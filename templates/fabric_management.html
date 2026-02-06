@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>面料管理</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div id="site-header"></div>
+
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1.5rem;">
+            <h2>面料管理</h2>
+            <p>维护面料编号、英文名称、面料类型与关联图片</p>
+        </section>
+
+        <section class="pm-layout">
+            <div class="card pm-card">
+                <div class="pm-toolbar">
+                    <div class="pm-toolbar-actions">
+                        <div class="form-group pm-search" style="margin: 0;">
+                            <span class="pm-search-title">搜索</span>
+                            <input type="text" id="searchInput" placeholder="搜索面料编号/英文名">
+                            <button class="btn-primary" onclick="loadFabricList()">搜索</button>
+                            <button class="btn-secondary" onclick="resetSearch()">清空</button>
+                        </div>
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-accent" onclick="openCreateModal()">新增</button>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <table class="pm-table" id="fabricTable">
+                    <thead>
+                        <tr>
+                            <th style="width:80px;" class="cell-center">图片</th>
+                            <th>面料编号</th>
+                            <th>面料英文名称</th>
+                            <th>面料类型</th>
+                            <th style="width:180px;">创建时间</th>
+                            <th style="width:160px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div class="pm-modal" id="pm-modal">
+        <div class="pm-modal-content">
+            <h3 id="pm-modal-title" style="margin-top:0;">新增面料</h3>
+            <div class="pm-form">
+                <div class="form-group">
+                    <label for="modalFabricCode">面料编号<span class="required-asterisk">*</span></label>
+                    <input type="text" id="modalFabricCode" class="required-field" placeholder="例如：Beige">
+                </div>
+                <div class="form-group">
+                    <label for="modalFabricNameEn">面料英文名称<span class="required-asterisk">*</span></label>
+                    <input type="text" id="modalFabricNameEn" class="required-field" placeholder="例如：Greige">
+                </div>
+                <div class="form-group">
+                    <label for="modalFabricMaterial">面料类型<span class="required-asterisk">*</span></label>
+                    <select id="modalFabricMaterial" class="required-field"></select>
+                </div>
+                <div class="fabric-image-choice fabric-image-choice--full">
+                    <div class="fabric-choice-block" id="fabricSelectBlock">
+                        <label for="modalImageToggle">关联图片（『面料』文件夹）<span class="required-asterisk">*</span></label>
+                        <div class="thumb-dropdown" id="modalImageDropdown">
+                            <button type="button" class="thumb-dropdown-toggle" id="modalImageToggle">请选择图片</button>
+                            <div class="thumb-dropdown-menu" id="modalImageMenu">
+                                <input type="text" id="modalImageFilter" placeholder="输入关键词筛选图片">
+                                <div class="thumb-dropdown-list" id="modalImageList"></div>
+                            </div>
+                        </div>
+                        <select id="modalImageSelect" class="thumb-dropdown-select"></select>
+                    </div>
+                    <div class="fabric-or">或</div>
+                    <div class="fabric-choice-block" id="fabricUploadBlock">
+                        <label for="modalImageUpload">上传新图片（仅一张）<span class="required-asterisk">*</span></label>
+                        <input type="file" id="modalImageUpload" accept="image/*">
+                    </div>
+                </div>
+            </div>
+            <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeModal()">取消</button>
+                <button class="btn-primary" id="modalSaveBtn" onclick="saveFabricFromModal()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 SITJOY | 内部使用</p>
+    </footer>
+
+    <script>
+        let editId = null;
+        let fabricImages = [];
+        let fabricMaterialOptions = [];
+        let usedFabricImages = new Set();
+        let excludeUsedImages = false;
+
+        function showModalStatus(message, isError) {
+            const el = document.getElementById('modalStatus');
+            el.style.display = 'block';
+            el.style.background = isError ? '#ffecec' : '#f0fff0';
+            el.style.color = isError ? '#a33' : '#2f6f2f';
+            el.innerText = message;
+        }
+
+        function resetModalStatus() {
+            const el = document.getElementById('modalStatus');
+            el.style.display = 'none';
+            el.innerText = '';
+        }
+
+        function resetSearch() {
+            document.getElementById('searchInput').value = '';
+            loadFabricList();
+        }
+
+        function openCreateModal() {
+            editId = null;
+            excludeUsedImages = true;
+            document.getElementById('pm-modal-title').innerText = '新增面料';
+            document.getElementById('modalFabricCode').value = '';
+            document.getElementById('modalFabricNameEn').value = '';
+            setFabricMaterialSelect('');
+            document.getElementById('modalImageUpload').value = '';
+            document.getElementById('modalImageFilter').value = '';
+            setImageSelect('');
+            setDropdownOpen(false);
+            enforceMutualExclusive('select');
+            document.getElementById('modalSaveBtn').innerText = '保存';
+            resetModalStatus();
+            document.getElementById('pm-modal').classList.add('active');
+            document.getElementById('modalFabricCode').focus();
+        }
+
+        function openEditModal(item) {
+            editId = item.id;
+            excludeUsedImages = false;
+            document.getElementById('pm-modal-title').innerText = '编辑面料';
+            document.getElementById('modalFabricCode').value = item.fabric_code;
+            document.getElementById('modalFabricNameEn').value = item.fabric_name_en;
+            setFabricMaterialSelect(item.material_id || '');
+            document.getElementById('modalImageUpload').value = '';
+            document.getElementById('modalImageFilter').value = '';
+            setImageSelect(item.image_name);
+            setDropdownOpen(false);
+            enforceMutualExclusive('select');
+            document.getElementById('modalSaveBtn').innerText = '保存';
+            resetModalStatus();
+            document.getElementById('pm-modal').classList.add('active');
+            document.getElementById('modalFabricCode').focus();
+        }
+
+        function loadFabricMaterials() {
+            fetch('/api/material?type=fabric')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        fabricMaterialOptions = [];
+                        renderFabricMaterialSelect('');
+                        return;
+                    }
+                    fabricMaterialOptions = data.items || [];
+                    renderFabricMaterialSelect('');
+                })
+                .catch(() => {
+                    fabricMaterialOptions = [];
+                    renderFabricMaterialSelect('');
+                });
+        }
+
+        function renderFabricMaterialSelect(selectedValue) {
+            const select = document.getElementById('modalFabricMaterial');
+            select.innerHTML = '';
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = fabricMaterialOptions.length ? '请选择面料类型' : '暂无面料类型，请先创建';
+            select.appendChild(placeholder);
+            fabricMaterialOptions.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item.id;
+                option.textContent = `${item.name} / ${item.name_en}`;
+                if (selectedValue && String(selectedValue) === String(item.id)) {
+                    option.selected = true;
+                }
+                select.appendChild(option);
+            });
+        }
+
+        function setFabricMaterialSelect(value) {
+            if (!fabricMaterialOptions.length) {
+                loadFabricMaterials();
+            }
+            renderFabricMaterialSelect(value || '');
+        }
+
+        function closeModal() {
+            document.getElementById('pm-modal').classList.remove('active');
+            editId = null;
+        }
+
+        function loadFabricImages() {
+            fetch('/api/fabric-images')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        fabricImages = [];
+                        renderImageSelect('');
+                        return;
+                    }
+                    fabricImages = data.items || [];
+                    renderImageSelect('');
+                })
+                .catch(() => {
+                    fabricImages = [];
+                    renderImageSelect('');
+                });
+        }
+
+        function getImagePlaceholderText() {
+            return fabricImages.length ? '请选择图片' : '暂无图片';
+        }
+
+        function updateImageToggleText(selectedValue) {
+            const toggle = document.getElementById('modalImageToggle');
+            const text = selectedValue ? selectedValue : getImagePlaceholderText();
+            toggle.innerText = text;
+            if (selectedValue) {
+                toggle.classList.add('has-value');
+            } else {
+                toggle.classList.remove('has-value');
+            }
+        }
+
+        function setDropdownOpen(isOpen) {
+            const dropdown = document.getElementById('modalImageDropdown');
+            if (!dropdown) return;
+            dropdown.classList.toggle('open', isOpen);
+        }
+
+        function renderImageSelect(selectedValue) {
+            const select = document.getElementById('modalImageSelect');
+            const list = document.getElementById('modalImageList');
+            select.innerHTML = '';
+            list.innerHTML = '';
+            const filterValue = (document.getElementById('modalImageFilter').value || '').trim().toLowerCase();
+
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = getImagePlaceholderText();
+            select.appendChild(placeholder);
+            updateImageToggleText(selectedValue);
+
+            const baseImages = excludeUsedImages
+                ? fabricImages.filter(name => !usedFabricImages.has(name) || name === selectedValue)
+                : fabricImages;
+
+            const filtered = filterValue
+                ? baseImages.filter(name => String(name).toLowerCase().includes(filterValue))
+                : baseImages;
+
+            if (!filtered.length) {
+                const empty = document.createElement('div');
+                empty.className = 'thumb-dropdown-empty';
+                empty.textContent = fabricImages.length ? '未找到匹配图片' : '暂无图片';
+                list.appendChild(empty);
+                return;
+            }
+
+            filtered.forEach(name => {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                if (selectedValue && selectedValue === name) {
+                    option.selected = true;
+                }
+                select.appendChild(option);
+
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'thumb-dropdown-item' + (selectedValue === name ? ' active' : '');
+                const path = `『面料』/${name}`;
+                const pathB64 = utf8ToB64(path);
+                item.innerHTML = `
+                    <img src="/api/image-preview?id=${encodeURIComponent(pathB64)}" alt="${name}">
+                    <span>${name}</span>
+                `;
+                item.addEventListener('click', () => {
+                    select.value = name;
+                    enforceMutualExclusive('select');
+                    updateImageToggleText(name);
+                    setDropdownOpen(false);
+                    renderImageSelect(name);
+                });
+                list.appendChild(item);
+            });
+        }
+
+        function setImageSelect(value) {
+            if (!fabricImages.length) {
+                loadFabricImages();
+            }
+            renderImageSelect(value || '');
+        }
+
+        function utf8ToB64(text) {
+            try {
+                if (typeof TextEncoder !== 'undefined') {
+                    const bytes = new TextEncoder().encode(text);
+                    let binary = '';
+                    bytes.forEach(b => binary += String.fromCharCode(b));
+                    return btoa(binary);
+                }
+                return btoa(unescape(encodeURIComponent(text)));
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function enforceMutualExclusive(source) {
+            const select = document.getElementById('modalImageSelect');
+            const upload = document.getElementById('modalImageUpload');
+            const filterInput = document.getElementById('modalImageFilter');
+            const selectBlock = document.getElementById('fabricSelectBlock');
+            const uploadBlock = document.getElementById('fabricUploadBlock');
+
+            if (source === 'select' && select.value) {
+                upload.value = '';
+            }
+            if (source === 'upload' && upload.files && upload.files.length > 0) {
+                select.value = '';
+                filterInput.value = '';
+                updateImageToggleText('');
+                setDropdownOpen(false);
+            }
+
+            if (select.value) {
+                selectBlock.classList.add('is-selected');
+            } else {
+                selectBlock.classList.remove('is-selected');
+            }
+
+            if (upload.files && upload.files.length > 0) {
+                uploadBlock.classList.add('is-selected');
+            } else {
+                uploadBlock.classList.remove('is-selected');
+            }
+        }
+
+        function saveFabricFromModal() {
+            const fabricCode = document.getElementById('modalFabricCode').value.trim();
+            const fabricNameEn = document.getElementById('modalFabricNameEn').value.trim();
+            const fabricMaterialId = document.getElementById('modalFabricMaterial').value;
+            const selectedImage = document.getElementById('modalImageSelect').value.trim();
+            const uploadInput = document.getElementById('modalImageUpload');
+            const uploadFile = uploadInput.files && uploadInput.files[0] ? uploadInput.files[0] : null;
+
+            if (!fabricCode || !fabricNameEn || !fabricMaterialId) {
+                showModalStatus('请填写面料编号、英文名称并选择面料类型', true);
+                return;
+            }
+
+            const finalizeSave = (imageName) => {
+                if (!imageName) {
+                    showModalStatus('请选择或上传图片', true);
+                    return;
+                }
+                const payload = {
+                    fabric_code: fabricCode,
+                    fabric_name_en: fabricNameEn,
+                    material_id: fabricMaterialId,
+                    image_name: imageName
+                };
+                let method = 'POST';
+                if (editId) {
+                    payload.id = editId;
+                    method = 'PUT';
+                }
+
+                fetch('/api/fabric', {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        showModalStatus(editId ? '更新成功' : '新增成功', false);
+                        setTimeout(() => {
+                            closeModal();
+                            loadFabricList();
+                            loadFabricImages();
+                        }, 400);
+                    } else {
+                        showModalStatus(data.message || '操作失败', true);
+                    }
+                })
+                .catch(err => showModalStatus('请求失败: ' + err, true));
+            };
+
+            if (uploadFile && selectedImage) {
+                showModalStatus('请选择其一：关联图片或上传图片', true);
+                return;
+            }
+
+            if (uploadFile) {
+                const formData = new FormData();
+                formData.append('file', uploadFile);
+                formData.append('fabric_code', fabricCode);
+
+                showModalStatus('上传中...', false);
+                fetch('/api/fabric-upload', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        finalizeSave(data.image_name || '');
+                    } else {
+                        showModalStatus(data.message || '上传失败', true);
+                    }
+                })
+                .catch(err => showModalStatus('上传失败: ' + err, true));
+                return;
+            }
+
+            finalizeSave(selectedImage);
+        }
+
+        function deleteFabric(id) {
+            if (!confirm('确认删除该面料？')) return;
+            fetch('/api/fabric', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: id })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    loadFabricList();
+                } else {
+                    alert(data.message || '删除失败');
+                }
+            })
+            .catch(err => alert('请求失败: ' + err));
+        }
+
+        function loadFabricList() {
+            const q = document.getElementById('searchInput').value.trim();
+            const url = q ? `/api/fabric?q=${encodeURIComponent(q)}` : '/api/fabric';
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    const tbody = document.querySelector('#fabricTable tbody');
+                    if (data.status !== 'success') {
+                        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        return;
+                    }
+                    const items = data.items || [];
+                    usedFabricImages = new Set(
+                        items
+                            .map(item => item.image_name)
+                            .filter(name => name)
+                    );
+                    if (items.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无数据</td></tr>';
+                        return;
+                    }
+                    tbody.innerHTML = items.map(item => {
+                        const dateText = item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : '';
+                        const imageName = item.image_name || '';
+                        const imagePath = imageName ? `『面料』/${imageName}` : '';
+                        const imageB64 = imagePath ? utf8ToB64(imagePath) : '';
+                        const imageThumb = imageB64
+                            ? `<img class="fabric-table-thumb" src="/api/image-preview?id=${encodeURIComponent(imageB64)}" alt="${imageName}">`
+                            : '';
+                        const materialText = item.material_name ? `${item.material_name} / ${item.material_name_en || ''}` : '';
+                        return `
+                            <tr>
+                                <td class="fabric-image-cell cell-center">${imageThumb}</td>
+                                <td>${item.fabric_code}</td>
+                                <td>${item.fabric_name_en}</td>
+                                <td>${materialText}</td>
+                                <td>${dateText}</td>
+                                <td>
+                                    <div class="pm-actions">
+                                        <button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button>
+                                        <button class="btn-danger" onclick='deleteFabric(${item.id})'>删除</button>
+                                    </div>
+                                <tr>
+                        `;
+                    }).join('');
+                })
+                .catch(err => {
+                    const tbody = document.querySelector('#fabricTable tbody');
+                    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                });
+        }
+
+        window.addEventListener('load', loadFabricList);
+        window.addEventListener('load', loadFabricImages);
+        window.addEventListener('load', loadFabricMaterials);
+        document.getElementById('pm-modal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
+        document.getElementById('searchInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                loadFabricList();
+            }
+        });
+        document.getElementById('modalImageToggle').addEventListener('click', function(e) {
+            const dropdown = document.getElementById('modalImageDropdown');
+            const isOpen = dropdown.classList.contains('open');
+            setDropdownOpen(!isOpen);
+            if (!isOpen) {
+                document.getElementById('modalImageFilter').focus();
+            }
+            e.stopPropagation();
+        });
+        document.getElementById('modalImageFilter').addEventListener('focus', function() {
+            setDropdownOpen(true);
+        });
+        document.getElementById('modalImageFilter').addEventListener('input', function() {
+            setDropdownOpen(true);
+            renderImageSelect(document.getElementById('modalImageSelect').value || '');
+        });
+        document.getElementById('modalImageSelect').addEventListener('change', function() {
+            enforceMutualExclusive('select');
+        });
+        document.getElementById('modalImageUpload').addEventListener('change', function() {
+            if (this.files && this.files.length > 1) {
+                this.value = '';
+                showModalStatus('仅支持上传一张图片', true);
+                return;
+            }
+            enforceMutualExclusive('upload');
+        });
+        document.addEventListener('click', function(e) {
+            const dropdown = document.getElementById('modalImageDropdown');
+            if (!dropdown.contains(e.target)) {
+                setDropdownOpen(false);
+            }
+        });
+    </script>
+</body>
+    <script src="/static/js/header.js"></script>
+</html>

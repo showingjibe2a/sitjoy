@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的网页 - Synology NAS</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <h1 class="logo">🏠 我的网页</h1>
+            <ul class="nav-menu">
+                <li><a href="/" class="active">首页</a></li>
+                <li><a href="/gallery">🖼️ 图片管理</a></li>
+                <li><a href="/about">关于</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container">
+        <section class="hero">
+            <h2>欢迎来到我的网页项目！</h2>
+            <p>这是运行在 Synology NAS 上的 Python Flask 应用</p>
+        </section>
+
+        <section class="content">
+            <div class="card">
+                <h3>🎯 快速开始</h3>
+                <p>输入你的名字，让我们测试 API 功能：</p>
+                <div class="form-group">
+                    <input type="text" id="nameInput" placeholder="输入你的名字" value="用户">
+                    <button onclick="sayHello()">问候我</button>
+                </div>
+                <div id="response" class="response"></div>
+            </div>
+
+            <div class="card">
+                <h3>✨ 功能特性</h3>
+                <ul>
+                    <li>✓ Python Flask 框架</li>
+                    <li>✓ RESTful API 支持</li>
+                    <li>✓ 响应式设计</li>
+                    <li>✓ 运行在 Synology NAS 上</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h3>🔧 系统信息</h3>
+                <button onclick="getStatus()">获取系统状态</button>
+                <div id="status" class="response"></div>
+            </div>
+        </section>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 我的 Synology NAS 网页 | 由 Python Flask 驱动</p>
+    </footer>
+
+    <script>
+        function sayHello() {
+            const name = document.getElementById('nameInput').value || '访客';
+            const responseDiv = document.getElementById('response');
+            responseDiv.innerHTML = '<p style="color: #666;">加载中...</p>';
+
+            fetch('/api/hello', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ name: name })
+            })
+            .then(response => response.json())
+            .then(data => {
+                responseDiv.innerHTML = `
+                    <div style="background: #f0f8ff; padding: 10px; border-radius: 5px;">
+                        <p><strong>消息：</strong> ${data.message}</p>
+                        <p><strong>时间：</strong> ${new Date(data.timestamp).toLocaleString('zh-CN')}</p>
+                        <p><strong>状态：</strong> ${data.status}</p>
+                    </div>
+                `;
+            })
+            .catch(error => {
+                responseDiv.innerHTML = `<p style="color: red;">错误: ${error}</p>`;
+            });
+        }
+
+        function getStatus() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = '<p style="color: #666;">加载中...</p>';
+
+            fetch('/status')
+            .then(response => response.json())
+            .then(data => {
+                statusDiv.innerHTML = `
+                    <div style="background: #f0fff0; padding: 10px; border-radius: 5px;">
+                        <p><strong>状态：</strong> ${data.status}</p>
+                        <p><strong>版本：</strong> ${data.version}</p>
+                        <p><strong>时间：</strong> ${new Date(data.timestamp).toLocaleString('zh-CN')}</p>
+                    </div>
+                `;
+            })
+            .catch(error => {
+                statusDiv.innerHTML = `<p style="color: red;">错误: ${error}</p>`;
+            });
+        }
+    </script>
+</body>
+</html>

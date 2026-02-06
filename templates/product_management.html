@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>产品管理 - 货号管理</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div id="site-header"></div>
+
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1.5rem;">
+            <h2>货号管理</h2>
+            <p>维护产品货号（父体）与品类</p>
+        </section>
+
+        <section class="pm-layout">
+            <div class="card pm-card">
+                <div class="pm-toolbar">
+                    <div class="pm-toolbar-actions">
+                        <div class="form-group pm-search" style="margin: 0;">
+                            <span class="pm-search-title">搜索</span>
+                            <input type="text" id="searchInput" placeholder="搜索货号/品类">
+                            <button class="btn-primary" onclick="loadSkuList()">搜索</button>
+                            <button class="btn-secondary" onclick="resetSearch()">清空</button>
+                        </div>
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-accent" onclick="openCreateModal()">新增</button>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <table class="pm-table" id="skuTable">
+                    <thead>
+                        <tr>
+                            <th>货号（父体）</th>
+                            <th>品类</th>
+                            <th style="width:160px;">创建时间</th>
+                            <th style="width:160px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="5" style="text-align:center;">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div class="pm-modal" id="pm-modal">
+        <div class="pm-modal-content">
+            <h3 id="pm-modal-title" style="margin-top:0;">新增货号</h3>
+            <div class="pm-form">
+                <div class="form-group">
+                    <label for="modalSkuInput">货号（父体）<span class="required-asterisk">*</span></label>
+                    <input type="text" id="modalSkuInput" class="required-field" placeholder="不加品类前缀，如：MS01">
+                </div>
+                <div class="form-group">
+                    <label for="modalCategorySelect">品类<span class="required-asterisk">*</span></label>
+                    <select id="modalCategorySelect" class="required-field"></select>
+                </div>
+            </div>
+            <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeModal()">取消</button>
+                <button class="btn-primary" id="modalSaveBtn" onclick="saveSkuFromModal()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 SITJOY | 内部使用</p>
+    </footer>
+
+    <script>
+        let editId = null;
+        let categoryOptions = [];
+
+        function showModalStatus(message, isError) {
+            const el = document.getElementById('modalStatus');
+            el.style.display = 'block';
+            el.style.background = isError ? '#ffecec' : '#f0fff0';
+            el.style.color = isError ? '#a33' : '#2f6f2f';
+            el.innerText = message;
+        }
+
+        function resetModalStatus() {
+            const el = document.getElementById('modalStatus');
+            el.style.display = 'none';
+            el.innerText = '';
+        }
+
+        function resetSearch() {
+            document.getElementById('searchInput').value = '';
+            loadSkuList();
+        }
+
+        function openCreateModal() {
+            editId = null;
+            document.getElementById('pm-modal-title').innerText = '新增货号';
+            document.getElementById('modalSkuInput').value = '';
+            setCategorySelect('');
+            document.getElementById('modalSaveBtn').innerText = '保存';
+            resetModalStatus();
+            document.getElementById('pm-modal').classList.add('active');
+            document.getElementById('modalSkuInput').focus();
+        }
+
+        function openEditModal(item) {
+            editId = item.id;
+            document.getElementById('pm-modal-title').innerText = '编辑货号';
+            document.getElementById('modalSkuInput').value = item.sku_family;
+            setCategorySelect(item.category);
+            document.getElementById('modalSaveBtn').innerText = '保存';
+            resetModalStatus();
+            document.getElementById('pm-modal').classList.add('active');
+            document.getElementById('modalSkuInput').focus();
+        }
+
+        function closeModal() {
+            document.getElementById('pm-modal').classList.remove('active');
+            editId = null;
+        }
+
+        function saveSkuFromModal() {
+            const skuFamily = document.getElementById('modalSkuInput').value.trim();
+            const category = document.getElementById('modalCategorySelect').value.trim();
+            if (!skuFamily || !category) {
+                showModalStatus('请填写货号与品类', true);
+                return;
+            }
+
+            const payload = { sku_family: skuFamily, category: category };
+            let method = 'POST';
+            if (editId) {
+                payload.id = editId;
+                method = 'PUT';
+            }
+
+            fetch('/api/sku', {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showModalStatus(editId ? '更新成功' : '新增成功', false);
+                    setTimeout(() => {
+                        closeModal();
+                        loadSkuList();
+                    }, 400);
+                } else {
+                    showModalStatus(data.message || '操作失败', true);
+                }
+            })
+            .catch(err => showModalStatus('请求失败: ' + err, true));
+        }
+
+        function deleteSku(id) {
+            if (!confirm('确认删除该货号？')) return;
+            fetch('/api/sku', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: id })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    loadSkuList();
+                } else {
+                    alert(data.message || '删除失败');
+                }
+            })
+            .catch(err => alert('请求失败: ' + err));
+        }
+
+        function loadSkuList() {
+            const q = document.getElementById('searchInput').value.trim();
+            const url = q ? `/api/sku?q=${encodeURIComponent(q)}` : '/api/sku';
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    const tbody = document.querySelector('#skuTable tbody');
+                    if (data.status !== 'success') {
+                        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        return;
+                    }
+                    const items = data.items || [];
+                    if (items.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">暂无数据</td></tr>';
+                        return;
+                    }
+                    tbody.innerHTML = items.map(item => {
+                        const dateText = item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : '';
+                        return `
+                            <tr>
+                                <td>${item.sku_family}</td>
+                                <td>${item.category}</td>
+                                <td>${dateText}</td>
+                                <td>
+                                    <div class="pm-actions">
+                                        <button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button>
+                                        <button class="btn-danger" onclick='deleteSku(${item.id})'>删除</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('');
+                })
+                .catch(err => {
+                    const tbody = document.querySelector('#skuTable tbody');
+                    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                });
+        }
+
+        window.addEventListener('load', loadSkuList);
+        window.addEventListener('load', loadCategories);
+        document.getElementById('pm-modal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
+        document.getElementById('searchInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                loadSkuList();
+            }
+        });
+
+        function loadCategories() {
+            fetch('/api/category')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        categoryOptions = [];
+                        renderCategorySelect('');
+                        return;
+                    }
+                    categoryOptions = data.items || [];
+                    renderCategorySelect('');
+                })
+                .catch(() => {
+                    categoryOptions = [];
+                    renderCategorySelect('');
+                });
+        }
+
+        function renderCategorySelect(selectedValue) {
+            const select = document.getElementById('modalCategorySelect');
+            const options = categoryOptions.map(item => {
+                const value = item.category_cn;
+                const label = `${item.category_cn} / ${item.category_en}`;
+                return { value, label };
+            });
+            select.innerHTML = '';
+
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = options.length ? '请选择品类' : '暂无品类，请先创建';
+            select.appendChild(placeholder);
+
+            options.forEach(opt => {
+                const option = document.createElement('option');
+                option.value = opt.value;
+                option.textContent = opt.label;
+                if (selectedValue && selectedValue === opt.value) {
+                    option.selected = true;
+                }
+                select.appendChild(option);
+            });
+        }
+
+        function setCategorySelect(value) {
+            if (!categoryOptions.length) {
+                loadCategories();
+            }
+            renderCategorySelect(value || '');
+        }
+    </script>
+</body>
+    <script src="/static/js/header.js"></script>
+</html>

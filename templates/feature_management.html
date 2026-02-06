@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>卖点管理</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    </head>
+<body>
+    <div id="site-header"></div>
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1.5rem;">
+            <h2>卖点管理</h2>
+            <p>维护卖点信息并关联品类</p>
+        </section>
+
+        <section class="pm-layout">
+            <div class="card pm-card">
+                <div class="pm-toolbar">
+                    <div class="pm-toolbar-actions">
+                        <div class="form-group pm-search" style="margin: 0;">
+                            <span class="pm-search-title">搜索</span>
+                            <input type="text" id="searchInput" placeholder="搜索卖点/英文名/品类">
+                            <button class="btn-primary" onclick="loadFeatureList()">搜索</button>
+                            <button class="btn-secondary" onclick="resetSearch()">清空</button>
+                        </div>
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-accent" onclick="openCreateModal()">新增</button>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <table class="pm-table" id="featureTable">
+                    <thead>
+                        <tr>
+                            <th>卖点中文名</th>
+                            <th>卖点英文名</th>
+                            <th>关联品类</th>
+                            <th style="width:180px;">创建时间</th>
+                            <th style="width:160px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="5" style="text-align:center;">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div class="pm-modal" id="pm-modal">
+        <div class="pm-modal-content">
+            <h3 id="pm-modal-title" style="margin-top:0;">新增卖点</h3>
+            <div class="pm-form">
+                <div class="form-group">
+                    <label for="modalFeatureName">卖点中文名<span class="required-asterisk">*</span></label>
+                    <input type="text" id="modalFeatureName" class="required-field" placeholder="例如：易清洁">
+                </div>
+                <div class="form-group">
+                    <label for="modalFeatureNameEn">卖点英文名<span class="required-asterisk">*</span></label>
+                    <input type="text" id="modalFeatureNameEn" class="required-field" placeholder="例如：Easy Clean">
+                </div>
+                <div class="form-group pm-form-full">
+                    <label for="modalCategorySelect">关联品类（可多选）<span class="required-asterisk">*</span></label>
+                    <div class="feature-category-picker" id="featureCategoryPicker">
+                        <div class="feature-category-chips" id="featureCategoryChips"></div>
+                        <div class="feature-category-dropdown" id="featureCategoryDropdown">
+                            <button type="button" class="feature-category-add" id="featureCategoryAdd">
+                                <span class="feature-category-add-icon">+</span>
+                                <span class="feature-category-add-text">添加品类</span>
+                            </button>
+                            <div class="feature-category-menu" id="featureCategoryMenu">
+                                <div class="feature-category-list" id="featureCategoryList"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeModal()">取消</button>
+                <button class="btn-primary" id="modalSaveBtn" onclick="saveFeatureFromModal()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 SITJOY | 内部使用</p>
+    </footer>
+
+    <script>
+        let editId = null;
+        let categoryOptions = [];
+        let selectedCategoryIds = [];
+
+        function showModalStatus(message, isError) {
+            const el = document.getElementById('modalStatus');
+            el.style.display = 'block';
+            el.style.background = isError ? '#ffecec' : '#f0fff0';
+            el.style.color = isError ? '#a33' : '#2f6f2f';
+            el.innerText = message;
+        }
+
+        function resetModalStatus() {
+            const el = document.getElementById('modalStatus');
+            el.style.display = 'none';
+            el.innerText = '';
+        }
+
+        function resetSearch() {
+            document.getElementById('searchInput').value = '';
+            loadFeatureList();
+        }
+
+        function openCreateModal() {
+            editId = null;
+            document.getElementById('pm-modal-title').innerText = '新增卖点';
+            document.getElementById('modalFeatureName').value = '';
+            document.getElementById('modalFeatureNameEn').value = '';
+            setCategorySelect([]);
+            document.getElementById('modalSaveBtn').innerText = '保存';
+            resetModalStatus();
+            document.getElementById('pm-modal').classList.add('active');
+            document.getElementById('modalFeatureName').focus();
+        }
+
+        function openEditModal(item) {
+            editId = item.id;
+            document.getElementById('pm-modal-title').innerText = '编辑卖点';
+            document.getElementById('modalFeatureName').value = item.name || '';
+            document.getElementById('modalFeatureNameEn').value = item.name_en || '';
+            setCategorySelect(item.category_ids || []);
+            document.getElementById('modalSaveBtn').innerText = '保存';
+            resetModalStatus();
+            document.getElementById('pm-modal').classList.add('active');
+            document.getElementById('modalFeatureName').focus();
+        }
+
+        function closeModal() {
+            document.getElementById('pm-modal').classList.remove('active');
+            editId = null;
+        }
+
+        function saveFeatureFromModal() {
+            const name = document.getElementById('modalFeatureName').value.trim();
+            const nameEn = document.getElementById('modalFeatureNameEn').value.trim();
+            const categoryIds = getSelectedCategoryIds();
+            if (!name || !nameEn || !categoryIds.length) {
+                showModalStatus('请填写卖点中英文名称并选择品类', true);
+                return;
+            }
+
+            const payload = {
+                name: name,
+                name_en: nameEn,
+                category_ids: categoryIds
+            };
+            let method = 'POST';
+            if (editId) {
+                payload.id = editId;
+                method = 'PUT';
+            }
+
+            fetch('/api/feature', {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showModalStatus(editId ? '更新成功' : '新增成功', false);
+                    setTimeout(() => {
+                        closeModal();
+                        loadFeatureList();
+                    }, 400);
+                } else {
+                    showModalStatus(data.message || '操作失败', true);
+                }
+            })
+            .catch(err => showModalStatus('请求失败: ' + err, true));
+        }
+
+        function deleteFeature(id) {
+            if (!confirm('确认删除该卖点？')) return;
+            fetch('/api/feature', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: id })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    loadFeatureList();
+                } else {
+                    alert(data.message || '删除失败');
+                }
+            })
+            .catch(err => alert('请求失败: ' + err));
+        }
+
+        function loadFeatureList() {
+            const q = document.getElementById('searchInput').value.trim();
+            const url = q ? `/api/feature?q=${encodeURIComponent(q)}` : '/api/feature';
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    const tbody = document.querySelector('#featureTable tbody');
+                    if (data.status !== 'success') {
+                        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        return;
+                    }
+                    const items = data.items || [];
+                    if (items.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">暂无数据</td></tr>';
+                        return;
+                    }
+                    tbody.innerHTML = items.map(item => {
+                        const dateText = item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : '';
+                        const categoryText = (item.category_names || '').replace(/\s*\/\s*/g, ' / ');
+                        return `
+                            <tr>
+                                <td>${item.name}</td>
+                                <td>${item.name_en || ''}</td>
+                                <td>${categoryText}</td>
+                                <td>${dateText}</td>
+                                <td>
+                                    <div class="pm-actions">
+                                        <button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button>
+                                        <button class="btn-danger" onclick='deleteFeature(${item.id})'>删除</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('');
+                })
+                .catch(err => {
+                    const tbody = document.querySelector('#featureTable tbody');
+                    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                });
+        }
+
+        function loadCategories() {
+            fetch('/api/category')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        categoryOptions = [];
+                        renderCategoryChips();
+                        renderCategorySelect();
+                        return;
+                    }
+                    categoryOptions = data.items || [];
+                    renderCategoryChips();
+                    renderCategorySelect();
+                })
+                .catch(() => {
+                    categoryOptions = [];
+                    renderCategoryChips();
+                    renderCategorySelect();
+                });
+        }
+
+
+        function renderCategoryChips() {
+            const container = document.getElementById('featureCategoryChips');
+            container.innerHTML = '';
+            if (!selectedCategoryIds.length) {
+                return;
+            }
+            selectedCategoryIds.forEach(id => {
+                const item = categoryOptions.find(opt => String(opt.id) === String(id));
+                if (!item) return;
+                const chip = document.createElement('span');
+                chip.className = 'feature-category-chip';
+                chip.textContent = `${item.category_cn} / ${item.category_en}`;
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'feature-category-remove';
+                removeBtn.innerText = '×';
+                removeBtn.addEventListener('click', () => removeCategory(id));
+                chip.appendChild(removeBtn);
+                container.appendChild(chip);
+            });
+        }
+
+        function renderCategorySelect() {
+            const list = document.getElementById('featureCategoryList');
+            list.innerHTML = '';
+
+            const available = categoryOptions.filter(
+                item => !selectedCategoryIds.includes(String(item.id))
+            );
+
+            if (!available.length) {
+                const empty = document.createElement('div');
+                empty.className = 'feature-category-empty';
+                empty.textContent = '无更多品类';
+                list.appendChild(empty);
+                return;
+            }
+
+            available.forEach(item => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'feature-category-option';
+                btn.textContent = `${item.category_cn} / ${item.category_en}`;
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (!selectedCategoryIds.includes(String(item.id))) {
+                        selectedCategoryIds.push(String(item.id));
+                        renderCategoryChips();
+                        renderCategorySelect();
+                    }
+                });
+                list.appendChild(btn);
+            });
+        }
+
+        function setCategorySelect(value) {
+            if (!categoryOptions.length) {
+                loadCategories();
+            }
+            selectedCategoryIds = normalizeCategoryIds(value);
+            renderCategoryChips();
+            renderCategorySelect();
+        }
+
+
+        function normalizeCategoryIds(value) {
+            if (!value) return [];
+            if (Array.isArray(value)) {
+                return value.map(v => String(v));
+            }
+            return String(value)
+                .split(',')
+                .map(v => v.trim())
+                .filter(v => v);
+        }
+
+        function getSelectedCategoryIds() {
+            return selectedCategoryIds;
+        }
+
+
+        function removeCategory(id) {
+            selectedCategoryIds = selectedCategoryIds.filter(item => String(item) !== String(id));
+            renderCategoryChips();
+            renderCategorySelect();
+        }
+
+
+        window.addEventListener('load', loadFeatureList);
+        window.addEventListener('load', loadCategories);
+        document.getElementById('pm-modal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
+        document.getElementById('searchInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                loadFeatureList();
+            }
+        });
+        document.getElementById('featureCategoryAdd').addEventListener('click', function() {
+            toggleCategoryMenu();
+        });
+
+        document.addEventListener('click', function(e) {
+            const picker = document.getElementById('featureCategoryPicker');
+            if (!picker.contains(e.target)) {
+                closeCategoryMenu();
+            }
+        });
+
+        function toggleCategoryMenu() {
+            const dropdown = document.getElementById('featureCategoryDropdown');
+            const isOpen = dropdown.classList.contains('open');
+            if (isOpen) {
+                closeCategoryMenu();
+                return;
+            }
+            dropdown.classList.add('expanded');
+            window.setTimeout(() => {
+                dropdown.classList.add('open');
+            }, 180);
+        }
+
+        function closeCategoryMenu() {
+            const dropdown = document.getElementById('featureCategoryDropdown');
+            dropdown.classList.remove('open');
+            dropdown.classList.remove('expanded');
+        }
+
+    </script>
+</body>
+    <script src="/static/js/header.js"></script>
+</html>

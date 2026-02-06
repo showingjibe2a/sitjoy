@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图片管理 - 预览和重命名</title>
+    <link rel="stylesheet" href="/static/css/gallery.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <h1 class="logo">🖼️ 图片管理系统</h1>
+            <ul class="nav-menu">
+                <li><a href="/">首页</a></li>
+                <li><a href="/gallery" class="active">图片管理</a></li>
+                <li><a href="/about">关于</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="container">
+        <section class="header">
+            <h2>图片预览和快速重命名</h2>
+            <p>点击图片预览，直接在下方重命名</p>
+        </section>
+
+        <!-- 图片列表 -->
+        <div id="images-grid" class="images-grid">
+            <div class="loading">加载图片中...</div>
+        </div>
+
+        <!-- 预览和重命名面板 -->
+        <div id="preview-panel" class="preview-panel" style="display: none;">
+            <button class="close-btn" onclick="closePreview()">✕</button>
+            
+            <div class="preview-container">
+                <div class="preview-image">
+                    <img id="preview-img" src="" alt="预览">
+                </div>
+                
+                <div class="preview-info">
+                    <div class="info-group">
+                        <label>当前文件名</label>
+                        <input type="text" id="current-filename" readonly>
+                    </div>
+                    
+                    <div class="info-group">
+                        <label>文件路径</label>
+                        <input type="text" id="file-path" readonly style="font-size: 12px;">
+                    </div>
+                    
+                    <div class="info-group">
+                        <label>新文件名</label>
+                        <input type="text" id="new-filename" placeholder="输入新的文件名（不需要扩展名）">
+                    </div>
+                    
+                    <button class="rename-btn" onclick="renameFile()">应用重命名</button>
+                    <div id="rename-status" class="status-message"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 图片管理系统 | Synology NAS</p>
+    </footer>
+
+    <script>
+        let currentFile = null;
+        let allImages = [];
+        let currentPage = 1;
+        let totalPages = 1;
+
+        // 页面加载时获取图片列表
+        window.addEventListener('load', function() {
+            loadImages(1);
+        });
+
+        function loadImages(page = 1) {
+            const grid = document.getElementById('images-grid');
+            grid.innerHTML = '<div class="loading">加载图片中...</div>';
+
+            fetch(`/api/images?page=${page}&per_page=50`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        currentPage = data.page;
+                        totalPages = data.pages;
+                        allImages = data.images;
+                        displayImages(data.images);
+                        displayPagination(data);
+                    } else {
+                        grid.innerHTML = '<p style="color: red;">加载失败: ' + data.message + '</p>';
+                    }
+                })
+                .catch(error => {
+                    console.error('错误:', error);
+                    grid.innerHTML = '<p style="color: red;">加载错误: ' + error + '</p>';
+                });
+        }
+
+        function displayImages(images) {
+            const grid = document.getElementById('images-grid');
+            
+            if (images.length === 0) {
+                grid.innerHTML = '<p style="grid-column: 1/-1;">未找到图片</p>';
+                return;
+            }
+
+            grid.innerHTML = '';
+            
+            images.forEach(image => {
+                const item = document.createElement('div');
+                item.className = 'image-item';
+                const filename = atob(image.filename);  // 解码Base64
+                const folder = atob(image.folder);
+                
+                item.innerHTML = `
+                    <div class="image-thumbnail" onclick="previewImage('${image.id}', '${image.filename}')">
+                        <img src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><rect fill='%23f0f0f0' width='200' height='200'/><text x='50%25' y='50%25' text-anchor='middle' dy='.3em' font-size='14' fill='%23999'>点击预览</text></svg>" 
+                             alt="${filename}"
+                             loading="lazy">
+                    </div>
+                    <div class="image-name" title="${filename}">${filename}</div>
+                    <div class="image-folder" title="${folder}">${folder}</div>
+                `;
+                grid.appendChild(item);
+            });
+        }
+
+        function displayPagination(data) {
+            let paginationHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 2rem; color: white;">`;
+            
+            // 上一页
+            if (data.page > 1) {
+                paginationHTML += `<button onclick="loadImages(${data.page - 1})" class="pagination-btn">上一页</button>`;
+            }
+            
+            // 页码信息
+            paginationHTML += `<span style="margin: 0 1rem;">第 ${data.page} / ${data.pages} 页 (共 ${data.total} 张图片)</span>`;
+            
+            // 下一页
+            if (data.page < data.pages) {
+                paginationHTML += `<button onclick="loadImages(${data.page + 1})" class="pagination-btn">下一页</button>`;
+            }
+            
+            paginationHTML += `</div>`;
+            
+            const grid = document.getElementById('images-grid');
+            grid.innerHTML += paginationHTML;
+        }
+
+        function previewImage(id, filenameB64) {
+            const filename = atob(filenameB64);
+            currentFile = {
+                id: id,
+                filename: filename,
+                filenameB64: filenameB64
+            };
+
+            document.getElementById('current-filename').value = filename;
+            document.getElementById('file-path').value = id;
+            
+            // 预填新文件名（去掉扩展名）
+            const nameWithoutExt = filename.substring(0, filename.lastIndexOf('.')) || filename;
+            document.getElementById('new-filename').value = nameWithoutExt;
+            document.getElementById('rename-status').innerHTML = '<p style="color: #666;">加载预览中...</p>';
+            
+            // 加载预览
+            const previewImg = document.getElementById('preview-img');
+            previewImg.src = `/api/image-preview?id=${encodeURIComponent(id)}`;
+            previewImg.onerror = function() {
+                document.getElementById('rename-status').innerHTML = '<p style="color: orange;">预览加载失败，但可继续重命名</p>';
+            };
+            previewImg.onload = function() {
+                document.getElementById('rename-status').innerHTML = '';
+            };
+            
+            document.getElementById('preview-panel').style.display = 'block';
+        }
+
+        function closePreview() {
+            document.getElementById('preview-panel').style.display = 'none';
+            currentFile = null;
+        }
+
+        function renameFile() {
+            if (!currentFile) return;
+            
+            const newName = document.getElementById('new-filename').value.trim();
+            const statusDiv = document.getElementById('rename-status');
+            
+            if (!newName) {
+                statusDiv.innerHTML = '<p style="color: orange;">请输入新文件名</p>';
+                return;
+            }
+            
+            if (newName === currentFile.filename) {
+                statusDiv.innerHTML = '<p style="color: orange;">新文件名与原文件名相同</p>';
+                return;
+            }
+
+            statusDiv.innerHTML = '<p style="color: #666;">重命名中...</p>';
+
+            // 新名称也用Base64编码
+            const newNameB64 = btoa(unescape(encodeURIComponent(newName)));
+
+            fetch('/api/rename', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    id: currentFile.id,
+                    new_name_b64: newNameB64
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    statusDiv.innerHTML = '<p style="color: green;">✓ ' + data.message + '</p>';
+                    setTimeout(() => {
+                        loadImages(currentPage);
+                        closePreview();
+                    }, 1500);
+                } else {
+                    statusDiv.innerHTML = '<p style="color: red;">✗ 重命名失败: ' + data.message + '</p>';
+                }
+            })
+            .catch(error => {
+                statusDiv.innerHTML = '<p style="color: red;">✗ 错误: ' + error + '</p>';
+            });
+        }
+
+        // 回车键提交重命名
+        document.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && currentFile && document.activeElement.id === 'new-filename') {
+                renameFile();
+            }
+        });
+
+        // 点击面板外关闭
+        document.getElementById('preview-panel').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closePreview();
+            }
+        });
+    </script>
+</body>
+</html>

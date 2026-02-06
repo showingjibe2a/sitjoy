@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>品类管理</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div id="site-header"></div>
+
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1.5rem;">
+            <h2>品类管理</h2>
+            <p>维护品类中文名、英文缩写与英文名称</p>
+        </section>
+
+        <section class="pm-layout">
+            <div class="card pm-card">
+                <div class="pm-toolbar">
+                    <div class="pm-toolbar-actions">
+                        <div class="form-group pm-search" style="margin: 0;">
+                            <span class="pm-search-title">搜索</span>
+                            <input type="text" id="searchInput" placeholder="搜索中文名/英文缩写/英文名称">
+                            <button class="btn-primary" onclick="loadCategoryList()">搜索</button>
+                            <button class="btn-secondary" onclick="resetSearch()">清空</button>
+                        </div>
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-accent" onclick="openCreateModal()">新增</button>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <table class="pm-table" id="categoryTable">
+                    <thead>
+                        <tr>
+                            <th>品类中文名</th>
+                            <th>品类英文缩写</th>
+                            <th>品类英文名称</th>
+                            <th style="width:180px;">创建时间</th>
+                            <th style="width:160px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="5" style="text-align:center;">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div class="pm-modal" id="pm-modal">
+        <div class="pm-modal-content">
+            <h3 id="pm-modal-title" style="margin-top:0;">新增品类</h3>
+            <div class="pm-form">
+                <div class="form-group">
+                    <label for="modalCategoryCn">品类中文名<span class="required-asterisk">*</span></label>
+                    <input type="text" id="modalCategoryCn" class="required-field" placeholder="例如：餐椅">
+                </div>
+                <div class="form-group">
+                    <label for="modalCategoryEn">品类英文缩写<span class="required-asterisk">*</span></label>
+                    <input type="text" id="modalCategoryEn" class="required-field" placeholder="例如：DC">
+                </div>
+                <div class="form-group">
+                    <label for="modalCategoryEnName">品类英文名称<span class="required-asterisk">*</span></label>
+                    <input type="text" id="modalCategoryEnName" class="required-field" placeholder="例如：Dining Chair">
+                </div>
+            </div>
+            <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeModal()">取消</button>
+                <button class="btn-primary" id="modalSaveBtn" onclick="saveCategoryFromModal()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 SITJOY | 内部使用</p>
+    </footer>
+
+    <script>
+        let editId = null;
+
+        function showModalStatus(message, isError) {
+            const el = document.getElementById('modalStatus');
+            el.style.display = 'block';
+            el.style.background = isError ? '#ffecec' : '#f0fff0';
+            el.style.color = isError ? '#a33' : '#2f6f2f';
+            el.innerText = message;
+        }
+
+        function resetModalStatus() {
+            const el = document.getElementById('modalStatus');
+            el.style.display = 'none';
+            el.innerText = '';
+        }
+
+        function resetSearch() {
+            document.getElementById('searchInput').value = '';
+            loadCategoryList();
+        }
+
+        function openCreateModal() {
+            editId = null;
+            document.getElementById('pm-modal-title').innerText = '新增品类';
+            document.getElementById('modalCategoryCn').value = '';
+            document.getElementById('modalCategoryEn').value = '';
+            document.getElementById('modalCategoryEnName').value = '';
+            document.getElementById('modalSaveBtn').innerText = '保存';
+            resetModalStatus();
+            document.getElementById('pm-modal').classList.add('active');
+            document.getElementById('modalCategoryCn').focus();
+        }
+
+        function openEditModal(item) {
+            editId = item.id;
+            document.getElementById('pm-modal-title').innerText = '编辑品类';
+            document.getElementById('modalCategoryCn').value = item.category_cn;
+            document.getElementById('modalCategoryEn').value = item.category_en;
+            document.getElementById('modalCategoryEnName').value = item.category_en_name || '';
+            document.getElementById('modalSaveBtn').innerText = '保存';
+            resetModalStatus();
+            document.getElementById('pm-modal').classList.add('active');
+            document.getElementById('modalCategoryCn').focus();
+        }
+
+        function closeModal() {
+            document.getElementById('pm-modal').classList.remove('active');
+            editId = null;
+        }
+
+        function saveCategoryFromModal() {
+            const categoryCn = document.getElementById('modalCategoryCn').value.trim();
+            const categoryEn = document.getElementById('modalCategoryEn').value.trim();
+            const categoryEnName = document.getElementById('modalCategoryEnName').value.trim();
+            if (!categoryCn || !categoryEn || !categoryEnName) {
+                showModalStatus('请填写中文名、英文缩写与英文名称', true);
+                return;
+            }
+
+            const payload = { category_cn: categoryCn, category_en: categoryEn, category_en_name: categoryEnName };
+            let method = 'POST';
+            if (editId) {
+                payload.id = editId;
+                method = 'PUT';
+            }
+
+            fetch('/api/category', {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showModalStatus(editId ? '更新成功' : '新增成功', false);
+                    setTimeout(() => {
+                        closeModal();
+                        loadCategoryList();
+                    }, 400);
+                } else {
+                    showModalStatus(data.message || '操作失败', true);
+                }
+            })
+            .catch(err => showModalStatus('请求失败: ' + err, true));
+        }
+
+        function deleteCategory(id) {
+            if (!confirm('确认删除该品类？')) return;
+            fetch('/api/category', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: id })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    loadCategoryList();
+                } else {
+                    alert(data.message || '删除失败');
+                }
+            })
+            .catch(err => alert('请求失败: ' + err));
+        }
+
+        function loadCategoryList() {
+            const q = document.getElementById('searchInput').value.trim();
+            const url = q ? `/api/category?q=${encodeURIComponent(q)}` : '/api/category';
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    const tbody = document.querySelector('#categoryTable tbody');
+                    if (data.status !== 'success') {
+                        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        return;
+                    }
+                    const items = data.items || [];
+                    if (items.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">暂无数据</td></tr>';
+                        return;
+                    }
+                    tbody.innerHTML = items.map(item => {
+                        const dateText = item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : '';
+                        return `
+                            <tr>
+                                <td>${item.category_cn}</td>
+                                <td>${item.category_en}</td>
+                                <td>${item.category_en_name || ''}</td>
+                                <td>${dateText}</td>
+                                <td>
+                                    <div class="pm-actions">
+                                        <button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button>
+                                        <button class="btn-danger" onclick='deleteCategory(${item.id})'>删除</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('');
+                })
+                .catch(err => {
+                    const tbody = document.querySelector('#categoryTable tbody');
+                    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                });
+        }
+
+        window.addEventListener('load', loadCategoryList);
+        document.getElementById('pm-modal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
+        document.getElementById('searchInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                loadCategoryList();
+            }
+        });
+    </script>
+</body>
+    <script src="/static/js/header.js"></script>
+</html>

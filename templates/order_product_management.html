@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>下单产品管理</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        :root {
+            --morandi-sand: #cfc7bd;
+            --morandi-ink: #2a2420;
+            --morandi-mist: #e8dfd4;
+            --morandi-slate: #8b8680;
+        }
+        
+        .required-field {
+            padding: 0.65rem 0.8rem !important;
+            border-radius: 6px !important;
+            border: 2px solid var(--morandi-sand) !important;
+            background: #fff !important;
+            color: var(--morandi-ink) !important;
+            font-size: 0.95rem !important;
+        }
+        
+        .optional-field {
+            padding: 0.65rem 0.8rem !important;
+            border-radius: 6px !important;
+            border: 2px solid var(--morandi-sand) !important;
+            background: transparent !important;
+            color: var(--morandi-ink) !important;
+            font-size: 0.95rem !important;
+            transition: background-color 0.2s ease !important;
+        }
+        
+        .optional-field.has-value {
+            background: #fff !important;
+        }
+        
+        .required-field:focus,
+        .optional-field:focus {
+            outline: none !important;
+            border-color: var(--morandi-ink) !important;
+            box-shadow: 0 0 0 3px rgba(42, 36, 32, 0.1) !important;
+        }
+        
+        .pm-select {
+            position: relative;
+            width: 100%;
+        }
+        .pm-select-trigger {
+            width: 100%;
+            text-align: left;
+            padding: 0.65rem 0.8rem;
+            border-radius: 6px;
+            border: 2px solid var(--morandi-sand);
+            background: #fff;
+            color: var(--morandi-ink);
+            font-size: 0.95rem;
+            cursor: pointer;
+        }
+        .pm-select-panel {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            right: 0;
+            background: #fff;
+            border-radius: 10px;
+            border: 1px solid var(--morandi-sand);
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+            padding: 0.6rem;
+            display: none;
+            z-index: 10;
+        }
+        .pm-select-panel.open {
+            display: block;
+        }
+        .pm-select-search {
+            width: 100%;
+            padding: 0.55rem 0.7rem;
+            border-radius: 6px;
+            border: 1px solid var(--morandi-sand);
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+        .pm-select-list {
+            max-height: 220px;
+            overflow-y: auto;
+            display: grid;
+            gap: 0.35rem;
+        }
+        .pm-select-option {
+            text-align: left;
+            padding: 0.5rem 0.6rem;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            background: var(--morandi-mist);
+            color: var(--morandi-ink);
+            cursor: pointer;
+            font-size: 0.92rem;
+        }
+        .pm-select-option:hover {
+            background: rgba(207, 199, 189, 0.55);
+        }
+        .pm-select-empty {
+            padding: 0.6rem;
+            text-align: center;
+            color: var(--morandi-slate);
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div id="site-header"></div>
+
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1.5rem;">
+            <h2>下单产品管理</h2>
+            <p>维护下单SKU、规格信息、材料与卖点</p>
+        </section>
+
+        <section class="pm-layout">
+            <div class="card pm-card">
+                <div class="pm-toolbar">
+                    <div class="pm-toolbar-actions">
+                        <div class="form-group pm-search" style="margin: 0;">
+                            <span class="pm-search-title">搜索</span>
+                            <input type="text" id="searchInput" placeholder="搜索SKU/货号/版本号/面料">
+                            <button class="btn-primary" onclick="loadOrderProductList()">搜索</button>
+                            <button class="btn-secondary" onclick="resetSearch()">清空</button>
+                        </div>
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-accent" onclick="openCreateModal()">新增</button>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <table class="pm-table" id="orderProductTable">
+                    <thead>
+                        <tr>
+                            <th>SKU</th>
+                            <th>货号</th>
+                            <th>版本号</th>
+                            <th>颜色</th>
+                            <th>规格简称</th>
+                            <th>成本价($)</th>
+                            <th>包裹归类</th>
+                            <th style="width:160px;">创建时间</th>
+                            <th style="width:160px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="9" style="text-align:center;">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div class="pm-modal" id="pm-modal">
+        <div class="pm-modal-content pm-modal-content--wide">
+            <h3 id="pm-modal-title" style="margin-top:0;">新增下单产品</h3>
+            <div class="pm-form">
+                <div class="pm-section">
+                    <h4>基础信息</h4>
+                    <div class="pm-section-body">
+                        <div class="form-group">
+                            <label for="modalSkuFamily">归属货号<span class="required-asterisk">*</span></label>
+                            <div class="pm-select" id="modalSkuFamilySelect">
+                                <button type="button" class="pm-select-trigger" id="modalSkuFamilyTrigger">请选择货号</button>
+                                <div class="pm-select-panel" id="modalSkuFamilyPanel">
+                                    <input type="text" class="pm-select-search" id="modalSkuFamilySearch" placeholder="搜索货号">
+                                    <div class="pm-select-list" id="modalSkuFamilyList"></div>
+                                </div>
+                            </div>
+                            <select id="modalSkuFamily" class="required-field" required style="display:none;"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalVersion">版本号</label>
+                            <input type="text" id="modalVersion" class="optional-field" placeholder="选填，一般是：1，2，3...">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalFabric">面料<span class="required-asterisk">*</span></label>
+                            <div class="pm-select" id="modalFabricSelect">
+                                <button type="button" class="pm-select-trigger" id="modalFabricTrigger">请选择面料</button>
+                                <div class="pm-select-panel" id="modalFabricPanel">
+                                    <input type="text" class="pm-select-search" id="modalFabricSearch" placeholder="搜索面料编号/英文名">
+                                    <div class="pm-select-list" id="modalFabricList"></div>
+                                </div>
+                            </div>
+                            <select id="modalFabric" class="required-field" required style="display:none;"></select>
+                        </div>
+                        <div class="form-group pm-form-span-2">
+                            <label for="modalSpecQty">规格与数量</label>
+                            <input type="text" id="modalSpecQty" class="optional-field" placeholder="选填，例如：中间位*1">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalSpecQtyShort">规格与数量简称</label>
+                            <input type="text" id="modalSpecQtyShort" class="optional-field" placeholder="选填，例如：A，B，C...">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalSku">下单SKU（注意核验）<span class="required-asterisk">*</span></label>
+                            <input type="text" id="modalSku" class="required-field" placeholder="例如：MS01A-Brown" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalYuncangNo">大健云仓编号</label>
+                            <input type="text" id="modalYuncangNo" class="optional-field" placeholder="选填，大健云仓下单编号">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pm-section">
+                    <h4>成品尺寸 / 重量</h4>
+                    <div class="pm-section-body">
+                        <div class="form-group">
+                            <label for="modalFinishedLength">成品长 (inch)</label>
+                            <input type="number" step="0.01" id="modalFinishedLength" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalFinishedWidth">成品宽 (inch)</label>
+                            <input type="number" step="0.01" id="modalFinishedWidth" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalFinishedHeight">成品高 (inch)</label>
+                            <input type="number" step="0.01" id="modalFinishedHeight" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalNetWeight">净重 (lbs)</label>
+                            <input type="number" step="0.01" id="modalNetWeight" class="optional-field">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pm-section">
+                    <h4>包裹尺寸 / 重量</h4>
+                    <div class="pm-section-body">
+                        <div class="form-group">
+                            <label for="modalPackageLength">包裹长 (inch)</label>
+                            <input type="number" step="0.01" id="modalPackageLength" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalPackageWidth">包裹宽 (inch)</label>
+                            <input type="number" step="0.01" id="modalPackageWidth" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalPackageHeight">包裹高 (inch)</label>
+                            <input type="number" step="0.01" id="modalPackageHeight" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalGrossWeight">毛重 (lbs)</label>
+                            <input type="number" step="0.01" id="modalGrossWeight" class="optional-field">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pm-section">
+                    <h4>成本与物流</h4>
+                    <div class="pm-section-body">
+                        <div class="form-group">
+                            <label for="modalCost">成本价（美元）</label>
+                            <input type="number" step="0.01" id="modalCost" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalCartonQty">装箱量</label>
+                            <input type="number" step="1" id="modalCartonQty" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalPackageClass">包裹大小归类（Fedx）</label>
+                            <input type="text" id="modalPackageClass" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalLastMile">尾程平均运费（美元）</label>
+                            <input type="number" step="0.01" id="modalLastMile" class="optional-field">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pm-section">
+                    <h4>材料与卖点</h4>
+                    <div class="pm-section-body">
+                        <div class="form-group pm-form-full">
+                            <label>填充材料（可多项）</label>
+                            <div class="feature-category-picker" id="fillingPicker">
+                                <div class="feature-category-chips" id="fillingChips"></div>
+                                <div class="feature-category-dropdown" id="fillingDropdown">
+                                    <button type="button" class="feature-category-add" id="fillingAdd">
+                                        <span class="feature-category-add-icon">+</span>
+                                        <span class="feature-category-add-text">添加材料</span>
+                                    </button>
+                                    <div class="feature-category-menu" id="fillingMenu">
+                                        <div class="feature-category-list" id="fillingList"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group pm-form-full">
+                            <label>框架材料（可多项）</label>
+                            <div class="feature-category-picker" id="framePicker">
+                                <div class="feature-category-chips" id="frameChips"></div>
+                                <div class="feature-category-dropdown" id="frameDropdown">
+                                    <button type="button" class="feature-category-add" id="frameAdd">
+                                        <span class="feature-category-add-icon">+</span>
+                                        <span class="feature-category-add-text">添加材料</span>
+                                    </button>
+                                    <div class="feature-category-menu" id="frameMenu">
+                                        <div class="feature-category-list" id="frameList"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group pm-form-full">
+                            <label>功能与卖点（可多项）</label>
+                            <div class="feature-category-picker" id="featurePicker">
+                                <div class="feature-category-chips" id="featureChips"></div>
+                                <div class="feature-category-dropdown" id="featureDropdown">
+                                    <button type="button" class="feature-category-add" id="featureAdd">
+                                        <span class="feature-category-add-icon">+</span>
+                                        <span class="feature-category-add-text">添加卖点</span>
+                                    </button>
+                                    <div class="feature-category-menu" id="featureMenu">
+                                        <div class="feature-category-list" id="featureList"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group pm-form-full">
+                            <label>关联认证（可多项）</label>
+                            <div class="feature-category-picker" id="certPicker">
+                                <div class="feature-category-chips" id="certChips"></div>
+                                <div class="feature-category-dropdown" id="certDropdown">
+                                    <button type="button" class="feature-category-add" id="certAdd">
+                                        <span class="feature-category-add-icon">+</span>
+                                        <span class="feature-category-add-text">添加认证</span>
+                                    </button>
+                                    <div class="feature-category-menu" id="certMenu">
+                                        <div class="feature-category-list" id="certList"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeModal()">取消</button>
+                <button class="btn-primary" id="modalSaveBtn" onclick="saveOrderProductFromModal()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 SITJOY | 内部使用</p>
+    </footer>
+
+    <script>
+        let editId = null;
+        let skuOptions = [];
+        let fabricOptions = [];
+        let fillingMaterialOptions = [];
+        let frameMaterialOptions = [];
+        let featureOptions = [];
+        let certificationOptions = [];
+        let categoryOptions = [];
+        let currentFeatureCategoryId = '';
+        let selectedFillingMaterialIds = [];
+        let selectedFrameMaterialIds = [];
+        let selectedFeatureIds = [];
+        let selectedCertificationIds = [];
+
+        function showModalStatus(message, isError) {
+            const el = document.getElementById('modalStatus');
+            el.style.display = 'block';
+            el.style.background = isError ? '#ffecec' : '#f0fff0';
+            el.style.color = isError ? '#a33' : '#2f6f2f';
+            el.innerText = message;
+        }
+
+        function resetModalStatus() {
+            const el = document.getElementById('modalStatus');
+            el.style.display = 'none';
+            el.innerText = '';
+        }
+
+        function resetSearch() {
+            document.getElementById('searchInput').value = '';
+            loadOrderProductList();
+        }
+
+        function openCreateModal() {
+            editId = null;
+            document.getElementById('pm-modal-title').innerText = '新增下单产品';
+            setInputValue('modalSku', '');
+            setSelectValue('modalSkuFamily', '');
+            setInputValue('modalVersion', '');
+            setInputValue('modalSkuFamilySearch', '');
+            setSelectValue('modalFabric', '');
+            setInputValue('modalFabricSearch', '');
+            setInputValue('modalSpecQty', '');
+            setInputValue('modalSpecQtyShort', '');
+            setInputValue('modalYuncangNo', '');
+            setInputValue('modalFinishedLength', '');
+            setInputValue('modalFinishedWidth', '');
+            setInputValue('modalFinishedHeight', '');
+            setInputValue('modalNetWeight', '');
+            setInputValue('modalPackageLength', '');
+            setInputValue('modalPackageWidth', '');
+            setInputValue('modalPackageHeight', '');
+            setInputValue('modalGrossWeight', '');
+            setInputValue('modalCost', '');
+            setInputValue('modalCartonQty', '');
+            setInputValue('modalPackageClass', '');
+            setInputValue('modalLastMile', '');
+            setPickerSelected('filling', []);
+            setPickerSelected('frame', []);
+            setPickerSelected('feature', []);
+            setPickerSelected('cert', []);
+            document.getElementById('modalSaveBtn').innerText = '保存';
+            resetModalStatus();
+            document.getElementById('pm-modal').classList.add('active');
+            document.getElementById('modalSku').focus();
+            // 初始化选填项样式
+            setTimeout(initOptionalFieldListeners, 50);
+        }
+
+        function openEditModal(item) {
+            editId = item.id;
+            document.getElementById('pm-modal-title').innerText = '编辑下单产品';
+            setInputValue('modalSku', item.sku || '');
+            setSelectValue('modalSkuFamily', item.sku_family_id || '');
+            setInputValue('modalVersion', item.version_no || '');
+            setInputValue('modalSkuFamilySearch', '');
+            setSelectValue('modalFabric', item.fabric_id || '');
+            setInputValue('modalFabricSearch', '');
+            setInputValue('modalSpecQty', item.spec_qty || '');
+            setInputValue('modalSpecQtyShort', item.spec_qty_short || '');
+            setInputValue('modalYuncangNo', item.dachene_yuncang_no || '');
+            setInputValue('modalFinishedLength', item.finished_length_in ?? '');
+            setInputValue('modalFinishedWidth', item.finished_width_in ?? '');
+            setInputValue('modalFinishedHeight', item.finished_height_in ?? '');
+            setInputValue('modalNetWeight', item.net_weight_lbs ?? '');
+            setInputValue('modalPackageLength', item.package_length_in ?? '');
+            setInputValue('modalPackageWidth', item.package_width_in ?? '');
+            setInputValue('modalPackageHeight', item.package_height_in ?? '');
+            setInputValue('modalGrossWeight', item.gross_weight_lbs ?? '');
+            setInputValue('modalCost', item.cost_usd ?? '');
+            setInputValue('modalCartonQty', item.carton_qty ?? '');
+            setInputValue('modalPackageClass', item.package_size_class || '');
+            setInputValue('modalLastMile', item.last_mile_avg_freight_usd ?? '');
+            setPickerSelected('filling', item.filling_material_ids || []);
+            setPickerSelected('frame', item.frame_material_ids || []);
+            setPickerSelected('feature', item.feature_ids || []);
+            setPickerSelected('cert', item.certification_ids || []);
+            document.getElementById('modalSaveBtn').innerText = '保存';
+            resetModalStatus();
+            document.getElementById('pm-modal').classList.add('active');
+            document.getElementById('modalSku').focus();
+            // 初始化选填项样式
+            setTimeout(initOptionalFieldListeners, 50);
+        }
+
+        function closeModal() {
+            document.getElementById('pm-modal').classList.remove('active');
+            editId = null;
+        }
+
+        function setInputValue(id, value) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.value = value;
+                // 更新选填项的样式
+                if (el.classList.contains('optional-field')) {
+                    updateOptionalFieldStyle(el);
+                }
+            }
+        }
+
+        function setSelectValue(id, value) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (!el.options.length) {
+                return;
+            }
+            el.value = String(value || '');
+            if (id === 'modalSkuFamily') {
+                updateSkuFamilyTrigger();
+            }
+            if (id === 'modalFabric') {
+                updateFabricTrigger();
+            }
+        }
+
+        function parseNumber(value) {
+            if (value === null || value === undefined) return null;
+            const text = String(value).trim();
+            if (!text) return null;
+            const num = Number(text);
+            return Number.isFinite(num) ? num : null;
+        }
+
+        function getSelectedSkuFamilyText() {
+            const select = document.getElementById('modalSkuFamily');
+            if (!select || !select.value) return '';
+            const option = select.selectedOptions && select.selectedOptions[0];
+            return option ? option.textContent.trim() : '';
+        }
+
+        function getSelectedFabricCode() {
+            const select = document.getElementById('modalFabric');
+            if (!select || !select.value) return '';
+            const option = select.selectedOptions && select.selectedOptions[0];
+            if (!option) return '';
+            return option.dataset.code ? option.dataset.code.trim() : option.textContent.split('/')[0].trim();
+        }
+
+        function buildSkuFromInputs() {
+            const skuFamily = getSelectedSkuFamilyText();
+            const version = document.getElementById('modalVersion').value.trim();
+            const specShort = document.getElementById('modalSpecQtyShort').value.trim();
+            const fabric = getSelectedFabricCode();
+            const parts = [skuFamily, version, specShort, fabric].filter(part => part);
+            return parts.join('-');
+        }
+
+        function updateSkuFromInputs() {
+            const sku = buildSkuFromInputs();
+            document.getElementById('modalSku').value = sku;
+            updateFeatureCategoryFilter();
+        }
+
+        function updateFeatureCategoryFilter() {
+            const skuFamilyId = document.getElementById('modalSkuFamily').value;
+            const skuItem = skuOptions.find(item => String(item.id) === String(skuFamilyId));
+            if (!skuItem || !skuItem.category) {
+                currentFeatureCategoryId = '';
+                setFeatureEnabled(false);
+                renderPicker('feature');
+                return;
+            }
+            const category = categoryOptions.find(item => item.category_cn === skuItem.category);
+            currentFeatureCategoryId = category ? String(category.id) : '';
+            setFeatureEnabled(!!currentFeatureCategoryId);
+            renderPicker('feature');
+        }
+
+        function setFeatureEnabled(isEnabled) {
+            const addBtn = document.getElementById('featureAdd');
+            if (!addBtn) return;
+            addBtn.disabled = !isEnabled;
+            addBtn.classList.toggle('is-disabled', !isEnabled);
+            if (!isEnabled) {
+                closePickerMenu('feature');
+            }
+        }
+
+        function normalizeIds(value) {
+            if (!value) return [];
+            if (Array.isArray(value)) {
+                return value.map(v => String(v));
+            }
+            return String(value)
+                .split(',')
+                .map(v => v.trim())
+                .filter(v => v);
+        }
+
+        function setPickerSelected(key, value) {
+            const ids = normalizeIds(value);
+            if (key === 'filling') {
+                selectedFillingMaterialIds = ids;
+            } else if (key === 'frame') {
+                selectedFrameMaterialIds = ids;
+            } else if (key === 'feature') {
+                selectedFeatureIds = ids;
+            } else if (key === 'cert') {
+                selectedCertificationIds = ids;
+            }
+            renderPicker(key);
+        }
+
+        function getPickerState(key) {
+            if (key === 'filling') {
+                return { options: fillingMaterialOptions, selected: selectedFillingMaterialIds };
+            }
+            if (key === 'frame') {
+                return { options: frameMaterialOptions, selected: selectedFrameMaterialIds };
+            }
+            if (key === 'cert') {
+                return { options: certificationOptions, selected: selectedCertificationIds };
+            }
+            return { options: featureOptions, selected: selectedFeatureIds };
+        }
+
+        function renderPicker(key) {
+            const state = getPickerState(key);
+            const chips = document.getElementById(`${key}Chips`);
+            const list = document.getElementById(`${key}List`);
+            if (!chips || !list) return;
+
+            chips.innerHTML = '';
+            state.selected.forEach(id => {
+                const item = state.options.find(opt => String(opt.id) === String(id));
+                if (!item) return;
+                const chip = document.createElement('span');
+                chip.className = 'feature-category-chip';
+                if (key === 'cert') {
+                    chip.textContent = item.name;
+                } else {
+                    chip.textContent = `${item.name} / ${item.name_en || ''}`;
+                }
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'feature-category-remove';
+                removeBtn.innerText = '×';
+                removeBtn.addEventListener('click', () => removePickerItem(key, id));
+                chip.appendChild(removeBtn);
+                chips.appendChild(chip);
+            });
+
+            list.innerHTML = '';
+            let sourceOptions = state.options;
+            if (key === 'feature' && currentFeatureCategoryId) {
+                sourceOptions = state.options.filter(item => {
+                    const ids = normalizeIds(item.category_ids || []);
+                    return ids.includes(String(currentFeatureCategoryId));
+                });
+            }
+            const available = sourceOptions.filter(
+                item => !state.selected.includes(String(item.id))
+            );
+
+            if (!available.length) {
+                const empty = document.createElement('div');
+                empty.className = 'feature-category-empty';
+                empty.textContent = '无更多可选项';
+                list.appendChild(empty);
+                return;
+            }
+
+            available.forEach(item => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'feature-category-option';
+                if (key === 'cert') {
+                    btn.textContent = item.name;
+                } else {
+                    btn.textContent = `${item.name} / ${item.name_en || ''}`;
+                }
+                btn.addEventListener('click', () => {
+                    addPickerItem(key, item.id);
+                });
+                list.appendChild(btn);
+            });
+        }
+
+        function addPickerItem(key, id) {
+            const state = getPickerState(key);
+            if (!state.selected.includes(String(id))) {
+                state.selected.push(String(id));
+            }
+            renderPicker(key);
+            closePickerMenu(key);
+        }
+
+        function removePickerItem(key, id) {
+            const state = getPickerState(key);
+            state.selected = state.selected.filter(item => String(item) !== String(id));
+            if (key === 'filling') {
+                selectedFillingMaterialIds = state.selected;
+            } else if (key === 'frame') {
+                selectedFrameMaterialIds = state.selected;
+            } else if (key === 'feature') {
+                selectedFeatureIds = state.selected;
+            } else if (key === 'cert') {
+                selectedCertificationIds = state.selected;
+            }
+            renderPicker(key);
+        }
+
+        function togglePickerMenu(key) {
+            const dropdown = document.getElementById(`${key}Dropdown`);
+            if (!dropdown) return;
+            const isOpen = dropdown.classList.contains('open');
+            if (isOpen) {
+                closePickerMenu(key);
+                return;
+            }
+            dropdown.classList.add('expanded');
+            window.setTimeout(() => {
+                dropdown.classList.add('open');
+            }, 180);
+        }
+
+        function closePickerMenu(key) {
+            const dropdown = document.getElementById(`${key}Dropdown`);
+            if (!dropdown) return;
+            dropdown.classList.remove('open');
+            dropdown.classList.remove('expanded');
+        }
+
+        function saveOrderProductFromModal() {
+            const payload = {
+                sku: document.getElementById('modalSku').value.trim(),
+                sku_family_id: document.getElementById('modalSkuFamily').value,
+                version_no: document.getElementById('modalVersion').value.trim(),
+                fabric_id: document.getElementById('modalFabric').value,
+                spec_qty: document.getElementById('modalSpecQty').value.trim(),
+                spec_qty_short: document.getElementById('modalSpecQtyShort').value.trim(),
+                dachene_yuncang_no: document.getElementById('modalYuncangNo').value.trim(),
+                finished_length_in: parseNumber(document.getElementById('modalFinishedLength').value),
+                finished_width_in: parseNumber(document.getElementById('modalFinishedWidth').value),
+                finished_height_in: parseNumber(document.getElementById('modalFinishedHeight').value),
+                net_weight_lbs: parseNumber(document.getElementById('modalNetWeight').value),
+                package_length_in: parseNumber(document.getElementById('modalPackageLength').value),
+                package_width_in: parseNumber(document.getElementById('modalPackageWidth').value),
+                package_height_in: parseNumber(document.getElementById('modalPackageHeight').value),
+                gross_weight_lbs: parseNumber(document.getElementById('modalGrossWeight').value),
+                cost_usd: parseNumber(document.getElementById('modalCost').value),
+                carton_qty: parseNumber(document.getElementById('modalCartonQty').value),
+                package_size_class: document.getElementById('modalPackageClass').value.trim(),
+                last_mile_avg_freight_usd: parseNumber(document.getElementById('modalLastMile').value),
+                filling_material_ids: selectedFillingMaterialIds,
+                frame_material_ids: selectedFrameMaterialIds,
+                feature_ids: selectedFeatureIds,
+                certification_ids: selectedCertificationIds
+            };
+
+            if (!payload.sku || !payload.sku_family_id || !payload.fabric_id) {
+                showModalStatus('请填写SKU、归属货号、面料', true);
+                return;
+            }
+
+            let method = 'POST';
+            if (editId) {
+                payload.id = editId;
+                method = 'PUT';
+            }
+
+            fetch('/api/order-product', {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showModalStatus(editId ? '更新成功' : '新增成功', false);
+                    setTimeout(() => {
+                        closeModal();
+                        loadOrderProductList();
+                    }, 400);
+                } else {
+                    showModalStatus(data.message || '操作失败', true);
+                }
+            })
+            .catch(err => showModalStatus('请求失败: ' + err, true));
+        }
+
+        function deleteOrderProduct(id) {
+            if (!confirm('确认删除该下单产品？')) return;
+            fetch('/api/order-product', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: id })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    loadOrderProductList();
+                } else {
+                    alert(data.message || '删除失败');
+                }
+            })
+            .catch(err => alert('请求失败: ' + err));
+        }
+
+        function loadOrderProductList() {
+            const q = document.getElementById('searchInput').value.trim();
+            const url = q ? `/api/order-product?q=${encodeURIComponent(q)}` : '/api/order-product';
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    const tbody = document.querySelector('#orderProductTable tbody');
+                    if (data.status !== 'success') {
+                        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        return;
+                    }
+                    const items = data.items || [];
+                    if (items.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">暂无数据</td></tr>';
+                        return;
+                    }
+                    tbody.innerHTML = items.map(item => {
+                        const dateText = item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : '';
+                        const costText = item.cost_usd !== null && item.cost_usd !== undefined ? item.cost_usd : '';
+                        const fabricText = item.fabric_code ? `${item.fabric_code}` : '';
+                        return `
+                            <tr>
+                                <td>${item.sku}</td>
+                                <td>${item.sku_family || ''}</td>
+                                <td>${item.version_no || ''}</td>
+                                <td>${fabricText}</td>
+                                <td>${item.spec_qty_short || ''}</td>
+                                <td>${costText}</td>
+                                <td>${item.package_size_class || ''}</td>
+                                <td>${dateText}</td>
+                                <td>
+                                    <div class="pm-actions">
+                                        <button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button>
+                                        <button class="btn-danger" onclick='deleteOrderProduct(${item.id})'>删除</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('');
+                })
+                .catch(err => {
+                    const tbody = document.querySelector('#orderProductTable tbody');
+                    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                });
+        }
+
+        function loadSkuFamilies() {
+            fetch('/api/sku')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        skuOptions = [];
+                        renderSkuFamilySelect('');
+                        return;
+                    }
+                    skuOptions = data.items || [];
+                    renderSkuFamilySelect('');
+                })
+                .catch(() => {
+                    skuOptions = [];
+                    renderSkuFamilySelect('');
+                });
+        }
+
+        function loadFabrics() {
+            fetch('/api/fabric')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        fabricOptions = [];
+                        renderFabricSelect('');
+                        return;
+                    }
+                    fabricOptions = data.items || [];
+                    renderFabricSelect('');
+                })
+                .catch(() => {
+                    fabricOptions = [];
+                    renderFabricSelect('');
+                });
+        }
+
+        function loadCategories() {
+            fetch('/api/category')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        categoryOptions = [];
+                        updateFeatureCategoryFilter();
+                        return;
+                    }
+                    categoryOptions = data.items || [];
+                    updateFeatureCategoryFilter();
+                })
+                .catch(() => {
+                    categoryOptions = [];
+                    updateFeatureCategoryFilter();
+                });
+        }
+
+        function loadFillingMaterials() {
+            fetch('/api/material?type=filling')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        fillingMaterialOptions = [];
+                        renderPicker('filling');
+                        return;
+                    }
+                    fillingMaterialOptions = data.items || [];
+                    renderPicker('filling');
+                })
+                .catch(() => {
+                    fillingMaterialOptions = [];
+                    renderPicker('filling');
+                });
+        }
+
+        function loadFrameMaterials() {
+            fetch('/api/material?type=frame')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        frameMaterialOptions = [];
+                        renderPicker('frame');
+                        return;
+                    }
+                    frameMaterialOptions = data.items || [];
+                    renderPicker('frame');
+                })
+                .catch(() => {
+                    frameMaterialOptions = [];
+                    renderPicker('frame');
+                });
+        }
+
+        function loadFeatures() {
+            fetch('/api/feature')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        featureOptions = [];
+                        renderPicker('feature');
+                        return;
+                    }
+                    featureOptions = (data.items || []).map(item => ({
+                        ...item,
+                        category_ids: item.category_ids || ''
+                    }));
+                    renderPicker('feature');
+                })
+                .catch(() => {
+                    featureOptions = [];
+                    renderPicker('feature');
+                });
+        }
+
+        function loadCertifications() {
+            fetch('/api/certification')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        certificationOptions = [];
+                        renderPicker('cert');
+                        return;
+                    }
+                    certificationOptions = data.items || [];
+                    renderPicker('cert');
+                })
+                .catch(() => {
+                    certificationOptions = [];
+                    renderPicker('cert');
+                });
+        }
+
+        function renderSkuFamilySelect(selectedValue) {
+            const select = document.getElementById('modalSkuFamily');
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = skuOptions.length ? '请选择货号' : '暂无货号，请先创建';
+            select.innerHTML = '';
+            select.appendChild(placeholder);
+            skuOptions.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item.id;
+                option.textContent = item.sku_family;
+                if (selectedValue && String(selectedValue) === String(item.id)) {
+                    option.selected = true;
+                }
+                select.appendChild(option);
+            });
+            updateSkuFamilyTrigger();
+            renderSkuFamilyList();
+        }
+
+        function renderFabricSelect(selectedValue) {
+            const select = document.getElementById('modalFabric');
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = fabricOptions.length ? '请选择面料' : '暂无面料，请先创建';
+            select.innerHTML = '';
+            select.appendChild(placeholder);
+            fabricOptions.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item.id;
+                option.dataset.code = item.fabric_code || '';
+                option.textContent = `${item.fabric_code} / ${item.fabric_name_en}`;
+                if (selectedValue && String(selectedValue) === String(item.id)) {
+                    option.selected = true;
+                }
+                select.appendChild(option);
+            });
+            updateFabricTrigger();
+            renderFabricList();
+        }
+
+        function updateSkuFamilyTrigger() {
+            const select = document.getElementById('modalSkuFamily');
+            const trigger = document.getElementById('modalSkuFamilyTrigger');
+            if (!select || !trigger) return;
+            const option = select.selectedOptions && select.selectedOptions[0];
+            trigger.textContent = option && option.value ? option.textContent : '请选择货号';
+        }
+
+        function updateFabricTrigger() {
+            const select = document.getElementById('modalFabric');
+            const trigger = document.getElementById('modalFabricTrigger');
+            if (!select || !trigger) return;
+            const option = select.selectedOptions && select.selectedOptions[0];
+            trigger.textContent = option && option.value ? option.textContent : '请选择面料';
+        }
+
+        function renderSkuFamilyList() {
+            const list = document.getElementById('modalSkuFamilyList');
+            const keyword = (document.getElementById('modalSkuFamilySearch').value || '').trim().toLowerCase();
+            if (!list) return;
+            list.innerHTML = '';
+            const available = skuOptions.filter(item => {
+                if (!keyword) return true;
+                return String(item.sku_family || '').toLowerCase().includes(keyword);
+            });
+            if (!available.length) {
+                const empty = document.createElement('div');
+                empty.className = 'pm-select-empty';
+                empty.textContent = '无匹配货号';
+                list.appendChild(empty);
+                return;
+            }
+            available.forEach(item => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'pm-select-option';
+                btn.textContent = item.sku_family;
+                btn.addEventListener('click', () => {
+                    setSelectValue('modalSkuFamily', item.id);
+                    updateSkuFromInputs();
+                    closeSelectPanel('sku');
+                });
+                list.appendChild(btn);
+            });
+        }
+
+        function renderFabricList() {
+            const list = document.getElementById('modalFabricList');
+            const keyword = (document.getElementById('modalFabricSearch').value || '').trim().toLowerCase();
+            if (!list) return;
+            list.innerHTML = '';
+            const available = fabricOptions.filter(item => {
+                if (!keyword) return true;
+                const codeText = String(item.fabric_code || '').toLowerCase();
+                const nameText = String(item.fabric_name_en || '').toLowerCase();
+                return codeText.includes(keyword) || nameText.includes(keyword);
+            });
+            if (!available.length) {
+                const empty = document.createElement('div');
+                empty.className = 'pm-select-empty';
+                empty.textContent = '无匹配面料';
+                list.appendChild(empty);
+                return;
+            }
+            available.forEach(item => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'pm-select-option';
+                btn.textContent = `${item.fabric_code} / ${item.fabric_name_en}`;
+                btn.addEventListener('click', () => {
+                    setSelectValue('modalFabric', item.id);
+                    updateSkuFromInputs();
+                    closeSelectPanel('fabric');
+                });
+                list.appendChild(btn);
+            });
+        }
+
+        function toggleSelectPanel(key) {
+            const panel = document.getElementById(key === 'sku' ? 'modalSkuFamilyPanel' : 'modalFabricPanel');
+            if (!panel) return;
+            const isOpen = panel.classList.contains('open');
+            if (isOpen) {
+                closeSelectPanel(key);
+                return;
+            }
+            panel.classList.add('open');
+            if (key === 'sku') {
+                renderSkuFamilyList();
+                document.getElementById('modalSkuFamilySearch').focus();
+            } else {
+                renderFabricList();
+                document.getElementById('modalFabricSearch').focus();
+            }
+        }
+
+        function closeSelectPanel(key) {
+            const panel = document.getElementById(key === 'sku' ? 'modalSkuFamilyPanel' : 'modalFabricPanel');
+            if (!panel) return;
+            panel.classList.remove('open');
+        }
+
+        window.addEventListener('load', loadOrderProductList);
+        window.addEventListener('load', loadSkuFamilies);
+        window.addEventListener('load', loadFabrics);
+        window.addEventListener('load', loadCategories);
+        window.addEventListener('load', loadFillingMaterials);
+        window.addEventListener('load', loadFrameMaterials);
+        window.addEventListener('load', loadFeatures);
+        window.addEventListener('load', loadCertifications);
+        document.getElementById('pm-modal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
+        document.getElementById('searchInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                loadOrderProductList();
+            }
+        });
+        document.getElementById('modalSkuFamilyTrigger').addEventListener('click', function() {
+            toggleSelectPanel('sku');
+        });
+        document.getElementById('modalSkuFamilySearch').addEventListener('input', function() {
+            renderSkuFamilyList();
+        });
+        document.getElementById('modalVersion').addEventListener('input', updateSkuFromInputs);
+        document.getElementById('modalSpecQtyShort').addEventListener('input', updateSkuFromInputs);
+        document.getElementById('modalFabricTrigger').addEventListener('click', function() {
+            toggleSelectPanel('fabric');
+        });
+        document.getElementById('modalFabricSearch').addEventListener('input', function() {
+            renderFabricList();
+        });
+        document.getElementById('fillingAdd').addEventListener('click', function() {
+            togglePickerMenu('filling');
+        });
+        document.getElementById('frameAdd').addEventListener('click', function() {
+            togglePickerMenu('frame');
+        });
+        document.getElementById('featureAdd').addEventListener('click', function() {
+            togglePickerMenu('feature');
+        });
+        document.getElementById('certAdd').addEventListener('click', function() {
+            togglePickerMenu('cert');
+        });
+        document.addEventListener('click', function(e) {
+            const fillingDropdown = document.getElementById('fillingDropdown');
+            const frameDropdown = document.getElementById('frameDropdown');
+            const featureDropdown = document.getElementById('featureDropdown');
+            if (fillingDropdown && !fillingDropdown.contains(e.target)) {
+                closePickerMenu('filling');
+            }
+            if (frameDropdown && !frameDropdown.contains(e.target)) {
+                closePickerMenu('frame');
+            }
+            if (featureDropdown && !featureDropdown.contains(e.target)) {
+                closePickerMenu('feature');
+            }
+            const certDropdown = document.getElementById('certDropdown');
+            if (certDropdown && !certDropdown.contains(e.target)) {
+                closePickerMenu('cert');
+            }
+            const skuSelect = document.getElementById('modalSkuFamilySelect');
+            const fabricSelect = document.getElementById('modalFabricSelect');
+            if (skuSelect && !skuSelect.contains(e.target)) {
+                closeSelectPanel('sku');
+            }
+            if (fabricSelect && !fabricSelect.contains(e.target)) {
+                closeSelectPanel('fabric');
+            }
+        });
+        
+        // 为所有 optional-field 添加值变化检测
+        function updateOptionalFieldStyle(el) {
+            if (el.value.trim()) {
+                el.classList.add('has-value');
+            } else {
+                el.classList.remove('has-value');
+            }
+        }
+        
+        function initOptionalFieldListeners() {
+            const optionalFields = document.querySelectorAll('.optional-field');
+            optionalFields.forEach(field => {
+                // 初始化 - 如果有现有值则添加 has-value 类
+                updateOptionalFieldStyle(field);
+                // 监听输入事件
+                field.addEventListener('input', function() {
+                    updateOptionalFieldStyle(this);
+                });
+                // 监听 change 事件（处理 number 类型的输入）
+                field.addEventListener('change', function() {
+                    updateOptionalFieldStyle(this);
+                });
+            });
+        }
+        
+        window.addEventListener('load', initOptionalFieldListeners);
+    </script>
+</body>
+    <script src="/static/js/header.js"></script>
+</html>
