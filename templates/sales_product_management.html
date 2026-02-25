@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>销售产品管理</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .required-field, .optional-field {
+            padding: 0.65rem 0.8rem !important;
+            border-radius: 6px !important;
+            border: 2px solid var(--morandi-sand) !important;
+            font-size: 0.95rem !important;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .required-field { background: #fff !important; }
+        .optional-field { background: transparent !important; }
+        .optional-field.has-value { background: #fff !important; }
+        .required-field:focus, .optional-field:focus {
+            outline: none !important;
+            border-color: var(--morandi-ink) !important;
+            box-shadow: 0 0 0 3px rgba(42, 36, 32, 0.1) !important;
+        }
+        .pm-select { position: relative; width: 100%; }
+        .pm-select-trigger {
+            width: 100%; text-align: left; padding: 0.65rem 0.8rem;
+            border-radius: 6px; border: 2px solid var(--morandi-sand);
+            background: #fff; color: var(--morandi-ink); font-size: 0.95rem; cursor: pointer;
+        }
+        .pm-select-panel {
+            position: absolute; top: calc(100% + 6px); left: 0; right: 0;
+            background: #fff; border-radius: 10px; border: 1px solid var(--morandi-sand);
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12); padding: 0.6rem; display: none; z-index: 10;
+        }
+        .pm-select-panel.open { display: block; }
+        .pm-select-search {
+            width: 100%; padding: 0.55rem 0.7rem; border-radius: 6px;
+            border: 1px solid var(--morandi-sand); font-size: 0.9rem; margin-bottom: 0.5rem;
+        }
+        .pm-select-list { max-height: 220px; overflow-y: auto; display: grid; gap: 0.35rem; }
+        .pm-select-option {
+            text-align: left; padding: 0.5rem 0.6rem; border-radius: 8px;
+            border: 1px solid transparent; background: var(--morandi-mist);
+            color: var(--morandi-ink); cursor: pointer; font-size: 0.92rem;
+        }
+        .pm-select-option:hover { background: rgba(207, 199, 189, 0.55); }
+        .pm-select-empty { padding: 0.6rem; text-align: center; color: var(--morandi-slate); font-size: 0.9rem; }
+        .order-link-box {
+            border: 2px solid var(--morandi-sand); border-radius: 8px; padding: 0.65rem; background: #fff;
+        }
+        .order-link-toolbar { display: grid; grid-template-columns: 1fr auto; gap: 0.5rem; margin-bottom: 0.6rem; }
+        .order-link-options { max-height: 180px; overflow-y: auto; display: grid; gap: 0.35rem; }
+        .order-link-option {
+            display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.55rem;
+            border-radius: 8px; background: var(--morandi-mist);
+        }
+        .order-link-selected { margin-top: 0.6rem; display: grid; gap: 0.4rem; }
+        .order-link-row {
+            display: grid; grid-template-columns: minmax(0,1fr) 90px 70px;
+            gap: 0.5rem; align-items: center;
+            padding: 0.45rem 0.55rem; border-radius: 8px; border: 1px solid var(--morandi-sand);
+            background: rgba(255,255,255,0.85);
+        }
+        .order-link-row input { padding: 0.45rem 0.55rem; border: 1px solid var(--morandi-sand); border-radius: 6px; }
+    </style>
+</head>
+<body>
+    <div id="site-header"></div>
+
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1.5rem;">
+            <h2>销售产品管理</h2>
+            <p>维护销售平台SKU、广告组合及关联下单SKU信息</p>
+        </section>
+
+        <section class="pm-layout">
+            <div class="card pm-card">
+                <div class="pm-toolbar">
+                    <div class="pm-toolbar-actions">
+                        <div class="form-group pm-search" style="margin: 0;">
+                            <span class="pm-search-title">搜索</span>
+                            <input type="text" id="searchInput" placeholder="搜索平台SKU/店铺/货号">
+                            <button class="btn-primary" onclick="loadSalesProductList()">搜索</button>
+                            <button class="btn-secondary" onclick="resetSearch()">清空</button>
+                        </div>
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-secondary" onclick="downloadSalesProductTemplate()">下载模板</button>
+                        <button class="btn-secondary" onclick="triggerSalesProductUpload()">批量上传</button>
+                        <input type="file" id="salesProductUploadInput" accept=".xlsx" style="display:none;">
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-accent" onclick="openCreateModal()">新增</button>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <table class="pm-table" id="salesProductTable">
+                    <thead>
+                        <tr>
+                            <th>销售平台SKU</th>
+                            <th>店铺/品牌</th>
+                            <th>货号</th>
+                            <th>面料</th>
+                            <th>规格名称</th>
+                            <th style="width:160px;">创建时间</th>
+                            <th style="width:160px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="7" style="text-align:center;">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div class="pm-modal" id="pm-modal">
+        <div class="pm-modal-content pm-modal-content--wide">
+            <h3 id="pm-modal-title" style="margin-top:0;">新增销售产品</h3>
+            <div class="pm-form">
+                <div class="form-group">
+                    <label for="modalShop">店铺/品牌<span class="required-asterisk">*</span></label>
+                    <div class="pm-select" id="modalShopSelectWrap">
+                        <button type="button" class="pm-select-trigger" id="modalShopTrigger">请选择店铺/品牌</button>
+                        <div class="pm-select-panel" id="modalShopPanel">
+                            <input type="text" class="pm-select-search" id="modalShopSearch" placeholder="搜索店铺/品牌">
+                            <div class="pm-select-list" id="modalShopList"></div>
+                        </div>
+                    </div>
+                    <select id="modalShop" class="required-field" style="display:none;"></select>
+                </div>
+                <div class="form-group">
+                    <label for="modalSkuFamily">货号<span class="required-asterisk">*</span></label>
+                    <div class="pm-select" id="modalSkuFamilySelectWrap">
+                        <button type="button" class="pm-select-trigger" id="modalSkuFamilyTrigger">请选择货号</button>
+                        <div class="pm-select-panel" id="modalSkuFamilyPanel">
+                            <input type="text" class="pm-select-search" id="modalSkuFamilySearch" placeholder="搜索货号">
+                            <div class="pm-select-list" id="modalSkuFamilyList"></div>
+                        </div>
+                    </div>
+                    <select id="modalSkuFamily" class="required-field" style="display:none;"></select>
+                </div>
+                <div class="form-group">
+                    <label for="modalPlatformSku">销售平台SKU<span class="required-asterisk">*</span></label>
+                    <input type="text" id="modalPlatformSku" class="required-field" placeholder="不可重复，自动生成，可编辑">
+                </div>
+                <div class="form-group">
+                    <label for="modalParentAsin">父ASIN</label>
+                    <input type="text" id="modalParentAsin" class="optional-field">
+                </div>
+                <div class="form-group">
+                    <label for="modalChildAsin">子ASIN</label>
+                    <input type="text" id="modalChildAsin" class="optional-field">
+                </div>
+                <div class="form-group pm-form-full">
+                    <label>关联下单SKU及数量<span class="required-asterisk">*</span></label>
+                    <div class="order-link-box">
+                        <div class="order-link-toolbar">
+                            <input type="text" id="orderSkuSearch" class="pm-select-search" placeholder="搜索下单SKU/货号/面料">
+                            <button type="button" class="btn-secondary" onclick="clearOrderSkuSelection()">清空</button>
+                        </div>
+                        <div id="orderSkuOptions" class="order-link-options"></div>
+                        <div id="orderSkuSelected" class="order-link-selected"></div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="modalFabric">面料</label>
+                    <input type="text" id="modalFabric" class="optional-field" placeholder="自动计算，可编辑">
+                </div>
+                <div class="form-group">
+                    <label for="modalSpecName">规格名称</label>
+                    <input type="text" id="modalSpecName" class="optional-field" placeholder="自动计算，可编辑">
+                </div>
+            </div>
+            <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeModal()">取消</button>
+                <button class="btn-primary" onclick="saveSalesProductFromModal()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 SITJOY | 内部使用</p>
+    </footer>
+
+    <script>
+        let editId = null;
+        let shopOptions = [];
+        let skuFamilyOptions = [];
+        let orderSkuOptions = [];
+        let selectedOrderSkus = [];
+        let manualFabric = false;
+        let manualSpecName = false;
+        let manualPlatformSku = false;
+
+        function showModalStatus(message, isError) {
+            const el = document.getElementById('modalStatus');
+            el.style.display = 'block';
+            el.style.background = isError ? '#ffecec' : '#f0fff0';
+            el.style.color = isError ? '#a33' : '#2f6f2f';
+            el.innerText = message;
+        }
+
+        function resetModalStatus() {
+            const el = document.getElementById('modalStatus');
+            el.style.display = 'none';
+            el.innerText = '';
+        }
+
+        function resetSearch() {
+            document.getElementById('searchInput').value = '';
+            loadSalesProductList();
+        }
+
+        function setupCustomSelect({ triggerId, panelId, searchId, listId, selectId, getOptions, getLabel }) {
+            const trigger = document.getElementById(triggerId);
+            const panel = document.getElementById(panelId);
+            const search = document.getElementById(searchId);
+            const list = document.getElementById(listId);
+            const select = document.getElementById(selectId);
+
+            function render() {
+                const keyword = (search.value || '').trim().toLowerCase();
+                const options = (getOptions() || []).filter(item => {
+                    const label = getLabel(item).toLowerCase();
+                    return !keyword || label.includes(keyword);
+                });
+                list.innerHTML = '';
+                if (!options.length) {
+                    const empty = document.createElement('div');
+                    empty.className = 'pm-select-empty';
+                    empty.textContent = '暂无匹配项';
+                    list.appendChild(empty);
+                    return;
+                }
+                options.forEach(item => {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'pm-select-option';
+                    btn.textContent = getLabel(item);
+                    btn.addEventListener('click', () => {
+                        select.value = item.id;
+                        trigger.textContent = getLabel(item);
+                        panel.classList.remove('open');
+                        // 触发change事件
+                        const changeEvent = new Event('change', { bubbles: true });
+                        select.dispatchEvent(changeEvent);
+                    });
+                    list.appendChild(btn);
+                });
+            }
+
+            trigger.addEventListener('click', function() {
+                panel.classList.toggle('open');
+                if (panel.classList.contains('open')) {
+                    search.value = '';
+                    render();
+                    search.focus();
+                }
+            });
+            search.addEventListener('input', render);
+            document.addEventListener('click', function(e) {
+                if (!panel.contains(e.target) && e.target !== trigger) panel.classList.remove('open');
+            });
+            return { render };
+        }
+
+        let shopSelectUI;
+        let skuSelectUI;
+
+        function renderOrderSkuOptions() {
+            const keyword = (document.getElementById('orderSkuSearch').value || '').trim().toLowerCase();
+            const container = document.getElementById('orderSkuOptions');
+            const selectedIds = new Set(selectedOrderSkus.map(x => String(x.order_product_id)));
+            const filtered = orderSkuOptions.filter(item => {
+                const text = `${item.sku || ''} ${item.sku_family || ''} ${item.fabric_name_en || ''}`.toLowerCase();
+                return !keyword || text.includes(keyword);
+            });
+            container.innerHTML = '';
+            if (!filtered.length) {
+                container.innerHTML = '<div class="pm-select-empty">暂无匹配下单SKU</div>';
+                return;
+            }
+            filtered.forEach(item => {
+                const row = document.createElement('label');
+                row.className = 'order-link-option';
+                row.innerHTML = `<input type="checkbox" value="${item.id}"> <span>${item.sku}（${item.sku_family || ''} / ${item.fabric_name_en || ''}）</span>`;
+                const checkbox = row.querySelector('input');
+                checkbox.checked = selectedIds.has(String(item.id));
+                checkbox.addEventListener('change', () => {
+                    if (checkbox.checked) {
+                        selectedOrderSkus.push({ order_product_id: item.id, quantity: 1 });
+                    } else {
+                        selectedOrderSkus = selectedOrderSkus.filter(x => String(x.order_product_id) !== String(item.id));
+                    }
+                    renderSelectedOrderSkuRows();
+                    autoComputeFabricSpec();
+                });
+                container.appendChild(row);
+            });
+        }
+
+        function renderSelectedOrderSkuRows() {
+            const container = document.getElementById('orderSkuSelected');
+            container.innerHTML = '';
+            if (!selectedOrderSkus.length) {
+                container.innerHTML = '<div class="pm-select-empty">未选择下单SKU</div>';
+                return;
+            }
+            selectedOrderSkus.forEach(link => {
+                const source = orderSkuOptions.find(x => String(x.id) === String(link.order_product_id));
+                const row = document.createElement('div');
+                row.className = 'order-link-row';
+                row.innerHTML = `
+                    <div>${source ? source.sku : link.order_product_id}</div>
+                    <input type="number" min="1" step="1" value="${link.quantity || 1}">
+                    <button type="button" class="btn-danger">移除</button>
+                `;
+                row.querySelector('input').addEventListener('input', function() {
+                    const qty = Number(this.value) || 1;
+                    link.quantity = qty < 1 ? 1 : qty;
+                    autoComputeFabricSpec();
+                });
+                row.querySelector('button').addEventListener('click', function() {
+                    selectedOrderSkus = selectedOrderSkus.filter(x => String(x.order_product_id) !== String(link.order_product_id));
+                    renderOrderSkuOptions();
+                    renderSelectedOrderSkuRows();
+                    autoComputeFabricSpec();
+                });
+                container.appendChild(row);
+            });
+        }
+
+        function clearOrderSkuSelection() {
+            selectedOrderSkus = [];
+            renderOrderSkuOptions();
+            renderSelectedOrderSkuRows();
+            autoComputeFabricSpec();
+        }
+
+        function autoComputeFabricSpec() {
+            const selected = selectedOrderSkus.map(link => {
+                const source = orderSkuOptions.find(x => String(x.id) === String(link.order_product_id));
+                return { link, source };
+            }).filter(x => x.source);
+
+            const fabrics = [];
+            const specs = [];
+            selected.forEach(item => {
+                const fabric = (item.source.fabric_name_en || '').trim();
+                if (fabric && !fabrics.includes(fabric)) fabrics.push(fabric);
+                const spec = (item.source.spec_qty_short || '').trim();
+                if (spec) specs.push(`${item.link.quantity}${spec}`);
+            });
+
+            if (!manualFabric) {
+                document.getElementById('modalFabric').value = fabrics.join(' / ');
+            }
+            if (!manualSpecName) {
+                document.getElementById('modalSpecName').value = specs.join('');
+            }
+            
+            // 自动生成平台SKU：货号-面料-规格
+            if (!manualPlatformSku) {
+                const skuFamilyId = document.getElementById('modalSkuFamily').value;
+                const skuFamily = skuFamilyOptions.find(x => String(x.id) === String(skuFamilyId));
+                const skuFamilyCode = skuFamily ? skuFamily.sku_family : '';
+                const fabric = fabrics.length > 0 ? fabrics[0] : '';
+                const specName = specs.join('');
+                if (skuFamilyCode && fabric && specName) {
+                    document.getElementById('modalPlatformSku').value = `${skuFamilyCode}-${fabric}-${specName}`;
+                } else {
+                    document.getElementById('modalPlatformSku').value = '';
+                }
+            }
+        }
+
+        function openCreateModal() {
+            editId = null;
+            manualFabric = false;
+            manualSpecName = false;
+            manualPlatformSku = false;
+            document.getElementById('pm-modal-title').innerText = '新增销售产品';
+            document.getElementById('modalShop').value = '';
+            document.getElementById('modalShopTrigger').textContent = '请选择店铺/品牌';
+            document.getElementById('modalSkuFamily').value = '';
+            document.getElementById('modalSkuFamilyTrigger').textContent = '请选择货号';
+            document.getElementById('modalPlatformSku').value = '';
+            document.getElementById('modalParentAsin').value = '';
+            document.getElementById('modalChildAsin').value = '';
+            document.getElementById('modalFabric').value = '';
+            document.getElementById('modalSpecName').value = '';
+            selectedOrderSkus = [];
+            renderOrderSkuOptions();
+            renderSelectedOrderSkuRows();
+            resetModalStatus();
+            document.getElementById('pm-modal').classList.add('active');
+        }
+
+        function openEditModal(item) {
+            editId = item.id;
+            manualFabric = false;
+            manualSpecName = false;
+            manualPlatformSku = false;
+            document.getElementById('pm-modal-title').innerText = '编辑销售产品';
+            document.getElementById('modalShop').value = item.shop_id || '';
+            const shop = shopOptions.find(x => String(x.id) === String(item.shop_id));
+            document.getElementById('modalShopTrigger').textContent = shop ? `${shop.shop_name} / ${shop.brand_name} / ${shop.platform_type_name}` : '请选择店铺/品牌';
+            document.getElementById('modalSkuFamily').value = item.sku_family_id || '';
+            const sku = skuFamilyOptions.find(x => String(x.id) === String(item.sku_family_id));
+            document.getElementById('modalSkuFamilyTrigger').textContent = sku ? `${sku.sku_family}（${sku.category}）` : '请选择货号';
+            document.getElementById('modalPlatformSku').value = item.platform_sku || '';
+            document.getElementById('modalParentAsin').value = item.parent_asin || '';
+            document.getElementById('modalChildAsin').value = item.child_asin || '';
+            document.getElementById('modalFabric').value = item.fabric || '';
+            document.getElementById('modalSpecName').value = item.spec_name || '';
+            selectedOrderSkus = (item.order_sku_links || []).map(link => ({
+                order_product_id: link.order_product_id,
+                quantity: link.quantity || 1
+            }));
+            renderOrderSkuOptions();
+            renderSelectedOrderSkuRows();
+            resetModalStatus();
+            document.getElementById('pm-modal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('pm-modal').classList.remove('active');
+            editId = null;
+        }
+
+        function saveSalesProductFromModal() {
+            const payload = {
+                shop_id: document.getElementById('modalShop').value,
+                sku_family_id: document.getElementById('modalSkuFamily').value,
+                platform_sku: document.getElementById('modalPlatformSku').value.trim(),
+                parent_asin: document.getElementById('modalParentAsin').value.trim(),
+                child_asin: document.getElementById('modalChildAsin').value.trim(),
+                fabric: document.getElementById('modalFabric').value.trim(),
+                spec_name: document.getElementById('modalSpecName').value.trim(),
+                order_sku_links: selectedOrderSkus.map(x => ({ order_product_id: x.order_product_id, quantity: Number(x.quantity) || 1 })),
+                manual_platform_sku: manualPlatformSku
+            };
+            if (!payload.shop_id || !payload.sku_family_id || !payload.platform_sku || !payload.order_sku_links.length) {
+                showModalStatus('请填写必填项并关联至少一个下单SKU', true);
+                return;
+            }
+            let method = 'POST';
+            if (editId) {
+                payload.id = editId;
+                method = 'PUT';
+            }
+            fetch('/api/sales-product', {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(r => r.json()).then(data => {
+                if (data.status === 'success') {
+                    closeModal();
+                    loadSalesProductList();
+                } else {
+                    showModalStatus(data.message || '操作失败', true);
+                }
+            }).catch(err => showModalStatus('请求失败: ' + err, true));
+        }
+
+        function deleteSalesProduct(id) {
+            if (!confirm('确认删除该销售产品？')) return;
+            fetch('/api/sales-product', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            }).then(r => r.json()).then(data => {
+                if (data.status === 'success') {
+                    loadSalesProductList();
+                } else {
+                    alert(data.message || '删除失败');
+                }
+            }).catch(err => alert('请求失败: ' + err));
+        }
+
+        function downloadSalesProductTemplate() {
+            window.location.href = '/api/sales-product-template';
+        }
+
+        function triggerSalesProductUpload() {
+            const input = document.getElementById('salesProductUploadInput');
+            if (input) input.click();
+        }
+
+        function uploadSalesProductTemplate(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+            fetch('/api/sales-product-import', {
+                method: 'POST',
+                body: formData
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    const errorCount = (data.errors || []).length;
+                    alert(`导入完成：成功 ${data.created || 0} 条，失败 ${errorCount} 条`);
+                    loadSalesProductList();
+                } else {
+                    alert(data.message || '导入失败');
+                }
+            })
+            .catch(err => alert('请求失败: ' + err));
+        }
+
+        function loadSalesProductList() {
+            const q = document.getElementById('searchInput').value.trim();
+            const url = q ? `/api/sales-product?q=${encodeURIComponent(q)}` : '/api/sales-product';
+            fetch(url).then(r => r.json()).then(data => {
+                const tbody = document.querySelector('#salesProductTable tbody');
+                if (data.status !== 'success') {
+                    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                    return;
+                }
+                const items = data.items || [];
+                if (!items.length) {
+                    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">暂无数据</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = items.map(item => `
+                    <tr>
+                        <td>${item.platform_sku || ''}</td>
+                        <td>${item.shop_name || ''} / ${item.brand_name || ''}</td>
+                        <td>${item.sku_family || ''}</td>
+                        <td>${item.fabric || ''}</td>
+                        <td>${item.spec_name || ''}</td>
+                        <td>${item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : ''}</td>
+                        <td>
+                            <div class="pm-actions">
+                                <button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button>
+                                <button class="btn-danger" onclick='deleteSalesProduct(${item.id})'>删除</button>
+                            </div>
+                        </td>
+                    </tr>
+                `).join('');
+            }).catch(err => {
+                const tbody = document.querySelector('#salesProductTable tbody');
+                tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+            });
+        }
+
+        function loadShopOptions() {
+            return fetch('/api/shop').then(r => r.json()).then(data => {
+                shopOptions = data.status === 'success' ? (data.items || []) : [];
+            }).catch(() => { shopOptions = []; });
+        }
+
+        function loadSkuFamilyOptions() {
+            return fetch('/api/sku').then(r => r.json()).then(data => {
+                skuFamilyOptions = data.status === 'success' ? (data.items || []) : [];
+            }).catch(() => { skuFamilyOptions = []; });
+        }
+
+        function loadOrderSkuOptions() {
+            return fetch('/api/order-product').then(r => r.json()).then(data => {
+                orderSkuOptions = data.status === 'success' ? (data.items || []) : [];
+                renderOrderSkuOptions();
+                renderSelectedOrderSkuRows();
+            }).catch(() => { orderSkuOptions = []; });
+        }
+
+        function initPage() {
+            Promise.all([
+                loadShopOptions(),
+                loadSkuFamilyOptions(),
+                loadOrderSkuOptions()
+            ]).then(() => {
+                shopSelectUI = setupCustomSelect({
+                    triggerId: 'modalShopTrigger',
+                    panelId: 'modalShopPanel',
+                    searchId: 'modalShopSearch',
+                    listId: 'modalShopList',
+                    selectId: 'modalShop',
+                    getOptions: () => shopOptions,
+                    getLabel: item => `${item.shop_name} / ${item.brand_name} / ${item.platform_type_name}`
+                });
+                skuSelectUI = setupCustomSelect({
+                    triggerId: 'modalSkuFamilyTrigger',
+                    panelId: 'modalSkuFamilyPanel',
+                    searchId: 'modalSkuFamilySearch',
+                    listId: 'modalSkuFamilyList',
+                    selectId: 'modalSkuFamily',
+                    getOptions: () => skuFamilyOptions,
+                    getLabel: item => `${item.sku_family}（${item.category}）`
+                });
+                shopSelectUI.render();
+                skuSelectUI.render();
+                loadSalesProductList();
+            });
+        }
+
+        document.getElementById('searchInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') loadSalesProductList();
+        });
+        document.getElementById('orderSkuSearch').addEventListener('input', renderOrderSkuOptions);
+        document.getElementById('modalFabric').addEventListener('input', function() { manualFabric = this.value.trim() !== ''; });
+        document.getElementById('modalSpecName').addEventListener('input', function() { manualSpecName = this.value.trim() !== ''; });
+        document.getElementById('modalPlatformSku').addEventListener('input', function() { manualPlatformSku = this.value.trim() !== ''; });
+        document.getElementById('modalSkuFamily').addEventListener('change', function() {
+            // 当货号改变时，重新计算platform_sku（如果没有手动编辑）
+            autoComputeFabricSpec();
+        });
+        document.getElementById('salesProductUploadInput').addEventListener('change', function() {
+            const file = this.files && this.files[0];
+            if (file) {
+                uploadSalesProductTemplate(file);
+            }
+            this.value = '';
+        });
+        document.getElementById('pm-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeModal();
+        });
+
+        window.addEventListener('load', initPage);
+    </script>
+</body>
+<script src="/static/js/header.js"></script>
+</html>

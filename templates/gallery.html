@@ -3,248 +3,669 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>图片管理 - 预览和重命名</title>
-    <link rel="stylesheet" href="/static/css/gallery.css">
+    <title>图片管理 - 文件浏览器</title>
+    <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <nav class="navbar">
-        <div class="container">
-            <h1 class="logo">🖼️ 图片管理系统</h1>
-            <ul class="nav-menu">
-                <li><a href="/">首页</a></li>
-                <li><a href="/gallery" class="active">图片管理</a></li>
-                <li><a href="/about">关于</a></li>
-            </ul>
-        </div>
-    </nav>
+    <div id="site-header"></div>
 
-    <div class="container">
-        <section class="header">
-            <h2>图片预览和快速重命名</h2>
-            <p>点击图片预览，直接在下方重命名</p>
+    <div class="container container--wide">
+        <section class="header header-row">
+            <div>
+                <h2>📁 文件浏览器</h2>
+                <p>点击文件夹进入，点击图片重命名</p>
+            </div>
         </section>
 
-        <!-- 图片列表 -->
-        <div id="images-grid" class="images-grid">
-            <div class="loading">加载图片中...</div>
+        <!-- 面包屑导航 -->
+        <div class="breadcrumb-row">
+            <div class="breadcrumb" id="breadcrumb">
+                <span class="breadcrumb-item" onclick="browse('')">🏠 根目录</span>
+            </div>
+            <div class="header-actions">
+                <div class="upload-bar">
+                    <div class="bar-body upload-left">
+                        <input type="file" id="uploadInput" accept="image/*" multiple>
+                        <button class="btn-accent" onclick="uploadImages()">上传</button>
+                    </div>
+                    <div id="upload-status" class="upload-status"></div>
+                </div>
+
+                <div class="download-bar">
+                    <div class="bar-body download-left">
+                        <button class="btn-primary" onclick="downloadSelected()">下载选中</button>
+                    </div>
+                    <div id="download-status" class="upload-status"></div>
+                </div>
+            </div>
         </div>
 
-        <!-- 预览和重命名面板 -->
-        <div id="preview-panel" class="preview-panel" style="display: none;">
-            <button class="close-btn" onclick="closePreview()">✕</button>
+
+
+        <!-- 文件/文件夹网格 -->
+        <div class="browser-grid" id="browser-grid">
+            <div class="loading">加载中...</div>
+        </div>
+
+        <div class="debug-container" id="debug-container"></div>
+    </div>
+
+    <!-- 重命名对话框 -->
+    <div class="rename-dialog" id="rename-dialog">
+        <div class="rename-content">
+            <h3 style="margin-top: 0;">✏️ 编辑图片信息</h3>
             
-            <div class="preview-container">
-                <div class="preview-image">
-                    <img id="preview-img" src="" alt="预览">
+            <div class="rename-preview">
+                <img id="rename-preview-img" src="" alt="预览">
+                <button class="preview-zoom" type="button" onclick="openPreviewZoom()" title="放大查看">🔍</button>
+            </div>
+            
+            <div class="rename-form">
+                <div class="form-group">
+                    <label>文件名（无需扩展名）</label>
+                    <input type="text" id="new-name" placeholder="输入新文件名">
+                </div>
+
+                <div class="form-group">
+                    <label>文件夹</label>
+                    <div class="folder-picker">
+                        <div class="folder-picker-levels" id="target-levels"></div>
+                    </div>
                 </div>
                 
-                <div class="preview-info">
-                    <div class="info-group">
-                        <label>当前文件名</label>
-                        <input type="text" id="current-filename" readonly>
-                    </div>
-                    
-                    <div class="info-group">
-                        <label>文件路径</label>
-                        <input type="text" id="file-path" readonly style="font-size: 12px;">
-                    </div>
-                    
-                    <div class="info-group">
-                        <label>新文件名</label>
-                        <input type="text" id="new-filename" placeholder="输入新的文件名（不需要扩展名）">
-                    </div>
-                    
-                    <button class="rename-btn" onclick="renameFile()">应用重命名</button>
-                    <div id="rename-status" class="status-message"></div>
+                <div class="button-group">
+                    <button class="btn btn-secondary" onclick="closeRenameDialog()">取消</button>
+                    <button class="btn btn-primary" onclick="confirmRename()">提交修改</button>
                 </div>
+                
+                <div id="rename-status" class="status-message" style="display: none;"></div>
             </div>
         </div>
     </div>
 
+
     <footer>
-        <p>&copy; 2026 图片管理系统 | Synology NAS</p>
+        <p>&copy; 2026 SITJOY | 内部使用</p>
     </footer>
 
     <script>
-        let currentFile = null;
-        let allImages = [];
-        let currentPage = 1;
-        let totalPages = 1;
+        let currentPath = '';
+        let currentRenameImage = null;
+        let lastFolders = [];
+        let lastImages = [];
+        const DEBUG_MODE = true;
+        const selectedItems = new Map();
 
-        // 页面加载时获取图片列表
+        function decodeB64Utf8(b64) {
+            if (!b64) return '';
+            try {
+                const binary = atob(b64);
+                if (typeof TextDecoder !== 'undefined') {
+                    const bytes = Uint8Array.from(binary, ch => ch.charCodeAt(0));
+                    return new TextDecoder('utf-8').decode(bytes);
+                }
+                return decodeURIComponent(escape(binary));
+            } catch (e) {
+                try {
+                    return decodeURIComponent(escape(atob(b64)));
+                } catch (err) {
+                    console.warn('Base64 decode failed:', b64, e);
+                    return '';
+                }
+            }
+        }
+
+        // 页面加载时浏览根目录
         window.addEventListener('load', function() {
-            loadImages(1);
+            browse('');
         });
 
-        function loadImages(page = 1) {
-            const grid = document.getElementById('images-grid');
-            grid.innerHTML = '<div class="loading">加载图片中...</div>';
+        // 浏览目录
+        function browse(path) {
+            currentPath = path;
+            const grid = document.getElementById('browser-grid');
+            grid.innerHTML = '<div class="loading">加载中...</div>';
 
-            fetch(`/api/images?page=${page}&per_page=50`)
+            const debugParam = DEBUG_MODE ? '&debug=1' : '';
+            const url = path ? `/api/browse?path=${encodeURIComponent(path)}${debugParam}` : `/api/browse?debug=1`;
+
+            fetch(url)
                 .then(response => response.json())
                 .then(data => {
                     if (data.status === 'success') {
-                        currentPage = data.page;
-                        totalPages = data.pages;
-                        allImages = data.images;
-                        displayImages(data.images);
-                        displayPagination(data);
+                        updateBreadcrumb(data.breadcrumbs);
+                        lastFolders = data.folders || [];
+                        lastImages = data.images || [];
+                        displayItems(lastFolders, lastImages);
+                        if (DEBUG_MODE && data.debug_items) {
+                            renderDebug(data.debug_items, data.total_folders || 0, data.total_images || 0);
+                        } else {
+                            renderDebug([], data.total_folders || 0, data.total_images || 0);
+                        }
                     } else {
-                        grid.innerHTML = '<p style="color: red;">加载失败: ' + data.message + '</p>';
+                        grid.innerHTML = '<p style="color: red; text-align: center;">加载失败: ' + data.message + '</p>';
+                        renderDebug([], 0, 0);
                     }
                 })
                 .catch(error => {
                     console.error('错误:', error);
-                    grid.innerHTML = '<p style="color: red;">加载错误: ' + error + '</p>';
+                    grid.innerHTML = '<p style="color: red; text-align: center;">加载错误: ' + error + '</p>';
+                    renderDebug([], 0, 0);
                 });
         }
 
-        function displayImages(images) {
-            const grid = document.getElementById('images-grid');
-            
-            if (images.length === 0) {
-                grid.innerHTML = '<p style="grid-column: 1/-1;">未找到图片</p>';
+        function uploadImages() {
+            const input = document.getElementById('uploadInput');
+            const status = document.getElementById('upload-status');
+            if (!input.files || input.files.length === 0) {
+                showStatus(status, '请选择图片', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            Array.from(input.files).forEach(file => formData.append('file', file));
+            if (currentPath) {
+                formData.append('path', currentPath);
+            }
+
+            showStatus(status, '上传中...', 'info');
+
+            fetch('/api/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(async r => {
+                const contentType = r.headers.get('content-type') || '';
+                if (contentType.includes('application/json')) {
+                    return r.json();
+                }
+                const text = await r.text();
+                throw new Error(text || `HTTP ${r.status}`);
+            })
+            .then(data => {
+                if (data.status === 'success') {
+                    showStatus(status, `上传完成：${data.count} 张`, 'success');
+                    input.value = '';
+                    browse(currentPath);
+                } else {
+                    showStatus(status, '上传失败: ' + (data.message || '未知错误'), 'error');
+                }
+            })
+            .catch(err => {
+                showStatus(status, '上传失败: ' + err.message, 'error');
+            });
+        }
+
+        function renderDebug(items, totalFolders = 0, totalImages = 0) {
+            const container = document.getElementById('debug-container');
+            const existing = document.getElementById('debug-info');
+            if (existing) {
+                existing.remove();
+            }
+
+            const wrapper = document.createElement('div');
+            wrapper.id = 'debug-info';
+            wrapper.style.padding = '0.75rem 1rem';
+            wrapper.style.background = 'rgba(236, 231, 223, 0.08)';
+            wrapper.style.borderRadius = '8px';
+            wrapper.style.color = '#cfc7bd';
+            wrapper.style.fontSize = '0.85rem';
+
+            const statsLine = `统计：文件夹 ${totalFolders} 个，图片 ${totalImages} 张`;
+            const lines = (items || []).slice(0, 50).map(item => {
+                const name = item.name || '';
+                const reason = item.skipped || 'unknown';
+                return `${name}  [${reason}]`;
+            });
+
+            wrapper.innerHTML = `
+                <div style="font-weight:600; margin-bottom:0.35rem;">${statsLine}</div>
+                ${lines.length ? `<div style="margin-top:0.35rem; font-weight:600;">调试：被跳过的条目（最多50条）</div>
+                <div style="white-space:pre-wrap; word-break:break-all;">${lines.join('\n')}</div>` : ''}
+            `;
+
+            container.appendChild(wrapper);
+        }
+
+        // 更新面包屑导航
+        function updateBreadcrumb(breadcrumbs) {
+            const breadcrumbEl = document.getElementById('breadcrumb');
+            let html = '<span class="breadcrumb-item" onclick="browse(\'\')">🏠 根目录</span>';
+
+            breadcrumbs.forEach(crumb => {
+                const name = decodeB64Utf8(crumb.name);
+                const path = crumb.path;
+                html += '<span class="breadcrumb-separator">›</span>';
+                html += `<span class="breadcrumb-item" onclick="browse('${path}')">${name}</span>`;
+            });
+
+            breadcrumbEl.innerHTML = html;
+        }
+
+        function setDownloadStatus(message, type) {
+            const status = document.getElementById('download-status');
+            showStatus(status, message || '', type || '');
+        }
+
+        function showStatus(el, message, type) {
+            if (!el) return;
+            if (!message) {
+                el.textContent = '';
+                el.className = 'upload-status';
+                el.classList.remove('show');
+                return;
+            }
+            el.textContent = message;
+            el.className = 'upload-status ' + (type || '');
+            el.classList.add('show');
+            clearTimeout(el._hideTimer);
+            el._hideTimer = setTimeout(() => {
+                el.classList.remove('show');
+            }, 2600);
+        }
+
+        function toggleSelection(path, type, checked) {
+            if (checked) {
+                selectedItems.set(path, type);
+            } else {
+                selectedItems.delete(path);
+            }
+        }
+
+        async function downloadSelected() {
+            if (selectedItems.size === 0) {
+                setDownloadStatus('请先勾选要下载的内容', 'error');
+                return;
+            }
+
+            setDownloadStatus('下载中...', 'info');
+            const payload = [];
+            selectedItems.forEach((type, path) => {
+                payload.push({ type, path });
+            });
+
+            fetch('/api/download-zip', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items: payload })
+            })
+            .then(async response => {
+                const contentType = response.headers.get('content-type') || '';
+                if (!response.ok) {
+                    const text = await response.text();
+                    throw new Error(text || `HTTP ${response.status}`);
+                }
+                if (!contentType.includes('application/zip')) {
+                    const text = await response.text();
+                    try {
+                        const data = JSON.parse(text);
+                        throw new Error(data.message || '下载失败');
+                    } catch (e) {
+                        throw new Error(text || '下载失败');
+                    }
+                }
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                const timestamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0];
+                link.href = url;
+                link.download = `sitjoy_download_${timestamp}.zip`;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(url);
+                setDownloadStatus('下载已开始', 'success');
+            })
+            .catch(err => {
+                setDownloadStatus('下载失败: ' + err.message, 'error');
+            });
+        }
+
+        // 显示项目（文件夹和图片）
+        function displayItems(folders, images) {
+            const grid = document.getElementById('browser-grid');
+
+            if (folders.length === 0 && images.length === 0) {
+                grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: white;">此文件夹为空</p>';
                 return;
             }
 
             grid.innerHTML = '';
-            
-            images.forEach(image => {
-                const item = document.createElement('div');
-                item.className = 'image-item';
-                const filename = atob(image.filename);  // 解码Base64
-                const folder = atob(image.folder);
-                
-                item.innerHTML = `
-                    <div class="image-thumbnail" onclick="previewImage('${image.id}', '${image.filename}')">
-                        <img src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><rect fill='%23f0f0f0' width='200' height='200'/><text x='50%25' y='50%25' text-anchor='middle' dy='.3em' font-size='14' fill='%23999'>点击预览</text></svg>" 
-                             alt="${filename}"
-                             loading="lazy">
+
+            // 显示文件夹
+            folders.forEach(folder => {
+                const name = decodeB64Utf8(folder.name);
+                const card = document.createElement('div');
+                const isSelected = selectedItems.has(folder.path);
+                card.className = 'item-card item-card--compact' + (isSelected ? ' item-card--selected' : '');
+                card.onclick = () => browse(folder.path);
+
+                card.innerHTML = `
+                    <div class="item-select" onclick="event.stopPropagation();">
+                        <input type="checkbox" data-path="${folder.path}" data-type="folder" ${isSelected ? 'checked' : ''}>
                     </div>
-                    <div class="image-name" title="${filename}">${filename}</div>
-                    <div class="image-folder" title="${folder}">${folder}</div>
+                    <div class="item-thumbnail folder">
+                        <div class="folder-icon">📁</div>
+                    </div>
+                    <div class="item-info">
+                        <div class="item-name">${name}</div>
+                        <div class="item-type">文件夹</div>
+                    </div>
                 `;
-                grid.appendChild(item);
+
+                const checkbox = card.querySelector('input[type="checkbox"]');
+                checkbox.addEventListener('click', (e) => e.stopPropagation());
+                checkbox.addEventListener('change', (e) => {
+                    toggleSelection(folder.path, 'folder', e.target.checked);
+                    card.classList.toggle('item-card--selected', e.target.checked);
+                });
+
+                grid.appendChild(card);
+            });
+
+            // 显示图片（带缩略图）
+            images.forEach(image => {
+                const name = decodeB64Utf8(image.name);
+                const card = document.createElement('div');
+                const isSelected = selectedItems.has(image.path);
+                card.className = 'item-card item-card--compact' + (isSelected ? ' item-card--selected' : '');
+                card.onclick = () => openRenameDialog(image.path, name);
+
+                const thumbnailUrl = `/api/image-preview?id=${encodeURIComponent(image.path)}`;
+
+                card.innerHTML = `
+                    <div class="item-select" onclick="event.stopPropagation();">
+                        <input type="checkbox" data-path="${image.path}" data-type="image" ${isSelected ? 'checked' : ''}>
+                    </div>
+                    <div class="item-thumbnail">
+                        <img src="${thumbnailUrl}" alt="${name}" loading="lazy">
+                    </div>
+                    <div class="item-info">
+                        <div class="item-name">${name}</div>
+                        <div class="item-type">图片</div>
+                    </div>
+                `;
+
+                const checkbox = card.querySelector('input[type="checkbox"]');
+                checkbox.addEventListener('click', (e) => e.stopPropagation());
+                checkbox.addEventListener('change', (e) => {
+                    toggleSelection(image.path, 'image', e.target.checked);
+                    card.classList.toggle('item-card--selected', e.target.checked);
+                });
+
+                grid.appendChild(card);
             });
         }
 
-        function displayPagination(data) {
-            let paginationHTML = `<div style="grid-column: 1/-1; text-align: center; padding: 2rem; color: white;">`;
-            
-            // 上一页
-            if (data.page > 1) {
-                paginationHTML += `<button onclick="loadImages(${data.page - 1})" class="pagination-btn">上一页</button>`;
+        // 打开重命名对话框
+        function openRenameDialog(imagePath, imageName) {
+            currentRenameImage = {
+                path: imagePath,
+                name: imageName
+            };
+
+            const currentNameInput = document.getElementById('current-name');
+            if (currentNameInput) {
+                currentNameInput.value = imageName;
             }
             
-            // 页码信息
-            paginationHTML += `<span style="margin: 0 1rem;">第 ${data.page} / ${data.pages} 页 (共 ${data.total} 张图片)</span>`;
-            
-            // 下一页
-            if (data.page < data.pages) {
-                paginationHTML += `<button onclick="loadImages(${data.page + 1})" class="pagination-btn">下一页</button>`;
+            // 提取文件名（无扩展名）
+            const nameWithoutExt = imageName.substring(0, imageName.lastIndexOf('.')) || imageName;
+            document.getElementById('new-name').value = nameWithoutExt;
+
+            // 加载预览图
+            const previewImg = document.getElementById('rename-preview-img');
+            previewImg.src = `/api/image-preview?id=${encodeURIComponent(imagePath)}`;
+
+            // 加载层级目录选择器（从根目录开始逐层选择）
+            targetFolderPath = '';
+            loadFolderLevels('');
+
+            // 显示对话框
+            document.getElementById('rename-dialog').classList.add('active');
+            document.getElementById('new-name').focus();
+            document.getElementById('rename-status').style.display = 'none';
+        }
+
+        function utf8ToB64(text) {
+            try {
+                if (typeof TextEncoder !== 'undefined') {
+                    const bytes = new TextEncoder().encode(text);
+                    let binary = '';
+                    bytes.forEach(b => binary += String.fromCharCode(b));
+                    return btoa(binary);
+                }
+                return btoa(unescape(encodeURIComponent(text)));
+            } catch (e) {
+                return '';
             }
-            
-            paginationHTML += `</div>`;
-            
-            const grid = document.getElementById('images-grid');
-            grid.innerHTML += paginationHTML;
         }
 
-        function previewImage(id, filenameB64) {
-            const filename = atob(filenameB64);
-            currentFile = {
-                id: id,
-                filename: filename,
-                filenameB64: filenameB64
-            };
-
-            document.getElementById('current-filename').value = filename;
-            document.getElementById('file-path').value = id;
-            
-            // 预填新文件名（去掉扩展名）
-            const nameWithoutExt = filename.substring(0, filename.lastIndexOf('.')) || filename;
-            document.getElementById('new-filename').value = nameWithoutExt;
-            document.getElementById('rename-status').innerHTML = '<p style="color: #666;">加载预览中...</p>';
-            
-            // 加载预览
-            const previewImg = document.getElementById('preview-img');
-            previewImg.src = `/api/image-preview?id=${encodeURIComponent(id)}`;
-            previewImg.onerror = function() {
-                document.getElementById('rename-status').innerHTML = '<p style="color: orange;">预览加载失败，但可继续重命名</p>';
-            };
-            previewImg.onload = function() {
-                document.getElementById('rename-status').innerHTML = '';
-            };
-            
-            document.getElementById('preview-panel').style.display = 'block';
+        function updateTargetPathLabel() {
+            return;
         }
 
-        function closePreview() {
-            document.getElementById('preview-panel').style.display = 'none';
-            currentFile = null;
+        function fetchFolders(pathB64) {
+            const url = pathB64 ? `/api/browse?path=${encodeURIComponent(pathB64)}` : '/api/browse';
+            return fetch(url)
+                .then(r => r.json())
+                .then(data => (data.status === 'success' ? (data.folders || []) : []))
+                .catch(() => []);
         }
 
-        function renameFile() {
-            if (!currentFile) return;
-            
-            const newName = document.getElementById('new-filename').value.trim();
+        async function loadFolderLevels(initialPath, autoExpandNext = false) {
+            const levels = document.getElementById('target-levels');
+            levels.innerHTML = '';
+            const parts = initialPath ? initialPath.split('/') : [];
+            let currentPathB64 = '';
+            let currentPathStr = '';
+
+            for (let level = 0; level <= parts.length; level++) {
+                const folders = await fetchFolders(currentPathB64);
+                if (folders.length === 0) break;
+
+                const select = document.createElement('select');
+                select.dataset.level = String(level);
+
+                const optStay = document.createElement('option');
+                optStay.value = '';
+                optStay.textContent = '此层(不再深入)';
+                select.appendChild(optStay);
+
+                folders.forEach(folder => {
+                    const name = decodeB64Utf8(folder.name);
+                    const pathStr = decodeB64Utf8(folder.path);
+                    const option = document.createElement('option');
+                    option.value = folder.path;
+                    option.textContent = name;
+                    option.dataset.path = pathStr;
+                    select.appendChild(option);
+                });
+
+                select.addEventListener('change', () => handleFolderLevelChange(level));
+                levels.appendChild(select);
+
+                if (level < parts.length) {
+                    const targetPathStr = parts.slice(0, level + 1).join('/');
+                    const match = Array.from(select.options).find(o => o.dataset.path === targetPathStr);
+                    if (match) {
+                        select.value = match.value;
+                        currentPathB64 = match.value;
+                        currentPathStr = match.dataset.path || '';
+                        continue;
+                    }
+                }
+                break;
+            }
+
+            targetFolderPath = currentPathStr || '';
+            updateTargetPathLabel();
+
+            if (autoExpandNext) {
+                const nextFolders = await fetchFolders(currentPathB64);
+                if (nextFolders.length > 0) {
+                    const nextLevel = parts.length + 1;
+                    const nextSelect = document.createElement('select');
+                    nextSelect.dataset.level = String(nextLevel);
+                    const optStay = document.createElement('option');
+                    optStay.value = '';
+                    optStay.textContent = '此层(不再深入)';
+                    nextSelect.appendChild(optStay);
+                    nextFolders.forEach(folder => {
+                        const name = decodeB64Utf8(folder.name);
+                        const pathStr = decodeB64Utf8(folder.path);
+                        const option = document.createElement('option');
+                        option.value = folder.path;
+                        option.textContent = name;
+                        option.dataset.path = pathStr;
+                        nextSelect.appendChild(option);
+                    });
+                    nextSelect.addEventListener('change', () => handleFolderLevelChange(nextLevel));
+                    levels.appendChild(nextSelect);
+                }
+            }
+        }
+
+        function handleFolderLevelChange(level) {
+            const levels = document.getElementById('target-levels');
+            const selects = Array.from(levels.querySelectorAll('select'));
+            selects.forEach(sel => {
+                if (parseInt(sel.dataset.level, 10) > level) {
+                    sel.remove();
+                }
+            });
+
+            const current = levels.querySelector(`select[data-level="${level}"]`);
+            const selectedOption = current ? current.selectedOptions[0] : null;
+            if (!selectedOption || !selectedOption.value) {
+                targetFolderPath = getSelectedPathFromLevels(levels);
+                updateTargetPathLabel();
+                return;
+            }
+
+            targetFolderPath = selectedOption.dataset.path || '';
+            updateTargetPathLabel();
+
+            fetchFolders(selectedOption.value).then(folders => {
+                if (folders.length === 0) return;
+                const nextLevel = level + 1;
+                const nextSelect = document.createElement('select');
+                nextSelect.dataset.level = String(nextLevel);
+                const optStay = document.createElement('option');
+                optStay.value = '';
+                optStay.textContent = '此层(不再深入)';
+                nextSelect.appendChild(optStay);
+                folders.forEach(folder => {
+                    const name = decodeB64Utf8(folder.name);
+                    const pathStr = decodeB64Utf8(folder.path);
+                    const option = document.createElement('option');
+                    option.value = folder.path;
+                    option.textContent = name;
+                    option.dataset.path = pathStr;
+                    nextSelect.appendChild(option);
+                });
+                nextSelect.addEventListener('change', () => handleFolderLevelChange(nextLevel));
+                levels.appendChild(nextSelect);
+            });
+        }
+
+        function getSelectedPathFromLevels(levels) {
+            let path = '';
+            const selects = Array.from(levels.querySelectorAll('select'));
+            for (const sel of selects) {
+                const opt = sel.selectedOptions[0];
+                if (!opt || !opt.dataset.path) break;
+                path = opt.dataset.path;
+            }
+            return path;
+        }
+
+        function openPreviewZoom() {
+            if (!currentRenameImage) return;
+            window.open(`/api/image-preview?id=${encodeURIComponent(currentRenameImage.path)}`, '_blank');
+        }
+
+        // 确认重命名
+        function confirmRename() {
+            if (!currentRenameImage) return;
+
+            let newName = document.getElementById('new-name').value.trim();
             const statusDiv = document.getElementById('rename-status');
-            
-            if (!newName) {
-                statusDiv.innerHTML = '<p style="color: orange;">请输入新文件名</p>';
+
+            const oldNameWithoutExt = currentRenameImage.name.substring(0, currentRenameImage.name.lastIndexOf('.')) || currentRenameImage.name;
+            if (!newName) newName = oldNameWithoutExt;
+
+            const decodedPath = decodeB64Utf8(currentRenameImage.path) || '';
+            const lastSlash = decodedPath.lastIndexOf('/');
+            const currentFolderPath = lastSlash >= 0 ? decodedPath.slice(0, lastSlash) : '';
+
+            if (newName === oldNameWithoutExt && targetFolderPath === currentFolderPath) {
+                statusDiv.textContent = '未做任何修改';
+                statusDiv.className = 'status-message error';
+                statusDiv.style.display = 'block';
                 return;
             }
-            
-            if (newName === currentFile.filename) {
-                statusDiv.innerHTML = '<p style="color: orange;">新文件名与原文件名相同</p>';
-                return;
-            }
 
-            statusDiv.innerHTML = '<p style="color: #666;">重命名中...</p>';
+            statusDiv.textContent = '重命名中...';
+            statusDiv.className = 'status-message info';
+            statusDiv.style.display = 'block';
 
-            // 新名称也用Base64编码
-            const newNameB64 = btoa(unescape(encodeURIComponent(newName)));
+            // Base64编码新文件名
+            const newNameB64 = utf8ToB64(newName);
+            const targetFolderB64 = targetFolderPath ? utf8ToB64(targetFolderPath) : '';
 
-            fetch('/api/rename', {
+            fetch('/api/move', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    id: currentFile.id,
-                    new_name_b64: newNameB64
+                    id: currentRenameImage.path,
+                    new_name_b64: newNameB64,
+                    target_folder_b64: targetFolderB64
                 })
             })
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'success') {
-                    statusDiv.innerHTML = '<p style="color: green;">✓ ' + data.message + '</p>';
+                    statusDiv.textContent = '✓ 重命名成功！';
+                    statusDiv.className = 'status-message success';
                     setTimeout(() => {
-                        loadImages(currentPage);
-                        closePreview();
-                    }, 1500);
+                        closeRenameDialog();
+                        browse(currentPath); // 刷新当前目录
+                    }, 1000);
                 } else {
-                    statusDiv.innerHTML = '<p style="color: red;">✗ 重命名失败: ' + data.message + '</p>';
+                    statusDiv.textContent = '✗ 重命名失败: ' + data.message;
+                    statusDiv.className = 'status-message error';
                 }
             })
             .catch(error => {
-                statusDiv.innerHTML = '<p style="color: red;">✗ 错误: ' + error + '</p>';
+                statusDiv.textContent = '✗ 错误: ' + error;
+                statusDiv.className = 'status-message error';
             });
         }
 
-        // 回车键提交重命名
-        document.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter' && currentFile && document.activeElement.id === 'new-filename') {
-                renameFile();
+        // 回车键提交
+        document.getElementById('new-name').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                confirmRename();
             }
         });
 
-        // 点击面板外关闭
-        document.getElementById('preview-panel').addEventListener('click', function(e) {
+        // 点击对话框外部关闭
+        document.getElementById('rename-dialog').addEventListener('click', function(e) {
             if (e.target === this) {
-                closePreview();
+                closeRenameDialog();
+            }
+        });
+
+        // ESC键关闭对话框
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeRenameDialog();
             }
         });
     </script>
 </body>
+    <script src="/static/js/header.js"></script>
 </html>

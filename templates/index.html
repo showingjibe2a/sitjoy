@@ -1,109 +1,1345 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>我的网页 - Synology NAS</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <title>SITJOY 工作台</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        /* 待办弹窗样式 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .modal.show {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 40px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+            animation: slideUp 0.3s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            font-size: 20px;
+            color: #333;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            color: #999;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.2s;
+        }
+
+        .modal-close:hover {
+            color: #333;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: all 0.2s;
+            box-sizing: border-box;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #d4a574;
+            box-shadow: 0 0 0 3px rgba(212, 165, 116, 0.1);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .form-row.full {
+            grid-template-columns: 1fr;
+        }
+
+        .modal-footer {
+            display: flex;
+            gap: 12px;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #f0f0f0;
+            justify-content: flex-end;
+        }
+
+        .btn-modal-submit {
+            flex: 1;
+            padding: 12px 24px;
+            background: #d4a574;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-modal-submit:hover {
+            background: #c49563;
+            box-shadow: 0 8px 20px rgba(212, 165, 116, 0.3);
+        }
+
+        .btn-modal-cancel {
+            padding: 12px 24px;
+            background: #f5f5f5;
+            color: #666;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-modal-cancel:hover {
+            background: #e8e8e8;
+        }
+
+        /* 多选标签 */
+        .checkbox-list {
+            margin: 0;
+            padding: 0;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 8px;
+            background: white;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .checkbox-list li {
+            list-style: none;
+            padding: 8px 0;
+            margin: 0;
+        }
+
+        .checkbox-list label {
+            display: flex;
+            align-items: center;
+            margin: 0;
+            font-weight: normal;
+        }
+
+        .checkbox-list input[type="checkbox"] {
+            width: auto;
+            margin-right: 8px;
+            margin-bottom: 0;
+        }
+        .assignee-picker {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .assignee-selected {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            min-height: 34px;
+            align-items: center;
+        }
+        .assignee-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: rgba(185, 75, 75, 0.12);
+            color: #7f3d3d;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .assignee-tag button {
+            background: none;
+            border: none;
+            color: inherit;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+            font-size: 14px;
+        }
+        .assignee-empty {
+            font-size: 12px;
+            color: #8a7d6b;
+        }
+        .assignee-option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 8px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            font-size: 13px;
+            font-weight: 600;
+            color: #3a3a3a;
+        }
+        .assignee-option:hover {
+            background: rgba(207, 199, 189, 0.4);
+        }
+        .assignee-option input {
+            accent-color: #b94b4b;
+        }
+
+        /* 员工管理模块 */
+        .employee-management {
+            display: none;
+        }
+
+        .employee-management.show {
+            display: block;
+        }
+
+        .admin-module {
+            margin-top: 32px;
+            background: rgba(255, 255, 255, 0.92);
+            border-radius: 18px;
+            padding: 28px;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.12);
+            color: #3a3a3a;
+        }
+
+        .admin-header {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .admin-header h3 {
+            font-size: 20px;
+            margin: 0;
+        }
+
+        .admin-header p {
+            margin: 0;
+            font-size: 12px;
+            color: #7b7b7b;
+        }
+
+        .admin-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 18px;
+        }
+
+        .admin-card {
+            background: #fff;
+            border: 1px solid #efe7dc;
+            border-radius: 14px;
+            padding: 18px;
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+        }
+
+        .admin-card h4 {
+            margin: 0 0 12px;
+            font-size: 16px;
+            color: #3a3a3a;
+        }
+
+        .admin-card label {
+            display: block;
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 6px;
+        }
+
+        .admin-card input,
+        .admin-card select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #e5dccf;
+            border-radius: 8px;
+            font-size: 13px;
+            margin-bottom: 12px;
+        }
+
+        .admin-card input:focus,
+        .admin-card select:focus {
+            outline: none;
+            border-color: #d4a574;
+            box-shadow: 0 0 0 2px rgba(212, 165, 116, 0.2);
+        }
+
+        .admin-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .admin-btn {
+            flex: 1;
+            min-width: 120px;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .admin-btn.primary {
+            background: #d4a574;
+            color: #fff;
+        }
+
+        .admin-btn.secondary {
+            background: #f2ece3;
+            color: #6b5e4d;
+        }
+
+        .admin-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .admin-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 10px 12px;
+            border-radius: 10px;
+            background: #f8f4ee;
+        }
+
+        .admin-item small {
+            color: #8a7d6b;
+        }
+
+        /* 登出按钮 */
+        .logout-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 8px 16px;
+            background: #f0f0f0;
+            color: #666;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            z-index: 100;
+        }
+
+        .logout-btn:hover {
+            background: #e0e0e0;
+            color: #333;
+        }
+    </style>
 </head>
 <body>
-    <nav class="navbar">
-        <div class="container">
-            <h1 class="logo">🏠 我的网页</h1>
-            <ul class="nav-menu">
-                <li><a href="/" class="active">首页</a></li>
-                <li><a href="/gallery">🖼️ 图片管理</a></li>
-                <li><a href="/about">关于</a></li>
-            </ul>
-        </div>
-    </nav>
+    <div id="site-header"></div>
+    <button class="logout-btn" onclick="handleLogout()">登出</button>
 
-    <div class="container">
-        <section class="hero">
-            <h2>欢迎来到我的网页项目！</h2>
-            <p>这是运行在 Synology NAS 上的 Python Flask 应用</p>
+    <div class="container home-container">
+        <section class="home-layout">
+            <aside class="todo-rail">
+                <div class="rail-card">
+                    <h3>待办</h3>
+                    <div style="margin-bottom: 20px;">
+                        <button class="btn-primary" style="width: 100%;" onclick="showTodoModal('create')">+ 新增待办</button>
+                    </div>
+                    <div class="rail-list" id="todoList"></div>
+                </div>
+
+            </aside>
+
+            <div class="calendar-panel">
+                <div class="calendar-toolbar">
+                    <div class="calendar-title">
+                        <h3>日历</h3>
+                        <p>悬浮查看详情，点击固定当天</p>
+                    </div>
+                    <div class="calendar-controls">
+                        <button class="btn-ghost" id="prevMonthBtn" type="button">&#8249;</button>
+                        <select id="calendarYear"></select>
+                        <select id="calendarMonth"></select>
+                        <button class="btn-ghost" id="nextMonthBtn" type="button">&#8250;</button>
+                    </div>
+                </div>
+
+                <div class="calendar-grid" id="calendarGrid"></div>
+
+                <!-- 日历详情已改为悬浮 tooltip，底部详情区移除 -->
+            </div>
         </section>
 
-        <section class="content">
-            <div class="card">
-                <h3>🎯 快速开始</h3>
-                <p>输入你的名字，让我们测试 API 功能：</p>
-                <div class="form-group">
-                    <input type="text" id="nameInput" placeholder="输入你的名字" value="用户">
-                    <button onclick="sayHello()">问候我</button>
+        <section class="card pm-card employee-management">
+            <div class="pm-toolbar" style="align-items:flex-start;">
+                <div>
+                    <h3 style="margin:0;color:#2f2f33;">员工账号管理</h3>
+                    <p style="margin:6px 0 0;color:#6b5e4d;font-size:12px;">仅管理员可调整姓名与生日；账号密码由管理员创建与管理。</p>
                 </div>
-                <div id="response" class="response"></div>
+                <div class="pm-toolbar-actions">
+                    <span class="hero-stat" style="display:flex; align-items:center; gap:8px;">
+                        <span class="stat-label">权限</span>
+                        <span class="stat-value">管理员专属</span>
+                    </span>
+                    <button class="btn-accent" type="button" id="employeeCreateBtn">新增账号</button>
+                </div>
             </div>
-
-            <div class="card">
-                <h3>✨ 功能特性</h3>
-                <ul>
-                    <li>✓ Python Flask 框架</li>
-                    <li>✓ RESTful API 支持</li>
-                    <li>✓ 响应式设计</li>
-                    <li>✓ 运行在 Synology NAS 上</li>
-                </ul>
-            </div>
-
-            <div class="card">
-                <h3>🔧 系统信息</h3>
-                <button onclick="getStatus()">获取系统状态</button>
-                <div id="status" class="response"></div>
+            <div>
+                <table class="pm-table" id="employeeTable">
+                    <thead>
+                        <tr>
+                            <th>账号</th>
+                            <th>姓名</th>
+                            <th>电话</th>
+                            <th>生日</th>
+                            <th>权限</th>
+                            <th style="width:180px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
+                    </tbody>
+                </table>
             </div>
         </section>
     </div>
 
     <footer>
-        <p>&copy; 2026 我的 Synology NAS 网页 | 由 Python Flask 驱动</p>
+        <p>&copy; 2026 SITJOY 内部工作台</p>
     </footer>
 
+    <!-- 待办弹窗（使用产品管理风格的 pm-modal 布局） -->
+    <div id="todoModal" class="pm-modal">
+        <div class="pm-modal-content pm-modal-content--wide">
+            <h3 id="todoModalTitle" style="margin-top:0;">新增待办</h3>
+            <div class="pm-form">
+                <div class="pm-section">
+                    <h4>基础信息</h4>
+                    <div class="pm-section-body">
+                        <div class="form-group">
+                            <label>事项标题 <span class="required-asterisk">*</span></label>
+                            <input type="text" id="todoModalTitle_input" placeholder="事项" required>
+                        </div>
+                        <div class="form-group">
+                            <label>开始日期 <span class="required-asterisk">*</span></label>
+                            <input type="date" id="todoModalStartDate" required>
+                        </div>
+                        <div class="form-group">
+                            <label>优先级</label>
+                            <select id="todoModalPriority">
+                                <option value="3">高</option>
+                                <option value="2" selected>中</option>
+                                <option value="1">低</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>提醒间隔（天）</label>
+                            <input type="number" id="todoModalReminderInterval" value="1" min="1" max="365">
+                        </div>
+                        <div class="form-group">
+                            <label>是否为循环任务</label>
+                            <div>
+                                <label style="font-weight:600;">
+                                    <input type="checkbox" id="todoModalIsRecurring">
+                                    启用
+                                </label>
+                            </div>
+                        </div>
+                        <div class="form-group pm-form-full">
+                            <label>详情/备注</label>
+                            <textarea id="todoModalDetail" rows="4" placeholder="可选的任务详情"></textarea>
+                        </div>
+                        <div class="form-group pm-form-full">
+                            <label>分配给（可多选）</label>
+                            <div class="feature-category-picker" id="assigneePicker">
+                                <div class="feature-category-chips" id="assigneeSelected"></div>
+                                <div class="feature-category-dropdown" id="assigneeDropdown">
+                                    <button type="button" class="feature-category-add" id="assigneeToggle">
+                                        <span class="feature-category-add-icon">+</span>
+                                        <span class="feature-category-add-text">添加负责人</span>
+                                    </button>
+                                    <div class="feature-category-menu" id="assigneeMenu">
+                                        <div class="feature-category-list" id="todoModalAssigneeList"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeTodoModal()">取消</button>
+                <button class="btn-primary" id="modalSaveBtn" onclick="handleTodoModalSubmit(event)">保存待办</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新增员工弹窗 -->
+    <div id="employeeCreateModal" class="pm-modal">
+        <div class="pm-modal-content">
+            <div class="modal-header">
+                <h2>新增账号</h2>
+                <button class="modal-close" onclick="closeEmployeeCreateModal()">×</button>
+            </div>
+            <form id="employeeCreateForm" class="pm-form">
+                <div class="form-group">
+                    <label>用户名<span class="required-asterisk">*</span></label>
+                    <input type="text" id="employeeUsername" placeholder="例如：lisa" required>
+                </div>
+                <div class="form-group">
+                    <label>密码<span class="required-asterisk">*</span></label>
+                    <input type="password" id="employeePassword" placeholder="至少6位" required minlength="6">
+                </div>
+                <div class="form-group">
+                    <label>姓名（可选）</label>
+                    <input type="text" id="employeeName" placeholder="例如：李华">
+                </div>
+                <div class="form-group">
+                    <label>电话（可选）</label>
+                    <input type="text" id="employeePhone" placeholder="可选">
+                </div>
+                <div class="form-group">
+                    <label>生日（可选）</label>
+                    <input type="date" id="employeeBirthday">
+                </div>
+            </form>
+            <div id="employeeCreateHint" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" type="button" onclick="closeEmployeeCreateModal()">取消</button>
+                <button class="btn-primary" type="submit" form="employeeCreateForm">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑员工弹窗 -->
+    <div id="employeeEditModal" class="pm-modal">
+        <div class="pm-modal-content">
+            <div class="modal-header">
+                <h2>编辑账号资料</h2>
+                <button class="modal-close" onclick="closeEmployeeEditModal()">×</button>
+            </div>
+            <form id="employeeEditForm" class="pm-form">
+                <input type="hidden" id="employeeEditId">
+                <div class="form-group">
+                    <label>姓名（仅管理员）</label>
+                    <input type="text" id="employeeEditName" placeholder="例如：李华">
+                </div>
+                <div class="form-group">
+                    <label>生日（仅管理员）</label>
+                    <input type="date" id="employeeEditBirthday">
+                </div>
+                <div class="form-group">
+                    <label>电话（可选）</label>
+                    <input type="text" id="employeeEditPhone" placeholder="可选">
+                </div>
+            </form>
+            <div id="employeeEditHint" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" type="button" onclick="closeEmployeeEditModal()">取消</button>
+                <button class="btn-primary" type="submit" form="employeeEditForm">保存</button>
+            </div>
+        </div>
+    </div>
+
     <script>
-        function sayHello() {
-            const name = document.getElementById('nameInput').value || '访客';
-            const responseDiv = document.getElementById('response');
-            responseDiv.innerHTML = '<p style="color: #666;">加载中...</p>';
+        let currentUser = null;
+        let isAdmin = false;
 
-            fetch('/api/hello', {
+        function formatDateKey(year, month, day) {
+            return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        }
+
+        function setHint(elementId, text, isError) {
+            const el = document.getElementById(elementId);
+            if (el) {
+                el.textContent = text;
+                el.style.color = isError ? '#c91d1d' : '#2d7d4a';
+            }
+        }
+
+        function showModalHint(elementId, text, isError) {
+            const el = document.getElementById(elementId);
+            if (!el) return;
+            el.style.display = 'block';
+            el.style.background = isError ? '#ffecec' : '#f0fff0';
+            el.style.color = isError ? '#a33' : '#2f6f2f';
+            el.textContent = text;
+        }
+
+        function resetModalHint(elementId) {
+            const el = document.getElementById(elementId);
+            if (!el) return;
+            el.style.display = 'none';
+            el.textContent = '';
+        }
+
+        async function checkAuth() {
+            try {
+                const resp = await fetch('/api/auth?action=current', { 
+                    method: 'GET',
+                    credentials: 'include'
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    currentUser = data;
+                    isAdmin = !!data.is_admin;
+                    const indicator = document.getElementById('adminOnlyIndicator');
+                    if (indicator) {
+                        indicator.style.display = isAdmin ? 'flex' : 'none';
+                    }
+                    const adminModule = document.querySelector('.employee-management');
+                    if (adminModule) {
+                        adminModule.classList.toggle('show', isAdmin);
+                    }
+                } else {
+                    window.location.href = '/login';
+                }
+            } catch (err) {
+                window.location.href = '/login';
+            }
+        }
+
+        async function handleLogout() {
+            const resp = await fetch('/api/auth?action=logout', { 
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ name: name })
-            })
-            .then(response => response.json())
-            .then(data => {
-                responseDiv.innerHTML = `
-                    <div style="background: #f0f8ff; padding: 10px; border-radius: 5px;">
-                        <p><strong>消息：</strong> ${data.message}</p>
-                        <p><strong>时间：</strong> ${new Date(data.timestamp).toLocaleString('zh-CN')}</p>
-                        <p><strong>状态：</strong> ${data.status}</p>
-                    </div>
-                `;
-            })
-            .catch(error => {
-                responseDiv.innerHTML = `<p style="color: red;">错误: ${error}</p>`;
+                credentials: 'include'
+            });
+            if (resp.ok) {
+                window.location.href = '/login';
+            }
+        }
+
+        function showTodoModal(action, todoId = null) {
+            document.getElementById('todoModal').classList.add('active');
+            const modal = document.getElementById('todoModalForm');
+            const today = new Date();
+            
+            if (action === 'create') {
+                document.getElementById('todoModalTitle').textContent = '新增待办';
+                modal.reset();
+                document.getElementById('todoModalStartDate').value = formatDateKey(today.getFullYear(), today.getMonth() + 1, today.getDate());
+                document.getElementById('todoModalReminderInterval').value = 1;
+            } else if (action === 'edit' && todoId) {
+                document.getElementById('todoModalTitle').textContent = '编辑待办';
+                // 加载现有待办数据（后续实现）
+            }
+            
+            modal.dataset.action = action;
+            modal.dataset.todoId = todoId || '';
+            loadAssigneeCheckboxes();
+        }
+
+        function closeTodoModal() {
+            document.getElementById('todoModal').classList.remove('active');
+            closeAssigneeDropdown();
+        }
+
+        function toggleAssigneeDropdown() {
+            const dropdown = document.getElementById('assigneeDropdown');
+            if (!dropdown) return;
+            dropdown.classList.toggle('open');
+            dropdown.classList.toggle('expanded');
+        }
+
+        function closeAssigneeDropdown() {
+            const dropdown = document.getElementById('assigneeDropdown');
+            if (!dropdown) return;
+            dropdown.classList.remove('open');
+            dropdown.classList.remove('expanded');
+        }
+
+        function updateAssigneeSelected() {
+            const selectedWrap = document.getElementById('assigneeSelected');
+            const toggleText = document.querySelector('#assigneeToggle .feature-category-add-text');
+            if (!selectedWrap) return;
+            const checked = Array.from(document.querySelectorAll('#todoModalAssigneeList input[type="checkbox"]:checked'));
+            selectedWrap.innerHTML = '';
+            if (checked.length === 0) {
+                selectedWrap.innerHTML = '<span class="assignee-empty">未选择负责人</span>';
+                if (toggleText) toggleText.textContent = '选择负责人';
+                return;
+            }
+            checked.forEach(cb => {
+                const tag = document.createElement('span');
+                tag.className = 'assignee-tag';
+                tag.innerHTML = `${cb.dataset.name || cb.value}<button type="button" data-remove-id="${cb.value}">×</button>`;
+                selectedWrap.appendChild(tag);
+            });
+            if (toggleText) toggleText.textContent = `已选 ${checked.length} 人`;
+        }
+
+        async function loadAssigneeCheckboxes() {
+            try {
+                const resp = await fetch('/api/employee', { credentials: 'include' });
+                const data = await resp.json();
+                const list = document.getElementById('todoModalAssigneeList');
+                if (!list) return;
+                list.innerHTML = '';
+                
+                if (data.items && Array.isArray(data.items)) {
+                    data.items.forEach(emp => {
+                        const li = document.createElement('label');
+                        li.className = 'assignee-option';
+                        const displayName = emp.name || emp.username || `用户${emp.id}`;
+                        li.innerHTML = `
+                            <input type="checkbox" value="${emp.id}" data-name="${displayName}">
+                            <span>${displayName}</span>
+                        `;
+                        list.appendChild(li);
+                    });
+                }
+                updateAssigneeSelected();
+            } catch (err) {
+                console.error('加载任务人失败:', err);
+            }
+        }
+
+        async function handleTodoModalSubmit(event) {
+            event.preventDefault();
+            
+            const title = document.getElementById('todoModalTitle_input').value.trim();
+            const start_date = document.getElementById('todoModalStartDate').value;
+            const reminder_interval_days = parseInt(document.getElementById('todoModalReminderInterval').value, 10) || 1;
+            const is_recurring = document.getElementById('todoModalIsRecurring').checked ? 1 : 0;
+            const detail = document.getElementById('todoModalDetail').value.trim();
+            const priority = parseInt(document.getElementById('todoModalPriority').value, 10);
+            
+            // 收集选中的分配人
+            const assignee_ids = [];
+            document.querySelectorAll('#todoModalAssigneeList input[type="checkbox"]:checked').forEach(cb => {
+                assignee_ids.push(parseInt(cb.value, 10));
+            });
+            
+            if (!title || !start_date) {
+                alert('请填写事项标题和开始日期');
+                return;
+            }
+            
+            const payload = {
+                title,
+                start_date,
+                reminder_interval_days,
+                is_recurring,
+                detail,
+                priority,
+                assignee_ids
+            };
+            
+            try {
+                const resp = await fetch('/api/todo', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    closeTodoModal();
+                    loadTodos();
+                    loadCalendar();
+                } else {
+                    alert(data.message || '保存失败');
+                }
+            } catch (err) {
+                alert('请求失败：' + err.message);
+            }
+        }
+
+        function openEmployeeCreateModal() {
+            const modal = document.getElementById('employeeCreateModal');
+            const form = document.getElementById('employeeCreateForm');
+            if (form) form.reset();
+            resetModalHint('employeeCreateHint');
+            if (modal) modal.classList.add('active');
+        }
+
+        function closeEmployeeCreateModal() {
+            const modal = document.getElementById('employeeCreateModal');
+            if (modal) modal.classList.remove('active');
+        }
+
+        function openEmployeeEditModal(data) {
+            document.getElementById('employeeEditId').value = data.id || '';
+            document.getElementById('employeeEditName').value = data.name || '';
+            document.getElementById('employeeEditBirthday').value = data.birthday || '';
+            document.getElementById('employeeEditPhone').value = data.phone || '';
+            resetModalHint('employeeEditHint');
+            const modal = document.getElementById('employeeEditModal');
+            if (modal) modal.classList.add('active');
+        }
+
+        function closeEmployeeEditModal() {
+            const modal = document.getElementById('employeeEditModal');
+            if (modal) modal.classList.remove('active');
+        }
+
+        // 关闭弹窗时的外层点击
+        document.getElementById('todoModal').addEventListener('click', e => {
+            if (e.target === document.getElementById('todoModal')) {
+                closeTodoModal();
+            }
+        });
+
+        function loadTodos() {
+            fetch('/api/todo', { credentials: 'include' })
+                .then(r => r.json())
+                .then(data => {
+                    const container = document.getElementById('todoList');
+                    container.innerHTML = '';
+                    if (!data.items) return;
+                    
+                    data.items.forEach(todo => {
+                        const div = document.createElement('div');
+                        div.className = 'rail-item';
+                        div.innerHTML = `
+                            <div style="flex:1">
+                                <div style="font-weight:500;word-break:break-word">${todo.title}</div>
+                                <div style="font-size:12px;color:#999;margin-top:4px">${todo.start_date || todo.due_date}</div>
+                            </div>
+                            <div style="display:flex;gap:8px;">
+                                <button data-action="toggle" data-status="${todo.status}" data-id="${todo.id}" class="btn-ghost" style="padding:4px 8px;font-size:11px;">
+                                    ${todo.status === 'done' ? '完成' : '待做'}
+                                </button>
+                                <button data-action="delete" data-id="${todo.id}" class="btn-ghost" style="padding:4px 8px;font-size:11px;color:#c91d1d;">删除</button>
+                            </div>
+                        `;
+                        container.appendChild(div);
+                    });
+                });
+        }
+
+        function loadEmployees() {
+            fetch('/api/employee', { credentials: 'include' })
+                .then(r => r.json())
+                .then(data => {
+                    const tbody = document.querySelector('#employeeTable tbody');
+                    if (!tbody) return;
+                    if (data.status !== 'success') {
+                        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        return;
+                    }
+                    const items = data.items || [];
+                    if (items.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无账号</td></tr>';
+                        return;
+                    }
+                    tbody.innerHTML = items.map(emp => {
+                        const displayName = emp.name || '-';
+                        const formattedBday = emp.birthday ? new Date(emp.birthday + 'T00:00:00').toLocaleDateString('zh-CN', { month:'numeric', day:'numeric' }) : '-';
+                        const role = emp.is_admin ? '管理员' : '员工';
+                        const todoRole = emp.can_manage_todos ? '可管理待办' : '普通';
+                        return `
+                            <tr>
+                                <td>${emp.username || '-'}</td>
+                                <td>${displayName}</td>
+                                <td>${emp.phone || '-'}</td>
+                                <td>${formattedBday}</td>
+                                <td>${role} / ${todoRole}</td>
+                                <td>
+                                    <div class="pm-actions">
+                                        <button class="btn-secondary" data-action="edit" data-id="${emp.id}" data-name="${emp.name || ''}" data-birthday="${emp.birthday || ''}" data-phone="${emp.phone || ''}">编辑</button>
+                                        <button class="btn-danger" data-action="delete" data-id="${emp.id}">删除</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('');
+                });
+        }
+
+        async function loadCalendar() {
+            const yearValue = parseInt(document.getElementById('calendarYear').value, 10);
+            const monthValue = parseInt(document.getElementById('calendarMonth').value, 10);
+            const today = new Date();
+            const year = Number.isNaN(yearValue) ? today.getFullYear() : yearValue;
+            const month = Number.isNaN(monthValue) ? today.getMonth() + 1 : monthValue;
+            const grid = document.getElementById('calendarGrid');
+            if (!grid) return;
+            grid.innerHTML = '';
+
+            const [todosResp, employeesResp] = await Promise.all([
+                fetch('/api/todo', { credentials: 'include' }).then(r => r.json()).catch(() => ({ items: [] })),
+                fetch('/api/employee', { credentials: 'include' }).then(r => r.json()).catch(() => ({ items: [] }))
+            ]);
+            const todos = (todosResp && todosResp.items) ? todosResp.items : [];
+            const employees = (employeesResp && employeesResp.items) ? employeesResp.items : [];
+            window.calendarTodosCache = todos;
+            window.calendarEmployeesCache = employees;
+
+            const firstDay = new Date(year, month - 1, 1).getDay();
+            const daysInMonth = new Date(year, month, 0).getDate();
+            const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
+
+            const header = document.createElement('div');
+            header.style.cssText = 'grid-column: 1/-1; display:grid;grid-template-columns:repeat(7,1fr);gap:0;margin-bottom:10px;text-align:center;font-weight:600;font-size:12px;';
+            dayNames.forEach(d => {
+                const span = document.createElement('span');
+                span.textContent = d;
+                span.style.padding = '8px';
+                header.appendChild(span);
+            });
+            grid.appendChild(header);
+
+            for (let i = 0; i < firstDay; i++) {
+                const blank = document.createElement('div');
+                blank.className = 'calendar-day is-empty';
+                grid.appendChild(blank);
+            }
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dateStr = formatDateKey(year, month, day);
+                const dayEl = document.createElement('div');
+                dayEl.className = 'calendar-day';
+                dayEl.dataset.date = dateStr;
+
+                const label = document.createElement('div');
+                label.className = 'calendar-day-header';
+                label.textContent = day;
+                dayEl.appendChild(label);
+
+                const todayCheck = new Date();
+                const isToday = day === todayCheck.getDate() && month === todayCheck.getMonth() + 1 && year === todayCheck.getFullYear();
+                if (isToday) {
+                    dayEl.classList.add('is-today');
+                }
+
+                dayEl.addEventListener('mouseenter', (e) => showCalendarTooltip(dateStr, e.pageX, e.pageY));
+                dayEl.addEventListener('mouseleave', () => hideCalendarTooltip());
+                dayEl.addEventListener('click', () => {
+                    document.querySelectorAll('.calendar-day.is-selected').forEach(n => n.classList.remove('is-selected'));
+                    dayEl.classList.add('is-selected');
+                });
+
+                const indicators = document.createElement('div');
+                indicators.className = 'day-indicators';
+                const todoCount = todos.filter(t => t.start_date === dateStr || t.due_date === dateStr).length;
+                const bdayCount = employees.filter(emp => emp.birthday && emp.birthday.slice(5) === dateStr.slice(5)).length;
+                if (todoCount > 0) {
+                    const s = document.createElement('span');
+                    s.className = 'indicator todo';
+                    s.textContent = todoCount > 9 ? '9+' : todoCount;
+                    indicators.appendChild(s);
+                }
+                if (bdayCount > 0) {
+                    const s2 = document.createElement('span');
+                    s2.className = 'indicator bday';
+                    s2.textContent = bdayCount > 9 ? '9+' : bdayCount;
+                    indicators.appendChild(s2);
+                }
+                dayEl.appendChild(indicators);
+
+                grid.appendChild(dayEl);
+            }
+        }
+
+        function showCalendarTooltip(dateStr, x, y) {
+            let tip = document.getElementById('calendarTooltip');
+            if (!tip) {
+                tip = document.createElement('div');
+                tip.id = 'calendarTooltip';
+                document.body.appendChild(tip);
+            }
+            tip.className = 'calendar-tooltip';
+            tip.style.left = (x + 12) + 'px';
+            tip.style.top = (y + 12) + 'px';
+            tip.style.display = 'block';
+
+            const todos = (window.calendarTodosCache || []);
+            const employees = (window.calendarEmployeesCache || []);
+            const todoItems = todos.filter(t => t.start_date === dateStr || t.due_date === dateStr);
+            const bdays = employees.filter(emp => emp.birthday && emp.birthday.slice(5) === dateStr.slice(5));
+
+            let html = '';
+            if (todoItems.length === 0 && bdays.length === 0) {
+                html = '<div style="min-width:160px;padding:6px 8px;color:#cfc7bd">当日无待办或生日</div>';
+            } else {
+                if (todoItems.length > 0) {
+                    html += '<div style="padding:6px 8px"><strong>待办</strong><ul style="margin:6px 0 0;padding-left:16px;">';
+                    todoItems.slice(0, 6).forEach(t => {
+                        html += `<li style="font-size:13px;line-height:1.3;color:#ece7df">${t.title}${t.detail ? '<div style="font-size:12px;color:#cfc7bd">'+(t.detail||'')+'</div>' : ''}</li>`;
+                    });
+                    if (todoItems.length > 6) html += `<li style="font-size:12px;color:#cfc7bd">等 ${todoItems.length - 6} 项...</li>`;
+                    html += '</ul></div>';
+                }
+                if (bdays.length > 0) {
+                    html += '<div style="padding:6px 8px;margin-top:6px"><strong>生日</strong><ul style="margin:6px 0 0;padding-left:16px;">';
+                    bdays.slice(0, 6).forEach(b => {
+                        html += `<li style="font-size:13px;line-height:1.3;color:#f3f0ec">${b.name || b.username || '用户'} (${(b.birthday||'').slice(5)})</li>`;
+                    });
+                    if (bdays.length > 6) html += `<li style="font-size:12px;color:#cfc7bd">等 ${bdays.length - 6} 人...</li>`;
+                    html += '</ul></div>';
+                }
+            }
+
+            tip.innerHTML = html;
+        }
+
+        function hideCalendarTooltip() {
+            const tip = document.getElementById('calendarTooltip');
+            if (tip) tip.style.display = 'none';
+        }
+
+        function buildCalendarControls() {
+            const today = new Date();
+            const yearSelect = document.getElementById('calendarYear');
+            const monthSelect = document.getElementById('calendarMonth');
+            
+            for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 2; y++) {
+                const opt = document.createElement('option');
+                opt.value = y;
+                opt.textContent = y + '年';
+                yearSelect.appendChild(opt);
+            }
+            yearSelect.value = today.getFullYear();
+            
+            const monthNames = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
+            monthNames.forEach((name, idx) => {
+                const opt = document.createElement('option');
+                opt.value = idx + 1;
+                opt.textContent = name;
+                monthSelect.appendChild(opt);
+            });
+            monthSelect.value = today.getMonth() + 1;
+            
+            const todayLabel = document.getElementById('todayLabel');
+            if (todayLabel) {
+                todayLabel.textContent = `${today.getMonth() + 1}月${today.getDate()}日`;
+            }
+        }
+
+        function bindEvents() {
+            const prevMonthBtn = document.getElementById('prevMonthBtn');
+            if (prevMonthBtn) {
+                prevMonthBtn.addEventListener('click', () => {
+                const year = parseInt(document.getElementById('calendarYear').value, 10);
+                let month = parseInt(document.getElementById('calendarMonth').value, 10);
+                month--;
+                if (month < 1) {
+                    month = 12;
+                    document.getElementById('calendarYear').value = year - 1;
+                }
+                document.getElementById('calendarMonth').value = month;
+                loadCalendar();
+                });
+            }
+            
+            const nextMonthBtn = document.getElementById('nextMonthBtn');
+            if (nextMonthBtn) {
+                nextMonthBtn.addEventListener('click', () => {
+                const year = parseInt(document.getElementById('calendarYear').value, 10);
+                let month = parseInt(document.getElementById('calendarMonth').value, 10);
+                month++;
+                if (month > 12) {
+                    month = 1;
+                    document.getElementById('calendarYear').value = year + 1;
+                }
+                document.getElementById('calendarMonth').value = month;
+                loadCalendar();
+                });
+            }
+
+            const calendarYear = document.getElementById('calendarYear');
+            if (calendarYear) {
+                calendarYear.addEventListener('change', loadCalendar);
+            }
+            const calendarMonth = document.getElementById('calendarMonth');
+            if (calendarMonth) {
+                calendarMonth.addEventListener('change', loadCalendar);
+            }
+
+            const assigneeToggle = document.getElementById('assigneeToggle');
+            if (assigneeToggle) {
+                assigneeToggle.addEventListener('click', e => {
+                    e.stopPropagation();
+                    toggleAssigneeDropdown();
+                });
+            }
+
+            const assigneeList = document.getElementById('todoModalAssigneeList');
+            if (assigneeList) {
+                assigneeList.addEventListener('change', updateAssigneeSelected);
+            }
+
+            const assigneeSelected = document.getElementById('assigneeSelected');
+            if (assigneeSelected) {
+                assigneeSelected.addEventListener('click', e => {
+                    const removeId = e.target.dataset.removeId;
+                    if (!removeId) return;
+                    const cb = document.querySelector(`#todoModalAssigneeList input[value="${removeId}"]`);
+                    if (cb) {
+                        cb.checked = false;
+                        updateAssigneeSelected();
+                    }
+                });
+            }
+
+            const todoList = document.getElementById('todoList');
+            if (todoList) {
+                todoList.addEventListener('click', e => {
+                const action = e.target.dataset.action;
+                const id = e.target.dataset.id;
+                if (!action || !id) return;
+                if (action === 'delete') {
+                    fetch('/api/todo', {
+                        method: 'DELETE',
+                        credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: id })
+                    })
+                        .then(() => {
+                            loadTodos();
+                            loadCalendar();
+                        });
+                }
+                if (action === 'toggle') {
+                    const status = e.target.dataset.status === 'done' ? 'open' : 'done';
+                    fetch('/api/todo', {
+                        method: 'PUT',
+                        credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: id, status: status })
+                    })
+                        .then(() => {
+                            loadTodos();
+                            loadCalendar();
+                        });
+                }
+                });
+            }
+
+            const employeeCreateBtn = document.getElementById('employeeCreateBtn');
+            if (employeeCreateBtn) {
+                employeeCreateBtn.addEventListener('click', openEmployeeCreateModal);
+            }
+
+            const employeeCreateForm = document.getElementById('employeeCreateForm');
+            if (employeeCreateForm) {
+                employeeCreateForm.addEventListener('submit', e => {
+                e.preventDefault();
+                const payload = {
+                    username: document.getElementById('employeeUsername').value.trim(),
+                    password: document.getElementById('employeePassword').value,
+                    name: document.getElementById('employeeName').value.trim(),
+                    phone: document.getElementById('employeePhone').value.trim(),
+                    birthday: document.getElementById('employeeBirthday').value
+                };
+                if (!payload.username || !payload.password) {
+                    showModalHint('employeeCreateHint', '请填写用户名与密码', true);
+                    return;
+                }
+                fetch('/api/employee', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            showModalHint('employeeCreateHint', '已新增账号', false);
+                            e.target.reset();
+                            setTimeout(() => {
+                                closeEmployeeCreateModal();
+                                loadEmployees();
+                                loadCalendar();
+                            }, 400);
+                        } else {
+                            showModalHint('employeeCreateHint', data.message || '保存失败', true);
+                        }
+                    })
+                    .catch(() => showModalHint('employeeCreateHint', '请求失败', true));
+                });
+            }
+
+            const employeeEditForm = document.getElementById('employeeEditForm');
+            if (employeeEditForm) {
+                employeeEditForm.addEventListener('submit', e => {
+                e.preventDefault();
+                if (!isAdmin) {
+                    showModalHint('employeeEditHint', '仅管理员可修改姓名或生日', true);
+                    return;
+                }
+                const id = document.getElementById('employeeEditId').value;
+                if (!id) {
+                    showModalHint('employeeEditHint', '请选择一个账号进行编辑', true);
+                    return;
+                }
+                const payload = {
+                    id: parseInt(id, 10),
+                    name: document.getElementById('employeeEditName').value.trim(),
+                    birthday: document.getElementById('employeeEditBirthday').value,
+                    phone: document.getElementById('employeeEditPhone').value.trim()
+                };
+                fetch('/api/employee', {
+                    method: 'PUT',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            showModalHint('employeeEditHint', '资料已更新', false);
+                            setTimeout(() => {
+                                closeEmployeeEditModal();
+                                loadEmployees();
+                                loadCalendar();
+                            }, 400);
+                        } else {
+                            showModalHint('employeeEditHint', data.message || '保存失败', true);
+                        }
+                    })
+                    .catch(() => showModalHint('employeeEditHint', '请求失败', true));
+                });
+            }
+
+            const employeeTable = document.getElementById('employeeTable');
+            if (employeeTable) {
+                employeeTable.addEventListener('click', e => {
+                const action = e.target.dataset.action;
+                const id = e.target.dataset.id;
+                if (!action || !id) return;
+                if (action === 'edit') {
+                    openEmployeeEditModal({
+                        id: id,
+                        name: e.target.dataset.name || '',
+                        birthday: e.target.dataset.birthday || '',
+                        phone: e.target.dataset.phone || ''
+                    });
+                    return;
+                }
+                if (action === 'delete') {
+                    fetch('/api/employee', {
+                        method: 'DELETE',
+                        credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: id })
+                    })
+                        .then(() => {
+                            loadEmployees();
+                            loadCalendar();
+                        });
+                }
+                });
+            }
+
+            const employeeCreateModal = document.getElementById('employeeCreateModal');
+            if (employeeCreateModal) {
+                employeeCreateModal.addEventListener('click', e => {
+                    if (e.target === employeeCreateModal) {
+                        closeEmployeeCreateModal();
+                    }
+                });
+            }
+
+            const employeeEditModal = document.getElementById('employeeEditModal');
+            if (employeeEditModal) {
+                employeeEditModal.addEventListener('click', e => {
+                    if (e.target === employeeEditModal) {
+                        closeEmployeeEditModal();
+                    }
+                });
+            }
+
+            document.addEventListener('click', e => {
+                const dropdown = document.getElementById('assigneeDropdown');
+                if (!dropdown) return;
+                if (!dropdown.contains(e.target)) {
+                    closeAssigneeDropdown();
+                }
             });
         }
 
-        function getStatus() {
-            const statusDiv = document.getElementById('status');
-            statusDiv.innerHTML = '<p style="color: #666;">加载中...</p>';
-
-            fetch('/status')
-            .then(response => response.json())
-            .then(data => {
-                statusDiv.innerHTML = `
-                    <div style="background: #f0fff0; padding: 10px; border-radius: 5px;">
-                        <p><strong>状态：</strong> ${data.status}</p>
-                        <p><strong>版本：</strong> ${data.version}</p>
-                        <p><strong>时间：</strong> ${new Date(data.timestamp).toLocaleString('zh-CN')}</p>
-                    </div>
-                `;
-            })
-            .catch(error => {
-                statusDiv.innerHTML = `<p style="color: red;">错误: ${error}</p>`;
+        window.addEventListener('load', () => {
+            checkAuth().then(() => {
+                buildCalendarControls();
+                bindEvents();
+                loadCalendar();
+                loadTodos();
+                loadEmployees();
             });
-        }
+        });
     </script>
+    <script src="/static/js/header.js"></script>
 </body>
 </html>

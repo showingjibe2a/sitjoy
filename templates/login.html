@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SITJOY 登录 | SITJOY 工作台</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Manrope', 'Noto Serif SC', sans-serif;
+            background: radial-gradient(circle at 15% 20%, rgba(236, 231, 223, 0.12), transparent 45%),
+                        radial-gradient(circle at 85% 10%, rgba(154, 163, 168, 0.25), transparent 40%),
+                        linear-gradient(180deg, #3a3a40 0%, #2f2f33 70%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+            color: #ece7df;
+        }
+
+        /* 背景装饰 */
+        .bg-decoration {
+            position: absolute;
+            top: -40%;
+            right: -10%;
+            width: 520px;
+            height: 520px;
+            background: radial-gradient(circle, rgba(154, 163, 168, 0.28) 0%, transparent 70%);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        .bg-decoration-2 {
+            position: absolute;
+            bottom: -35%;
+            left: -10%;
+            width: 460px;
+            height: 460px;
+            background: radial-gradient(circle, rgba(212, 165, 116, 0.18) 0%, transparent 70%);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 440px;
+            padding: 38px 38px 30px;
+            background: rgba(236, 231, 223, 0.96);
+            border-radius: 20px;
+            box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            animation: slideUp 0.6s ease-out;
+            color: #2f2f33;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .header {
+            margin-bottom: 32px;
+            text-align: center;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: 700;
+            color: #2f2f33;
+            margin-bottom: 6px;
+            letter-spacing: 3px;
+        }
+
+        .subtitle {
+            font-size: 12px;
+            color: #6f6f6f;
+            letter-spacing: 1px;
+        }
+
+        .tab-container {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 24px;
+            border-bottom: 1px solid #e2d8cc;
+        }
+
+        .tab-button {
+            flex: 1;
+            padding: 15px 0;
+            border: none;
+            background: none;
+            font-size: 14px;
+            font-weight: 500;
+            color: #8a857f;
+            cursor: pointer;
+            position: relative;
+            transition: color 0.3s ease;
+        }
+
+        .tab-button.active {
+            color: #2f2f33;
+        }
+
+        .tab-button.active::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: #2f2f33;
+        }
+
+        .form-container {
+            display: none;
+        }
+
+        .form-container.active {
+            display: block;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            font-size: 13px;
+            color: #5f5a55;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid #d7cfc3;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: all 0.2s ease;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #2f2f33;
+            box-shadow: 0 0 0 3px rgba(47, 47, 51, 0.12);
+        }
+
+        .form-group input[type="date"] {
+            cursor: pointer;
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 12px;
+            margin-top: 10px;
+            border: none;
+            background: #2f2f33;
+            color: white;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .submit-btn:hover {
+            background: #1f1f23;
+            box-shadow: 0 8px 20px rgba(47, 47, 51, 0.3);
+        }
+
+        .submit-btn:active {
+            transform: scale(0.98);
+        }
+
+        .submit-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .error-message {
+            background: rgba(201, 29, 29, 0.12);
+            color: #8b1d1d;
+            padding: 10px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            margin-bottom: 20px;
+            display: none;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .success-message {
+            background: rgba(45, 125, 74, 0.14);
+            color: #2d7d4a;
+            padding: 10px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            margin-bottom: 20px;
+            display: none;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        .success-message.show {
+            display: block;
+        }
+
+        .loading {
+            display: none;
+        }
+
+        .loading.show {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #d4a574;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 6px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-decoration"></div>
+    <div class="bg-decoration-2"></div>
+
+    <div class="container">
+        <div class="header">
+            <div class="logo">SITJOY</div>
+            <div class="subtitle">SIT乐管理系统</div>
+        </div>
+
+        <div class="tab-container">
+            <button class="tab-button active" data-tab="login">登录</button>
+            <button class="tab-button" data-tab="register">注册</button>
+        </div>
+
+        <!-- 登录表单 -->
+        <div id="login" class="form-container active">
+            <div class="error-message" id="loginError"></div>
+            <form onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label>用户名</label>
+                    <input type="text" id="loginUsername" placeholder="请输入用户名" required>
+                </div>
+                <div class="form-group">
+                    <label>密码</label>
+                    <input type="password" id="loginPassword" placeholder="请输入密码" required>
+                </div>
+                <button type="submit" class="submit-btn">
+                    <span class="loading" id="loginLoading"></span>
+                    <span>登 录</span>
+                </button>
+            </form>
+        </div>
+
+        <!-- 注册表单 -->
+        <div id="register" class="form-container">
+            <div class="error-message" id="registerError"></div>
+            <div class="success-message" id="registerSuccess"></div>
+            <form onsubmit="handleRegister(event)">
+                <div class="form-group">
+                    <label>姓名（可选）</label>
+                    <input type="text" id="registerName" placeholder="请输入全名">
+                </div>
+                <div class="form-group">
+                    <label>用户名</label>
+                    <input type="text" id="registerUsername" placeholder="请输入用户名（3-20字符）" required minlength="3" maxlength="20">
+                </div>
+                <div class="form-group">
+                    <label>密码</label>
+                    <input type="password" id="registerPassword" placeholder="请输入密码（6个字符以上）" required minlength="6">
+                </div>
+                <div class="form-group">
+                    <label>确认密码</label>
+                    <input type="password" id="registerPassword2" placeholder="再次输入密码" required>
+                </div>
+                <div class="form-group">
+                    <label>出生日期（可选）</label>
+                    <input type="date" id="registerBirthday">
+                </div>
+                <div class="form-group">
+                    <label>电话（可选）</label>
+                    <input type="tel" id="registerPhone" placeholder="请输入电话号码">
+                </div>
+                <button type="submit" class="submit-btn">
+                    <span class="loading" id="registerLoading"></span>
+                    <span>注 册</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Tab 切换
+        document.querySelectorAll('.tab-button').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tab = btn.getAttribute('data-tab');
+                
+                // 隐藏所有表单
+                document.querySelectorAll('.form-container').forEach(form => form.classList.remove('active'));
+                
+                // 移除所有 active 状态
+                document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+                
+                // 显示选择的表单和 tab
+                document.getElementById(tab).classList.add('active');
+                btn.classList.add('active');
+                
+                // 清空错误信息
+                document.getElementById('loginError').classList.remove('show');
+                document.getElementById('registerError').classList.remove('show');
+                document.getElementById('registerSuccess').classList.remove('show');
+            });
+        });
+
+        async function handleLogin(evt) {
+            evt.preventDefault();
+            const username = document.getElementById('loginUsername').value.trim();
+            const password = document.getElementById('loginPassword').value;
+            const errorEl = document.getElementById('loginError');
+            const loadingEl = document.getElementById('loginLoading');
+            
+            errorEl.classList.remove('show');
+            loadingEl.classList.add('show');
+
+            try {
+                const resp = await fetch('/api/auth?action=login', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const result = await resp.json();
+
+                if (result.status === 'success') {
+                    // 已由 /api/auth 设置 Set-Cookie。若浏览器未保存（某些环境下可能发生），作为回退使用返回的 session_id 设置 cookie。
+                    try {
+                        if (!document.cookie || document.cookie.indexOf('session_id=') === -1) {
+                            if (result.session_id) {
+                                document.cookie = 'session_id=' + result.session_id + '; Path=/';
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('无法写入回退 cookie', e);
+                    }
+                    window.location.href = '/';
+                } else {
+                    errorEl.textContent = result.message || '登录失败';
+                    errorEl.classList.add('show');
+                }
+            } catch (err) {
+                errorEl.textContent = '请求失败：' + err.message;
+                errorEl.classList.add('show');
+            } finally {
+                loadingEl.classList.remove('show');
+            }
+        }
+
+        async function handleRegister(evt) {
+            evt.preventDefault();
+            const name = document.getElementById('registerName').value.trim();
+            const username = document.getElementById('registerUsername').value.trim();
+            const password = document.getElementById('registerPassword').value;
+            const password2 = document.getElementById('registerPassword2').value;
+            const birthday = document.getElementById('registerBirthday').value;
+            const phone = document.getElementById('registerPhone').value.trim();
+            const errorEl = document.getElementById('registerError');
+            const successEl = document.getElementById('registerSuccess');
+            const loadingEl = document.getElementById('registerLoading');
+            
+            errorEl.classList.remove('show');
+            successEl.classList.remove('show');
+
+            if (password !== password2) {
+                errorEl.textContent = '两次输入的密码不一致';
+                errorEl.classList.add('show');
+                return;
+            }
+
+            loadingEl.classList.add('show');
+
+            try {
+                const resp = await fetch('/api/auth?action=register', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, username, password, birthday, phone })
+                });
+                
+                const result = await resp.json();
+
+                if (result.status === 'success') {
+                    // 注册并已登录（服务器返回 session_id 并尝试 Set-Cookie）
+                    successEl.textContent = '注册成功！正在登录...';
+                    successEl.classList.add('show');
+                    try {
+                        if (!document.cookie || document.cookie.indexOf('session_id=') === -1) {
+                            if (result.session_id) {
+                                document.cookie = 'session_id=' + result.session_id + '; Path=/';
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('无法写入回退 cookie', e);
+                    }
+                    // 跳转到首页
+                    setTimeout(() => { window.location.href = '/'; }, 400);
+                    // 1秒后清空表单（若页面未跳转）
+                    setTimeout(() => {
+                        document.getElementById('registerName').value = '';
+                        document.getElementById('registerUsername').value = '';
+                        document.getElementById('registerPassword').value = '';
+                        document.getElementById('registerPassword2').value = '';
+                        document.getElementById('registerBirthday').value = '';
+                        document.getElementById('registerPhone').value = '';
+                        document.querySelector('[data-tab="login"]').click();
+                    }, 1500);
+                } else {
+                    errorEl.textContent = result.message || '注册失败';
+                    errorEl.classList.add('show');
+                }
+            } catch (err) {
+                errorEl.textContent = '请求失败：' + err.message;
+                errorEl.classList.add('show');
+            } finally {
+                loadingEl.classList.remove('show');
+            }
+        }
+    </script>
+</body>
+</html>

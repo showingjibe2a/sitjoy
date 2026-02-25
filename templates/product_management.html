@@ -5,6 +5,61 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>产品管理 - 货号管理</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .multi-select-box {
+            border: 1px solid var(--morandi-sand);
+            border-radius: 10px;
+            padding: 0.75rem;
+            background: #fff;
+        }
+        .multi-select-filter {
+            width: 100%;
+            padding: 0.55rem 0.7rem;
+            border-radius: 6px;
+            border: 1px solid var(--morandi-sand);
+            margin-bottom: 0.6rem;
+        }
+        .multi-select-options {
+            max-height: 200px;
+            overflow-y: auto;
+            display: grid;
+            gap: 0.4rem;
+            margin-bottom: 0.6rem;
+        }
+        .multi-select-option {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.35rem 0.4rem;
+            border-radius: 6px;
+            background: var(--morandi-mist);
+        }
+        .multi-select-selected {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+        }
+        .multi-select-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 999px;
+            background: var(--morandi-sand);
+            color: var(--morandi-ink);
+            font-size: 0.85rem;
+        }
+        .multi-select-chip button {
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 1rem;
+            line-height: 1;
+        }
+        .pm-form-full {
+            grid-column: 1 / -1;
+        }
+    </style>
 </head>
 <body>
     <div id="site-header"></div>
@@ -61,6 +116,22 @@
                     <label for="modalCategorySelect">品类<span class="required-asterisk">*</span></label>
                     <select id="modalCategorySelect" class="required-field"></select>
                 </div>
+                <div class="form-group pm-form-full">
+                    <label>可用面料（可多选）</label>
+                    <div class="feature-category-picker" id="fabricPicker">
+                        <div class="feature-category-chips" id="fabricChips"></div>
+                        <div class="feature-category-dropdown" id="fabricDropdown">
+                            <button type="button" class="feature-category-add" id="fabricAdd">
+                                <span class="feature-category-add-icon">+</span>
+                                <span class="feature-category-add-text">添加面料</span>
+                            </button>
+                            <div class="feature-category-menu" id="fabricMenu">
+                                <input type="text" id="modalFabricFilter" placeholder="搜索面料" style="width:100%;padding:0.4rem;border:1px solid #ccc;border-radius:4px;margin-bottom:0.4rem;">
+                                <div class="feature-category-list" id="fabricList"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
             <div class="pm-modal-actions">
@@ -77,6 +148,8 @@
     <script>
         let editId = null;
         let categoryOptions = [];
+        let fabricOptions = [];
+        let selectedFabricIds = [];
 
         function showModalStatus(message, isError) {
             const el = document.getElementById('modalStatus');
@@ -102,6 +175,8 @@
             document.getElementById('pm-modal-title').innerText = '新增货号';
             document.getElementById('modalSkuInput').value = '';
             setCategorySelect('');
+            selectedFabricIds = [];
+            renderFabricPicker();
             document.getElementById('modalSaveBtn').innerText = '保存';
             resetModalStatus();
             document.getElementById('pm-modal').classList.add('active');
@@ -113,6 +188,8 @@
             document.getElementById('pm-modal-title').innerText = '编辑货号';
             document.getElementById('modalSkuInput').value = item.sku_family;
             setCategorySelect(item.category);
+            selectedFabricIds = (item.fabric_ids || []).map(v => String(v));
+            renderFabricPicker();
             document.getElementById('modalSaveBtn').innerText = '保存';
             resetModalStatus();
             document.getElementById('pm-modal').classList.add('active');
@@ -132,7 +209,7 @@
                 return;
             }
 
-            const payload = { sku_family: skuFamily, category: category };
+            const payload = { sku_family: skuFamily, category: category, fabric_ids: selectedFabricIds };
             let method = 'POST';
             if (editId) {
                 payload.id = editId;
@@ -216,8 +293,109 @@
                 });
         }
 
+        function loadFabrics() {
+            fetch('/api/fabric')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        fabricOptions = [];
+                        renderFabricOptions();
+                        renderSelectedFabrics();
+                        return;
+                    }
+                    fabricOptions = data.items || [];
+                    renderFabricPicker();
+                })
+                .catch(() => {
+                    fabricOptions = [];
+                    renderFabricPicker();
+                });
+        }
+
+        function renderFabricPicker() {
+            const chips = document.getElementById('fabricChips');
+            const list = document.getElementById('fabricList');
+            if (!chips || !list) return;
+            const keyword = (document.getElementById('modalFabricFilter').value || '').trim().toLowerCase();
+
+            // 渲染已选面料chips
+            chips.innerHTML = '';
+            selectedFabricIds.forEach(id => {
+                const item = fabricOptions.find(opt => String(opt.id) === String(id));
+                if (!item) return;
+                const chip = document.createElement('span');
+                chip.className = 'feature-category-chip';
+                const materialType = item.material_name ? `（${item.material_name}）` : '';
+                chip.textContent = `${item.fabric_code || ''} / ${item.fabric_name_en || ''}${materialType}`;
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'feature-category-remove';
+                removeBtn.innerText = '×';
+                removeBtn.addEventListener('click', () => {
+                    selectedFabricIds = selectedFabricIds.filter(v => String(v) !== String(id));
+                    renderFabricPicker();
+                });
+                chip.appendChild(removeBtn);
+                chips.appendChild(chip);
+            });
+
+            // 渲染可选面料列表
+            list.innerHTML = '';
+            const filtered = fabricOptions.filter(item => {
+                if (selectedFabricIds.includes(String(item.id))) return false;
+                const text = `${item.fabric_code || ''} ${item.fabric_name_en || ''} ${item.material_name || ''}`.toLowerCase();
+                return !keyword || text.includes(keyword);
+            });
+
+            if (!filtered.length) {
+                const empty = document.createElement('div');
+                empty.className = 'feature-category-empty';
+                empty.textContent = '无更多可选面料';
+                list.appendChild(empty);
+                return;
+            }
+
+            filtered.forEach(item => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'feature-category-option';
+                const materialType = item.material_name ? `（${item.material_name}）` : '';
+                btn.textContent = `${item.fabric_code || ''} / ${item.fabric_name_en || ''}${materialType}`;
+                btn.addEventListener('click', () => {
+                    if (!selectedFabricIds.includes(String(item.id))) {
+                        selectedFabricIds.push(String(item.id));
+                    }
+                    renderFabricPicker();
+                    closeFabricMenu();
+                });
+                list.appendChild(btn);
+            });
+        }
+
+        function toggleFabricMenu() {
+            const dropdown = document.getElementById('fabricDropdown');
+            if (!dropdown) return;
+            const isOpen = dropdown.classList.contains('open');
+            if (isOpen) {
+                closeFabricMenu();
+                return;
+            }
+            dropdown.classList.add('expanded');
+            window.setTimeout(() => {
+                dropdown.classList.add('open');
+            }, 180);
+        }
+
+        function closeFabricMenu() {
+            const dropdown = document.getElementById('fabricDropdown');
+            if (!dropdown) return;
+            dropdown.classList.remove('open');
+            dropdown.classList.remove('expanded');
+        }
+
         window.addEventListener('load', loadSkuList);
         window.addEventListener('load', loadCategories);
+        window.addEventListener('load', loadFabrics);
         document.getElementById('pm-modal').addEventListener('click', function(e) {
             if (e.target === this) {
                 closeModal();
@@ -228,6 +406,8 @@
                 loadSkuList();
             }
         });
+        document.getElementById('modalFabricFilter').addEventListener('input', renderFabricPicker);
+        document.getElementById('fabricAdd').addEventListener('click', toggleFabricMenu);
 
         function loadCategories() {
             fetch('/api/category')

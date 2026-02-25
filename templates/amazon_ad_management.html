@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amazon广告管理 - 广告信息</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .ad-row-portfolio td { font-weight: 600; background: rgba(236, 231, 223, 0.65); }
+        .ad-row-campaign td { background: rgba(236, 231, 223, 0.35); }
+        .ad-row-group td { background: rgba(236, 231, 223, 0.2); }
+        .ad-name-indent-1 { padding-left: 1.1rem; }
+        .ad-name-indent-2 { padding-left: 2rem; }
+        .ad-expand-cell { width: 36px; text-align: center; }
+        .ad-toggle {
+            border: none;
+            background: transparent;
+            color: var(--morandi-ink);
+            cursor: pointer;
+            font-size: 1.1rem;
+            width: 1.2rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="site-header"></div>
+
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1.5rem;">
+            <h2>Amazon广告管理 - 广告信息</h2>
+            <p>维护广告组合（Portfolio）/广告活动（Campaign）/广告组（Group）三层基础信息</p>
+        </section>
+
+        <section class="pm-layout">
+            <div class="card pm-card">
+                <div class="pm-toolbar">
+                    <div class="pm-toolbar-actions">
+                        <div class="form-group pm-search" style="margin: 0;">
+                            <span class="pm-search-title">搜索</span>
+                            <input type="text" id="searchInput" placeholder="搜索广告名称/货号/细分类">
+                            <button class="btn-primary" onclick="loadAdList()">搜索</button>
+                            <button class="btn-secondary" onclick="resetSearch()">清空</button>
+                        </div>
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-accent" onclick="openCreateModal()">新增</button>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <table class="pm-table" id="adTable">
+                    <thead>
+                        <tr>
+                            <th style="width:36px;"></th>
+                            <th>广告名称</th>
+                            <th>层级</th>
+                            <th>关联信息</th>
+                            <th>预算</th>
+                            <th>最后修改时间</th>
+                            <th style="width:160px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="7" style="text-align:center;">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div class="pm-modal" id="ad-modal">
+        <div class="pm-modal-content">
+            <h3 id="ad-modal-title" style="margin-top:0;">新增广告信息</h3>
+            <div class="pm-form">
+                <div class="form-group pm-form-full">
+                    <label for="modalAdLevel">广告类型<span class="required-asterisk">*</span></label>
+                    <select id="modalAdLevel" class="required-field" onchange="onAdLevelChanged()">
+                        <option value="portfolio">广告组合（Portfolio）</option>
+                        <option value="campaign">广告活动（Campaign）</option>
+                        <option value="group">广告组（Group）</option>
+                    </select>
+                </div>
+
+                <div class="form-group level-portfolio">
+                    <label for="modalSkuFamily">关联货号<span class="required-asterisk">*</span></label>
+                    <select id="modalSkuFamily" onchange="onPortfolioSkuChanged()"></select>
+                </div>
+                <div class="form-group level-portfolio">
+                    <label for="modalPortfolioName">广告组合名称</label>
+                    <input type="text" id="modalPortfolioName" readonly>
+                </div>
+                <div class="form-group level-portfolio">
+                    <label for="modalSharedBudget">是否共享预算<span class="required-asterisk">*</span></label>
+                    <select id="modalSharedBudget">
+                        <option value="是">是</option>
+                        <option value="否">否</option>
+                    </select>
+                </div>
+                <div class="form-group level-portfolio">
+                    <label for="modalStatusPortfolio">状态<span class="required-asterisk">*</span></label>
+                    <select id="modalStatusPortfolio">
+                        <option value="启动">启动</option>
+                        <option value="暂停">暂停</option>
+                        <option value="存档">存档</option>
+                    </select>
+                </div>
+
+                <div class="form-group level-campaign">
+                    <label for="modalCampaignPortfolio">归属广告组合<span class="required-asterisk">*</span></label>
+                    <select id="modalCampaignPortfolio" onchange="refreshCampaignName()"></select>
+                </div>
+                <div class="form-group level-campaign">
+                    <label for="modalStrategy">策略<span class="required-asterisk">*</span></label>
+                    <select id="modalStrategy" onchange="refreshCampaignName()">
+                        <option value="BE">BE - 品牌扩张</option>
+                        <option value="BD">BD - 品牌防御</option>
+                        <option value="PC">PC - 竞品进攻</option>
+                    </select>
+                </div>
+                <div class="form-group level-campaign">
+                    <label for="modalSubtype">细分类<span class="required-asterisk">*</span></label>
+                    <select id="modalSubtype" onchange="refreshCampaignName()"></select>
+                </div>
+                <div class="form-group level-campaign">
+                    <label for="modalCampaignName">广告活动名称</label>
+                    <input type="text" id="modalCampaignName" placeholder="自动生成，可修改">
+                </div>
+                <div class="form-group level-campaign">
+                    <label for="modalBudget">预算</label>
+                    <input type="number" id="modalBudget" step="0.01" placeholder="例如：50.00">
+                </div>
+
+                <div class="form-group level-group">
+                    <label for="modalGroupCampaign">归属广告活动<span class="required-asterisk">*</span></label>
+                    <select id="modalGroupCampaign"></select>
+                </div>
+                <div class="form-group level-group">
+                    <label for="modalGroupName">广告组名称<span class="required-asterisk">*</span></label>
+                    <input type="text" id="modalGroupName" placeholder="例如：核心词-精准">
+                </div>
+                <div class="form-group level-group">
+                    <label for="modalStatusGroup">状态</label>
+                    <select id="modalStatusGroup">
+                        <option value="">未设置</option>
+                        <option value="启动">启动</option>
+                        <option value="暂停">暂停</option>
+                        <option value="存档">存档</option>
+                    </select>
+                </div>
+            </div>
+            <div id="adModalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeAdModal()">取消</button>
+                <button class="btn-primary" onclick="saveAdFromModal()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 SITJOY | 内部使用</p>
+    </footer>
+
+    <script>
+        let adEditId = null;
+        let adItemsCache = [];
+        let adItemsById = {};
+        let skuOptions = [];
+        let categoryMap = new Map();
+        let portfolioOptions = [];
+        let campaignOptions = [];
+        let subtypeOptions = [];
+        const expandedPortfolios = new Set();
+        const expandedCampaigns = new Set();
+
+        function resetSearch() {
+            document.getElementById('searchInput').value = '';
+            loadAdList();
+        }
+
+        function formatDateTime(value) {
+            return value ? new Date(value).toLocaleString('zh-CN') : '';
+        }
+
+        function showAdStatus(message, isError) {
+            const el = document.getElementById('adModalStatus');
+            el.style.display = 'block';
+            el.style.background = isError ? '#ffecec' : '#f0fff0';
+            el.style.color = isError ? '#a33' : '#2f6f2f';
+            el.innerText = message;
+        }
+
+        function resetAdStatus() {
+            const el = document.getElementById('adModalStatus');
+            el.style.display = 'none';
+            el.innerText = '';
+        }
+
+        function levelLabel(level) {
+            if (level === 'portfolio') return '广告组合';
+            if (level === 'campaign') return '广告活动';
+            if (level === 'group') return '广告组';
+            return '';
+        }
+
+        function renderAdTable(items) {
+            const tbody = document.querySelector('#adTable tbody');
+            if (!items.length) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">暂无数据</td></tr>';
+                return;
+            }
+
+            const portfolios = items.filter(x => x.ad_level === 'portfolio');
+            const campaigns = items.filter(x => x.ad_level === 'campaign');
+            const groups = items.filter(x => x.ad_level === 'group');
+            const campaignsByPortfolio = new Map();
+            const groupsByCampaign = new Map();
+            campaigns.forEach(item => {
+                const key = String(item.portfolio_id || '');
+                if (!campaignsByPortfolio.has(key)) campaignsByPortfolio.set(key, []);
+                campaignsByPortfolio.get(key).push(item);
+            });
+            groups.forEach(item => {
+                const key = String(item.campaign_id || '');
+                if (!groupsByCampaign.has(key)) groupsByCampaign.set(key, []);
+                groupsByCampaign.get(key).push(item);
+            });
+
+            const rows = [];
+            portfolios.forEach(item => {
+                const pKey = String(item.id);
+                const pExpanded = expandedPortfolios.has(pKey);
+                const pChildren = campaignsByPortfolio.get(pKey) || [];
+                const pToggle = pChildren.length ? `<button class="ad-toggle" data-level="portfolio" data-id="${item.id}">${pExpanded ? '▾' : '▸'}</button>` : '';
+                rows.push(renderAdRow(item, pToggle, 'ad-row-portfolio', ''));
+
+                if (pExpanded) {
+                    pChildren.forEach(c => {
+                        const cKey = String(c.id);
+                        const cExpanded = expandedCampaigns.has(cKey);
+                        const cChildren = groupsByCampaign.get(cKey) || [];
+                        const cToggle = cChildren.length ? `<button class="ad-toggle" data-level="campaign" data-id="${c.id}">${cExpanded ? '▾' : '▸'}</button>` : '';
+                        rows.push(renderAdRow(c, cToggle, 'ad-row-campaign', 'ad-name-indent-1'));
+                        if (cExpanded) {
+                            cChildren.forEach(g => rows.push(renderAdRow(g, '', 'ad-row-group', 'ad-name-indent-2')));
+                        }
+                    });
+                }
+            });
+
+            tbody.innerHTML = rows.join('');
+            tbody.querySelectorAll('.ad-toggle').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const level = this.getAttribute('data-level');
+                    const id = this.getAttribute('data-id');
+                    if (!id) return;
+                    if (level === 'portfolio') {
+                        if (expandedPortfolios.has(id)) expandedPortfolios.delete(id); else expandedPortfolios.add(id);
+                    } else if (level === 'campaign') {
+                        if (expandedCampaigns.has(id)) expandedCampaigns.delete(id); else expandedCampaigns.add(id);
+                    }
+                    renderAdTable(adItemsCache);
+                });
+            });
+        }
+
+        function renderAdRow(item, toggleHtml, rowClass, nameIndentClass) {
+            const related = [];
+            if (item.ad_level === 'portfolio') {
+                related.push(item.sku_family ? `货号：${item.sku_family}` : '');
+                related.push(item.is_shared_budget === 1 ? '共享预算：是' : (item.is_shared_budget === 0 ? '共享预算：否' : ''));
+                related.push(item.status ? `状态：${item.status}` : '');
+            } else if (item.ad_level === 'campaign') {
+                related.push(item.portfolio_name ? `归属：${item.portfolio_name}` : '');
+                related.push(item.strategy_code ? `策略：${item.strategy_code}` : '');
+                related.push(item.subtype_description ? `细分类：${item.ad_class}-${item.subtype_code}` : '');
+            } else {
+                related.push(item.campaign_name ? `归属：${item.campaign_name}` : '');
+                related.push(item.status ? `状态：${item.status}` : '');
+            }
+            const budgetText = item.budget === null || item.budget === undefined ? '' : Number(item.budget).toFixed(2);
+            return `
+                <tr class="${rowClass}" data-id="${item.id}">
+                    <td class="ad-expand-cell">${toggleHtml}</td>
+                    <td class="${nameIndentClass}">${item.name || ''}</td>
+                    <td>${levelLabel(item.ad_level)}</td>
+                    <td>${related.filter(Boolean).join('<br>')}</td>
+                    <td>${budgetText}</td>
+                    <td>${formatDateTime(item.updated_at)}</td>
+                    <td>
+                        <div class="pm-actions">
+                            <button class="btn-secondary" onclick="openEditModal(${item.id})">编辑</button>
+                            <button class="btn-danger" onclick="deleteAd(${item.id})">删除</button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+
+        function loadCategoryMap() {
+            return fetch('/api/category')
+                .then(r => r.json())
+                .then(data => {
+                    categoryMap = new Map();
+                    if (data.status !== 'success') return;
+                    (data.items || []).forEach(item => {
+                        categoryMap.set(item.category_cn, item.category_en || item.category_cn || '');
+                    });
+                })
+                .catch(() => { categoryMap = new Map(); });
+        }
+
+        function loadSkuOptions() {
+            return fetch('/api/sku')
+                .then(r => r.json())
+                .then(data => {
+                    skuOptions = data.status === 'success' ? (data.items || []) : [];
+                    const select = document.getElementById('modalSkuFamily');
+                    select.innerHTML = '<option value="">请选择货号</option>';
+                    skuOptions.forEach(item => {
+                        const option = document.createElement('option');
+                        option.value = item.id;
+                        option.textContent = `${item.sku_family}（${item.category || ''}）`;
+                        select.appendChild(option);
+                    });
+                })
+                .catch(() => { skuOptions = []; });
+        }
+
+        function loadSubtypeOptions() {
+            return fetch('/api/amazon-ad-subtype')
+                .then(r => r.json())
+                .then(data => {
+                    subtypeOptions = data.status === 'success' ? (data.items || []) : [];
+                    const select = document.getElementById('modalSubtype');
+                    select.innerHTML = '<option value="">请选择细分类</option>';
+                    subtypeOptions.forEach(item => {
+                        const option = document.createElement('option');
+                        option.value = item.id;
+                        option.textContent = `${item.ad_class}-${item.subtype_code}｜${item.description}`;
+                        select.appendChild(option);
+                    });
+                })
+                .catch(() => {
+                    subtypeOptions = [];
+                });
+        }
+
+        function loadPortfolioOptions() {
+            return fetch('/api/amazon-ad?level=portfolio')
+                .then(r => r.json())
+                .then(data => {
+                    portfolioOptions = data.status === 'success' ? (data.items || []) : [];
+                    const select = document.getElementById('modalCampaignPortfolio');
+                    select.innerHTML = '<option value="">请选择广告组合</option>';
+                    portfolioOptions.forEach(item => {
+                        const option = document.createElement('option');
+                        option.value = item.id;
+                        option.textContent = item.name || '';
+                        select.appendChild(option);
+                    });
+                })
+                .catch(() => { portfolioOptions = []; });
+        }
+
+        function loadCampaignOptions() {
+            return fetch('/api/amazon-ad?level=campaign')
+                .then(r => r.json())
+                .then(data => {
+                    campaignOptions = data.status === 'success' ? (data.items || []) : [];
+                    const select = document.getElementById('modalGroupCampaign');
+                    select.innerHTML = '<option value="">请选择广告活动</option>';
+                    campaignOptions.forEach(item => {
+                        const option = document.createElement('option');
+                        option.value = item.id;
+                        option.textContent = item.name || '';
+                        select.appendChild(option);
+                    });
+                })
+                .catch(() => { campaignOptions = []; });
+        }
+
+        function buildPortfolioNameBySkuId(skuId) {
+            const sku = skuOptions.find(x => String(x.id) === String(skuId));
+            if (!sku) return '';
+            const short = categoryMap.get(sku.category) || sku.category || '';
+            return short && sku.sku_family ? `${short}-${sku.sku_family}` : '';
+        }
+
+        function onPortfolioSkuChanged() {
+            const skuId = document.getElementById('modalSkuFamily').value;
+            document.getElementById('modalPortfolioName').value = buildPortfolioNameBySkuId(skuId);
+        }
+
+        function buildCampaignName() {
+            const strategy = document.getElementById('modalStrategy').value;
+            const portfolioId = document.getElementById('modalCampaignPortfolio').value;
+            const subtypeId = document.getElementById('modalSubtype').value;
+            const portfolio = portfolioOptions.find(x => String(x.id) === String(portfolioId));
+            const subtype = subtypeOptions.find(x => String(x.id) === String(subtypeId));
+            if (!strategy || !portfolio || !subtype) return '';
+            return `${strategy}-${portfolio.name}-${subtype.ad_class}-${subtype.subtype_code}`;
+        }
+
+        function refreshCampaignName() {
+            const input = document.getElementById('modalCampaignName');
+            const autoName = buildCampaignName();
+            if (!input.value || input.dataset.auto === '1') {
+                input.value = autoName;
+                input.dataset.auto = autoName ? '1' : '0';
+            }
+        }
+
+        function onAdLevelChanged() {
+            const level = document.getElementById('modalAdLevel').value;
+            ['portfolio', 'campaign', 'group'].forEach(item => {
+                document.querySelectorAll(`.level-${item}`).forEach(el => {
+                    el.style.display = item === level ? '' : 'none';
+                });
+            });
+        }
+
+        function openCreateModal() {
+            adEditId = null;
+            document.getElementById('ad-modal-title').innerText = '新增广告信息';
+            document.getElementById('modalAdLevel').disabled = false;
+            document.getElementById('modalAdLevel').value = 'portfolio';
+            document.getElementById('modalSkuFamily').value = '';
+            document.getElementById('modalPortfolioName').value = '';
+            document.getElementById('modalSharedBudget').value = '是';
+            document.getElementById('modalStatusPortfolio').value = '启动';
+            document.getElementById('modalCampaignPortfolio').value = '';
+            document.getElementById('modalStrategy').value = 'BE';
+            document.getElementById('modalSubtype').value = '';
+            document.getElementById('modalCampaignName').value = '';
+            document.getElementById('modalCampaignName').dataset.auto = '1';
+            document.getElementById('modalBudget').value = '';
+            document.getElementById('modalGroupCampaign').value = '';
+            document.getElementById('modalGroupName').value = '';
+            document.getElementById('modalStatusGroup').value = '';
+            resetAdStatus();
+            onAdLevelChanged();
+            document.getElementById('ad-modal').classList.add('active');
+        }
+
+        function openEditModal(id) {
+            const item = adItemsById[id];
+            if (!item) return;
+            adEditId = item.id;
+            document.getElementById('ad-modal-title').innerText = '编辑广告信息';
+            document.getElementById('modalAdLevel').value = item.ad_level;
+            document.getElementById('modalAdLevel').disabled = true;
+            if (item.ad_level === 'portfolio') {
+                document.getElementById('modalSkuFamily').value = item.sku_family_id || '';
+                document.getElementById('modalSharedBudget').value = item.is_shared_budget === 1 ? '是' : '否';
+                document.getElementById('modalStatusPortfolio').value = item.status || '启动';
+                onPortfolioSkuChanged();
+            } else if (item.ad_level === 'campaign') {
+                document.getElementById('modalCampaignPortfolio').value = item.portfolio_id || '';
+                document.getElementById('modalStrategy').value = item.strategy_code || 'BE';
+                document.getElementById('modalSubtype').value = item.subtype_id || '';
+                document.getElementById('modalCampaignName').value = item.name || '';
+                document.getElementById('modalCampaignName').dataset.auto = '0';
+                document.getElementById('modalBudget').value = item.budget === null || item.budget === undefined ? '' : item.budget;
+            } else {
+                document.getElementById('modalGroupCampaign').value = item.campaign_id || '';
+                document.getElementById('modalGroupName').value = item.name || '';
+                document.getElementById('modalStatusGroup').value = item.status || '';
+            }
+            resetAdStatus();
+            onAdLevelChanged();
+            document.getElementById('ad-modal').classList.add('active');
+        }
+
+        function closeAdModal() {
+            document.getElementById('ad-modal').classList.remove('active');
+            adEditId = null;
+        }
+
+        function saveAdFromModal() {
+            const level = document.getElementById('modalAdLevel').value;
+            const payload = { ad_level: level };
+
+            if (level === 'portfolio') {
+                payload.sku_family_id = document.getElementById('modalSkuFamily').value;
+                payload.is_shared_budget = document.getElementById('modalSharedBudget').value;
+                payload.status = document.getElementById('modalStatusPortfolio').value;
+                if (!payload.sku_family_id || !payload.is_shared_budget || !payload.status) {
+                    showAdStatus('请完整填写广告组合信息', true);
+                    return;
+                }
+            } else if (level === 'campaign') {
+                payload.portfolio_id = document.getElementById('modalCampaignPortfolio').value;
+                payload.strategy_code = document.getElementById('modalStrategy').value;
+                payload.subtype_id = document.getElementById('modalSubtype').value;
+                payload.name = document.getElementById('modalCampaignName').value.trim();
+                payload.budget = document.getElementById('modalBudget').value;
+                if (!payload.portfolio_id || !payload.strategy_code || !payload.subtype_id) {
+                    showAdStatus('请完整填写广告活动信息', true);
+                    return;
+                }
+            } else {
+                payload.campaign_id = document.getElementById('modalGroupCampaign').value;
+                payload.name = document.getElementById('modalGroupName').value.trim();
+                payload.status = document.getElementById('modalStatusGroup').value;
+                if (!payload.campaign_id || !payload.name) {
+                    showAdStatus('请完整填写广告组信息', true);
+                    return;
+                }
+            }
+
+            let method = 'POST';
+            if (adEditId) {
+                payload.id = adEditId;
+                method = 'PUT';
+            }
+
+            fetch('/api/amazon-ad', {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    closeAdModal();
+                    Promise.all([loadAdList(), loadPortfolioOptions(), loadCampaignOptions()]);
+                } else {
+                    showAdStatus(data.message || '操作失败', true);
+                }
+            })
+            .catch(err => showAdStatus('请求失败: ' + err, true));
+        }
+
+        function deleteAd(id) {
+            if (!confirm('确认删除该广告记录？')) return;
+            fetch('/api/amazon-ad', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    Promise.all([loadAdList(), loadPortfolioOptions(), loadCampaignOptions()]);
+                } else {
+                    alert(data.message || '删除失败');
+                }
+            })
+            .catch(err => alert('请求失败: ' + err));
+        }
+
+        function loadAdList() {
+            const q = document.getElementById('searchInput').value.trim();
+            const url = q ? `/api/amazon-ad?q=${encodeURIComponent(q)}` : '/api/amazon-ad';
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    const tbody = document.querySelector('#adTable tbody');
+                    if (data.status !== 'success') {
+                        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        return;
+                    }
+                    adItemsCache = data.items || [];
+                    adItemsById = {};
+                    adItemsCache.forEach(item => { adItemsById[item.id] = item; });
+                    renderAdTable(adItemsCache);
+                })
+                .catch(err => {
+                    const tbody = document.querySelector('#adTable tbody');
+                    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                });
+        }
+
+        function initData() {
+            Promise.all([
+                loadCategoryMap(),
+                loadSkuOptions(),
+                loadSubtypeOptions(),
+                loadPortfolioOptions(),
+                loadCampaignOptions(),
+                loadAdList()
+            ]);
+        }
+
+        document.getElementById('searchInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') loadAdList();
+        });
+        document.getElementById('modalCampaignName').addEventListener('input', function() {
+            this.dataset.auto = this.value.trim() ? '0' : '1';
+        });
+        document.getElementById('ad-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeAdModal();
+        });
+
+        window.addEventListener('load', initData);
+    </script>
+</body>
+<script src="/static/js/header.js"></script>
+</html>

@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amazon广告管理 - 广告信息分类管理</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .op-type-bar {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+            padding: 0.5rem 0.7rem;
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.18);
+        }
+        .op-type-add {
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            border: 1px solid rgba(155, 74, 74, 0.2);
+            background: #9b4a4a;
+            color: #fff;
+            font-size: 18px;
+            line-height: 1;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .op-type-item {
+            border: 1px solid var(--morandi-sand);
+            background: var(--morandi-mist);
+            color: var(--morandi-ink);
+            border-radius: 8px;
+            padding: 0.45rem 0.8rem;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+        .op-type-item:hover { background: rgba(207, 199, 189, 0.55); }
+        .switch-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            padding: 0.55rem 0.7rem;
+            border-radius: 8px;
+            border: 1px solid var(--morandi-sand);
+            background: #fff;
+        }
+        .switch-wrap {
+            position: relative;
+            display: inline-block;
+            width: 46px;
+            height: 26px;
+        }
+        .switch-wrap input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .switch-slider {
+            position: absolute;
+            cursor: pointer;
+            inset: 0;
+            background-color: #cfc7bd;
+            transition: .2s;
+            border-radius: 999px;
+        }
+        .switch-slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            top: 3px;
+            background-color: white;
+            transition: .2s;
+            border-radius: 50%;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+        }
+        .switch-wrap input:checked + .switch-slider {
+            background-color: #9b4a4a;
+        }
+        .switch-wrap input:checked + .switch-slider:before {
+            transform: translateX(20px);
+        }
+        .multi-select-list {
+            border: 1px solid var(--morandi-sand);
+            border-radius: 8px;
+            background: #fff;
+            padding: 0.6rem;
+            max-height: 280px;
+            overflow-y: auto;
+        }
+        .multi-select-rows {
+            display: grid;
+            gap: 0.6rem;
+        }
+        .multi-select-row {
+            border: 1px solid rgba(207, 199, 189, 0.85);
+            border-radius: 8px;
+            padding: 0.45rem 0.55rem;
+            background: rgba(255,255,255,0.8);
+        }
+        .multi-select-row-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            margin-bottom: 0.35rem;
+        }
+        .multi-select-row h5 {
+            margin: 0;
+            font-size: 0.85rem;
+            color: var(--morandi-slate);
+        }
+        .row-check-all {
+            border: 1px solid var(--morandi-sand);
+            background: #fff;
+            color: var(--morandi-ink);
+            border-radius: 999px;
+            padding: 0.18rem 0.6rem;
+            font-size: 0.78rem;
+            cursor: pointer;
+        }
+        .row-check-all:hover { background: var(--morandi-mist); }
+        .multi-select-options {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 0.35rem 0.6rem;
+        }
+        .multi-select-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin: 0.22rem 0;
+            font-size: 0.92rem;
+            color: var(--morandi-ink);
+        }
+        .multi-select-empty {
+            color: var(--morandi-slate);
+            font-size: 0.9rem;
+        }
+        .tag-inline {
+            display: inline-block;
+            margin-left: 0.35rem;
+            padding: 0 0.35rem;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            background: rgba(155, 74, 74, 0.12);
+            color: #7f3d3d;
+        }
+    </style>
+</head>
+<body>
+    <div id="site-header"></div>
+
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1.5rem;">
+            <h2>Amazon广告管理 - 广告信息分类管理</h2>
+            <p>维护广告信息分类，并关联可选操作类型（多选）</p>
+        </section>
+
+        <section class="pm-layout">
+            <div class="card pm-card">
+                <div class="pm-toolbar">
+                    <div class="pm-toolbar-actions">
+                        <div class="form-group pm-search" style="margin: 0;">
+                            <span class="pm-search-title">搜索</span>
+                            <input type="text" id="searchInput" placeholder="搜索描述/大类简称/细分简称">
+                            <button class="btn-primary" onclick="loadSubtypeList()">搜索</button>
+                            <button class="btn-secondary" onclick="resetSearch()">清空</button>
+                        </div>
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-accent" onclick="openSubtypeCreateModal()">新增</button>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <table class="pm-table" id="subtypeTable">
+                    <thead>
+                        <tr>
+                            <th>描述</th>
+                            <th>大类简称</th>
+                            <th>细分简称</th>
+                            <th>关联操作类型</th>
+                            <th style="width:180px;">最后修改时间</th>
+                            <th style="width:160px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="card pm-card" style="margin-top: 1rem;">
+                <div class="pm-toolbar">
+                    <div class="pm-toolbar-actions">
+                        <span class="pm-search-title">操作类型管理</span>
+                    </div>
+                </div>
+                <div id="opTypeBar" class="op-type-bar" style="margin-top: 0.6rem;">
+                    <button class="op-type-add" type="button" onclick="openOpTypeCreateModal()">+</button>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <div class="pm-modal" id="subtype-modal">
+        <div class="pm-modal-content">
+            <h3 id="subtype-modal-title" style="margin-top:0;">新增广告信息分类</h3>
+            <div class="pm-form">
+                <div class="form-group">
+                    <label for="modalSubtypeDesc">描述<span class="required-asterisk">*</span></label>
+                    <input type="text" id="modalSubtypeDesc" placeholder="例如：自动投放-广泛">
+                </div>
+                <div class="form-group">
+                    <label for="modalSubtypeClass">大类简称</label>
+                    <select id="modalSubtypeClass">
+                        <option value="SP">SP</option>
+                        <option value="SB">SB</option>
+                        <option value="SD">SD</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="modalSubtypeCode">细分简称<span class="required-asterisk">*</span></label>
+                    <input type="text" id="modalSubtypeCode" placeholder="例如：auto（支持小写）">
+                </div>
+                <div class="form-group pm-form-full">
+                    <label>关联操作类型（可多选）</label>
+                    <div id="modalSubtypeOperationTypes" class="multi-select-list"></div>
+                </div>
+            </div>
+            <div id="subtypeModalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-danger" id="subtypeDeleteBtn" style="display:none;" onclick="deleteSubtypeFromModal()">删除</button>
+                <button class="btn-secondary" onclick="closeSubtypeModal()">取消</button>
+                <button class="btn-primary" onclick="saveSubtypeFromModal()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="pm-modal" id="optype-modal">
+        <div class="pm-modal-content">
+            <h3 id="optype-modal-title" style="margin-top:0;">新增操作类型</h3>
+            <div class="pm-form">
+                <div class="form-group">
+                    <label for="modalOpTypeName">操作名称<span class="required-asterisk">*</span></label>
+                    <input type="text" id="modalOpTypeName" placeholder="例如：加词">
+                </div>
+                <div class="form-group pm-form-full">
+                    <div class="switch-row">
+                        <span>适用在广告活动</span>
+                        <label class="switch-wrap">
+                            <input type="checkbox" id="modalApplyCampaign" checked>
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group pm-form-full">
+                    <div class="switch-row">
+                        <span>适用在广告组</span>
+                        <label class="switch-wrap">
+                            <input type="checkbox" id="modalApplyGroup" checked>
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div id="optypeModalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-danger" id="optypeDeleteBtn" style="display:none;" onclick="deleteOpTypeFromModal()">删除</button>
+                <button class="btn-secondary" onclick="closeOpTypeModal()">取消</button>
+                <button class="btn-primary" onclick="saveOpTypeFromModal()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 SITJOY | 内部使用</p>
+    </footer>
+
+    <script>
+        let subtypeEditId = null;
+        let opTypeEditId = null;
+        let subtypeCache = [];
+        let opTypeOptions = [];
+
+        function resetSearch() {
+            document.getElementById('searchInput').value = '';
+            loadSubtypeList();
+        }
+
+        function formatDateTime(value) {
+            return value ? new Date(value).toLocaleString('zh-CN') : '';
+        }
+
+        function showSubtypeStatus(message, isError) {
+            const el = document.getElementById('subtypeModalStatus');
+            el.style.display = 'block';
+            el.style.background = isError ? '#ffecec' : '#f0fff0';
+            el.style.color = isError ? '#a33' : '#2f6f2f';
+            el.innerText = message;
+        }
+
+        function resetSubtypeStatus() {
+            const el = document.getElementById('subtypeModalStatus');
+            el.style.display = 'none';
+            el.innerText = '';
+        }
+
+        function showOpTypeStatus(message, isError) {
+            const el = document.getElementById('optypeModalStatus');
+            el.style.display = 'block';
+            el.style.background = isError ? '#ffecec' : '#f0fff0';
+            el.style.color = isError ? '#a33' : '#2f6f2f';
+            el.innerText = message;
+        }
+
+        function resetOpTypeStatus() {
+            const el = document.getElementById('optypeModalStatus');
+            el.style.display = 'none';
+            el.innerText = '';
+        }
+
+        function opTypeScopeLabel(item) {
+            const c = Number(item.apply_campaign) === 1;
+            const g = Number(item.apply_group) === 1;
+            if (c && g) return '活动/组';
+            if (c) return '活动';
+            if (g) return '广告组';
+            return '未指定';
+        }
+
+        function renderOpTypeBar() {
+            const bar = document.getElementById('opTypeBar');
+            bar.innerHTML = '';
+            const addBtn = document.createElement('button');
+            addBtn.type = 'button';
+            addBtn.className = 'op-type-add';
+            addBtn.textContent = '+';
+            addBtn.addEventListener('click', openOpTypeCreateModal);
+            bar.appendChild(addBtn);
+
+            opTypeOptions.forEach(item => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'op-type-item';
+                btn.innerHTML = `${item.name}<span class="tag-inline">${opTypeScopeLabel(item)}</span>`;
+                btn.addEventListener('click', () => openOpTypeEditModal(item));
+                bar.appendChild(btn);
+            });
+        }
+
+        function groupOperationTypes() {
+            const campaign = [];
+            const group = [];
+            opTypeOptions.forEach(item => {
+                const c = Number(item.apply_campaign) === 1;
+                const g = Number(item.apply_group) === 1;
+                if (c) campaign.push(item);
+                if (g) group.push(item);
+            });
+            return { campaign, group };
+        }
+
+        function renderRowCheckboxes(type, title, items, selectedIds) {
+            const lines = items.map(item => {
+                const checked = (selectedIds || []).some(x => String(x) === String(item.id)) ? 'checked' : '';
+                return `<label class="multi-select-item"><input type="checkbox" value="${item.id}" ${checked}> <span>${item.name}</span></label>`;
+            }).join('');
+            return `
+                <div class="multi-select-row" data-row-type="${type}">
+                    <div class="multi-select-row-head">
+                        <h5>${title}</h5>
+                        <button type="button" class="row-check-all" data-row-check-all="${type}">全选</button>
+                    </div>
+                    <div class="multi-select-options">${lines || '<div class="multi-select-empty">暂无</div>'}</div>
+                </div>
+            `;
+        }
+
+        function renderSubtypeOperationTypeSelector(selectedIds) {
+            const container = document.getElementById('modalSubtypeOperationTypes');
+            container.innerHTML = '';
+            if (!opTypeOptions.length) {
+                container.innerHTML = '<div class="multi-select-empty">暂无操作类型，请先在下方创建</div>';
+                return;
+            }
+            const grouped = groupOperationTypes();
+            container.innerHTML = `
+                <div class="multi-select-rows">
+                    ${renderRowCheckboxes('campaign', '广告活动', grouped.campaign, selectedIds)}
+                    ${renderRowCheckboxes('group', '广告组', grouped.group, selectedIds)}
+                </div>
+            `;
+            container.querySelectorAll('.row-check-all').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const rowType = this.getAttribute('data-row-check-all');
+                    const row = container.querySelector(`.multi-select-row[data-row-type="${rowType}"]`);
+                    if (!row) return;
+                    row.querySelectorAll('input[type="checkbox"]').forEach(box => {
+                        box.checked = true;
+                    });
+                });
+            });
+        }
+
+        function getSelectedOperationTypeIds() {
+            const boxes = document.querySelectorAll('#modalSubtypeOperationTypes input[type="checkbox"]:checked');
+            return Array.from(boxes).map(box => Number(box.value));
+        }
+
+        function openSubtypeCreateModal() {
+            subtypeEditId = null;
+            document.getElementById('subtype-modal-title').innerText = '新增广告信息分类';
+            document.getElementById('modalSubtypeDesc').value = '';
+            document.getElementById('modalSubtypeClass').value = 'SP';
+            document.getElementById('modalSubtypeCode').value = '';
+            document.getElementById('subtypeDeleteBtn').style.display = 'none';
+            renderSubtypeOperationTypeSelector([]);
+            resetSubtypeStatus();
+            document.getElementById('subtype-modal').classList.add('active');
+        }
+
+        function openSubtypeEditModal(item) {
+            subtypeEditId = item.id;
+            document.getElementById('subtype-modal-title').innerText = '编辑广告信息分类';
+            document.getElementById('modalSubtypeDesc').value = item.description || '';
+            document.getElementById('modalSubtypeClass').value = item.ad_class || 'SP';
+            document.getElementById('modalSubtypeCode').value = item.subtype_code || '';
+            document.getElementById('subtypeDeleteBtn').style.display = '';
+            renderSubtypeOperationTypeSelector(item.operation_type_ids || []);
+            resetSubtypeStatus();
+            document.getElementById('subtype-modal').classList.add('active');
+        }
+
+        function closeSubtypeModal() {
+            document.getElementById('subtype-modal').classList.remove('active');
+            subtypeEditId = null;
+        }
+
+        function saveSubtypeFromModal() {
+            const payload = {
+                description: document.getElementById('modalSubtypeDesc').value.trim(),
+                ad_class: document.getElementById('modalSubtypeClass').value,
+                subtype_code: document.getElementById('modalSubtypeCode').value.trim(),
+                operation_type_ids: getSelectedOperationTypeIds()
+            };
+            if (!payload.description || !payload.subtype_code) {
+                showSubtypeStatus('请填写描述和细分简称', true);
+                return;
+            }
+            let method = 'POST';
+            if (subtypeEditId) {
+                payload.id = subtypeEditId;
+                method = 'PUT';
+            }
+            fetch('/api/amazon-ad-subtype', {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    closeSubtypeModal();
+                    loadSubtypeList();
+                } else {
+                    showSubtypeStatus(data.message || '操作失败', true);
+                }
+            })
+            .catch(err => showSubtypeStatus('请求失败: ' + err, true));
+        }
+
+        function deleteSubtypeFromModal() {
+            if (!subtypeEditId) return;
+            if (!confirm('确认删除该分类？')) return;
+            fetch('/api/amazon-ad-subtype', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: subtypeEditId })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    closeSubtypeModal();
+                    loadSubtypeList();
+                } else {
+                    showSubtypeStatus(data.message || '删除失败', true);
+                }
+            })
+            .catch(err => showSubtypeStatus('请求失败: ' + err, true));
+        }
+
+        function openOpTypeCreateModal() {
+            opTypeEditId = null;
+            document.getElementById('optype-modal-title').innerText = '新增操作类型';
+            document.getElementById('modalOpTypeName').value = '';
+            document.getElementById('modalApplyCampaign').checked = true;
+            document.getElementById('modalApplyGroup').checked = true;
+            document.getElementById('optypeDeleteBtn').style.display = 'none';
+            resetOpTypeStatus();
+            document.getElementById('optype-modal').classList.add('active');
+        }
+
+        function openOpTypeEditModal(item) {
+            opTypeEditId = item.id;
+            document.getElementById('optype-modal-title').innerText = '编辑操作类型';
+            document.getElementById('modalOpTypeName').value = item.name || '';
+            document.getElementById('modalApplyCampaign').checked = Number(item.apply_campaign) === 1;
+            document.getElementById('modalApplyGroup').checked = Number(item.apply_group) === 1;
+            document.getElementById('optypeDeleteBtn').style.display = '';
+            resetOpTypeStatus();
+            document.getElementById('optype-modal').classList.add('active');
+        }
+
+        function closeOpTypeModal() {
+            document.getElementById('optype-modal').classList.remove('active');
+            opTypeEditId = null;
+        }
+
+        function saveOpTypeFromModal() {
+            const payload = {
+                name: document.getElementById('modalOpTypeName').value.trim(),
+                apply_campaign: document.getElementById('modalApplyCampaign').checked ? 1 : 0,
+                apply_group: document.getElementById('modalApplyGroup').checked ? 1 : 0
+            };
+            if (!payload.name) {
+                showOpTypeStatus('请填写操作名称', true);
+                return;
+            }
+            let method = 'POST';
+            if (opTypeEditId) {
+                payload.id = opTypeEditId;
+                method = 'PUT';
+            }
+            fetch('/api/amazon-ad-operation-type', {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    closeOpTypeModal();
+                    Promise.all([loadOperationTypeList(), loadSubtypeList()]);
+                } else {
+                    showOpTypeStatus(data.message || '操作失败', true);
+                }
+            })
+            .catch(err => showOpTypeStatus('请求失败: ' + err, true));
+        }
+
+        function deleteOpTypeFromModal() {
+            if (!opTypeEditId) return;
+            if (!confirm('确认删除该操作类型？')) return;
+            fetch('/api/amazon-ad-operation-type', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: opTypeEditId })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    closeOpTypeModal();
+                    Promise.all([loadOperationTypeList(), loadSubtypeList()]);
+                } else {
+                    showOpTypeStatus(data.message || '删除失败', true);
+                }
+            })
+            .catch(err => showOpTypeStatus('请求失败: ' + err, true));
+        }
+
+        function buildSubtypeOperationText(item) {
+            const ids = item.operation_type_ids || [];
+            if (!ids.length) return '';
+            const map = new Map(opTypeOptions.map(x => [String(x.id), x]));
+            return ids.map(id => {
+                const op = map.get(String(id));
+                if (!op) return '';
+                return `${op.name}（${opTypeScopeLabel(op)}）`;
+            }).filter(Boolean).join(' / ');
+        }
+
+        function renderSubtypeTable() {
+            const tbody = document.querySelector('#subtypeTable tbody');
+            if (!subtypeCache.length) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无数据</td></tr>';
+                return;
+            }
+            tbody.innerHTML = subtypeCache.map(item => `
+                <tr>
+                    <td>${item.description || ''}</td>
+                    <td>${item.ad_class || ''}</td>
+                    <td>${item.subtype_code || ''}</td>
+                    <td>${buildSubtypeOperationText(item)}</td>
+                    <td>${formatDateTime(item.updated_at)}</td>
+                    <td>
+                        <div class="pm-actions">
+                            <button class="btn-secondary" onclick='openSubtypeEditModal(${JSON.stringify(item)})'>编辑</button>
+                            <button class="btn-danger" onclick='deleteSubtypeRow(${item.id})'>删除</button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function loadOperationTypeList() {
+            return fetch('/api/amazon-ad-operation-type')
+                .then(r => r.json())
+                .then(data => {
+                    opTypeOptions = data.status === 'success' ? (data.items || []) : [];
+                    renderOpTypeBar();
+                    renderSubtypeTable();
+                })
+                .catch(() => {
+                    opTypeOptions = [];
+                    renderOpTypeBar();
+                    renderSubtypeTable();
+                });
+        }
+
+        function loadSubtypeList() {
+            const q = document.getElementById('searchInput').value.trim();
+            const url = q ? `/api/amazon-ad-subtype?q=${encodeURIComponent(q)}` : '/api/amazon-ad-subtype';
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    const tbody = document.querySelector('#subtypeTable tbody');
+                    if (data.status !== 'success') {
+                        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        return;
+                    }
+                    subtypeCache = data.items || [];
+                    renderSubtypeTable();
+                })
+                .catch(err => {
+                    const tbody = document.querySelector('#subtypeTable tbody');
+                    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                });
+        }
+
+        function deleteSubtypeRow(id) {
+            if (!confirm('确认删除该分类？')) return;
+            fetch('/api/amazon-ad-subtype', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    loadSubtypeList();
+                } else {
+                    alert(data.message || '删除失败');
+                }
+            })
+            .catch(err => alert('请求失败: ' + err));
+        }
+
+        function initData() {
+            Promise.all([loadOperationTypeList(), loadSubtypeList()]);
+        }
+
+        document.getElementById('searchInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') loadSubtypeList();
+        });
+        document.getElementById('subtype-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeSubtypeModal();
+        });
+        document.getElementById('optype-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeOpTypeModal();
+        });
+
+        window.addEventListener('load', initData);
+    </script>
+</body>
+<script src="/static/js/header.js"></script>
+</html>
