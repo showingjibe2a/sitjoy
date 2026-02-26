@@ -32,6 +32,7 @@ import zipfile
 import hmac
 import hashlib
 import secrets
+import unicodedata
 try:
     from PIL import Image
     _pillow_import_error = None
@@ -109,7 +110,7 @@ class WSGIApp:
 
     def _make_stateless_token(self, user_id, ttl_seconds=7 * 24 * 3600):
         exp = int(time.time()) + int(ttl_seconds)
-        payload = f"{user_id}|{exp}".encode('utf-8')
+        payload = f"{user_id}|{exp}".encode('utf-8', errors='surrogatepass')
         sig = hmac.new(self._get_auth_secret(), payload, hashlib.sha256).hexdigest().encode('ascii')
         return self._b64url_encode(payload + b'|' + sig)
 
@@ -228,6 +229,75 @@ class WSGIApp:
             return os.fsdecode(value)
         except Exception:
             return bytes(value).decode('utf-8', errors='surrogatepass')
+
+    def _add_name_and_b64_variants(self, bound_name_map, bound_b64_map, raw_name, fabric_id):
+        """Add normalized string variants and base64-of-bytes variants for a given image name into maps."""
+        if not raw_name:
+            return
+        try:
+            base = raw_name.split('/')[-1].strip()
+        except Exception:
+            base = raw_name
+        if not base:
+            return
+        try:
+            nfc = unicodedata.normalize('NFC', base)
+        except Exception:
+            nfc = base
+        try:
+            nfd = unicodedata.normalize('NFD', base)
+        except Exception:
+            nfd = nfc
+
+        for key in (nfc, nfc.lower(), nfd, nfd.lower()):
+            if not key:
+                continue
+            if key not in bound_name_map:
+                bound_name_map[key] = set()
+            if fabric_id is not None:
+                bound_name_map[key].add(int(fabric_id))
+
+        # Add multiple byte-encoding variants for more robust matching across
+        # filesystem encodings and database-stored strings. Try fs encoding first,
+        # then fall back to several common encodings with surrogatepass so that
+        # round-trip surrogate bytes are preserved when present on the NAS.
+        for variant in (nfc, nfd):
+            if not variant:
+                continue
+            encodings_to_try = []
+            try:
+                encodings_to_try.append(os.fsencode(variant))
+            except Exception:
+                pass
+            try:
+                encodings_to_try.append(variant.encode('utf-8', errors='surrogatepass'))
+            except Exception:
+                pass
+            try:
+                encodings_to_try.append(variant.encode('gb18030', errors='surrogatepass'))
+            except Exception:
+                pass
+            try:
+                encodings_to_try.append(variant.encode('latin-1', errors='surrogatepass'))
+            except Exception:
+                pass
+
+            # de-duplicate byte variants
+            seen = set()
+            for b in encodings_to_try:
+                if not isinstance(b, (bytes, bytearray)):
+                    continue
+                if b in seen:
+                    continue
+                seen.add(b)
+                try:
+                    b64 = base64.b64encode(b).decode('ascii')
+                    if b64 not in bound_b64_map:
+                        bound_b64_map[b64] = set()
+                    if fabric_id is not None:
+                        bound_b64_map[b64].add(int(fabric_id))
+                except Exception:
+                    continue
 
     def _is_image_name(self, name):
         """判断是否为图片文件名（兼容 bytes/str）"""
@@ -440,6 +510,8 @@ class WSGIApp:
                 return self.serve_file('templates/shop_brand_management.html', 'text/html', start_response)
             elif path == '/sales-product-management':
                 return self.serve_file('templates/sales_product_management.html', 'text/html', start_response)
+            elif path == '/parent-management':
+                return self.serve_file('templates/parent_management.html', 'text/html', start_response)
             elif path == '/amazon-ad-management':
                 return self.serve_file('templates/amazon_ad_management.html', 'text/html', start_response)
             elif path == '/amazon-ad-subtype-management':
@@ -458,16 +530,6 @@ class WSGIApp:
                 return self.handle_images_api(environ, start_response)
             elif path == '/api/browse':
                 return self.handle_browse_api(environ, start_response)
-            elif path == '/api/debug-paths':
-                return self.handle_debug_paths(environ, start_response)
-            elif path == '/api/debug-perms':
-                return self.handle_debug_perms(environ, start_response)
-            elif path == '/api/debug-list':
-                return self.handle_debug_list(environ, start_response)
-            elif path == '/api/debug-volumes':
-                return self.handle_debug_volumes(environ, start_response)
-            elif path == '/api/debug-list-abs':
-                return self.handle_debug_list_abs(environ, start_response)
             elif path == '/api/image-preview':
                 return self.handle_image_preview(environ, start_response)
             elif path == '/api/rename':
@@ -510,16 +572,14 @@ class WSGIApp:
                 return self.handle_order_product_import_api(environ, method, start_response)
             elif path == '/api/sales-product':
                 return self.handle_sales_product_api(environ, method, start_response)
+            elif path == '/api/parent':
+                return self.handle_parent_api(environ, method, start_response)
             elif path == '/api/sales-product-template':
                 return self.handle_sales_product_template_api(environ, method, start_response)
             elif path == '/api/sales-product-import':
                 return self.handle_sales_product_import_api(environ, method, start_response)
             elif path == '/api/fabric-images':
                 return self.handle_fabric_images_api(environ, start_response)
-            elif path == '/api/_debug/fabric-images':
-                return self.handle_debug_fabric_images_api(environ, start_response)
-            elif path == '/api/listing-images':
-                return self.handle_listing_images_api(environ, start_response)
             elif path == '/api/fabric-attach':
                 return self.handle_fabric_attach_api(environ, start_response)
             elif path == '/api/fabric-upload':
@@ -591,7 +651,7 @@ class WSGIApp:
                             return self.send_json({'status': 'error', 'message': '用户不存在'}, start_response)
 
                         import hashlib
-                        pwd_hash = hashlib.sha256(password.encode()).hexdigest()
+                        pwd_hash = hashlib.sha256(password.encode('utf-8', errors='surrogatepass')).hexdigest()
                         if row['password_hash'] != pwd_hash:
                             return self.send_json({'status': 'error', 'message': '密码错误'}, start_response)
 
@@ -608,7 +668,7 @@ class WSGIApp:
                             'session_id': session_id,
                             'employee_id': row['id'],
                             'name': row.get('name') or row.get('username')
-                        }).encode('utf-8')
+                        }).encode('utf-8', errors='surrogatepass')
                         start_response('200 OK', headers)
                         return [response_body]
 
@@ -632,7 +692,7 @@ class WSGIApp:
                     ('Set-Cookie', 'session_token=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax')
                 ]
                 start_response('200 OK', headers)
-                return [json.dumps({'status': 'success'}).encode('utf-8')]
+                return [json.dumps({'status': 'success'}).encode('utf-8', errors='surrogatepass')]
 
             elif method == 'GET' and action == 'current':
                 user_id = self._get_session_user(environ)
@@ -701,7 +761,7 @@ class WSGIApp:
                     with conn.cursor() as cur:
                         try:
                             import hashlib
-                            pwd_hash = hashlib.sha256(password.encode()).hexdigest()
+                            pwd_hash = hashlib.sha256(password.encode('utf-8', errors='surrogatepass')).hexdigest()
                             cur.execute(
                                 """
                                 INSERT INTO users (username, password_hash, name, phone, birthday)
@@ -722,7 +782,7 @@ class WSGIApp:
                                 'status': 'success',
                                 'session_id': session_id,
                                 'employee_id': emp_id
-                            }).encode('utf-8')
+                            }).encode('utf-8', errors='surrogatepass')
                             start_response('200 OK', headers)
                             return [response_body]
                         except Exception as e:
@@ -744,228 +804,6 @@ class WSGIApp:
         }
         return self.send_json(response, start_response)
 
-    def handle_debug_paths(self, environ, start_response):
-        """调试API：列出所有volume和路径"""
-        result = {'status': 'success', 'volumes': {}}
-        try:
-            base = '/volume1'
-            if not os.path.exists(base):
-                return self.send_json({'status': 'error', 'message': 'Volume root not found'}, start_response)
-
-            for vol in os.listdir(base):
-                vol_path = os.path.join(base, vol)
-                if not os.path.isdir(vol_path):
-                    continue
-
-                try:
-                    contents = {'folders': [], 'images': []}
-                    for item in os.listdir(vol_path):
-                        try:
-                            if item.startswith('@') or item.startswith('.'):
-                                continue
-
-                            item_path = os.path.join(vol_path, item)
-                            # 文件夹
-                            if os.path.isdir(item_path):
-                                rel = item
-                                contents['folders'].append({
-                                    'name': base64.b64encode(item.encode('utf-8')).decode('ascii'),
-                                    'path': base64.b64encode(rel.encode('utf-8')).decode('ascii'),
-                                    'type': 'folder'
-                                })
-                            # 图片文件
-                            elif item.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp')):
-                                rel = item
-                                contents['images'].append({
-                                    'name': base64.b64encode(item.encode('utf-8')).decode('ascii'),
-                                    'path': base64.b64encode(rel.encode('utf-8')).decode('ascii'),
-                                    'type': 'image'
-                                })
-                        except Exception:
-                            # 忽略单个条目错误
-                            continue
-
-                    result['volumes'][vol] = contents
-                except Exception as e:
-                    result['volumes'][vol] = f'Error: {type(e).__name__}'
-
-            return self.send_json(result, start_response)
-        except Exception as e:
-            return self.send_json({
-                'status': 'error',
-                'message': f'Debug error: {type(e).__name__}'
-            }, start_response)
-
-    def handle_debug_perms(self, environ, start_response):
-        """调试API：返回当前运行用户与目录权限检查"""
-        try:
-            uid = os.getuid() if hasattr(os, 'getuid') else None
-            gid = os.getgid() if hasattr(os, 'getgid') else None
-            path_bytes = RESOURCES_PATH_BYTES
-
-            exists = os.path.exists(path_bytes)
-            is_dir = os.path.isdir(path_bytes)
-            can_read = os.access(path_bytes, os.R_OK)
-            can_execute = os.access(path_bytes, os.X_OK)
-
-            info = {
-                'status': 'success',
-                'resources_path_b64': base64.b64encode(path_bytes).decode('ascii'),
-                'exists': bool(exists),
-                'is_dir': bool(is_dir),
-                'can_read': bool(can_read),
-                'can_execute': bool(can_execute),
-                'uid': uid,
-                'gid': gid
-            }
-            return self.send_json(info, start_response)
-        except Exception as e:
-            return self.send_json({
-                'status': 'error',
-                'message': f'Debug error: {type(e).__name__}'
-            }, start_response)
-
-    def handle_debug_list(self, environ, start_response):
-        """调试API：列出目标目录前200个条目（不过滤）"""
-        try:
-            query_string = environ.get('QUERY_STRING', '')
-            query_params = parse_qs(query_string)
-            path_b64 = query_params.get('path', [''])[0]
-
-            if path_b64:
-                try:
-                    rel_path = self._fs_from_b64(path_b64)
-                except:
-                    return self.send_json({'status': 'error', 'message': 'Invalid path'}, start_response)
-            else:
-                rel_path = ''
-
-            if '..' in rel_path:
-                return self.send_json({'status': 'error', 'message': 'Invalid path'}, start_response)
-
-            current_path = self._join_resources(rel_path)
-
-            abs_path = os.path.abspath(current_path)
-            abs_resources = os.path.abspath(RESOURCES_PATH_BYTES)
-            if not abs_path.startswith(abs_resources):
-                return self.send_json({'status': 'error', 'message': 'Access denied'}, start_response)
-
-            if not os.path.exists(current_path):
-                return self.send_json({'status': 'error', 'message': 'Path not found'}, start_response)
-
-            items = []
-            count = 0
-            with os.scandir(current_path) as it:
-                for entry in it:
-                    try:
-                        name_b64 = self._b64_from_fs(entry.name)
-                        items.append({
-                            'name': name_b64,
-                            'is_dir': entry.is_dir(follow_symlinks=False),
-                            'is_file': entry.is_file(follow_symlinks=False)
-                        })
-                        count += 1
-                        if count >= 200:
-                            break
-                    except Exception:
-                        continue
-
-            return self.send_json({
-                'status': 'success',
-                'current_path': path_b64,
-                'count': len(items),
-                'items': items
-            }, start_response)
-        except Exception as e:
-            return self.send_json({
-                'status': 'error',
-                'message': f'Debug error: {type(e).__name__}'
-            }, start_response)
-
-    def handle_debug_volumes(self, environ, start_response):
-        """调试API：列出 /volume1 下的顶层目录与权限"""
-        try:
-            base = '/volume1'
-            if not os.path.exists(base):
-                return self.send_json({'status': 'error', 'message': 'Volume root not found'}, start_response)
-
-            items = []
-            with os.scandir(base) as it:
-                for entry in it:
-                    try:
-                        name_b64 = self._b64_from_fs(entry.name)
-                        entry_path = os.path.join(base, entry.name)
-                        items.append({
-                            'name': name_b64,
-                            'is_dir': entry.is_dir(follow_symlinks=False),
-                            'can_read': os.access(entry_path, os.R_OK),
-                            'can_execute': os.access(entry_path, os.X_OK)
-                        })
-                    except Exception:
-                        continue
-
-            return self.send_json({
-                'status': 'success',
-                'count': len(items),
-                'items': items
-            }, start_response)
-        except Exception as e:
-            return self.send_json({
-                'status': 'error',
-                'message': f'Debug error: {type(e).__name__}'
-            }, start_response)
-
-    def handle_debug_list_abs(self, environ, start_response):
-        """调试API：列出指定绝对路径的前200个条目（限 /volume1）"""
-        try:
-            query_string = environ.get('QUERY_STRING', '')
-            query_params = parse_qs(query_string)
-            path_b64 = query_params.get('path', [''])[0]
-
-            if not path_b64:
-                return self.send_json({'status': 'error', 'message': 'Missing path'}, start_response)
-
-            try:
-                abs_path = self._fs_from_b64(path_b64)
-            except:
-                return self.send_json({'status': 'error', 'message': 'Invalid path'}, start_response)
-
-            abs_path = os.path.abspath(abs_path)
-            if not abs_path.startswith('/volume1'):
-                return self.send_json({'status': 'error', 'message': 'Access denied'}, start_response)
-
-            if not os.path.exists(abs_path):
-                return self.send_json({'status': 'error', 'message': 'Path not found'}, start_response)
-
-            items = []
-            count = 0
-            with os.scandir(abs_path) as it:
-                for entry in it:
-                    try:
-                        name_b64 = self._b64_from_fs(entry.name)
-                        items.append({
-                            'name': name_b64,
-                            'is_dir': entry.is_dir(follow_symlinks=False),
-                            'is_file': entry.is_file(follow_symlinks=False)
-                        })
-                        count += 1
-                        if count >= 200:
-                            break
-                    except Exception:
-                        continue
-
-            return self.send_json({
-                'status': 'success',
-                'path': path_b64,
-                'count': len(items),
-                'items': items
-            }, start_response)
-        except Exception as e:
-            return self.send_json({
-                'status': 'error',
-                'message': f'Debug error: {type(e).__name__}'
-            }, start_response)
-    
     def handle_images_api(self, environ, start_response):
         """获取图片列表（用Base64编码路径避免编码问题）"""
         images = []
@@ -983,7 +821,10 @@ class WSGIApp:
                     volume_contents = os.listdir('/volume1') if os.path.exists('/volume1') else []
                     folders_list = [f for f in volume_contents if os.path.isdir(f'/volume1/{f}')]
                     # 用Base64编码文件夹列表以避免编码问题
-                    folders_b64 = base64.b64encode(str(folders_list).encode('utf-8')).decode('ascii')
+                    try:
+                        folders_b64 = base64.b64encode(str(folders_list).encode('utf-8', errors='surrogatepass')).decode('ascii')
+                    except Exception:
+                        folders_b64 = base64.b64encode(str(folders_list).encode('utf-8', errors='ignore')).decode('ascii')
                     return self.send_json({
                         'status': 'error', 
                         'message': 'Path not found',
@@ -2234,7 +2075,6 @@ class WSGIApp:
             version_no VARCHAR(64) NOT NULL,
             fabric_id INT UNSIGNED NULL,
             spec_qty_short VARCHAR(128) NOT NULL,
-            listing_image_b64 VARCHAR(512) NULL,
             is_iteration TINYINT(1) NOT NULL DEFAULT 0,
             source_order_product_id INT UNSIGNED NULL,
             finished_length_in DECIMAL(10,2) NULL,
@@ -2382,9 +2222,9 @@ class WSGIApp:
                     """
                 )
                 row = cur.fetchone()
-                if row and row.get('cnt', 0) == 0:
+                if row and row.get('cnt', 0) > 0:
                     try:
-                        cur.execute("ALTER TABLE order_products ADD COLUMN listing_image_b64 VARCHAR(512) NULL")
+                        cur.execute("ALTER TABLE order_products DROP COLUMN listing_image_b64")
                     except Exception:
                         pass
 
@@ -2437,11 +2277,29 @@ class WSGIApp:
 
         self._order_product_ready = True
 
+    def _ensure_sales_parent_tables(self):
+        create_sales_parents = """
+        CREATE TABLE IF NOT EXISTS sales_parents (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            parent_code VARCHAR(64) NOT NULL UNIQUE,
+            estimated_refund_rate DECIMAL(8,4) NULL,
+            estimated_discount_rate DECIMAL(8,4) NULL,
+            commission_rate DECIMAL(8,4) NULL,
+            estimated_acoas DECIMAL(8,4) NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_parent_code (parent_code)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+        with self._get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(create_sales_parents)
+
     def _ensure_sales_product_tables(self):
         if self._sales_product_ready:
             return
         self._ensure_shops_table()
-        self._ensure_product_table()
+        self._ensure_sales_parent_tables()
         self._ensure_amazon_ad_tables()
         self._ensure_order_product_tables()
 
@@ -2449,20 +2307,30 @@ class WSGIApp:
         CREATE TABLE IF NOT EXISTS sales_products (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
             shop_id INT UNSIGNED NOT NULL,
-            sku_family_id INT UNSIGNED NOT NULL,
             portfolio_id INT UNSIGNED NOT NULL,
             platform_sku VARCHAR(128) NOT NULL UNIQUE,
-            parent_asin VARCHAR(32) NULL,
-            child_asin VARCHAR(32) NULL,
+            parent_id INT UNSIGNED NULL,
+            child_code VARCHAR(64) NULL,
             fabric VARCHAR(255) NULL,
             spec_name VARCHAR(255) NULL,
+            sale_price_usd DECIMAL(10,2) NULL,
+            warehouse_cost_usd DECIMAL(10,2) NULL,
+            last_mile_cost_usd DECIMAL(10,2) NULL,
+            package_length_in DECIMAL(10,2) NULL,
+            package_width_in DECIMAL(10,2) NULL,
+            package_height_in DECIMAL(10,2) NULL,
+            net_weight_lbs DECIMAL(10,2) NULL,
+            gross_weight_lbs DECIMAL(10,2) NULL,
+            assembled_length_in DECIMAL(10,2) NULL,
+            assembled_width_in DECIMAL(10,2) NULL,
+            assembled_height_in DECIMAL(10,2) NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             INDEX idx_sp_shop (shop_id),
-            INDEX idx_sp_sku_family (sku_family_id),
+            INDEX idx_sp_parent (parent_id),
             INDEX idx_sp_portfolio (portfolio_id),
             CONSTRAINT fk_sp_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE RESTRICT,
-            CONSTRAINT fk_sp_sku_family FOREIGN KEY (sku_family_id) REFERENCES product_families(id) ON DELETE RESTRICT,
+            CONSTRAINT fk_sp_parent FOREIGN KEY (parent_id) REFERENCES sales_parents(id) ON DELETE SET NULL,
             CONSTRAINT fk_sp_portfolio FOREIGN KEY (portfolio_id) REFERENCES amazon_ad_items(id) ON DELETE RESTRICT
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """
@@ -2520,6 +2388,132 @@ class WSGIApp:
                             cur.execute(f"ALTER TABLE sales_products DROP INDEX {idx_name}")
                         # 最后删除列
                         cur.execute("ALTER TABLE sales_products DROP COLUMN portfolio_id")
+                except Exception:
+                    pass
+
+                # 删除 sku_family_id 兼容迁移
+                try:
+                    cur.execute(
+                        """
+                        SELECT COUNT(*) AS cnt
+                        FROM information_schema.COLUMNS
+                        WHERE TABLE_SCHEMA=DATABASE()
+                          AND TABLE_NAME='sales_products'
+                          AND COLUMN_NAME='sku_family_id'
+                        """
+                    )
+                    row = cur.fetchone()
+                    if row and row.get('cnt', 0) > 0:
+                        try:
+                            cur.execute("ALTER TABLE sales_products DROP FOREIGN KEY fk_sp_sku_family")
+                        except Exception:
+                            pass
+                        try:
+                            cur.execute("ALTER TABLE sales_products DROP INDEX idx_sp_sku_family")
+                        except Exception:
+                            pass
+                        try:
+                            cur.execute("ALTER TABLE sales_products DROP COLUMN sku_family_id")
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+                # 兼容迁移：旧字段重命名/新增
+                migration_columns = [
+                    ("parent_id", "ALTER TABLE sales_products ADD COLUMN parent_id INT UNSIGNED NULL AFTER platform_sku"),
+                    ("child_code", "ALTER TABLE sales_products ADD COLUMN child_code VARCHAR(64) NULL AFTER parent_id"),
+                    ("sale_price_usd", "ALTER TABLE sales_products ADD COLUMN sale_price_usd DECIMAL(10,2) NULL AFTER spec_name"),
+                    ("warehouse_cost_usd", "ALTER TABLE sales_products ADD COLUMN warehouse_cost_usd DECIMAL(10,2) NULL AFTER sale_price_usd"),
+                    ("last_mile_cost_usd", "ALTER TABLE sales_products ADD COLUMN last_mile_cost_usd DECIMAL(10,2) NULL AFTER warehouse_cost_usd"),
+                    ("package_length_in", "ALTER TABLE sales_products ADD COLUMN package_length_in DECIMAL(10,2) NULL AFTER last_mile_cost_usd"),
+                    ("package_width_in", "ALTER TABLE sales_products ADD COLUMN package_width_in DECIMAL(10,2) NULL AFTER package_length_in"),
+                    ("package_height_in", "ALTER TABLE sales_products ADD COLUMN package_height_in DECIMAL(10,2) NULL AFTER package_width_in"),
+                    ("net_weight_lbs", "ALTER TABLE sales_products ADD COLUMN net_weight_lbs DECIMAL(10,2) NULL AFTER package_height_in"),
+                    ("gross_weight_lbs", "ALTER TABLE sales_products ADD COLUMN gross_weight_lbs DECIMAL(10,2) NULL AFTER net_weight_lbs"),
+                    ("assembled_length_in", "ALTER TABLE sales_products ADD COLUMN assembled_length_in DECIMAL(10,2) NULL AFTER gross_weight_lbs"),
+                    ("assembled_width_in", "ALTER TABLE sales_products ADD COLUMN assembled_width_in DECIMAL(10,2) NULL AFTER assembled_length_in"),
+                    ("assembled_height_in", "ALTER TABLE sales_products ADD COLUMN assembled_height_in DECIMAL(10,2) NULL AFTER assembled_width_in")
+                ]
+                for col_name, alter_sql in migration_columns:
+                    try:
+                        cur.execute(
+                            """
+                            SELECT COUNT(*) AS cnt
+                            FROM information_schema.COLUMNS
+                            WHERE TABLE_SCHEMA=DATABASE()
+                              AND TABLE_NAME='sales_products'
+                              AND COLUMN_NAME=%s
+                            """,
+                            (col_name,)
+                        )
+                        row = cur.fetchone()
+                        if row and row.get('cnt', 0) == 0:
+                            cur.execute(alter_sql)
+                    except Exception:
+                        pass
+
+                # 旧 parent_asin/child_asin 字段迁移
+                try:
+                    cur.execute(
+                        """
+                        SELECT COUNT(*) AS cnt
+                        FROM information_schema.COLUMNS
+                        WHERE TABLE_SCHEMA=DATABASE()
+                          AND TABLE_NAME='sales_products'
+                          AND COLUMN_NAME='child_asin'
+                        """
+                    )
+                    row = cur.fetchone()
+                    if row and row.get('cnt', 0) > 0:
+                        cur.execute("UPDATE sales_products SET child_code = child_asin WHERE child_code IS NULL AND child_asin IS NOT NULL")
+                        cur.execute("ALTER TABLE sales_products DROP COLUMN child_asin")
+                except Exception:
+                    pass
+
+                try:
+                    cur.execute(
+                        """
+                        SELECT COUNT(*) AS cnt
+                        FROM information_schema.COLUMNS
+                        WHERE TABLE_SCHEMA=DATABASE()
+                          AND TABLE_NAME='sales_products'
+                          AND COLUMN_NAME='parent_asin'
+                        """
+                    )
+                    row = cur.fetchone()
+                    if row and row.get('cnt', 0) > 0:
+                        cur.execute(
+                            """
+                            INSERT IGNORE INTO sales_parents (parent_code)
+                            SELECT DISTINCT parent_asin FROM sales_products
+                            WHERE parent_asin IS NOT NULL AND parent_asin <> ''
+                            """
+                        )
+                        cur.execute(
+                            """
+                            UPDATE sales_products sp
+                            JOIN sales_parents p ON p.parent_code = sp.parent_asin
+                            SET sp.parent_id = p.id
+                            WHERE sp.parent_id IS NULL
+                            """
+                        )
+                        cur.execute("ALTER TABLE sales_products DROP COLUMN parent_asin")
+                except Exception:
+                    pass
+
+                try:
+                    cur.execute("ALTER TABLE sales_products ADD INDEX idx_sp_parent (parent_id)")
+                except Exception:
+                    pass
+                try:
+                    cur.execute(
+                        """
+                        ALTER TABLE sales_products
+                        ADD CONSTRAINT fk_sp_parent FOREIGN KEY (parent_id)
+                        REFERENCES sales_parents(id) ON DELETE SET NULL
+                        """
+                    )
                 except Exception:
                     pass
         self._sales_product_ready = True
@@ -3077,16 +3071,17 @@ class WSGIApp:
 
     def _derive_sales_fields(self, conn, sku_family_id, links):
         """自动推导销售产品的面料、规格名称和平台SKU"""
-        if not links or not sku_family_id:
+        if not links:
             return '', '', ''
         
         # 获取货号系列代码
         sku_family_code = ''
-        with conn.cursor() as cur:
-            cur.execute("SELECT sku_family FROM product_families WHERE id=%s", (sku_family_id,))
-            row = cur.fetchone()
-            if row:
-                sku_family_code = (row.get('sku_family') or '').strip()
+        if sku_family_id:
+            with conn.cursor() as cur:
+                cur.execute("SELECT sku_family FROM product_families WHERE id=%s", (sku_family_id,))
+                row = cur.fetchone()
+                if row:
+                    sku_family_code = (row.get('sku_family') or '').strip()
         
         # 获取下单产品信息
         id_list = [entry['order_product_id'] for entry in links]
@@ -3129,6 +3124,73 @@ class WSGIApp:
         
         return fabric, spec_name, platform_sku
 
+    def _derive_sales_cost_size(self, conn, links):
+        """根据关联下单SKU累加成本与尺寸重量"""
+        if not links:
+            return {
+                'warehouse_cost_usd': 0.0,
+                'last_mile_cost_usd': 0.0,
+                'package_length_in': 0.0,
+                'package_width_in': 0.0,
+                'package_height_in': 0.0,
+                'net_weight_lbs': 0.0,
+                'gross_weight_lbs': 0.0,
+                'sku_family_id': None
+            }
+
+        id_list = [entry['order_product_id'] for entry in links]
+        placeholders = ','.join(['%s'] * len(id_list))
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT id, sku_family_id,
+                       cost_usd, last_mile_avg_freight_usd,
+                       package_length_in, package_width_in, package_height_in,
+                       net_weight_lbs, gross_weight_lbs
+                FROM order_products
+                WHERE id IN ({placeholders})
+                """,
+                id_list
+            )
+            rows = cur.fetchall() or []
+
+        row_map = {row['id']: row for row in rows}
+        warehouse_cost_usd = 0.0
+        last_mile_cost_usd = 0.0
+        package_length_in = 0.0
+        package_width_in = 0.0
+        package_height_in = 0.0
+        net_weight_lbs = 0.0
+        gross_weight_lbs = 0.0
+        sku_family_id = None
+
+        for entry in links:
+            row = row_map.get(entry['order_product_id'])
+            if not row:
+                continue
+            qty = max(1, int(entry.get('quantity') or 1))
+            if sku_family_id is None:
+                sku_family_id = row.get('sku_family_id')
+
+            warehouse_cost_usd += float(row.get('cost_usd') or 0) * qty
+            last_mile_cost_usd += float(row.get('last_mile_avg_freight_usd') or 0) * qty
+            package_length_in += float(row.get('package_length_in') or 0) * qty
+            package_width_in += float(row.get('package_width_in') or 0) * qty
+            package_height_in += float(row.get('package_height_in') or 0) * qty
+            net_weight_lbs += float(row.get('net_weight_lbs') or 0) * qty
+            gross_weight_lbs += float(row.get('gross_weight_lbs') or 0) * qty
+
+        return {
+            'warehouse_cost_usd': round(warehouse_cost_usd, 2),
+            'last_mile_cost_usd': round(last_mile_cost_usd, 2),
+            'package_length_in': round(package_length_in, 2),
+            'package_width_in': round(package_width_in, 2),
+            'package_height_in': round(package_height_in, 2),
+            'net_weight_lbs': round(net_weight_lbs, 2),
+            'gross_weight_lbs': round(gross_weight_lbs, 2),
+            'sku_family_id': sku_family_id
+        }
+
     def _get_fabric_folder_bytes(self):
         return self._join_resources('『面料』')
 
@@ -3160,6 +3222,15 @@ class WSGIApp:
         target = os.path.join(base_folder, sku_bytes)
         if not os.path.exists(target):
             os.makedirs(target, exist_ok=True)
+        # Create standard subfolders for the SKU
+        for sub in ('源文件', '主图', 'A+'):
+            try:
+                sub_bytes = os.fsencode(sub)
+            except Exception:
+                sub_bytes = str(sub).encode('utf-8', errors='surrogatepass')
+            sub_path = os.path.join(target, sub_bytes)
+            if not os.path.exists(sub_path):
+                os.makedirs(sub_path, exist_ok=True)
 
     def _get_certification_folder_bytes(self):
         return self._join_resources('『认证』')
@@ -3481,29 +3552,16 @@ class WSGIApp:
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute("SELECT fabric_id, image_name FROM fabric_images")
+                        db_count = 0
                         for row in (cur.fetchall() or []):
                             image_name = (row.get('image_name') or '').strip().replace('\\', '/')
                             if not image_name:
                                 continue
-                            # normalize to filename only; DB may contain '『面料』/xxx.jpg'
-                            normalized = image_name.split('/')[-1].strip()
-                            if not normalized:
-                                continue
                             fid = row.get('fabric_id')
-                            if normalized not in bound_name_to_fabric_ids:
-                                bound_name_to_fabric_ids[normalized] = set()
-                            if fid is not None:
-                                bound_name_to_fabric_ids[normalized].add(int(fid))
-                            # also store base64 of raw bytes of the DB-stored name for robust matching
-                            try:
-                                db_raw_bytes = os.fsencode(normalized)
-                                db_b64 = base64.b64encode(db_raw_bytes).decode('ascii')
-                                if db_b64 not in bound_b64_to_fabric_ids:
-                                    bound_b64_to_fabric_ids[db_b64] = set()
-                                if fid is not None:
-                                    bound_b64_to_fabric_ids[db_b64].add(int(fid))
-                            except Exception:
-                                pass
+                            db_count += 1
+                            # use helper to add many normalization/b64 variants
+                            self._add_name_and_b64_variants(bound_name_to_fabric_ids, bound_b64_to_fabric_ids, image_name, fid)
+
 
             folder = self._get_fabric_folder_bytes()
             if not os.path.exists(folder):
@@ -3523,32 +3581,62 @@ class WSGIApp:
                         else:
                             raw_bytes = raw
 
-                        # Try best-effort decode for display name (utf-8, then gb18030, then fs decode)
+                        # Try best-effort decode for display name, ensuring no surrogates in result
                         display = None
                         try:
                             display = os.fsdecode(raw_bytes)
+                            # Clean surrogates if any
+                            display = display.encode('utf-8', errors='surrogatepass').decode('utf-8', errors='replace')
                         except Exception:
                             try:
-                                display = raw_bytes.decode('utf-8')
+                                display = raw_bytes.decode('utf-8', errors='replace')
                             except Exception:
                                 try:
-                                    display = raw_bytes.decode('gb18030')
+                                    display = raw_bytes.decode('gb18030', errors='replace')
                                 except Exception:
                                     display = raw_bytes.decode('latin-1', errors='replace')
 
                         if unbound_only:
                             normalized_display = (display or '').replace('\\', '/').split('/')[-1].strip()
-                            # try matching by db normalized name
-                            bound_ids = bound_name_to_fabric_ids.get(normalized_display, set())
-                            # also try matching by base64 of raw bytes
                             try:
-                                b64_display = base64.b64encode(raw_bytes).decode('ascii')
-                                b64_bound_ids = bound_b64_to_fabric_ids.get(b64_display, set())
+                                nd_nfc = unicodedata.normalize('NFC', normalized_display)
                             except Exception:
-                                b64_bound_ids = set()
-                            combined_bound = set(bound_ids) | set(b64_bound_ids)
-                            if combined_bound:
-                                if current_fabric_id is None or current_fabric_id not in combined_bound:
+                                nd_nfc = normalized_display
+                            try:
+                                nd_nfd = unicodedata.normalize('NFD', nd_nfc)
+                            except Exception:
+                                nd_nfd = nd_nfc
+
+                            check_ids = set()
+                            # check string variants
+                            for variant in (nd_nfc, nd_nfc.lower(), nd_nfd, nd_nfd.lower()):
+                                if variant:
+                                    ids = bound_name_to_fabric_ids.get(variant, set())
+                                    if ids:
+                                        check_ids |= ids
+
+                            # check base64 of raw bytes
+                            try:
+                                b64_display_raw = base64.b64encode(raw_bytes).decode('ascii')
+                                ids = bound_b64_to_fabric_ids.get(b64_display_raw, set())
+                                if ids:
+                                    check_ids |= ids
+                            except Exception:
+                                pass
+
+                            # also check base64 of normalized variants
+                            for variant in (nd_nfc, nd_nfd):
+                                try:
+                                    vb = os.fsencode(variant)
+                                    b64_v = base64.b64encode(vb).decode('ascii')
+                                    ids = bound_b64_to_fabric_ids.get(b64_v, set())
+                                    if ids:
+                                        check_ids |= ids
+                                except Exception:
+                                    pass
+
+                            if check_ids:
+                                if current_fabric_id is None or current_fabric_id not in check_ids:
                                     continue
 
                         # 返回相对于 resources 的字节路径 base64（包含『面料』子目录），
@@ -3561,7 +3649,7 @@ class WSGIApp:
                             rel_bytes = os.path.join(folder_bytes, raw_bytes)
                         except Exception:
                             # fallback: simple concat with os.sep
-                            rel_bytes = folder_bytes + os.sep.encode() + raw_bytes
+                            rel_bytes = folder_bytes + os.sep.encode('utf-8', errors='surrogatepass') + raw_bytes
                         b64 = base64.b64encode(rel_bytes).decode('ascii')
                         name_raw_b64 = base64.b64encode(raw_bytes).decode('ascii')
                         items.append({'name': display, 'name_raw_b64': name_raw_b64, 'b64': b64})
@@ -3571,71 +3659,6 @@ class WSGIApp:
                 items.sort(key=lambda x: (x.get('name') or '').lower())
             except Exception:
                 pass
-            return self.send_json({'status': 'success', 'items': items}, start_response)
-        except Exception as e:
-            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
-
-    def handle_debug_fabric_images_api(self, environ, start_response):
-        """调试：返回 fabric_images 表的前 200 条记录（只读）。"""
-        try:
-            with self._get_db_connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("SELECT id, fabric_id, image_name, remark, created_at FROM fabric_images ORDER BY id DESC LIMIT 200")
-                    rows = cur.fetchall() or []
-                    items = []
-                    for r in rows:
-                        items.append({
-                            'id': r.get('id'),
-                            'fabric_id': r.get('fabric_id'),
-                            'image_name': r.get('image_name'),
-                            'remark': r.get('remark'),
-                            'created_at': r.get('created_at')
-                        })
-            return self.send_json({'status': 'success', 'items': items}, start_response)
-        except Exception as e:
-            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
-
-    def handle_listing_images_api(self, environ, start_response):
-        """列出『上架资源』文件夹内图片（递归）"""
-        try:
-            folder = self._ensure_listing_folder()
-            items = []
-            for root, _, files in os.walk(folder):
-                for fname in files:
-                    if not self._is_image_name(fname):
-                        continue
-                    raw = fname
-                    if isinstance(raw, (str,)):
-                        try:
-                            raw_bytes = os.fsencode(raw)
-                        except Exception:
-                            raw_bytes = raw.encode('utf-8', errors='surrogatepass')
-                    else:
-                        raw_bytes = raw
-
-                    rel_dir = os.path.relpath(root, folder)
-                    if rel_dir == '.':
-                        rel_bytes = raw_bytes
-                        display_name = os.fsdecode(raw_bytes)
-                    else:
-                        try:
-                            rel_dir_bytes = os.fsencode(rel_dir)
-                        except Exception:
-                            rel_dir_bytes = rel_dir.encode('utf-8', errors='surrogatepass')
-                        rel_bytes = os.path.join(rel_dir_bytes, raw_bytes)
-                        display_name = os.fsdecode(rel_bytes)
-
-                    # rel_bytes already represents the path relative to the resources root
-                    # e.g. 'subdir/file.jpg' or '『面料』/file.jpg'. Do not prefix '『上架资源』' again.
-                    try:
-                        rel_path_bytes = rel_bytes
-                    except Exception:
-                        rel_path_bytes = rel_bytes
-
-                    b64 = base64.b64encode(rel_path_bytes).decode('ascii')
-                    items.append({'name': display_name, 'b64': b64})
-
-            items.sort(key=lambda x: (x.get('name') or '').lower())
             return self.send_json({'status': 'success', 'items': items}, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
@@ -4462,7 +4485,7 @@ class WSGIApp:
 
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        pwd_hash = hashlib.sha256(password.encode()).hexdigest()
+                        pwd_hash = hashlib.sha256(password.encode('utf-8', errors='surrogatepass')).hexdigest()
                         cur.execute(
                             """
                             INSERT INTO users (username, password_hash, name, phone, birthday, is_admin, can_manage_todos)
@@ -6039,7 +6062,7 @@ class WSGIApp:
                                 """
                                 SELECT
                                     op.id, op.sku, op.sku_family_id, op.version_no, op.fabric_id,
-                                    op.spec_qty_short, op.listing_image_b64, op.is_iteration, op.source_order_product_id,
+                                    op.spec_qty_short, op.is_iteration, op.source_order_product_id,
                                     op.finished_length_in, op.finished_width_in, op.finished_height_in,
                                     op.net_weight_lbs, op.package_length_in, op.package_width_in,
                                     op.package_height_in, op.gross_weight_lbs, op.cost_usd,
@@ -6081,7 +6104,7 @@ class WSGIApp:
                                 """
                                 SELECT
                                     op.id, op.sku, op.sku_family_id, op.version_no, op.fabric_id,
-                                    op.spec_qty_short, op.listing_image_b64, op.is_iteration, op.source_order_product_id,
+                                    op.spec_qty_short, op.is_iteration, op.source_order_product_id,
                                     op.finished_length_in, op.finished_width_in, op.finished_height_in,
                                     op.net_weight_lbs, op.package_length_in, op.package_width_in,
                                     op.package_height_in, op.gross_weight_lbs, op.cost_usd,
@@ -6123,14 +6146,15 @@ class WSGIApp:
                 version_no = (data.get('version_no') or '').strip()
                 fabric_id = data.get('fabric_id')
                 spec_qty_short = (data.get('spec_qty_short') or '').strip()
-                listing_image_b64 = (data.get('listing_image_b64') or '').strip() or None
                 is_iteration = 1 if str(data.get('is_iteration') or '').lower() in ('1', 'true', 'yes', 'on') else 0
                 source_order_product_id = self._parse_int(data.get('source_order_product_id'))
 
-                if not sku or not sku_family_id or not version_no or not fabric_id or not spec_qty_short:
+                if not sku or not sku_family_id or not fabric_id or not spec_qty_short:
                     return self.send_json({'status': 'error', 'message': 'Missing required fields'}, start_response)
                 if is_iteration and not source_order_product_id:
                     return self.send_json({'status': 'error', 'message': 'Missing source SKU'}, start_response)
+                if is_iteration and not version_no:
+                    return self.send_json({'status': 'error', 'message': 'Missing version'}, start_response)
 
                 payload = {
                     'sku': sku,
@@ -6138,7 +6162,6 @@ class WSGIApp:
                     'version_no': version_no,
                     'fabric_id': self._parse_int(fabric_id),
                     'spec_qty_short': spec_qty_short,
-                    'listing_image_b64': listing_image_b64,
                     'is_iteration': is_iteration,
                     'source_order_product_id': source_order_product_id,
                     'finished_length_in': self._parse_float(data.get('finished_length_in')),
@@ -6170,13 +6193,13 @@ class WSGIApp:
                             """
                             INSERT INTO order_products (
                                 sku, sku_family_id, version_no, fabric_id, spec_qty_short,
-                                listing_image_b64, is_iteration, source_order_product_id,
+                                is_iteration, source_order_product_id,
                                 finished_length_in, finished_width_in, finished_height_in,
                                 net_weight_lbs, package_length_in, package_width_in, package_height_in,
                                 gross_weight_lbs, cost_usd, carton_qty, package_size_class, last_mile_avg_freight_usd
                             ) VALUES (
                                 %(sku)s, %(sku_family_id)s, %(version_no)s, %(fabric_id)s, %(spec_qty_short)s,
-                                %(listing_image_b64)s, %(is_iteration)s, %(source_order_product_id)s,
+                                %(is_iteration)s, %(source_order_product_id)s,
                                 %(finished_length_in)s, %(finished_width_in)s, %(finished_height_in)s,
                                 %(net_weight_lbs)s, %(package_length_in)s, %(package_width_in)s, %(package_height_in)s,
                                 %(gross_weight_lbs)s, %(cost_usd)s, %(carton_qty)s, %(package_size_class)s, %(last_mile_avg_freight_usd)s
@@ -6200,14 +6223,15 @@ class WSGIApp:
                 version_no = (data.get('version_no') or '').strip()
                 fabric_id = data.get('fabric_id')
                 spec_qty_short = (data.get('spec_qty_short') or '').strip()
-                listing_image_b64 = (data.get('listing_image_b64') or '').strip() or None
                 is_iteration = 1 if str(data.get('is_iteration') or '').lower() in ('1', 'true', 'yes', 'on') else 0
                 source_order_product_id = self._parse_int(data.get('source_order_product_id'))
 
-                if not item_id or not sku or not sku_family_id or not version_no or not fabric_id or not spec_qty_short:
+                if not item_id or not sku or not sku_family_id or not fabric_id or not spec_qty_short:
                     return self.send_json({'status': 'error', 'message': 'Missing id or fields'}, start_response)
                 if is_iteration and not source_order_product_id:
                     return self.send_json({'status': 'error', 'message': 'Missing source SKU'}, start_response)
+                if is_iteration and not version_no:
+                    return self.send_json({'status': 'error', 'message': 'Missing version'}, start_response)
                 if source_order_product_id and int(source_order_product_id) == int(item_id):
                     return self.send_json({'status': 'error', 'message': 'Source SKU cannot be itself'}, start_response)
 
@@ -6218,7 +6242,6 @@ class WSGIApp:
                     'version_no': version_no,
                     'fabric_id': self._parse_int(fabric_id),
                     'spec_qty_short': spec_qty_short,
-                    'listing_image_b64': listing_image_b64,
                     'is_iteration': is_iteration,
                     'source_order_product_id': source_order_product_id,
                     'finished_length_in': self._parse_float(data.get('finished_length_in')),
@@ -6254,7 +6277,6 @@ class WSGIApp:
                                 version_no=%(version_no)s,
                                 fabric_id=%(fabric_id)s,
                                 spec_qty_short=%(spec_qty_short)s,
-                                listing_image_b64=%(listing_image_b64)s,
                                 is_iteration=%(is_iteration)s,
                                 source_order_product_id=%(source_order_product_id)s,
                                 finished_length_in=%(finished_length_in)s,
@@ -6306,26 +6328,286 @@ class WSGIApp:
                 return self.send_error(405, 'Method not allowed', start_response)
             if Workbook is None:
                 return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
+            
+            from openpyxl.styles import PatternFill, Font, Alignment
+            from openpyxl.worksheet.datavalidation import DataValidation
+            
+            self._ensure_order_product_tables()
             wb = Workbook()
             ws = wb.active
             ws.title = 'order_products'
-            headers = [
-                'sku', 'sku_family', 'version_no', 'fabric_code', 'spec_qty_short',
-                'listing_image_path', 'is_iteration', 'source_sku',
-                'finished_length_in', 'finished_width_in', 'finished_height_in', 'net_weight_lbs',
-                'package_length_in', 'package_width_in', 'package_height_in', 'gross_weight_lbs',
-                'cost_usd', 'carton_qty', 'package_size_class', 'last_mile_avg_freight_usd',
-                'filling_materials', 'frame_materials', 'features', 'certifications'
+            
+            # 获取所有可用的数据用于下拉菜单
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id, sku_family FROM product_families ORDER BY sku_family")
+                    sku_families = [row['sku_family'] for row in cur.fetchall()]
+                    
+                    cur.execute("SELECT id, fabric_code FROM fabric_materials ORDER BY fabric_code")
+                    fabrics = [row['fabric_code'] for row in cur.fetchall()]
+                    
+                    cur.execute("""
+                        SELECT m.id, m.name
+                        FROM materials m
+                        JOIN material_types mt ON m.material_type_id = mt.id
+                        WHERE mt.name = '填充'
+                        ORDER BY m.name
+                    """)
+                    filling_materials = [row['name'] for row in cur.fetchall()]
+                    
+                    cur.execute("""
+                        SELECT m.id, m.name
+                        FROM materials m
+                        JOIN material_types mt ON m.material_type_id = mt.id
+                        WHERE mt.name = '框架'
+                        ORDER BY m.name
+                    """)
+                    frame_materials = [row['name'] for row in cur.fetchall()]
+                    
+                    cur.execute("SELECT id, name FROM features ORDER BY name")
+                    features = [row['name'] for row in cur.fetchall()]
+                    
+                    cur.execute("SELECT id, name FROM certifications ORDER BY name")
+                    certifications = [row['name'] for row in cur.fetchall()]
+            
+            # 定义组件和字段（带中文标签）
+            sections = [
+                {
+                    'title': '迭代款',
+                    'bg_color': 'E8DFD4',
+                    'fields': [
+                        ('is_iteration', '是否迭代款', 'dropdown', ['否', '是']),
+                        ('source_sku', '来源下单SKU', 'text', None),
+                        ('version_no', '版本号', 'text', None)
+                    ]
+                },
+                {
+                    'title': '基础信息',
+                    'bg_color': 'F5F1ED',
+                    'fields': [
+                        ('sku', '下单SKU *', 'text', None),
+                        ('sku_family', '归属货号 *', 'dropdown', sku_families),
+                        ('fabric_code', '面料 *', 'dropdown', fabrics),
+                        ('spec_qty_short', '规格与数量简称', 'text', None)
+                    ]
+                },
+                {
+                    'title': '成品尺寸/重量',
+                    'bg_color': 'E8DFD4',
+                    'fields': [
+                        ('finished_length_in', '成品长(inch)', 'number', None),
+                        ('finished_width_in', '成品宽(inch)', 'number', None),
+                        ('finished_height_in', '成品高(inch)', 'number', None),
+                        ('net_weight_lbs', '净重(lbs)', 'number', None)
+                    ]
+                },
+                {
+                    'title': '包裹尺寸/重量',
+                    'bg_color': 'F5F1ED',
+                    'fields': [
+                        ('package_length_in', '包裹长(inch)', 'number', None),
+                        ('package_width_in', '包裹宽(inch)', 'number', None),
+                        ('package_height_in', '包裹高(inch)', 'number', None),
+                        ('gross_weight_lbs', '毛重(lbs)', 'number', None)
+                    ]
+                },
+                {
+                    'title': '成本与物流',
+                    'bg_color': 'E8DFD4',
+                    'fields': [
+                        ('cost_usd', '成本价(美元)', 'number', None),
+                        ('carton_qty', '装箱量', 'number', None),
+                        ('package_size_class', '包裹大小归类(Fedx)', 'text', None),
+                        ('last_mile_avg_freight_usd', '尾程平均运费(美元)', 'number', None)
+                    ]
+                },
+                {
+                    'title': '材料与卖点',
+                    'bg_color': 'F5F1ED',
+                    'fields': [
+                        ('filling_materials', '填充材料(可多项)', 'multi_dropdown', filling_materials),
+                        ('frame_materials', '框架材料(可多项)', 'multi_dropdown', frame_materials),
+                        ('features', '卖点特点(可多项)', 'multi_dropdown', features),
+                        ('certifications', '认证(可多项)', 'multi_dropdown', certifications)
+                    ]
+                }
             ]
-            ws.append(headers)
-            ws.append([
-                'MS01A-Brown', 'MS01', '1', 'Brown', 'A',
-                '『上架资源』/MS01/cover.jpg', 0, '',
-                0, 0, 0, 0,
-                0, 0, 0, 0,
-                0, 0, '', 0,
-                '海绵 / 羽绒', '金属', '可拆洗 / 防水', 'CE'
-            ])
+            
+            # 建立模块标题行和列名行
+            section_headers = []  # 模块名称行
+            column_headers = []   # 列名行
+            header_to_column = {}  # 用于数据验证时查找列
+            col_idx = 0
+            field_to_options = {}  # 记录字段对应的可选项
+            
+            for section in sections:
+                section_title = section['title']
+                section_start_col = col_idx
+                
+                for field_info in section['fields']:
+                    field_code = field_info[0]
+                    field_label = field_info[1]
+                    field_type = field_info[2]
+                    field_options = field_info[3] if len(field_info) > 3 else None
+                    
+                    if field_type == 'multi_dropdown':
+                        # 对于多选字段，检测需要多少列（基于选项数或默认10列）
+                        num_cols = max(3, len(field_options) // 5 + 1) if field_options else 3
+                        for i in range(1, num_cols + 1):
+                            col_name = f"{field_code}_{i}"
+                            column_headers.append(field_label if i == 1 else '')
+                            header_to_column[col_name] = col_idx
+                            field_to_options[col_name] = field_options
+                            col_idx += 1
+                    else:
+                        column_headers.append(field_label)
+                        header_to_column[field_code] = col_idx
+                        if field_options:
+                            field_to_options[field_code] = field_options
+                        col_idx += 1
+                
+                # 填充模块标题（需要合并的列数）
+                section_span = col_idx - section_start_col
+                section_headers.append((section_title, section_start_col, section_span))
+            
+            # 第1行：模块标题（合并单元格）
+            for i in range(col_idx):
+                ws.cell(row=1, column=i+1).value = ''  # 先填充空值
+            
+            current_col = 1
+            title_fill = PatternFill(start_color='CFC7BD', end_color='CFC7BD', fill_type='solid')
+            title_font = Font(bold=True, color='2A2420', size=11)
+            title_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            
+            for title, start_col, span in section_headers:
+                if span > 1:
+                    ws.merge_cells(start_row=1, start_column=start_col+1, end_row=1, end_column=start_col+span)
+                ws.cell(row=1, column=start_col+1).value = title
+                for col in range(start_col, start_col + span):
+                    ws.cell(row=1, column=col+1).fill = title_fill
+                    ws.cell(row=1, column=col+1).font = title_font
+                    ws.cell(row=1, column=col+1).alignment = title_alignment
+            
+            # 第2行：列名
+            for idx, header in enumerate(column_headers):
+                cell = ws.cell(row=2, column=idx+1)
+                cell.value = header
+                cell.fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
+                cell.font = Font(bold=True, color='2A2420')
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            
+            # 第3行：示例行
+            example_row_idx = 3
+            example_row_data = []
+            
+            for col_name in list(header_to_column.keys()):
+                field_base = col_name.rsplit('_', 1)[0] if '_' in col_name else col_name
+                
+                if field_base == 'is_iteration':
+                    example_row_data.append(('是否迭代款', 0, '否'))
+                elif field_base == 'sku':
+                    example_row_data.append(('下单SKU', 0, 'MS01A-Brown'))
+                elif field_base == 'sku_family':
+                    example_row_data.append(('归属货号', 0, 'MS01'))
+                elif field_base == 'fabric_code':
+                    example_row_data.append(('面料', 0, 'Brown'))
+                elif field_base == 'spec_qty_short':
+                    example_row_data.append(('规格与数量简称', 0, 'A'))
+                elif field_base == 'version_no':
+                    example_row_data.append(('版本号', 0, '1'))
+                elif field_base == 'source_sku':
+                    example_row_data.append(('来源下单SKU', 0, ''))
+                elif field_base == 'finished_length_in':
+                    example_row_data.append(('成品长(inch)', 0, 30))
+                elif field_base == 'finished_width_in':
+                    example_row_data.append(('成品宽(inch)', 0, 20))
+                elif field_base == 'finished_height_in':
+                    example_row_data.append(('成品高(inch)', 0, 10))
+                elif field_base == 'net_weight_lbs':
+                    example_row_data.append(('净重(lbs)', 0, 5.5))
+                elif field_base == 'package_length_in':
+                    example_row_data.append(('包裹长(inch)', 0, 32))
+                elif field_base == 'package_width_in':
+                    example_row_data.append(('包裹宽(inch)', 0, 22))
+                elif field_base == 'package_height_in':
+                    example_row_data.append(('包裹高(inch)', 0, 12))
+                elif field_base == 'gross_weight_lbs':
+                    example_row_data.append(('毛重(lbs)', 0, 6.5))
+                elif field_base == 'cost_usd':
+                    example_row_data.append(('成本价(美元)', 0, 25.00))
+                elif field_base == 'carton_qty':
+                    example_row_data.append(('装箱量', 0, 50))
+                elif field_base == 'package_size_class':
+                    example_row_data.append(('包裹大小归类(Fedx)', 0, 'Small'))
+                elif field_base == 'last_mile_avg_freight_usd':
+                    example_row_data.append(('尾程平均运费(美元)', 0, 3.50))
+                elif field_base in ['filling_materials', 'frame_materials', 'features', 'certifications']:
+                    # 多选字段只在第一列填充示例
+                    if col_name.endswith('_1'):
+                        if field_base == 'filling_materials':
+                            example_row_data.append(('填充材料(可多项)', 0, '海绵'))
+                        elif field_base == 'frame_materials':
+                            example_row_data.append(('框架材料(可多项)', 0, '金属'))
+                        elif field_base == 'features':
+                            example_row_data.append(('卖点特点(可多项)', 0, '可拆洗'))
+                        elif field_base == 'certifications':
+                            example_row_data.append(('认证(可多项)', 0, 'CE'))
+                    else:
+                        example_row_data.append(('', 0, None))
+                else:
+                    example_row_data.append(('', 0, None))
+            
+            for idx, (label, unused, value) in enumerate(example_row_data):
+                cell = ws.cell(row=example_row_idx, column=idx+1)
+                cell.value = value
+                cell.fill = PatternFill(start_color='E8E8E8', end_color='E8E8E8', fill_type='solid')
+                cell.font = Font(italic=True, color='888888')
+            
+            # 辅助函数：将列索引转换为Excel列字母
+            def col_idx_to_letter(idx):
+                """将0-based列索引转换为Excel列字母"""
+                result = ''
+                while idx >= 0:
+                    result = chr(65 + (idx % 26)) + result
+                    idx = idx // 26 - 1
+                return result
+            
+            # 添加数据验证
+            yes_no_validation = DataValidation(type='list', formula1='"否,是"', allow_blank=True)
+            ws.add_data_validation(yes_no_validation)
+            
+            if 'is_iteration' in header_to_column:
+                col_letter = col_idx_to_letter(header_to_column['is_iteration'])
+                for row in range(4, 1000):
+                    yes_no_validation.add(f'{col_letter}{row}')
+            
+            # 为下拉字段添加验证
+            for field_name, options in field_to_options.items():
+                if options and field_name in header_to_column:
+                    col_idx = header_to_column[field_name]
+                    col_letter = col_idx_to_letter(col_idx)
+                    
+                    validation = DataValidation(type='list', formula1=f'"{",".join(options)}"', allow_blank=True)
+                    ws.add_data_validation(validation)
+                    
+                    for row in range(4, 1000):
+                        validation.add(f'{col_letter}{row}')
+            
+            # 设置列宽
+            for idx, header in enumerate(column_headers):
+                col_letter = col_idx_to_letter(idx)
+                if '材料' in header or '特点' in header or '认证' in header:
+                    ws.column_dimensions[col_letter].width = 18
+                elif 'SKU' in header:
+                    ws.column_dimensions[col_letter].width = 15
+                elif '简称' in header:
+                    ws.column_dimensions[col_letter].width = 12
+                else:
+                    ws.column_dimensions[col_letter].width = 14
+            
+            # 冻结表头
+            ws.freeze_panes = 'A3'
+            
             return self._send_excel_workbook(wb, 'order_product_template.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
@@ -6357,8 +6639,62 @@ class WSGIApp:
             wb = load_workbook(io.BytesIO(file_bytes))
             ws = wb.active
 
-            headers = [cell.value for cell in ws[1]]
-            header_map = {str(h).strip(): idx for idx, h in enumerate(headers) if h}
+            # 支持两种表头格式：新的中文表头（从第2行）或旧的字段代码表头（从第1行）
+            header_row_idx = 2 if ws.cell(row=1, column=1).value in ['迭代款', '基础信息', '成品尺寸/重量', '包裹尺寸/重量', '成本与物流', '材料与卖点'] else 1
+            
+            headers = [cell.value for cell in ws[header_row_idx]]
+            
+            # 中文字段标签到字段代码的映射
+            label_to_code = {
+                '是否迭代款': 'is_iteration',
+                '来源下单SKU': 'source_sku',
+                '版本号': 'version_no',
+                '下单SKU *': 'sku',
+                '归属货号 *': 'sku_family',
+                '面料 *': 'fabric_code',
+                '规格与数量简称': 'spec_qty_short',
+                '成品长(inch)': 'finished_length_in',
+                '成品宽(inch)': 'finished_width_in',
+                '成品高(inch)': 'finished_height_in',
+                '净重(lbs)': 'net_weight_lbs',
+                '包裹长(inch)': 'package_length_in',
+                '包裹宽(inch)': 'package_width_in',
+                '包裹高(inch)': 'package_height_in',
+                '毛重(lbs)': 'gross_weight_lbs',
+                '成本价(美元)': 'cost_usd',
+                '装箱量': 'carton_qty',
+                '包裹大小归类(Fedx)': 'package_size_class',
+                '尾程平均运费(美元)': 'last_mile_avg_freight_usd',
+                '填充材料(可多项)': 'filling_materials',
+                '框架材料(可多项)': 'frame_materials',
+                '卖点特点(可多项)': 'features',
+                '认证(可多项)': 'certifications'
+            }
+            
+            # 构建列映射，支持中文标签或字段代码
+            header_map = {}
+            for idx, h in enumerate(headers):
+                if h:
+                    h_stripped = str(h).strip()
+                    # 先尝试翻译中文标签
+                    if h_stripped in label_to_code:
+                        field_code = label_to_code[h_stripped]
+                    else:
+                        field_code = h_stripped
+                    
+                    # 检测是否是多列字段（带后缀 _1, _2, _3 等）
+                    base_field = field_code.rsplit('_', 1)[0] if '_' in field_code and field_code[-1].isdigit() else field_code
+                    
+                    mapped_key = field_code if field_code in ['sku', 'sku_family', 'fabric_code', 'spec_qty_short', 'is_iteration', 'source_sku', 'version_no',
+                                                               'finished_length_in', 'finished_width_in', 'finished_height_in', 'net_weight_lbs',
+                                                               'package_length_in', 'package_width_in', 'package_height_in', 'gross_weight_lbs',
+                                                               'cost_usd', 'carton_qty', 'package_size_class', 'last_mile_avg_freight_usd'] else base_field
+                    
+                    # 对于多列字段，保留后缀
+                    if field_code != mapped_key and '_' in field_code and field_code[-1].isdigit():
+                        mapped_key = f"{base_field}_{field_code.rsplit('_', 1)[1]}"
+                    
+                    header_map[mapped_key] = idx
 
             def get_cell(row, key):
                 idx = header_map.get(key)
@@ -6366,27 +6702,36 @@ class WSGIApp:
                     return None
                 return row[idx].value
 
-            def parse_list(raw):
-                if raw is None:
-                    return []
-                text = str(raw).strip()
-                if not text:
-                    return []
-                return [t.strip() for t in re.split(r'[;/,，、]+', text) if t.strip()]
-
             def parse_bool(raw):
                 if raw is None:
                     return 0
                 text = str(raw).strip().lower()
-                if text in ('1', 'true', 'yes', 'y', '是', '对', 'on'):
+                if text in ('1', 'true', 'yes', 'y', '是', '对', 'on', '是否迭代款'):
                     return 1
                 return 0
+            
+            # 支持多列的多选字段收集函数（动态识别所有 _1, _2, _3... 等列）
+            def collect_multi_select_values(row, field_base_name, options_map):
+                """
+                收集某个多选字段的所有列中的值（动态识别 _1, _2, _3, ... 等）
+                """
+                values = []
+                # 尝试所有可能的后缀（1-20）
+                for i in range(1, 21):
+                    col_name = f"{field_base_name}_{i}"
+                    cell_value = (get_cell(row, col_name) or '').strip()
+                    if cell_value and options_map:
+                        val_id = options_map.get(cell_value)
+                        if val_id:
+                            values.append(val_id)
+                    elif not cell_value:
+                        # 如果某列为空，后续列也可能有值，继续检查
+                        continue
+                return values
 
             self._ensure_order_product_tables()
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("SELECT id, sku_family FROM product_families")
-                    sku_map = {row['sku_family']: row['id'] for row in cur.fetchall()}
                     cur.execute("SELECT id, fabric_code FROM fabric_materials")
                     fabric_map = {row['fabric_code']: row['id'] for row in cur.fetchall()}
                     cur.execute(
@@ -6408,7 +6753,9 @@ class WSGIApp:
 
                 created = 0
                 errors = []
-                for row_idx in range(2, ws.max_row + 1):
+                data_start_row = header_row_idx + 1
+                
+                for row_idx in range(data_start_row, ws.max_row + 1):
                     row = ws[row_idx]
                     row_values = [cell.value for cell in row]
                     if not any(v is not None and str(v).strip() for v in row_values):
@@ -6419,12 +6766,14 @@ class WSGIApp:
                     version_no = (get_cell(row, 'version_no') or '').strip()
                     fabric_code = (get_cell(row, 'fabric_code') or '').strip()
                     spec_qty_short = (get_cell(row, 'spec_qty_short') or '').strip()
-                    listing_image_path = (get_cell(row, 'listing_image_path') or '').strip()
                     is_iteration = parse_bool(get_cell(row, 'is_iteration'))
                     source_sku = (get_cell(row, 'source_sku') or '').strip()
 
-                    if not sku or not sku_family or not version_no or not fabric_code or not spec_qty_short:
+                    if not sku or not sku_family or not fabric_code or not spec_qty_short:
                         errors.append({'row': row_idx, 'error': 'Missing required fields'})
+                        continue
+                    if is_iteration and not version_no:
+                        errors.append({'row': row_idx, 'error': 'Missing version for iteration'})
                         continue
 
                     sku_family_id = sku_map.get(sku_family)
@@ -6440,26 +6789,12 @@ class WSGIApp:
                             continue
                         source_order_product_id = order_map.get(source_sku)
 
-                    listing_image_b64 = None
-                    if listing_image_path:
-                        # listing_image_path in spreadsheet may contain a path like 'MS01/cover.jpg'
-                        # or may already include a leading '上架资源/' — normalize to be relative
-                        rel_path = listing_image_path
-                        # remove leading '上架资源' or '『上架资源』' if present, because RESOURCES_PATH_BYTES already points to 上架资源
-                        rel_path = re.sub(r'^(?:上架资源|『上架资源』)[/\\]?', '', rel_path)
-                        try:
-                            rel_bytes = os.fsencode(rel_path)
-                        except Exception:
-                            rel_bytes = rel_path.encode('utf-8', errors='surrogatepass')
-                        listing_image_b64 = base64.b64encode(rel_bytes).decode('ascii')
-
                     payload = {
                         'sku': sku,
                         'sku_family_id': sku_family_id,
                         'version_no': version_no,
                         'fabric_id': fabric_id,
                         'spec_qty_short': spec_qty_short,
-                        'listing_image_b64': listing_image_b64,
                         'is_iteration': is_iteration,
                         'source_order_product_id': source_order_product_id,
                         'finished_length_in': self._parse_float(get_cell(row, 'finished_length_in')),
@@ -6476,14 +6811,11 @@ class WSGIApp:
                         'last_mile_avg_freight_usd': self._parse_float(get_cell(row, 'last_mile_avg_freight_usd'))
                     }
 
-                    filling_ids = [filling_map.get(name) for name in parse_list(get_cell(row, 'filling_materials'))]
-                    frame_ids = [frame_map.get(name) for name in parse_list(get_cell(row, 'frame_materials'))]
-                    feature_ids = [feature_map.get(name) for name in parse_list(get_cell(row, 'features'))]
-                    cert_ids = [cert_map.get(name) for name in parse_list(get_cell(row, 'certifications'))]
-                    filling_ids = [v for v in filling_ids if v]
-                    frame_ids = [v for v in frame_ids if v]
-                    feature_ids = [v for v in feature_ids if v]
-                    cert_ids = [v for v in cert_ids if v]
+                    # 支持动态多列多选格式 (field_1, field_2, field_3, ...)
+                    filling_ids = collect_multi_select_values(row, 'filling_materials', filling_map)
+                    frame_ids = collect_multi_select_values(row, 'frame_materials', frame_map)
+                    feature_ids = collect_multi_select_values(row, 'features', feature_map)
+                    cert_ids = collect_multi_select_values(row, 'certifications', cert_map)
 
                     try:
                         with conn.cursor() as cur:
@@ -6491,13 +6823,13 @@ class WSGIApp:
                                 """
                                 INSERT INTO order_products (
                                     sku, sku_family_id, version_no, fabric_id, spec_qty_short,
-                                    listing_image_b64, is_iteration, source_order_product_id,
+                                    is_iteration, source_order_product_id,
                                     finished_length_in, finished_width_in, finished_height_in,
                                     net_weight_lbs, package_length_in, package_width_in, package_height_in,
                                     gross_weight_lbs, cost_usd, carton_qty, package_size_class, last_mile_avg_freight_usd
                                 ) VALUES (
                                     %(sku)s, %(sku_family_id)s, %(version_no)s, %(fabric_id)s, %(spec_qty_short)s,
-                                    %(listing_image_b64)s, %(is_iteration)s, %(source_order_product_id)s,
+                                    %(is_iteration)s, %(source_order_product_id)s,
                                     %(finished_length_in)s, %(finished_width_in)s, %(finished_height_in)s,
                                     %(net_weight_lbs)s, %(package_length_in)s, %(package_width_in)s, %(package_height_in)s,
                                     %(gross_weight_lbs)s, %(cost_usd)s, %(carton_qty)s, %(package_size_class)s, %(last_mile_avg_freight_usd)s
@@ -6517,6 +6849,92 @@ class WSGIApp:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def handle_parent_api(self, environ, method, start_response):
+        """父体管理 API（CRUD）"""
+        try:
+            self._ensure_sales_parent_tables()
+            if method == 'GET':
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT id, parent_code,
+                                   estimated_refund_rate, estimated_discount_rate,
+                                   commission_rate, estimated_acoas,
+                                   created_at, updated_at
+                            FROM sales_parents
+                            ORDER BY id DESC
+                            """
+                        )
+                        rows = cur.fetchall() or []
+                return self.send_json({'status': 'success', 'items': rows}, start_response)
+
+            if method == 'POST':
+                data = self._read_json_body(environ)
+                parent_code = (data.get('parent_code') or '').strip()
+                if not parent_code:
+                    return self.send_json({'status': 'error', 'message': 'Missing parent_code'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            INSERT INTO sales_parents
+                            (parent_code, estimated_refund_rate, estimated_discount_rate, commission_rate, estimated_acoas)
+                            VALUES (%s, %s, %s, %s, %s)
+                            """,
+                            (
+                                parent_code,
+                                self._parse_float(data.get('estimated_refund_rate')),
+                                self._parse_float(data.get('estimated_discount_rate')),
+                                self._parse_float(data.get('commission_rate')),
+                                self._parse_float(data.get('estimated_acoas'))
+                            )
+                        )
+                        new_id = cur.lastrowid
+                return self.send_json({'status': 'success', 'id': new_id}, start_response)
+
+            if method == 'PUT':
+                data = self._read_json_body(environ)
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            UPDATE sales_parents
+                            SET parent_code=%s,
+                                estimated_refund_rate=%s,
+                                estimated_discount_rate=%s,
+                                commission_rate=%s,
+                                estimated_acoas=%s
+                            WHERE id=%s
+                            """,
+                            (
+                                (data.get('parent_code') or '').strip(),
+                                self._parse_float(data.get('estimated_refund_rate')),
+                                self._parse_float(data.get('estimated_discount_rate')),
+                                self._parse_float(data.get('commission_rate')),
+                                self._parse_float(data.get('estimated_acoas')),
+                                item_id
+                            )
+                        )
+                return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'DELETE':
+                data = self._read_json_body(environ)
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM sales_parents WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
     def handle_sales_product_template_api(self, environ, method, start_response):
         """销售产品模板下载"""
         try:
@@ -6524,20 +6942,120 @@ class WSGIApp:
                 return self.send_error(405, 'Method not allowed', start_response)
             if Workbook is None:
                 return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
+            
+            from openpyxl.styles import PatternFill, Font, Alignment
+            from openpyxl.worksheet.datavalidation import DataValidation
+            
+            self._ensure_sales_product_tables()
             wb = Workbook()
             ws = wb.active
             ws.title = 'sales_products'
-            headers = [
-                'shop_name', 'brand_name', 'platform_type', 'sku_family',
-                'platform_sku', 'parent_asin', 'child_asin',
-                'fabric', 'spec_name', 'order_sku_links'
+            
+            # 获取可选项
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    # 获取所有店铺-品牌-平台组合
+                    cur.execute("""
+                        SELECT DISTINCT s.shop_name, b.name AS brand_name, pt.name AS platform_type
+                        FROM shops s
+                        JOIN brands b ON b.id = s.brand_id
+                        JOIN platform_types pt ON pt.id = s.platform_type_id
+                        ORDER BY s.shop_name, b.name, pt.name
+                    """)
+                    shops = [f"{row['shop_name']} | {row['brand_name']} | {row['platform_type']}" for row in cur.fetchall()]
+                    cur.execute("SELECT parent_code FROM sales_parents ORDER BY parent_code")
+                    parent_codes = [row['parent_code'] for row in cur.fetchall()]
+            
+            # 第1行：模块标题
+            section_headers = [
+                '基础信息', '基础信息', '基础信息', '基础信息', '基础信息', '基础信息',
+                '成本', '成本', '成本',
+                '尺寸', '尺寸', '尺寸', '尺寸', '尺寸', '尺寸', '尺寸', '尺寸'
             ]
-            ws.append(headers)
+            # 第2行：字段标题
+            cn_headers = [
+                '店铺 | 品牌 | 平台', '销售平台SKU', '父体编号', '子体编号', '面料', '规格名称',
+                '售价(USD)', '海外仓成本(自动)', '尾程物流成本(自动)',
+                '包裹长(in,自动)', '包裹宽(in,自动)', '包裹高(in,自动)',
+                '净重(lbs,自动)', '毛重(lbs,自动)',
+                '组装后长(in)', '组装后宽(in)', '组装后高(in)',
+                '关联下单SKU\n(支持换行|;分隔)'
+            ]
+
+            ws.append(section_headers)
+            ws.append(cn_headers)
+            title_fill = PatternFill(start_color='CFC7BD', end_color='CFC7BD', fill_type='solid')
+            header_fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
+            header_font = Font(bold=True, color='2A2420', size=11)
+            header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+            for cell in ws[1]:
+                cell.fill = title_fill
+                cell.font = header_font
+                cell.alignment = header_alignment
+            for cell in ws[2]:
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = header_alignment
+            
+            # 第3行：示例行
             ws.append([
-                '店铺A', '品牌A', 'Amazon', 'MS01',
-                '', 'B01XXXX', 'B01YYYY',
-                '', '', 'MS01A-Brown*2;MS01B-Gray*1'
+                '店铺A | 品牌A | Amazon',
+                'MS01-Brown-1A',
+                'PARENT-001',
+                'CHILD-001',
+                '棕色/Brown',
+                'A款',
+                199.99,
+                '',
+                '',
+                '', '', '', '', '',
+                78, 32, 30,
+                'MS01A-Brown*2\nMS01B-Gray'
             ])
+            
+            example_fill = PatternFill(start_color='E8E8E8', end_color='E8E8E8', fill_type='solid')
+            example_font = Font(italic=True, color='888888')
+            for cell in ws[3]:
+                cell.fill = example_fill
+                cell.font = example_font
+            
+            # 添加数据验证
+            if shops:
+                shop_validation = DataValidation(type='list', formula1=f'"{";".join(shops[:100])}"', allow_blank=False)
+                ws.add_data_validation(shop_validation)
+                for row in range(4, 1000):
+                    shop_validation.add(f'A{row}')
+
+            if parent_codes:
+                parent_validation = DataValidation(type='list', formula1=f'"{";".join(parent_codes[:100])}"', allow_blank=True)
+                ws.add_data_validation(parent_validation)
+                for row in range(4, 1000):
+                    parent_validation.add(f'C{row}')
+            
+            
+            # 设置列宽
+            ws.column_dimensions['A'].width = 25
+            ws.column_dimensions['B'].width = 18
+            ws.column_dimensions['C'].width = 12
+            ws.column_dimensions['D'].width = 12
+            ws.column_dimensions['E'].width = 14
+            ws.column_dimensions['F'].width = 15
+            ws.column_dimensions['G'].width = 12
+            ws.column_dimensions['H'].width = 16
+            ws.column_dimensions['I'].width = 18
+            ws.column_dimensions['J'].width = 14
+            ws.column_dimensions['K'].width = 14
+            ws.column_dimensions['L'].width = 14
+            ws.column_dimensions['M'].width = 14
+            ws.column_dimensions['N'].width = 14
+            ws.column_dimensions['O'].width = 14
+            ws.column_dimensions['P'].width = 14
+            ws.column_dimensions['Q'].width = 14
+            ws.column_dimensions['R'].width = 24
+            
+            ws.freeze_panes = 'A3'
+            
             return self._send_excel_workbook(wb, 'sales_product_template.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
@@ -6569,8 +7087,55 @@ class WSGIApp:
             wb = load_workbook(io.BytesIO(file_bytes))
             ws = wb.active
 
-            headers = [cell.value for cell in ws[1]]
-            header_map = {str(h).strip(): idx for idx, h in enumerate(headers) if h}
+            header_row_idx = 2 if str(ws.cell(row=1, column=1).value or '').strip() == '基础信息' else 1
+            headers = [cell.value for cell in ws[header_row_idx]]
+            
+            # 中文标签到字段代码的映射
+            label_to_code = {
+                '店铺 | 品牌 | 平台': 'shop_info',
+                '平台SKU': 'platform_sku',
+                '销售平台SKU': 'platform_sku',
+                '父体编号': 'parent_code',
+                '子体编号': 'child_code',
+                '面料(选填)': 'fabric',
+                '规格名(选填)': 'spec_name',
+                '面料': 'fabric',
+                '规格名称': 'spec_name',
+                '售价(USD)': 'sale_price_usd',
+                '海外仓成本(自动)': 'warehouse_cost_usd',
+                '尾程物流成本(自动)': 'last_mile_cost_usd',
+                '包裹长(in,自动)': 'package_length_in',
+                '包裹宽(in,自动)': 'package_width_in',
+                '包裹高(in,自动)': 'package_height_in',
+                '净重(lbs,自动)': 'net_weight_lbs',
+                '毛重(lbs,自动)': 'gross_weight_lbs',
+                '组装后长(in)': 'assembled_length_in',
+                '组装后宽(in)': 'assembled_width_in',
+                '组装后高(in)': 'assembled_height_in',
+                '关联下单SKU\n(支持换行|;分隔)': 'order_sku_links',
+                # 兼容旧字段名
+                'shop_name': 'shop_name',
+                'brand_name': 'brand_name',
+                'platform_type': 'platform_type',
+                'platform_sku': 'platform_sku',
+                'parent_asin': 'parent_code',
+                'child_asin': 'child_code',
+                'fabric': 'fabric',
+                'spec_name': 'spec_name',
+                'sale_price_usd': 'sale_price_usd',
+                'assembled_length_in': 'assembled_length_in',
+                'assembled_width_in': 'assembled_width_in',
+                'assembled_height_in': 'assembled_height_in',
+                'order_sku_links': 'order_sku_links'
+            }
+            
+            # 构建列映射，支持中文和旧格式
+            header_map = {}
+            for idx, h in enumerate(headers):
+                if h:
+                    h_stripped = str(h).strip()
+                    field_code = label_to_code.get(h_stripped, h_stripped)
+                    header_map[field_code] = idx
 
             def get_cell(row, key):
                 idx = header_map.get(key)
@@ -6579,27 +7144,47 @@ class WSGIApp:
                 return row[idx].value
 
             def parse_links(raw):
+                """解析 order_sku_links：支持换行\\n、分号;、竖线|分隔，支持 *数量 或重复计数"""
                 if raw is None:
                     return []
                 text = str(raw).strip()
                 if not text:
                     return []
-                parts = [t.strip() for t in re.split(r'[;；|]+', text) if t.strip()]
+                
+                # 支持换行符、各类分隔符分割
+                parts = [t.strip() for t in re.split(r'[\n;；|]+', text) if t.strip()]
                 result = []
+                sku_count = {}  # 记录每个SKU的重复计数
+                
                 for part in parts:
                     if '*' in part:
+                        # 显式指定数量：MS01A-Brown*2
                         sku, qty = part.split('*', 1)
                     else:
-                        sku, qty = part, '1'
+                        # 未指定数量，检查是否重复出现
+                        sku, qty = part, None
+                    
                     sku = sku.strip()
-                    qty = qty.strip()
                     if not sku:
                         continue
-                    try:
-                        qty_val = int(qty) if qty else 1
-                    except Exception:
-                        qty_val = 1
+                    
+                    if qty is None:
+                        # 默认计数：重复出现同一SKU则累加
+                        if sku not in sku_count:
+                            sku_count[sku] = 1
+                        else:
+                            sku_count[sku] += 1
+                        qty_val = sku_count[sku]
+                    else:
+                        # 显式指定的数量
+                        qty = qty.strip()
+                        try:
+                            qty_val = int(qty) if qty else 1
+                        except Exception:
+                            qty_val = 1
+                    
                     result.append((sku, max(1, qty_val)))
+                
                 return result
 
             self._ensure_sales_product_tables()
@@ -6618,35 +7203,51 @@ class WSGIApp:
                         key = (row['shop_name'], row['brand_name'], row['platform_type_name'])
                         shop_map[key] = row['id']
 
-                    cur.execute("SELECT id, sku_family FROM product_families")
-                    sku_map = {row['sku_family']: row['id'] for row in cur.fetchall()}
-
                     cur.execute("SELECT id, sku FROM order_products")
                     order_map = {row['sku']: row['id'] for row in cur.fetchall()}
 
+                    cur.execute("SELECT id, sku_family_id FROM order_products")
+                    order_family = {row['id']: row['sku_family_id'] for row in cur.fetchall()}
+
                 created = 0
                 errors = []
-                for row_idx in range(2, ws.max_row + 1):
+                data_start_row = header_row_idx + 2
+                for row_idx in range(data_start_row, ws.max_row + 1):
                     row = ws[row_idx]
                     row_values = [cell.value for cell in row]
                     if not any(v is not None and str(v).strip() for v in row_values):
                         continue
 
-                    shop_name = (get_cell(row, 'shop_name') or '').strip()
-                    brand_name = (get_cell(row, 'brand_name') or '').strip()
-                    platform_type = (get_cell(row, 'platform_type') or '').strip()
-                    sku_family = (get_cell(row, 'sku_family') or '').strip()
+                    # 支持两种格式：新的合并列 vs 旧的分开列
+                    shop_info = (get_cell(row, 'shop_info') or '').strip()
+                    if shop_info and '|' in shop_info:
+                        # 新格式："店铺A | 品牌A | Amazon"
+                        parts = [p.strip() for p in shop_info.split('|')]
+                        if len(parts) >= 3:
+                            shop_name, brand_name, platform_type = parts[0], parts[1], parts[2]
+                        else:
+                            errors.append({'row': row_idx, 'error': 'Invalid shop format'})
+                            continue
+                    else:
+                        # 旧格式：分开的列
+                        shop_name = (get_cell(row, 'shop_name') or '').strip()
+                        brand_name = (get_cell(row, 'brand_name') or '').strip()
+                        platform_type = (get_cell(row, 'platform_type') or '').strip()
+                    
                     platform_sku = (get_cell(row, 'platform_sku') or '').strip()
-                    parent_asin = (get_cell(row, 'parent_asin') or '').strip() or None
-                    child_asin = (get_cell(row, 'child_asin') or '').strip() or None
+                    parent_code = (get_cell(row, 'parent_code') or '').strip() or None
+                    child_code = (get_cell(row, 'child_code') or '').strip() or None
                     fabric = (get_cell(row, 'fabric') or '').strip()
                     spec_name = (get_cell(row, 'spec_name') or '').strip()
+                    sale_price_usd = self._parse_float(get_cell(row, 'sale_price_usd'))
+                    assembled_length_in = self._parse_float(get_cell(row, 'assembled_length_in'))
+                    assembled_width_in = self._parse_float(get_cell(row, 'assembled_width_in'))
+                    assembled_height_in = self._parse_float(get_cell(row, 'assembled_height_in'))
                     order_sku_links = (get_cell(row, 'order_sku_links') or '').strip()
 
                     shop_id = shop_map.get((shop_name, brand_name, platform_type))
-                    sku_family_id = sku_map.get(sku_family)
-                    if not shop_id or not sku_family_id:
-                        errors.append({'row': row_idx, 'error': 'Invalid shop or sku_family'})
+                    if not shop_id:
+                        errors.append({'row': row_idx, 'error': 'Invalid shop'})
                         continue
 
                     link_entries = []
@@ -6660,6 +7261,20 @@ class WSGIApp:
                     if not link_entries:
                         errors.append({'row': row_idx, 'error': 'Missing order_sku_links'})
                         continue
+
+                    derived = self._derive_sales_cost_size(conn, link_entries)
+                    sku_family_id = derived.get('sku_family_id')
+                    if not sku_family_id:
+                        errors.append({'row': row_idx, 'error': '无法根据订单SKU推断归属货号'})
+                        continue
+
+                    parent_id = None
+                    if parent_code:
+                        with conn.cursor() as cur:
+                            cur.execute("INSERT IGNORE INTO sales_parents (parent_code) VALUES (%s)", (parent_code,))
+                            cur.execute("SELECT id FROM sales_parents WHERE parent_code=%s", (parent_code,))
+                            p_row = cur.fetchone()
+                            parent_id = p_row['id'] if p_row else None
 
                     manual_platform_sku = bool(platform_sku)
                     auto_fabric, auto_spec_name, auto_platform_sku = self._derive_sales_fields(conn, sku_family_id, link_entries)
@@ -6676,10 +7291,24 @@ class WSGIApp:
                             cur.execute(
                                 """
                                 INSERT INTO sales_products
-                                (shop_id, sku_family_id, platform_sku, parent_asin, child_asin, fabric, spec_name)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                (shop_id, platform_sku, parent_id, child_code, fabric, spec_name,
+                                 sale_price_usd, warehouse_cost_usd, last_mile_cost_usd,
+                                 package_length_in, package_width_in, package_height_in,
+                                 net_weight_lbs, gross_weight_lbs,
+                                 assembled_length_in, assembled_width_in, assembled_height_in)
+                                VALUES (%s, %s, %s, %s, %s, %s,
+                                        %s, %s, %s,
+                                        %s, %s, %s,
+                                        %s, %s,
+                                        %s, %s, %s)
                                 """,
-                                (shop_id, sku_family_id, final_platform_sku, parent_asin, child_asin, final_fabric, final_spec_name)
+                                (
+                                    shop_id, final_platform_sku, parent_id, child_code, final_fabric, final_spec_name,
+                                    sale_price_usd, derived.get('warehouse_cost_usd'), derived.get('last_mile_cost_usd'),
+                                    derived.get('package_length_in'), derived.get('package_width_in'), derived.get('package_height_in'),
+                                    derived.get('net_weight_lbs'), derived.get('gross_weight_lbs'),
+                                    assembled_length_in, assembled_width_in, assembled_height_in
+                                )
                             )
                             new_id = cur.lastrowid
                         self._replace_sales_order_links(conn, new_id, link_entries)
@@ -6704,25 +7333,30 @@ class WSGIApp:
                     with conn.cursor() as cur:
                         base_sql = """
                             SELECT
-                                sp.id, sp.shop_id, sp.sku_family_id,
-                                sp.platform_sku, sp.parent_asin, sp.child_asin,
-                                sp.fabric, sp.spec_name, sp.created_at, sp.updated_at,
+                                sp.id, sp.shop_id,
+                                sp.platform_sku, sp.parent_id, sp.child_code,
+                                sp.fabric, sp.spec_name,
+                                sp.sale_price_usd, sp.warehouse_cost_usd, sp.last_mile_cost_usd,
+                                sp.package_length_in, sp.package_width_in, sp.package_height_in,
+                                sp.net_weight_lbs, sp.gross_weight_lbs,
+                                sp.assembled_length_in, sp.assembled_width_in, sp.assembled_height_in,
+                                sp.created_at, sp.updated_at,
                                 s.shop_name, pt.name AS platform_type_name, b.name AS brand_name,
-                                pf.sku_family,
+                                p.parent_code,
                                 GROUP_CONCAT(CONCAT(op.id, ':', op.sku, ':', spol.quantity) ORDER BY op.id SEPARATOR '|') AS order_sku_links
                             FROM sales_products sp
                             LEFT JOIN shops s ON s.id = sp.shop_id
                             LEFT JOIN platform_types pt ON pt.id = s.platform_type_id
                             LEFT JOIN brands b ON b.id = s.brand_id
-                            LEFT JOIN product_families pf ON pf.id = sp.sku_family_id
+                            LEFT JOIN sales_parents p ON p.id = sp.parent_id
                             LEFT JOIN sales_product_order_links spol ON spol.sales_product_id = sp.id
                             LEFT JOIN order_products op ON op.id = spol.order_product_id
                         """
                         filters = []
                         params = []
                         if keyword:
-                            filters.append("(sp.platform_sku LIKE %s OR pf.sku_family LIKE %s OR s.shop_name LIKE %s)")
-                            params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
+                            filters.append("(sp.platform_sku LIKE %s OR s.shop_name LIKE %s OR p.parent_code LIKE %s OR sp.child_code LIKE %s)")
+                            params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
                         where_sql = (" WHERE " + " AND ".join(filters)) if filters else ""
                         cur.execute(base_sql + where_sql + " GROUP BY sp.id ORDER BY sp.id DESC", params)
                         rows = cur.fetchall() or []
@@ -6748,19 +7382,35 @@ class WSGIApp:
             if method == 'POST':
                 data = self._read_json_body(environ)
                 shop_id = self._parse_int(data.get('shop_id'))
-                sku_family_id = self._parse_int(data.get('sku_family_id'))
                 platform_sku_manual = (data.get('platform_sku') or '').strip()
-                parent_asin = (data.get('parent_asin') or '').strip() or None
-                child_asin = (data.get('child_asin') or '').strip() or None
+                parent_code = (data.get('parent_code') or '').strip() or None
+                child_code = (data.get('child_code') or '').strip() or None
+                sale_price_usd = self._parse_float(data.get('sale_price_usd'))
+                assembled_length_in = self._parse_float(data.get('assembled_length_in'))
+                assembled_width_in = self._parse_float(data.get('assembled_width_in'))
+                assembled_height_in = self._parse_float(data.get('assembled_height_in'))
                 links = self._normalize_sales_order_links(data.get('order_sku_links'))
                 
                 # 检查是否手动编辑了platform_sku
                 manual_platform_sku = bool(data.get('manual_platform_sku'))
                 
-                if not shop_id or not sku_family_id or not links:
+                if not shop_id or not links:
                     return self.send_json({'status': 'error', 'message': 'Missing required fields'}, start_response)
 
                 with self._get_db_connection() as conn:
+                    derived = self._derive_sales_cost_size(conn, links)
+                    sku_family_id = derived.get('sku_family_id')
+                    if not sku_family_id:
+                        return self.send_json({'status': 'error', 'message': '无法根据下单SKU推断归属货号'}, start_response)
+
+                    parent_id = None
+                    if parent_code:
+                        with conn.cursor() as cur:
+                            cur.execute("INSERT IGNORE INTO sales_parents (parent_code) VALUES (%s)", (parent_code,))
+                            cur.execute("SELECT id FROM sales_parents WHERE parent_code=%s", (parent_code,))
+                            row = cur.fetchone()
+                            parent_id = row['id'] if row else None
+
                     auto_fabric, auto_spec_name, auto_platform_sku = self._derive_sales_fields(conn, sku_family_id, links)
                     fabric = (data.get('fabric') or '').strip() or auto_fabric
                     spec_name = (data.get('spec_name') or '').strip() or auto_spec_name
@@ -6775,10 +7425,24 @@ class WSGIApp:
                         cur.execute(
                             """
                             INSERT INTO sales_products
-                            (shop_id, sku_family_id, platform_sku, parent_asin, child_asin, fabric, spec_name)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            (shop_id, platform_sku, parent_id, child_code, fabric, spec_name,
+                             sale_price_usd, warehouse_cost_usd, last_mile_cost_usd,
+                             package_length_in, package_width_in, package_height_in,
+                             net_weight_lbs, gross_weight_lbs,
+                             assembled_length_in, assembled_width_in, assembled_height_in)
+                            VALUES (%s, %s, %s, %s, %s, %s,
+                                    %s, %s, %s,
+                                    %s, %s, %s,
+                                    %s, %s,
+                                    %s, %s, %s)
                             """,
-                            (shop_id, sku_family_id, platform_sku, parent_asin, child_asin, fabric, spec_name)
+                            (
+                                shop_id, platform_sku, parent_id, child_code, fabric, spec_name,
+                                sale_price_usd, derived.get('warehouse_cost_usd'), derived.get('last_mile_cost_usd'),
+                                derived.get('package_length_in'), derived.get('package_width_in'), derived.get('package_height_in'),
+                                derived.get('net_weight_lbs'), derived.get('gross_weight_lbs'),
+                                assembled_length_in, assembled_width_in, assembled_height_in
+                            )
                         )
                         new_id = cur.lastrowid
                     self._replace_sales_order_links(conn, new_id, links)
@@ -6788,19 +7452,35 @@ class WSGIApp:
                 data = self._read_json_body(environ)
                 item_id = self._parse_int(data.get('id'))
                 shop_id = self._parse_int(data.get('shop_id'))
-                sku_family_id = self._parse_int(data.get('sku_family_id'))
                 platform_sku_manual = (data.get('platform_sku') or '').strip()
-                parent_asin = (data.get('parent_asin') or '').strip() or None
-                child_asin = (data.get('child_asin') or '').strip() or None
+                parent_code = (data.get('parent_code') or '').strip() or None
+                child_code = (data.get('child_code') or '').strip() or None
+                sale_price_usd = self._parse_float(data.get('sale_price_usd'))
+                assembled_length_in = self._parse_float(data.get('assembled_length_in'))
+                assembled_width_in = self._parse_float(data.get('assembled_width_in'))
+                assembled_height_in = self._parse_float(data.get('assembled_height_in'))
                 links = self._normalize_sales_order_links(data.get('order_sku_links'))
                 
                 # 检查是否手动编辑了platform_sku
                 manual_platform_sku = bool(data.get('manual_platform_sku'))
                 
-                if not item_id or not shop_id or not sku_family_id or not links:
+                if not item_id or not shop_id or not links:
                     return self.send_json({'status': 'error', 'message': 'Missing required fields'}, start_response)
 
                 with self._get_db_connection() as conn:
+                    derived = self._derive_sales_cost_size(conn, links)
+                    sku_family_id = derived.get('sku_family_id')
+                    if not sku_family_id:
+                        return self.send_json({'status': 'error', 'message': '无法根据下单SKU推断归属货号'}, start_response)
+
+                    parent_id = None
+                    if parent_code:
+                        with conn.cursor() as cur:
+                            cur.execute("INSERT IGNORE INTO sales_parents (parent_code) VALUES (%s)", (parent_code,))
+                            cur.execute("SELECT id FROM sales_parents WHERE parent_code=%s", (parent_code,))
+                            row = cur.fetchone()
+                            parent_id = row['id'] if row else None
+
                     auto_fabric, auto_spec_name, auto_platform_sku = self._derive_sales_fields(conn, sku_family_id, links)
                     fabric = (data.get('fabric') or '').strip() or auto_fabric
                     spec_name = (data.get('spec_name') or '').strip() or auto_spec_name
@@ -6815,12 +7495,38 @@ class WSGIApp:
                         cur.execute(
                             """
                             UPDATE sales_products
-                            SET shop_id=%s, sku_family_id=%s,
-                                platform_sku=%s, parent_asin=%s, child_asin=%s,
-                                fabric=%s, spec_name=%s
+                            SET shop_id=%s,
+                                platform_sku=%s, parent_id=%s, child_code=%s,
+                                fabric=%s, spec_name=%s,
+                                sale_price_usd=%s,
+                                warehouse_cost_usd=%s,
+                                last_mile_cost_usd=%s,
+                                package_length_in=%s,
+                                package_width_in=%s,
+                                package_height_in=%s,
+                                net_weight_lbs=%s,
+                                gross_weight_lbs=%s,
+                                assembled_length_in=%s,
+                                assembled_width_in=%s,
+                                assembled_height_in=%s
                             WHERE id=%s
                             """,
-                            (shop_id, sku_family_id, platform_sku, parent_asin, child_asin, fabric, spec_name, item_id)
+                            (
+                                shop_id, platform_sku, parent_id, child_code,
+                                fabric, spec_name,
+                                sale_price_usd,
+                                derived.get('warehouse_cost_usd'),
+                                derived.get('last_mile_cost_usd'),
+                                derived.get('package_length_in'),
+                                derived.get('package_width_in'),
+                                derived.get('package_height_in'),
+                                derived.get('net_weight_lbs'),
+                                derived.get('gross_weight_lbs'),
+                                assembled_length_in,
+                                assembled_width_in,
+                                assembled_height_in,
+                                item_id
+                            )
                         )
                     self._replace_sales_order_links(conn, item_id, links)
                 return self.send_json({'status': 'success'}, start_response)
@@ -6851,7 +7557,7 @@ class WSGIApp:
             with open(full_path, 'r', encoding='utf-8') as f:
                 content = f.read()
 
-            content_bytes = content.encode('utf-8')
+            content_bytes = content.encode('utf-8', errors='surrogatepass')
             start_response('200 OK', [
                 ('Content-Type', content_type + '; charset=utf-8'),
                 ('Content-Length', str(len(content_bytes)))
@@ -6887,7 +7593,9 @@ class WSGIApp:
     def send_json(self, data, start_response):
         """发送 JSON 响应（确保完全ASCII编码）"""
         try:
-            response = json.dumps(data, ensure_ascii=True, default=str).encode('ascii')
+            # Use UTF-8 with surrogatepass to safely encode any filesystem surrogate characters
+            text = json.dumps(data, ensure_ascii=False, default=str)
+            response = text.encode('utf-8', errors='surrogatepass')
             start_response('200 OK', [
                 ('Content-Type', 'application/json; charset=utf-8'),
                 ('Content-Length', str(len(response)))
@@ -6895,9 +7603,13 @@ class WSGIApp:
             return [response]
         except Exception as e:
             print("JSON encoding error: " + str(e))
-            fallback = json.dumps({'status': 'error', 'message': 'encoding error'}).encode('ascii')
+            try:
+                fallback_text = json.dumps({'status': 'error', 'message': 'encoding error'}, ensure_ascii=False)
+                fallback = fallback_text.encode('utf-8', errors='surrogatepass')
+            except Exception:
+                fallback = b'{"status":"error","message":"encoding error"}'
             start_response('200 OK', [
-                ('Content-Type', 'application/json'),
+                ('Content-Type', 'application/json; charset=utf-8'),
                 ('Content-Length', str(len(fallback)))
             ])
             return [fallback]
@@ -6927,7 +7639,7 @@ class WSGIApp:
             <p>{message}</p>
         </body>
         </html>
-        '''.encode('utf-8')
+        '''.encode('utf-8', errors='surrogatepass')
         
         start_response(status, [
             ('Content-Type', 'text/html; charset=utf-8'),

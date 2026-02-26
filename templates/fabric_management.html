@@ -278,6 +278,22 @@
             border-color: var(--morandi-ink);
             background: var(--morandi-mist);
         }
+        .pm-modal-content {
+            max-height: 88vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .pm-modal-body {
+            overflow-y: auto;
+            min-height: 0;
+            padding-right: 0.25rem;
+            margin-right: -0.25rem;
+        }
+        .fabric-image-card.placeholder {
+            border-style: dashed !important;
+            border-color: var(--morandi-ink) !important;
+            background: rgba(255, 255, 255, 0.75);
+        }
     </style>
 </head>
 <body>
@@ -328,58 +344,57 @@
     <div class="pm-modal" id="pm-modal">
         <div class="pm-modal-content">
             <h3 id="pm-modal-title" style="margin-top:0;">新增面料</h3>
-            <div class="pm-form">
-                <div class="form-group">
-                    <label for="modalFabricCode">面料编号<span class="required-asterisk">*</span></label>
-                    <input type="text" id="modalFabricCode" class="required-field" placeholder="例如：Beige">
-                </div>
-                <div class="form-group">
-                    <label for="modalFabricNameEn">面料英文名称<span class="required-asterisk">*</span></label>
-                    <input type="text" id="modalFabricNameEn" class="required-field" placeholder="例如：Greige">
-                </div>
-                <div class="form-group">
-                    <label for="modalFabricMaterial">面料类型<span class="required-asterisk">*</span></label>
-                    <select id="modalFabricMaterial" class="required-field"></select>
-                </div>
-                <div class="form-group pm-form-full">
-                    <label>关联货号（可多选）</label>
-                    <div class="feature-category-picker" id="skuPicker">
-                        <div class="feature-category-chips" id="skuChips"></div>
-                        <div class="feature-category-dropdown" id="skuDropdown">
-                            <button type="button" class="feature-category-add" id="skuAdd">
-                                <span class="feature-category-add-icon">+</span>
-                                <span class="feature-category-add-text">添加货号</span>
-                            </button>
-                            <div class="feature-category-menu" id="skuMenu">
-                                <input type="text" id="modalSkuFilter" placeholder="搜索货号" style="width:100%;padding:0.4rem;border:1px solid #ccc;border-radius:4px;margin-bottom:0.4rem;">
-                                <div class="feature-category-list" id="skuList"></div>
+            <div class="pm-modal-body">
+                <div class="pm-form">
+                    <div class="form-group">
+                        <label for="modalFabricCode">面料编号<span class="required-asterisk">*</span></label>
+                        <input type="text" id="modalFabricCode" class="required-field" placeholder="例如：Beige">
+                    </div>
+                    <div class="form-group">
+                        <label for="modalFabricNameEn">面料英文名称<span class="required-asterisk">*</span></label>
+                        <input type="text" id="modalFabricNameEn" class="required-field" placeholder="例如：Greige">
+                    </div>
+                    <div class="form-group">
+                        <label for="modalFabricMaterial">面料类型<span class="required-asterisk">*</span></label>
+                        <select id="modalFabricMaterial" class="required-field"></select>
+                    </div>
+                    <div class="form-group pm-form-full">
+                        <label>关联货号（可多选）</label>
+                        <div class="feature-category-picker" id="skuPicker">
+                            <div class="feature-category-chips" id="skuChips"></div>
+                            <div class="feature-category-dropdown" id="skuDropdown">
+                                <button type="button" class="feature-category-add" id="skuAdd">
+                                    <span class="feature-category-add-icon">+</span>
+                                    <span class="feature-category-add-text">添加货号</span>
+                                </button>
+                                <div class="feature-category-menu" id="skuMenu">
+                                    <input type="text" id="modalSkuFilter" placeholder="搜索货号" style="width:100%;padding:0.4rem;border:1px solid #ccc;border-radius:4px;margin-bottom:0.4rem;">
+                                    <div class="feature-category-list" id="skuList"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-group pm-form-full">
+                        <label>面料图片管理<span class="required-asterisk">*</span></label>
+                        <div class="fabric-images-manager">
+                            <div class="fabric-images-toolbar">
+                                <button type="button" class="btn-secondary" id="btnSelectExisting" onclick="toggleExistingImagePanel()">选择已有图片</button>
+                                <button type="button" class="btn-secondary" onclick="document.getElementById('modalImageUpload').click()">从外部导入图片</button>
+                                <input type="file" id="modalImageUpload" accept="image/*" multiple style="display:none;">
+                            </div>
+                            <div class="fabric-existing-panel" id="existingImagePanel" style="display:none;">
+                                <input type="text" id="modalImageFilter" class="fabric-image-search" placeholder="搜索图片">
+                                <!-- legacy select and tag container removed; using new grid instead -->
+                                <div class="fabric-existing-list" id="modalImageList"></div>
+                            </div>
+                            <div class="fabric-images-grid" id="selectedImagesGrid">
+                                <div class="fabric-images-empty">未选择图片，请点击上方按钮选择或导入图片</div>
                             </div>
                         </div>
                     </div>
                 </div>
-                <div class="form-group pm-form-full">
-                    <label>面料图片管理<span class="required-asterisk">*</span></label>
-                    <div class="fabric-images-manager">
-                        <div class="fabric-images-toolbar">
-                            <button type="button" class="btn-secondary" id="btnSelectExisting" onclick="toggleExistingImagePanel()">选择已有图片</button>
-                            <button type="button" class="btn-secondary" onclick="document.getElementById('modalImageUpload').click()">从外部导入图片</button>
-                            <input type="file" id="modalImageUpload" accept="image/*" multiple style="display:none;">
-                        </div>
-                        <div class="fabric-existing-panel" id="existingImagePanel" style="display:none;">
-                            <input type="text" id="modalImageFilter" class="fabric-image-search" placeholder="搜索图片">
-                            <!-- hidden select for legacy code paths -->
-                            <select id="modalImageSelect" style="display:none"></select>
-                            <!-- container to show currently selected image tags -->
-                            <div id="modalImageSelected" style="margin:0.5rem 0; display:flex; flex-wrap:wrap; gap:0.4rem;"></div>
-                            <div class="fabric-existing-list" id="modalImageList"></div>
-                        </div>
-                        <div class="fabric-images-grid" id="selectedImagesGrid">
-                            <div class="fabric-images-empty">未选择图片，请点击上方按钮选择或导入图片</div>
-                        </div>
-                    </div>
-                </div>
+                <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
             </div>
-            <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
             <div class="pm-modal-actions">
                 <button class="btn-secondary" onclick="closeModal()">取消</button>
                 <button class="btn-primary" id="modalSaveBtn" onclick="saveFabricFromModal()">保存</button>
@@ -425,10 +440,10 @@
         let skuFamilyOptions = [];
         let usedFabricImages = new Set();
         let excludeUsedImages = false;
-        let selectedImages = []; // 兼容旧代码
         let selectedImageObjects = []; // 新格式：[{image_name, remark, sort_order}]
         let selectedSkuFamilyIds = [];
         let draggedIndex = null;
+        let draggedInsertIndex = null;
         let currentEditingImageIndex = null;
         const FABRIC_TYPE_OPTIONS = ['原图', '主图·Swatch', '主图·卖点', 'A+·电脑端', 'A+·手机端', 'A+·通用'];
 
@@ -713,17 +728,16 @@
                 .then(data => {
                     if (data.status !== 'success') {
                         fabricImages = [];
-                        renderImageSelect();
+                        renderExistingImagesList();
                         return;
                     }
                     // Expect items as objects: { name: displayName, name_raw_b64: base64(filename bytes), b64: base64(path bytes) }
                     fabricImages = (data.items || []).map(it => ({ name: it.name, rawB64: it.name_raw_b64, b64: it.b64 }));
-                    console.log('[DEBUG] loadFabricImages -> count=', fabricImages.length, 'sample=', fabricImages.slice(0,6));
-                    renderImageSelect();
+                    renderExistingImagesList();
                 })
                 .catch(() => {
                     fabricImages = [];
-                    renderImageSelect();
+                    renderExistingImagesList();
                 });
         }
 
@@ -752,158 +766,7 @@
             }
         }
 
-        function getImagePlaceholderText() {
-            return fabricImages.length ? '请选择图片' : '暂无图片';
-        }
-
-        function updateImageToggleText(selectedValue) {
-            const toggle = document.getElementById('modalImageToggle');
-            if (!toggle) return;
-            let text = getImagePlaceholderText();
-            if (selectedValue) {
-                text = selectedValue;
-            } else if (selectedImages.length) {
-                text = selectedImages.length === 1
-                    ? selectedImages[0]
-                    : `${selectedImages[0]} 等 ${selectedImages.length} 张`;
-            }
-            toggle.innerText = text;
-            if (selectedValue || selectedImages.length) {
-                toggle.classList.add('has-value');
-            } else {
-                toggle.classList.remove('has-value');
-            }
-        }
-
-        function setDropdownOpen(isOpen) {
-            const dropdown = document.getElementById('modalImageDropdown');
-            if (!dropdown) return;
-            dropdown.classList.toggle('open', isOpen);
-        }
-
-        function renderImageSelect() {
-            const select = document.getElementById('modalImageSelect');
-            const list = document.getElementById('modalImageList');
-            select.innerHTML = '';
-            list.innerHTML = '';
-            const filterValue = (document.getElementById('modalImageFilter').value || '').trim().toLowerCase();
-            const placeholder = document.createElement('option');
-            placeholder.value = '';
-            placeholder.textContent = getImagePlaceholderText();
-            select.appendChild(placeholder);
-            updateImageToggleText('');
-
-            // build decoded view of fabricImages to ensure comparisons use the displayed name
-            const decodedImages = (fabricImages || []).map(it => ({
-                rawB64: it.rawB64,
-                b64: it.b64,
-                name: it.name,
-                decoded: tryDecodeNameFromB64(it.rawB64) || it.name || ''
-            }));
-
-            const baseImages = excludeUsedImages
-                ? decodedImages.filter(it => !usedFabricImages.has(it.decoded) || selectedImages.includes(it.decoded))
-                : decodedImages;
-
-            const filtered = filterValue
-                ? baseImages.filter(it => String(it.decoded).toLowerCase().includes(filterValue))
-                : baseImages;
-
-            if (!filtered.length) {
-                const empty = document.createElement('div');
-                empty.className = 'thumb-dropdown-empty';
-                empty.textContent = decodedImages.length ? '未找到匹配图片' : '暂无图片';
-                list.appendChild(empty);
-                return;
-            }
-
-            filtered.forEach(it => {
-                const decoded = it.decoded;
-                const option = document.createElement('option');
-                option.value = decoded;
-                option.textContent = decoded;
-                option.selected = selectedImages.includes(decoded);
-                select.appendChild(option);
-
-                const item = document.createElement('button');
-                item.type = 'button';
-                item.className = 'thumb-dropdown-item' + (selectedImages.includes(decoded) ? ' active' : '');
-                const imgEl = document.createElement('img');
-                // use raw path bytes base64 from backend for preview to avoid encoding issues
-                imgEl.src = `/api/image-preview?id=${encodeURIComponent(it.b64)}&mode=thumb&w=320&q=70`;
-                imgEl.alt = decoded;
-                const spanEl = document.createElement('span');
-                spanEl.textContent = decoded;
-                item.appendChild(imgEl);
-                item.appendChild(spanEl);
-                item.addEventListener('click', () => {
-                    toggleSelectedImage(decoded);
-                    // no longer enforce mutual-exclusive clearing here so uploads and selection can co-exist
-                    setDropdownOpen(false);
-                    renderImageSelect();
-                });
-                list.appendChild(item);
-            });
-        }
-
-        function setImageSelect(value) {
-            if (!fabricImages.length) {
-                loadFabricImages();
-            }
-            setSelectedImages(value || []);
-            renderImageSelect();
-        }
-
-        function setSelectedImages(value) {
-            selectedImages = normalizeImageNames(value);
-            renderSelectedImages();
-            updateImageToggleText('');
-        }
-
-        function normalizeImageNames(value) {
-            const raw = Array.isArray(value) ? value : (value ? [value] : []);
-            const seen = new Set();
-            const result = [];
-            raw.forEach(name => {
-                const text = String(name || '').trim();
-                if (!text || seen.has(text)) return;
-                seen.add(text);
-                result.push(text);
-            });
-            return result;
-        }
-
-        function toggleSelectedImage(name) {
-            const idx = selectedImages.indexOf(name);
-            if (idx >= 0) {
-                selectedImages.splice(idx, 1);
-            } else {
-                selectedImages.push(name);
-            }
-            renderSelectedImages();
-            updateImageToggleText('');
-        }
-
-        function renderSelectedImages() {
-            const container = document.getElementById('modalImageSelected');
-            container.innerHTML = '';
-            if (!selectedImages.length) {
-                return;
-            }
-            selectedImages.forEach(name => {
-                const tag = document.createElement('span');
-                tag.className = 'thumb-dropdown-tag';
-                tag.innerHTML = `
-                    <span>${name}</span>
-                    <button type="button" aria-label="移除">&times;</button>
-                `;
-                tag.querySelector('button').addEventListener('click', () => {
-                    toggleSelectedImage(name);
-                    renderImageSelect();
-                });
-                container.appendChild(tag);
-            });
-        }
+        
 
         function utf8ToB64(text) {
             try {
@@ -920,25 +783,22 @@
         }
 
         function enforceMutualExclusive(source) {
-            const select = document.getElementById('modalImageSelect');
             const upload = document.getElementById('modalImageUpload');
-            const filterInput = document.getElementById('modalImageFilter');
             const selectBlock = document.getElementById('fabricSelectBlock');
             const uploadBlock = document.getElementById('fabricUploadBlock');
 
             // Do NOT clear the opposite control so uploads and existing selections can co-exist.
-            // The save logic will merge uploaded names (appended) with selected existing images.
-
-            if (selectedImages.length) {
-                selectBlock.classList.add('is-selected');
+            // Use `selectedImageObjects` as the canonical selection state.
+            if (selectedImageObjects && selectedImageObjects.length) {
+                selectBlock && selectBlock.classList.add('is-selected');
             } else {
-                selectBlock.classList.remove('is-selected');
+                selectBlock && selectBlock.classList.remove('is-selected');
             }
 
-            if (upload.files && upload.files.length > 0) {
-                uploadBlock.classList.add('is-selected');
+            if (upload && upload.files && upload.files.length > 0) {
+                uploadBlock && uploadBlock.classList.add('is-selected');
             } else {
-                uploadBlock.classList.remove('is-selected');
+                uploadBlock && uploadBlock.classList.remove('is-selected');
             }
         }
 
@@ -1165,14 +1025,16 @@
             const list = document.getElementById('modalImageList');
             const keyword = (document.getElementById('modalImageFilter').value || '').trim().toLowerCase();
             const selectedDisplaySet = new Set((selectedImageObjects||[]).map(v => (tryDecodeNameFromB64(v.image_name) || v.image_name)));
-            console.log('[DEBUG] renderExistingImagesList -> fabricImages.length=', (fabricImages||[]).length);
-            console.log('[DEBUG] usedFabricImages sample=', Array.from(usedFabricImages).slice(0,6));
             list.innerHTML = '';
             const filtered = fabricImages.filter(item => {
                 const display = item.name || '';
                 // try decode rawB64 to get the original filename when possible
                 const decoded = tryDecodeNameFromB64(item.rawB64) || display;
                 const name = String(decoded || display).toLowerCase();
+
+                // exclude already-selected images so they only appear below
+                const displayText = (decoded || display) || '';
+                if (selectedDisplaySet.has(displayText)) return false;
 
                 // unbound filtering is handled by backend API
                 return (!keyword || name.includes(keyword));
@@ -1187,7 +1049,6 @@
                 const div = document.createElement('div');
                 div.className = 'fabric-existing-item';
                 const displayText = tryDecodeNameFromB64(item.rawB64) || item.name || '';
-                if (selectedDisplaySet.has(displayText)) div.classList.add('selected');
 
                 div.innerHTML = `
                     <img src="/api/image-preview?id=${encodeURIComponent(item.b64)}&mode=thumb&w=240&q=68" alt="${displayText}" loading="lazy">
@@ -1216,13 +1077,22 @@
         
         function renderSelectedImagesGrid() {
             const grid = document.getElementById('selectedImagesGrid');
-            
+
             if (!selectedImageObjects.length) {
                 grid.innerHTML = '<div class="fabric-images-empty">未选择图片，请点击上方按钮选择或导入图片</div>';
                 return;
             }
-            
+
+            // container will hold cards and a single placeholder element
             grid.innerHTML = '';
+
+            const placeholder = document.createElement('div');
+            placeholder.className = 'fabric-image-card placeholder';
+            placeholder.style.minHeight = '80px';
+            placeholder.style.borderStyle = 'dashed';
+            placeholder.style.opacity = '0.6';
+            placeholder.style.display = 'none';
+
             selectedImageObjects.forEach((img, index) => {
                 const card = document.createElement('div');
                 const normalizedRemark = normalizeImageRemark(img.remark);
@@ -1231,7 +1101,7 @@
                 card.className = `fabric-image-card ${categoryClass}`;
                 card.setAttribute('draggable', 'true');
                 card.dataset.index = index;
-                
+
                 card.innerHTML = `
                     <div class="fabric-image-remove-badge" onclick="removeImageCard(${index}); event.stopPropagation();"><span class="fabric-image-remove-icon">×</span></div>
                     <div class="fabric-image-preview-wrap">
@@ -1244,66 +1114,205 @@
                         <div class="fabric-image-name">${img.image_name}</div>
                     </div>
                 `;
-                
-                // 绑定拖拽事件
+
+                // bind events
                 card.addEventListener('dragstart', handleDragStartImage);
+                card.addEventListener('dragenter', handleDragEnterImage);
                 card.addEventListener('dragover', handleDragOverImage);
+                card.addEventListener('dragleave', handleDragLeaveImage);
                 card.addEventListener('drop', handleDropImage);
                 card.addEventListener('dragend', handleDragEndImage);
-                
-                // 绑定双击事件
-                card.addEventListener('dblclick', () => {
-                    openTypeModal(index);
-                });
-                
+
+                // allow dragging when starting on inner image or text
+                try {
+                    const inners = card.querySelectorAll('img, .fabric-image-name');
+                    inners.forEach(n => {
+                        n.setAttribute('draggable', 'true');
+                        n.addEventListener('dragstart', handleDragStartImage);
+                        n.addEventListener('dragenter', handleDragEnterImage);
+                        n.addEventListener('dragover', handleDragOverImage);
+                        n.addEventListener('dragleave', handleDragLeaveImage);
+                        n.addEventListener('drop', handleDropImage);
+                        n.addEventListener('dragend', handleDragEndImage);
+                    });
+                } catch (e) {}
+
+                card.addEventListener('dblclick', () => { openTypeModal(index); });
+
                 grid.appendChild(card);
             });
+
+            // append placeholder at end (hidden by default)
+            grid.appendChild(placeholder);
+
+            // grid-level handlers: allow dropping in gaps/last position
+            grid.ondragover = handleDragOverGrid;
+            grid.ondrop = handleDropImage;
+            grid.ondragleave = handleDragLeaveGrid;
         }
-        
+
         function removeImageCard(index) {
             selectedImageObjects.splice(index, 1);
+            // reindex
+            selectedImageObjects.forEach((img, idx) => img.sort_order = idx);
             renderSelectedImagesGrid();
-            renderExistingImagesList(); // 更新已有图片列表的选中状态
+            renderExistingImagesList();
         }
-        
+
         function handleDragStartImage(e) {
-            draggedIndex = parseInt(e.target.dataset.index);
-            e.target.classList.add('dragging');
+            const src = e.currentTarget || e.target;
+            const card = src.closest ? src.closest('.fabric-image-card') : (e.target.closest('.fabric-image-card'));
+            if (!card) return;
+            draggedIndex = parseInt(card.dataset.index);
+            draggedInsertIndex = draggedIndex;
+            if (e.dataTransfer) {
+                e.dataTransfer.effectAllowed = 'move';
+                try { e.dataTransfer.setData('text/plain', String(draggedIndex)); } catch (_) {}
+            }
+            card.classList.add('dragging');
+            // show hint
+            showModalStatus('拖动图片，放手即可调整顺序', false);
         }
-        
+
+        function handleDragEnterImage(e) {
+            e.preventDefault();
+            const src = e.currentTarget || e.target;
+            const card = src.closest ? src.closest('.fabric-image-card') : (e.target.closest('.fabric-image-card'));
+            if (!card) return;
+            card.classList.add('drag-over');
+        }
+
         function handleDragOverImage(e) {
             e.preventDefault();
-            const card = e.target.closest('.fabric-image-card');
-            if (card) card.classList.add('drag-over');
+            updateDragPlaceholder(e.clientX, e.clientY);
         }
-        
+
+        function handleDragOverGrid(e) {
+            e.preventDefault();
+            updateDragPlaceholder(e.clientX, e.clientY);
+        }
+
+        function handleDragLeaveImage(e) {
+            const src = e.currentTarget || e.target;
+            const card = src.closest ? src.closest('.fabric-image-card') : (e.target.closest('.fabric-image-card'));
+            if (card) card.classList.remove('drag-over');
+        }
+
         function handleDropImage(e) {
             e.preventDefault();
-            const card = e.target.closest('.fabric-image-card');
-            if (!card) return;
-            
-            card.classList.remove('drag-over');
-            const targetIndex = parseInt(card.dataset.index);
-            
-            if (draggedIndex !== null && draggedIndex !== targetIndex) {
-                // 交换位置
-                const temp = selectedImageObjects[draggedIndex];
-                selectedImageObjects[draggedIndex] = selectedImageObjects[targetIndex];
-                selectedImageObjects[targetIndex] = temp;
-                
-                // 更新sort_order
-                selectedImageObjects.forEach((img, idx) => {
-                    img.sort_order = idx;
-                });
-                
+            const grid = document.getElementById('selectedImagesGrid');
+            if (!grid) return;
+            const children = Array.from(grid.children).filter(n => !n.classList.contains('placeholder'));
+            let insertIndex = (draggedInsertIndex === null || draggedInsertIndex === undefined) ? children.length : draggedInsertIndex;
+            if (insertIndex < 0) insertIndex = 0;
+            if (insertIndex > children.length) insertIndex = children.length;
+
+            // if draggedIndex valid, move item
+            if (draggedIndex !== null && draggedIndex >= 0 && draggedIndex < selectedImageObjects.length) {
+                const item = selectedImageObjects.splice(draggedIndex, 1)[0];
+                // adjust insertIndex if source was before destination
+                if (insertIndex > draggedIndex) insertIndex = insertIndex - 1;
+                selectedImageObjects.splice(insertIndex, 0, item);
+
+                // reindex
+                selectedImageObjects.forEach((img, idx) => img.sort_order = idx);
                 renderSelectedImagesGrid();
+
+                // try autosave order if editing existing fabric
+                autosaveImageOrder();
+            }
+            // clear
+            draggedIndex = null;
+            draggedInsertIndex = null;
+            resetModalStatus();
+        }
+
+        function handleDragLeaveGrid(e) {
+            const grid = document.getElementById('selectedImagesGrid');
+            if (!grid) return;
+            if (e.relatedTarget && grid.contains(e.relatedTarget)) return;
+            const placeholder = grid.querySelector('.fabric-image-card.placeholder');
+            if (placeholder) placeholder.style.display = 'none';
+        }
+
+        function updateDragPlaceholder(clientX, clientY) {
+            const grid = document.getElementById('selectedImagesGrid');
+            const placeholder = grid && grid.querySelector('.fabric-image-card.placeholder');
+            if (!grid || !placeholder) return;
+
+            const children = Array.from(grid.children).filter(n => !n.classList.contains('placeholder'));
+            if (!children.length) {
+                draggedInsertIndex = 0;
+                placeholder.style.display = '';
+                grid.appendChild(placeholder);
+                return;
+            }
+
+            let insertIndex = children.length;
+            const pointed = document.elementFromPoint(clientX, clientY);
+            const pointedCard = pointed && pointed.closest ? pointed.closest('.fabric-image-card') : null;
+            if (pointedCard && !pointedCard.classList.contains('placeholder') && grid.contains(pointedCard)) {
+                const targetIndex = parseInt(pointedCard.dataset.index);
+                const rect = pointedCard.getBoundingClientRect();
+                const before = clientY < (rect.top + rect.height / 2);
+                insertIndex = before ? targetIndex : targetIndex + 1;
+            } else {
+                // fallback by vertical center; supports dropping into blank space as last position
+                for (let i = 0; i < children.length; i++) {
+                    const r = children[i].getBoundingClientRect();
+                    const mid = r.top + r.height / 2;
+                    if (clientY < mid) {
+                        insertIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            if (insertIndex < 0) insertIndex = 0;
+            if (insertIndex > children.length) insertIndex = children.length;
+            draggedInsertIndex = insertIndex;
+
+            placeholder.style.display = '';
+            if (insertIndex >= children.length) {
+                grid.appendChild(placeholder);
+            } else {
+                grid.insertBefore(placeholder, children[insertIndex]);
             }
         }
-        
+
         function handleDragEndImage(e) {
-            e.target.classList.remove('dragging');
-            document.querySelectorAll('.fabric-image-card').forEach(c => c.classList.remove('drag-over'));
+            document.querySelectorAll('.fabric-image-card').forEach(c => c.classList.remove('dragging', 'drag-over'));
             draggedIndex = null;
+            draggedInsertIndex = null;
+            const grid = document.getElementById('selectedImagesGrid');
+            const placeholder = grid && grid.querySelector('.fabric-image-card.placeholder');
+            if (placeholder) placeholder.style.display = 'none';
+            resetModalStatus();
+        }
+
+        function autosaveImageOrder() {
+            // only auto-save when editing an existing fabric (editId present)
+            if (!editId) return;
+            showModalStatus('正在保存图片顺序...', false);
+            const payload = {
+                id: editId,
+                images: selectedImageObjects.map((img, idx) => ({ image_name: img.image_name, remark: img.remark || '', sort_order: idx }))
+            };
+            fetch('/api/fabric', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showModalStatus('图片顺序已保存', false);
+                    setTimeout(resetModalStatus, 900);
+                } else {
+                    showModalStatus(data.message || '保存失败', true);
+                }
+            })
+            .catch(err => showModalStatus('保存失败: ' + err, true));
         }
         
         function openTypeModal(index) {

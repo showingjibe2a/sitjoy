@@ -80,7 +80,7 @@
                     <div class="pm-toolbar-actions">
                         <div class="form-group pm-search" style="margin: 0;">
                             <span class="pm-search-title">搜索</span>
-                            <input type="text" id="searchInput" placeholder="搜索平台SKU/店铺/货号">
+                            <input type="text" id="searchInput" placeholder="搜索平台SKU/店铺/父体/子体">
                             <button class="btn-primary" onclick="loadSalesProductList()">搜索</button>
                             <button class="btn-secondary" onclick="resetSearch()">清空</button>
                         </div>
@@ -89,6 +89,7 @@
                         <button class="btn-secondary" onclick="triggerSalesProductUpload()">批量上传</button>
                         <input type="file" id="salesProductUploadInput" accept=".xlsx" style="display:none;">
                         <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-secondary" onclick="openCopyModal()">复制已有产品信息</button>
                         <button class="btn-accent" onclick="openCreateModal()">新增</button>
                     </div>
                 </div>
@@ -99,16 +100,18 @@
                     <thead>
                         <tr>
                             <th>销售平台SKU</th>
+                            <th>父体编号</th>
+                            <th>子体编号</th>
                             <th>店铺/品牌</th>
-                            <th>货号</th>
                             <th>面料</th>
                             <th>规格名称</th>
+                            <th>售价</th>
                             <th style="width:160px;">创建时间</th>
                             <th style="width:160px;">操作</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="7" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="9" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -119,64 +122,127 @@
         <div class="pm-modal-content pm-modal-content--wide">
             <h3 id="pm-modal-title" style="margin-top:0;">新增销售产品</h3>
             <div class="pm-form">
-                <div class="form-group">
-                    <label for="modalShop">店铺/品牌<span class="required-asterisk">*</span></label>
-                    <div class="pm-select" id="modalShopSelectWrap">
-                        <button type="button" class="pm-select-trigger" id="modalShopTrigger">请选择店铺/品牌</button>
-                        <div class="pm-select-panel" id="modalShopPanel">
-                            <input type="text" class="pm-select-search" id="modalShopSearch" placeholder="搜索店铺/品牌">
-                            <div class="pm-select-list" id="modalShopList"></div>
+                <div class="pm-section pm-form-full">
+                    <h4>基础信息</h4>
+                    <div class="pm-section-body pm-form">
+                        <div class="form-group">
+                            <label for="modalShop">店铺/品牌<span class="required-asterisk">*</span></label>
+                            <div class="pm-select" id="modalShopSelectWrap">
+                                <button type="button" class="pm-select-trigger" id="modalShopTrigger">请选择店铺/品牌</button>
+                                <div class="pm-select-panel" id="modalShopPanel">
+                                    <input type="text" class="pm-select-search" id="modalShopSearch" placeholder="搜索店铺/品牌">
+                                    <div class="pm-select-list" id="modalShopList"></div>
+                                </div>
+                            </div>
+                            <select id="modalShop" class="required-field" style="display:none;"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalPlatformSku">销售平台SKU<span class="required-asterisk">*</span></label>
+                            <input type="text" id="modalPlatformSku" class="required-field" placeholder="不可重复，自动生成，可编辑">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalParentCode">父体编号</label>
+                            <input type="text" id="modalParentCode" class="optional-field" placeholder="可输入新父体编号，保存时自动创建">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalChildCode">子体编号</label>
+                            <input type="text" id="modalChildCode" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalFabric">面料</label>
+                            <input type="text" id="modalFabric" class="optional-field" placeholder="自动计算，可编辑">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalSpecName">规格名称</label>
+                            <input type="text" id="modalSpecName" class="optional-field" placeholder="自动计算，可编辑">
+                        </div>
+                        <div class="form-group pm-form-full">
+                            <label>关联下单SKU及数量<span class="required-asterisk">*</span></label>
+                            <div class="order-link-box">
+                                <div class="order-link-toolbar">
+                                    <input type="text" id="orderSkuSearch" class="pm-select-search" placeholder="搜索下单SKU/面料">
+                                    <button type="button" class="btn-secondary" onclick="clearOrderSkuSelection()">清空</button>
+                                </div>
+                                <div id="orderSkuOptions" class="order-link-options"></div>
+                                <div id="orderSkuSelected" class="order-link-selected"></div>
+                            </div>
                         </div>
                     </div>
-                    <select id="modalShop" class="required-field" style="display:none;"></select>
                 </div>
-                <div class="form-group">
-                    <label for="modalSkuFamily">货号<span class="required-asterisk">*</span></label>
-                    <div class="pm-select" id="modalSkuFamilySelectWrap">
-                        <button type="button" class="pm-select-trigger" id="modalSkuFamilyTrigger">请选择货号</button>
-                        <div class="pm-select-panel" id="modalSkuFamilyPanel">
-                            <input type="text" class="pm-select-search" id="modalSkuFamilySearch" placeholder="搜索货号">
-                            <div class="pm-select-list" id="modalSkuFamilyList"></div>
+
+                <div class="pm-section pm-form-full">
+                    <h4>成本</h4>
+                    <div class="pm-section-body pm-form">
+                        <div class="form-group">
+                            <label for="modalSalePrice">售价(USD)</label>
+                            <input type="number" step="0.01" id="modalSalePrice" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalWarehouseCost">海外仓成本(自动)</label>
+                            <input type="number" step="0.01" id="modalWarehouseCost" class="optional-field" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalLastMileCost">尾程物流成本(自动)</label>
+                            <input type="number" step="0.01" id="modalLastMileCost" class="optional-field" readonly>
                         </div>
                     </div>
-                    <select id="modalSkuFamily" class="required-field" style="display:none;"></select>
                 </div>
-                <div class="form-group">
-                    <label for="modalPlatformSku">销售平台SKU<span class="required-asterisk">*</span></label>
-                    <input type="text" id="modalPlatformSku" class="required-field" placeholder="不可重复，自动生成，可编辑">
-                </div>
-                <div class="form-group">
-                    <label for="modalParentAsin">父ASIN</label>
-                    <input type="text" id="modalParentAsin" class="optional-field">
-                </div>
-                <div class="form-group">
-                    <label for="modalChildAsin">子ASIN</label>
-                    <input type="text" id="modalChildAsin" class="optional-field">
-                </div>
-                <div class="form-group pm-form-full">
-                    <label>关联下单SKU及数量<span class="required-asterisk">*</span></label>
-                    <div class="order-link-box">
-                        <div class="order-link-toolbar">
-                            <input type="text" id="orderSkuSearch" class="pm-select-search" placeholder="搜索下单SKU/货号/面料">
-                            <button type="button" class="btn-secondary" onclick="clearOrderSkuSelection()">清空</button>
+
+                <div class="pm-section pm-form-full">
+                    <h4>尺寸</h4>
+                    <div class="pm-section-body pm-form">
+                        <div class="form-group">
+                            <label for="modalPackageLength">包裹长(in,自动)</label>
+                            <input type="number" step="0.01" id="modalPackageLength" class="optional-field" readonly>
                         </div>
-                        <div id="orderSkuOptions" class="order-link-options"></div>
-                        <div id="orderSkuSelected" class="order-link-selected"></div>
+                        <div class="form-group">
+                            <label for="modalPackageWidth">包裹宽(in,自动)</label>
+                            <input type="number" step="0.01" id="modalPackageWidth" class="optional-field" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalPackageHeight">包裹高(in,自动)</label>
+                            <input type="number" step="0.01" id="modalPackageHeight" class="optional-field" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalNetWeight">净重(lbs,自动)</label>
+                            <input type="number" step="0.01" id="modalNetWeight" class="optional-field" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalGrossWeight">毛重(lbs,自动)</label>
+                            <input type="number" step="0.01" id="modalGrossWeight" class="optional-field" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalAssembledLength">组装后长(in)</label>
+                            <input type="number" step="0.01" id="modalAssembledLength" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalAssembledWidth">组装后宽(in)</label>
+                            <input type="number" step="0.01" id="modalAssembledWidth" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalAssembledHeight">组装后高(in)</label>
+                            <input type="number" step="0.01" id="modalAssembledHeight" class="optional-field">
+                        </div>
                     </div>
-                </div>
-                <div class="form-group">
-                    <label for="modalFabric">面料</label>
-                    <input type="text" id="modalFabric" class="optional-field" placeholder="自动计算，可编辑">
-                </div>
-                <div class="form-group">
-                    <label for="modalSpecName">规格名称</label>
-                    <input type="text" id="modalSpecName" class="optional-field" placeholder="自动计算，可编辑">
                 </div>
             </div>
             <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
             <div class="pm-modal-actions">
                 <button class="btn-secondary" onclick="closeModal()">取消</button>
                 <button class="btn-primary" onclick="saveSalesProductFromModal()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="pm-modal" id="copy-modal">
+        <div class="pm-modal-content">
+            <h3 style="margin-top:0;">复制已有销售产品信息</h3>
+            <div class="form-group">
+                <input type="text" id="copySearchInput" class="required-field" placeholder="搜索销售平台SKU/父体/子体">
+            </div>
+            <div id="copyList" class="pm-select-list" style="max-height: 380px;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeCopyModal()">关闭</button>
             </div>
         </div>
     </div>
@@ -188,8 +254,8 @@
     <script>
         let editId = null;
         let shopOptions = [];
-        let skuFamilyOptions = [];
         let orderSkuOptions = [];
+        let salesProductItems = [];
         let selectedOrderSkus = [];
         let manualFabric = false;
         let manualSpecName = false;
@@ -268,14 +334,13 @@
         }
 
         let shopSelectUI;
-        let skuSelectUI;
 
         function renderOrderSkuOptions() {
             const keyword = (document.getElementById('orderSkuSearch').value || '').trim().toLowerCase();
             const container = document.getElementById('orderSkuOptions');
             const selectedIds = new Set(selectedOrderSkus.map(x => String(x.order_product_id)));
             const filtered = orderSkuOptions.filter(item => {
-                const text = `${item.sku || ''} ${item.sku_family || ''} ${item.fabric_name_en || ''}`.toLowerCase();
+                const text = `${item.sku || ''} ${item.fabric_name_en || ''}`.toLowerCase();
                 return !keyword || text.includes(keyword);
             });
             container.innerHTML = '';
@@ -286,7 +351,7 @@
             filtered.forEach(item => {
                 const row = document.createElement('label');
                 row.className = 'order-link-option';
-                row.innerHTML = `<input type="checkbox" value="${item.id}"> <span>${item.sku}（${item.sku_family || ''} / ${item.fabric_name_en || ''}）</span>`;
+                row.innerHTML = `<input type="checkbox" value="${item.id}"> <span>${item.sku}（${item.fabric_name_en || ''}）</span>`;
                 const checkbox = row.querySelector('input');
                 checkbox.checked = selectedIds.has(String(item.id));
                 checkbox.addEventListener('change', () => {
@@ -348,11 +413,27 @@
 
             const fabrics = [];
             const specs = [];
+            let warehouseCost = 0;
+            let lastMileCost = 0;
+            let packageLength = 0;
+            let packageWidth = 0;
+            let packageHeight = 0;
+            let netWeight = 0;
+            let grossWeight = 0;
             selected.forEach(item => {
                 const fabric = (item.source.fabric_name_en || '').trim();
                 if (fabric && !fabrics.includes(fabric)) fabrics.push(fabric);
                 const spec = (item.source.spec_qty_short || '').trim();
                 if (spec) specs.push(`${item.link.quantity}${spec}`);
+
+                const qty = Number(item.link.quantity) || 1;
+                warehouseCost += (Number(item.source.cost_usd) || 0) * qty;
+                lastMileCost += (Number(item.source.last_mile_avg_freight_usd) || 0) * qty;
+                packageLength += (Number(item.source.package_length_in) || 0) * qty;
+                packageWidth += (Number(item.source.package_width_in) || 0) * qty;
+                packageHeight += (Number(item.source.package_height_in) || 0) * qty;
+                netWeight += (Number(item.source.net_weight_lbs) || 0) * qty;
+                grossWeight += (Number(item.source.gross_weight_lbs) || 0) * qty;
             });
 
             if (!manualFabric) {
@@ -362,19 +443,24 @@
                 document.getElementById('modalSpecName').value = specs.join('');
             }
             
-            // 自动生成平台SKU：货号-面料-规格
+            // 自动生成平台SKU：面料-规格（货号由后台根据订单链接确定）
             if (!manualPlatformSku) {
-                const skuFamilyId = document.getElementById('modalSkuFamily').value;
-                const skuFamily = skuFamilyOptions.find(x => String(x.id) === String(skuFamilyId));
-                const skuFamilyCode = skuFamily ? skuFamily.sku_family : '';
                 const fabric = fabrics.length > 0 ? fabrics[0] : '';
                 const specName = specs.join('');
-                if (skuFamilyCode && fabric && specName) {
-                    document.getElementById('modalPlatformSku').value = `${skuFamilyCode}-${fabric}-${specName}`;
+                if (fabric && specName) {
+                    document.getElementById('modalPlatformSku').value = `${fabric}-${specName}`;
                 } else {
                     document.getElementById('modalPlatformSku').value = '';
                 }
             }
+
+            document.getElementById('modalWarehouseCost').value = warehouseCost.toFixed(2);
+            document.getElementById('modalLastMileCost').value = lastMileCost.toFixed(2);
+            document.getElementById('modalPackageLength').value = packageLength.toFixed(2);
+            document.getElementById('modalPackageWidth').value = packageWidth.toFixed(2);
+            document.getElementById('modalPackageHeight').value = packageHeight.toFixed(2);
+            document.getElementById('modalNetWeight').value = netWeight.toFixed(2);
+            document.getElementById('modalGrossWeight').value = grossWeight.toFixed(2);
         }
 
         function openCreateModal() {
@@ -385,13 +471,23 @@
             document.getElementById('pm-modal-title').innerText = '新增销售产品';
             document.getElementById('modalShop').value = '';
             document.getElementById('modalShopTrigger').textContent = '请选择店铺/品牌';
-            document.getElementById('modalSkuFamily').value = '';
-            document.getElementById('modalSkuFamilyTrigger').textContent = '请选择货号';
+
             document.getElementById('modalPlatformSku').value = '';
-            document.getElementById('modalParentAsin').value = '';
-            document.getElementById('modalChildAsin').value = '';
+            document.getElementById('modalParentCode').value = '';
+            document.getElementById('modalChildCode').value = '';
             document.getElementById('modalFabric').value = '';
             document.getElementById('modalSpecName').value = '';
+            document.getElementById('modalSalePrice').value = '';
+            document.getElementById('modalWarehouseCost').value = '';
+            document.getElementById('modalLastMileCost').value = '';
+            document.getElementById('modalPackageLength').value = '';
+            document.getElementById('modalPackageWidth').value = '';
+            document.getElementById('modalPackageHeight').value = '';
+            document.getElementById('modalNetWeight').value = '';
+            document.getElementById('modalGrossWeight').value = '';
+            document.getElementById('modalAssembledLength').value = '';
+            document.getElementById('modalAssembledWidth').value = '';
+            document.getElementById('modalAssembledHeight').value = '';
             selectedOrderSkus = [];
             renderOrderSkuOptions();
             renderSelectedOrderSkuRows();
@@ -408,14 +504,23 @@
             document.getElementById('modalShop').value = item.shop_id || '';
             const shop = shopOptions.find(x => String(x.id) === String(item.shop_id));
             document.getElementById('modalShopTrigger').textContent = shop ? `${shop.shop_name} / ${shop.brand_name} / ${shop.platform_type_name}` : '请选择店铺/品牌';
-            document.getElementById('modalSkuFamily').value = item.sku_family_id || '';
-            const sku = skuFamilyOptions.find(x => String(x.id) === String(item.sku_family_id));
-            document.getElementById('modalSkuFamilyTrigger').textContent = sku ? `${sku.sku_family}（${sku.category}）` : '请选择货号';
+
             document.getElementById('modalPlatformSku').value = item.platform_sku || '';
-            document.getElementById('modalParentAsin').value = item.parent_asin || '';
-            document.getElementById('modalChildAsin').value = item.child_asin || '';
+            document.getElementById('modalParentCode').value = item.parent_code || '';
+            document.getElementById('modalChildCode').value = item.child_code || '';
             document.getElementById('modalFabric').value = item.fabric || '';
             document.getElementById('modalSpecName').value = item.spec_name || '';
+            document.getElementById('modalSalePrice').value = item.sale_price_usd || '';
+            document.getElementById('modalWarehouseCost').value = item.warehouse_cost_usd || '';
+            document.getElementById('modalLastMileCost').value = item.last_mile_cost_usd || '';
+            document.getElementById('modalPackageLength').value = item.package_length_in || '';
+            document.getElementById('modalPackageWidth').value = item.package_width_in || '';
+            document.getElementById('modalPackageHeight').value = item.package_height_in || '';
+            document.getElementById('modalNetWeight').value = item.net_weight_lbs || '';
+            document.getElementById('modalGrossWeight').value = item.gross_weight_lbs || '';
+            document.getElementById('modalAssembledLength').value = item.assembled_length_in || '';
+            document.getElementById('modalAssembledWidth').value = item.assembled_width_in || '';
+            document.getElementById('modalAssembledHeight').value = item.assembled_height_in || '';
             selectedOrderSkus = (item.order_sku_links || []).map(link => ({
                 order_product_id: link.order_product_id,
                 quantity: link.quantity || 1
@@ -434,16 +539,19 @@
         function saveSalesProductFromModal() {
             const payload = {
                 shop_id: document.getElementById('modalShop').value,
-                sku_family_id: document.getElementById('modalSkuFamily').value,
                 platform_sku: document.getElementById('modalPlatformSku').value.trim(),
-                parent_asin: document.getElementById('modalParentAsin').value.trim(),
-                child_asin: document.getElementById('modalChildAsin').value.trim(),
+                parent_code: document.getElementById('modalParentCode').value.trim(),
+                child_code: document.getElementById('modalChildCode').value.trim(),
                 fabric: document.getElementById('modalFabric').value.trim(),
                 spec_name: document.getElementById('modalSpecName').value.trim(),
+                sale_price_usd: document.getElementById('modalSalePrice').value,
+                assembled_length_in: document.getElementById('modalAssembledLength').value,
+                assembled_width_in: document.getElementById('modalAssembledWidth').value,
+                assembled_height_in: document.getElementById('modalAssembledHeight').value,
                 order_sku_links: selectedOrderSkus.map(x => ({ order_product_id: x.order_product_id, quantity: Number(x.quantity) || 1 })),
                 manual_platform_sku: manualPlatformSku
             };
-            if (!payload.shop_id || !payload.sku_family_id || !payload.platform_sku || !payload.order_sku_links.length) {
+            if (!payload.shop_id || !payload.platform_sku || !payload.order_sku_links.length) {
                 showModalStatus('请填写必填项并关联至少一个下单SKU', true);
                 return;
             }
@@ -516,21 +624,24 @@
             fetch(url).then(r => r.json()).then(data => {
                 const tbody = document.querySelector('#salesProductTable tbody');
                 if (data.status !== 'success') {
-                    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                     return;
                 }
                 const items = data.items || [];
+                salesProductItems = items;
                 if (!items.length) {
-                    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">暂无数据</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">暂无数据</td></tr>';
                     return;
                 }
                 tbody.innerHTML = items.map(item => `
                     <tr>
                         <td>${item.platform_sku || ''}</td>
+                        <td>${item.parent_code || ''}</td>
+                        <td>${item.child_code || ''}</td>
                         <td>${item.shop_name || ''} / ${item.brand_name || ''}</td>
-                        <td>${item.sku_family || ''}</td>
                         <td>${item.fabric || ''}</td>
                         <td>${item.spec_name || ''}</td>
+                        <td>${item.sale_price_usd || ''}</td>
                         <td>${item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : ''}</td>
                         <td>
                             <div class="pm-actions">
@@ -542,8 +653,62 @@
                 `).join('');
             }).catch(err => {
                 const tbody = document.querySelector('#salesProductTable tbody');
-                tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
             });
+        }
+
+        function openCopyModal() {
+            renderCopyList();
+            document.getElementById('copy-modal').classList.add('active');
+        }
+
+        function closeCopyModal() {
+            document.getElementById('copy-modal').classList.remove('active');
+        }
+
+        function renderCopyList() {
+            const keyword = (document.getElementById('copySearchInput').value || '').trim().toLowerCase();
+            const list = document.getElementById('copyList');
+            const items = (salesProductItems || []).filter(item => {
+                const text = `${item.platform_sku || ''} ${item.parent_code || ''} ${item.child_code || ''}`.toLowerCase();
+                return !keyword || text.includes(keyword);
+            });
+            if (!items.length) {
+                list.innerHTML = '<div class="pm-select-empty">暂无可复制记录</div>';
+                return;
+            }
+            list.innerHTML = items.map(item => `
+                <button type="button" class="pm-select-option" onclick='copyFromItem(${JSON.stringify(item)})'>
+                    ${item.platform_sku || ''} ｜ ${item.parent_code || '-'} ｜ ${item.child_code || '-'}
+                </button>
+            `).join('');
+        }
+
+        function copyFromItem(item) {
+            document.getElementById('modalShop').value = item.shop_id || '';
+            const shop = shopOptions.find(x => String(x.id) === String(item.shop_id));
+            document.getElementById('modalShopTrigger').textContent = shop ? `${shop.shop_name} / ${shop.brand_name} / ${shop.platform_type_name}` : '请选择店铺/品牌';
+
+            document.getElementById('modalFabric').value = item.fabric || '';
+            document.getElementById('modalSpecName').value = item.spec_name || '';
+            document.getElementById('modalSalePrice').value = item.sale_price_usd || '';
+            document.getElementById('modalAssembledLength').value = item.assembled_length_in || '';
+            document.getElementById('modalAssembledWidth').value = item.assembled_width_in || '';
+            document.getElementById('modalAssembledHeight').value = item.assembled_height_in || '';
+
+            selectedOrderSkus = (item.order_sku_links || []).map(link => ({
+                order_product_id: link.order_product_id,
+                quantity: link.quantity || 1
+            }));
+            renderOrderSkuOptions();
+            renderSelectedOrderSkuRows();
+            autoComputeFabricSpec();
+
+            // 不复制销售平台SKU、父体编号、子体编号
+            document.getElementById('modalPlatformSku').value = '';
+            document.getElementById('modalParentCode').value = '';
+            document.getElementById('modalChildCode').value = '';
+            closeCopyModal();
         }
 
         function loadShopOptions() {
@@ -552,11 +717,7 @@
             }).catch(() => { shopOptions = []; });
         }
 
-        function loadSkuFamilyOptions() {
-            return fetch('/api/sku').then(r => r.json()).then(data => {
-                skuFamilyOptions = data.status === 'success' ? (data.items || []) : [];
-            }).catch(() => { skuFamilyOptions = []; });
-        }
+
 
         function loadOrderSkuOptions() {
             return fetch('/api/order-product').then(r => r.json()).then(data => {
@@ -569,7 +730,6 @@
         function initPage() {
             Promise.all([
                 loadShopOptions(),
-                loadSkuFamilyOptions(),
                 loadOrderSkuOptions()
             ]).then(() => {
                 shopSelectUI = setupCustomSelect({
@@ -581,17 +741,7 @@
                     getOptions: () => shopOptions,
                     getLabel: item => `${item.shop_name} / ${item.brand_name} / ${item.platform_type_name}`
                 });
-                skuSelectUI = setupCustomSelect({
-                    triggerId: 'modalSkuFamilyTrigger',
-                    panelId: 'modalSkuFamilyPanel',
-                    searchId: 'modalSkuFamilySearch',
-                    listId: 'modalSkuFamilyList',
-                    selectId: 'modalSkuFamily',
-                    getOptions: () => skuFamilyOptions,
-                    getLabel: item => `${item.sku_family}（${item.category}）`
-                });
                 shopSelectUI.render();
-                skuSelectUI.render();
                 loadSalesProductList();
             });
         }
@@ -599,14 +749,11 @@
         document.getElementById('searchInput').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') loadSalesProductList();
         });
+        document.getElementById('copySearchInput').addEventListener('input', renderCopyList);
         document.getElementById('orderSkuSearch').addEventListener('input', renderOrderSkuOptions);
         document.getElementById('modalFabric').addEventListener('input', function() { manualFabric = this.value.trim() !== ''; });
         document.getElementById('modalSpecName').addEventListener('input', function() { manualSpecName = this.value.trim() !== ''; });
         document.getElementById('modalPlatformSku').addEventListener('input', function() { manualPlatformSku = this.value.trim() !== ''; });
-        document.getElementById('modalSkuFamily').addEventListener('change', function() {
-            // 当货号改变时，重新计算platform_sku（如果没有手动编辑）
-            autoComputeFabricSpec();
-        });
         document.getElementById('salesProductUploadInput').addEventListener('change', function() {
             const file = this.files && this.files[0];
             if (file) {
@@ -616,6 +763,9 @@
         });
         document.getElementById('pm-modal').addEventListener('click', function(e) {
             if (e.target === this) closeModal();
+        });
+        document.getElementById('copy-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeCopyModal();
         });
 
         window.addEventListener('load', initPage);

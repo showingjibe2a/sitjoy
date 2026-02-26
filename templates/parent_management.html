@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>父体管理</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .inline-input {
+            width: 100%;
+            border: 1px solid transparent;
+            background: transparent;
+            padding: 0.4rem 0.5rem;
+            border-radius: 6px;
+        }
+        .inline-input:focus {
+            outline: none;
+            border-color: var(--morandi-sand);
+            background: #fff;
+        }
+        .floating-save {
+            position: fixed;
+            left: 50%;
+            bottom: 22px;
+            transform: translateX(-50%);
+            background: #fff;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 12px;
+            padding: 0.7rem 1rem;
+            display: none;
+            align-items: center;
+            gap: 0.75rem;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+            z-index: 40;
+        }
+        .floating-save.active { display: flex; }
+    </style>
+</head>
+<body>
+<div id="site-header"></div>
+<div class="container">
+    <section class="hero" style="margin-bottom: 1.25rem;">
+        <h2>父体管理</h2>
+        <p>维护父体编号与核心经营指标</p>
+    </section>
+
+    <section class="pm-layout">
+        <div class="card pm-card">
+            <div class="pm-toolbar">
+                <div class="pm-toolbar-actions">
+                    <button class="btn-accent" onclick="openCreate()">新增父体</button>
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <table class="pm-table" id="parentTable">
+                <thead>
+                <tr>
+                    <th>父体编号</th>
+                    <th>预估退款率</th>
+                    <th>预估折扣率</th>
+                    <th>佣金费率</th>
+                    <th>预估ACOAS</th>
+                    <th style="width:130px;">操作</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+<div class="pm-modal" id="createModal">
+    <div class="pm-modal-content">
+        <h3 style="margin-top:0;">新增父体</h3>
+        <div class="pm-form">
+            <div class="form-group pm-form-full">
+                <label for="newParentCode">父体编号<span class="required-asterisk">*</span></label>
+                <input type="text" id="newParentCode" class="required-field" placeholder="例如：PARENT-001">
+            </div>
+        </div>
+        <div class="pm-modal-actions">
+            <button class="btn-secondary" onclick="closeCreate()">取消</button>
+            <button class="btn-primary" onclick="createParent()">保存</button>
+        </div>
+    </div>
+</div>
+
+<div class="floating-save" id="floatingSave">
+    <span id="floatingText">有未保存更改</span>
+    <button class="btn-secondary" onclick="discardChanges()">取消</button>
+    <button class="btn-primary" onclick="saveChanges()">保存更改</button>
+</div>
+
+<script>
+    let items = [];
+    let edits = {};
+
+    function openCreate() {
+        document.getElementById('newParentCode').value = '';
+        document.getElementById('createModal').classList.add('active');
+    }
+
+    function closeCreate() {
+        document.getElementById('createModal').classList.remove('active');
+    }
+
+    function markDirty(id, field, value) {
+        if (!edits[id]) edits[id] = {};
+        edits[id][field] = value;
+        document.getElementById('floatingSave').classList.add('active');
+    }
+
+    function discardChanges() {
+        edits = {};
+        document.getElementById('floatingSave').classList.remove('active');
+        renderTable();
+    }
+
+    function renderTable() {
+        const tbody = document.querySelector('#parentTable tbody');
+        if (!items.length) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无数据</td></tr>';
+            return;
+        }
+        tbody.innerHTML = items.map(item => {
+            const patch = edits[item.id] || {};
+            return `
+                <tr>
+                    <td><input class="inline-input" value="${patch.parent_code ?? (item.parent_code || '')}" oninput="markDirty(${item.id}, 'parent_code', this.value)"></td>
+                    <td><input class="inline-input" type="number" step="0.0001" value="${patch.estimated_refund_rate ?? (item.estimated_refund_rate ?? '')}" oninput="markDirty(${item.id}, 'estimated_refund_rate', this.value)"></td>
+                    <td><input class="inline-input" type="number" step="0.0001" value="${patch.estimated_discount_rate ?? (item.estimated_discount_rate ?? '')}" oninput="markDirty(${item.id}, 'estimated_discount_rate', this.value)"></td>
+                    <td><input class="inline-input" type="number" step="0.0001" value="${patch.commission_rate ?? (item.commission_rate ?? '')}" oninput="markDirty(${item.id}, 'commission_rate', this.value)"></td>
+                    <td><input class="inline-input" type="number" step="0.0001" value="${patch.estimated_acoas ?? (item.estimated_acoas ?? '')}" oninput="markDirty(${item.id}, 'estimated_acoas', this.value)"></td>
+                    <td><button class="btn-danger" onclick="deleteParent(${item.id})">删除</button></td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    async function loadParents() {
+        const res = await fetch('/api/parent');
+        const data = await res.json();
+        items = data.status === 'success' ? (data.items || []) : [];
+        renderTable();
+    }
+
+    async function createParent() {
+        const parent_code = document.getElementById('newParentCode').value.trim();
+        if (!parent_code) return;
+        const res = await fetch('/api/parent', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ parent_code })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+            closeCreate();
+            await loadParents();
+        } else {
+            alert(data.message || '保存失败');
+        }
+    }
+
+    async function saveChanges() {
+        const ids = Object.keys(edits);
+        for (const id of ids) {
+            const base = items.find(x => String(x.id) === String(id));
+            if (!base) continue;
+            const payload = {
+                id: base.id,
+                parent_code: (edits[id].parent_code ?? base.parent_code) || '',
+                estimated_refund_rate: edits[id].estimated_refund_rate ?? base.estimated_refund_rate,
+                estimated_discount_rate: edits[id].estimated_discount_rate ?? base.estimated_discount_rate,
+                commission_rate: edits[id].commission_rate ?? base.commission_rate,
+                estimated_acoas: edits[id].estimated_acoas ?? base.estimated_acoas
+            };
+            const res = await fetch('/api/parent', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.status !== 'success') {
+                alert(data.message || '保存失败');
+                return;
+            }
+        }
+        edits = {};
+        document.getElementById('floatingSave').classList.remove('active');
+        await loadParents();
+    }
+
+    async function deleteParent(id) {
+        if (!confirm('确认删除该父体？')) return;
+        const res = await fetch('/api/parent', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+            await loadParents();
+        } else {
+            alert(data.message || '删除失败');
+        }
+    }
+
+    document.getElementById('createModal').addEventListener('click', function(e) {
+        if (e.target === this) closeCreate();
+    });
+
+    window.addEventListener('load', loadParents);
+</script>
+<script src="/static/js/header.js"></script>
+</body>
+</html>

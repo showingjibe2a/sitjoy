@@ -17,8 +17,10 @@
                     const elG = document.querySelector('.nav-gallery'); if(elG) elG.classList.add('active');
                 } else if(path.startsWith('/amazon-ad-management') || path.startsWith('/amazon-ad-subtype-management')){
                     const elAd = document.querySelector('.nav-amazon-ad'); if(elAd) elAd.classList.add('active');
-                } else if(path.startsWith('/product-management') || path.startsWith('/category-management') || path.startsWith('/fabric-management') || path.startsWith('/feature-management') || path.startsWith('/material-management') || path.startsWith('/certification-management') || path.startsWith('/order-product-management') || path.startsWith('/shop-brand-management') || path.startsWith('/sales-product-management')){
+                } else if(path.startsWith('/product-management') || path.startsWith('/category-management') || path.startsWith('/fabric-management') || path.startsWith('/feature-management') || path.startsWith('/material-management') || path.startsWith('/certification-management') || path.startsWith('/order-product-management') || path.startsWith('/shop-brand-management')){
                     const elP = document.querySelector('.nav-product'); if(elP) elP.classList.add('active');
+                } else if(path.startsWith('/sales-product-management') || path.startsWith('/parent-management')){
+                    const elS = document.querySelector('.nav-sales'); if(elS) elS.classList.add('active');
                 } else if(path.startsWith('/about')){
                     const elA = document.querySelector('.nav-about'); if(elA) elA.classList.add('active');
                 }

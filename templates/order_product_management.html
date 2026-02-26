@@ -107,63 +107,44 @@
             color: var(--morandi-slate);
             font-size: 0.9rem;
         }
-        .toggle-switch {
+        .switch-wrap {
             position: relative;
             display: inline-block;
-            width: 50px;
-            height: 28px;
+            width: 46px;
+            height: 26px;
         }
-        .toggle-switch input {
+        .switch-wrap input {
             opacity: 0;
             width: 0;
             height: 0;
         }
-        .toggle-slider {
+        .switch-slider {
             position: absolute;
             cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: #d5cec4;
+            inset: 0;
+            background-color: #cfc7bd;
+            transition: .2s;
             border-radius: 999px;
-            transition: 0.2s ease;
         }
-        .toggle-slider::before {
-            content: '';
+        .switch-slider:before {
             position: absolute;
+            content: "";
             height: 20px;
             width: 20px;
-            left: 4px;
-            top: 4px;
-            background: #fff;
+            left: 3px;
+            top: 3px;
+            background-color: white;
+            transition: .2s;
             border-radius: 50%;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-            transition: 0.2s ease;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.25);
         }
-        .toggle-switch input:checked + .toggle-slider {
-            background: var(--morandi-ink);
+        .switch-wrap input:checked + .switch-slider {
+            background-color: #9b4a4a;
         }
-        .toggle-switch input:checked + .toggle-slider::before {
-            transform: translateX(22px);
+        .switch-wrap input:checked + .switch-slider:before {
+            transform: translateX(20px);
         }
-        .listing-preview {
-            border: 1px dashed var(--morandi-sand);
-            border-radius: 10px;
-            padding: 0.6rem;
-            display: flex;
-            align-items: center;
-            gap: 0.8rem;
-            min-height: 80px;
-            color: var(--morandi-slate);
-        }
-        .listing-preview img {
-            max-height: 70px;
-            max-width: 140px;
-            border-radius: 8px;
-            object-fit: cover;
-            border: 1px solid var(--morandi-sand);
-        }
+        
     </style>
 </head>
 <body>
@@ -223,8 +204,38 @@
             <h3 id="pm-modal-title" style="margin-top:0;">新增下单产品</h3>
             <div class="pm-form">
                 <div class="pm-section">
+                    <h4 style="display:inline-flex; align-items:center;">迭代款&nbsp;
+                        <label class="switch-wrap" style="margin-left:0.75rem;">
+                            <input type="checkbox" id="modalIsIteration">
+                            <span class="switch-slider"></span>
+                        </label>
+                    </h4>
+                    <div class="pm-section-body">
+                        <div class="form-group pm-form-span-2" id="iterationFields" style="display:none;">
+                            <label for="modalSourceSku">来源SKU</label>
+                            <div class="pm-select" id="modalSourceSkuSelect">
+                                <button type="button" class="pm-select-trigger" id="modalSourceSkuTrigger">请选择来源SKU</button>
+                                <div class="pm-select-panel" id="modalSourceSkuPanel">
+                                    <input type="text" class="pm-select-search" id="modalSourceSkuSearch" placeholder="搜索下单SKU">
+                                    <div class="pm-select-list" id="modalSourceSkuList"></div>
+                                </div>
+                            </div>
+                            <select id="modalSourceSku" class="optional-field" style="display:none;"></select>
+                        </div>
+                        <div class="form-group" id="iterationVersionWrap" style="display:none;">
+                            <label for="modalVersion">版本号</label>
+                            <input type="text" id="modalVersion" class="optional-field" placeholder="选填，一般是：1，2，3...">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pm-section">
                     <h4>基础信息</h4>
                     <div class="pm-section-body">
+                        <div class="form-group pm-form-span-2">
+                            <label for="modalSku">下单SKU（注意核验）<span class="required-asterisk">*</span></label>
+                            <input type="text" id="modalSku" class="required-field" placeholder="例如：MS01A-Brown" required>
+                        </div>
                         <div class="form-group">
                             <label for="modalSkuFamily">归属货号<span class="required-asterisk">*</span></label>
                             <div class="pm-select" id="modalSkuFamilySelect">
@@ -235,10 +246,6 @@
                                 </div>
                             </div>
                             <select id="modalSkuFamily" class="required-field" required style="display:none;"></select>
-                        </div>
-                        <div class="form-group">
-                            <label for="modalVersion">版本号</label>
-                            <input type="text" id="modalVersion" class="optional-field" placeholder="选填，一般是：1，2，3...">
                         </div>
                         <div class="form-group">
                             <label for="modalFabric">面料<span class="required-asterisk">*</span></label>
@@ -254,51 +261,6 @@
                         <div class="form-group">
                             <label for="modalSpecQtyShort">规格与数量简称</label>
                             <input type="text" id="modalSpecQtyShort" class="optional-field" placeholder="选填，例如：A，B，C...">
-                        </div>
-                        <div class="form-group">
-                            <label for="modalSku">下单SKU（注意核验）<span class="required-asterisk">*</span></label>
-                            <input type="text" id="modalSku" class="required-field" placeholder="例如：MS01A-Brown" required>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="pm-section">
-                    <h4>上架与迭代</h4>
-                    <div class="pm-section-body">
-                        <div class="form-group pm-form-span-2">
-                            <label for="modalListingImage">关联图片（可选）</label>
-                            <div class="pm-select" id="modalListingImageSelect">
-                                <button type="button" class="pm-select-trigger" id="modalListingImageTrigger">请选择上架图片</button>
-                                <div class="pm-select-panel" id="modalListingImagePanel">
-                                    <input type="text" class="pm-select-search" id="modalListingImageSearch" placeholder="搜索『上架资源』图片">
-                                    <div class="pm-select-list" id="modalListingImageList"></div>
-                                </div>
-                            </div>
-                            <select id="modalListingImage" class="optional-field" style="display:none;"></select>
-                        </div>
-                        <div class="form-group">
-                            <label>迭代产品</label>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="modalIsIteration">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                        <div class="form-group pm-form-span-2" id="sourceSkuWrap" style="display:none;">
-                            <label for="modalSourceSku">来源SKU</label>
-                            <div class="pm-select" id="modalSourceSkuSelect">
-                                <button type="button" class="pm-select-trigger" id="modalSourceSkuTrigger">请选择来源SKU</button>
-                                <div class="pm-select-panel" id="modalSourceSkuPanel">
-                                    <input type="text" class="pm-select-search" id="modalSourceSkuSearch" placeholder="搜索下单SKU">
-                                    <div class="pm-select-list" id="modalSourceSkuList"></div>
-                                </div>
-                            </div>
-                            <select id="modalSourceSku" class="optional-field" style="display:none;"></select>
-                        </div>
-                        <div class="form-group pm-form-full">
-                            <div class="listing-preview" id="modalListingPreview">
-                                <img id="modalListingPreviewImg" alt="预览" style="display:none;">
-                                <span id="modalListingPreviewText">未选择图片</span>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -382,6 +344,7 @@
                                         <span class="feature-category-add-text">添加材料</span>
                                     </button>
                                     <div class="feature-category-menu" id="fillingMenu">
+                                        <input type="text" id="fillingSearch" class="pm-select-search" placeholder="搜索材料">
                                         <div class="feature-category-list" id="fillingList"></div>
                                     </div>
                                 </div>
@@ -397,6 +360,7 @@
                                         <span class="feature-category-add-text">添加材料</span>
                                     </button>
                                     <div class="feature-category-menu" id="frameMenu">
+                                        <input type="text" id="frameSearch" class="pm-select-search" placeholder="搜索材料">
                                         <div class="feature-category-list" id="frameList"></div>
                                     </div>
                                 </div>
@@ -412,6 +376,7 @@
                                         <span class="feature-category-add-text">添加卖点</span>
                                     </button>
                                     <div class="feature-category-menu" id="featureMenu">
+                                        <input type="text" id="featureSearch" class="pm-select-search" placeholder="搜索卖点">
                                         <div class="feature-category-list" id="featureList"></div>
                                     </div>
                                 </div>
@@ -427,6 +392,7 @@
                                         <span class="feature-category-add-text">添加认证</span>
                                     </button>
                                     <div class="feature-category-menu" id="certMenu">
+                                        <input type="text" id="certSearch" class="pm-select-search" placeholder="搜索认证">
                                         <div class="feature-category-list" id="certList"></div>
                                     </div>
                                 </div>
@@ -451,7 +417,6 @@
         let editId = null;
         let skuOptions = [];
         let fabricOptions = [];
-        let listingImageOptions = [];
         let sourceSkuOptions = [];
         let fillingMaterialOptions = [];
         let frameMaterialOptions = [];
@@ -459,6 +424,7 @@
         let certificationOptions = [];
         let categoryOptions = [];
         let currentFeatureCategoryId = '';
+        let skuManuallyEdited = false;
         let selectedFillingMaterialIds = [];
         let selectedFrameMaterialIds = [];
         let selectedFeatureIds = [];
@@ -485,6 +451,7 @@
 
         function openCreateModal() {
             editId = null;
+            skuManuallyEdited = false;
             document.getElementById('pm-modal-title').innerText = '新增下单产品';
             setInputValue('modalSku', '');
             setSelectValue('modalSkuFamily', '');
@@ -493,11 +460,7 @@
             setSelectValue('modalFabric', '');
             setInputValue('modalFabricSearch', '');
             setInputValue('modalSpecQtyShort', '');
-            setSelectValue('modalListingImage', '');
-            document.getElementById('modalListingImageTrigger').textContent = '请选择上架图片';
-            setListingPreview('');
-            document.getElementById('modalIsIteration').checked = false;
-            toggleSourceSku(false);
+            setIterationMode(false);
             setSelectValue('modalSourceSku', '');
             document.getElementById('modalSourceSkuTrigger').textContent = '请选择来源SKU';
             setInputValue('modalFinishedLength', '');
@@ -526,6 +489,7 @@
 
         function openEditModal(item) {
             editId = item.id;
+            skuManuallyEdited = false;
             document.getElementById('pm-modal-title').innerText = '编辑下单产品';
             setInputValue('modalSku', item.sku || '');
             setSelectValue('modalSkuFamily', item.sku_family_id || '');
@@ -534,12 +498,8 @@
             setSelectValue('modalFabric', item.fabric_id || '');
             setInputValue('modalFabricSearch', '');
             setInputValue('modalSpecQtyShort', item.spec_qty_short || '');
-            setSelectValue('modalListingImage', item.listing_image_b64 || '');
-            updateListingImageTrigger();
-            setListingPreview(item.listing_image_b64 || '');
             const isIteration = String(item.is_iteration || '0') === '1';
-            document.getElementById('modalIsIteration').checked = isIteration;
-            toggleSourceSku(isIteration);
+            setIterationMode(isIteration);
             setSelectValue('modalSourceSku', item.source_order_product_id || '');
             updateSourceSkuTrigger();
             setInputValue('modalFinishedLength', item.finished_length_in ?? '');
@@ -591,12 +551,15 @@
             el.value = String(value || '');
             if (id === 'modalSkuFamily') {
                 updateSkuFamilyTrigger();
+                refreshFabricOptions();
+                const allowed = getAllowedFabricOptions().map(item => String(item.id));
+                if (el.value && allowed.length && !allowed.includes(String(document.getElementById('modalFabric').value))) {
+                    document.getElementById('modalFabric').value = '';
+                    updateFabricTrigger();
+                }
             }
             if (id === 'modalFabric') {
                 updateFabricTrigger();
-            }
-            if (id === 'modalListingImage') {
-                updateListingImageTrigger();
             }
             if (id === 'modalSourceSku') {
                 updateSourceSkuTrigger();
@@ -636,9 +599,68 @@
         }
 
         function updateSkuFromInputs() {
-            const sku = buildSkuFromInputs();
-            document.getElementById('modalSku').value = sku;
             updateFeatureCategoryFilter();
+            if (skuManuallyEdited) {
+                return;
+            }
+            const sku = buildSkuFromInputs();
+            setInputValue('modalSku', sku);
+        }
+
+        function setIterationMode(isOn) {
+            const wrap = document.getElementById('iterationFields');
+            const versionWrap = document.getElementById('iterationVersionWrap');
+            const checkbox = document.getElementById('modalIsIteration');
+            if (checkbox) checkbox.checked = !!isOn;
+            if (wrap) wrap.style.display = isOn ? '' : 'none';
+            if (versionWrap) versionWrap.style.display = isOn ? '' : 'none';
+            if (!isOn) {
+                setSelectValue('modalSourceSku', '');
+                setInputValue('modalVersion', '');
+            }
+        }
+
+        function getAllowedFabricOptions() {
+            const skuFamilyId = document.getElementById('modalSkuFamily').value;
+            if (!skuFamilyId) return [];
+            const skuItem = skuOptions.find(item => String(item.id) === String(skuFamilyId));
+            const allowedIds = (skuItem && skuItem.fabric_ids) ? skuItem.fabric_ids.map(String) : [];
+            if (!allowedIds.length) return [];
+            return fabricOptions.filter(item => allowedIds.includes(String(item.id)));
+        }
+
+        function refreshFabricOptions() {
+            const current = document.getElementById('modalFabric').value;
+            renderFabricSelect(current || '');
+        }
+
+        function applySourceSkuData(source) {
+            if (!source) return;
+            setSelectValue('modalSkuFamily', source.sku_family_id || '');
+            refreshFabricOptions();
+            setSelectValue('modalFabric', source.fabric_id || '');
+            setInputValue('modalSpecQtyShort', source.spec_qty_short || '');
+            setInputValue('modalVersion', source.version_no || '');
+            if (!skuManuallyEdited) {
+                setInputValue('modalSku', source.sku || '');
+            }
+            setInputValue('modalFinishedLength', source.finished_length_in ?? '');
+            setInputValue('modalFinishedWidth', source.finished_width_in ?? '');
+            setInputValue('modalFinishedHeight', source.finished_height_in ?? '');
+            setInputValue('modalNetWeight', source.net_weight_lbs ?? '');
+            setInputValue('modalPackageLength', source.package_length_in ?? '');
+            setInputValue('modalPackageWidth', source.package_width_in ?? '');
+            setInputValue('modalPackageHeight', source.package_height_in ?? '');
+            setInputValue('modalGrossWeight', source.gross_weight_lbs ?? '');
+            setInputValue('modalCost', source.cost_usd ?? '');
+            setInputValue('modalCartonQty', source.carton_qty ?? '');
+            setInputValue('modalPackageClass', source.package_size_class || '');
+            setInputValue('modalLastMile', source.last_mile_avg_freight_usd ?? '');
+            setPickerSelected('filling', source.filling_material_ids || []);
+            setPickerSelected('frame', source.frame_material_ids || []);
+            setPickerSelected('feature', source.feature_ids || []);
+            setPickerSelected('cert', source.certification_ids || []);
+            updateSkuFromInputs();
         }
 
         function updateFeatureCategoryFilter() {
@@ -709,6 +731,7 @@
             const chips = document.getElementById(`${key}Chips`);
             const list = document.getElementById(`${key}List`);
             if (!chips || !list) return;
+            const keyword = (document.getElementById(`${key}Search`)?.value || '').trim().toLowerCase();
 
             chips.innerHTML = '';
             state.selected.forEach(id => {
@@ -738,9 +761,14 @@
                     return ids.includes(String(currentFeatureCategoryId));
                 });
             }
-            const available = sourceOptions.filter(
-                item => !state.selected.includes(String(item.id))
-            );
+            const available = sourceOptions.filter(item => {
+                if (state.selected.includes(String(item.id))) return false;
+                if (!keyword) return true;
+                const text = key === 'cert'
+                    ? String(item.name || '')
+                    : `${item.name || ''} ${item.name_en || ''}`;
+                return text.toLowerCase().includes(keyword);
+            });
 
             if (!available.length) {
                 const empty = document.createElement('div');
@@ -772,7 +800,6 @@
                 state.selected.push(String(id));
             }
             renderPicker(key);
-            closePickerMenu(key);
         }
 
         function removePickerItem(key, id) {
@@ -818,7 +845,6 @@
                 version_no: document.getElementById('modalVersion').value.trim(),
                 fabric_id: document.getElementById('modalFabric').value,
                 spec_qty_short: document.getElementById('modalSpecQtyShort').value.trim(),
-                listing_image_b64: document.getElementById('modalListingImage').value,
                 is_iteration: document.getElementById('modalIsIteration').checked ? 1 : 0,
                 source_order_product_id: document.getElementById('modalSourceSku').value,
                 finished_length_in: parseNumber(document.getElementById('modalFinishedLength').value),
@@ -845,6 +871,10 @@
             }
             if (payload.is_iteration && !payload.source_order_product_id) {
                 showModalStatus('请选择来源SKU', true);
+                return;
+            }
+            if (payload.is_iteration && !payload.version_no) {
+                showModalStatus('请填写版本号', true);
                 return;
             }
 
@@ -995,25 +1025,11 @@
                         return;
                     }
                     fabricOptions = data.items || [];
-                    renderFabricSelect('');
+                    refreshFabricOptions();
                 })
                 .catch(() => {
                     fabricOptions = [];
                     renderFabricSelect('');
-                });
-        }
-
-        function loadListingImages() {
-            fetch('/api/listing-images')
-                .then(r => r.json())
-                .then(data => {
-                    listingImageOptions = data.status === 'success' ? (data.items || []) : [];
-                    const current = document.getElementById('modalListingImage').value;
-                    renderListingImageSelect(current || '');
-                })
-                .catch(() => {
-                    listingImageOptions = [];
-                    renderListingImageSelect('');
                 });
         }
 
@@ -1148,10 +1164,15 @@
             const select = document.getElementById('modalFabric');
             const placeholder = document.createElement('option');
             placeholder.value = '';
-            placeholder.textContent = fabricOptions.length ? '请选择面料' : '暂无面料，请先创建';
+            const allowed = getAllowedFabricOptions();
+            if (!document.getElementById('modalSkuFamily').value) {
+                placeholder.textContent = '请先选择货号';
+            } else {
+                placeholder.textContent = allowed.length ? '请选择面料' : '暂无匹配面料';
+            }
             select.innerHTML = '';
             select.appendChild(placeholder);
-            fabricOptions.forEach(item => {
+            allowed.forEach(item => {
                 const option = document.createElement('option');
                 option.value = item.id;
                 option.dataset.code = item.fabric_code || '';
@@ -1163,26 +1184,6 @@
             });
             updateFabricTrigger();
             renderFabricList();
-        }
-
-        function renderListingImageSelect(selectedValue) {
-            const select = document.getElementById('modalListingImage');
-            const placeholder = document.createElement('option');
-            placeholder.value = '';
-            placeholder.textContent = listingImageOptions.length ? '请选择上架图片' : '暂无上架图片';
-            select.innerHTML = '';
-            select.appendChild(placeholder);
-            listingImageOptions.forEach(item => {
-                const option = document.createElement('option');
-                option.value = item.b64 || '';
-                option.textContent = item.name || '';
-                if (selectedValue && String(selectedValue) === String(item.b64)) {
-                    option.selected = true;
-                }
-                select.appendChild(option);
-            });
-            updateListingImageTrigger();
-            renderListingImageList();
         }
 
         function renderSourceSkuSelect(selectedValue) {
@@ -1221,14 +1222,6 @@
             trigger.textContent = option && option.value ? option.textContent : '请选择面料';
         }
 
-        function updateListingImageTrigger() {
-            const select = document.getElementById('modalListingImage');
-            const trigger = document.getElementById('modalListingImageTrigger');
-            if (!select || !trigger) return;
-            const option = select.selectedOptions && select.selectedOptions[0];
-            trigger.textContent = option && option.value ? option.textContent : '请选择上架图片';
-        }
-
         function updateSourceSkuTrigger() {
             const select = document.getElementById('modalSourceSku');
             const trigger = document.getElementById('modalSourceSkuTrigger');
@@ -1236,31 +1229,7 @@
             const option = select.selectedOptions && select.selectedOptions[0];
             trigger.textContent = option && option.value ? option.textContent : '请选择来源SKU';
         }
-
-        function setListingPreview(b64) {
-            const img = document.getElementById('modalListingPreviewImg');
-            const text = document.getElementById('modalListingPreviewText');
-            if (!img || !text) return;
-            if (!b64) {
-                img.style.display = 'none';
-                img.src = '';
-                text.style.display = 'inline';
-                text.textContent = '未选择图片';
-                return;
-            }
-            img.src = `/api/image-preview?id=${encodeURIComponent(b64)}`;
-            img.style.display = 'block';
-            text.style.display = 'none';
-        }
-
-        function toggleSourceSku(isOn) {
-            const wrap = document.getElementById('sourceSkuWrap');
-            if (!wrap) return;
-            wrap.style.display = isOn ? '' : 'none';
-            if (!isOn) {
-                setSelectValue('modalSourceSku', '');
-            }
-        }
+        
 
         function renderSkuFamilyList() {
             const list = document.getElementById('modalSkuFamilyList');
@@ -1297,7 +1266,7 @@
             const keyword = (document.getElementById('modalFabricSearch').value || '').trim().toLowerCase();
             if (!list) return;
             list.innerHTML = '';
-            const available = fabricOptions.filter(item => {
+            const available = getAllowedFabricOptions().filter(item => {
                 if (!keyword) return true;
                 const codeText = String(item.fabric_code || '').toLowerCase();
                 const nameText = String(item.fabric_name_en || '').toLowerCase();
@@ -1319,36 +1288,6 @@
                     setSelectValue('modalFabric', item.id);
                     updateSkuFromInputs();
                     closeSelectPanel('fabric');
-                });
-                list.appendChild(btn);
-            });
-        }
-
-        function renderListingImageList() {
-            const list = document.getElementById('modalListingImageList');
-            const keyword = (document.getElementById('modalListingImageSearch').value || '').trim().toLowerCase();
-            if (!list) return;
-            list.innerHTML = '';
-            const available = listingImageOptions.filter(item => {
-                if (!keyword) return true;
-                return String(item.name || '').toLowerCase().includes(keyword);
-            });
-            if (!available.length) {
-                const empty = document.createElement('div');
-                empty.className = 'pm-select-empty';
-                empty.textContent = '无匹配图片';
-                list.appendChild(empty);
-                return;
-            }
-            available.forEach(item => {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'pm-select-option';
-                btn.textContent = item.name || '';
-                btn.addEventListener('click', () => {
-                    setSelectValue('modalListingImage', item.b64);
-                    setListingPreview(item.b64);
-                    closeSelectPanel('listing');
                 });
                 list.appendChild(btn);
             });
@@ -1378,6 +1317,7 @@
                 btn.textContent = item.sku;
                 btn.addEventListener('click', () => {
                     setSelectValue('modalSourceSku', item.id);
+                    applySourceSkuData(item);
                     closeSelectPanel('source');
                 });
                 list.appendChild(btn);
@@ -1388,8 +1328,7 @@
             const panel = document.getElementById(
                 key === 'sku' ? 'modalSkuFamilyPanel'
                     : key === 'fabric' ? 'modalFabricPanel'
-                        : key === 'listing' ? 'modalListingImagePanel'
-                            : 'modalSourceSkuPanel'
+                        : 'modalSourceSkuPanel'
             );
             if (!panel) return;
             const isOpen = panel.classList.contains('open');
@@ -1404,9 +1343,6 @@
             } else if (key === 'fabric') {
                 renderFabricList();
                 document.getElementById('modalFabricSearch').focus();
-            } else if (key === 'listing') {
-                renderListingImageList();
-                document.getElementById('modalListingImageSearch').focus();
             } else {
                 renderSourceSkuList();
                 document.getElementById('modalSourceSkuSearch').focus();
@@ -1417,8 +1353,7 @@
             const panel = document.getElementById(
                 key === 'sku' ? 'modalSkuFamilyPanel'
                     : key === 'fabric' ? 'modalFabricPanel'
-                        : key === 'listing' ? 'modalListingImagePanel'
-                            : 'modalSourceSkuPanel'
+                        : 'modalSourceSkuPanel'
             );
             if (!panel) return;
             panel.classList.remove('open');
@@ -1427,7 +1362,6 @@
         window.addEventListener('load', loadOrderProductList);
         window.addEventListener('load', loadSkuFamilies);
         window.addEventListener('load', loadFabrics);
-        window.addEventListener('load', loadListingImages);
         window.addEventListener('load', loadSourceSkuOptions);
         window.addEventListener('load', loadCategories);
         window.addEventListener('load', loadFillingMaterials);
@@ -1450,6 +1384,9 @@
         document.getElementById('modalSkuFamilySearch').addEventListener('input', function() {
             renderSkuFamilyList();
         });
+        document.getElementById('modalSku').addEventListener('input', function() {
+            skuManuallyEdited = true;
+        });
         document.getElementById('modalVersion').addEventListener('input', updateSkuFromInputs);
         document.getElementById('modalSpecQtyShort').addEventListener('input', updateSkuFromInputs);
         document.getElementById('modalFabricTrigger').addEventListener('click', function() {
@@ -1458,12 +1395,6 @@
         document.getElementById('modalFabricSearch').addEventListener('input', function() {
             renderFabricList();
         });
-        document.getElementById('modalListingImageTrigger').addEventListener('click', function() {
-            toggleSelectPanel('listing');
-        });
-        document.getElementById('modalListingImageSearch').addEventListener('input', function() {
-            renderListingImageList();
-        });
         document.getElementById('modalSourceSkuTrigger').addEventListener('click', function() {
             toggleSelectPanel('source');
         });
@@ -1471,7 +1402,7 @@
             renderSourceSkuList();
         });
         document.getElementById('modalIsIteration').addEventListener('change', function() {
-            toggleSourceSku(this.checked);
+            setIterationMode(this.checked);
         });
         document.getElementById('orderProductUploadInput').addEventListener('change', function() {
             const file = this.files && this.files[0];
@@ -1492,6 +1423,18 @@
         document.getElementById('certAdd').addEventListener('click', function() {
             togglePickerMenu('cert');
         });
+        document.getElementById('fillingSearch').addEventListener('input', function() {
+            renderPicker('filling');
+        });
+        document.getElementById('frameSearch').addEventListener('input', function() {
+            renderPicker('frame');
+        });
+        document.getElementById('featureSearch').addEventListener('input', function() {
+            renderPicker('feature');
+        });
+        document.getElementById('certSearch').addEventListener('input', function() {
+            renderPicker('cert');
+        });
         document.addEventListener('click', function(e) {
             const fillingDropdown = document.getElementById('fillingDropdown');
             const frameDropdown = document.getElementById('frameDropdown');
@@ -1511,16 +1454,12 @@
             }
             const skuSelect = document.getElementById('modalSkuFamilySelect');
             const fabricSelect = document.getElementById('modalFabricSelect');
-            const listingSelect = document.getElementById('modalListingImageSelect');
             const sourceSelect = document.getElementById('modalSourceSkuSelect');
             if (skuSelect && !skuSelect.contains(e.target)) {
                 closeSelectPanel('sku');
             }
             if (fabricSelect && !fabricSelect.contains(e.target)) {
                 closeSelectPanel('fabric');
-            }
-            if (listingSelect && !listingSelect.contains(e.target)) {
-                closeSelectPanel('listing');
             }
             if (sourceSelect && !sourceSelect.contains(e.target)) {
                 closeSelectPanel('source');
