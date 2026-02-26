@@ -109,8 +109,10 @@
         }
         .fabric-existing-item img {
             width: 100%;
-            height: 80px;
-            object-fit: cover;
+            aspect-ratio: 1 / 1;
+            object-fit: contain;
+            background: #fff;
+            padding: 8px;
             display: block;
         }
         .fabric-existing-item-name {
@@ -149,37 +151,50 @@
             transform: scale(1.05);
             box-shadow: 0 8px 20px rgba(0,0,0,0.2);
         }
-        /* 不同类型的边框颜色（降低饱和度） */
-        .fabric-image-card[data-remark="原图"] {
-            border: 3px solid #93b5dd;
-        }
-        .fabric-image-card[data-remark="卖点图"] {
-            border: 3px solid #e5ba8c;
-        }
-        .fabric-image-card[data-remark=""] {
+        .fabric-image-card {
             border: 3px solid var(--morandi-sand);
+            background: #fff;
+        }
+        .fabric-image-card.remark-original {
+            border-color: #93b5dd;
+        }
+        .fabric-image-card.remark-main {
+            border-color: #e5ba8c;
+        }
+        .fabric-image-card.remark-aplus {
+            border-color: #8fbfa3;
+        }
+        .fabric-image-preview-wrap {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            background: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 7px 7px 0 0;
+            overflow: hidden;
         }
         .fabric-image-preview {
             width: 100%;
-            height: 120px;
-            object-fit: cover;
+            height: 100%;
+            object-fit: contain;
             display: block;
-            border-radius: 7px 7px 0 0;
         }
         .fabric-image-info {
-            padding: 0.5rem;
+            padding: 0.35rem 0.45rem;
             background: #fff;
             border-radius: 0 0 7px 7px;
         }
         .fabric-image-remark {
-            margin-bottom: 0.4rem;
-            font-size: 0.85rem;
+            margin-bottom: 0.15rem;
+            font-size: 0.78rem;
             font-weight: 600;
+            color: #4b5563;
         }
         .fabric-image-remove-badge {
             position: absolute;
-            top: -8px;
-            right: -8px;
+            top: 8px;
+            right: 8px;
             width: 24px;
             height: 24px;
             border-radius: 50%;
@@ -197,15 +212,19 @@
             transition: background 0.2s, transform 0.1s;
             z-index: 10;
         }
+        .fabric-image-remove-icon {
+            position: relative;
+            top: -1px;
+        }
         .fabric-image-remove-badge:hover {
             background: #6b1f1f;
             transform: scale(1.1);
         }
         .fabric-image-name {
-            font-size: 0.7rem;
+            font-size: 0.66rem;
             color: var(--morandi-slate);
             word-break: break-all;
-            margin-top: 0.25rem;
+            margin-top: 0.1rem;
         }
         .fabric-type-modal {
             position: fixed;
@@ -239,38 +258,25 @@
         .fabric-type-options {
             display: flex;
             flex-direction: column;
-            gap: 0.75rem;
-            margin-bottom: 1.5rem;
+            gap: 0.6rem;
         }
         .fabric-type-option {
-            display: flex;
-            align-items: center;
             padding: 0.75rem;
             border: 2px solid var(--morandi-sand);
             border-radius: 8px;
             cursor: pointer;
             transition: all 0.2s;
+            font-size: 0.98rem;
+            font-weight: 600;
+            color: #4b5563;
         }
         .fabric-type-option:hover {
             border-color: var(--morandi-ink);
             background: var(--morandi-mist);
         }
-        .fabric-type-option input[type="radio"] {
-            margin-right: 0.75rem;
-            width: 18px;
-            height: 18px;
-            cursor: pointer;
-        }
-        .fabric-type-option label {
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            flex: 1;
-        }
-        .fabric-type-modal-actions {
-            display: flex;
-            gap: 0.5rem;
-            justify-content: flex-end;
+        .fabric-type-option.active {
+            border-color: var(--morandi-ink);
+            background: var(--morandi-mist);
         }
     </style>
 </head>
@@ -361,6 +367,10 @@
                         </div>
                         <div class="fabric-existing-panel" id="existingImagePanel" style="display:none;">
                             <input type="text" id="modalImageFilter" class="fabric-image-search" placeholder="搜索图片">
+                            <!-- hidden select for legacy code paths -->
+                            <select id="modalImageSelect" style="display:none"></select>
+                            <!-- container to show currently selected image tags -->
+                            <div id="modalImageSelected" style="margin:0.5rem 0; display:flex; flex-wrap:wrap; gap:0.4rem;"></div>
                             <div class="fabric-existing-list" id="modalImageList"></div>
                         </div>
                         <div class="fabric-images-grid" id="selectedImagesGrid">
@@ -383,17 +393,23 @@
             <div class="fabric-type-modal-title">选择图片类型</div>
             <div class="fabric-type-options">
                 <div class="fabric-type-option" onclick="selectImageType('原图')">
-                    <input type="radio" name="imageType" value="原图" id="typeOriginal">
-                    <label for="typeOriginal">原图</label>
+                    原图
                 </div>
-                <div class="fabric-type-option" onclick="selectImageType('卖点图')">
-                    <input type="radio" name="imageType" value="卖点图" id="typeSelling">
-                    <label for="typeSelling">卖点图</label>
+                <div class="fabric-type-option" onclick="selectImageType('主图·Swatch')">
+                    主图·Swatch
                 </div>
-            </div>
-            <div class="fabric-type-modal-actions">
-                <button class="btn-secondary" onclick="closeTypeModal()">取消</button>
-                <button class="btn-primary" onclick="confirmImageType()">确定</button>
+                <div class="fabric-type-option" onclick="selectImageType('主图·卖点')">
+                    主图·卖点
+                </div>
+                <div class="fabric-type-option" onclick="selectImageType('A+·电脑端')">
+                    A+·电脑端
+                </div>
+                <div class="fabric-type-option" onclick="selectImageType('A+·手机端')">
+                    A+·手机端
+                </div>
+                <div class="fabric-type-option" onclick="selectImageType('A+·通用')">
+                    A+·通用
+                </div>
             </div>
         </div>
     </div>
@@ -414,6 +430,50 @@
         let selectedSkuFamilyIds = [];
         let draggedIndex = null;
         let currentEditingImageIndex = null;
+        const FABRIC_TYPE_OPTIONS = ['原图', '主图·Swatch', '主图·卖点', 'A+·电脑端', 'A+·手机端', 'A+·通用'];
+
+        function normalizeImageRemark(value) {
+            const text = String(value || '').trim();
+            if (FABRIC_TYPE_OPTIONS.includes(text)) return text;
+            if (text === '卖点图' || text.includes('卖点')) return '主图·卖点';
+            if (text.toLowerCase().includes('swatch')) return '主图·Swatch';
+            if (text.includes('A+')) {
+                if (text.includes('电脑')) return 'A+·电脑端';
+                if (text.includes('手机')) return 'A+·手机端';
+                return 'A+·通用';
+            }
+            return '原图';
+        }
+
+        function getRemarkCategoryClass(remark) {
+            const normalized = normalizeImageRemark(remark);
+            if (normalized === '原图') return 'remark-original';
+            if (normalized.startsWith('主图·')) return 'remark-main';
+            if (normalized.startsWith('A+·')) return 'remark-aplus';
+            return '';
+        }
+
+        function getImageItemByName(imageName) {
+            const arr = (fabricImages || []);
+            for (let it of arr) {
+                if (!it) continue;
+                if (it.name === imageName) return it;
+                try {
+                    const dec = tryDecodeNameFromB64(it.rawB64) || '';
+                    if (dec === imageName) return it;
+                } catch (e) {}
+                if (it.rawB64 === imageName) return it;
+            }
+            return null;
+        }
+
+        function getFabricImagePreviewSrc(imageName, width = 520, quality = 72) {
+            const found = getImageItemByName(imageName);
+            const fallbackPath = `『面料』/${imageName || ''}`;
+            const fallbackB64 = utf8ToB64(fallbackPath);
+            const imageB64 = found && found.b64 ? found.b64 : fallbackB64;
+            return `/api/image-preview?id=${encodeURIComponent(imageB64)}&mode=thumb&w=${width}&q=${quality}`;
+        }
 
         function showModalStatus(message, isError) {
             const el = document.getElementById('modalStatus');
@@ -455,6 +515,7 @@
             resetModalStatus();
             document.getElementById('pm-modal').classList.add('active');
             document.getElementById('modalFabricCode').focus();
+            loadFabricImages();
         }
 
         function openEditModal(item) {
@@ -473,14 +534,14 @@
             if (item.images && Array.isArray(item.images)) {
                 selectedImageObjects = item.images.map(img => ({
                     image_name: img.image_name,
-                    remark: img.remark || '',
+                    remark: normalizeImageRemark(img.remark),
                     sort_order: img.sort_order || 0
                 }));
             } else {
                 // 向后兼容：如果只有 image_names，创建简单对象
                 selectedImageObjects = (item.image_names || []).map((name, idx) => ({
                     image_name: name,
-                    remark: '',
+                    remark: '原图',
                     sort_order: idx
                 }));
             }
@@ -491,6 +552,7 @@
             resetModalStatus();
             document.getElementById('pm-modal').classList.add('active');
             document.getElementById('modalFabricCode').focus();
+            loadFabricImages();
         }
 
         function loadFabricMaterials() {
@@ -642,7 +704,11 @@
         }
 
         function loadFabricImages() {
-            fetch('/api/fabric-images')
+            const params = new URLSearchParams();
+            params.set('unbound', '1');
+            if (editId) params.set('fabric_id', String(editId));
+            const url = `/api/fabric-images?${params.toString()}`;
+            return fetch(url)
                 .then(r => r.json())
                 .then(data => {
                     if (data.status !== 'success') {
@@ -652,6 +718,7 @@
                     }
                     // Expect items as objects: { name: displayName, name_raw_b64: base64(filename bytes), b64: base64(path bytes) }
                     fabricImages = (data.items || []).map(it => ({ name: it.name, rawB64: it.name_raw_b64, b64: it.b64 }));
+                    console.log('[DEBUG] loadFabricImages -> count=', fabricImages.length, 'sample=', fabricImages.slice(0,6));
                     renderImageSelect();
                 })
                 .catch(() => {
@@ -691,6 +758,7 @@
 
         function updateImageToggleText(selectedValue) {
             const toggle = document.getElementById('modalImageToggle');
+            if (!toggle) return;
             let text = getImagePlaceholderText();
             if (selectedValue) {
                 text = selectedValue;
@@ -1086,49 +1154,55 @@
             const panel = document.getElementById('existingImagePanel');
             panel.style.display = (panel.style.display === 'none') ? 'block' : 'none';
             if (panel.style.display === 'block') {
-                renderExistingImagesList();
-                document.getElementById('modalImageFilter').focus();
+                loadFabricImages().finally(() => {
+                    renderExistingImagesList();
+                    document.getElementById('modalImageFilter').focus();
+                });
             }
         }
         
         function renderExistingImagesList() {
             const list = document.getElementById('modalImageList');
             const keyword = (document.getElementById('modalImageFilter').value || '').trim().toLowerCase();
-            const selectedSet = new Set(selectedImageObjects.map(v => v.image_name));
-            
+            const selectedDisplaySet = new Set((selectedImageObjects||[]).map(v => (tryDecodeNameFromB64(v.image_name) || v.image_name)));
+            console.log('[DEBUG] renderExistingImagesList -> fabricImages.length=', (fabricImages||[]).length);
+            console.log('[DEBUG] usedFabricImages sample=', Array.from(usedFabricImages).slice(0,6));
             list.innerHTML = '';
             const filtered = fabricImages.filter(item => {
-                const name = (item.name || '').toLowerCase();
-                return !keyword || name.includes(keyword);
+                const display = item.name || '';
+                // try decode rawB64 to get the original filename when possible
+                const decoded = tryDecodeNameFromB64(item.rawB64) || display;
+                const name = String(decoded || display).toLowerCase();
+
+                // unbound filtering is handled by backend API
+                return (!keyword || name.includes(keyword));
             });
             
             if (!filtered.length) {
-                list.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--morandi-slate);">暂无图片</div>';
+                list.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--morandi-slate);">暂无未绑定图片</div>';
                 return;
             }
             
             filtered.forEach(item => {
                 const div = document.createElement('div');
                 div.className = 'fabric-existing-item';
-                if (selectedSet.has(item.name)) div.classList.add('selected');
-                
-                const imgPath = `『面料』/${item.name}`;
-                const imgB64 = utf8ToB64(imgPath);
-                
+                const displayText = tryDecodeNameFromB64(item.rawB64) || item.name || '';
+                if (selectedDisplaySet.has(displayText)) div.classList.add('selected');
+
                 div.innerHTML = `
-                    <img src="/api/image-preview?id=${encodeURIComponent(imgB64)}&mode=thumb&w=240&q=68" alt="${item.name}" loading="lazy">
-                    <div class="fabric-existing-item-name">${item.name}</div>
+                    <img src="/api/image-preview?id=${encodeURIComponent(item.b64)}&mode=thumb&w=240&q=68" alt="${displayText}" loading="lazy">
+                    <div class="fabric-existing-item-name">${displayText}</div>
                 `;
-                
+
                 div.onclick = () => {
-                    if (selectedSet.has(item.name)) {
-                        // 取消选择
-                        selectedImageObjects = selectedImageObjects.filter(v => v.image_name !== item.name);
+                    if (selectedDisplaySet.has(displayText)) {
+                        // 取消选择 by display name
+                        selectedImageObjects = selectedImageObjects.filter(v => (tryDecodeNameFromB64(v.image_name) || v.image_name) !== displayText);
                     } else {
-                        // 添加选择（默认类型为空，需要用户选择）
+                        // 添加选择（使用解码后的显示名保存）
                         selectedImageObjects.push({
-                            image_name: item.name,
-                            remark: '',
+                            image_name: displayText,
+                            remark: '原图',
                             sort_order: selectedImageObjects.length
                         });
                     }
@@ -1151,20 +1225,21 @@
             grid.innerHTML = '';
             selectedImageObjects.forEach((img, index) => {
                 const card = document.createElement('div');
-                card.className = 'fabric-image-card';
-                card.setAttribute('data-remark', img.remark || '');
+                const normalizedRemark = normalizeImageRemark(img.remark);
+                img.remark = normalizedRemark;
+                const categoryClass = getRemarkCategoryClass(normalizedRemark);
+                card.className = `fabric-image-card ${categoryClass}`;
                 card.setAttribute('draggable', 'true');
                 card.dataset.index = index;
                 
-                const imgPath = `『面料』/${img.image_name}`;
-                const imgB64 = utf8ToB64(imgPath);
-                
                 card.innerHTML = `
-                    <div class="fabric-image-remove-badge" onclick="removeImageCard(${index}); event.stopPropagation();">×</div>
-                    <img src="/api/image-preview?id=${encodeURIComponent(imgB64)}&mode=thumb&w=520&q=72" alt="${img.image_name}" class="fabric-image-preview" loading="lazy">
+                    <div class="fabric-image-remove-badge" onclick="removeImageCard(${index}); event.stopPropagation();"><span class="fabric-image-remove-icon">×</span></div>
+                    <div class="fabric-image-preview-wrap">
+                        <img src="${getFabricImagePreviewSrc(img.image_name, 520, 72)}" alt="${img.image_name}" class="fabric-image-preview" loading="lazy">
+                    </div>
                     <div class="fabric-image-info">
                         <div class="fabric-image-remark">
-                            类型：${img.remark || '未分类'}
+                            类型：${normalizedRemark}
                         </div>
                         <div class="fabric-image-name">${img.image_name}</div>
                     </div>
@@ -1235,15 +1310,12 @@
             currentEditingImageIndex = index;
             const img = selectedImageObjects[index];
             const modal = document.getElementById('fabricTypeModal');
-            
-            // 设置当前类型
-            if (img.remark === '原图') {
-                document.getElementById('typeOriginal').checked = true;
-            } else if (img.remark === '卖点图') {
-                document.getElementById('typeSelling').checked = true;
-            } else {
-                document.querySelector('input[name="imageType"]').checked = false;
-            }
+            const normalizedRemark = normalizeImageRemark(img && img.remark);
+            const options = modal.querySelectorAll('.fabric-type-option');
+            options.forEach(option => {
+                const optionText = (option.textContent || '').trim();
+                option.classList.toggle('active', optionText === normalizedRemark);
+            });
             
             modal.classList.add('active');
         }
@@ -1254,22 +1326,9 @@
         }
         
         function selectImageType(type) {
-            if (type === '原图') {
-                document.getElementById('typeOriginal').checked = true;
-            } else if (type === '卖点图') {
-                document.getElementById('typeSelling').checked = true;
-            }
-        }
-        
-        function confirmImageType() {
             if (currentEditingImageIndex === null) return;
-            
-            const selected = document.querySelector('input[name="imageType"]:checked');
-            if (selected) {
-                selectedImageObjects[currentEditingImageIndex].remark = selected.value;
-                renderSelectedImagesGrid();
-            }
-            
+            selectedImageObjects[currentEditingImageIndex].remark = normalizeImageRemark(type);
+            renderSelectedImagesGrid();
             closeTypeModal();
         }
 
@@ -1293,6 +1352,11 @@
         document.getElementById('modalImageUpload').addEventListener('change', handleImageUpload);
         document.getElementById('modalSkuFilter').addEventListener('input', renderSkuFamilyPicker);
         document.getElementById('skuAdd').addEventListener('click', toggleSkuMenu);
+        document.getElementById('fabricTypeModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeTypeModal();
+            }
+        });
         
         function handleImageUpload() {
             const files = document.getElementById('modalImageUpload').files;
@@ -1302,7 +1366,7 @@
             Array.from(files).forEach(file => {
                 selectedImageObjects.push({
                     image_name: file.name,
-                    remark: '',
+                    remark: '原图',
                     sort_order: selectedImageObjects.length,
                     _isNewUpload: true,
                     _fileObject: file

@@ -8,7 +8,7 @@ WSGI 应用 - 用于 Synology Web Station
 import sys
 import os
 
-# 强制设置所有I/O为UTF-8（这是关键）
+# 强制设置所有I/O为UTF-8
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 if hasattr(sys.stderr, 'reconfigure'):
@@ -246,12 +246,28 @@ class WSGIApp:
 
     def _normalize_fabric_remark(self, remark):
         value = (remark or '').strip()
-        if value in ('原图', '卖点图'):
+        allowed = {
+            '原图',
+            '主图·Swatch',
+            '主图·卖点',
+            'A+·电脑端',
+            'A+·手机端',
+            'A+·通用',
+        }
+        if value in allowed:
             return value
         if value in ('平面原图', '褶皱原图'):
             return '原图'
         if '卖点' in value:
-            return '卖点图'
+            return '主图·卖点'
+        if 'Swatch' in value or 'swatch' in value:
+            return '主图·Swatch'
+        if 'A+' in value or value.startswith('A＋'):
+            if '电脑' in value:
+                return 'A+·电脑端'
+            if '手机' in value:
+                return 'A+·手机端'
+            return 'A+·通用'
         return '原图'
 
     def _build_fabric_image_plan(self, images, fabric_code):
@@ -500,6 +516,8 @@ class WSGIApp:
                 return self.handle_sales_product_import_api(environ, method, start_response)
             elif path == '/api/fabric-images':
                 return self.handle_fabric_images_api(environ, start_response)
+            elif path == '/api/_debug/fabric-images':
+                return self.handle_debug_fabric_images_api(environ, start_response)
             elif path == '/api/listing-images':
                 return self.handle_listing_images_api(environ, start_response)
             elif path == '/api/fabric-attach':
@@ -3121,7 +3139,9 @@ class WSGIApp:
         return folder
 
     def _get_listing_folder_bytes(self):
-        return self._join_resources('上架资源')
+        # RESOURCES_PATH_BYTES already points to the decoded child (上架资源),
+        # so listing folder is the resources path itself.
+        return RESOURCES_PATH_BYTES
 
     def _ensure_listing_folder(self):
         folder = self._get_listing_folder_bytes()
@@ -3445,6 +3465,46 @@ class WSGIApp:
     def handle_fabric_images_api(self, environ, start_response):
         """列出面料文件夹内图片"""
         try:
+            query_params = parse_qs(environ.get('QUERY_STRING', '') or '')
+            unbound_only = str(query_params.get('unbound', [''])[0]).strip().lower() in ('1', 'true', 'yes')
+            current_fabric_id = None
+            try:
+                raw_fabric_id = str(query_params.get('fabric_id', [''])[0]).strip()
+                if raw_fabric_id:
+                    current_fabric_id = int(raw_fabric_id)
+            except Exception:
+                current_fabric_id = None
+
+            bound_name_to_fabric_ids = {}
+            bound_b64_to_fabric_ids = {}
+            if unbound_only:
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT fabric_id, image_name FROM fabric_images")
+                        for row in (cur.fetchall() or []):
+                            image_name = (row.get('image_name') or '').strip().replace('\\', '/')
+                            if not image_name:
+                                continue
+                            # normalize to filename only; DB may contain '『面料』/xxx.jpg'
+                            normalized = image_name.split('/')[-1].strip()
+                            if not normalized:
+                                continue
+                            fid = row.get('fabric_id')
+                            if normalized not in bound_name_to_fabric_ids:
+                                bound_name_to_fabric_ids[normalized] = set()
+                            if fid is not None:
+                                bound_name_to_fabric_ids[normalized].add(int(fid))
+                            # also store base64 of raw bytes of the DB-stored name for robust matching
+                            try:
+                                db_raw_bytes = os.fsencode(normalized)
+                                db_b64 = base64.b64encode(db_raw_bytes).decode('ascii')
+                                if db_b64 not in bound_b64_to_fabric_ids:
+                                    bound_b64_to_fabric_ids[db_b64] = set()
+                                if fid is not None:
+                                    bound_b64_to_fabric_ids[db_b64].add(int(fid))
+                            except Exception:
+                                pass
+
             folder = self._get_fabric_folder_bytes()
             if not os.path.exists(folder):
                 return self.send_json({'status': 'success', 'items': []}, start_response)
@@ -3476,6 +3536,21 @@ class WSGIApp:
                                 except Exception:
                                     display = raw_bytes.decode('latin-1', errors='replace')
 
+                        if unbound_only:
+                            normalized_display = (display or '').replace('\\', '/').split('/')[-1].strip()
+                            # try matching by db normalized name
+                            bound_ids = bound_name_to_fabric_ids.get(normalized_display, set())
+                            # also try matching by base64 of raw bytes
+                            try:
+                                b64_display = base64.b64encode(raw_bytes).decode('ascii')
+                                b64_bound_ids = bound_b64_to_fabric_ids.get(b64_display, set())
+                            except Exception:
+                                b64_bound_ids = set()
+                            combined_bound = set(bound_ids) | set(b64_bound_ids)
+                            if combined_bound:
+                                if current_fabric_id is None or current_fabric_id not in combined_bound:
+                                    continue
+
                         # 返回相对于 resources 的字节路径 base64（包含『面料』子目录），
                         # 以便前端直接传回 /api/image-preview 使用
                         try:
@@ -3500,8 +3575,28 @@ class WSGIApp:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def handle_debug_fabric_images_api(self, environ, start_response):
+        """调试：返回 fabric_images 表的前 200 条记录（只读）。"""
+        try:
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id, fabric_id, image_name, remark, created_at FROM fabric_images ORDER BY id DESC LIMIT 200")
+                    rows = cur.fetchall() or []
+                    items = []
+                    for r in rows:
+                        items.append({
+                            'id': r.get('id'),
+                            'fabric_id': r.get('fabric_id'),
+                            'image_name': r.get('image_name'),
+                            'remark': r.get('remark'),
+                            'created_at': r.get('created_at')
+                        })
+            return self.send_json({'status': 'success', 'items': items}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
     def handle_listing_images_api(self, environ, start_response):
-        """列出上架资源文件夹内图片（递归）"""
+        """列出『上架资源』文件夹内图片（递归）"""
         try:
             folder = self._ensure_listing_folder()
             items = []
@@ -3530,14 +3625,12 @@ class WSGIApp:
                         rel_bytes = os.path.join(rel_dir_bytes, raw_bytes)
                         display_name = os.fsdecode(rel_bytes)
 
+                    # rel_bytes already represents the path relative to the resources root
+                    # e.g. 'subdir/file.jpg' or '『面料』/file.jpg'. Do not prefix '『上架资源』' again.
                     try:
-                        folder_bytes = os.fsencode('上架资源')
+                        rel_path_bytes = rel_bytes
                     except Exception:
-                        folder_bytes = '上架资源'.encode('utf-8', errors='surrogatepass')
-                    try:
-                        rel_path_bytes = os.path.join(folder_bytes, rel_bytes)
-                    except Exception:
-                        rel_path_bytes = folder_bytes + os.sep.encode() + rel_bytes
+                        rel_path_bytes = rel_bytes
 
                     b64 = base64.b64encode(rel_path_bytes).decode('ascii')
                     items.append({'name': display_name, 'b64': b64})
@@ -4130,12 +4223,15 @@ class WSGIApp:
                 for row in rows:
                     # 用详细图片信息替换简单的 image_names 列表
                     row['images'] = images_map.get(row['id'], [])
-                    # 保留向后兼容的 image_names
-                    names = row.get('image_names')
-                    if names:
-                        row['image_names'] = [name for name in names.split('||') if name]
+                    # 保留向后兼容的 image_names（优先使用明细表结果，避免多表 JOIN 重复）
+                    if row['images']:
+                        row['image_names'] = [img.get('image_name') for img in row['images'] if img.get('image_name')]
                     else:
-                        row['image_names'] = []
+                        names = row.get('image_names')
+                        if names:
+                            row['image_names'] = [name for name in names.split('||') if name]
+                        else:
+                            row['image_names'] = []
                     sku_ids = row.get('sku_family_ids')
                     if sku_ids:
                         row['sku_family_ids'] = [v for v in sku_ids.split(',') if v]
@@ -6224,7 +6320,7 @@ class WSGIApp:
             ws.append(headers)
             ws.append([
                 'MS01A-Brown', 'MS01', '1', 'Brown', 'A',
-                '上架资源/MS01/cover.jpg', 0, '',
+                '『上架资源』/MS01/cover.jpg', 0, '',
                 0, 0, 0, 0,
                 0, 0, 0, 0,
                 0, 0, '', 0,
@@ -6346,9 +6442,11 @@ class WSGIApp:
 
                     listing_image_b64 = None
                     if listing_image_path:
+                        # listing_image_path in spreadsheet may contain a path like 'MS01/cover.jpg'
+                        # or may already include a leading '上架资源/' — normalize to be relative
                         rel_path = listing_image_path
-                        if not rel_path.startswith('上架资源'):
-                            rel_path = f"上架资源/{rel_path}"
+                        # remove leading '上架资源' or '『上架资源』' if present, because RESOURCES_PATH_BYTES already points to 上架资源
+                        rel_path = re.sub(r'^(?:上架资源|『上架资源』)[/\\]?', '', rel_path)
                         try:
                             rel_bytes = os.fsencode(rel_path)
                         except Exception:
