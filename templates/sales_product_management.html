@@ -57,12 +57,244 @@
         }
         .order-link-selected { margin-top: 0.6rem; display: grid; gap: 0.4rem; }
         .order-link-row {
-            display: grid; grid-template-columns: minmax(0,1fr) 90px 70px;
+            display: grid; grid-template-columns: minmax(0,1fr) 76px 58px;
             gap: 0.5rem; align-items: center;
             padding: 0.45rem 0.55rem; border-radius: 8px; border: 1px solid var(--morandi-sand);
             background: rgba(255,255,255,0.85);
         }
         .order-link-row input { padding: 0.45rem 0.55rem; border: 1px solid var(--morandi-sand); border-radius: 6px; }
+        .order-link-row .btn-danger { padding: 0.35rem 0.45rem; font-size: 0.82rem; line-height: 1.15; }
+        .label-help {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+        .help-dot {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            font-size: 11px;
+            line-height: 1;
+            border: 1px solid var(--morandi-sand);
+            color: var(--morandi-slate);
+            background: #fff;
+            cursor: help;
+        }
+        .help-dot::after {
+            content: attr(data-tip);
+            position: absolute;
+            left: 50%;
+            bottom: calc(100% + 8px);
+            transform: translateX(-50%);
+            min-width: 170px;
+            max-width: 260px;
+            padding: 0.4rem 0.55rem;
+            border-radius: 6px;
+            border: 1px solid var(--morandi-sand);
+            background: #fff;
+            color: var(--morandi-ink);
+            font-size: 0.8rem;
+            white-space: normal;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transition: opacity 0.15s ease;
+            z-index: 20;
+        }
+        .help-dot:hover::after { opacity: 1; visibility: visible; }
+        .upload-progress {
+            position: fixed;
+            right: 18px;
+            bottom: 18px;
+            width: 280px;
+            padding: 0.75rem 0.8rem;
+            background: #fff;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 10px;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+            z-index: 60;
+            display: none;
+        }
+        .upload-progress-title {
+            font-size: 0.9rem;
+            color: var(--morandi-ink);
+            margin-bottom: 0.45rem;
+        }
+        .upload-progress-bar {
+            width: 100%;
+            height: 8px;
+            background: var(--morandi-mist);
+            border-radius: 99px;
+            overflow: hidden;
+        }
+        .upload-progress-bar > span {
+            display: block;
+            height: 100%;
+            width: 0%;
+            background: var(--morandi-sand);
+        }
+        .dialog-message {
+            white-space: pre-wrap;
+            color: var(--morandi-ink);
+            line-height: 1.55;
+            font-size: 0.95rem;
+        }
+        .dialog-detail-wrap {
+            margin-top: 0.8rem;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 8px;
+            background: #fff;
+            max-height: 280px;
+            overflow: auto;
+            display: none;
+        }
+        .dialog-detail-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.45rem 0.6rem;
+            border-bottom: 1px solid var(--morandi-mist);
+            background: #faf9f7;
+        }
+        .dialog-detail-title { font-size: 0.86rem; color: var(--morandi-slate); }
+        .dialog-detail-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+        .dialog-detail-table th, .dialog-detail-table td {
+            border-bottom: 1px solid var(--morandi-mist);
+            text-align: left;
+            padding: 0.42rem 0.55rem;
+            vertical-align: top;
+        }
+        .dialog-detail-table th { background: #f7f4ef; position: sticky; top: 0; z-index: 1; }
+        .toast-notice {
+            position: fixed;
+            right: 18px;
+            bottom: 18px;
+            min-width: 280px;
+            max-width: 420px;
+            padding: 0.7rem 0.85rem;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 10px;
+            background: #fff;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+            color: var(--morandi-ink);
+            font-size: 0.9rem;
+            line-height: 1.5;
+            z-index: 70;
+            display: none;
+        }
+        .percent-input {
+            position: relative;
+            width: 100%;
+        }
+        .percent-input .optional-field,
+        .percent-input .required-field {
+            padding-right: 1.8rem !important;
+        }
+        .percent-input .percent-suffix {
+            position: absolute;
+            right: 0.6rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--morandi-slate);
+            pointer-events: none;
+            font-size: 0.9rem;
+        }
+        .pm-section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.6rem;
+        }
+        .pm-section-header h4 { margin: 0; }
+        .pm-section-tools { display: inline-flex; gap: 0.45rem; }
+        .parent-suggest-list {
+            margin-top: 0.4rem;
+            max-height: 160px;
+            overflow-y: auto;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 8px;
+            background: #fff;
+            display: none;
+        }
+        .parent-suggest-item {
+            width: 100%;
+            text-align: left;
+            padding: 0.45rem 0.55rem;
+            border: none;
+            border-bottom: 1px solid var(--morandi-mist);
+            background: #fff;
+            color: var(--morandi-ink);
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        .parent-suggest-item:last-child { border-bottom: none; }
+        .parent-create-tip {
+            margin-top: 0.45rem;
+            color: var(--morandi-slate);
+            font-size: 0.86rem;
+            display: none;
+        }
+        .danger-note {
+            color: #9b4a4a;
+            font-weight: 600;
+        }
+        .auto-note {
+            color: #8b2f2f;
+            font-size: 0.86rem;
+            margin-left: 0.4rem;
+            font-weight: 600;
+        }
+        .status-segment {
+            display: inline-flex;
+            gap: 0.4rem;
+            padding: 0.28rem;
+            border-radius: 999px;
+            background: rgba(207, 199, 189, 0.3);
+            border: 1px solid rgba(207, 199, 189, 0.8);
+            width: fit-content;
+            max-width: 100%;
+        }
+        .status-pill {
+            border: none;
+            border-radius: 999px;
+            padding: 0.3rem 0.7rem;
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--morandi-ink);
+            background: transparent;
+            cursor: pointer;
+            transition: background .15s ease, color .15s ease;
+        }
+        .status-pill:hover { background: rgba(207, 199, 189, 0.55); color: var(--morandi-ink); }
+        .status-pill.is-active { color: #fff; }
+        .status-pill--enabled.is-active { background: #7fa88b; }
+        .status-pill--retained.is-active { background: #b07b7b; }
+        .status-pill--discarded.is-active { background: #8f82b5; }
+        .status-segment--inline {
+            border-radius: 10px;
+            transform: scale(0.95);
+            transform-origin: left center;
+        }
+        .btn-helper-pill {
+            border: 1px solid #6f6760 !important;
+            background: #6f6760 !important;
+            color: #fff !important;
+            border-radius: 999px !important;
+            padding: 0.24rem 0.62rem !important;
+            font-size: 0.78rem !important;
+            line-height: 1.25;
+            box-shadow: none !important;
+        }
+        .btn-helper-pill:hover {
+            background: #5e5751 !important;
+            border-color: #5e5751 !important;
+            color: #fff !important;
+        }
     </style>
 </head>
 <body>
@@ -80,7 +312,7 @@
                     <div class="pm-toolbar-actions">
                         <div class="form-group pm-search" style="margin: 0;">
                             <span class="pm-search-title">搜索</span>
-                            <input type="text" id="searchInput" placeholder="搜索平台SKU/店铺/父体/子体">
+                            <input type="text" id="searchInput" placeholder="搜索平台SKU/子体/大健云仓编号/货号/父体">
                             <button class="btn-primary" onclick="loadSalesProductList()">搜索</button>
                             <button class="btn-secondary" onclick="resetSearch()">清空</button>
                         </div>
@@ -88,9 +320,7 @@
                         <button class="btn-secondary" onclick="downloadSalesProductTemplate()">下载模板</button>
                         <button class="btn-secondary" onclick="triggerSalesProductUpload()">批量上传</button>
                         <input type="file" id="salesProductUploadInput" accept=".xlsx" style="display:none;">
-                        <span class="pm-divider" aria-hidden="true"></span>
-                        <button class="btn-secondary" onclick="openCopyModal()">复制已有产品信息</button>
-                        <button class="btn-accent" onclick="openCreateModal()">新增</button>
+                        <button class="btn-accent" onclick="openCreateModal()">新增子体</button>
                     </div>
                 </div>
             </div>
@@ -99,14 +329,14 @@
                 <table class="pm-table" id="salesProductTable">
                     <thead>
                         <tr>
-                            <th>销售平台SKU</th>
-                            <th>父体编号</th>
-                            <th>子体编号</th>
-                            <th>店铺/品牌</th>
+                            <th>状态</th>
+                            <th>货号</th>
                             <th>面料</th>
                             <th>规格名称</th>
+                            <th>销售平台SKU</th>
+                            <th>子体编号</th>
+                            <th>大健云仓编号</th>
                             <th>售价</th>
-                            <th style="width:160px;">创建时间</th>
                             <th style="width:160px;">操作</th>
                         </tr>
                     </thead>
@@ -120,44 +350,76 @@
 
     <div class="pm-modal" id="pm-modal">
         <div class="pm-modal-content pm-modal-content--wide">
-            <h3 id="pm-modal-title" style="margin-top:0;">新增销售产品</h3>
+            <div class="pm-section-header" style="margin-bottom: 12px;">
+                <h3 id="pm-modal-title" style="margin:0;">新增销售产品</h3>
+                <button type="button" class="btn-helper-pill" onclick="openCopyModal()">复制已有产品信息</button>
+            </div>
             <div class="pm-form">
                 <div class="pm-section pm-form-full">
-                    <h4>基础信息</h4>
+                    <h4>父体关联</h4>
                     <div class="pm-section-body pm-form">
                         <div class="form-group">
-                            <label for="modalShop">店铺/品牌<span class="required-asterisk">*</span></label>
-                            <div class="pm-select" id="modalShopSelectWrap">
-                                <button type="button" class="pm-select-trigger" id="modalShopTrigger">请选择店铺/品牌</button>
-                                <div class="pm-select-panel" id="modalShopPanel">
-                                    <input type="text" class="pm-select-search" id="modalShopSearch" placeholder="搜索店铺/品牌">
-                                    <div class="pm-select-list" id="modalShopList"></div>
-                                </div>
+                            <label for="modalParentShop">店铺<span class="required-asterisk">*</span></label>
+                            <select id="modalParentShop" class="required-field"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalParentCode" class="label-help">父体编号（可选）<span class="help-dot" data-tip="支持搜索和选择，留空则不关联父体">?</span></label>
+                            <input type="text" id="modalParentCode" class="optional-field" list="parentCodeSuggestions" placeholder="可手动输入新编号或选已有父体">
+                            <datalist id="parentCodeSuggestions"></datalist>
+                        </div>
+                        <div class="form-group" id="modalParentSkuMarkerWrap" style="display:none;">
+                            <label for="modalParentSkuMarker">新父体SKU标识</label>
+                            <input type="text" id="modalParentSkuMarker" class="optional-field" maxlength="128" placeholder="本次会创建新父体">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pm-section pm-form-full">
+                    <div class="pm-section-header">
+                        <h4>基础信息</h4>
+                    </div>
+                    <div class="pm-section-body pm-form">
+                        <div class="form-group pm-form-full">
+                            <label>产品状态</label>
+                            <div id="modalProductStatusSegment" class="status-segment">
+                                <button type="button" class="status-pill status-pill--enabled" data-status="enabled">启用</button>
+                                <button type="button" class="status-pill status-pill--retained" data-status="retained">留用</button>
+                                <button type="button" class="status-pill status-pill--discarded" data-status="discarded">弃用</button>
                             </div>
-                            <select id="modalShop" class="required-field" style="display:none;"></select>
                         </div>
                         <div class="form-group">
                             <label for="modalPlatformSku">销售平台SKU<span class="required-asterisk">*</span></label>
                             <input type="text" id="modalPlatformSku" class="required-field" placeholder="不可重复，自动生成，可编辑">
                         </div>
                         <div class="form-group">
-                            <label for="modalParentCode">父体编号</label>
-                            <input type="text" id="modalParentCode" class="optional-field" placeholder="可输入新父体编号，保存时自动创建">
-                        </div>
-                        <div class="form-group">
-                            <label for="modalChildCode">子体编号</label>
+                            <label for="modalChildCode" class="label-help">子体编号<span class="help-dot" data-tip="填写亚马逊产品的子ASIN">?</span></label>
                             <input type="text" id="modalChildCode" class="optional-field">
                         </div>
                         <div class="form-group">
-                            <label for="modalFabric">面料</label>
-                            <input type="text" id="modalFabric" class="optional-field" placeholder="自动计算，可编辑">
+                            <label for="modalDacheneNo">大健云仓编号（选填，需先在下单产品管理页面维护子Item Code后再选择关联下单SKU及数量）</label>
+                            <input type="text" id="modalDacheneNo" class="optional-field" placeholder="选填：需先维护子Item Code后再选择关联下单SKU及数量">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalSkuFamily" class="label-help">货号<span class="help-dot" data-tip="用于关联图片文件夹，可搜索并从下拉建议选择；选中第一个下单SKU时会自动带出">?</span></label>
+                            <div class="pm-select" id="modalSkuFamilySelect">
+                                <button type="button" class="pm-select-trigger" id="modalSkuFamilyTrigger">请选择货号</button>
+                                <div class="pm-select-panel" id="modalSkuFamilyPanel">
+                                    <input type="text" class="pm-select-search" id="modalSkuFamilySearch" placeholder="搜索货号">
+                                    <div class="pm-select-list" id="modalSkuFamilyList"></div>
+                                </div>
+                            </div>
+                            <select id="modalSkuFamily" class="optional-field" style="display:none;"></select>
                         </div>
                         <div class="form-group">
                             <label for="modalSpecName">规格名称</label>
                             <input type="text" id="modalSpecName" class="optional-field" placeholder="自动计算，可编辑">
                         </div>
+                        <div class="form-group">
+                            <label for="modalFabric">面料</label>
+                            <input type="text" id="modalFabric" class="optional-field" placeholder="自动计算，可编辑">
+                        </div>
                         <div class="form-group pm-form-full">
-                            <label>关联下单SKU及数量<span class="required-asterisk">*</span></label>
+                            <label>关联下单SKU及数量（必填）</label>
                             <div class="order-link-box">
                                 <div class="order-link-toolbar">
                                     <input type="text" id="orderSkuSearch" class="pm-select-search" placeholder="搜索下单SKU/面料">
@@ -171,14 +433,39 @@
                 </div>
 
                 <div class="pm-section pm-form-full">
-                    <h4>成本</h4>
+                    <div class="pm-section-header">
+                        <h4>销售信息</h4>
+                        <div class="pm-section-tools">
+                            <button type="button" class="btn-helper-pill" onclick="applyParentSalesInfo()">一键应用父体销售信息</button>
+                            <button type="button" class="btn-helper-pill" onclick="openCopySalesInfoModal()">复制已有SKU销售信息</button>
+                        </div>
+                    </div>
+                    <div class="pm-section-body pm-form">
+                        <div class="form-group pm-form-full">
+                            <label for="modalSalesTitle">标题（<=200英文字符）</label>
+                            <input type="text" id="modalSalesTitle" class="optional-field" maxlength="200">
+                        </div>
+                        <div class="form-group pm-form-full">
+                            <label for="modalSalesIntro">简介（<=500英文字符）</label>
+                            <textarea id="modalSalesIntro" class="optional-field" maxlength="500" rows="3"></textarea>
+                        </div>
+                        <div class="form-group pm-form-full"><label for="modalSalesBullet1">五点描述1（<=500英文字符）</label><textarea id="modalSalesBullet1" class="optional-field" maxlength="500" rows="2"></textarea></div>
+                        <div class="form-group pm-form-full"><label for="modalSalesBullet2">五点描述2（<=500英文字符）</label><textarea id="modalSalesBullet2" class="optional-field" maxlength="500" rows="2"></textarea></div>
+                        <div class="form-group pm-form-full"><label for="modalSalesBullet3">五点描述3（<=500英文字符）</label><textarea id="modalSalesBullet3" class="optional-field" maxlength="500" rows="2"></textarea></div>
+                        <div class="form-group pm-form-full"><label for="modalSalesBullet4">五点描述4（<=500英文字符）</label><textarea id="modalSalesBullet4" class="optional-field" maxlength="500" rows="2"></textarea></div>
+                        <div class="form-group pm-form-full"><label for="modalSalesBullet5">五点描述5（<=500英文字符）</label><textarea id="modalSalesBullet5" class="optional-field" maxlength="500" rows="2"></textarea></div>
+                    </div>
+                </div>
+
+                <div class="pm-section pm-form-full">
+                    <h4>成本 <span id="modalCostWarning" class="danger-note" style="display:none;">售价低于成本+尾程，请重点核对</span></h4>
                     <div class="pm-section-body pm-form">
                         <div class="form-group">
                             <label for="modalSalePrice">售价(USD)</label>
                             <input type="number" step="0.01" id="modalSalePrice" class="optional-field">
                         </div>
                         <div class="form-group">
-                            <label for="modalWarehouseCost">海外仓成本(自动)</label>
+                            <label for="modalWarehouseCost">产品成本及发货至海外仓成本估算(USD，不含仓储费)(自动)</label>
                             <input type="number" step="0.01" id="modalWarehouseCost" class="optional-field" readonly>
                         </div>
                         <div class="form-group">
@@ -189,39 +476,45 @@
                 </div>
 
                 <div class="pm-section pm-form-full">
-                    <h4>尺寸</h4>
+                    <h4>成品尺寸 / 重量 <span class="auto-note">自动叠加，注意修改</span></h4>
                     <div class="pm-section-body pm-form">
                         <div class="form-group">
-                            <label for="modalPackageLength">包裹长(in,自动)</label>
-                            <input type="number" step="0.01" id="modalPackageLength" class="optional-field" readonly>
+                            <label for="modalFinishedLength">成品长(in,自动)</label>
+                            <input type="number" step="0.01" id="modalFinishedLength" class="optional-field">
                         </div>
                         <div class="form-group">
-                            <label for="modalPackageWidth">包裹宽(in,自动)</label>
-                            <input type="number" step="0.01" id="modalPackageWidth" class="optional-field" readonly>
+                            <label for="modalFinishedWidth">成品宽(in,自动)</label>
+                            <input type="number" step="0.01" id="modalFinishedWidth" class="optional-field">
                         </div>
                         <div class="form-group">
-                            <label for="modalPackageHeight">包裹高(in,自动)</label>
-                            <input type="number" step="0.01" id="modalPackageHeight" class="optional-field" readonly>
+                            <label for="modalFinishedHeight">成品高(in,自动)</label>
+                            <input type="number" step="0.01" id="modalFinishedHeight" class="optional-field">
                         </div>
                         <div class="form-group">
                             <label for="modalNetWeight">净重(lbs,自动)</label>
-                            <input type="number" step="0.01" id="modalNetWeight" class="optional-field" readonly>
+                            <input type="number" step="0.01" id="modalNetWeight" class="optional-field">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pm-section pm-form-full">
+                    <h4>包裹尺寸 / 重量 <span class="auto-note">自动叠加，注意修改</span></h4>
+                    <div class="pm-section-body pm-form">
+                        <div class="form-group">
+                            <label for="modalPackageLength">包裹长(in,自动)</label>
+                            <input type="number" step="0.01" id="modalPackageLength" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalPackageWidth">包裹宽(in,自动)</label>
+                            <input type="number" step="0.01" id="modalPackageWidth" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalPackageHeight">包裹高(in,自动)</label>
+                            <input type="number" step="0.01" id="modalPackageHeight" class="optional-field">
                         </div>
                         <div class="form-group">
                             <label for="modalGrossWeight">毛重(lbs,自动)</label>
-                            <input type="number" step="0.01" id="modalGrossWeight" class="optional-field" readonly>
-                        </div>
-                        <div class="form-group">
-                            <label for="modalAssembledLength">组装后长(in)</label>
-                            <input type="number" step="0.01" id="modalAssembledLength" class="optional-field">
-                        </div>
-                        <div class="form-group">
-                            <label for="modalAssembledWidth">组装后宽(in)</label>
-                            <input type="number" step="0.01" id="modalAssembledWidth" class="optional-field">
-                        </div>
-                        <div class="form-group">
-                            <label for="modalAssembledHeight">组装后高(in)</label>
-                            <input type="number" step="0.01" id="modalAssembledHeight" class="optional-field">
+                            <input type="number" step="0.01" id="modalGrossWeight" class="optional-field">
                         </div>
                     </div>
                 </div>
@@ -230,6 +523,19 @@
             <div class="pm-modal-actions">
                 <button class="btn-secondary" onclick="closeModal()">取消</button>
                 <button class="btn-primary" onclick="saveSalesProductFromModal()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="pm-modal" id="copy-sales-info-modal">
+        <div class="pm-modal-content">
+            <h3 style="margin-top:0;">复制已有SKU销售信息</h3>
+            <div class="form-group">
+                <input type="text" id="copySalesInfoSearchInput" class="required-field" placeholder="搜索销售平台SKU/父体/子体">
+            </div>
+            <div id="copySalesInfoList" class="pm-select-list" style="max-height: 380px;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeCopySalesInfoModal()">关闭</button>
             </div>
         </div>
     </div>
@@ -251,15 +557,171 @@
         <p>&copy; 2026 SITJOY | 内部使用</p>
     </footer>
 
+    <div id="uploadProgress" class="upload-progress" aria-live="polite">
+        <div id="uploadProgressText" class="upload-progress-title">准备上传...</div>
+        <div class="upload-progress-bar"><span id="uploadProgressFill"></span></div>
+    </div>
+
+    <div class="pm-modal" id="uploadDialogModal">
+        <div class="pm-modal-content" style="max-width: 520px;">
+            <h3 id="uploadDialogTitle" style="margin-top:0;">提示</h3>
+            <div id="uploadDialogMessage" class="dialog-message"></div>
+            <div id="uploadDialogDetails" class="dialog-detail-wrap">
+                <div class="dialog-detail-toolbar">
+                    <span class="dialog-detail-title">失败明细（行号 / 原因）</span>
+                    <button class="btn-secondary" id="uploadDialogCopyBtn" type="button">复制明细</button>
+                </div>
+                <table class="dialog-detail-table">
+                    <thead><tr><th style="width:90px;">行号</th><th>原因</th></tr></thead>
+                    <tbody id="uploadDialogDetailsBody"></tbody>
+                </table>
+            </div>
+            <div class="pm-modal-actions" id="uploadDialogActions">
+                <button class="btn-secondary" id="uploadDialogCancelBtn" style="display:none;">取消</button>
+                <button class="btn-primary" id="uploadDialogOkBtn">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="timeoutToast" class="toast-notice"></div>
+
     <script>
         let editId = null;
         let shopOptions = [];
+        let skuFamilyOptions = [];
+        let parentItems = [];
         let orderSkuOptions = [];
         let salesProductItems = [];
         let selectedOrderSkus = [];
         let manualFabric = false;
         let manualSpecName = false;
         let manualPlatformSku = false;
+        let uploadProcessingTimer = null;
+        let uploadDialogErrorRows = [];
+        let toastTimer = null;
+        let orderSkuLoaded = false;
+        let orderSkuLoadingPromise = null;
+        const salesProductDetailCache = {};
+        let currentProductStatus = 'enabled';
+
+        function normalizeProductStatus(value) {
+            const v = String(value || '').trim().toLowerCase();
+            return ['enabled', 'retained', 'discarded'].includes(v) ? v : 'enabled';
+        }
+
+        function productStatusLabel(value) {
+            const v = normalizeProductStatus(value);
+            if (v === 'retained') return '留用';
+            if (v === 'discarded') return '弃用';
+            return '启用';
+        }
+
+        function renderModalProductStatus() {
+            const container = document.getElementById('modalProductStatusSegment');
+            if (!container) return;
+            container.querySelectorAll('.status-pill').forEach(btn => {
+                const status = normalizeProductStatus(btn.getAttribute('data-status'));
+                btn.classList.toggle('is-active', status === currentProductStatus);
+            });
+        }
+
+        function renderInlineProductStatus(item) {
+            const current = normalizeProductStatus(item.product_status);
+            const id = Number(item.id);
+            return `
+                <div class="status-segment status-segment--inline">
+                    <button type="button" class="status-pill status-pill--enabled ${current === 'enabled' ? 'is-active' : ''}" onclick="quickUpdateProductStatus(${id}, 'enabled')">启用</button>
+                    <button type="button" class="status-pill status-pill--retained ${current === 'retained' ? 'is-active' : ''}" onclick="quickUpdateProductStatus(${id}, 'retained')">留用</button>
+                    <button type="button" class="status-pill status-pill--discarded ${current === 'discarded' ? 'is-active' : ''}" onclick="quickUpdateProductStatus(${id}, 'discarded')">弃用</button>
+                </div>
+            `;
+        }
+
+        function renderParentCodeSuggestions() {
+            const datalist = document.getElementById('parentCodeSuggestions');
+            if (!datalist) return;
+            const rows = getFilteredParentItems('').slice(0, 300).map(item => {
+                const marker = (item.sku_marker || '').trim();
+                return `<option value="${item.parent_code}">${marker ? `${item.parent_code} (${marker})` : item.parent_code}</option>`;
+            });
+            datalist.innerHTML = rows.join('');
+            updateParentSkuMarkerVisibility();
+        }
+
+        function updateParentSkuMarkerVisibility() {
+            const wrap = document.getElementById('modalParentSkuMarkerWrap');
+            const input = document.getElementById('modalParentCode');
+            const markerInput = document.getElementById('modalParentSkuMarker');
+            const shopSelect = document.getElementById('modalParentShop');
+            if (!wrap || !input || !markerInput) return;
+            const parentCode = String(input.value || '').trim();
+            const selectedShopId = String(shopSelect?.value || '').trim();
+            if (!parentCode || !selectedShopId) {
+                wrap.style.display = 'none';
+                markerInput.value = '';
+                return;
+            }
+            const exists = (parentItems || []).some(item => {
+                const codeMatched = String(item.parent_code || '').trim().toLowerCase() === parentCode.toLowerCase();
+                const shopMatched = String(item.shop_id || '') === selectedShopId;
+                return codeMatched && shopMatched;
+            });
+            wrap.style.display = exists ? 'none' : '';
+            if (exists) markerInput.value = '';
+        }
+
+        function renderUploadErrorDetails(errors) {
+            const wrap = document.getElementById('uploadDialogDetails');
+            const body = document.getElementById('uploadDialogDetailsBody');
+            uploadDialogErrorRows = Array.isArray(errors) ? errors.filter(x => x && (x.row || x.error)) : [];
+            if (!uploadDialogErrorRows.length) {
+                wrap.style.display = 'none';
+                body.innerHTML = '';
+                return;
+            }
+            body.innerHTML = uploadDialogErrorRows.map(item => {
+                const row = item.row || '-';
+                const error = item.error || '';
+                return `<tr><td>${row}</td><td>${error}</td></tr>`;
+            }).join('');
+            wrap.style.display = 'block';
+        }
+
+        function showUploadDialog({ title, message, confirmText = '确定', cancelText = '', onConfirm = null, onCancel = null, errors = [] }) {
+            const modal = document.getElementById('uploadDialogModal');
+            const titleEl = document.getElementById('uploadDialogTitle');
+            const msgEl = document.getElementById('uploadDialogMessage');
+            const okBtn = document.getElementById('uploadDialogOkBtn');
+            const cancelBtn = document.getElementById('uploadDialogCancelBtn');
+
+            titleEl.textContent = title || '提示';
+            msgEl.textContent = message || '';
+            okBtn.textContent = confirmText || '确定';
+            cancelBtn.style.display = cancelText ? '' : 'none';
+            if (cancelText) cancelBtn.textContent = cancelText;
+            renderUploadErrorDetails(errors);
+
+            okBtn.onclick = function() {
+                modal.classList.remove('active');
+                if (typeof onConfirm === 'function') onConfirm();
+            };
+            cancelBtn.onclick = function() {
+                modal.classList.remove('active');
+                if (typeof onCancel === 'function') onCancel();
+            };
+
+            modal.classList.add('active');
+        }
+
+        function showTimeoutToast(message) {
+            const toast = document.getElementById('timeoutToast');
+            toast.textContent = message || '';
+            toast.style.display = 'block';
+            if (toastTimer) clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
+                toast.style.display = 'none';
+            }, 6000);
+        }
 
         function showModalStatus(message, isError) {
             const el = document.getElementById('modalStatus');
@@ -280,60 +742,254 @@
             loadSalesProductList();
         }
 
-        function setupCustomSelect({ triggerId, panelId, searchId, listId, selectId, getOptions, getLabel }) {
-            const trigger = document.getElementById(triggerId);
-            const panel = document.getElementById(panelId);
-            const search = document.getElementById(searchId);
-            const list = document.getElementById(listId);
-            const select = document.getElementById(selectId);
-
-            function render() {
-                const keyword = (search.value || '').trim().toLowerCase();
-                const options = (getOptions() || []).filter(item => {
-                    const label = getLabel(item).toLowerCase();
-                    return !keyword || label.includes(keyword);
-                });
-                list.innerHTML = '';
-                if (!options.length) {
-                    const empty = document.createElement('div');
-                    empty.className = 'pm-select-empty';
-                    empty.textContent = '暂无匹配项';
-                    list.appendChild(empty);
-                    return;
-                }
-                options.forEach(item => {
-                    const btn = document.createElement('button');
-                    btn.type = 'button';
-                    btn.className = 'pm-select-option';
-                    btn.textContent = getLabel(item);
-                    btn.addEventListener('click', () => {
-                        select.value = item.id;
-                        trigger.textContent = getLabel(item);
-                        panel.classList.remove('open');
-                        // 触发change事件
-                        const changeEvent = new Event('change', { bubbles: true });
-                        select.dispatchEvent(changeEvent);
-                    });
-                    list.appendChild(btn);
-                });
-            }
-
-            trigger.addEventListener('click', function() {
-                panel.classList.toggle('open');
-                if (panel.classList.contains('open')) {
-                    search.value = '';
-                    render();
-                    search.focus();
-                }
-            });
-            search.addEventListener('input', render);
-            document.addEventListener('click', function(e) {
-                if (!panel.contains(e.target) && e.target !== trigger) panel.classList.remove('open');
-            });
-            return { render };
+        function renderParentShopOptions() {
+            const select = document.getElementById('modalParentShop');
+            if (!select) return;
+            const old = select.value;
+            const options = ['<option value="">请选择店铺</option>'].concat(
+                (shopOptions || []).map(item => `<option value="${item.id}">${item.shop_name} / ${item.brand_name} / ${item.platform_type_name}</option>`)
+            );
+            select.innerHTML = options.join('');
+            if (old) select.value = old;
         }
 
-        let shopSelectUI;
+        function getFilteredParentItems(keyword) {
+            const selectedShopId = document.getElementById('modalParentShop').value;
+            const text = String(keyword || '').trim().toLowerCase();
+            return (parentItems || []).filter(item => {
+                const enabled = String(item.is_enabled ?? 1) !== '0';
+                if (!enabled) return false;
+                if (selectedShopId && String(item.shop_id || '') !== String(selectedShopId)) return false;
+                const code = String(item.parent_code || '').toLowerCase();
+                const marker = String(item.sku_marker || '').toLowerCase();
+                return !text || code.includes(text) || marker.includes(text);
+            });
+        }
+
+        function updateSkuFamilyTrigger() {
+            const trigger = document.getElementById('modalSkuFamilyTrigger');
+            const select = document.getElementById('modalSkuFamily');
+            if (!trigger || !select) return;
+            if (!select.value) {
+                trigger.textContent = '请选择货号';
+                return;
+            }
+            const option = select.selectedOptions && select.selectedOptions[0];
+            trigger.textContent = option ? option.textContent : '请选择货号';
+        }
+
+        function renderSkuFamilyList() {
+            const list = document.getElementById('modalSkuFamilyList');
+            const keyword = (document.getElementById('modalSkuFamilySearch').value || '').trim().toLowerCase();
+            if (!list) return;
+            const items = (skuFamilyOptions || []).filter(item => {
+                const text = `${item.sku_family || ''} ${item.category || ''}`.toLowerCase();
+                return !keyword || text.includes(keyword);
+            });
+            if (!items.length) {
+                list.innerHTML = '<div class="pm-select-empty">无匹配货号</div>';
+                return;
+            }
+            list.innerHTML = items.map(item => `<button type="button" class="pm-select-option" data-id="${item.id}">${item.sku_family || ''}</button>`).join('');
+            list.querySelectorAll('.pm-select-option').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.getElementById('modalSkuFamily').value = btn.getAttribute('data-id') || '';
+                    updateSkuFamilyTrigger();
+                    closeSelectPanel('sku');
+                });
+            });
+        }
+
+        function renderSkuFamilySelect(selectedValue) {
+            const select = document.getElementById('modalSkuFamily');
+            if (!select) return;
+            const previous = selectedValue !== undefined && selectedValue !== null ? String(selectedValue) : String(select.value || '');
+            const options = ['<option value="">请选择货号</option>'].concat(
+                (skuFamilyOptions || []).map(item => `<option value="${item.id}">${item.sku_family || ''}</option>`)
+            );
+            select.innerHTML = options.join('');
+            select.value = previous;
+            updateSkuFamilyTrigger();
+            renderSkuFamilyList();
+        }
+
+        function updateParentCodeTrigger() {
+            const trigger = document.getElementById('modalParentCodeTrigger');
+            const select = document.getElementById('modalParentCode');
+            if (!trigger || !select) return;
+            if (!select.value) {
+                trigger.textContent = '不关联父体';
+                return;
+            }
+            const option = select.selectedOptions && select.selectedOptions[0];
+            trigger.textContent = option ? option.textContent : '不关联父体';
+        }
+
+        function renderParentCodeList() {
+            const list = document.getElementById('modalParentCodeList');
+            const keyword = (document.getElementById('modalParentCodeSearch').value || '').trim();
+            if (!list) return;
+            const items = getFilteredParentItems(keyword).slice(0, 50);
+            const rows = ['<button type="button" class="pm-select-option" data-value="">不关联父体</button>'].concat(
+                items.map(item => {
+                    const marker = (item.sku_marker || '').trim();
+                    const text = marker ? `${item.parent_code} (${marker})` : `${item.parent_code}`;
+                    return `<button type="button" class="pm-select-option" data-value="${item.parent_code}">${text}</button>`;
+                })
+            );
+            list.innerHTML = rows.join('');
+            list.querySelectorAll('.pm-select-option').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.getElementById('modalParentCode').value = btn.getAttribute('data-value') || '';
+                    updateParentCodeTrigger();
+                    closeSelectPanel('parent');
+                });
+            });
+        }
+
+        function renderParentCodeSelect(selectedValue) {
+            const select = document.getElementById('modalParentCode');
+            if (!select) return;
+            const previous = selectedValue !== undefined && selectedValue !== null ? String(selectedValue) : String(select.value || '');
+            const options = ['<option value="">不关联父体</option>'].concat(
+                getFilteredParentItems('')
+                    .map(item => `<option value="${item.parent_code}">${item.parent_code}</option>`)
+            );
+            select.innerHTML = options.join('');
+            select.value = previous;
+            if (previous && !select.value) {
+                select.value = '';
+            }
+            updateParentCodeTrigger();
+            renderParentCodeList();
+        }
+
+        function closeSelectPanel(key) {
+            const panelMap = {
+                sku: 'modalSkuFamilyPanel'
+            };
+            const panel = document.getElementById(panelMap[key]);
+            if (panel) panel.classList.remove('open');
+        }
+
+        function closeAllSelectPanels() {
+            closeSelectPanel('sku');
+        }
+
+        function toggleSelectPanel(key) {
+            const panelMap = {
+                sku: 'modalSkuFamilyPanel'
+            };
+            const panel = document.getElementById(panelMap[key]);
+            if (!panel) return;
+            const isOpen = panel.classList.contains('open');
+            closeAllSelectPanels();
+            if (!isOpen) {
+                if (key === 'sku') renderSkuFamilyList();
+                panel.classList.add('open');
+            }
+        }
+
+        function renderSalesGroupedTable(items) {
+            const tbody = document.querySelector('#salesProductTable tbody');
+            if (!(items || []).length) {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">暂无数据</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = (items || []).map(item => `
+                <tr>
+                    <td>${renderInlineProductStatus(item)}</td>
+                    <td>${item.sku_family || ''}</td>
+                    <td>${item.fabric || ''}</td>
+                    <td>${item.spec_name || ''}</td>
+                    <td>${item.platform_sku || ''}</td>
+                    <td>${item.child_code || ''}</td>
+                    <td>${item.dachene_yuncang_no || ''}</td>
+                    <td class="${(Number(item.sale_price_usd || 0) > 0 && Number(item.warehouse_cost_usd || 0) + Number(item.last_mile_cost_usd || 0) > 0 && Number(item.sale_price_usd || 0) < (Number(item.warehouse_cost_usd || 0) + Number(item.last_mile_cost_usd || 0))) ? 'danger-note' : ''}">${item.sale_price_usd || ''}</td>
+                    <td>
+                        <div class="pm-actions">
+                            <button class="btn-secondary" onclick='openEditModal(${item.id})'>编辑</button>
+                            <button class="btn-danger" onclick='deleteSalesProduct(${item.id})'>删除</button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function quickUpdateProductStatus(id, status) {
+            const normalized = normalizeProductStatus(status);
+            const target = (salesProductItems || []).find(x => String(x.id) === String(id));
+            if (target && normalizeProductStatus(target.product_status) === normalized) {
+                return;
+            }
+            fetch('/api/sales-product', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, product_status: normalized })
+            }).then(r => r.json()).then(data => {
+                if (data.status !== 'success') {
+                    showTimeoutToast(data.message || '状态更新失败');
+                    return;
+                }
+                if (target) target.product_status = normalized;
+                if (salesProductDetailCache[String(id)]) {
+                    salesProductDetailCache[String(id)].product_status = normalized;
+                }
+                renderSalesGroupedTable(salesProductItems || []);
+                showTimeoutToast(`状态已更新为：${productStatusLabel(normalized)}`);
+            }).catch(err => {
+                showTimeoutToast(`状态更新失败：${err}`);
+            });
+        }
+
+        function setSalesInfoFields(source) {
+            document.getElementById('modalSalesTitle').value = source?.sales_title || '';
+            document.getElementById('modalSalesIntro').value = source?.sales_intro || '';
+            document.getElementById('modalSalesBullet1').value = source?.sales_bullet_1 || '';
+            document.getElementById('modalSalesBullet2').value = source?.sales_bullet_2 || '';
+            document.getElementById('modalSalesBullet3').value = source?.sales_bullet_3 || '';
+            document.getElementById('modalSalesBullet4').value = source?.sales_bullet_4 || '';
+            document.getElementById('modalSalesBullet5').value = source?.sales_bullet_5 || '';
+        }
+
+        async function applyParentSalesInfo() {
+            const parentCode = document.getElementById('modalParentCode').value.trim();
+            if (!parentCode) {
+                showModalStatus('请先输入或选择父体编号', true);
+                return;
+            }
+            const parent = (parentItems || []).find(x => String(x.parent_code || '').trim() === parentCode);
+            if (!parent) {
+                showModalStatus('未找到该父体编号的销售信息', true);
+                return;
+            }
+            try {
+                let source = parent;
+                const hasSalesFields = Object.prototype.hasOwnProperty.call(parent, 'sales_title')
+                    || Object.prototype.hasOwnProperty.call(parent, 'sales_intro');
+                if (!hasSalesFields && parent.id) {
+                    const res = await fetch(`/api/parent?id=${encodeURIComponent(parent.id)}`);
+                    const data = await res.json();
+                    if (data.status === 'success' && data.item) {
+                        source = data.item;
+                    }
+                }
+                setSalesInfoFields(source);
+                showModalStatus('已应用父体销售信息', false);
+            } catch (error) {
+                showModalStatus(error.message || '应用父体销售信息失败', true);
+            }
+        }
+
+        function updateCostWarning() {
+            const sale = Number(document.getElementById('modalSalePrice').value || 0);
+            const warehouse = Number(document.getElementById('modalWarehouseCost').value || 0);
+            const lastMile = Number(document.getElementById('modalLastMileCost').value || 0);
+            const warning = document.getElementById('modalCostWarning');
+            const risk = sale > 0 && (warehouse + lastMile) > 0 && sale < (warehouse + lastMile);
+            warning.style.display = risk ? '' : 'none';
+        }
 
         function renderOrderSkuOptions() {
             const keyword = (document.getElementById('orderSkuSearch').value || '').trim().toLowerCase();
@@ -357,6 +1013,10 @@
                 checkbox.addEventListener('change', () => {
                     if (checkbox.checked) {
                         selectedOrderSkus.push({ order_product_id: item.id, quantity: 1 });
+                        const skuFamilySelect = document.getElementById('modalSkuFamily');
+                        if (!skuFamilySelect.value && item.sku_family_id) {
+                            renderSkuFamilySelect(item.sku_family_id);
+                        }
                     } else {
                         selectedOrderSkus = selectedOrderSkus.filter(x => String(x.order_product_id) !== String(item.id));
                     }
@@ -405,6 +1065,20 @@
             autoComputeFabricSpec();
         }
 
+        function normalizeCodePrefix(value) {
+            const text = String(value || '').trim();
+            if (!text) return '';
+            const dashIndex = text.indexOf('-');
+            return dashIndex > -1 ? text.slice(0, dashIndex).trim() : text;
+        }
+
+        function getSelectedSkuFamilyText() {
+            const select = document.getElementById('modalSkuFamily');
+            if (!select || !select.value) return '';
+            const option = select.selectedOptions && select.selectedOptions[0];
+            return option ? String(option.textContent || '').trim() : '';
+        }
+
         function autoComputeFabricSpec() {
             const selected = selectedOrderSkus.map(link => {
                 const source = orderSkuOptions.find(x => String(x.id) === String(link.order_product_id));
@@ -412,23 +1086,32 @@
             }).filter(x => x.source);
 
             const fabrics = [];
+            const fabricCodes = [];
             const specs = [];
             let warehouseCost = 0;
             let lastMileCost = 0;
             let packageLength = 0;
             let packageWidth = 0;
             let packageHeight = 0;
+            let finishedLength = 0;
+            let finishedWidth = 0;
+            let finishedHeight = 0;
             let netWeight = 0;
             let grossWeight = 0;
             selected.forEach(item => {
-                const fabric = (item.source.fabric_name_en || '').trim();
-                if (fabric && !fabrics.includes(fabric)) fabrics.push(fabric);
+                const fabricName = String(item.source.fabric_name_en || '').trim();
+                if (fabricName && !fabrics.includes(fabricName)) fabrics.push(fabricName);
+                const fabricCode = normalizeCodePrefix(item.source.fabric_code || item.source.fabric_name_en || '');
+                if (fabricCode && !fabricCodes.includes(fabricCode)) fabricCodes.push(fabricCode);
                 const spec = (item.source.spec_qty_short || '').trim();
                 if (spec) specs.push(`${item.link.quantity}${spec}`);
 
                 const qty = Number(item.link.quantity) || 1;
                 warehouseCost += (Number(item.source.cost_usd) || 0) * qty;
                 lastMileCost += (Number(item.source.last_mile_avg_freight_usd) || 0) * qty;
+                finishedLength += (Number(item.source.finished_length_in) || 0) * qty;
+                finishedWidth += (Number(item.source.finished_width_in) || 0) * qty;
+                finishedHeight += (Number(item.source.finished_height_in) || 0) * qty;
                 packageLength += (Number(item.source.package_length_in) || 0) * qty;
                 packageWidth += (Number(item.source.package_width_in) || 0) * qty;
                 packageHeight += (Number(item.source.package_height_in) || 0) * qty;
@@ -443,12 +1126,13 @@
                 document.getElementById('modalSpecName').value = specs.join('');
             }
             
-            // 自动生成平台SKU：面料-规格（货号由后台根据订单链接确定）
+            // 自动生成平台SKU：货号-规格名称-面料编号（面料编号仅取-前）
             if (!manualPlatformSku) {
-                const fabric = fabrics.length > 0 ? fabrics[0] : '';
+                const skuFamily = getSelectedSkuFamilyText();
                 const specName = specs.join('');
-                if (fabric && specName) {
-                    document.getElementById('modalPlatformSku').value = `${fabric}-${specName}`;
+                const fabric = fabricCodes.length > 0 ? fabricCodes[0] : '';
+                if (skuFamily && specName && fabric) {
+                    document.getElementById('modalPlatformSku').value = `${skuFamily}-${specName}-${fabric}`;
                 } else {
                     document.getElementById('modalPlatformSku').value = '';
                 }
@@ -456,77 +1140,105 @@
 
             document.getElementById('modalWarehouseCost').value = warehouseCost.toFixed(2);
             document.getElementById('modalLastMileCost').value = lastMileCost.toFixed(2);
+            document.getElementById('modalFinishedLength').value = finishedLength.toFixed(2);
+            document.getElementById('modalFinishedWidth').value = finishedWidth.toFixed(2);
+            document.getElementById('modalFinishedHeight').value = finishedHeight.toFixed(2);
             document.getElementById('modalPackageLength').value = packageLength.toFixed(2);
             document.getElementById('modalPackageWidth').value = packageWidth.toFixed(2);
             document.getElementById('modalPackageHeight').value = packageHeight.toFixed(2);
             document.getElementById('modalNetWeight').value = netWeight.toFixed(2);
             document.getElementById('modalGrossWeight').value = grossWeight.toFixed(2);
+            updateCostWarning();
         }
 
-        function openCreateModal() {
+        async function openCreateModal() {
             editId = null;
             manualFabric = false;
             manualSpecName = false;
             manualPlatformSku = false;
             document.getElementById('pm-modal-title').innerText = '新增销售产品';
-            document.getElementById('modalShop').value = '';
-            document.getElementById('modalShopTrigger').textContent = '请选择店铺/品牌';
 
+            await ensureOrderSkuOptionsLoaded();
+
+            document.getElementById('modalParentShop').value = '';
+            currentProductStatus = 'enabled';
+            renderModalProductStatus();
             document.getElementById('modalPlatformSku').value = '';
+            document.getElementById('modalSkuFamily').value = '';
+            renderSkuFamilySelect('');
+            document.getElementById('modalSkuFamilySearch').value = '';
             document.getElementById('modalParentCode').value = '';
+            document.getElementById('modalParentSkuMarker').value = '';
+            updateParentSkuMarkerVisibility();
             document.getElementById('modalChildCode').value = '';
+            document.getElementById('modalDacheneNo').value = '';
             document.getElementById('modalFabric').value = '';
             document.getElementById('modalSpecName').value = '';
+            setSalesInfoFields(null);
             document.getElementById('modalSalePrice').value = '';
             document.getElementById('modalWarehouseCost').value = '';
             document.getElementById('modalLastMileCost').value = '';
             document.getElementById('modalPackageLength').value = '';
             document.getElementById('modalPackageWidth').value = '';
             document.getElementById('modalPackageHeight').value = '';
+            document.getElementById('modalFinishedLength').value = '';
+            document.getElementById('modalFinishedWidth').value = '';
+            document.getElementById('modalFinishedHeight').value = '';
             document.getElementById('modalNetWeight').value = '';
             document.getElementById('modalGrossWeight').value = '';
-            document.getElementById('modalAssembledLength').value = '';
-            document.getElementById('modalAssembledWidth').value = '';
-            document.getElementById('modalAssembledHeight').value = '';
             selectedOrderSkus = [];
             renderOrderSkuOptions();
             renderSelectedOrderSkuRows();
+            updateCostWarning();
             resetModalStatus();
             document.getElementById('pm-modal').classList.add('active');
         }
 
-        function openEditModal(item) {
+        async function openEditModal(id) {
+            await ensureOrderSkuOptionsLoaded();
+            const item = await fetchSalesProductDetail(id);
+            if (!item) {
+                showUploadDialog({ title: '加载失败', message: '未找到销售产品详情' });
+                return;
+            }
             editId = item.id;
             manualFabric = false;
             manualSpecName = false;
-            manualPlatformSku = false;
+            manualPlatformSku = true;
             document.getElementById('pm-modal-title').innerText = '编辑销售产品';
-            document.getElementById('modalShop').value = item.shop_id || '';
-            const shop = shopOptions.find(x => String(x.id) === String(item.shop_id));
-            document.getElementById('modalShopTrigger').textContent = shop ? `${shop.shop_name} / ${shop.brand_name} / ${shop.platform_type_name}` : '请选择店铺/品牌';
 
+            document.getElementById('modalParentShop').value = item.shop_id ? String(item.shop_id) : '';
+            currentProductStatus = normalizeProductStatus(item.product_status);
+            renderModalProductStatus();
             document.getElementById('modalPlatformSku').value = item.platform_sku || '';
+            renderSkuFamilySelect(item.sku_family_id || '');
+            document.getElementById('modalSkuFamilySearch').value = '';
             document.getElementById('modalParentCode').value = item.parent_code || '';
+            document.getElementById('modalParentSkuMarker').value = '';
+            updateParentSkuMarkerVisibility();
             document.getElementById('modalChildCode').value = item.child_code || '';
+            document.getElementById('modalDacheneNo').value = item.dachene_yuncang_no || '';
             document.getElementById('modalFabric').value = item.fabric || '';
             document.getElementById('modalSpecName').value = item.spec_name || '';
+            setSalesInfoFields(item);
             document.getElementById('modalSalePrice').value = item.sale_price_usd || '';
             document.getElementById('modalWarehouseCost').value = item.warehouse_cost_usd || '';
             document.getElementById('modalLastMileCost').value = item.last_mile_cost_usd || '';
+            document.getElementById('modalFinishedLength').value = item.finished_length_in || '';
+            document.getElementById('modalFinishedWidth').value = item.finished_width_in || '';
+            document.getElementById('modalFinishedHeight').value = item.finished_height_in || '';
             document.getElementById('modalPackageLength').value = item.package_length_in || '';
             document.getElementById('modalPackageWidth').value = item.package_width_in || '';
             document.getElementById('modalPackageHeight').value = item.package_height_in || '';
             document.getElementById('modalNetWeight').value = item.net_weight_lbs || '';
             document.getElementById('modalGrossWeight').value = item.gross_weight_lbs || '';
-            document.getElementById('modalAssembledLength').value = item.assembled_length_in || '';
-            document.getElementById('modalAssembledWidth').value = item.assembled_width_in || '';
-            document.getElementById('modalAssembledHeight').value = item.assembled_height_in || '';
             selectedOrderSkus = (item.order_sku_links || []).map(link => ({
                 order_product_id: link.order_product_id,
                 quantity: link.quantity || 1
             }));
             renderOrderSkuOptions();
             renderSelectedOrderSkuRows();
+            updateCostWarning();
             resetModalStatus();
             document.getElementById('pm-modal').classList.add('active');
         }
@@ -538,21 +1250,41 @@
 
         function saveSalesProductFromModal() {
             const payload = {
-                shop_id: document.getElementById('modalShop').value,
+                shop_id: document.getElementById('modalParentShop').value || null,
                 platform_sku: document.getElementById('modalPlatformSku').value.trim(),
-                parent_code: document.getElementById('modalParentCode').value.trim(),
+                sku_family_id: document.getElementById('modalSkuFamily').value || null,
+                parent_code: document.getElementById('modalParentCode').value || null,
+                parent_sku_marker: document.getElementById('modalParentSkuMarker').value.trim(),
                 child_code: document.getElementById('modalChildCode').value.trim(),
+                dachene_yuncang_no: document.getElementById('modalDacheneNo').value.trim(),
                 fabric: document.getElementById('modalFabric').value.trim(),
                 spec_name: document.getElementById('modalSpecName').value.trim(),
+                sales_title: document.getElementById('modalSalesTitle').value.trim(),
+                sales_intro: document.getElementById('modalSalesIntro').value.trim(),
+                sales_bullet_1: document.getElementById('modalSalesBullet1').value.trim(),
+                sales_bullet_2: document.getElementById('modalSalesBullet2').value.trim(),
+                sales_bullet_3: document.getElementById('modalSalesBullet3').value.trim(),
+                sales_bullet_4: document.getElementById('modalSalesBullet4').value.trim(),
+                sales_bullet_5: document.getElementById('modalSalesBullet5').value.trim(),
                 sale_price_usd: document.getElementById('modalSalePrice').value,
-                assembled_length_in: document.getElementById('modalAssembledLength').value,
-                assembled_width_in: document.getElementById('modalAssembledWidth').value,
-                assembled_height_in: document.getElementById('modalAssembledHeight').value,
+                product_status: currentProductStatus,
+                finished_length_in: document.getElementById('modalFinishedLength').value,
+                finished_width_in: document.getElementById('modalFinishedWidth').value,
+                finished_height_in: document.getElementById('modalFinishedHeight').value,
+                package_length_in: document.getElementById('modalPackageLength').value,
+                package_width_in: document.getElementById('modalPackageWidth').value,
+                package_height_in: document.getElementById('modalPackageHeight').value,
+                net_weight_lbs: document.getElementById('modalNetWeight').value,
+                gross_weight_lbs: document.getElementById('modalGrossWeight').value,
                 order_sku_links: selectedOrderSkus.map(x => ({ order_product_id: x.order_product_id, quantity: Number(x.quantity) || 1 })),
                 manual_platform_sku: manualPlatformSku
             };
-            if (!payload.shop_id || !payload.platform_sku || !payload.order_sku_links.length) {
-                showModalStatus('请填写必填项并关联至少一个下单SKU', true);
+            if (!payload.shop_id) {
+                showModalStatus('请选择店铺', true);
+                return;
+            }
+            if (!payload.platform_sku || !payload.order_sku_links.length) {
+                showModalStatus('请填写销售平台SKU，并至少关联一条下单SKU及数量', true);
                 return;
             }
             let method = 'POST';
@@ -575,18 +1307,25 @@
         }
 
         function deleteSalesProduct(id) {
-            if (!confirm('确认删除该销售产品？')) return;
-            fetch('/api/sales-product', {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id })
-            }).then(r => r.json()).then(data => {
-                if (data.status === 'success') {
-                    loadSalesProductList();
-                } else {
-                    alert(data.message || '删除失败');
+            showUploadDialog({
+                title: '删除确认',
+                message: '确认删除该销售产品？',
+                confirmText: '确认删除',
+                cancelText: '取消',
+                onConfirm: function() {
+                    fetch('/api/sales-product', {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id })
+                    }).then(r => r.json()).then(data => {
+                        if (data.status === 'success') {
+                            loadSalesProductList();
+                        } else {
+                            showUploadDialog({ title: '删除失败', message: data.message || '删除失败' });
+                        }
+                    }).catch(err => showUploadDialog({ title: '请求失败', message: '请求失败: ' + err }));
                 }
-            }).catch(err => alert('请求失败: ' + err));
+            });
         }
 
         function downloadSalesProductTemplate() {
@@ -598,24 +1337,143 @@
             if (input) input.click();
         }
 
-        function uploadSalesProductTemplate(file) {
+        function showUploadProgress(text, percent) {
+            const box = document.getElementById('uploadProgress');
+            const textEl = document.getElementById('uploadProgressText');
+            const fillEl = document.getElementById('uploadProgressFill');
+            box.style.display = 'block';
+            textEl.textContent = text || '上传中...';
+            const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+            fillEl.style.width = `${safePercent}%`;
+        }
+
+        function hideUploadProgress() {
+            const box = document.getElementById('uploadProgress');
+            box.style.display = 'none';
+            if (uploadProcessingTimer) {
+                clearInterval(uploadProcessingTimer);
+                uploadProcessingTimer = null;
+            }
+        }
+
+        function startProcessingProgress() {
+            if (uploadProcessingTimer) {
+                clearInterval(uploadProcessingTimer);
+                uploadProcessingTimer = null;
+            }
+            const fillEl = document.getElementById('uploadProgressFill');
+            const textEl = document.getElementById('uploadProgressText');
+            let percent = Math.max(88, parseInt(fillEl.style.width || '0', 10) || 0);
+            uploadProcessingTimer = setInterval(() => {
+                percent = Math.min(98, percent + 1);
+                fillEl.style.width = `${percent}%`;
+                textEl.textContent = `文件已上传，正在处理数据... ${percent}%`;
+            }, 180);
+        }
+
+        function parseJsonSafe(xhr) {
+            try {
+                return JSON.parse(xhr.responseText || '{}');
+            } catch (e) {
+                const raw = String(xhr.responseText || '').slice(0, 600);
+                const status = Number(xhr.status);
+                const isGatewayLike = [500, 502, 503, 504].includes(status);
+                const looksLikeHtmlError = /Internal Server Error|Bad Gateway|Gateway Time-out|Service Unavailable/i.test(raw);
+                if (status === 504 || (isGatewayLike && looksLikeHtmlError)) {
+                    return {
+                        status: 'timeout',
+                        message: `请求超时或网关异常（HTTP ${status || '-'}），但后台可能仍在继续导入。系统将稍后自动刷新列表，请核对导入结果。`,
+                        raw
+                    };
+                }
+                return {
+                    status: 'error',
+                    message: `服务端返回非JSON（HTTP ${xhr.status}）。原始响应片段：\n${raw || '[empty]'}`
+                };
+            }
+        }
+
+        function confirmImportByPreview(file, onConfirmed) {
             const formData = new FormData();
             formData.append('file', file);
-            fetch('/api/sales-product-import', {
-                method: 'POST',
-                body: formData
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    const errorCount = (data.errors || []).length;
-                    alert(`导入完成：成功 ${data.created || 0} 条，失败 ${errorCount} 条`);
-                    loadSalesProductList();
-                } else {
-                    alert(data.message || '导入失败');
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/sales-product-import?preview=1', true);
+            showUploadProgress('正在预检模板数据...', 20);
+            xhr.onload = function() {
+                const data = parseJsonSafe(xhr);
+                hideUploadProgress();
+                if (data.status !== 'success') {
+                    showUploadDialog({ title: '预检失败', message: data.message || '预检失败', errors: data.errors || [] });
+                    return;
                 }
-            })
-            .catch(err => alert('请求失败: ' + err));
+                const errorCount = (data.errors || []).length;
+                const tip = `此次导入数据共 ${data.total_rows || 0} 条\n新建 ${data.created || 0} 条\n更新 ${data.updated || 0} 条\n无变更 ${data.unchanged || 0} 条\n外键关联预计新增 ${data.relation_added || data.relation_created || 0} 条\n外键关联预计删除 ${data.relation_deleted || 0} 条\n失败预警 ${errorCount} 条\n\n确认执行正式导入吗？`;
+                showUploadDialog({
+                    title: '导入确认',
+                    message: tip,
+                    confirmText: '确认导入',
+                    cancelText: '取消',
+                    onConfirm: onConfirmed,
+                    errors: data.errors || []
+                });
+            };
+            xhr.onerror = function() {
+                hideUploadProgress();
+                showUploadDialog({ title: '预检失败', message: '预检失败：网络异常' });
+            };
+            xhr.send(formData);
+        }
+
+        function uploadSalesProductTemplate(file) {
+            confirmImportByPreview(file, function() {
+                const formData = new FormData();
+                formData.append('file', file);
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '/api/sales-product-import', true);
+                showUploadProgress('正在上传模板...', 5);
+
+                xhr.upload.onprogress = function(evt) {
+                    if (!evt.lengthComputable) {
+                        showUploadProgress('正在上传模板...', 75);
+                        return;
+                    }
+                    const uploadPercent = Math.round((evt.loaded / evt.total) * 85);
+                    showUploadProgress(`正在上传模板... ${uploadPercent}%`, uploadPercent);
+                };
+
+                xhr.onload = function() {
+                    startProcessingProgress();
+                    const data = parseJsonSafe(xhr);
+                    hideUploadProgress();
+                    if (data.status === 'success') {
+                        const errorCount = (data.errors || []).length;
+                        showUploadDialog({
+                            title: '导入完成',
+                            message: `导入完成：总计 ${data.total_rows || 0} 条，新增 ${data.created || 0} 条，更新 ${data.updated || 0} 条，无变更 ${data.unchanged || 0} 条，外键新增 ${data.relation_added || data.relation_created || 0} 条，外键删除 ${data.relation_deleted || 0} 条，失败 ${errorCount} 条`,
+                            errors: data.errors || []
+                        });
+                        loadSalesProductList();
+                    } else if (data.status === 'timeout') {
+                        showTimeoutToast(data.message || '请求超时，请稍后刷新核对结果。');
+                        setTimeout(loadSalesProductList, 10000);
+                    } else {
+                        let debugMsg = '';
+                        if (data.debug) {
+                            const count = data.debug.invalid_bool_cells || 0;
+                            const samples = (data.debug.samples || []).slice(0, 3).map(s => `${s.sheet_xml}:${s.cell}=${s.value}`).join('\n');
+                            debugMsg = `\n\n调试信息：疑似布尔异常单元格 ${count} 个${samples ? '\n' + samples : ''}`;
+                        }
+                        showUploadDialog({ title: '导入失败', message: (data.message || '导入失败') + debugMsg, errors: data.errors || [] });
+                    }
+                };
+
+                xhr.onerror = function() {
+                    hideUploadProgress();
+                    showUploadDialog({ title: '请求失败', message: '请求失败: 网络异常' });
+                };
+
+                xhr.send(formData);
+            });
         }
 
         function loadSalesProductList() {
@@ -629,32 +1487,42 @@
                 }
                 const items = data.items || [];
                 salesProductItems = items;
-                if (!items.length) {
-                    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">暂无数据</td></tr>';
-                    return;
-                }
-                tbody.innerHTML = items.map(item => `
-                    <tr>
-                        <td>${item.platform_sku || ''}</td>
-                        <td>${item.parent_code || ''}</td>
-                        <td>${item.child_code || ''}</td>
-                        <td>${item.shop_name || ''} / ${item.brand_name || ''}</td>
-                        <td>${item.fabric || ''}</td>
-                        <td>${item.spec_name || ''}</td>
-                        <td>${item.sale_price_usd || ''}</td>
-                        <td>${item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : ''}</td>
-                        <td>
-                            <div class="pm-actions">
-                                <button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button>
-                                <button class="btn-danger" onclick='deleteSalesProduct(${item.id})'>删除</button>
-                            </div>
-                        </td>
-                    </tr>
-                `).join('');
+                Object.keys(salesProductDetailCache).forEach(k => delete salesProductDetailCache[k]);
+                renderSalesGroupedTable(items);
             }).catch(err => {
                 const tbody = document.querySelector('#salesProductTable tbody');
                 tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
             });
+        }
+
+        function fetchSalesProductDetail(id, forceReload) {
+            const key = String(id || '');
+            if (!key) return Promise.resolve(null);
+            if (!forceReload && salesProductDetailCache[key]) {
+                return Promise.resolve(salesProductDetailCache[key]);
+            }
+            return fetch(`/api/sales-product?id=${encodeURIComponent(key)}&include_links=1`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success' || !data.item) {
+                        throw new Error(data.message || '加载详情失败');
+                    }
+                    salesProductDetailCache[key] = data.item;
+                    return data.item;
+                });
+        }
+
+        function ensureOrderSkuOptionsLoaded() {
+            if (orderSkuLoaded) return Promise.resolve();
+            if (orderSkuLoadingPromise) return orderSkuLoadingPromise;
+            orderSkuLoadingPromise = loadOrderSkuOptions().then(() => {
+                orderSkuLoaded = true;
+            }).catch(() => {
+                orderSkuLoaded = false;
+            }).finally(() => {
+                orderSkuLoadingPromise = null;
+            });
+            return orderSkuLoadingPromise;
         }
 
         function openCopyModal() {
@@ -664,6 +1532,44 @@
 
         function closeCopyModal() {
             document.getElementById('copy-modal').classList.remove('active');
+        }
+
+        function openCopySalesInfoModal() {
+            renderCopySalesInfoList();
+            document.getElementById('copy-sales-info-modal').classList.add('active');
+        }
+
+        function closeCopySalesInfoModal() {
+            document.getElementById('copy-sales-info-modal').classList.remove('active');
+        }
+
+        function renderCopySalesInfoList() {
+            const keyword = (document.getElementById('copySalesInfoSearchInput').value || '').trim().toLowerCase();
+            const list = document.getElementById('copySalesInfoList');
+            const items = (salesProductItems || []).filter(item => {
+                const text = `${item.platform_sku || ''} ${item.parent_code || ''} ${item.child_code || ''}`.toLowerCase();
+                return !keyword || text.includes(keyword);
+            });
+            if (!items.length) {
+                list.innerHTML = '<div class="pm-select-empty">暂无可复制记录</div>';
+                return;
+            }
+            list.innerHTML = items.map(item => `
+                <button type="button" class="pm-select-option" onclick='copySalesInfoFromItem(${item.id})'>
+                    ${item.platform_sku || ''} ｜ ${item.parent_code || '-'} ｜ ${item.child_code || '-'}
+                </button>
+            `).join('');
+        }
+
+        async function copySalesInfoFromItem(id) {
+            try {
+                const item = await fetchSalesProductDetail(id);
+                setSalesInfoFields(item || {});
+                closeCopySalesInfoModal();
+                showModalStatus('已复制销售信息', false);
+            } catch (error) {
+                showModalStatus(error.message || '复制销售信息失败', true);
+            }
         }
 
         function renderCopyList() {
@@ -678,23 +1584,30 @@
                 return;
             }
             list.innerHTML = items.map(item => `
-                <button type="button" class="pm-select-option" onclick='copyFromItem(${JSON.stringify(item)})'>
+                <button type="button" class="pm-select-option" onclick='copyFromItem(${item.id})'>
                     ${item.platform_sku || ''} ｜ ${item.parent_code || '-'} ｜ ${item.child_code || '-'}
                 </button>
             `).join('');
         }
 
-        function copyFromItem(item) {
-            document.getElementById('modalShop').value = item.shop_id || '';
-            const shop = shopOptions.find(x => String(x.id) === String(item.shop_id));
-            document.getElementById('modalShopTrigger').textContent = shop ? `${shop.shop_name} / ${shop.brand_name} / ${shop.platform_type_name}` : '请选择店铺/品牌';
-
+        async function copyFromItem(id) {
+            await ensureOrderSkuOptionsLoaded();
+            const item = await fetchSalesProductDetail(id);
+            if (!item) return;
             document.getElementById('modalFabric').value = item.fabric || '';
             document.getElementById('modalSpecName').value = item.spec_name || '';
+            document.getElementById('modalParentShop').value = item.shop_id ? String(item.shop_id) : '';
+            currentProductStatus = normalizeProductStatus(item.product_status);
+            renderModalProductStatus();
+            document.getElementById('modalDacheneNo').value = item.dachene_yuncang_no || '';
+            renderSkuFamilySelect(item.sku_family_id || '');
+            document.getElementById('modalParentCode').value = item.parent_code || '';
+            updateParentSkuMarkerVisibility();
+            setSalesInfoFields(item);
             document.getElementById('modalSalePrice').value = item.sale_price_usd || '';
-            document.getElementById('modalAssembledLength').value = item.assembled_length_in || '';
-            document.getElementById('modalAssembledWidth').value = item.assembled_width_in || '';
-            document.getElementById('modalAssembledHeight').value = item.assembled_height_in || '';
+            document.getElementById('modalFinishedLength').value = item.finished_length_in || '';
+            document.getElementById('modalFinishedWidth').value = item.finished_width_in || '';
+            document.getElementById('modalFinishedHeight').value = item.finished_height_in || '';
 
             selectedOrderSkus = (item.order_sku_links || []).map(link => ({
                 order_product_id: link.order_product_id,
@@ -704,17 +1617,43 @@
             renderSelectedOrderSkuRows();
             autoComputeFabricSpec();
 
-            // 不复制销售平台SKU、父体编号、子体编号
+            // 不复制销售平台SKU和子体编号（保留父体关联）
             document.getElementById('modalPlatformSku').value = '';
-            document.getElementById('modalParentCode').value = '';
+            document.getElementById('modalParentSkuMarker').value = '';
+            updateParentSkuMarkerVisibility();
             document.getElementById('modalChildCode').value = '';
             closeCopyModal();
+            showTimeoutToast('已复制产品信息（含父体关联）');
         }
 
         function loadShopOptions() {
             return fetch('/api/shop').then(r => r.json()).then(data => {
                 shopOptions = data.status === 'success' ? (data.items || []) : [];
-            }).catch(() => { shopOptions = []; });
+                renderParentShopOptions();
+            }).catch(() => {
+                shopOptions = [];
+                renderParentShopOptions();
+            });
+        }
+
+        function loadSkuFamilyOptions() {
+            return fetch('/api/sku').then(r => r.json()).then(data => {
+                skuFamilyOptions = data.status === 'success' ? (data.items || []) : [];
+                renderSkuFamilySelect(document.getElementById('modalSkuFamily')?.value || '');
+            }).catch(() => {
+                skuFamilyOptions = [];
+                renderSkuFamilySelect('');
+            });
+        }
+
+        function loadParentOptions() {
+            return fetch('/api/parent?simple=1').then(r => r.json()).then(data => {
+                parentItems = data.status === 'success' ? (data.items || []) : [];
+                renderParentCodeSuggestions();
+            }).catch(() => {
+                parentItems = [];
+                renderParentCodeSuggestions();
+            });
         }
 
 
@@ -728,29 +1667,34 @@
         }
 
         function initPage() {
+            loadSalesProductList();
             Promise.all([
                 loadShopOptions(),
-                loadOrderSkuOptions()
-            ]).then(() => {
-                shopSelectUI = setupCustomSelect({
-                    triggerId: 'modalShopTrigger',
-                    panelId: 'modalShopPanel',
-                    searchId: 'modalShopSearch',
-                    listId: 'modalShopList',
-                    selectId: 'modalShop',
-                    getOptions: () => shopOptions,
-                    getLabel: item => `${item.shop_name} / ${item.brand_name} / ${item.platform_type_name}`
-                });
-                shopSelectUI.render();
-                loadSalesProductList();
-            });
+                loadSkuFamilyOptions(),
+                loadParentOptions()
+            ]);
         }
 
         document.getElementById('searchInput').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') loadSalesProductList();
         });
+        document.querySelectorAll('#modalProductStatusSegment .status-pill').forEach(btn => {
+            btn.addEventListener('click', () => {
+                currentProductStatus = normalizeProductStatus(btn.getAttribute('data-status'));
+                renderModalProductStatus();
+            });
+        });
         document.getElementById('copySearchInput').addEventListener('input', renderCopyList);
+        document.getElementById('copySalesInfoSearchInput').addEventListener('input', renderCopySalesInfoList);
         document.getElementById('orderSkuSearch').addEventListener('input', renderOrderSkuOptions);
+        document.getElementById('modalSkuFamilyTrigger').addEventListener('click', () => toggleSelectPanel('sku'));
+        document.getElementById('modalSkuFamilySearch').addEventListener('input', renderSkuFamilyList);
+        document.getElementById('modalParentShop').addEventListener('change', function() {
+            renderParentCodeSuggestions();
+            updateParentSkuMarkerVisibility();
+        });
+        document.getElementById('modalParentCode').addEventListener('input', updateParentSkuMarkerVisibility);
+        document.getElementById('modalSalePrice').addEventListener('input', updateCostWarning);
         document.getElementById('modalFabric').addEventListener('input', function() { manualFabric = this.value.trim() !== ''; });
         document.getElementById('modalSpecName').addEventListener('input', function() { manualSpecName = this.value.trim() !== ''; });
         document.getElementById('modalPlatformSku').addEventListener('input', function() { manualPlatformSku = this.value.trim() !== ''; });
@@ -761,13 +1705,38 @@
             }
             this.value = '';
         });
+        document.getElementById('uploadDialogModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                this.classList.remove('active');
+            }
+        });
+        document.getElementById('uploadDialogCopyBtn').addEventListener('click', function() {
+            const lines = (uploadDialogErrorRows || []).map(item => `行 ${item.row || '-'}\t${item.error || ''}`);
+            const text = lines.join('\n') || '无失败明细';
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(() => {
+                    showTimeoutToast('失败明细已复制');
+                }).catch(() => {
+                    showTimeoutToast('复制失败，请手动复制');
+                });
+            } else {
+                showTimeoutToast('当前环境不支持剪贴板复制');
+            }
+        });
         document.getElementById('pm-modal').addEventListener('click', function(e) {
             if (e.target === this) closeModal();
+        });
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('#modalSkuFamilySelect')) {
+                closeAllSelectPanels();
+            }
         });
         document.getElementById('copy-modal').addEventListener('click', function(e) {
             if (e.target === this) closeCopyModal();
         });
-
+        document.getElementById('copy-sales-info-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeCopySalesInfoModal();
+        });
         window.addEventListener('load', initPage);
     </script>
 </body>

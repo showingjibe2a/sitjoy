@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amazon广告管理 - 关键词管理</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .keyword-mini-note { color: #6b7280; font-size: 0.84rem; }
+        .keyword-tags { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+        .keyword-tag-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.2rem 0.45rem;
+            border-radius: 999px;
+            background: var(--morandi-mist);
+            font-size: 0.78rem;
+            color: var(--morandi-ink);
+        }
+        .keyword-level-3 { color: #2f6f2f; font-weight: 600; }
+        .keyword-level-2 { color: #35678f; font-weight: 600; }
+        .keyword-level-1 { color: #8c6a2f; font-weight: 600; }
+        .keyword-level-4 { color: #6a4fa3; font-weight: 600; }
+        .keyword-level-0 { color: #9b4a4a; font-weight: 600; }
+        .keyword-level-empty { color: var(--morandi-slate); }
+        .keyword-tag-pool { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+        .keyword-tag-btn {
+            border: 1px solid var(--morandi-sand);
+            background: #fff;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            padding: 0.2rem 0.55rem;
+            cursor: pointer;
+        }
+        .keyword-tag-btn.active { background: var(--morandi-sand); }
+    </style>
+</head>
+<body>
+    <div id="site-header"></div>
+
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1.5rem;">
+            <h2>Amazon广告管理 - 关键词管理</h2>
+            <p>按品类维护搜索词、排名、ASIN占比、标签及货号相关性</p>
+        </section>
+
+        <section class="pm-layout">
+            <div class="card pm-card" style="margin-bottom:0.8rem;">
+                <h3 style="margin:0 0 0.75rem 0;">基础选择</h3>
+                <div class="pm-form">
+                    <div class="form-group">
+                            <label for="categorySelect">品类（选择后自动进入模块）</label>
+                            <select id="categorySelect"></select>
+                    </div>
+                    <div class="form-group">
+                            <label for="currentSkuFamily">当前编辑货号（仅当前品类）</label>
+                            <select id="currentSkuFamily"></select>
+                    </div>
+                </div>
+                <div class="helper-text" style="margin-top:0.55rem;">选择品类后，自动加载该品类关键词、标签和货号数据。</div>
+            </div>
+
+            <div class="card pm-card" style="margin-bottom:0.8rem;">
+                <h3 style="margin:0 0 0.75rem 0;">关键词操作</h3>
+                <div class="pm-toolbar">
+                    <div class="pm-toolbar-actions">
+                        <div class="form-group pm-search" style="margin: 0;">
+                            <span class="pm-search-title">搜索</span>
+                            <input type="text" id="searchInput" placeholder="搜索关键词">
+                            <button class="btn-primary" onclick="loadKeywordList()">搜索</button>
+                            <button class="btn-secondary" onclick="resetSearch()">清空</button>
+                        </div>
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <div class="form-group" style="margin:0; min-width:220px;">
+                            <label for="tagFilter">标签筛选</label>
+                            <select id="tagFilter"></select>
+                        </div>
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-secondary" onclick="downloadTemplate()">下载模板</button>
+                        <button class="btn-secondary" onclick="triggerUpload()">批量上传</button>
+                        <input type="file" id="uploadInput" accept=".xlsx" style="display:none;">
+                        <button class="btn-primary" onclick="openCreateModal()">新增关键词</button>
+                    </div>
+                </div>
+                <div class="pm-form">
+                    <div class="pm-section">
+                        <h4>标签模块</h4>
+                        <div class="pm-section-body">
+                            <div class="form-group pm-form-full">
+                                <label for="bulkTagsInput">批量追加标签（对当前勾选关键词）</label>
+                                <input type="text" id="bulkTagsInput" class="optional-field" placeholder="换行/逗号/分号分隔多个标签">
+                            </div>
+                            <div class="form-group">
+                                <label>批量操作</label>
+                                <button class="btn-primary" type="button" onclick="bulkApplyTags()">批量追加标签</button>
+                            </div>
+                            <div class="form-group">
+                                <label>逐个设置</label>
+                                <button class="btn-secondary" type="button" onclick="startTagWalker()">逐个设置标签（遍历当前筛选中未加标签）</button>
+                            </div>
+                            <div class="form-group pm-form-full helper-text" id="bulkHint">已选 0 条关键词</div>
+                        </div>
+                    </div>
+
+                    <div class="pm-section">
+                        <h4>相关性模块</h4>
+                        <div class="pm-section-body">
+                            <div class="form-group">
+                                <label for="bulkRelevanceLevel">相关性等级（批量）</label>
+                                <select id="bulkRelevanceLevel">
+                                    <option value="">请选择</option>
+                                    <option value="高相关精准词">高相关精准词</option>
+                                    <option value="中相关普通词">中相关普通词</option>
+                                    <option value="低相关大词">低相关大词</option>
+                                    <option value="变体相关">变体相关</option>
+                                    <option value="不相关">不相关</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>批量操作</label>
+                                <button class="btn-primary" type="button" onclick="bulkSetRelevance()">批量设置相关性（当前勾选）</button>
+                            </div>
+                            <div class="form-group">
+                                <label>逐个设置</label>
+                                <button class="btn-secondary" type="button" onclick="startRelevanceWalker()">逐个设置相关性（遍历当前筛选中未设置）</button>
+                            </div>
+                            <div class="form-group pm-form-full helper-text">需先在顶部选择“当前编辑货号”。</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <table class="pm-table" id="keywordTable">
+                <thead>
+                    <tr>
+                        <th style="width:46px; text-align:center;"><input type="checkbox" id="selectAll"></th>
+                        <th>用户搜索词</th>
+                        <th>搜索词排名</th>
+                        <th>排名更新时间</th>
+                        <th>往期搜索词排名</th>
+                        <th>往期排名更新时间</th>
+                        <th>标签</th>
+                        <th>当前货号相关性</th>
+                        <th style="width:160px;">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td colspan="9" style="text-align:center;">请先选择品类</td></tr>
+                </tbody>
+            </table>
+        </section>
+    </div>
+
+    <div class="pm-modal" id="keywordModal">
+        <div class="pm-modal-content" style="max-width:1080px;">
+            <h3 id="keywordModalTitle" style="margin-top:0;">新增关键词</h3>
+            <div class="pm-form">
+                <div class="form-group pm-form-full">
+                    <label for="modalSearchTerm">用户搜索词<span class="required-asterisk">*</span></label>
+                    <input type="text" id="modalSearchTerm" class="required-field" placeholder="唯一搜索词">
+                </div>
+                <div class="form-group">
+                    <label for="modalSearchRank">搜索词排名</label>
+                    <input type="number" id="modalSearchRank" class="optional-field" step="1">
+                </div>
+                <div class="form-group">
+                    <label for="modalAsin1">最高点击ASIN1</label>
+                    <input type="text" id="modalAsin1" class="optional-field">
+                </div>
+                <div class="form-group">
+                    <label for="modalAsin1Click">最高点击ASIN1点击占比</label>
+                    <input type="text" id="modalAsin1Click" class="optional-field" placeholder="如 22.3%">
+                </div>
+                <div class="form-group">
+                    <label for="modalAsin1Conv">最高点击ASIN1转化占比</label>
+                    <input type="text" id="modalAsin1Conv" class="optional-field" placeholder="如 10.8%">
+                </div>
+                <div class="form-group">
+                    <label for="modalAsin2">最高点击ASIN2</label>
+                    <input type="text" id="modalAsin2" class="optional-field">
+                </div>
+                <div class="form-group">
+                    <label for="modalAsin2Click">最高点击ASIN2点击占比</label>
+                    <input type="text" id="modalAsin2Click" class="optional-field" placeholder="如 18.2%">
+                </div>
+                <div class="form-group">
+                    <label for="modalAsin2Conv">最高点击ASIN2转化占比</label>
+                    <input type="text" id="modalAsin2Conv" class="optional-field" placeholder="如 8.5%">
+                </div>
+                <div class="form-group">
+                    <label for="modalAsin3">最高点击ASIN3</label>
+                    <input type="text" id="modalAsin3" class="optional-field">
+                </div>
+                <div class="form-group">
+                    <label for="modalAsin3Click">最高点击ASIN3点击占比</label>
+                    <input type="text" id="modalAsin3Click" class="optional-field" placeholder="如 12.1%">
+                </div>
+                <div class="form-group">
+                    <label for="modalAsin3Conv">最高点击ASIN3转化占比</label>
+                    <input type="text" id="modalAsin3Conv" class="optional-field" placeholder="如 5.3%">
+                </div>
+                <div class="form-group pm-form-full">
+                    <label for="modalTags">标签（换行/逗号/分号分隔；新品类标签会自动创建）</label>
+                    <textarea id="modalTags" rows="3" class="optional-field"></textarea>
+                </div>
+                <div class="form-group pm-form-full">
+                    <label>快速选择标签（当前品类）</label>
+                    <div class="keyword-tag-pool" id="modalTagPool"></div>
+                </div>
+                <div class="form-group pm-form-full">
+                    <label for="modalRelatedSkus">关联货号（换行/逗号/分号分隔，仅当前品类）</label>
+                    <textarea id="modalRelatedSkus" rows="3" class="optional-field"></textarea>
+                </div>
+            </div>
+            <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeModal()">取消</button>
+                <button class="btn-primary" onclick="saveKeyword()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="pm-modal" id="tagWalkerModal">
+        <div class="pm-modal-content" style="max-width:760px;">
+            <h3 style="margin-top:0;">逐个设置标签</h3>
+            <div class="pm-form">
+                <div class="form-group pm-form-full">
+                    <label>当前关键词</label>
+                    <input type="text" id="tagWalkerTerm" class="required-field" readonly>
+                </div>
+                <div class="form-group pm-form-full">
+                    <label for="tagWalkerTags">标签（可多选已有/新增）</label>
+                    <textarea id="tagWalkerTags" rows="3" class="optional-field"></textarea>
+                </div>
+                <div class="form-group pm-form-full">
+                    <label>快速选择标签</label>
+                    <div class="keyword-tag-pool" id="tagWalkerTagPool"></div>
+                </div>
+                <div class="form-group pm-form-full keyword-mini-note" id="tagWalkerProgress">-</div>
+            </div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeTagWalker()">取消</button>
+                <button class="btn-primary" onclick="saveTagWalkerAndNext()">保存并下一个</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="pm-modal" id="relevanceWalkerModal">
+        <div class="pm-modal-content" style="max-width:620px;">
+            <h3 style="margin-top:0;">逐个设置相关性</h3>
+            <div class="pm-form">
+                <div class="form-group pm-form-full">
+                    <label>当前关键词</label>
+                    <input type="text" id="relevanceWalkerTerm" class="required-field" readonly>
+                </div>
+                <div class="form-group pm-form-full">
+                    <label for="relevanceWalkerLevel">相关性等级</label>
+                    <select id="relevanceWalkerLevel">
+                        <option value="">请选择</option>
+                        <option value="高相关精准词">高相关精准词</option>
+                        <option value="中相关普通词">中相关普通词</option>
+                        <option value="低相关大词">低相关大词</option>
+                        <option value="变体相关">变体相关</option>
+                        <option value="不相关">不相关</option>
+                    </select>
+                </div>
+                <div class="form-group pm-form-full keyword-mini-note" id="relevanceWalkerProgress">-</div>
+            </div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeRelevanceWalker()">取消</button>
+                <button class="btn-primary" onclick="saveRelevanceWalkerAndNext()">保存并下一个</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 SITJOY | 内部使用</p>
+    </footer>
+
+    <script>
+        let categoryOptions = [];
+        let tagOptions = [];
+        let skuFamilyOptions = [];
+        let currentCategoryId = null;
+        let keywordItems = [];
+        let selectedKeywordIds = new Set();
+        let editId = null;
+        let tagWalkQueue = [];
+        let tagWalkIndex = 0;
+        let relevanceWalkQueue = [];
+        let relevanceWalkIndex = 0;
+
+        function showModalStatus(message, isError) {
+            const el = document.getElementById('modalStatus');
+            el.style.display = 'block';
+            el.style.background = isError ? '#ffecec' : '#f0fff0';
+            el.style.color = isError ? '#a33' : '#2f6f2f';
+            el.innerText = message;
+        }
+
+        function resetModalStatus() {
+            const el = document.getElementById('modalStatus');
+            el.style.display = 'none';
+            el.innerText = '';
+        }
+
+        function parseTextList(value) {
+            return String(value || '')
+                .split(/[\n,;；]+/)
+                .map(v => v.trim())
+                .filter(v => v);
+        }
+
+        function formatDateTime(v) {
+            return v ? new Date(v).toLocaleString('zh-CN') : '';
+        }
+
+        function relevanceClass(level) {
+            if (level === '高相关精准词') return 'keyword-level-3';
+            if (level === '中相关普通词') return 'keyword-level-2';
+            if (level === '低相关大词') return 'keyword-level-1';
+            if (level === '变体相关') return 'keyword-level-4';
+            if (level === '不相关') return 'keyword-level-0';
+            return 'keyword-level-empty';
+        }
+
+        function renderTagPool(containerId, textareaId) {
+            const pool = document.getElementById(containerId);
+            if (!pool) return;
+            const textarea = document.getElementById(textareaId);
+            const selected = new Set(parseTextList(textarea ? textarea.value : ''));
+            pool.innerHTML = '';
+            if (!(tagOptions || []).length) {
+                pool.innerHTML = '<span class="keyword-mini-note">当前品类暂无标签，可直接输入创建</span>';
+                return;
+            }
+            tagOptions.forEach(t => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'keyword-tag-btn' + (selected.has(t.tag_name) ? ' active' : '');
+                btn.textContent = t.tag_name;
+                btn.addEventListener('click', () => {
+                    const set = new Set(parseTextList(textarea.value));
+                    if (set.has(t.tag_name)) set.delete(t.tag_name);
+                    else set.add(t.tag_name);
+                    textarea.value = Array.from(set).join('\n');
+                    renderTagPool(containerId, textareaId);
+                });
+                pool.appendChild(btn);
+            });
+        }
+
+        function loadCategories() {
+            fetch('/api/category').then(r => r.json()).then(data => {
+                categoryOptions = data.status === 'success' ? (data.items || []) : [];
+                const select = document.getElementById('categorySelect');
+                select.innerHTML = '<option value="">请选择品类</option>' + categoryOptions.map(c =>
+                    `<option value="${c.id}">${c.category_cn} / ${c.category_en || ''}</option>`
+                ).join('');
+            });
+        }
+
+        function onCategoryChanged() {
+            const categoryId = Number(document.getElementById('categorySelect').value || 0);
+            currentCategoryId = categoryId || null;
+            selectedKeywordIds = new Set();
+            if (!currentCategoryId) {
+                keywordItems = [];
+                document.querySelector('#keywordTable tbody').innerHTML = '<tr><td colspan="9" style="text-align:center;">请选择品类后查看数据</td></tr>';
+                document.getElementById('tagFilter').innerHTML = '<option value="">全部标签</option>';
+                document.getElementById('currentSkuFamily').innerHTML = '<option value="">请选择当前编辑货号（仅当前品类）</option>';
+                updateBulkHint();
+                return;
+            }
+            Promise.all([loadOptions(), loadKeywordList()]);
+        }
+
+        function loadOptions() {
+            if (!currentCategoryId) return Promise.resolve();
+            return fetch(`/api/amazon-ad-keyword?action=options&category_id=${encodeURIComponent(currentCategoryId)}`)
+                .then(r => r.json())
+                .then(data => {
+                    tagOptions = data.tags || [];
+                    skuFamilyOptions = data.sku_families || [];
+
+                    const tagFilter = document.getElementById('tagFilter');
+                    const oldTag = tagFilter.value;
+                    tagFilter.innerHTML = '<option value="">全部标签</option>' + tagOptions.map(t =>
+                        `<option value="${t.tag_name}">${t.tag_name}</option>`
+                    ).join('');
+                    if (oldTag) tagFilter.value = oldTag;
+
+                    const skuSelect = document.getElementById('currentSkuFamily');
+                    const old = skuSelect.value;
+                    skuSelect.innerHTML = '<option value="">请选择当前编辑货号（仅当前品类）</option>' + skuFamilyOptions.map(s =>
+                        `<option value="${s.id}">${s.sku_family}</option>`
+                    ).join('');
+                    if (old) skuSelect.value = old;
+
+                    renderTagPool('modalTagPool', 'modalTags');
+                    renderTagPool('tagWalkerTagPool', 'tagWalkerTags');
+                });
+        }
+
+        function loadKeywordList() {
+            if (!currentCategoryId) return Promise.resolve();
+            const q = document.getElementById('searchInput').value.trim();
+            const tag = document.getElementById('tagFilter').value;
+            const skuFamilyId = document.getElementById('currentSkuFamily').value;
+            const params = new URLSearchParams({ category_id: String(currentCategoryId) });
+            if (q) params.set('q', q);
+            if (tag) params.set('tag', tag);
+            if (skuFamilyId) params.set('sku_family_id', skuFamilyId);
+            return fetch(`/api/amazon-ad-keyword?${params.toString()}`)
+                .then(r => r.json())
+                .then(data => {
+                    const tbody = document.querySelector('#keywordTable tbody');
+                    if (data.status !== 'success') {
+                        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        return;
+                    }
+                    keywordItems = data.items || [];
+                    if (!keywordItems.length) {
+                        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">暂无数据</td></tr>';
+                        updateBulkHint();
+                        return;
+                    }
+
+                    const validIdSet = new Set(keywordItems.map(item => String(item.id)));
+                    selectedKeywordIds = new Set(Array.from(selectedKeywordIds).filter(id => validIdSet.has(id)));
+
+                    tbody.innerHTML = keywordItems.map(item => {
+                        const checked = selectedKeywordIds.has(String(item.id)) ? 'checked' : '';
+                        const tagsHtml = (item.tag_names || []).length
+                            ? `<div class="keyword-tags">${item.tag_names.map(t => `<span class="keyword-tag-chip">${t}</span>`).join('')}</div>`
+                            : '<span class="keyword-level-empty">-</span>';
+                        const level = item.current_relevance_level || '';
+                        const levelText = level || '未设置';
+                        return `
+                            <tr>
+                                <td style="text-align:center;"><input type="checkbox" class="row-check" data-id="${item.id}" ${checked}></td>
+                                <td>${item.user_search_term || ''}</td>
+                                <td>${item.search_rank ?? ''}</td>
+                                <td>${formatDateTime(item.rank_updated_at)}</td>
+                                <td>${item.previous_search_rank ?? ''}</td>
+                                <td>${formatDateTime(item.previous_rank_updated_at)}</td>
+                                <td>${tagsHtml}</td>
+                                <td class="${relevanceClass(level)}">${levelText}</td>
+                                <td>
+                                    <div class="pm-actions">
+                                        <button class="btn-secondary" onclick="openEditModal(${item.id})">编辑</button>
+                                        <button class="btn-danger" onclick="deleteKeyword(${item.id})">删除</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('');
+                    bindRowChecks();
+                    updateBulkHint();
+                });
+        }
+
+        function bindRowChecks() {
+            document.querySelectorAll('.row-check').forEach(el => {
+                el.addEventListener('change', function() {
+                    const id = String(this.dataset.id || '');
+                    if (!id) return;
+                    if (this.checked) selectedKeywordIds.add(id);
+                    else selectedKeywordIds.delete(id);
+                    updateBulkHint();
+                });
+            });
+        }
+
+        function updateBulkHint() {
+            document.getElementById('bulkHint').innerText = `已选 ${selectedKeywordIds.size} 条关键词`;
+            const all = document.getElementById('selectAll');
+            const rows = Array.from(document.querySelectorAll('.row-check'));
+            if (!rows.length) {
+                all.checked = false;
+                all.indeterminate = false;
+                return;
+            }
+            const checked = rows.filter(r => r.checked).length;
+            all.checked = checked === rows.length;
+            all.indeterminate = checked > 0 && checked < rows.length;
+        }
+
+        function resetSearch() {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('tagFilter').value = '';
+            loadKeywordList();
+        }
+
+        function openCreateModal() {
+            editId = null;
+            document.getElementById('keywordModalTitle').innerText = '新增关键词';
+            document.getElementById('modalSearchTerm').value = '';
+            document.getElementById('modalSearchRank').value = '';
+            document.getElementById('modalAsin1').value = '';
+            document.getElementById('modalAsin1Click').value = '';
+            document.getElementById('modalAsin1Conv').value = '';
+            document.getElementById('modalAsin2').value = '';
+            document.getElementById('modalAsin2Click').value = '';
+            document.getElementById('modalAsin2Conv').value = '';
+            document.getElementById('modalAsin3').value = '';
+            document.getElementById('modalAsin3Click').value = '';
+            document.getElementById('modalAsin3Conv').value = '';
+            document.getElementById('modalTags').value = '';
+            document.getElementById('modalRelatedSkus').value = '';
+            renderTagPool('modalTagPool', 'modalTags');
+            resetModalStatus();
+            document.getElementById('keywordModal').classList.add('active');
+        }
+
+        function openEditModal(id) {
+            const item = (keywordItems || []).find(x => String(x.id) === String(id));
+            if (!item) return;
+            editId = Number(id);
+            document.getElementById('keywordModalTitle').innerText = '编辑关键词';
+            document.getElementById('modalSearchTerm').value = item.user_search_term || '';
+            document.getElementById('modalSearchRank').value = item.search_rank ?? '';
+            document.getElementById('modalAsin1').value = item.top_click_asin1 || '';
+            document.getElementById('modalAsin1Click').value = item.top_click_asin1_click_share || '';
+            document.getElementById('modalAsin1Conv').value = item.top_click_asin1_conversion_share || '';
+            document.getElementById('modalAsin2').value = item.top_click_asin2 || '';
+            document.getElementById('modalAsin2Click').value = item.top_click_asin2_click_share || '';
+            document.getElementById('modalAsin2Conv').value = item.top_click_asin2_conversion_share || '';
+            document.getElementById('modalAsin3').value = item.top_click_asin3 || '';
+            document.getElementById('modalAsin3Click').value = item.top_click_asin3_click_share || '';
+            document.getElementById('modalAsin3Conv').value = item.top_click_asin3_conversion_share || '';
+            document.getElementById('modalTags').value = (item.tag_names || []).join('\n');
+            const relatedSkuCodes = (item.related_sku_family_ids || []).map(idVal => {
+                const found = (skuFamilyOptions || []).find(s => String(s.id) === String(idVal));
+                return found ? found.sku_family : '';
+            }).filter(Boolean);
+            document.getElementById('modalRelatedSkus').value = relatedSkuCodes.join('\n');
+            renderTagPool('modalTagPool', 'modalTags');
+            resetModalStatus();
+            document.getElementById('keywordModal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('keywordModal').classList.remove('active');
+            editId = null;
+        }
+
+        function saveKeyword() {
+            if (!currentCategoryId) return;
+            const relatedSkuCodes = parseTextList(document.getElementById('modalRelatedSkus').value);
+            const relatedSkuIds = relatedSkuCodes.map(code => {
+                const found = (skuFamilyOptions || []).find(s => String(s.sku_family || '').trim() === code);
+                return found ? Number(found.id) : 0;
+            }).filter(v => v > 0);
+
+            if (relatedSkuCodes.length && relatedSkuIds.length !== relatedSkuCodes.length) {
+                showModalStatus('存在无效货号，请仅填写当前品类下货号', true);
+                return;
+            }
+
+            const payload = {
+                category_id: currentCategoryId,
+                user_search_term: document.getElementById('modalSearchTerm').value.trim(),
+                search_rank: document.getElementById('modalSearchRank').value === '' ? null : Number(document.getElementById('modalSearchRank').value),
+                top_click_asin1: document.getElementById('modalAsin1').value.trim(),
+                top_click_asin1_click_share: document.getElementById('modalAsin1Click').value.trim(),
+                top_click_asin1_conversion_share: document.getElementById('modalAsin1Conv').value.trim(),
+                top_click_asin2: document.getElementById('modalAsin2').value.trim(),
+                top_click_asin2_click_share: document.getElementById('modalAsin2Click').value.trim(),
+                top_click_asin2_conversion_share: document.getElementById('modalAsin2Conv').value.trim(),
+                top_click_asin3: document.getElementById('modalAsin3').value.trim(),
+                top_click_asin3_click_share: document.getElementById('modalAsin3Click').value.trim(),
+                top_click_asin3_conversion_share: document.getElementById('modalAsin3Conv').value.trim(),
+                tag_names: parseTextList(document.getElementById('modalTags').value),
+                related_sku_family_ids: relatedSkuIds
+            };
+
+            if (!payload.user_search_term) {
+                showModalStatus('请填写用户搜索词', true);
+                return;
+            }
+
+            let method = 'POST';
+            if (editId) {
+                method = 'PUT';
+                payload.id = editId;
+            }
+
+            fetch('/api/amazon-ad-keyword', {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(r => r.json()).then(data => {
+                if (data.status === 'success') {
+                    closeModal();
+                    loadOptions().then(loadKeywordList);
+                } else {
+                    showModalStatus(data.message || '保存失败', true);
+                }
+            }).catch(err => showModalStatus('请求失败: ' + err, true));
+        }
+
+        function deleteKeyword(id) {
+            if (!confirm('确认删除该关键词？')) return;
+            fetch('/api/amazon-ad-keyword', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            }).then(r => r.json()).then(data => {
+                if (data.status === 'success') {
+                    selectedKeywordIds.delete(String(id));
+                    loadOptions().then(loadKeywordList);
+                } else {
+                    alert(data.message || '删除失败');
+                }
+            });
+        }
+
+        function getSelectedKeywordIdList() {
+            return Array.from(selectedKeywordIds).map(v => Number(v)).filter(v => v > 0);
+        }
+
+        function bulkApplyTags() {
+            const ids = getSelectedKeywordIdList();
+            if (!ids.length) {
+                alert('请先勾选关键词');
+                return;
+            }
+            const tags = parseTextList(document.getElementById('bulkTagsInput').value);
+            if (!tags.length) {
+                alert('请先输入标签');
+                return;
+            }
+            fetch('/api/amazon-ad-keyword', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    category_id: currentCategoryId,
+                    keyword_ids: ids,
+                    tag_names: tags
+                })
+            }).then(r => r.json()).then(data => {
+                if (data.status === 'success') {
+                    loadOptions().then(loadKeywordList);
+                } else {
+                    alert(data.message || '批量标签更新失败');
+                }
+            });
+        }
+
+        function bulkSetRelevance() {
+            const ids = getSelectedKeywordIdList();
+            if (!ids.length) {
+                alert('请先勾选关键词');
+                return;
+            }
+            const skuFamilyId = Number(document.getElementById('currentSkuFamily').value || 0);
+            if (!skuFamilyId) {
+                alert('请先选择“当前编辑货号”');
+                return;
+            }
+            const relevanceLevel = document.getElementById('bulkRelevanceLevel').value;
+            if (!relevanceLevel) {
+                alert('请选择相关性等级');
+                return;
+            }
+            fetch('/api/amazon-ad-keyword', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    category_id: currentCategoryId,
+                    keyword_ids: ids,
+                    sku_family_id: skuFamilyId,
+                    relevance_level: relevanceLevel
+                })
+            }).then(r => r.json()).then(data => {
+                if (data.status === 'success') {
+                    loadKeywordList();
+                } else {
+                    alert(data.message || '批量相关性更新失败');
+                }
+            });
+        }
+
+        function startTagWalker() {
+            if (!currentCategoryId) {
+                alert('请先选择品类');
+                return;
+            }
+            tagWalkQueue = (keywordItems || []).filter(item => !(item.tag_names || []).length);
+            tagWalkIndex = 0;
+            if (!tagWalkQueue.length) {
+                alert('当前筛选结果中不存在未加标签的关键词');
+                return;
+            }
+            openTagWalkerCurrent();
+            document.getElementById('tagWalkerModal').classList.add('active');
+        }
+
+        function openTagWalkerCurrent() {
+            const item = tagWalkQueue[tagWalkIndex];
+            if (!item) return;
+            document.getElementById('tagWalkerTerm').value = item.user_search_term || '';
+            document.getElementById('tagWalkerTags').value = '';
+            document.getElementById('tagWalkerProgress').innerText = `第 ${tagWalkIndex + 1} / ${tagWalkQueue.length} 条`;
+            renderTagPool('tagWalkerTagPool', 'tagWalkerTags');
+        }
+
+        function closeTagWalker() {
+            document.getElementById('tagWalkerModal').classList.remove('active');
+        }
+
+        function saveTagWalkerAndNext() {
+            const item = tagWalkQueue[tagWalkIndex];
+            if (!item) return;
+            const tags = parseTextList(document.getElementById('tagWalkerTags').value);
+            if (!tags.length) {
+                alert('请至少设置一个标签');
+                return;
+            }
+            fetch('/api/amazon-ad-keyword', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: item.id, tag_names: tags })
+            }).then(r => r.json()).then(data => {
+                if (data.status !== 'success') {
+                    alert(data.message || '保存失败');
+                    return;
+                }
+                tagWalkIndex += 1;
+                if (tagWalkIndex >= tagWalkQueue.length) {
+                    closeTagWalker();
+                    loadOptions().then(loadKeywordList);
+                    return;
+                }
+                openTagWalkerCurrent();
+                loadOptions().then(loadKeywordList);
+            });
+        }
+
+        function startRelevanceWalker() {
+            if (!currentCategoryId) {
+                alert('请先选择品类');
+                return;
+            }
+            const skuFamilyId = Number(document.getElementById('currentSkuFamily').value || 0);
+            if (!skuFamilyId) {
+                alert('请先选择“当前编辑货号”');
+                return;
+            }
+            relevanceWalkQueue = (keywordItems || []).filter(item => !item.current_relevance_level);
+            relevanceWalkIndex = 0;
+            if (!relevanceWalkQueue.length) {
+                alert('当前筛选结果中不存在未设置相关性的关键词');
+                return;
+            }
+            openRelevanceWalkerCurrent();
+            document.getElementById('relevanceWalkerModal').classList.add('active');
+        }
+
+        function openRelevanceWalkerCurrent() {
+            const item = relevanceWalkQueue[relevanceWalkIndex];
+            if (!item) return;
+            document.getElementById('relevanceWalkerTerm').value = item.user_search_term || '';
+            document.getElementById('relevanceWalkerLevel').value = '';
+            document.getElementById('relevanceWalkerProgress').innerText = `第 ${relevanceWalkIndex + 1} / ${relevanceWalkQueue.length} 条`;
+        }
+
+        function closeRelevanceWalker() {
+            document.getElementById('relevanceWalkerModal').classList.remove('active');
+        }
+
+        function saveRelevanceWalkerAndNext() {
+            const item = relevanceWalkQueue[relevanceWalkIndex];
+            if (!item) return;
+            const skuFamilyId = Number(document.getElementById('currentSkuFamily').value || 0);
+            const level = document.getElementById('relevanceWalkerLevel').value;
+            if (!skuFamilyId || !level) {
+                alert('请选择相关性等级');
+                return;
+            }
+            fetch('/api/amazon-ad-keyword', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    category_id: currentCategoryId,
+                    keyword_ids: [item.id],
+                    sku_family_id: skuFamilyId,
+                    relevance_level: level
+                })
+            }).then(r => r.json()).then(data => {
+                if (data.status !== 'success') {
+                    alert(data.message || '保存失败');
+                    return;
+                }
+                relevanceWalkIndex += 1;
+                if (relevanceWalkIndex >= relevanceWalkQueue.length) {
+                    closeRelevanceWalker();
+                    loadKeywordList();
+                    return;
+                }
+                openRelevanceWalkerCurrent();
+                loadKeywordList();
+            });
+        }
+
+        function downloadTemplate() {
+            if (!currentCategoryId) {
+                alert('请先选择品类');
+                return;
+            }
+            window.location.href = `/api/amazon-ad-keyword-template?category_id=${encodeURIComponent(currentCategoryId)}`;
+        }
+
+        function triggerUpload() {
+            if (!currentCategoryId) {
+                alert('请先选择品类');
+                return;
+            }
+            document.getElementById('uploadInput').click();
+        }
+
+        function uploadTemplate(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+            fetch(`/api/amazon-ad-keyword-import?category_id=${encodeURIComponent(currentCategoryId)}`, {
+                method: 'POST',
+                body: formData
+            }).then(r => r.json()).then(data => {
+                if (data.status === 'success') {
+                    const failCount = (data.errors || []).length;
+                    alert(`导入完成：新增 ${data.created || 0} 条，更新 ${data.updated || 0} 条，失败 ${failCount} 条`);
+                    loadOptions().then(loadKeywordList);
+                } else {
+                    alert(data.message || '导入失败');
+                }
+            }).catch(err => alert('导入失败: ' + err));
+        }
+
+        document.getElementById('searchInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') loadKeywordList();
+        });
+        document.getElementById('selectAll').addEventListener('change', function() {
+            const checked = this.checked;
+            document.querySelectorAll('.row-check').forEach(el => {
+                el.checked = checked;
+                const id = String(el.dataset.id || '');
+                if (!id) return;
+                if (checked) selectedKeywordIds.add(id);
+                else selectedKeywordIds.delete(id);
+            });
+            updateBulkHint();
+        });
+        document.getElementById('categorySelect').addEventListener('change', onCategoryChanged);
+        document.getElementById('currentSkuFamily').addEventListener('change', loadKeywordList);
+        document.getElementById('tagFilter').addEventListener('change', loadKeywordList);
+        document.getElementById('keywordModal').addEventListener('click', function(e) {
+            if (e.target === this) closeModal();
+        });
+        document.getElementById('tagWalkerModal').addEventListener('click', function(e) {
+            if (e.target === this) closeTagWalker();
+        });
+        document.getElementById('relevanceWalkerModal').addEventListener('click', function(e) {
+            if (e.target === this) closeRelevanceWalker();
+        });
+        document.getElementById('modalTags').addEventListener('input', () => renderTagPool('modalTagPool', 'modalTags'));
+        document.getElementById('tagWalkerTags').addEventListener('input', () => renderTagPool('tagWalkerTagPool', 'tagWalkerTags'));
+        document.getElementById('uploadInput').addEventListener('change', function() {
+            const file = this.files && this.files[0];
+            if (file) uploadTemplate(file);
+            this.value = '';
+        });
+
+        window.addEventListener('load', () => {
+            loadCategories();
+            updateBulkHint();
+        });
+    </script>
+</body>
+<script src="/static/js/header.js"></script>
+</html>

@@ -144,6 +144,86 @@
         .switch-wrap input:checked + .switch-slider:before {
             transform: translateX(20px);
         }
+        .upload-progress {
+            position: fixed;
+            right: 18px;
+            bottom: 18px;
+            width: 280px;
+            padding: 0.75rem 0.8rem;
+            background: #fff;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 10px;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+            z-index: 60;
+            display: none;
+        }
+        .upload-progress-title {
+            font-size: 0.9rem;
+            color: var(--morandi-ink);
+            margin-bottom: 0.45rem;
+        }
+        .upload-progress-bar {
+            width: 100%;
+            height: 8px;
+            background: var(--morandi-mist);
+            border-radius: 99px;
+            overflow: hidden;
+        }
+        .upload-progress-bar > span {
+            display: block;
+            height: 100%;
+            width: 0%;
+            background: var(--morandi-sand);
+        }
+        .dialog-message {
+            white-space: pre-wrap;
+            color: var(--morandi-ink);
+            line-height: 1.55;
+            font-size: 0.95rem;
+        }
+        .dialog-detail-wrap {
+            margin-top: 0.8rem;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 8px;
+            background: #fff;
+            max-height: 280px;
+            overflow: auto;
+            display: none;
+        }
+        .dialog-detail-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.45rem 0.6rem;
+            border-bottom: 1px solid var(--morandi-mist);
+            background: #faf9f7;
+        }
+        .dialog-detail-title { font-size: 0.86rem; color: var(--morandi-slate); }
+        .dialog-detail-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+        .dialog-detail-table th, .dialog-detail-table td {
+            border-bottom: 1px solid var(--morandi-mist);
+            text-align: left;
+            padding: 0.42rem 0.55rem;
+            vertical-align: top;
+        }
+        .dialog-detail-table th { background: #f7f4ef; position: sticky; top: 0; z-index: 1; }
+        .toast-notice {
+            position: fixed;
+            right: 18px;
+            bottom: 18px;
+            min-width: 280px;
+            max-width: 420px;
+            padding: 0.7rem 0.85rem;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 10px;
+            background: #fff;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+            color: var(--morandi-ink);
+            font-size: 0.9rem;
+            line-height: 1.5;
+            z-index: 70;
+            display: none;
+        }
         
     </style>
 </head>
@@ -180,11 +260,13 @@
                 <table class="pm-table" id="orderProductTable">
                     <thead>
                         <tr>
+                            <th style="width:54px; text-align:center;"><input type="checkbox" id="orderSelectAll"></th>
                             <th>SKU</th>
                             <th>货号</th>
                             <th>版本号</th>
                             <th>颜色</th>
                             <th>规格简称</th>
+                            <th>内含物英文描述</th>
                             <th>成本价($)</th>
                             <th>包裹归类</th>
                             <th style="width:160px;">创建时间</th>
@@ -192,7 +274,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="9" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="11" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -210,7 +292,16 @@
                             <span class="switch-slider"></span>
                         </label>
                     </h4>
+                    <h4 style="display:inline-flex; align-items:center; margin-left:1rem;">是否为大健云仓产品&nbsp;
+                        <label class="switch-wrap" style="margin-left:0.75rem;">
+                            <input type="checkbox" id="modalIsDacheneProduct">
+                            <span class="switch-slider"></span>
+                        </label>
+                    </h4>
                     <div class="pm-section-body">
+                        <div class="form-group pm-form-span-2" style="margin-bottom:0;">
+                            <div style="font-size:0.84rem;color:#6b7280;">提示：若开启，请在“下单SKU”中填写对应大健云仓 Item Code。</div>
+                        </div>
                         <div class="form-group pm-form-span-2" id="iterationFields" style="display:none;">
                             <label for="modalSourceSku">来源SKU</label>
                             <div class="pm-select" id="modalSourceSkuSelect">
@@ -262,6 +353,10 @@
                             <label for="modalSpecQtyShort">规格与数量简称</label>
                             <input type="text" id="modalSpecQtyShort" class="optional-field" placeholder="选填，例如：A，B，C...">
                         </div>
+                        <div class="form-group">
+                            <label for="modalContentsDescEn">内含物英文描述</label>
+                            <input type="text" id="modalContentsDescEn" class="optional-field" placeholder="选填，例如：memory foam + metal frame">
+                        </div>
                     </div>
                 </div>
 
@@ -306,16 +401,6 @@
                             <label for="modalGrossWeight">毛重 (lbs)</label>
                             <input type="number" step="0.01" id="modalGrossWeight" class="optional-field">
                         </div>
-                    </div>
-                </div>
-
-                <div class="pm-section">
-                    <h4>成本与物流</h4>
-                    <div class="pm-section-body">
-                        <div class="form-group">
-                            <label for="modalCost">成本价（美元）</label>
-                            <input type="number" step="0.01" id="modalCost" class="optional-field">
-                        </div>
                         <div class="form-group">
                             <label for="modalCartonQty">装箱量</label>
                             <input type="number" step="1" id="modalCartonQty" class="optional-field">
@@ -323,6 +408,16 @@
                         <div class="form-group">
                             <label for="modalPackageClass">包裹大小归类（Fedx）</label>
                             <input type="text" id="modalPackageClass" class="optional-field">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pm-section">
+                    <h4>成本与物流</h4>
+                    <div class="pm-section-body">
+                        <div class="form-group">
+                            <label for="modalCost">产品成本及发货至海外仓成本估算（USD，不含仓储费）</label>
+                            <input type="number" step="0.01" id="modalCost" class="optional-field">
                         </div>
                         <div class="form-group">
                             <label for="modalLastMile">尾程平均运费（美元）</label>
@@ -413,6 +508,34 @@
         <p>&copy; 2026 SITJOY | 内部使用</p>
     </footer>
 
+    <div id="uploadProgress" class="upload-progress" aria-live="polite">
+        <div id="uploadProgressText" class="upload-progress-title">准备上传...</div>
+        <div class="upload-progress-bar"><span id="uploadProgressFill"></span></div>
+    </div>
+
+    <div class="pm-modal" id="uploadDialogModal">
+        <div class="pm-modal-content" style="max-width: 520px;">
+            <h3 id="uploadDialogTitle" style="margin-top:0;">提示</h3>
+            <div id="uploadDialogMessage" class="dialog-message"></div>
+            <div id="uploadDialogDetails" class="dialog-detail-wrap">
+                <div class="dialog-detail-toolbar">
+                    <span class="dialog-detail-title">失败明细（行号 / 原因）</span>
+                    <button class="btn-secondary" id="uploadDialogCopyBtn" type="button">复制明细</button>
+                </div>
+                <table class="dialog-detail-table">
+                    <thead><tr><th style="width:90px;">行号</th><th>原因</th></tr></thead>
+                    <tbody id="uploadDialogDetailsBody"></tbody>
+                </table>
+            </div>
+            <div class="pm-modal-actions" id="uploadDialogActions">
+                <button class="btn-secondary" id="uploadDialogCancelBtn" style="display:none;">取消</button>
+                <button class="btn-primary" id="uploadDialogOkBtn">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="timeoutToast" class="toast-notice"></div>
+
     <script>
         let editId = null;
         let skuOptions = [];
@@ -429,6 +552,65 @@
         let selectedFrameMaterialIds = [];
         let selectedFeatureIds = [];
         let selectedCertificationIds = [];
+        let uploadProcessingTimer = null;
+        let uploadDialogErrorRows = [];
+        let toastTimer = null;
+        let selectedOrderProductIds = new Set();
+        let orderProductItemsCache = [];
+
+        function renderUploadErrorDetails(errors) {
+            const wrap = document.getElementById('uploadDialogDetails');
+            const body = document.getElementById('uploadDialogDetailsBody');
+            uploadDialogErrorRows = Array.isArray(errors) ? errors.filter(x => x && (x.row || x.error)) : [];
+            if (!uploadDialogErrorRows.length) {
+                wrap.style.display = 'none';
+                body.innerHTML = '';
+                return;
+            }
+            body.innerHTML = uploadDialogErrorRows.map(item => {
+                const row = item.row || '-';
+                const error = item.error || '';
+                return `<tr><td>${row}</td><td>${error}</td></tr>`;
+            }).join('');
+            wrap.style.display = 'block';
+        }
+
+        function showUploadDialog({ title, message, confirmText = '确定', cancelText = '', onConfirm = null, onCancel = null, errors = [] }) {
+            const modal = document.getElementById('uploadDialogModal');
+            const titleEl = document.getElementById('uploadDialogTitle');
+            const msgEl = document.getElementById('uploadDialogMessage');
+            const okBtn = document.getElementById('uploadDialogOkBtn');
+            const cancelBtn = document.getElementById('uploadDialogCancelBtn');
+
+            titleEl.textContent = title || '提示';
+            msgEl.textContent = message || '';
+            okBtn.textContent = confirmText || '确定';
+
+            cancelBtn.style.display = cancelText ? '' : 'none';
+            if (cancelText) cancelBtn.textContent = cancelText;
+            renderUploadErrorDetails(errors);
+
+            okBtn.onclick = function() {
+                modal.classList.remove('active');
+                if (typeof onConfirm === 'function') onConfirm();
+            };
+            cancelBtn.onclick = function() {
+                modal.classList.remove('active');
+                if (typeof onCancel === 'function') onCancel();
+            };
+
+            modal.classList.add('active');
+        }
+
+        function showTimeoutToast(message) {
+            const toast = document.getElementById('timeoutToast');
+            toast.textContent = message || '';
+            toast.style.display = 'block';
+            if (toastTimer) clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
+                toast.style.display = 'none';
+            }, 6000);
+        }
 
         function showModalStatus(message, isError) {
             const el = document.getElementById('modalStatus');
@@ -460,7 +642,10 @@
             setSelectValue('modalFabric', '');
             setInputValue('modalFabricSearch', '');
             setInputValue('modalSpecQtyShort', '');
+            setInputValue('modalContentsDescEn', '');
             setIterationMode(false);
+            const dacheneEl = document.getElementById('modalIsDacheneProduct');
+            if (dacheneEl) dacheneEl.checked = false;
             setSelectValue('modalSourceSku', '');
             document.getElementById('modalSourceSkuTrigger').textContent = '请选择来源SKU';
             setInputValue('modalFinishedLength', '');
@@ -498,8 +683,11 @@
             setSelectValue('modalFabric', item.fabric_id || '');
             setInputValue('modalFabricSearch', '');
             setInputValue('modalSpecQtyShort', item.spec_qty_short || '');
+            setInputValue('modalContentsDescEn', item.contents_desc_en || '');
             const isIteration = String(item.is_iteration || '0') === '1';
             setIterationMode(isIteration);
+            const dacheneEl = document.getElementById('modalIsDacheneProduct');
+            if (dacheneEl) dacheneEl.checked = String(item.is_dachene_product || '0') === '1';
             setSelectValue('modalSourceSku', item.source_order_product_id || '');
             updateSourceSkuTrigger();
             setInputValue('modalFinishedLength', item.finished_length_in ?? '');
@@ -552,6 +740,7 @@
             if (id === 'modalSkuFamily') {
                 updateSkuFamilyTrigger();
                 refreshFabricOptions();
+                updateFeatureCategoryFilter();
                 const allowed = getAllowedFabricOptions().map(item => String(item.id));
                 if (el.value && allowed.length && !allowed.includes(String(document.getElementById('modalFabric').value))) {
                     document.getElementById('modalFabric').value = '';
@@ -589,11 +778,18 @@
             return option.dataset.code ? option.dataset.code.trim() : option.textContent.split('/')[0].trim();
         }
 
+        function normalizeCodePrefix(value) {
+            const text = String(value || '').trim();
+            if (!text) return '';
+            const dashIndex = text.indexOf('-');
+            return dashIndex > -1 ? text.slice(0, dashIndex).trim() : text;
+        }
+
         function buildSkuFromInputs() {
             const skuFamily = getSelectedSkuFamilyText();
             const version = document.getElementById('modalVersion').value.trim();
             const specShort = document.getElementById('modalSpecQtyShort').value.trim();
-            const fabric = getSelectedFabricCode();
+            const fabric = normalizeCodePrefix(getSelectedFabricCode());
             const parts = [skuFamily, version, specShort, fabric].filter(part => part);
             return parts.join('-');
         }
@@ -640,6 +836,9 @@
             refreshFabricOptions();
             setSelectValue('modalFabric', source.fabric_id || '');
             setInputValue('modalSpecQtyShort', source.spec_qty_short || '');
+            setInputValue('modalContentsDescEn', source.contents_desc_en || '');
+            const dacheneEl = document.getElementById('modalIsDacheneProduct');
+            if (dacheneEl) dacheneEl.checked = String(source.is_dachene_product || '0') === '1';
             setInputValue('modalVersion', source.version_no || '');
             if (!skuManuallyEdited) {
                 setInputValue('modalSku', source.sku || '');
@@ -665,16 +864,31 @@
 
         function updateFeatureCategoryFilter() {
             const skuFamilyId = document.getElementById('modalSkuFamily').value;
-            const skuItem = skuOptions.find(item => String(item.id) === String(skuFamilyId));
-            if (!skuItem || !skuItem.category) {
+            if (!skuFamilyId) {
                 currentFeatureCategoryId = '';
                 setFeatureEnabled(false);
                 renderPicker('feature');
                 return;
             }
+
+            const skuItem = skuOptions.find(item => String(item.id) === String(skuFamilyId));
+            if (!skuItem) {
+                currentFeatureCategoryId = '';
+                setFeatureEnabled(true);
+                renderPicker('feature');
+                return;
+            }
+
+            if (!skuItem.category) {
+                currentFeatureCategoryId = '';
+                setFeatureEnabled(true);
+                renderPicker('feature');
+                return;
+            }
+
             const category = categoryOptions.find(item => item.category_cn === skuItem.category);
             currentFeatureCategoryId = category ? String(category.id) : '';
-            setFeatureEnabled(!!currentFeatureCategoryId);
+            setFeatureEnabled(true);
             renderPicker('feature');
         }
 
@@ -845,7 +1059,9 @@
                 version_no: document.getElementById('modalVersion').value.trim(),
                 fabric_id: document.getElementById('modalFabric').value,
                 spec_qty_short: document.getElementById('modalSpecQtyShort').value.trim(),
+                contents_desc_en: document.getElementById('modalContentsDescEn').value.trim(),
                 is_iteration: document.getElementById('modalIsIteration').checked ? 1 : 0,
+                is_dachene_product: document.getElementById('modalIsDacheneProduct').checked ? 1 : 0,
                 source_order_product_id: document.getElementById('modalSourceSku').value,
                 finished_length_in: parseNumber(document.getElementById('modalFinishedLength').value),
                 finished_width_in: parseNumber(document.getElementById('modalFinishedWidth').value),
@@ -905,21 +1121,28 @@
         }
 
         function deleteOrderProduct(id) {
-            if (!confirm('确认删除该下单产品？')) return;
-            fetch('/api/order-product', {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: id })
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    loadOrderProductList();
-                } else {
-                    alert(data.message || '删除失败');
+            showUploadDialog({
+                title: '删除确认',
+                message: '确认删除该下单产品？',
+                confirmText: '确认删除',
+                cancelText: '取消',
+                onConfirm: function() {
+                    fetch('/api/order-product', {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: id })
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            loadOrderProductList();
+                        } else {
+                            showUploadDialog({ title: '删除失败', message: data.message || '删除失败' });
+                        }
+                    })
+                    .catch(err => showUploadDialog({ title: '请求失败', message: '请求失败: ' + err }));
                 }
-            })
-            .catch(err => alert('请求失败: ' + err));
+            });
         }
 
         function loadOrderProductList() {
@@ -930,25 +1153,32 @@
                 .then(data => {
                     const tbody = document.querySelector('#orderProductTable tbody');
                     if (data.status !== 'success') {
-                        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                         return;
                     }
                     const items = data.items || [];
+                    orderProductItemsCache = items;
+                    const availableIdSet = new Set(items.map(x => String(x.id)));
+                    selectedOrderProductIds = new Set(Array.from(selectedOrderProductIds).filter(id => availableIdSet.has(String(id))));
                     if (items.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">暂无数据</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">暂无数据</td></tr>';
+                        syncSelectAllCheckbox();
                         return;
                     }
                     tbody.innerHTML = items.map(item => {
                         const dateText = item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : '';
                         const costText = item.cost_usd !== null && item.cost_usd !== undefined ? item.cost_usd : '';
                         const fabricText = item.fabric_code ? `${item.fabric_code}` : '';
+                        const checked = selectedOrderProductIds.has(String(item.id)) ? 'checked' : '';
                         return `
                             <tr>
+                                <td style="text-align:center;"><input type="checkbox" class="order-row-checkbox" data-id="${item.id}" ${checked}></td>
                                 <td>${item.sku}</td>
                                 <td>${item.sku_family || ''}</td>
                                 <td>${item.version_no || ''}</td>
                                 <td>${fabricText}</td>
                                 <td>${item.spec_qty_short || ''}</td>
+                                <td>${item.contents_desc_en || ''}</td>
                                 <td>${costText}</td>
                                 <td>${item.package_size_class || ''}</td>
                                 <td>${dateText}</td>
@@ -961,15 +1191,59 @@
                             </tr>
                         `;
                     }).join('');
+                    bindRowSelectionEvents();
+                    syncSelectAllCheckbox();
                 })
                 .catch(err => {
                     const tbody = document.querySelector('#orderProductTable tbody');
-                    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
                 });
         }
 
+        function bindRowSelectionEvents() {
+            document.querySelectorAll('.order-row-checkbox').forEach(el => {
+                el.addEventListener('change', function() {
+                    const id = String(this.getAttribute('data-id') || '');
+                    if (!id) return;
+                    if (this.checked) {
+                        selectedOrderProductIds.add(id);
+                    } else {
+                        selectedOrderProductIds.delete(id);
+                    }
+                    syncSelectAllCheckbox();
+                });
+            });
+        }
+
+        function syncSelectAllCheckbox() {
+            const master = document.getElementById('orderSelectAll');
+            if (!master) return;
+            const checkboxes = Array.from(document.querySelectorAll('.order-row-checkbox'));
+            if (!checkboxes.length) {
+                master.checked = false;
+                master.indeterminate = false;
+                return;
+            }
+            const checkedCount = checkboxes.filter(x => x.checked).length;
+            master.checked = checkedCount === checkboxes.length;
+            master.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+        }
+
+        function toggleSelectAllOrderRows(checked) {
+            document.querySelectorAll('.order-row-checkbox').forEach(el => {
+                const id = String(el.getAttribute('data-id') || '');
+                el.checked = !!checked;
+                if (!id) return;
+                if (checked) selectedOrderProductIds.add(id);
+                else selectedOrderProductIds.delete(id);
+            });
+            syncSelectAllCheckbox();
+        }
+
         function downloadOrderProductTemplate() {
-            window.location.href = '/api/order-product-template';
+            const ids = Array.from(selectedOrderProductIds);
+            const query = ids.length ? `?ids=${encodeURIComponent(ids.join(','))}` : '';
+            window.location.href = `/api/order-product-template${query}`;
         }
 
         function triggerOrderProductUpload() {
@@ -977,24 +1251,143 @@
             if (input) input.click();
         }
 
-        function uploadOrderProductTemplate(file) {
+        function showUploadProgress(text, percent) {
+            const box = document.getElementById('uploadProgress');
+            const textEl = document.getElementById('uploadProgressText');
+            const fillEl = document.getElementById('uploadProgressFill');
+            box.style.display = 'block';
+            textEl.textContent = text || '上传中...';
+            const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+            fillEl.style.width = `${safePercent}%`;
+        }
+
+        function hideUploadProgress() {
+            const box = document.getElementById('uploadProgress');
+            box.style.display = 'none';
+            if (uploadProcessingTimer) {
+                clearInterval(uploadProcessingTimer);
+                uploadProcessingTimer = null;
+            }
+        }
+
+        function startProcessingProgress() {
+            if (uploadProcessingTimer) {
+                clearInterval(uploadProcessingTimer);
+                uploadProcessingTimer = null;
+            }
+            const fillEl = document.getElementById('uploadProgressFill');
+            const textEl = document.getElementById('uploadProgressText');
+            let percent = Math.max(88, parseInt(fillEl.style.width || '0', 10) || 0);
+            uploadProcessingTimer = setInterval(() => {
+                percent = Math.min(98, percent + 1);
+                fillEl.style.width = `${percent}%`;
+                textEl.textContent = `文件已上传，正在处理数据... ${percent}%`;
+            }, 180);
+        }
+
+        function parseJsonSafe(xhr) {
+            try {
+                return JSON.parse(xhr.responseText || '{}');
+            } catch (e) {
+                const raw = String(xhr.responseText || '').slice(0, 600);
+                const status = Number(xhr.status);
+                const isGatewayLike = [500, 502, 503, 504].includes(status);
+                const looksLikeHtmlError = /Internal Server Error|Bad Gateway|Gateway Time-out|Service Unavailable/i.test(raw);
+                if (status === 504 || (isGatewayLike && looksLikeHtmlError)) {
+                    return {
+                        status: 'timeout',
+                        message: `请求超时或网关异常（HTTP ${status || '-'}），但后台可能仍在继续导入。系统将稍后自动刷新列表，请核对导入结果。`,
+                        raw
+                    };
+                }
+                return {
+                    status: 'error',
+                    message: `服务端返回非JSON（HTTP ${xhr.status}）。原始响应片段：\n${raw || '[empty]'}`
+                };
+            }
+        }
+
+        function confirmImportByPreview(file, onConfirmed) {
             const formData = new FormData();
             formData.append('file', file);
-            fetch('/api/order-product-import', {
-                method: 'POST',
-                body: formData
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    const errorCount = (data.errors || []).length;
-                    alert(`导入完成：成功 ${data.created || 0} 条，失败 ${errorCount} 条`);
-                    loadOrderProductList();
-                } else {
-                    alert(data.message || '导入失败');
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/order-product-import?preview=1', true);
+            showUploadProgress('正在预检模板数据...', 20);
+            xhr.onload = function() {
+                const data = parseJsonSafe(xhr);
+                hideUploadProgress();
+                if (data.status !== 'success') {
+                    showUploadDialog({ title: '预检失败', message: data.message || '预检失败' });
+                    return;
                 }
-            })
-            .catch(err => alert('请求失败: ' + err));
+                const errorCount = (data.errors || []).length;
+                const tip = `此次导入数据共 ${data.total_rows || 0} 条\n新建 ${data.created || 0} 条\n更新 ${data.updated || 0} 条\n无变更 ${data.unchanged || 0} 条\n外键关联预计新增 ${data.relation_added || 0} 条\n外键关联预计删除 ${data.relation_deleted || 0} 条\n失败预警 ${errorCount} 条\n\n确认执行正式导入吗？`;
+                showUploadDialog({
+                    title: '导入确认',
+                    message: tip,
+                    confirmText: '确认导入',
+                    cancelText: '取消',
+                    onConfirm: onConfirmed,
+                    errors: data.errors || []
+                });
+            };
+            xhr.onerror = function() {
+                hideUploadProgress();
+                showUploadDialog({ title: '预检失败', message: '预检失败：网络异常' });
+            };
+            xhr.send(formData);
+        }
+
+        function uploadOrderProductTemplate(file) {
+            confirmImportByPreview(file, function() {
+                const formData = new FormData();
+                formData.append('file', file);
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '/api/order-product-import', true);
+                showUploadProgress('正在上传模板...', 5);
+
+                xhr.upload.onprogress = function(evt) {
+                    if (!evt.lengthComputable) {
+                        showUploadProgress('正在上传模板...', 75);
+                        return;
+                    }
+                    const uploadPercent = Math.round((evt.loaded / evt.total) * 85);
+                    showUploadProgress(`正在上传模板... ${uploadPercent}%`, uploadPercent);
+                };
+
+                xhr.onload = function() {
+                    startProcessingProgress();
+                    const data = parseJsonSafe(xhr);
+                    hideUploadProgress();
+                    if (data.status === 'success') {
+                        const errorCount = (data.errors || []).length;
+                        showUploadDialog({
+                            title: '导入完成',
+                            message: `导入完成：新增 ${data.created || 0} 条，更新 ${data.updated || 0} 条，无变更 ${data.unchanged || 0} 条，外键新增 ${data.relation_added || 0} 条，外键删除 ${data.relation_deleted || 0} 条，失败 ${errorCount} 条`,
+                            errors: data.errors || []
+                        });
+                        loadOrderProductList();
+                    } else if (data.status === 'timeout') {
+                        showTimeoutToast(data.message || '请求超时，请稍后刷新核对结果。');
+                        setTimeout(loadOrderProductList, 10000);
+                    } else {
+                        let debugMsg = '';
+                        if (data.debug) {
+                            const count = data.debug.invalid_bool_cells || 0;
+                            const samples = (data.debug.samples || []).slice(0, 3).map(s => `${s.sheet_xml}:${s.cell}=${s.value}`).join('\n');
+                            debugMsg = `\n\n调试信息：疑似布尔异常单元格 ${count} 个${samples ? '\n' + samples : ''}`;
+                        }
+                        showUploadDialog({ title: '导入失败', message: (data.message || '导入失败') + debugMsg, errors: data.errors || [] });
+                    }
+                };
+
+                xhr.onerror = function() {
+                    hideUploadProgress();
+                    showUploadDialog({ title: '请求失败', message: '请求失败: 网络异常' });
+                };
+
+                xhr.send(formData);
+            });
         }
 
         function loadSkuFamilies() {
@@ -1378,6 +1771,9 @@
                 loadOrderProductList();
             }
         });
+        document.getElementById('orderSelectAll').addEventListener('change', function() {
+            toggleSelectAllOrderRows(this.checked);
+        });
         document.getElementById('modalSkuFamilyTrigger').addEventListener('click', function() {
             toggleSelectPanel('sku');
         });
@@ -1410,6 +1806,24 @@
                 uploadOrderProductTemplate(file);
             }
             this.value = '';
+        });
+        document.getElementById('uploadDialogModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                this.classList.remove('active');
+            }
+        });
+        document.getElementById('uploadDialogCopyBtn').addEventListener('click', function() {
+            const lines = (uploadDialogErrorRows || []).map(item => `行 ${item.row || '-'}: ${item.error || ''}`);
+            const text = lines.join('\n') || '无失败明细';
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(() => {
+                    showTimeoutToast('失败明细已复制');
+                }).catch(() => {
+                    showTimeoutToast('复制失败，请手动复制');
+                });
+            } else {
+                showTimeoutToast('当前环境不支持剪贴板复制');
+            }
         });
         document.getElementById('fillingAdd').addEventListener('click', function() {
             togglePickerMenu('filling');

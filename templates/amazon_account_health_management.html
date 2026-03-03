@@ -1,0 +1,1339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>店铺管理 - Amazon账户健康</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .pm-form-full { grid-column: 1 / -1; }
+        .health-toolbar {
+            display: grid;
+            gap: 0.7rem;
+        }
+        .health-row {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            flex-wrap: wrap;
+        }
+        .health-row-title {
+            color: var(--morandi-ink);
+            font-weight: 700;
+            min-width: 52px;
+        }
+        .health-row input[type="text"],
+        .health-row input[type="date"],
+        .health-row select,
+        .health-row .universal-select-trigger {
+            min-height: 40px;
+            height: 40px;
+            box-sizing: border-box;
+        }
+        .health-row input[type="text"],
+        .health-row input[type="date"],
+        .health-row select {
+            padding: 0.55rem 0.7rem;
+            border-radius: 8px;
+            border: 1px solid var(--morandi-sand);
+            background: #fff;
+            color: var(--morandi-ink);
+        }
+        .health-row input[type="text"]:focus,
+        .health-row input[type="date"]:focus,
+        .health-row select:focus,
+        .health-row .universal-select-trigger:focus,
+        .pm-modal .pm-form input[type="text"]:focus,
+        .pm-modal .pm-form input[type="number"]:focus,
+        .pm-modal .pm-form input[type="datetime-local"]:focus,
+        .pm-modal .pm-form select:focus,
+        .pm-modal .pm-form .universal-select-trigger:focus {
+            outline: none;
+            border-color: var(--morandi-ink);
+            box-shadow: 0 0 0 3px rgba(42, 36, 32, 0.10);
+        }
+        .health-row .health-keyword {
+            min-width: 220px;
+            flex: 1;
+        }
+        .health-row .health-shop,
+        .health-row .health-date {
+            min-width: 180px;
+        }
+        .health-import-status {
+            display: none;
+            font-size: 0.82rem;
+            color: var(--morandi-ink);
+            padding: 0.25rem 0.55rem;
+            border-radius: 999px;
+            border: 1px solid rgba(74, 78, 87, 0.2);
+            background: rgba(236, 231, 223, 0.65);
+        }
+        .health-import-status.show {
+            display: inline-flex;
+            align-items: center;
+        }
+        .warn-triangle {
+            width: 0;
+            height: 0;
+            border-left: 7px solid transparent;
+            border-right: 7px solid transparent;
+            border-bottom: 12px solid #d08a2f;
+            position: relative;
+            display: inline-block;
+            margin-left: 0.28rem;
+            vertical-align: middle;
+        }
+        .warn-triangle::after {
+            content: '!';
+            position: absolute;
+            left: -2px;
+            top: 2px;
+            font-size: 8px;
+            line-height: 1;
+            color: #fff;
+            font-weight: 700;
+        }
+        .warn-triangle-red {
+            border-bottom-color: #c33b3b;
+        }
+        .health-chart-card {
+            margin-top: 0.9rem;
+            padding: 1rem;
+            border-radius: 12px;
+            border: 1px solid rgba(207, 199, 189, 0.55);
+            background: rgba(236, 231, 223, 0.42);
+        }
+        .health-chart-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.8rem;
+            flex-wrap: wrap;
+            margin-bottom: 0.6rem;
+        }
+        .health-chart-title {
+            color: var(--morandi-ink);
+            font-weight: 600;
+        }
+        .health-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.65rem;
+            font-size: 0.86rem;
+            color: var(--morandi-slate);
+        }
+        .health-legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+        .health-legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .health-chart-wrap {
+            width: 100%;
+            min-height: 260px;
+            border-radius: 10px;
+            background: #fff;
+            border: 1px solid rgba(207, 199, 189, 0.45);
+            padding: 0.5rem;
+        }
+        #healthChart {
+            width: 100%;
+            height: 260px;
+            display: block;
+        }
+        .metric-group-title {
+            margin: 0 0 0.4rem 0;
+            font-size: 0.95rem;
+            color: var(--morandi-ink);
+            font-weight: 700;
+        }
+        .target-note {
+            color: var(--morandi-slate);
+            font-size: 0.84rem;
+            line-height: 1.45;
+            margin-top: 0.55rem;
+        }
+        .health-metric-cell {
+            white-space: nowrap;
+        }
+        .health-metric-cell.value-bad {
+            color: #9b2226;
+            background: rgba(201, 29, 29, 0.12);
+            border: 1px solid rgba(201, 29, 29, 0.35);
+            border-radius: 6px;
+            padding: 0.1rem 0.35rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.15rem;
+        }
+        .health-metric-cell.value-worse {
+            color: #8a5c14;
+            display: inline-flex;
+            align-items: center;
+        }
+        .target-alert {
+            margin-top: 0.55rem;
+            padding: 0.55rem 0.7rem;
+            border-radius: 8px;
+            border: 1px solid rgba(201, 29, 29, 0.4);
+            background: rgba(201, 29, 29, 0.12);
+            color: #9b2226;
+            font-size: 0.86rem;
+            line-height: 1.45;
+            display: none;
+            align-items: flex-start;
+            gap: 0.45rem;
+        }
+        .target-alert.show {
+            display: flex;
+        }
+        .modal-title-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.7rem;
+            flex-wrap: wrap;
+        }
+        .modal-change-summary {
+            font-size: 0.82rem;
+            color: var(--morandi-slate);
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            flex-wrap: wrap;
+        }
+        .change-chip {
+            border-radius: 999px;
+            padding: 0.12rem 0.5rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.2rem;
+            border: 1px solid rgba(208, 138, 47, 0.4);
+            background: rgba(208, 138, 47, 0.1);
+            color: #8a5c14;
+        }
+        .change-chip.bad {
+            border-color: rgba(201, 29, 29, 0.45);
+            background: rgba(201, 29, 29, 0.14);
+            color: #9b2226;
+            font-weight: 700;
+        }
+        .last-record-tip {
+            grid-column: 1 / -1;
+            font-size: 0.84rem;
+            color: var(--morandi-slate);
+            margin-top: -0.1rem;
+        }
+        .percent-input {
+            position: relative;
+        }
+        .percent-input input {
+            padding-right: 1.9rem !important;
+        }
+        .percent-input-suffix {
+            position: absolute;
+            right: 0.65rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--morandi-slate);
+            font-size: 0.9rem;
+            pointer-events: none;
+        }
+        .pm-modal .pm-form input[type="text"],
+        .pm-modal .pm-form input[type="number"],
+        .pm-modal .pm-form input[type="datetime-local"],
+        .pm-modal .pm-form select,
+        .pm-modal .pm-form .universal-select-trigger,
+        .pm-modal .pm-form .required-field,
+        .pm-modal .pm-form .optional-field {
+            min-height: 40px !important;
+            height: 40px !important;
+            box-sizing: border-box;
+            border: 1px solid var(--morandi-sand) !important;
+            border-radius: 8px !important;
+            padding: 0.55rem 0.7rem !important;
+            background: #fff !important;
+            color: var(--morandi-ink) !important;
+            font-size: 0.95rem !important;
+            line-height: 1.2 !important;
+        }
+        .pm-modal .pm-form .universal-select-trigger {
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-start;
+            text-align: left;
+        }
+        .pm-modal .pm-form textarea {
+            border: 1px solid var(--morandi-sand);
+            border-radius: 8px;
+            padding: 0.55rem 0.7rem;
+            color: var(--morandi-ink);
+            background: #fff;
+        }
+        .pm-modal .pm-form textarea:focus {
+            outline: none;
+            border-color: var(--morandi-ink);
+            box-shadow: 0 0 0 3px rgba(42, 36, 32, 0.10);
+        }
+        .health-col-sep {
+            border-left: 1px dashed rgba(74, 78, 87, 0.25);
+        }
+        .table-wrapper {
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div id="site-header"></div>
+
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1.5rem;">
+            <h2>Amazon账户健康</h2>
+            <p>记录并追踪店铺账号健康指标，及时识别变坏风险</p>
+        </section>
+
+        <section class="pm-layout">
+            <div class="card pm-card">
+                <div class="health-toolbar">
+                    <div class="health-row">
+                        <span class="health-row-title">搜索</span>
+                        <input type="text" id="searchKeyword" class="health-keyword" placeholder="备注关键字">
+                        <button class="btn-primary" onclick="handleSearchClick()">搜索</button>
+                        <button class="btn-secondary" onclick="resetSearch()">清空</button>
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-accent" onclick="openCreateModal()">新增记录</button>
+                        <button class="btn-secondary" onclick="downloadHealthTemplate()">下载模板</button>
+                        <button class="btn-secondary" onclick="triggerHealthUpload()">批量上传</button>
+                        <input type="file" id="healthUploadInput" accept=".xlsx" style="display:none;">
+                        <span id="healthImportStatus" class="health-import-status"></span>
+                    </div>
+                    <div class="health-row">
+                        <span class="health-row-title">图表筛选</span>
+                        <select id="searchShopId" class="health-shop"></select>
+                        <input type="date" id="searchStartDate" class="health-date">
+                        <input type="date" id="searchEndDate" class="health-date">
+                        <button class="btn-secondary" onclick="loadChartData()">刷新图表</button>
+                    </div>
+                </div>
+
+                <div class="health-chart-card">
+                    <div class="health-chart-head">
+                        <span class="health-chart-title">趋势图（按日）</span>
+                    </div>
+                    <div class="health-legend">
+                        <span class="health-legend-item"><i class="health-legend-dot" style="background:#5b6aa8;"></i>账户状况评级</span>
+                        <span class="health-legend-item"><i class="health-legend-dot" style="background:#b85c5c;"></i>订单缺陷率%</span>
+                        <span class="health-legend-item"><i class="health-legend-dot" style="background:#bc7a3f;"></i>迟发率%</span>
+                        <span class="health-legend-item"><i class="health-legend-dot" style="background:#44798c;"></i>配送前取消率%</span>
+                        <span class="health-legend-item"><i class="health-legend-dot" style="background:#7e8a57;"></i>有效追踪率%</span>
+                        <span class="health-legend-item"><i class="health-legend-dot" style="background:#8b6f9c;"></i>准时交货率%</span>
+                    </div>
+                    <div class="health-chart-wrap">
+                        <canvas id="healthChart"></canvas>
+                    </div>
+                </div>
+                <div class="target-note">
+                    目标：订单缺陷率 &lt; 1%，账户状况评级 &gt; 200，迟发率 &lt; 4%，配送前取消率 &lt; 2.5%，有效追踪率 &gt; 95%，准时交货率 &gt; 90%，所有政策合规项维持为 0。
+                </div>
+                <div id="latestViolationAlert" class="target-alert"></div>
+            </div>
+
+            <div class="table-wrapper">
+                <table class="pm-table" id="healthTable">
+                    <thead>
+                        <tr>
+                            <th>店铺</th>
+                            <th>记录时间</th>
+                            <th class="health-col-sep">账户状况评级</th>
+                            <th>涉嫌侵犯知识产权</th>
+                            <th>知识产权投诉</th>
+                            <th>商品真实性买家投诉</th>
+                            <th>商品状况买家投诉</th>
+                            <th>食品和商品安全问题</th>
+                            <th>上架政策违规</th>
+                            <th>违反受限商品政策</th>
+                            <th>违反买家商品评论政策</th>
+                            <th>其他违反政策</th>
+                            <th>监管合规性</th>
+                            <th class="health-col-sep">订单缺陷率</th>
+                            <th>负面反馈</th>
+                            <th>A-to-z</th>
+                            <th>信用卡拒付</th>
+                            <th class="health-col-sep">迟发率</th>
+                            <th>配送前取消率</th>
+                            <th>有效追踪率</th>
+                            <th>准时交货率</th>
+                            <th>备注</th>
+                            <th style="width:160px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="23" style="text-align:center;">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div class="pm-modal" id="pm-modal">
+        <div class="pm-modal-content pm-modal-content--wide">
+            <div class="modal-title-row">
+                <h3 id="pm-modal-title" style="margin-top:0; margin-bottom:0;">新增账户健康记录</h3>
+                <span id="modalChangeSummary" class="modal-change-summary"></span>
+            </div>
+            <div class="pm-form">
+                <div class="form-group">
+                    <label for="modalShopId">店铺<span class="required-asterisk">*</span></label>
+                    <select id="modalShopId" class="required-field"></select>
+                </div>
+                <div class="form-group">
+                    <label for="modalRecordDatetime">记录日期时间<span class="required-asterisk">*</span></label>
+                    <input type="datetime-local" id="modalRecordDatetime" class="required-field">
+                </div>
+                <div id="lastRecordTip" class="last-record-tip">选择店铺后自动带出该店铺上次记录。</div>
+
+                <div class="pm-section pm-form-full">
+                    <h4 class="metric-group-title">政策合规性（整数）</h4>
+                    <div class="pm-section-body">
+                        <div class="form-group"><label>账户状况评级<span class="required-asterisk">*</span></label><input type="number" id="account_health_rating" step="1"></div>
+                        <div class="form-group"><label>涉嫌侵犯知识产权<span class="required-asterisk">*</span></label><input type="number" id="suspected_ip_infringement" step="1" value="0"></div>
+                        <div class="form-group"><label>知识产权投诉<span class="required-asterisk">*</span></label><input type="number" id="intellectual_property_complaints" step="1" value="0"></div>
+                        <div class="form-group"><label>商品真实性买家投诉<span class="required-asterisk">*</span></label><input type="number" id="authenticity_customer_complaints" step="1" value="0"></div>
+                        <div class="form-group"><label>商品状况买家投诉<span class="required-asterisk">*</span></label><input type="number" id="condition_customer_complaints" step="1" value="0"></div>
+                        <div class="form-group"><label>食品和商品安全问题<span class="required-asterisk">*</span></label><input type="number" id="food_safety_issues" step="1" value="0"></div>
+                        <div class="form-group"><label>上架政策违规<span class="required-asterisk">*</span></label><input type="number" id="listing_policy_violations" step="1" value="0"></div>
+                        <div class="form-group"><label>违反受限商品政策<span class="required-asterisk">*</span></label><input type="number" id="restricted_product_policy_violations" step="1" value="0"></div>
+                        <div class="form-group"><label>违反买家商品评论政策<span class="required-asterisk">*</span></label><input type="number" id="customer_review_policy_violations" step="1" value="0"></div>
+                        <div class="form-group"><label>其他违反政策<span class="required-asterisk">*</span></label><input type="number" id="other_policy_violations" step="1" value="0"></div>
+                        <div class="form-group"><label>监管合规性<span class="required-asterisk">*</span></label><input type="number" id="regulatory_compliance_issues" step="1" value="0"></div>
+                    </div>
+                </div>
+
+                <div class="pm-section pm-form-full">
+                    <h4 class="metric-group-title">客户服务绩效（百分数）</h4>
+                    <div class="pm-section-body">
+                        <div class="form-group"><label>订单缺陷率 %<span class="required-asterisk">*</span></label><div class="percent-input"><input type="number" id="order_defect_rate" step="0.01"><span class="percent-input-suffix">%</span></div></div>
+                        <div class="form-group"><label>负面反馈 %<span class="required-asterisk">*</span></label><div class="percent-input"><input type="number" id="negative_feedback_rate" step="0.01" value="0"><span class="percent-input-suffix">%</span></div></div>
+                        <div class="form-group"><label>A-to-z %<span class="required-asterisk">*</span></label><div class="percent-input"><input type="number" id="a_to_z_rate" step="0.01" value="0"><span class="percent-input-suffix">%</span></div></div>
+                        <div class="form-group"><label>信用卡拒付 %<span class="required-asterisk">*</span></label><div class="percent-input"><input type="number" id="chargeback_rate" step="0.01" value="0"><span class="percent-input-suffix">%</span></div></div>
+                    </div>
+                </div>
+
+                <div class="pm-section pm-form-full">
+                    <h4 class="metric-group-title">配送绩效（百分数）</h4>
+                    <div class="pm-section-body">
+                        <div class="form-group"><label>迟发率 %<span class="required-asterisk">*</span></label><div class="percent-input"><input type="number" id="late_shipment_rate" step="0.01"><span class="percent-input-suffix">%</span></div></div>
+                        <div class="form-group"><label>配送前取消率 %<span class="required-asterisk">*</span></label><div class="percent-input"><input type="number" id="pre_fulfillment_cancel_rate" step="0.01"><span class="percent-input-suffix">%</span></div></div>
+                        <div class="form-group"><label>有效追踪率 %<span class="required-asterisk">*</span></label><div class="percent-input"><input type="number" id="valid_tracking_rate" step="0.01"><span class="percent-input-suffix">%</span></div></div>
+                        <div class="form-group"><label>准时交货率 %<span class="required-asterisk">*</span></label><div class="percent-input"><input type="number" id="on_time_delivery_rate" step="0.01"><span class="percent-input-suffix">%</span></div></div>
+                    </div>
+                </div>
+
+                <div class="form-group pm-form-full">
+                    <label for="remark">备注</label>
+                    <textarea id="remark" rows="2" placeholder="可选"></textarea>
+                </div>
+            </div>
+            <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeModal()">取消</button>
+                <button class="btn-primary" id="modalSaveBtn" onclick="saveFromModal()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 SITJOY | 内部使用</p>
+    </footer>
+
+    <script>
+        const metricConfig = {
+            account_health_rating: { label: '账户状况评级', type: 'int', target: 200, direction: 'gt' },
+            suspected_ip_infringement: { label: '涉嫌侵犯知识产权', type: 'int', target: 0, direction: 'eq' },
+            intellectual_property_complaints: { label: '知识产权投诉', type: 'int', target: 0, direction: 'eq' },
+            authenticity_customer_complaints: { label: '商品真实性买家投诉', type: 'int', target: 0, direction: 'eq' },
+            condition_customer_complaints: { label: '商品状况买家投诉', type: 'int', target: 0, direction: 'eq' },
+            food_safety_issues: { label: '食品和商品安全问题', type: 'int', target: 0, direction: 'eq' },
+            listing_policy_violations: { label: '上架政策违规', type: 'int', target: 0, direction: 'eq' },
+            restricted_product_policy_violations: { label: '违反受限商品政策', type: 'int', target: 0, direction: 'eq' },
+            customer_review_policy_violations: { label: '违反买家商品评论政策', type: 'int', target: 0, direction: 'eq' },
+            other_policy_violations: { label: '其他违反政策', type: 'int', target: 0, direction: 'eq' },
+            regulatory_compliance_issues: { label: '监管合规性', type: 'int', target: 0, direction: 'eq' },
+            order_defect_rate: { label: '订单缺陷率', type: 'percent', target: 1, direction: 'lt' },
+            negative_feedback_rate: { label: '负面反馈', type: 'percent', target: null, direction: 'lower-better' },
+            a_to_z_rate: { label: 'A-to-z', type: 'percent', target: null, direction: 'lower-better' },
+            chargeback_rate: { label: '信用卡拒付', type: 'percent', target: null, direction: 'lower-better' },
+            late_shipment_rate: { label: '迟发率', type: 'percent', target: 4, direction: 'lt' },
+            pre_fulfillment_cancel_rate: { label: '配送前取消率', type: 'percent', target: 2.5, direction: 'lt' },
+            valid_tracking_rate: { label: '有效追踪率', type: 'percent', target: 95, direction: 'gt' },
+            on_time_delivery_rate: { label: '准时交货率', type: 'percent', target: 90, direction: 'gt' }
+        };
+
+        const intFields = [
+            'account_health_rating','suspected_ip_infringement','intellectual_property_complaints','authenticity_customer_complaints',
+            'condition_customer_complaints','food_safety_issues','listing_policy_violations','restricted_product_policy_violations',
+            'customer_review_policy_violations','other_policy_violations','regulatory_compliance_issues'
+        ];
+
+        const percentFields = [
+            'order_defect_rate','negative_feedback_rate','a_to_z_rate','chargeback_rate',
+            'late_shipment_rate','pre_fulfillment_cancel_rate','valid_tracking_rate','on_time_delivery_rate'
+        ];
+
+        let editId = null;
+        let shops = [];
+        let latestListItems = [];
+        let modalBaselineRecord = null;
+
+        function showModalStatus(message, isError) {
+            const el = document.getElementById('modalStatus');
+            el.style.display = 'block';
+            el.style.background = isError ? '#ffecec' : '#f0fff0';
+            el.style.color = isError ? '#a33' : '#2f6f2f';
+            el.innerText = message;
+        }
+
+        function resetModalStatus() {
+            const el = document.getElementById('modalStatus');
+            el.style.display = 'none';
+            el.innerText = '';
+        }
+
+        function toLocalDatetimeInputValue(value) {
+            const date = value ? new Date(value) : new Date();
+            const pad = n => String(n).padStart(2, '0');
+            return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+        }
+
+        function parseNumber(value, asInt = false) {
+            const text = String(value === undefined || value === null ? '' : value).trim();
+            if (!text) return null;
+            const num = Number(text);
+            if (Number.isNaN(num)) return null;
+            return asInt ? Math.round(num) : num;
+        }
+
+        function formatPercent(value) {
+            if (value === null || value === undefined || value === '') return '';
+            const num = Number(value);
+            if (Number.isNaN(num)) return '';
+            return `${num.toFixed(2)}%`;
+        }
+
+        function formatPercentInputValue(value) {
+            if (value === null || value === undefined || value === '') return '';
+            const num = Number(value);
+            if (Number.isNaN(num)) return '';
+            return num.toFixed(2);
+        }
+
+        function formatInt(value) {
+            if (value === null || value === undefined || value === '') return '';
+            const num = Number(value);
+            if (Number.isNaN(num)) return '';
+            return `${Math.round(num)}`;
+        }
+
+        function compareWorse(curr, prev, direction) {
+            if (prev === null || prev === undefined || prev === '') return false;
+            const current = Number(curr);
+            const previous = Number(prev);
+            if (Number.isNaN(current) || Number.isNaN(previous)) return false;
+            if (direction === 'gt') return current < previous;
+            return current > previous;
+        }
+
+        function isWorseThanBaseline(curr, prev, conf) {
+            if (!conf) return false;
+            return compareWorse(curr, prev, conf.direction);
+        }
+
+        function isTargetBad(value, conf) {
+            if (!conf || conf.target === null || conf.target === undefined) return false;
+            const num = Number(value);
+            if (Number.isNaN(num)) return false;
+            if (conf.direction === 'lt') return num >= conf.target;
+            if (conf.direction === 'gt') return num <= conf.target;
+            if (conf.direction === 'eq') return num !== conf.target;
+            return false;
+        }
+
+        function buildWarnMap(items) {
+            const grouped = {};
+            (items || []).forEach(row => {
+                const key = String(row.shop_id || '');
+                if (!grouped[key]) grouped[key] = [];
+                grouped[key].push(row);
+            });
+            Object.keys(grouped).forEach(key => {
+                grouped[key].sort((a, b) => new Date(a.record_datetime) - new Date(b.record_datetime));
+            });
+
+            const warnMap = {};
+            Object.keys(grouped).forEach(key => {
+                const rows = grouped[key];
+                rows.forEach((row, idx) => {
+                    const prev = idx > 0 ? rows[idx - 1] : null;
+                    const rowWarn = {};
+                    Object.keys(metricConfig).forEach(field => {
+                        const conf = metricConfig[field];
+                        const byTarget = isTargetBad(row[field], conf);
+                        const byTrend = prev ? compareWorse(row[field], prev[field], conf.direction) : false;
+                        rowWarn[field] = {
+                            byTarget: !!byTarget,
+                            byTrend: !!byTrend,
+                            hasWarning: !!(byTarget || byTrend)
+                        };
+                    });
+                    warnMap[row.id] = rowWarn;
+                });
+            });
+            return warnMap;
+        }
+
+        function metricCell(row, warnMap, field) {
+            const conf = metricConfig[field];
+            const warnInfo = warnMap[row.id] && warnMap[row.id][field] ? warnMap[row.id][field] : { byTarget: false, byTrend: false, hasWarning: false };
+            const text = conf.type === 'percent' ? formatPercent(row[field]) : formatInt(row[field]);
+            if (warnInfo.byTarget) {
+                return `<span class="health-metric-cell value-bad">${text}<i class="warn-triangle warn-triangle-red"></i></span>`;
+            }
+            if (warnInfo.byTrend) {
+                return `<span class="health-metric-cell value-worse">${text}<i class="warn-triangle"></i></span>`;
+            }
+            return `<span class="health-metric-cell">${text}</span>`;
+        }
+
+        function encodeItem(item) {
+            return encodeURIComponent(JSON.stringify(item || {}));
+        }
+
+        function openEditModalEncoded(encodedText) {
+            try {
+                const item = JSON.parse(decodeURIComponent(encodedText || ''));
+                openEditModal(item);
+            } catch (e) {
+                alert('记录解析失败');
+            }
+        }
+
+        function renderShopSelectOptions() {
+            const searchSelect = document.getElementById('searchShopId');
+            const modalSelect = document.getElementById('modalShopId');
+            searchSelect.innerHTML = '<option value="">请选择店铺（图表）</option>';
+            modalSelect.innerHTML = '<option value="">请选择店铺</option>';
+            shops.forEach(item => {
+                const opt1 = document.createElement('option');
+                opt1.value = item.id;
+                opt1.textContent = item.shop_name;
+                searchSelect.appendChild(opt1);
+
+                const opt2 = document.createElement('option');
+                opt2.value = item.id;
+                opt2.textContent = item.shop_name;
+                modalSelect.appendChild(opt2);
+            });
+            if (window.refreshUniversalSingleSelect) {
+                window.refreshUniversalSingleSelect(searchSelect);
+                window.refreshUniversalSingleSelect(modalSelect);
+            }
+        }
+
+        function loadShops() {
+            return fetch('/api/platform-type?q=Amazon')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') throw new Error(data.message || '加载平台类型失败');
+                    const list = data.items || [];
+                    const amazon = list.find(item => String(item.name || '').trim().toLowerCase() === 'amazon');
+                    if (!amazon || !amazon.id) {
+                        shops = [];
+                        renderShopSelectOptions();
+                        return;
+                    }
+                    return fetch(`/api/shop?platform_type_id=${encodeURIComponent(amazon.id)}`)
+                        .then(resp => resp.json())
+                        .then(shopData => {
+                            if (shopData.status !== 'success') throw new Error(shopData.message || '加载店铺失败');
+                            shops = shopData.items || [];
+                            renderShopSelectOptions();
+                        });
+                })
+                .catch(err => {
+                    shops = [];
+                    renderShopSelectOptions();
+                    console.error(err);
+                });
+        }
+
+        function setImportStatus(message, type) {
+            const el = document.getElementById('healthImportStatus');
+            if (!el) return;
+            if (!message) {
+                el.classList.remove('show');
+                el.textContent = '';
+                return;
+            }
+            el.classList.add('show');
+            el.textContent = message;
+            const colorMap = {
+                success: '#2f6f2f',
+                error: '#a33',
+                info: '#4a4e57'
+            };
+            el.style.color = colorMap[type || 'info'] || colorMap.info;
+        }
+
+        function updateLatestViolationAlert(items) {
+            const alertEl = document.getElementById('latestViolationAlert');
+            if (!alertEl) return;
+            const selectedShopId = String(document.getElementById('searchShopId').value || '');
+            if (!selectedShopId) {
+                alertEl.classList.remove('show');
+                alertEl.innerHTML = '';
+                return;
+            }
+            const sameShopRows = (items || []).filter(row => String(row.shop_id || '') === selectedShopId);
+            if (!sameShopRows.length) {
+                alertEl.classList.remove('show');
+                alertEl.innerHTML = '';
+                return;
+            }
+            sameShopRows.sort((a, b) => new Date(b.record_datetime) - new Date(a.record_datetime));
+            const latest = sameShopRows[0];
+            const previous = sameShopRows.length > 1 ? sameShopRows[1] : null;
+
+            const breaches = [];
+            const worses = [];
+            Object.keys(metricConfig).forEach(field => {
+                const conf = metricConfig[field];
+                if (isTargetBad(latest[field], conf)) {
+                    breaches.push(conf.label);
+                } else if (previous && isWorseThanBaseline(latest[field], previous[field], conf)) {
+                    worses.push(conf.label);
+                }
+            });
+
+            if (!breaches.length && !worses.length) {
+                alertEl.classList.remove('show');
+                alertEl.innerHTML = '';
+                return;
+            }
+
+            const parts = [];
+            if (breaches.length) {
+                parts.push(`超出标准：${breaches.join('、')}`);
+            }
+            if (worses.length) {
+                parts.push(`较上次变差：${worses.join('、')}`);
+            }
+            alertEl.innerHTML = `<i class="warn-triangle warn-triangle-red"></i><span>${parts.join('；')}</span>`;
+            alertEl.classList.add('show');
+        }
+
+        function refreshModalChangeSummary() {
+            const summaryEl = document.getElementById('modalChangeSummary');
+            if (!summaryEl) return;
+            if (!modalBaselineRecord) {
+                summaryEl.innerHTML = '';
+                return;
+            }
+            const changed = [];
+            const badChanged = [];
+            const deltaItems = [];
+            Object.keys(metricConfig).forEach(field => {
+                const conf = metricConfig[field];
+                const input = document.getElementById(field);
+                if (!input) return;
+                const current = parseNumber(input.value, conf.type === 'int');
+                const baseline = parseNumber(modalBaselineRecord[field], conf.type === 'int');
+                if (current === null || baseline === null || current === baseline) return;
+                const delta = current - baseline;
+                deltaItems.push({
+                    label: conf.label,
+                    delta,
+                    absDelta: Math.abs(delta),
+                    type: conf.type
+                });
+                if (isTargetBad(current, conf)) {
+                    badChanged.push(conf.label);
+                } else if (isWorseThanBaseline(current, baseline, conf)) {
+                    changed.push(conf.label);
+                }
+            });
+            const chips = [];
+            if (changed.length) {
+                chips.push(`<span class="change-chip"><i class="warn-triangle"></i>${changed.length}项变差</span>`);
+            }
+            if (badChanged.length) {
+                chips.push(`<span class="change-chip bad"><i class="warn-triangle warn-triangle-red"></i>${badChanged.length}项超标</span>`);
+            }
+            deltaItems.sort((a, b) => b.absDelta - a.absDelta);
+            deltaItems.slice(0, 2).forEach(item => {
+                const sign = item.delta > 0 ? '+' : '';
+                const deltaText = item.type === 'percent'
+                    ? `${sign}${item.delta.toFixed(2)}%`
+                    : `${sign}${Math.round(item.delta)}`;
+                chips.push(`<span class="change-chip">${item.label} ${deltaText}</span>`);
+            });
+            summaryEl.innerHTML = chips.join('');
+        }
+
+        function bindModalChangeTracking() {
+            const allMetricFields = [...intFields, ...percentFields];
+            allMetricFields.forEach(field => {
+                const input = document.getElementById(field);
+                if (!input) return;
+                input.addEventListener('input', refreshModalChangeSummary);
+                input.addEventListener('change', refreshModalChangeSummary);
+            });
+        }
+
+        function applyRecordToModal(record) {
+            if (!record) return;
+            intFields.forEach(key => {
+                const input = document.getElementById(key);
+                if (input) input.value = record[key] !== null && record[key] !== undefined ? record[key] : '';
+            });
+            percentFields.forEach(key => {
+                const input = document.getElementById(key);
+                if (input) input.value = formatPercentInputValue(record[key]);
+            });
+            document.getElementById('remark').value = record.remark || '';
+            modalBaselineRecord = record;
+            const tipEl = document.getElementById('lastRecordTip');
+            if (tipEl) {
+                const dt = record.record_datetime ? new Date(record.record_datetime).toLocaleString('zh-CN') : '';
+                tipEl.textContent = `已带出该店铺上次记录（${dt}），可直接修改后保存。`;
+            }
+            refreshModalChangeSummary();
+        }
+
+        function loadLatestForModalShop(shopId) {
+            if (!shopId) {
+                modalBaselineRecord = null;
+                const tipEl = document.getElementById('lastRecordTip');
+                if (tipEl) tipEl.textContent = '选择店铺后自动带出该店铺上次记录。';
+                refreshModalChangeSummary();
+                return;
+            }
+            fetch(`/api/amazon-account-health?shop_id=${encodeURIComponent(shopId)}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        modalBaselineRecord = null;
+                        refreshModalChangeSummary();
+                        return;
+                    }
+                    const rows = data.items || [];
+                    if (!rows.length) {
+                        modalBaselineRecord = null;
+                        const tipEl = document.getElementById('lastRecordTip');
+                        if (tipEl) tipEl.textContent = '该店铺暂无历史记录，请填写首条数据。';
+                        refreshModalChangeSummary();
+                        return;
+                    }
+                    applyRecordToModal(rows[0]);
+                })
+                .catch(() => {
+                    modalBaselineRecord = null;
+                    refreshModalChangeSummary();
+                });
+        }
+
+        function downloadHealthTemplate() {
+            window.location.href = '/api/amazon-account-health-template';
+        }
+
+        function triggerHealthUpload() {
+            const input = document.getElementById('healthUploadInput');
+            if (input) input.click();
+        }
+
+        function uploadHealthTemplate(file) {
+            if (!file) return;
+            setImportStatus('正在上传并导入...', 'info');
+            const formData = new FormData();
+            formData.append('file', file);
+            fetch('/api/amazon-account-health-import', {
+                method: 'POST',
+                body: formData
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    setImportStatus(data.message || '导入失败', 'error');
+                    return;
+                }
+                const errorCount = (data.errors || []).length;
+                const msg = `导入完成：新增 ${data.created || 0}，更新 ${data.updated || 0}，未变化 ${data.unchanged || 0}，失败 ${errorCount}`;
+                setImportStatus(msg, errorCount ? 'error' : 'success');
+                loadHealthList();
+                loadChartData();
+            })
+            .catch(err => setImportStatus(`导入失败: ${err}`, 'error'));
+        }
+
+        function handleSearchClick() {
+            loadHealthList();
+            loadChartData();
+        }
+
+        function resetForm() {
+            document.getElementById('modalShopId').value = '';
+            document.getElementById('modalRecordDatetime').value = toLocalDatetimeInputValue();
+            intFields.forEach(key => {
+                document.getElementById(key).value = key === 'account_health_rating' ? '' : '0';
+            });
+            percentFields.forEach(key => {
+                document.getElementById(key).value = '';
+            });
+            document.getElementById('negative_feedback_rate').value = '0';
+            document.getElementById('a_to_z_rate').value = '0';
+            document.getElementById('chargeback_rate').value = '0';
+            document.getElementById('remark').value = '';
+            modalBaselineRecord = null;
+            const tipEl = document.getElementById('lastRecordTip');
+            if (tipEl) tipEl.textContent = '选择店铺后自动带出该店铺上次记录。';
+            refreshModalChangeSummary();
+            if (window.refreshUniversalSingleSelect) {
+                window.refreshUniversalSingleSelect(document.getElementById('modalShopId'));
+            }
+        }
+
+        function openCreateModal() {
+            editId = null;
+            document.getElementById('pm-modal-title').innerText = '新增账户健康记录';
+            document.getElementById('modalSaveBtn').innerText = '保存';
+            resetForm();
+            resetModalStatus();
+            document.getElementById('pm-modal').classList.add('active');
+        }
+
+        function openEditModal(item) {
+            editId = item.id;
+            document.getElementById('pm-modal-title').innerText = '编辑账户健康记录';
+            document.getElementById('modalSaveBtn').innerText = '保存';
+            document.getElementById('modalShopId').value = item.shop_id || '';
+            document.getElementById('modalRecordDatetime').value = toLocalDatetimeInputValue(item.record_datetime || '');
+            intFields.forEach(key => {
+                document.getElementById(key).value = item[key] !== null && item[key] !== undefined ? item[key] : '';
+            });
+            percentFields.forEach(key => {
+                document.getElementById(key).value = formatPercentInputValue(item[key]);
+            });
+            document.getElementById('remark').value = item.remark || '';
+            modalBaselineRecord = item || null;
+            const tipEl = document.getElementById('lastRecordTip');
+            if (tipEl) tipEl.textContent = '当前为编辑模式，角标比较基准为该条记录原值。';
+            refreshModalChangeSummary();
+            if (window.refreshUniversalSingleSelect) {
+                window.refreshUniversalSingleSelect(document.getElementById('modalShopId'));
+            }
+            resetModalStatus();
+            document.getElementById('pm-modal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('pm-modal').classList.remove('active');
+            editId = null;
+        }
+
+        function buildPayload() {
+            const payload = {
+                shop_id: parseNumber(document.getElementById('modalShopId').value, true),
+                record_datetime: document.getElementById('modalRecordDatetime').value,
+                remark: document.getElementById('remark').value.trim()
+            };
+            if (!payload.shop_id) return { error: '请选择店铺' };
+            if (!payload.record_datetime) return { error: '请填写记录时间' };
+
+            for (const key of intFields) {
+                const value = parseNumber(document.getElementById(key).value, true);
+                if (value === null) return { error: `请填写${metricConfig[key].label}` };
+                payload[key] = value;
+            }
+            for (const key of percentFields) {
+                const value = parseNumber(document.getElementById(key).value, false);
+                if (value === null) return { error: `请填写${metricConfig[key].label}` };
+                payload[key] = value;
+            }
+            return { payload };
+        }
+
+        function saveFromModal() {
+            const built = buildPayload();
+            if (built.error) {
+                showModalStatus(built.error, true);
+                return;
+            }
+            const payload = built.payload;
+            let method = 'POST';
+            if (editId) {
+                method = 'PUT';
+                payload.id = editId;
+            }
+            fetch('/api/amazon-account-health', {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    showModalStatus(data.message || '保存失败', true);
+                    return;
+                }
+                showModalStatus('保存成功', false);
+                setTimeout(() => {
+                    closeModal();
+                    loadHealthList();
+                    loadChartData();
+                }, 350);
+            })
+            .catch(err => showModalStatus('请求失败: ' + err, true));
+        }
+
+        function deleteItem(id) {
+            if (!confirm('确认删除该记录？')) return;
+            fetch('/api/amazon-account-health', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    alert(data.message || '删除失败');
+                    return;
+                }
+                loadHealthList();
+                loadChartData();
+            })
+            .catch(err => alert('请求失败: ' + err));
+        }
+
+        function buildQueryForList() {
+            const shopId = document.getElementById('searchShopId').value;
+            const startDate = document.getElementById('searchStartDate').value;
+            const endDate = document.getElementById('searchEndDate').value;
+            const keyword = document.getElementById('searchKeyword').value.trim();
+            const params = new URLSearchParams();
+            if (shopId) params.set('shop_id', shopId);
+            if (startDate) params.set('start_date', startDate);
+            if (endDate) params.set('end_date', endDate);
+            if (keyword) params.set('q', keyword);
+            return params.toString() ? `/api/amazon-account-health?${params.toString()}` : '/api/amazon-account-health';
+        }
+
+        function renderTable(items) {
+            const tbody = document.querySelector('#healthTable tbody');
+            if (!items.length) {
+                tbody.innerHTML = '<tr><td colspan="23" style="text-align:center;">暂无数据</td></tr>';
+                return;
+            }
+            const warnMap = buildWarnMap(items);
+            tbody.innerHTML = items.map(item => {
+                const dt = item.record_datetime ? new Date(item.record_datetime).toLocaleString('zh-CN') : '';
+                return `
+                    <tr>
+                        <td>${item.shop_name || ''}</td>
+                        <td>${dt}</td>
+                        <td class="health-col-sep">${metricCell(item, warnMap, 'account_health_rating')}</td>
+                        <td>${metricCell(item, warnMap, 'suspected_ip_infringement')}</td>
+                        <td>${metricCell(item, warnMap, 'intellectual_property_complaints')}</td>
+                        <td>${metricCell(item, warnMap, 'authenticity_customer_complaints')}</td>
+                        <td>${metricCell(item, warnMap, 'condition_customer_complaints')}</td>
+                        <td>${metricCell(item, warnMap, 'food_safety_issues')}</td>
+                        <td>${metricCell(item, warnMap, 'listing_policy_violations')}</td>
+                        <td>${metricCell(item, warnMap, 'restricted_product_policy_violations')}</td>
+                        <td>${metricCell(item, warnMap, 'customer_review_policy_violations')}</td>
+                        <td>${metricCell(item, warnMap, 'other_policy_violations')}</td>
+                        <td>${metricCell(item, warnMap, 'regulatory_compliance_issues')}</td>
+                        <td class="health-col-sep">${metricCell(item, warnMap, 'order_defect_rate')}</td>
+                        <td>${metricCell(item, warnMap, 'negative_feedback_rate')}</td>
+                        <td>${metricCell(item, warnMap, 'a_to_z_rate')}</td>
+                        <td>${metricCell(item, warnMap, 'chargeback_rate')}</td>
+                        <td class="health-col-sep">${metricCell(item, warnMap, 'late_shipment_rate')}</td>
+                        <td>${metricCell(item, warnMap, 'pre_fulfillment_cancel_rate')}</td>
+                        <td>${metricCell(item, warnMap, 'valid_tracking_rate')}</td>
+                        <td>${metricCell(item, warnMap, 'on_time_delivery_rate')}</td>
+                        <td>${item.remark || ''}</td>
+                        <td>
+                            <div class="pm-actions">
+                                <button class="btn-secondary" onclick="openEditModalEncoded('${encodeItem(item)}')">编辑</button>
+                                <button class="btn-danger" onclick='deleteItem(${item.id})'>删除</button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function loadHealthList() {
+            return fetch(buildQueryForList())
+                .then(r => r.json())
+                .then(data => {
+                    const tbody = document.querySelector('#healthTable tbody');
+                    if (data.status !== 'success') {
+                        tbody.innerHTML = `<tr><td colspan="23" style="text-align:center;color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        latestListItems = [];
+                        updateLatestViolationAlert([]);
+                        return;
+                    }
+                    latestListItems = data.items || [];
+                    renderTable(latestListItems);
+                    updateLatestViolationAlert(latestListItems);
+                })
+                .catch(err => {
+                    const tbody = document.querySelector('#healthTable tbody');
+                    tbody.innerHTML = `<tr><td colspan="23" style="text-align:center;color:#a33;">加载失败: ${err}</td></tr>`;
+                    latestListItems = [];
+                    updateLatestViolationAlert([]);
+                });
+        }
+
+        function resetSearch() {
+            document.getElementById('searchShopId').value = '';
+            document.getElementById('searchStartDate').value = '';
+            document.getElementById('searchEndDate').value = '';
+            document.getElementById('searchKeyword').value = '';
+            setImportStatus('', 'info');
+            if (window.refreshUniversalSingleSelect) {
+                window.refreshUniversalSingleSelect(document.getElementById('searchShopId'));
+            }
+            loadHealthList();
+            clearChart('请选择店铺后查看趋势');
+            updateLatestViolationAlert([]);
+        }
+
+        function clearChart(text) {
+            const canvas = document.getElementById('healthChart');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 1;
+            const width = canvas.clientWidth || 760;
+            const height = canvas.clientHeight || 260;
+            canvas.width = Math.floor(width * dpr);
+            canvas.height = Math.floor(height * dpr);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.clearRect(0, 0, width, height);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, width, height);
+            ctx.fillStyle = '#7b8088';
+            ctx.font = '14px Segoe UI';
+            ctx.textAlign = 'center';
+            ctx.fillText(text || '暂无图表数据', width / 2, height / 2);
+        }
+
+        function drawLine(ctx, points, color) {
+            if (!points.length) return;
+            ctx.beginPath();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            points.forEach((p, idx) => {
+                if (idx === 0) ctx.moveTo(p.x, p.y);
+                else ctx.lineTo(p.x, p.y);
+            });
+            ctx.stroke();
+            points.forEach(p => {
+                ctx.beginPath();
+                ctx.fillStyle = color;
+                ctx.arc(p.x, p.y, 2.8, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function drawChart(items) {
+            const canvas = document.getElementById('healthChart');
+            if (!canvas) return;
+            if (!items.length) {
+                clearChart('所选时间范围无数据');
+                return;
+            }
+            const ctx = canvas.getContext('2d');
+            const dpr = window.devicePixelRatio || 1;
+            const width = canvas.clientWidth || 760;
+            const height = canvas.clientHeight || 260;
+            canvas.width = Math.floor(width * dpr);
+            canvas.height = Math.floor(height * dpr);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.clearRect(0, 0, width, height);
+
+            const padd = { left: 48, right: 48, top: 16, bottom: 42 };
+            const plotW = width - padd.left - padd.right;
+            const plotH = height - padd.top - padd.bottom;
+            const count = items.length;
+
+            const seriesDefs = [
+                { key: 'account_health_rating', color: '#5b6aa8', axis: 'left' },
+                { key: 'order_defect_rate', color: '#b85c5c', axis: 'right' },
+                { key: 'late_shipment_rate', color: '#bc7a3f', axis: 'right' },
+                { key: 'pre_fulfillment_cancel_rate', color: '#44798c', axis: 'right' },
+                { key: 'valid_tracking_rate', color: '#7e8a57', axis: 'right' },
+                { key: 'on_time_delivery_rate', color: '#8b6f9c', axis: 'right' }
+            ];
+
+            const leftValues = [];
+            const rightValues = [];
+            seriesDefs.forEach(def => {
+                items.forEach(row => {
+                    const num = Number(row[def.key]);
+                    if (Number.isNaN(num)) return;
+                    if (def.axis === 'left') leftValues.push(num);
+                    else rightValues.push(num);
+                });
+            });
+            if (!leftValues.length && !rightValues.length) {
+                clearChart('所选时间范围无可绘制数据');
+                return;
+            }
+
+            const leftMin = leftValues.length ? Math.min(...leftValues) : 0;
+            const leftMax = leftValues.length ? Math.max(...leftValues) : 100;
+            const leftRangeRaw = Math.max(1, leftMax - leftMin);
+            const leftPad = Math.max(10, leftRangeRaw * 0.15);
+            const y1Min = Math.max(0, Math.floor(leftMin - leftPad));
+            const y1Max = Math.ceil(leftMax + leftPad);
+            const y1Range = Math.max(1, y1Max - y1Min);
+
+            let y2Min = 0;
+            let y2Max = 100;
+            if (rightValues.length) {
+                const rMin = Math.min(...rightValues);
+                const rMax = Math.max(...rightValues);
+                y2Min = Math.max(0, Math.floor(rMin - 5));
+                y2Max = Math.min(100, Math.ceil(rMax + 5));
+                if (y2Max - y2Min < 20) {
+                    y2Max = Math.min(100, y2Min + 20);
+                }
+            }
+            const y2Range = Math.max(1, y2Max - y2Min);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, width, height);
+            ctx.strokeStyle = 'rgba(74, 78, 87, 0.2)';
+            ctx.lineWidth = 1;
+
+            for (let i = 0; i <= 4; i++) {
+                const y = padd.top + (plotH * i / 4);
+                ctx.beginPath();
+                ctx.moveTo(padd.left, y);
+                ctx.lineTo(width - padd.right, y);
+                ctx.stroke();
+            }
+
+            ctx.strokeStyle = 'rgba(74, 78, 87, 0.45)';
+            ctx.beginPath();
+            ctx.moveTo(padd.left, padd.top);
+            ctx.lineTo(padd.left, padd.top + plotH);
+            ctx.lineTo(width - padd.right, padd.top + plotH);
+            ctx.moveTo(width - padd.right, padd.top);
+            ctx.lineTo(width - padd.right, padd.top + plotH);
+            ctx.stroke();
+
+            ctx.fillStyle = '#7b8088';
+            ctx.font = '11px Segoe UI';
+            ctx.textAlign = 'right';
+            for (let i = 0; i <= 4; i++) {
+                const val = (y1Max - y1Range * i / 4).toFixed(0);
+                const y = padd.top + (plotH * i / 4) + 4;
+                ctx.fillText(val, padd.left - 6, y);
+            }
+
+            ctx.textAlign = 'left';
+            for (let i = 0; i <= 4; i++) {
+                const val = (y2Max - y2Range * i / 4).toFixed(1);
+                const y = padd.top + (plotH * i / 4) + 4;
+                ctx.fillText(`${val}%`, width - padd.right + 6, y);
+            }
+
+            const toX = index => padd.left + (count === 1 ? plotW / 2 : (plotW * index / (count - 1)));
+            const toYLeft = value => padd.top + ((y1Max - Number(value)) / y1Range) * plotH;
+            const toYRight = value => padd.top + ((y2Max - Number(value)) / y2Range) * plotH;
+
+            seriesDefs.forEach(def => {
+                const points = items.map((row, idx) => {
+                    const y = def.axis === 'left' ? toYLeft(row[def.key]) : toYRight(row[def.key]);
+                    return { x: toX(idx), y };
+                });
+                drawLine(ctx, points, def.color);
+            });
+
+            ctx.fillStyle = '#7b8088';
+            ctx.font = '11px Segoe UI';
+            ctx.textAlign = 'center';
+            const step = Math.max(1, Math.floor(count / 6));
+            items.forEach((row, idx) => {
+                if (idx % step !== 0 && idx !== count - 1) return;
+                const x = toX(idx);
+                const label = (row.record_date || '').slice(5);
+                ctx.fillText(label, x, height - 12);
+            });
+        }
+
+        function loadChartData() {
+            const shopId = document.getElementById('searchShopId').value;
+            const startDate = document.getElementById('searchStartDate').value;
+            const endDate = document.getElementById('searchEndDate').value;
+            if (!shopId) {
+                clearChart('请选择店铺后查看趋势');
+                updateLatestViolationAlert(latestListItems);
+                return;
+            }
+            const params = new URLSearchParams();
+            params.set('mode', 'chart');
+            params.set('shop_id', shopId);
+            if (startDate) params.set('start_date', startDate);
+            if (endDate) params.set('end_date', endDate);
+            fetch(`/api/amazon-account-health?${params.toString()}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        clearChart(data.message || '图表加载失败');
+                        return;
+                    }
+                    drawChart(data.items || []);
+                    updateLatestViolationAlert(latestListItems);
+                })
+                .catch(err => clearChart('图表加载失败: ' + err));
+        }
+
+        function init() {
+            bindModalChangeTracking();
+            loadShops().then(() => {
+                loadHealthList();
+                clearChart('请选择店铺后查看趋势');
+            });
+        }
+
+        window.addEventListener('load', init);
+        window.addEventListener('resize', () => loadChartData());
+
+        document.getElementById('pm-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeModal();
+        });
+        document.getElementById('searchKeyword').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') handleSearchClick();
+        });
+        document.getElementById('healthUploadInput').addEventListener('change', function() {
+            const file = this.files && this.files[0];
+            if (file) uploadHealthTemplate(file);
+            this.value = '';
+        });
+        document.getElementById('modalShopId').addEventListener('change', function() {
+            loadLatestForModalShop(this.value);
+        });
+        document.getElementById('searchShopId').addEventListener('change', loadChartData);
+        document.getElementById('searchStartDate').addEventListener('change', loadChartData);
+        document.getElementById('searchEndDate').addEventListener('change', loadChartData);
+    </script>
+</body>
+<script src="/static/js/header.js"></script>
+</html>

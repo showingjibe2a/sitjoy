@@ -3,62 +3,43 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>产品管理 - 货号管理</title>
+    <title>产品管理 - 品类/货号管理</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
-        .multi-select-box {
-            border: 1px solid var(--morandi-sand);
-            border-radius: 10px;
-            padding: 0.75rem;
-            background: #fff;
-        }
-        .multi-select-filter {
-            width: 100%;
-            padding: 0.55rem 0.7rem;
-            border-radius: 6px;
-            border: 1px solid var(--morandi-sand);
-            margin-bottom: 0.6rem;
-        }
-        .multi-select-options {
-            max-height: 200px;
-            overflow-y: auto;
-            display: grid;
-            gap: 0.4rem;
-            margin-bottom: 0.6rem;
-        }
-        .multi-select-option {
+        .pm-form-full { grid-column: 1 / -1; }
+        .material-type-bar {
             display: flex;
             align-items: center;
-            gap: 0.45rem;
-            padding: 0.35rem 0.4rem;
-            border-radius: 6px;
-            background: var(--morandi-mist);
-        }
-        .multi-select-selected {
-            display: flex;
+            gap: 0.6rem;
             flex-wrap: wrap;
-            gap: 0.4rem;
+            padding: 0.5rem 0.7rem;
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.18);
         }
-        .multi-select-chip {
+        .material-type-add {
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            border: 1px solid rgba(155, 74, 74, 0.2);
+            background: #9b4a4a;
+            color: #fff;
+            font-size: 18px;
+            line-height: 1;
+            cursor: pointer;
             display: inline-flex;
             align-items: center;
-            gap: 0.35rem;
-            padding: 0.25rem 0.5rem;
-            border-radius: 999px;
-            background: var(--morandi-sand);
+            justify-content: center;
+        }
+        .material-type-item {
+            border: 1px solid var(--morandi-sand);
+            background: var(--morandi-mist);
             color: var(--morandi-ink);
-            font-size: 0.85rem;
-        }
-        .multi-select-chip button {
-            border: none;
-            background: transparent;
+            border-radius: 8px;
+            padding: 0.45rem 0.8rem;
+            font-size: 0.9rem;
             cursor: pointer;
-            font-size: 1rem;
-            line-height: 1;
         }
-        .pm-form-full {
-            grid-column: 1 / -1;
-        }
+        .material-type-item:hover { background: rgba(207, 199, 189, 0.55); }
     </style>
 </head>
 <body>
@@ -66,8 +47,8 @@
 
     <div class="container">
         <section class="hero" style="margin-bottom: 1.5rem;">
-            <h2>货号管理</h2>
-            <p>维护产品货号（父体）与品类</p>
+            <h2>品类/货号管理</h2>
+            <p>维护品类字典与货号（父体）信息</p>
         </section>
 
         <section class="pm-layout">
@@ -75,14 +56,23 @@
                 <div class="pm-toolbar">
                     <div class="pm-toolbar-actions">
                         <div class="form-group pm-search" style="margin: 0;">
-                            <span class="pm-search-title">搜索</span>
+                            <span class="pm-search-title">货号搜索</span>
                             <input type="text" id="searchInput" placeholder="搜索货号/品类">
                             <button class="btn-primary" onclick="loadSkuList()">搜索</button>
                             <button class="btn-secondary" onclick="resetSearch()">清空</button>
                         </div>
                         <span class="pm-divider" aria-hidden="true"></span>
-                        <button class="btn-accent" onclick="openCreateModal()">新增</button>
+                        <button class="btn-accent" onclick="openCreateModal()">新增货号</button>
                     </div>
+                </div>
+
+                <div class="pm-toolbar" style="margin-top: 0.85rem;">
+                    <div class="pm-toolbar-actions">
+                        <span class="pm-search-title">品类管理</span>
+                    </div>
+                </div>
+                <div class="material-type-bar" id="categoryTypeBar" style="margin-top: 0.6rem;">
+                    <button class="material-type-add" type="button" aria-label="新增品类" onclick="openCategoryCreateModal()">+</button>
                 </div>
             </div>
 
@@ -97,7 +87,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="5" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="4" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -116,27 +106,36 @@
                     <label for="modalCategorySelect">品类<span class="required-asterisk">*</span></label>
                     <select id="modalCategorySelect" class="required-field"></select>
                 </div>
-                <div class="form-group pm-form-full">
-                    <label>可用面料（可多选）</label>
-                    <div class="feature-category-picker" id="fabricPicker">
-                        <div class="feature-category-chips" id="fabricChips"></div>
-                        <div class="feature-category-dropdown" id="fabricDropdown">
-                            <button type="button" class="feature-category-add" id="fabricAdd">
-                                <span class="feature-category-add-icon">+</span>
-                                <span class="feature-category-add-text">添加面料</span>
-                            </button>
-                            <div class="feature-category-menu" id="fabricMenu">
-                                <input type="text" id="modalFabricFilter" placeholder="搜索面料" style="width:100%;padding:0.4rem;border:1px solid #ccc;border-radius:4px;margin-bottom:0.4rem;">
-                                <div class="feature-category-list" id="fabricList"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
             </div>
             <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
             <div class="pm-modal-actions">
                 <button class="btn-secondary" onclick="closeModal()">取消</button>
                 <button class="btn-primary" id="modalSaveBtn" onclick="saveSkuFromModal()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="pm-modal" id="category-modal">
+        <div class="pm-modal-content">
+            <h3 id="category-modal-title" style="margin-top:0;">新增品类</h3>
+            <div class="pm-form">
+                <div class="form-group">
+                    <label for="modalCategoryCn">品类中文名<span class="required-asterisk">*</span></label>
+                    <input type="text" id="modalCategoryCn" class="required-field" placeholder="例如：餐椅">
+                </div>
+                <div class="form-group">
+                    <label for="modalCategoryEn">品类英文缩写<span class="required-asterisk">*</span></label>
+                    <input type="text" id="modalCategoryEn" class="required-field" placeholder="例如：DC">
+                </div>
+                <div class="form-group">
+                    <label for="modalCategoryEnName">品类英文名称<span class="required-asterisk">*</span></label>
+                    <input type="text" id="modalCategoryEnName" class="required-field" placeholder="例如：Dining Chair">
+                </div>
+            </div>
+            <div id="categoryModalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeCategoryModal()">取消</button>
+                <button class="btn-primary" onclick="saveCategoryFromModal()">保存</button>
             </div>
         </div>
     </div>
@@ -147,9 +146,8 @@
 
     <script>
         let editId = null;
+        let categoryEditId = null;
         let categoryOptions = [];
-        let fabricOptions = [];
-        let selectedFabricIds = [];
 
         function showModalStatus(message, isError) {
             const el = document.getElementById('modalStatus');
@@ -165,6 +163,20 @@
             el.innerText = '';
         }
 
+        function showCategoryStatus(message, isError) {
+            const el = document.getElementById('categoryModalStatus');
+            el.style.display = 'block';
+            el.style.background = isError ? '#ffecec' : '#f0fff0';
+            el.style.color = isError ? '#a33' : '#2f6f2f';
+            el.innerText = message;
+        }
+
+        function resetCategoryStatus() {
+            const el = document.getElementById('categoryModalStatus');
+            el.style.display = 'none';
+            el.innerText = '';
+        }
+
         function resetSearch() {
             document.getElementById('searchInput').value = '';
             loadSkuList();
@@ -175,8 +187,6 @@
             document.getElementById('pm-modal-title').innerText = '新增货号';
             document.getElementById('modalSkuInput').value = '';
             setCategorySelect('');
-            selectedFabricIds = [];
-            renderFabricPicker();
             document.getElementById('modalSaveBtn').innerText = '保存';
             resetModalStatus();
             document.getElementById('pm-modal').classList.add('active');
@@ -188,8 +198,6 @@
             document.getElementById('pm-modal-title').innerText = '编辑货号';
             document.getElementById('modalSkuInput').value = item.sku_family;
             setCategorySelect(item.category);
-            selectedFabricIds = (item.fabric_ids || []).map(v => String(v));
-            renderFabricPicker();
             document.getElementById('modalSaveBtn').innerText = '保存';
             resetModalStatus();
             document.getElementById('pm-modal').classList.add('active');
@@ -209,7 +217,7 @@
                 return;
             }
 
-            const payload = { sku_family: skuFamily, category: category, fabric_ids: selectedFabricIds };
+            const payload = { sku_family: skuFamily, category: category, fabric_ids: [] };
             let method = 'POST';
             if (editId) {
                 payload.id = editId;
@@ -262,12 +270,12 @@
                 .then(data => {
                     const tbody = document.querySelector('#skuTable tbody');
                     if (data.status !== 'success') {
-                        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                         return;
                     }
                     const items = data.items || [];
                     if (items.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">暂无数据</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">暂无数据</td></tr>';
                         return;
                     }
                     tbody.innerHTML = items.map(item => {
@@ -289,141 +297,22 @@
                 })
                 .catch(err => {
                     const tbody = document.querySelector('#skuTable tbody');
-                    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
                 });
         }
-
-        function loadFabrics() {
-            fetch('/api/fabric')
-                .then(r => r.json())
-                .then(data => {
-                    if (data.status !== 'success') {
-                        fabricOptions = [];
-                        renderFabricOptions();
-                        renderSelectedFabrics();
-                        return;
-                    }
-                    fabricOptions = data.items || [];
-                    renderFabricPicker();
-                })
-                .catch(() => {
-                    fabricOptions = [];
-                    renderFabricPicker();
-                });
-        }
-
-        function renderFabricPicker() {
-            const chips = document.getElementById('fabricChips');
-            const list = document.getElementById('fabricList');
-            if (!chips || !list) return;
-            const keyword = (document.getElementById('modalFabricFilter').value || '').trim().toLowerCase();
-
-            // 渲染已选面料chips
-            chips.innerHTML = '';
-            selectedFabricIds.forEach(id => {
-                const item = fabricOptions.find(opt => String(opt.id) === String(id));
-                if (!item) return;
-                const chip = document.createElement('span');
-                chip.className = 'feature-category-chip';
-                const materialType = item.material_name ? `（${item.material_name}）` : '';
-                chip.textContent = `${item.fabric_code || ''} / ${item.fabric_name_en || ''}${materialType}`;
-                const removeBtn = document.createElement('button');
-                removeBtn.type = 'button';
-                removeBtn.className = 'feature-category-remove';
-                removeBtn.innerText = '×';
-                removeBtn.addEventListener('click', () => {
-                    selectedFabricIds = selectedFabricIds.filter(v => String(v) !== String(id));
-                    renderFabricPicker();
-                });
-                chip.appendChild(removeBtn);
-                chips.appendChild(chip);
-            });
-
-            // 渲染可选面料列表
-            list.innerHTML = '';
-            const filtered = fabricOptions.filter(item => {
-                if (selectedFabricIds.includes(String(item.id))) return false;
-                const text = `${item.fabric_code || ''} ${item.fabric_name_en || ''} ${item.material_name || ''}`.toLowerCase();
-                return !keyword || text.includes(keyword);
-            });
-
-            if (!filtered.length) {
-                const empty = document.createElement('div');
-                empty.className = 'feature-category-empty';
-                empty.textContent = '无更多可选面料';
-                list.appendChild(empty);
-                return;
-            }
-
-            filtered.forEach(item => {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'feature-category-option';
-                const materialType = item.material_name ? `（${item.material_name}）` : '';
-                btn.textContent = `${item.fabric_code || ''} / ${item.fabric_name_en || ''}${materialType}`;
-                btn.addEventListener('click', () => {
-                    if (!selectedFabricIds.includes(String(item.id))) {
-                        selectedFabricIds.push(String(item.id));
-                    }
-                    renderFabricPicker();
-                    closeFabricMenu();
-                });
-                list.appendChild(btn);
-            });
-        }
-
-        function toggleFabricMenu() {
-            const dropdown = document.getElementById('fabricDropdown');
-            if (!dropdown) return;
-            const isOpen = dropdown.classList.contains('open');
-            if (isOpen) {
-                closeFabricMenu();
-                return;
-            }
-            dropdown.classList.add('expanded');
-            window.setTimeout(() => {
-                dropdown.classList.add('open');
-            }, 180);
-        }
-
-        function closeFabricMenu() {
-            const dropdown = document.getElementById('fabricDropdown');
-            if (!dropdown) return;
-            dropdown.classList.remove('open');
-            dropdown.classList.remove('expanded');
-        }
-
-        window.addEventListener('load', loadSkuList);
-        window.addEventListener('load', loadCategories);
-        window.addEventListener('load', loadFabrics);
-        document.getElementById('pm-modal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeModal();
-            }
-        });
-        document.getElementById('searchInput').addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') {
-                loadSkuList();
-            }
-        });
-        document.getElementById('modalFabricFilter').addEventListener('input', renderFabricPicker);
-        document.getElementById('fabricAdd').addEventListener('click', toggleFabricMenu);
 
         function loadCategories() {
-            fetch('/api/category')
+            return fetch('/api/category')
                 .then(r => r.json())
                 .then(data => {
-                    if (data.status !== 'success') {
-                        categoryOptions = [];
-                        renderCategorySelect('');
-                        return;
-                    }
-                    categoryOptions = data.items || [];
+                    categoryOptions = data.status === 'success' ? (data.items || []) : [];
                     renderCategorySelect('');
+                    renderCategoryTypeBar();
                 })
                 .catch(() => {
                     categoryOptions = [];
                     renderCategorySelect('');
+                    renderCategoryTypeBar();
                 });
         }
 
@@ -458,7 +347,114 @@
             }
             renderCategorySelect(value || '');
         }
+
+        function renderCategoryTypeBar() {
+            const bar = document.getElementById('categoryTypeBar');
+            if (!bar) return;
+            bar.innerHTML = '';
+
+            const addBtn = document.createElement('button');
+            addBtn.type = 'button';
+            addBtn.className = 'material-type-add';
+            addBtn.setAttribute('aria-label', '新增品类');
+            addBtn.textContent = '+';
+            addBtn.addEventListener('click', openCategoryCreateModal);
+            bar.appendChild(addBtn);
+
+            categoryOptions.forEach(item => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'material-type-item';
+                btn.textContent = `${item.category_cn} / ${item.category_en}`;
+                btn.addEventListener('click', () => openCategoryEditModalById(item.id));
+                bar.appendChild(btn);
+            });
+        }
+
+        function openCategoryCreateModal() {
+            categoryEditId = null;
+            document.getElementById('category-modal-title').innerText = '新增品类';
+            document.getElementById('modalCategoryCn').value = '';
+            document.getElementById('modalCategoryEn').value = '';
+            document.getElementById('modalCategoryEnName').value = '';
+            resetCategoryStatus();
+            document.getElementById('category-modal').classList.add('active');
+            document.getElementById('modalCategoryCn').focus();
+        }
+
+        function openCategoryEditModalById(id) {
+            const item = (categoryOptions || []).find(x => String(x.id) === String(id));
+            if (!item) return;
+            categoryEditId = item.id;
+            document.getElementById('category-modal-title').innerText = '编辑品类';
+            document.getElementById('modalCategoryCn').value = item.category_cn || '';
+            document.getElementById('modalCategoryEn').value = item.category_en || '';
+            document.getElementById('modalCategoryEnName').value = item.category_en_name || '';
+            resetCategoryStatus();
+            document.getElementById('category-modal').classList.add('active');
+            document.getElementById('modalCategoryCn').focus();
+        }
+
+        function closeCategoryModal() {
+            document.getElementById('category-modal').classList.remove('active');
+            categoryEditId = null;
+        }
+
+        function saveCategoryFromModal() {
+            const categoryCn = document.getElementById('modalCategoryCn').value.trim();
+            const categoryEn = document.getElementById('modalCategoryEn').value.trim();
+            const categoryEnName = document.getElementById('modalCategoryEnName').value.trim();
+            if (!categoryCn || !categoryEn || !categoryEnName) {
+                showCategoryStatus('请填写中文名、英文缩写与英文名称', true);
+                return;
+            }
+
+            const payload = { category_cn: categoryCn, category_en: categoryEn, category_en_name: categoryEnName };
+            let method = 'POST';
+            if (categoryEditId) {
+                payload.id = categoryEditId;
+                method = 'PUT';
+            }
+
+            fetch('/api/category', {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showCategoryStatus(categoryEditId ? '更新成功' : '新增成功', false);
+                    setTimeout(() => {
+                        closeCategoryModal();
+                        Promise.all([loadCategories(), loadSkuList()]);
+                    }, 350);
+                } else {
+                    showCategoryStatus(data.message || '操作失败', true);
+                }
+            })
+            .catch(err => showCategoryStatus('请求失败: ' + err, true));
+        }
+
+        window.addEventListener('load', loadSkuList);
+        window.addEventListener('load', loadCategories);
+
+        document.getElementById('pm-modal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
+        document.getElementById('category-modal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeCategoryModal();
+            }
+        });
+        document.getElementById('searchInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                loadSkuList();
+            }
+        });
     </script>
 </body>
-    <script src="/static/js/header.js"></script>
+<script src="/static/js/header.js"></script>
 </html>

@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amazon广告管理 - 广告调整</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .aa-grid {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 1rem;
+            align-items: start;
+        }
+        .aa-list {
+            border: 1px solid var(--morandi-sand);
+            border-radius: 10px;
+            background: #fff;
+            max-height: 560px;
+            overflow-y: auto;
+        }
+        .aa-item {
+            width: 100%;
+            border: none;
+            border-bottom: 1px solid rgba(207, 199, 189, 0.45);
+            background: transparent;
+            text-align: left;
+            padding: 0.62rem 0.7rem;
+            cursor: pointer;
+            color: var(--morandi-ink);
+        }
+        .aa-item:hover { background: rgba(207, 199, 189, 0.28); }
+        .aa-item.is-active { background: rgba(207, 199, 189, 0.45); }
+        .aa-item-title { font-weight: 600; font-size: 0.92rem; margin-bottom: 0.16rem; }
+        .aa-item-meta { font-size: 0.84rem; color: var(--morandi-slate); }
+
+        .aa-info {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.55rem 0.75rem;
+            margin-bottom: 0.9rem;
+        }
+        .aa-info-row {
+            padding: 0.5rem 0.55rem;
+            border-radius: 8px;
+            border: 1px solid rgba(207, 199, 189, 0.65);
+            background: rgba(255, 255, 255, 0.85);
+            font-size: 0.88rem;
+            color: var(--morandi-ink);
+        }
+        .aa-info-row strong { color: var(--morandi-slate); font-weight: 600; margin-right: 0.35rem; }
+        .aa-actions {
+            margin-top: 0.95rem;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .btn-quick-small {
+            padding: 0.3rem 0.55rem;
+            font-size: 0.78rem;
+            line-height: 1;
+        }
+    </style>
+</head>
+<body>
+    <div id="site-header"></div>
+
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1.2rem;">
+            <h2>Amazon广告管理 - 广告调整</h2>
+            <p>按广告信息执行调整并记录效果区间数据，支持提交并记录与快速提交</p>
+        </section>
+
+        <section class="pm-layout">
+            <div class="card pm-card" style="margin-bottom: 0.9rem;">
+                <div class="pm-toolbar">
+                    <div class="pm-toolbar-actions" style="width: 100%;">
+                        <div class="form-group pm-search" style="margin: 0; width: 100%; max-width: 680px;">
+                            <span class="pm-search-title">搜索</span>
+                            <input type="text" id="adSearchInput" placeholder="搜索广告类型/组合/活动/组">
+                            <button class="btn-primary" onclick="loadAdList()">搜索</button>
+                            <button class="btn-secondary" onclick="resetAdSearch()">清空</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="aa-grid">
+                <div class="card pm-card" style="padding: 0.75rem;">
+                    <h3 style="margin:0 0 0.6rem 0;">广告信息</h3>
+                    <div class="aa-list" id="adList">
+                        <div style="padding:0.7rem; text-align:center; color:var(--morandi-slate);">加载中...</div>
+                    </div>
+                </div>
+
+                <div class="card pm-card" style="padding: 0.95rem;">
+                    <h3 style="margin:0 0 0.7rem 0;">调整内容</h3>
+                    <div class="aa-info" id="adInfoBox">
+                        <div class="aa-info-row"><strong>广告类型</strong><span id="infoAdType">-</span></div>
+                        <div class="aa-info-row"><strong>广告组合</strong><span id="infoPortfolio">-</span></div>
+                        <div class="aa-info-row"><strong>广告活动</strong><span id="infoCampaign">-</span></div>
+                        <div class="aa-info-row"><strong>广告组</strong><span id="infoGroup">-</span></div>
+                    </div>
+
+                    <div class="pm-form">
+                        <div class="pm-section">
+                            <h4>基础调整信息</h4>
+                            <div class="pm-section-body">
+                                <div class="form-group">
+                                    <label for="operationType">允许操作类型<span class="required-asterisk">*</span></label>
+                                    <select id="operationType" data-search-placeholder="搜索操作类型">
+                                        <option value="">请选择操作类型</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="operationReason">修改原因<span class="required-asterisk">*</span></label>
+                                    <select id="operationReason" data-search-placeholder="搜索修改原因">
+                                        <option value="">请先选择操作类型</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="adjustDate">调整日期</label>
+                                    <input type="datetime-local" id="adjustDate">
+                                </div>
+
+                                <div class="form-group pm-form-full">
+                                    <label for="targetObject">操作对象<span class="required-asterisk">*</span></label>
+                                    <input type="text" id="targetObject" placeholder="例如：关键词 / 竞价 / 投放位置">
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="beforeValue">修改前<span class="required-asterisk">*</span></label>
+                                    <input type="text" id="beforeValue" placeholder="例如：0.75 或 置顶展示">
+                                </div>
+                                <div class="form-group">
+                                    <label for="afterValue">修改后<span class="required-asterisk">*</span></label>
+                                    <input type="text" id="afterValue" placeholder="例如：0.95 或 下调竞价">
+                                </div>
+                                <div class="form-group">
+                                    <label for="attributionChecked">归因是否检查</label>
+                                    <select id="attributionChecked">
+                                        <option value="0">否</option>
+                                        <option value="1">是</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="pm-section">
+                            <h4>效果区间数据</h4>
+                            <div class="pm-section-body">
+                                <div class="form-group">
+                                    <label for="startTime">开始时间</label>
+                                    <input type="datetime-local" id="startTime">
+                                </div>
+                                <div class="form-group">
+                                    <label for="endTime">结束时间</label>
+                                    <input type="datetime-local" id="endTime">
+                                </div>
+                                <div class="form-group">
+                                    <label for="impressions">曝光</label>
+                                    <input type="text" id="impressions" placeholder="简短数字">
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="clicks">点击</label>
+                                    <input type="text" id="clicks" placeholder="简短数字">
+                                </div>
+                                <div class="form-group">
+                                    <label for="cost">花费</label>
+                                    <input type="text" id="cost" placeholder="简短数字">
+                                </div>
+                                <div class="form-group">
+                                    <label for="orders">订单</label>
+                                    <input type="text" id="orders" placeholder="简短数字">
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="sales">销售额</label>
+                                    <input type="text" id="sales" placeholder="简短数字">
+                                </div>
+                                <div class="form-group">
+                                    <label for="acos">ACOS</label>
+                                    <input type="text" id="acos" placeholder="如 12.50%">
+                                </div>
+                                <div class="form-group">
+                                    <label for="cpc">CPC</label>
+                                    <input type="text" id="cpc" placeholder="简短数字">
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="ctr">CTR</label>
+                                    <input type="text" id="ctr" placeholder="如 2.30%">
+                                </div>
+                                <div class="form-group">
+                                    <label for="cvr">CVR</label>
+                                    <input type="text" id="cvr" placeholder="如 3.10%">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="pm-section">
+                            <h4>归因与备注</h4>
+                            <div class="pm-section-body">
+                                <div class="form-group">
+                                    <label for="attributionOrders">归因订单数</label>
+                                    <input type="text" id="attributionOrders" placeholder="简短数字">
+                                </div>
+                                <div class="form-group">
+                                    <label for="attributionSales">归因销售额</label>
+                                    <input type="text" id="attributionSales" placeholder="简短数字">
+                                </div>
+                                <div class="form-group pm-form-full">
+                                    <label for="remark">备注</label>
+                                    <input type="text" id="remark" placeholder="补充说明（选填）">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="aa-actions">
+                        <button class="btn-secondary" onclick="quickSubmit()" id="quickSubmitBtn">快速提交</button>
+                        <button class="btn-primary" onclick="submitRecord()" id="submitBtn" disabled>提交并记录</button>
+                    </div>
+                    <div id="formStatus" class="response" style="display:none; margin-top:0.6rem;"></div>
+                </div>
+            </div>
+
+            <div class="card pm-card" style="margin-top: 1rem;">
+                <div class="pm-toolbar" style="margin-bottom: 0.6rem;">
+                    <div class="pm-toolbar-actions">
+                        <h3 style="margin:0;">调整记录</h3>
+                        <button class="btn-secondary btn-quick-small" onclick="loadRecords()">刷新</button>
+                    </div>
+                </div>
+                <div style="overflow:auto;">
+                    <table class="pm-table" id="recordTable" style="min-width: 1600px;">
+                        <thead>
+                            <tr>
+                                <th>调整日期</th>
+                                <th>关联广告</th>
+                                <th>操作</th>
+                                <th>对象</th>
+                                <th>修改前</th>
+                                <th>修改后</th>
+                                <th>原因</th>
+                                <th>开始时间</th>
+                                <th>结束时间</th>
+                                <th>曝光</th>
+                                <th>点击</th>
+                                <th>花费</th>
+                                <th>订单</th>
+                                <th>销售额</th>
+                                <th>ACOS</th>
+                                <th>CPC</th>
+                                <th>CTR</th>
+                                <th>CVR</th>
+                                <th>归因检查</th>
+                                <th>归因订单</th>
+                                <th>归因销售额</th>
+                                <th>备注</th>
+                                <th>类型</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td colspan="24" style="text-align:center;">加载中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 SITJOY | 内部使用</p>
+    </footer>
+
+    <script>
+        let adItems = [];
+        let selectedAd = null;
+        let selectedAdId = null;
+        let allowedOperations = [];
+
+        function toDatetimeLocal(value) {
+            if (!value) return '';
+            const d = new Date(value);
+            if (Number.isNaN(d.getTime())) return '';
+            const pad = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+
+        function formatDateTime(value) {
+            if (!value) return '';
+            const d = new Date(value);
+            if (Number.isNaN(d.getTime())) return value;
+            return d.toLocaleString('zh-CN');
+        }
+
+        function showFormStatus(message, isError) {
+            const el = document.getElementById('formStatus');
+            el.style.display = 'block';
+            el.style.background = isError ? '#ffecec' : '#f0fff0';
+            el.style.color = isError ? '#a33' : '#2f6f2f';
+            el.innerText = message;
+        }
+
+        function clearFormStatus() {
+            const el = document.getElementById('formStatus');
+            el.style.display = 'none';
+            el.innerText = '';
+        }
+
+        function resetAdSearch() {
+            document.getElementById('adSearchInput').value = '';
+            loadAdList();
+        }
+
+        function renderAdList() {
+            const wrap = document.getElementById('adList');
+            if (!adItems.length) {
+                wrap.innerHTML = '<div style="padding:0.7rem; text-align:center; color:var(--morandi-slate);">暂无广告信息</div>';
+                return;
+            }
+            wrap.innerHTML = adItems.map(item => {
+                const active = String(item.id) === String(selectedAdId) ? 'is-active' : '';
+                const levelText = item.ad_level === 'group' ? '广告组' : '广告活动';
+                return `
+                    <button class="aa-item ${active}" onclick="selectAd(${item.id})">
+                        <div class="aa-item-title">${item.ad_name || '-'}（${levelText}）</div>
+                        <div class="aa-item-meta">类型：${item.ad_type_text || '-'} | 组合：${item.portfolio_name || '-'}</div>
+                    </button>
+                `;
+            }).join('');
+        }
+
+        function loadAdList() {
+            const keyword = document.getElementById('adSearchInput').value.trim();
+            const url = keyword
+                ? `/api/amazon-ad-adjustment?action=ad-search&q=${encodeURIComponent(keyword)}`
+                : '/api/amazon-ad-adjustment?action=ad-search';
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        adItems = [];
+                        renderAdList();
+                        return;
+                    }
+                    adItems = data.items || [];
+                    renderAdList();
+                    if (!selectedAdId && adItems.length) {
+                        selectAd(adItems[0].id);
+                    }
+                })
+                .catch(() => {
+                    adItems = [];
+                    renderAdList();
+                });
+        }
+
+        function renderOperationOptions(selectedId) {
+            const opSelect = document.getElementById('operationType');
+            const current = String(selectedId || '');
+            opSelect.innerHTML = '<option value="">请选择操作类型</option>';
+            allowedOperations.forEach(op => {
+                const option = document.createElement('option');
+                option.value = op.id;
+                option.textContent = op.name || `操作${op.id}`;
+                if (current && String(op.id) === current) option.selected = true;
+                opSelect.appendChild(option);
+            });
+            if (window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(opSelect);
+            syncReasonOptions();
+        }
+
+        function syncReasonOptions() {
+            const opId = String(document.getElementById('operationType').value || '');
+            const reasonSelect = document.getElementById('operationReason');
+            reasonSelect.innerHTML = '<option value="">请选择修改原因</option>';
+            const op = allowedOperations.find(item => String(item.id) === opId);
+            const reasons = op ? (op.reasons || []) : [];
+            reasons.forEach(reason => {
+                const option = document.createElement('option');
+                option.value = reason.id;
+                option.textContent = reason.reason_name || `原因${reason.id}`;
+                reasonSelect.appendChild(option);
+            });
+            if (window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(reasonSelect);
+            updateSubmitButtonState();
+        }
+
+        function updateInfoPanel(adInfo) {
+            document.getElementById('infoAdType').innerText = adInfo.ad_type_text || '-';
+            document.getElementById('infoPortfolio').innerText = adInfo.portfolio_name || '-';
+            document.getElementById('infoCampaign').innerText = adInfo.campaign_name || '-';
+            document.getElementById('infoGroup').innerText = adInfo.group_name || '-';
+        }
+
+        function setFieldValue(id, value) {
+            const input = document.getElementById(id);
+            if (!input) return;
+            input.value = value || '';
+        }
+
+        function selectAd(adId) {
+            selectedAdId = String(adId || '');
+            selectedAd = adItems.find(item => String(item.id) === selectedAdId) || null;
+            renderAdList();
+            clearFormStatus();
+            fetch(`/api/amazon-ad-adjustment?action=defaults&ad_item_id=${encodeURIComponent(selectedAdId)}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        showFormStatus(data.message || '加载默认信息失败', true);
+                        return;
+                    }
+                    const adInfo = data.ad_info || {};
+                    updateInfoPanel(adInfo);
+                    allowedOperations = data.allowed_operations || [];
+                    renderOperationOptions('');
+                    const defaults = data.defaults || {};
+                    setFieldValue('adjustDate', toDatetimeLocal(defaults.adjust_date));
+                    setFieldValue('startTime', toDatetimeLocal(defaults.start_time));
+                    setFieldValue('endTime', toDatetimeLocal(defaults.end_time));
+                    setFieldValue('targetObject', '');
+                    setFieldValue('beforeValue', '');
+                    setFieldValue('afterValue', '');
+                    setFieldValue('impressions', '');
+                    setFieldValue('clicks', '');
+                    setFieldValue('cost', '');
+                    setFieldValue('orders', '');
+                    setFieldValue('sales', '');
+                    setFieldValue('acos', '');
+                    setFieldValue('cpc', '');
+                    setFieldValue('ctr', '');
+                    setFieldValue('cvr', '');
+                    setFieldValue('attributionOrders', '');
+                    setFieldValue('attributionSales', '');
+                    setFieldValue('remark', '');
+                    document.getElementById('attributionChecked').value = '0';
+                    if (window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(document.getElementById('attributionChecked'));
+                    updateSubmitButtonState();
+                    loadRecords();
+                })
+                .catch(err => showFormStatus('加载默认信息失败: ' + err, true));
+        }
+
+        function buildPayload(isQuickSubmit) {
+            return {
+                is_quick_submit: isQuickSubmit ? 1 : 0,
+                ad_item_id: selectedAdId,
+                operation_type_id: document.getElementById('operationType').value,
+                reason_id: document.getElementById('operationReason').value,
+                target_object: document.getElementById('targetObject').value.trim(),
+                before_value: document.getElementById('beforeValue').value.trim(),
+                after_value: document.getElementById('afterValue').value.trim(),
+                adjust_date: document.getElementById('adjustDate').value,
+                start_time: document.getElementById('startTime').value,
+                end_time: document.getElementById('endTime').value,
+                impressions: document.getElementById('impressions').value.trim(),
+                clicks: document.getElementById('clicks').value.trim(),
+                cost: document.getElementById('cost').value.trim(),
+                orders: document.getElementById('orders').value.trim(),
+                sales: document.getElementById('sales').value.trim(),
+                acos: document.getElementById('acos').value.trim(),
+                cpc: document.getElementById('cpc').value.trim(),
+                ctr: document.getElementById('ctr').value.trim(),
+                cvr: document.getElementById('cvr').value.trim(),
+                attribution_checked: document.getElementById('attributionChecked').value,
+                attribution_orders: document.getElementById('attributionOrders').value.trim(),
+                attribution_sales: document.getElementById('attributionSales').value.trim(),
+                remark: document.getElementById('remark').value.trim()
+            };
+        }
+
+        function canSubmitFull() {
+            if (!selectedAdId) return false;
+            const required = [
+                document.getElementById('operationType').value,
+                document.getElementById('operationReason').value,
+                document.getElementById('targetObject').value.trim(),
+                document.getElementById('beforeValue').value.trim(),
+                document.getElementById('afterValue').value.trim(),
+                document.getElementById('startTime').value,
+                document.getElementById('endTime').value
+            ];
+            return required.every(Boolean);
+        }
+
+        function updateSubmitButtonState() {
+            document.getElementById('submitBtn').disabled = !canSubmitFull();
+            document.getElementById('quickSubmitBtn').disabled = !(selectedAdId && document.getElementById('operationType').value && document.getElementById('targetObject').value.trim());
+        }
+
+        function postRecord(isQuickSubmit) {
+            const payload = buildPayload(isQuickSubmit);
+            fetch('/api/amazon-ad-adjustment', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    showFormStatus(data.message || '提交失败', true);
+                    return;
+                }
+                showFormStatus(isQuickSubmit ? '快速提交成功' : '提交并记录成功', false);
+                loadRecords();
+                if (selectedAdId) {
+                    fetch(`/api/amazon-ad-adjustment?action=defaults&ad_item_id=${encodeURIComponent(selectedAdId)}`)
+                        .then(r => r.json())
+                        .then(d => {
+                            if (d.status === 'success' && d.defaults) {
+                                setFieldValue('startTime', toDatetimeLocal(d.defaults.start_time));
+                                setFieldValue('endTime', toDatetimeLocal(d.defaults.end_time));
+                            }
+                        });
+                }
+            })
+            .catch(err => showFormStatus('提交失败: ' + err, true));
+        }
+
+        function submitRecord() {
+            if (!canSubmitFull()) {
+                showFormStatus('请先完整填写提交并记录所需字段', true);
+                return;
+            }
+            postRecord(false);
+        }
+
+        function quickSubmit() {
+            const canQuick = selectedAdId && document.getElementById('operationType').value && document.getElementById('targetObject').value.trim();
+            if (!canQuick) {
+                showFormStatus('快速提交至少需要：广告、操作类型、操作对象', true);
+                return;
+            }
+            postRecord(true);
+        }
+
+        function deleteRecord(id) {
+            if (!confirm('确定删除该条调整记录吗？')) return;
+            fetch('/api/amazon-ad-adjustment', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    alert(data.message || '删除失败');
+                    return;
+                }
+                loadRecords();
+            })
+            .catch(err => alert('删除失败: ' + err));
+        }
+
+        function loadRecords() {
+            const base = '/api/amazon-ad-adjustment';
+            const url = selectedAdId ? `${base}?ad_item_id=${encodeURIComponent(selectedAdId)}` : base;
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    const tbody = document.querySelector('#recordTable tbody');
+                    if (data.status !== 'success') {
+                        tbody.innerHTML = `<tr><td colspan="24" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        return;
+                    }
+                    const items = data.items || [];
+                    if (!items.length) {
+                        tbody.innerHTML = '<tr><td colspan="24" style="text-align:center;">暂无调整记录</td></tr>';
+                        return;
+                    }
+                    tbody.innerHTML = items.map(item => {
+                        const adName = item.ad_name || '';
+                        const levelText = item.ad_level === 'group' ? '广告组' : (item.ad_level === 'campaign' ? '广告活动' : item.ad_level || '');
+                        return `
+                            <tr>
+                                <td>${formatDateTime(item.adjust_date)}</td>
+                                <td>${adName}（${levelText}）</td>
+                                <td>${item.operation_name || ''}</td>
+                                <td>${item.target_object || ''}</td>
+                                <td>${item.before_value || ''}</td>
+                                <td>${item.after_value || ''}</td>
+                                <td>${item.reason_name || ''}</td>
+                                <td>${formatDateTime(item.start_time)}</td>
+                                <td>${formatDateTime(item.end_time)}</td>
+                                <td>${item.impressions || ''}</td>
+                                <td>${item.clicks || ''}</td>
+                                <td>${item.cost || ''}</td>
+                                <td>${item.orders || ''}</td>
+                                <td>${item.sales || ''}</td>
+                                <td>${item.acos || ''}</td>
+                                <td>${item.cpc || ''}</td>
+                                <td>${item.ctr || ''}</td>
+                                <td>${item.cvr || ''}</td>
+                                <td>${String(item.attribution_checked || '0') === '1' ? '是' : '否'}</td>
+                                <td>${item.attribution_orders || ''}</td>
+                                <td>${item.attribution_sales || ''}</td>
+                                <td>${item.remark || ''}</td>
+                                <td>${String(item.is_quick_submit || '0') === '1' ? '快速提交' : '完整提交'}</td>
+                                <td><button class="btn-danger btn-quick-small" onclick="deleteRecord(${item.id})">删除</button></td>
+                            </tr>
+                        `;
+                    }).join('');
+                })
+                .catch(err => {
+                    const tbody = document.querySelector('#recordTable tbody');
+                    tbody.innerHTML = `<tr><td colspan="24" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                });
+        }
+
+        document.getElementById('operationType').addEventListener('change', syncReasonOptions);
+        ['targetObject', 'beforeValue', 'afterValue', 'operationReason', 'startTime', 'endTime'].forEach(id => {
+            document.getElementById(id).addEventListener('input', updateSubmitButtonState);
+            document.getElementById(id).addEventListener('change', updateSubmitButtonState);
+        });
+
+        window.addEventListener('DOMContentLoaded', () => {
+            if (window.initUniversalSingleSelects) window.initUniversalSingleSelects(document);
+            loadAdList();
+            loadRecords();
+        });
+    </script>
+
+    <script src="/static/js/header.js"></script>
+</body>
+</html>

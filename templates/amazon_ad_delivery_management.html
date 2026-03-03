@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amazon广告管理 - 广告投放管理</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .status-segment {
+            display: inline-flex;
+            gap: 0.4rem;
+            padding: 0.28rem;
+            border-radius: 999px;
+            background: rgba(207, 199, 189, 0.3);
+            border: 1px solid rgba(207, 199, 189, 0.8);
+            width: fit-content;
+            max-width: 100%;
+        }
+        .status-pill {
+            border: none;
+            border-radius: 999px;
+            padding: 0.3rem 0.7rem;
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--morandi-ink);
+            background: transparent;
+            cursor: pointer;
+            transition: background .15s ease, color .15s ease;
+        }
+        .status-pill:hover { background: rgba(207, 199, 189, 0.55); color: var(--morandi-ink); }
+        .status-pill.is-active { color: #fff; }
+        .status-pill--enabled.is-active { background: #7fa88b; }
+        .status-pill--paused.is-active { background: #b07b7b; }
+        .status-pill--archived.is-active { background: #8f82b5; }
+        .status-segment--inline {
+            border-radius: 10px;
+            transform: scale(0.95);
+            transform-origin: left center;
+        }
+        .bid-inline {
+            display: inline-flex;
+            gap: 0.4rem;
+            align-items: center;
+        }
+        .bid-inline input {
+            width: 110px;
+            padding: 0.35rem 0.45rem;
+            border-radius: 6px;
+            border: 1px solid rgba(207, 199, 189, 0.8);
+            background: #fff;
+            color: var(--morandi-ink);
+        }
+        .bid-inline button {
+            padding: 0.35rem 0.5rem;
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+<body>
+    <div id="site-header"></div>
+
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1.5rem;">
+            <h2>Amazon广告管理 - 广告投放管理</h2>
+            <p>维护广告活动/广告组的投放描述、竞价和观察时间</p>
+        </section>
+
+        <section class="pm-layout">
+            <div class="card pm-card">
+                <div class="pm-toolbar">
+                    <div class="pm-toolbar-actions">
+                        <div class="form-group pm-search" style="margin: 0;">
+                            <span class="pm-search-title">搜索</span>
+                            <input type="text" id="searchInput" placeholder="搜索广告关联/投放描述">
+                            <button class="btn-primary" onclick="loadList()">搜索</button>
+                            <button class="btn-secondary" onclick="resetSearch()">清空</button>
+                        </div>
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-accent" onclick="openCreateModal()">新增</button>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <table class="pm-table" id="deliveryTable">
+                    <thead>
+                        <tr>
+                            <th style="width:220px;">状态</th>
+                            <th>广告关联</th>
+                            <th>投放描述</th>
+                            <th style="width:190px;">竞价</th>
+                            <th style="width:170px;">最后修改时间</th>
+                            <th style="width:160px;">下次观察时间间隔</th>
+                            <th style="width:170px;">下次观察时间</th>
+                            <th style="width:150px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="8" style="text-align:center;">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div class="pm-modal" id="delivery-modal">
+        <div class="pm-modal-content">
+            <h3 id="modal-title" style="margin-top:0;">新增投放</h3>
+            <div class="pm-form">
+                <div class="form-group pm-form-full">
+                    <label>状态<span class="required-asterisk">*</span></label>
+                    <input type="hidden" id="modalStatus" value="启动">
+                    <div class="status-segment status-segment--inline">
+                        <button type="button" class="status-pill status-pill--enabled" data-target="modalStatus" data-value="启动" onclick="setStatus('启动')">启动</button>
+                        <button type="button" class="status-pill status-pill--paused" data-target="modalStatus" data-value="暂停" onclick="setStatus('暂停')">暂停</button>
+                        <button type="button" class="status-pill status-pill--archived" data-target="modalStatus" data-value="存档" onclick="setStatus('存档')">存档</button>
+                    </div>
+                </div>
+                <div class="form-group pm-form-full">
+                    <label for="modalAdItem">广告关联<span class="required-asterisk">*</span></label>
+                    <select id="modalAdItem" data-search-placeholder="搜索广告活动/广告组"></select>
+                </div>
+                <div class="form-group pm-form-full">
+                    <label for="modalDesc">投放描述<span class="required-asterisk">*</span></label>
+                    <input type="text" id="modalDesc" placeholder="请输入投放描述">
+                </div>
+                <div class="form-group">
+                    <label for="modalBid">竞价<span class="required-asterisk">*</span></label>
+                    <input type="text" id="modalBid" placeholder="如 0.35 或 18%">
+                </div>
+                <div class="form-group">
+                    <label for="modalUpdatedAt">最后修改时间<span class="required-asterisk">*</span></label>
+                    <input type="datetime-local" id="modalUpdatedAt">
+                </div>
+                <div class="form-group">
+                    <label for="modalObserveDays">下次观察时间间隔（天）</label>
+                    <input type="number" id="modalObserveDays" min="0" step="1" value="1">
+                </div>
+                <div class="form-group">
+                    <label for="modalNextObserve">下次观察时间</label>
+                    <input type="datetime-local" id="modalNextObserve">
+                </div>
+            </div>
+            <div id="modalStatusBar" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeModal()">取消</button>
+                <button class="btn-primary" onclick="saveItem()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 SITJOY | 内部使用</p>
+    </footer>
+
+    <script>
+        let editId = null;
+        let adOptions = [];
+        let rowsCache = [];
+        let lastSelectedAdItemId = '';
+
+        function resetSearch() {
+            document.getElementById('searchInput').value = '';
+            loadList();
+        }
+
+        function formatDateTime(value) {
+            return value ? new Date(value).toLocaleString('zh-CN') : '';
+        }
+
+        function toDatetimeLocal(value) {
+            if (!value) return '';
+            const d = new Date(value);
+            if (Number.isNaN(d.getTime())) return '';
+            const pad = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+
+        function nowLocalInputValue() {
+            return toDatetimeLocal(new Date());
+        }
+
+        function parseObserveDaysFromText(value) {
+            const text = String(value || '').trim();
+            const m = text.match(/\d+/);
+            if (!m) return 1;
+            const n = Number(m[0]);
+            if (!Number.isFinite(n) || n < 0) return 1;
+            return Math.floor(n);
+        }
+
+        function recalcNextObserveTime() {
+            const updatedAt = document.getElementById('modalUpdatedAt').value;
+            const dayRaw = document.getElementById('modalObserveDays').value;
+            const days = Math.max(0, parseInt(dayRaw || '1', 10) || 1);
+            if (!updatedAt) return;
+            const base = new Date(updatedAt);
+            if (Number.isNaN(base.getTime())) return;
+            base.setDate(base.getDate() + days);
+            document.getElementById('modalNextObserve').value = toDatetimeLocal(base);
+        }
+
+        function showStatus(message, isError) {
+            const el = document.getElementById('modalStatusBar');
+            el.style.display = 'block';
+            el.style.background = isError ? '#ffecec' : '#f0fff0';
+            el.style.color = isError ? '#a33' : '#2f6f2f';
+            el.innerText = message;
+        }
+
+        function resetStatus() {
+            const el = document.getElementById('modalStatusBar');
+            el.style.display = 'none';
+            el.innerText = '';
+        }
+
+        function syncStatusButtons() {
+            const value = document.getElementById('modalStatus').value;
+            document.querySelectorAll('[data-target="modalStatus"]').forEach(btn => {
+                btn.classList.toggle('is-active', btn.getAttribute('data-value') === value);
+            });
+        }
+
+        function setStatus(value) {
+            document.getElementById('modalStatus').value = value;
+            syncStatusButtons();
+        }
+
+        function adRelationText(item) {
+            const levelText = item.ad_level === 'group' ? '广告组' : '广告活动';
+            const adName = (item && (item.ad_name || item.name)) ? (item.ad_name || item.name) : '';
+            return `${adName}（${levelText}）`;
+        }
+
+        function renderAdOptions(selectedValue) {
+            const select = document.getElementById('modalAdItem');
+            const current = String(selectedValue !== undefined ? selectedValue : (select.value || ''));
+            select.innerHTML = '<option value="">请选择广告活动或广告组</option>';
+            let hasCurrent = false;
+            adOptions.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item.id;
+                option.textContent = adRelationText(item);
+                if (current && String(item.id) === current) {
+                    option.selected = true;
+                    hasCurrent = true;
+                }
+                select.appendChild(option);
+            });
+            if (current && !hasCurrent) select.value = '';
+            if (window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(select);
+            if (select.value) lastSelectedAdItemId = String(select.value);
+        }
+
+        function loadAdOptions() {
+            const req1 = fetch('/api/amazon-ad?level=campaign').then(r => r.json());
+            const req2 = fetch('/api/amazon-ad?level=group').then(r => r.json());
+            return Promise.all([req1, req2]).then(([c, g]) => {
+                const campaigns = c.status === 'success' ? (c.items || []) : [];
+                const groups = g.status === 'success' ? (g.items || []) : [];
+                adOptions = [...campaigns, ...groups];
+                renderAdOptions();
+            }).catch(() => {
+                adOptions = [];
+                renderAdOptions();
+            });
+        }
+
+        function renderTable(items) {
+            const tbody = document.querySelector('#deliveryTable tbody');
+            if (!items.length) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">暂无数据</td></tr>';
+                return;
+            }
+            tbody.innerHTML = items.map(item => `
+                <tr>
+                    <td>
+                        <div class="status-segment status-segment--inline">
+                            <button type="button" class="status-pill status-pill--enabled ${item.status === '启动' ? 'is-active' : ''}" onclick="quickStatus(${item.id}, '启动')">启动</button>
+                            <button type="button" class="status-pill status-pill--paused ${item.status === '暂停' ? 'is-active' : ''}" onclick="quickStatus(${item.id}, '暂停')">暂停</button>
+                            <button type="button" class="status-pill status-pill--archived ${item.status === '存档' ? 'is-active' : ''}" onclick="quickStatus(${item.id}, '存档')">存档</button>
+                        </div>
+                    </td>
+                    <td>${adRelationText(item)}</td>
+                    <td>${item.delivery_desc || ''}</td>
+                    <td>
+                        <div class="bid-inline">
+                            <input type="text" id="bid-${item.id}" value="${item.bid_value || ''}" placeholder="0.3 / 15%">
+                            <button class="btn-secondary" onclick="quickBid(${item.id})">保存</button>
+                        </div>
+                    </td>
+                    <td>${formatDateTime(item.updated_at)}</td>
+                    <td>${item.observe_interval || ''}</td>
+                    <td>${formatDateTime(item.next_observe_at)}</td>
+                    <td>
+                        <div class="pm-actions">
+                            <button class="btn-secondary" onclick="openEditModal(${item.id})">编辑</button>
+                            <button class="btn-danger" onclick="deleteItem(${item.id})">删除</button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function quickStatus(id, status) {
+            fetch('/api/amazon-ad-delivery', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, status })
+            }).then(r => r.json()).then(data => {
+                if (data.status !== 'success') {
+                    alert(data.message || '状态更新失败');
+                    return;
+                }
+                loadList();
+            }).catch(err => alert('状态更新失败: ' + err));
+        }
+
+        function quickBid(id) {
+            const value = document.getElementById(`bid-${id}`)?.value || '';
+            fetch('/api/amazon-ad-delivery', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, bid_value: value })
+            }).then(r => r.json()).then(data => {
+                if (data.status !== 'success') {
+                    alert(data.message || '竞价更新失败');
+                    return;
+                }
+                loadList();
+            }).catch(err => alert('竞价更新失败: ' + err));
+        }
+
+        function loadList() {
+            const q = document.getElementById('searchInput').value.trim();
+            const url = q ? `/api/amazon-ad-delivery?q=${encodeURIComponent(q)}` : '/api/amazon-ad-delivery';
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    const tbody = document.querySelector('#deliveryTable tbody');
+                    if (data.status !== 'success') {
+                        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        return;
+                    }
+                    rowsCache = data.items || [];
+                    renderTable(rowsCache);
+                })
+                .catch(err => {
+                    const tbody = document.querySelector('#deliveryTable tbody');
+                    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                });
+        }
+
+        function openCreateModal() {
+            editId = null;
+            document.getElementById('modal-title').innerText = '新增投放';
+            document.getElementById('modalStatus').value = '启动';
+            document.getElementById('modalAdItem').value = lastSelectedAdItemId || '';
+            document.getElementById('modalDesc').value = '';
+            document.getElementById('modalBid').value = '';
+            document.getElementById('modalObserveDays').value = '1';
+            document.getElementById('modalUpdatedAt').value = nowLocalInputValue();
+            document.getElementById('modalNextObserve').value = '';
+            renderAdOptions(lastSelectedAdItemId || '');
+            recalcNextObserveTime();
+            syncStatusButtons();
+            resetStatus();
+            document.getElementById('delivery-modal').classList.add('active');
+        }
+
+        function openEditModal(id) {
+            const item = rowsCache.find(x => String(x.id) === String(id));
+            if (!item) return;
+            editId = item.id;
+            document.getElementById('modal-title').innerText = '编辑投放';
+            document.getElementById('modalStatus').value = item.status || '启动';
+            document.getElementById('modalAdItem').value = item.ad_item_id || '';
+            lastSelectedAdItemId = item.ad_item_id ? String(item.ad_item_id) : lastSelectedAdItemId;
+            document.getElementById('modalDesc').value = item.delivery_desc || '';
+            document.getElementById('modalBid').value = item.bid_value || '';
+            document.getElementById('modalObserveDays').value = String(parseObserveDaysFromText(item.observe_interval));
+            document.getElementById('modalUpdatedAt').value = toDatetimeLocal(item.updated_at) || nowLocalInputValue();
+            document.getElementById('modalNextObserve').value = toDatetimeLocal(item.next_observe_at);
+            renderAdOptions(item.ad_item_id || '');
+            syncStatusButtons();
+            resetStatus();
+            document.getElementById('delivery-modal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('delivery-modal').classList.remove('active');
+            editId = null;
+        }
+
+        function saveItem() {
+            const payload = {
+                status: document.getElementById('modalStatus').value,
+                ad_item_id: document.getElementById('modalAdItem').value,
+                delivery_desc: document.getElementById('modalDesc').value.trim(),
+                bid_value: document.getElementById('modalBid').value.trim(),
+                observe_days: document.getElementById('modalObserveDays').value,
+                updated_at: document.getElementById('modalUpdatedAt').value,
+                next_observe_at: document.getElementById('modalNextObserve').value
+            };
+            if (!payload.status || !payload.ad_item_id || !payload.delivery_desc || !payload.bid_value || !payload.updated_at) {
+                showStatus('请完整填写必填项', true);
+                return;
+            }
+            lastSelectedAdItemId = String(payload.ad_item_id);
+
+            const method = editId ? 'PUT' : 'POST';
+            if (editId) payload.id = editId;
+            fetch('/api/amazon-ad-delivery', {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(r => r.json()).then(data => {
+                if (data.status !== 'success') {
+                    showStatus(data.message || '保存失败', true);
+                    return;
+                }
+                closeModal();
+                loadList();
+            }).catch(err => showStatus('请求失败: ' + err, true));
+        }
+
+        function deleteItem(id) {
+            if (!confirm('确认删除该投放记录？')) return;
+            fetch('/api/amazon-ad-delivery', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            }).then(r => r.json()).then(data => {
+                if (data.status !== 'success') {
+                    alert(data.message || '删除失败');
+                    return;
+                }
+                loadList();
+            }).catch(err => alert('删除失败: ' + err));
+        }
+
+        function init() {
+            Promise.all([loadAdOptions(), loadList()]).then(() => syncStatusButtons());
+        }
+
+        document.getElementById('searchInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') loadList();
+        });
+        document.getElementById('delivery-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeModal();
+        });
+        document.getElementById('modalAdItem').addEventListener('change', function() {
+            lastSelectedAdItemId = this.value ? String(this.value) : lastSelectedAdItemId;
+        });
+        document.getElementById('modalObserveDays').addEventListener('input', recalcNextObserveTime);
+        document.getElementById('modalUpdatedAt').addEventListener('change', recalcNextObserveTime);
+        window.addEventListener('load', init);
+    </script>
+</body>
+<script src="/static/js/header.js"></script>
+</html>

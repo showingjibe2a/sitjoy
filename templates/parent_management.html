@@ -32,8 +32,71 @@
             gap: 0.75rem;
             box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
             z-index: 40;
+            color: var(--morandi-ink);
         }
         .floating-save.active { display: flex; }
+        .switch-wrap {
+            position: relative;
+            display: inline-flex;
+            width: 44px;
+            height: 24px;
+            vertical-align: middle;
+        }
+        .switch-wrap input { opacity: 0; width: 0; height: 0; }
+        .switch-slider {
+            position: absolute;
+            inset: 0;
+            background: #d9d2c8;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: .2s;
+        }
+        .switch-slider:before {
+            content: '';
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            left: 3px;
+            top: 3px;
+            background: #fff;
+            border-radius: 50%;
+            transition: .2s;
+            box-shadow: 0 1px 3px rgba(0,0,0,.2);
+        }
+        .switch-wrap input:checked + .switch-slider { background: #9b4a4a; }
+        .switch-wrap input:checked + .switch-slider:before { transform: translateX(20px); }
+        .cell-text {
+            max-width: 220px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .percent-input {
+            position: relative;
+            width: 100%;
+        }
+        .percent-input .inline-input,
+        .percent-input .optional-field {
+            padding-right: 1.8rem !important;
+        }
+        .percent-input .percent-suffix {
+            position: absolute;
+            right: 0.55rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--morandi-slate);
+            pointer-events: none;
+            font-size: 0.9rem;
+            line-height: 1;
+        }
+        #createModal .pm-modal-content {
+            max-height: 82vh;
+            overflow-y: auto;
+        }
+        #editModal .pm-modal-content {
+            max-height: 82vh;
+            overflow-y: auto;
+        }
     </style>
 </head>
 <body>
@@ -41,13 +104,20 @@
 <div class="container">
     <section class="hero" style="margin-bottom: 1.25rem;">
         <h2>父体管理</h2>
-        <p>维护父体编号与核心经营指标</p>
+        <p>维护父体编号、核心经营指标与销售信息</p>
     </section>
 
     <section class="pm-layout">
         <div class="card pm-card">
             <div class="pm-toolbar">
                 <div class="pm-toolbar-actions">
+                    <div class="form-group pm-search" style="margin: 0;">
+                        <span class="pm-search-title">搜索</span>
+                        <input type="text" id="searchInput" placeholder="搜索父体编号/SKU标识">
+                        <button class="btn-primary" onclick="loadParents()">搜索</button>
+                        <button class="btn-secondary" onclick="resetSearch()">清空</button>
+                    </div>
+                    <span class="pm-divider" aria-hidden="true"></span>
                     <button class="btn-accent" onclick="openCreate()">新增父体</button>
                 </div>
             </div>
@@ -57,7 +127,9 @@
             <table class="pm-table" id="parentTable">
                 <thead>
                 <tr>
+                    <th>是否启用</th>
                     <th>父体编号</th>
+                    <th>SKU标识</th>
                     <th>预估退款率</th>
                     <th>预估折扣率</th>
                     <th>佣金费率</th>
@@ -66,7 +138,7 @@
                 </tr>
                 </thead>
                 <tbody>
-                <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
+                <tr><td colspan="8" style="text-align:center;">加载中...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -78,13 +150,162 @@
         <h3 style="margin-top:0;">新增父体</h3>
         <div class="pm-form">
             <div class="form-group pm-form-full">
+                <label for="newShopId">店铺/品牌<span class="required-asterisk">*</span></label>
+                <select id="newShopId" class="required-field"></select>
+            </div>
+            <div class="form-group pm-form-full">
                 <label for="newParentCode">父体编号<span class="required-asterisk">*</span></label>
                 <input type="text" id="newParentCode" class="required-field" placeholder="例如：PARENT-001">
+            </div>
+            <div class="form-group pm-form-full">
+                <label for="newSkuMarker">SKU标识</label>
+                <input type="text" id="newSkuMarker" class="optional-field" maxlength="128" placeholder="仅用于父体管理模块补充说明">
+            </div>
+            <div class="form-group pm-form-full">
+                <label for="newIsEnabled">是否启用</label>
+                <label class="switch-wrap">
+                    <input type="checkbox" id="newIsEnabled" checked>
+                    <span class="switch-slider"></span>
+                </label>
+            </div>
+            <div class="pm-section pm-form-full">
+                <h4>费率预估</h4>
+                <div class="pm-section-body pm-form">
+                    <div class="form-group">
+                        <label for="newEstimatedRefundRate">预估退款率</label>
+                        <div class="percent-input">
+                            <input type="number" step="0.01" id="newEstimatedRefundRate" class="optional-field">
+                            <span class="percent-suffix">%</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="newEstimatedDiscountRate">预估折扣率</label>
+                        <div class="percent-input">
+                            <input type="number" step="0.01" id="newEstimatedDiscountRate" class="optional-field">
+                            <span class="percent-suffix">%</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="newCommissionRate">佣金费率</label>
+                        <div class="percent-input">
+                            <input type="number" step="0.01" id="newCommissionRate" class="optional-field">
+                            <span class="percent-suffix">%</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="newEstimatedAcoas">预估ACOAS</label>
+                        <div class="percent-input">
+                            <input type="number" step="0.01" id="newEstimatedAcoas" class="optional-field">
+                            <span class="percent-suffix">%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="pm-section pm-form-full">
+                <h4>销售信息</h4>
+                <div class="pm-section-body pm-form">
+                    <div class="form-group pm-form-full">
+                        <label for="newSalesTitle">标题（<=200英文字符）</label>
+                        <input type="text" id="newSalesTitle" class="optional-field" maxlength="200">
+                    </div>
+                    <div class="form-group pm-form-full">
+                        <label for="newSalesIntro">简介（<=500英文字符）</label>
+                        <textarea id="newSalesIntro" class="optional-field" maxlength="500" rows="3"></textarea>
+                    </div>
+                    <div class="form-group pm-form-full"><label for="newBullet1">五点描述1（<=500英文字符）</label><textarea id="newBullet1" class="optional-field" maxlength="500" rows="2"></textarea></div>
+                    <div class="form-group pm-form-full"><label for="newBullet2">五点描述2（<=500英文字符）</label><textarea id="newBullet2" class="optional-field" maxlength="500" rows="2"></textarea></div>
+                    <div class="form-group pm-form-full"><label for="newBullet3">五点描述3（<=500英文字符）</label><textarea id="newBullet3" class="optional-field" maxlength="500" rows="2"></textarea></div>
+                    <div class="form-group pm-form-full"><label for="newBullet4">五点描述4（<=500英文字符）</label><textarea id="newBullet4" class="optional-field" maxlength="500" rows="2"></textarea></div>
+                    <div class="form-group pm-form-full"><label for="newBullet5">五点描述5（<=500英文字符）</label><textarea id="newBullet5" class="optional-field" maxlength="500" rows="2"></textarea></div>
+                </div>
             </div>
         </div>
         <div class="pm-modal-actions">
             <button class="btn-secondary" onclick="closeCreate()">取消</button>
             <button class="btn-primary" onclick="createParent()">保存</button>
+        </div>
+    </div>
+</div>
+
+<div class="pm-modal" id="editModal">
+    <div class="pm-modal-content">
+        <h3 style="margin-top:0;">编辑父体</h3>
+        <div class="pm-form">
+            <input type="hidden" id="editParentId">
+            <div class="form-group pm-form-full">
+                <label for="editShopId">店铺/品牌<span class="required-asterisk">*</span></label>
+                <select id="editShopId" class="required-field"></select>
+            </div>
+            <div class="form-group pm-form-full">
+                <label for="editParentCode">父体编号<span class="required-asterisk">*</span></label>
+                <input type="text" id="editParentCode" class="required-field">
+            </div>
+            <div class="form-group pm-form-full">
+                <label for="editSkuMarker">SKU标识</label>
+                <input type="text" id="editSkuMarker" class="optional-field" maxlength="128">
+            </div>
+            <div class="form-group pm-form-full">
+                <label for="editIsEnabled">是否启用</label>
+                <label class="switch-wrap">
+                    <input type="checkbox" id="editIsEnabled" checked>
+                    <span class="switch-slider"></span>
+                </label>
+            </div>
+            <div class="pm-section pm-form-full">
+                <h4>费率预估</h4>
+                <div class="pm-section-body pm-form">
+                    <div class="form-group">
+                        <label for="editEstimatedRefundRate">预估退款率</label>
+                        <div class="percent-input">
+                            <input type="number" step="0.01" id="editEstimatedRefundRate" class="optional-field">
+                            <span class="percent-suffix">%</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="editEstimatedDiscountRate">预估折扣率</label>
+                        <div class="percent-input">
+                            <input type="number" step="0.01" id="editEstimatedDiscountRate" class="optional-field">
+                            <span class="percent-suffix">%</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="editCommissionRate">佣金费率</label>
+                        <div class="percent-input">
+                            <input type="number" step="0.01" id="editCommissionRate" class="optional-field">
+                            <span class="percent-suffix">%</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="editEstimatedAcoas">预估ACOAS</label>
+                        <div class="percent-input">
+                            <input type="number" step="0.01" id="editEstimatedAcoas" class="optional-field">
+                            <span class="percent-suffix">%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="pm-section pm-form-full">
+                <h4>销售信息</h4>
+                <div class="pm-section-body pm-form">
+                    <div class="form-group pm-form-full">
+                        <label for="editSalesTitle">标题（<=200英文字符）</label>
+                        <input type="text" id="editSalesTitle" class="optional-field" maxlength="200">
+                    </div>
+                    <div class="form-group pm-form-full">
+                        <label for="editSalesIntro">简介（<=500英文字符）</label>
+                        <textarea id="editSalesIntro" class="optional-field" maxlength="500" rows="3"></textarea>
+                    </div>
+                    <div class="form-group pm-form-full"><label for="editBullet1">五点描述1（<=500英文字符）</label><textarea id="editBullet1" class="optional-field" maxlength="500" rows="2"></textarea></div>
+                    <div class="form-group pm-form-full"><label for="editBullet2">五点描述2（<=500英文字符）</label><textarea id="editBullet2" class="optional-field" maxlength="500" rows="2"></textarea></div>
+                    <div class="form-group pm-form-full"><label for="editBullet3">五点描述3（<=500英文字符）</label><textarea id="editBullet3" class="optional-field" maxlength="500" rows="2"></textarea></div>
+                    <div class="form-group pm-form-full"><label for="editBullet4">五点描述4（<=500英文字符）</label><textarea id="editBullet4" class="optional-field" maxlength="500" rows="2"></textarea></div>
+                    <div class="form-group pm-form-full"><label for="editBullet5">五点描述5（<=500英文字符）</label><textarea id="editBullet5" class="optional-field" maxlength="500" rows="2"></textarea></div>
+                </div>
+            </div>
+        </div>
+        <div class="pm-modal-actions">
+            <button class="btn-secondary" onclick="closeEdit()">取消</button>
+            <button class="btn-primary" onclick="saveEditParent()">保存</button>
         </div>
     </div>
 </div>
@@ -98,9 +319,47 @@
 <script>
     let items = [];
     let edits = {};
+    let shopOptions = [];
+
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"]/g, function(s) {
+            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[s] || s;
+        });
+    }
+
+    function renderShopOptions() {
+        const options = ['<option value="">请选择店铺/品牌</option>'].concat(
+            (shopOptions || []).map(item => `<option value="${item.id}">${item.shop_name} / ${item.brand_name} / ${item.platform_type_name}</option>`)
+        ).join('');
+        const newSelect = document.getElementById('newShopId');
+        const editSelect = document.getElementById('editShopId');
+        if (newSelect) newSelect.innerHTML = options;
+        if (editSelect) editSelect.innerHTML = options;
+    }
+
+    async function loadShopOptions() {
+        const res = await fetch('/api/shop');
+        const data = await res.json();
+        shopOptions = data.status === 'success' ? (data.items || []) : [];
+        renderShopOptions();
+    }
 
     function openCreate() {
         document.getElementById('newParentCode').value = '';
+        document.getElementById('newSkuMarker').value = '';
+        document.getElementById('newIsEnabled').checked = true;
+        document.getElementById('newShopId').value = '';
+        document.getElementById('newEstimatedRefundRate').value = '';
+        document.getElementById('newEstimatedDiscountRate').value = '';
+        document.getElementById('newCommissionRate').value = '';
+        document.getElementById('newEstimatedAcoas').value = '';
+        document.getElementById('newSalesTitle').value = '';
+        document.getElementById('newSalesIntro').value = '';
+        document.getElementById('newBullet1').value = '';
+        document.getElementById('newBullet2').value = '';
+        document.getElementById('newBullet3').value = '';
+        document.getElementById('newBullet4').value = '';
+        document.getElementById('newBullet5').value = '';
         document.getElementById('createModal').classList.add('active');
     }
 
@@ -123,26 +382,125 @@
     function renderTable() {
         const tbody = document.querySelector('#parentTable tbody');
         if (!items.length) {
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无数据</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">暂无数据</td></tr>';
             return;
         }
         tbody.innerHTML = items.map(item => {
             const patch = edits[item.id] || {};
+            const isEnabledChecked = String(patch.is_enabled ?? item.is_enabled ?? 1) === '1';
             return `
                 <tr>
-                    <td><input class="inline-input" value="${patch.parent_code ?? (item.parent_code || '')}" oninput="markDirty(${item.id}, 'parent_code', this.value)"></td>
-                    <td><input class="inline-input" type="number" step="0.0001" value="${patch.estimated_refund_rate ?? (item.estimated_refund_rate ?? '')}" oninput="markDirty(${item.id}, 'estimated_refund_rate', this.value)"></td>
-                    <td><input class="inline-input" type="number" step="0.0001" value="${patch.estimated_discount_rate ?? (item.estimated_discount_rate ?? '')}" oninput="markDirty(${item.id}, 'estimated_discount_rate', this.value)"></td>
-                    <td><input class="inline-input" type="number" step="0.0001" value="${patch.commission_rate ?? (item.commission_rate ?? '')}" oninput="markDirty(${item.id}, 'commission_rate', this.value)"></td>
-                    <td><input class="inline-input" type="number" step="0.0001" value="${patch.estimated_acoas ?? (item.estimated_acoas ?? '')}" oninput="markDirty(${item.id}, 'estimated_acoas', this.value)"></td>
-                    <td><button class="btn-danger" onclick="deleteParent(${item.id})">删除</button></td>
+                    <td>
+                        <label class="switch-wrap">
+                            <input type="checkbox" ${isEnabledChecked ? 'checked' : ''} onchange="markDirty(${item.id}, 'is_enabled', this.checked ? '1' : '0')">
+                            <span class="switch-slider"></span>
+                        </label>
+                    </td>
+                    <td>${escapeHtml(item.parent_code || '')}</td>
+                    <td><div class="cell-text" title="${escapeHtml(item.sku_marker || '')}">${escapeHtml(item.sku_marker || '')}</div></td>
+                    <td><div class="percent-input"><input class="inline-input" type="number" step="0.01" value="${patch.estimated_refund_rate ?? (item.estimated_refund_rate ?? '')}" oninput="markDirty(${item.id}, 'estimated_refund_rate', this.value)"><span class="percent-suffix">%</span></div></td>
+                    <td><div class="percent-input"><input class="inline-input" type="number" step="0.01" value="${patch.estimated_discount_rate ?? (item.estimated_discount_rate ?? '')}" oninput="markDirty(${item.id}, 'estimated_discount_rate', this.value)"><span class="percent-suffix">%</span></div></td>
+                    <td><div class="percent-input"><input class="inline-input" type="number" step="0.01" value="${patch.commission_rate ?? (item.commission_rate ?? '')}" oninput="markDirty(${item.id}, 'commission_rate', this.value)"><span class="percent-suffix">%</span></div></td>
+                    <td><div class="percent-input"><input class="inline-input" type="number" step="0.01" value="${patch.estimated_acoas ?? (item.estimated_acoas ?? '')}" oninput="markDirty(${item.id}, 'estimated_acoas', this.value)"><span class="percent-suffix">%</span></div></td>
+                    <td>
+                        <div class="pm-actions">
+                            <button class="btn-secondary" onclick="openEdit(${item.id})">编辑</button>
+                            <button class="btn-danger" onclick="deleteParent(${item.id})">删除</button>
+                        </div>
+                    </td>
                 </tr>
             `;
         }).join('');
     }
 
+    async function fetchParentDetail(id) {
+        const res = await fetch(`/api/parent?id=${encodeURIComponent(id)}`);
+        const data = await res.json();
+        if (data.status !== 'success' || !data.item) {
+            throw new Error(data.message || '加载父体详情失败');
+        }
+        return data.item;
+    }
+
+    async function openEdit(id) {
+        try {
+            const item = await fetchParentDetail(id);
+            document.getElementById('editParentId').value = item.id;
+            document.getElementById('editParentCode').value = item.parent_code || '';
+            document.getElementById('editSkuMarker').value = item.sku_marker || '';
+            document.getElementById('editIsEnabled').checked = String(item.is_enabled ?? 1) === '1';
+            document.getElementById('editShopId').value = item.shop_id ? String(item.shop_id) : '';
+            document.getElementById('editEstimatedRefundRate').value = item.estimated_refund_rate ?? '';
+            document.getElementById('editEstimatedDiscountRate').value = item.estimated_discount_rate ?? '';
+            document.getElementById('editCommissionRate').value = item.commission_rate ?? '';
+            document.getElementById('editEstimatedAcoas').value = item.estimated_acoas ?? '';
+            document.getElementById('editSalesTitle').value = item.sales_title || '';
+            document.getElementById('editSalesIntro').value = item.sales_intro || '';
+            document.getElementById('editBullet1').value = item.sales_bullet_1 || '';
+            document.getElementById('editBullet2').value = item.sales_bullet_2 || '';
+            document.getElementById('editBullet3').value = item.sales_bullet_3 || '';
+            document.getElementById('editBullet4').value = item.sales_bullet_4 || '';
+            document.getElementById('editBullet5').value = item.sales_bullet_5 || '';
+            document.getElementById('editModal').classList.add('active');
+        } catch (error) {
+            alert(error.message || '加载详情失败');
+        }
+    }
+
+    function closeEdit() {
+        document.getElementById('editModal').classList.remove('active');
+    }
+
+    async function saveEditParent() {
+        const id = document.getElementById('editParentId').value;
+        const parent_code = document.getElementById('editParentCode').value.trim();
+        const shop_id = document.getElementById('editShopId').value;
+        if (!id || !parent_code || !shop_id) {
+            alert('请填写店铺/品牌和父体编号');
+            return;
+        }
+        const res = await fetch('/api/parent', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                id,
+                parent_code,
+                is_enabled: document.getElementById('editIsEnabled').checked ? 1 : 0,
+                shop_id,
+                sku_marker: document.getElementById('editSkuMarker').value.trim(),
+                estimated_refund_rate: document.getElementById('editEstimatedRefundRate').value,
+                estimated_discount_rate: document.getElementById('editEstimatedDiscountRate').value,
+                commission_rate: document.getElementById('editCommissionRate').value,
+                estimated_acoas: document.getElementById('editEstimatedAcoas').value,
+                sales_title: document.getElementById('editSalesTitle').value.trim(),
+                sales_intro: document.getElementById('editSalesIntro').value.trim(),
+                sales_bullet_1: document.getElementById('editBullet1').value.trim(),
+                sales_bullet_2: document.getElementById('editBullet2').value.trim(),
+                sales_bullet_3: document.getElementById('editBullet3').value.trim(),
+                sales_bullet_4: document.getElementById('editBullet4').value.trim(),
+                sales_bullet_5: document.getElementById('editBullet5').value.trim()
+            })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+            closeEdit();
+            await loadParents();
+        } else {
+            alert(data.message || '保存失败');
+        }
+    }
+
+    function resetSearch() {
+        document.getElementById('searchInput').value = '';
+        loadParents();
+    }
+
     async function loadParents() {
-        const res = await fetch('/api/parent');
+        const keyword = document.getElementById('searchInput').value.trim();
+        const url = keyword
+            ? `/api/parent?simple=1&q=${encodeURIComponent(keyword)}`
+            : '/api/parent?simple=1';
+        const res = await fetch(url);
         const data = await res.json();
         items = data.status === 'success' ? (data.items || []) : [];
         renderTable();
@@ -150,11 +508,31 @@
 
     async function createParent() {
         const parent_code = document.getElementById('newParentCode').value.trim();
-        if (!parent_code) return;
+        const shop_id = document.getElementById('newShopId').value;
+        if (!parent_code || !shop_id) {
+            alert('请填写店铺/品牌和父体编号');
+            return;
+        }
         const res = await fetch('/api/parent', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ parent_code })
+            body: JSON.stringify({
+                parent_code,
+                is_enabled: document.getElementById('newIsEnabled').checked ? 1 : 0,
+                shop_id,
+                sku_marker: document.getElementById('newSkuMarker').value.trim(),
+                estimated_refund_rate: document.getElementById('newEstimatedRefundRate').value,
+                estimated_discount_rate: document.getElementById('newEstimatedDiscountRate').value,
+                commission_rate: document.getElementById('newCommissionRate').value,
+                estimated_acoas: document.getElementById('newEstimatedAcoas').value,
+                sales_title: document.getElementById('newSalesTitle').value.trim(),
+                sales_intro: document.getElementById('newSalesIntro').value.trim(),
+                sales_bullet_1: document.getElementById('newBullet1').value.trim(),
+                sales_bullet_2: document.getElementById('newBullet2').value.trim(),
+                sales_bullet_3: document.getElementById('newBullet3').value.trim(),
+                sales_bullet_4: document.getElementById('newBullet4').value.trim(),
+                sales_bullet_5: document.getElementById('newBullet5').value.trim()
+            })
         });
         const data = await res.json();
         if (data.status === 'success') {
@@ -168,15 +546,27 @@
     async function saveChanges() {
         const ids = Object.keys(edits);
         for (const id of ids) {
-            const base = items.find(x => String(x.id) === String(id));
+            const rowBase = items.find(x => String(x.id) === String(id));
+            if (!rowBase) continue;
+            const base = await fetchParentDetail(id);
             if (!base) continue;
             const payload = {
                 id: base.id,
-                parent_code: (edits[id].parent_code ?? base.parent_code) || '',
-                estimated_refund_rate: edits[id].estimated_refund_rate ?? base.estimated_refund_rate,
-                estimated_discount_rate: edits[id].estimated_discount_rate ?? base.estimated_discount_rate,
-                commission_rate: edits[id].commission_rate ?? base.commission_rate,
-                estimated_acoas: edits[id].estimated_acoas ?? base.estimated_acoas
+                parent_code: base.parent_code || '',
+                is_enabled: edits[id].is_enabled ?? (rowBase.is_enabled ?? base.is_enabled ?? 1),
+                shop_id: base.shop_id || null,
+                sku_marker: base.sku_marker ?? '',
+                estimated_refund_rate: edits[id].estimated_refund_rate ?? rowBase.estimated_refund_rate ?? base.estimated_refund_rate,
+                estimated_discount_rate: edits[id].estimated_discount_rate ?? rowBase.estimated_discount_rate ?? base.estimated_discount_rate,
+                commission_rate: edits[id].commission_rate ?? rowBase.commission_rate ?? base.commission_rate,
+                estimated_acoas: edits[id].estimated_acoas ?? rowBase.estimated_acoas ?? base.estimated_acoas,
+                sales_title: base.sales_title ?? '',
+                sales_intro: base.sales_intro ?? '',
+                sales_bullet_1: base.sales_bullet_1 ?? '',
+                sales_bullet_2: base.sales_bullet_2 ?? '',
+                sales_bullet_3: base.sales_bullet_3 ?? '',
+                sales_bullet_4: base.sales_bullet_4 ?? '',
+                sales_bullet_5: base.sales_bullet_5 ?? ''
             };
             const res = await fetch('/api/parent', {
                 method: 'PUT',
@@ -212,8 +602,18 @@
     document.getElementById('createModal').addEventListener('click', function(e) {
         if (e.target === this) closeCreate();
     });
+    document.getElementById('editModal').addEventListener('click', function(e) {
+        if (e.target === this) closeEdit();
+    });
 
-    window.addEventListener('load', loadParents);
+    document.getElementById('searchInput').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') loadParents();
+    });
+
+    window.addEventListener('load', async function() {
+        await loadShopOptions();
+        await loadParents();
+    });
 </script>
 <script src="/static/js/header.js"></script>
 </body>

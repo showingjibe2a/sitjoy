@@ -294,6 +294,13 @@
             border-color: var(--morandi-ink) !important;
             background: rgba(255, 255, 255, 0.75);
         }
+        .fabric-thumb-empty {
+            display: inline-block;
+            color: var(--morandi-slate);
+            font-size: 0.9rem;
+            line-height: 1;
+            padding: 0.2rem 0;
+        }
     </style>
 </head>
 <body>
@@ -375,7 +382,7 @@
                         </div>
                     </div>
                     <div class="form-group pm-form-full">
-                        <label>面料图片管理<span class="required-asterisk">*</span></label>
+                        <label>面料图片管理</label>
                         <div class="fabric-images-manager">
                             <div class="fabric-images-toolbar">
                                 <button type="button" class="btn-secondary" id="btnSelectExisting" onclick="toggleExistingImagePanel()">选择已有图片</button>
@@ -388,7 +395,7 @@
                                 <div class="fabric-existing-list" id="modalImageList"></div>
                             </div>
                             <div class="fabric-images-grid" id="selectedImagesGrid">
-                                <div class="fabric-images-empty">未选择图片，请点击上方按钮选择或导入图片</div>
+                                <div class="fabric-images-empty">未选择图片（可为空），可点击上方按钮选择或导入图片</div>
                             </div>
                         </div>
                     </div>
@@ -490,6 +497,31 @@
             return `/api/image-preview?id=${encodeURIComponent(imageB64)}&mode=thumb&w=${width}&q=${quality}`;
         }
 
+        function getSelectedImagePreviewSrc(img, width = 520, quality = 72) {
+            if (img && img._isNewUpload && img._fileObject instanceof File) {
+                if (!img._localPreviewUrl) {
+                    try {
+                        img._localPreviewUrl = URL.createObjectURL(img._fileObject);
+                    } catch (e) {
+                        img._localPreviewUrl = '';
+                    }
+                }
+                if (img._localPreviewUrl) return img._localPreviewUrl;
+            }
+            return getFabricImagePreviewSrc(img ? img.image_name : '', width, quality);
+        }
+
+        function cleanupSelectedImagePreviewUrls() {
+            (selectedImageObjects || []).forEach(img => {
+                if (img && img._localPreviewUrl) {
+                    try {
+                        URL.revokeObjectURL(img._localPreviewUrl);
+                    } catch (e) {}
+                    delete img._localPreviewUrl;
+                }
+            });
+        }
+
         function showModalStatus(message, isError) {
             const el = document.getElementById('modalStatus');
             el.style.display = 'block';
@@ -510,6 +542,7 @@
         }
 
         function openCreateModal() {
+            cleanupSelectedImagePreviewUrls();
             editId = null;
             excludeUsedImages = true;
             document.getElementById('pm-modal-title').innerText = '新增面料';
@@ -534,6 +567,7 @@
         }
 
         function openEditModal(item) {
+            cleanupSelectedImagePreviewUrls();
             editId = item.id;
             excludeUsedImages = false;
             document.getElementById('pm-modal-title').innerText = '编辑面料';
@@ -714,6 +748,7 @@
         }
 
         function closeModal() {
+            cleanupSelectedImagePreviewUrls();
             document.getElementById('pm-modal').classList.remove('active');
             editId = null;
         }
@@ -831,11 +866,6 @@
                 return;
             }
             
-            if (!selectedImageObjects.length) {
-                showModalStatus('请选择或上传图片', true);
-                return;
-            }
-
             // 检查是否有新上传的文件
             const newUploads = selectedImageObjects.filter(img => img._isNewUpload);
             
@@ -862,9 +892,15 @@
                         let uploadIndex = 0;
                         selectedImageObjects.forEach(img => {
                             if (img._isNewUpload && uploadIndex < uploadedNames.length) {
+                                if (img._localPreviewUrl) {
+                                    try {
+                                        URL.revokeObjectURL(img._localPreviewUrl);
+                                    } catch (e) {}
+                                }
                                 img.image_name = uploadedNames[uploadIndex];
                                 delete img._isNewUpload;
                                 delete img._fileObject;
+                                delete img._localPreviewUrl;
                                 uploadIndex++;
                             }
                         });
@@ -975,7 +1011,9 @@
                             ? `<img class="fabric-table-thumb" src="/api/image-preview?id=${encodeURIComponent(imageB64)}&mode=thumb&w=220&q=68" alt="${imageName}">`
                             : '';
                         const imageCount = imageNames.length > 1 ? `<div class="fabric-image-count">${imageNames.length}</div>` : '';
-                        const thumbWrap = imageThumb ? `<div class="fabric-thumb-wrap">${imageThumb}${imageCount}</div>` : '';
+                        const thumbWrap = imageThumb
+                            ? `<div class="fabric-thumb-wrap">${imageThumb}${imageCount}</div>`
+                            : '<span class="fabric-thumb-empty">-</span>';
                         const materialText = item.material_name ? `${item.material_name} / ${item.material_name_en || ''}` : '';
                         return `
                             <tr>
@@ -989,7 +1027,8 @@
                                         <button class="btn-secondary edit-btn" data-id="${item.id}">编辑</button>
                                         <button class="btn-danger" onclick='deleteFabric(${item.id})'>删除</button>
                                     </div>
-                                <tr>
+                                </td>
+                            </tr>
                         `;
                     }).join('');
 
@@ -1079,7 +1118,7 @@
             const grid = document.getElementById('selectedImagesGrid');
 
             if (!selectedImageObjects.length) {
-                grid.innerHTML = '<div class="fabric-images-empty">未选择图片，请点击上方按钮选择或导入图片</div>';
+                grid.innerHTML = '<div class="fabric-images-empty">未选择图片（可为空），可点击上方按钮选择或导入图片</div>';
                 return;
             }
 
@@ -1105,7 +1144,7 @@
                 card.innerHTML = `
                     <div class="fabric-image-remove-badge" onclick="removeImageCard(${index}); event.stopPropagation();"><span class="fabric-image-remove-icon">×</span></div>
                     <div class="fabric-image-preview-wrap">
-                        <img src="${getFabricImagePreviewSrc(img.image_name, 520, 72)}" alt="${img.image_name}" class="fabric-image-preview" loading="lazy">
+                        <img src="${getSelectedImagePreviewSrc(img, 520, 72)}" alt="${img.image_name}" class="fabric-image-preview" loading="lazy">
                     </div>
                     <div class="fabric-image-info">
                         <div class="fabric-image-remark">
@@ -1152,6 +1191,12 @@
         }
 
         function removeImageCard(index) {
+            const removed = selectedImageObjects[index];
+            if (removed && removed._localPreviewUrl) {
+                try {
+                    URL.revokeObjectURL(removed._localPreviewUrl);
+                } catch (e) {}
+            }
             selectedImageObjects.splice(index, 1);
             // reindex
             selectedImageObjects.forEach((img, idx) => img.sort_order = idx);

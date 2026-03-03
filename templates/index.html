@@ -861,14 +861,16 @@
         });
 
         function loadTodos() {
-            fetch('/api/todo', { credentials: 'include' })
+            return fetch('/api/todo', { credentials: 'include' })
                 .then(r => r.json())
                 .then(data => {
                     const container = document.getElementById('todoList');
                     container.innerHTML = '';
-                    if (!data.items) return;
+                    const items = (data && data.items) ? data.items : [];
+                    window.calendarTodosCache = items;
+                    if (!items.length) return items;
                     
-                    data.items.forEach(todo => {
+                    items.forEach(todo => {
                         const div = document.createElement('div');
                         div.className = 'rail-item';
                         div.innerHTML = `
@@ -885,23 +887,26 @@
                         `;
                         container.appendChild(div);
                     });
+                    return items;
                 });
         }
 
         function loadEmployees() {
-            fetch('/api/employee', { credentials: 'include' })
+            return fetch('/api/employee', { credentials: 'include' })
                 .then(r => r.json())
                 .then(data => {
                     const tbody = document.querySelector('#employeeTable tbody');
                     if (!tbody) return;
                     if (data.status !== 'success') {
                         tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">${data.message || '加载失败'}</td></tr>`;
-                        return;
+                        window.calendarEmployeesCache = [];
+                        return [];
                     }
                     const items = data.items || [];
+                    window.calendarEmployeesCache = items;
                     if (items.length === 0) {
                         tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无账号</td></tr>';
-                        return;
+                        return items;
                     }
                     tbody.innerHTML = items.map(emp => {
                         const displayName = emp.name || '-';
@@ -924,10 +929,11 @@
                             </tr>
                         `;
                     }).join('');
+                    return items;
                 });
         }
 
-        async function loadCalendar() {
+        async function loadCalendar(options = {}) {
             const yearValue = parseInt(document.getElementById('calendarYear').value, 10);
             const monthValue = parseInt(document.getElementById('calendarMonth').value, 10);
             const today = new Date();
@@ -937,14 +943,18 @@
             if (!grid) return;
             grid.innerHTML = '';
 
-            const [todosResp, employeesResp] = await Promise.all([
-                fetch('/api/todo', { credentials: 'include' }).then(r => r.json()).catch(() => ({ items: [] })),
-                fetch('/api/employee', { credentials: 'include' }).then(r => r.json()).catch(() => ({ items: [] }))
-            ]);
-            const todos = (todosResp && todosResp.items) ? todosResp.items : [];
-            const employees = (employeesResp && employeesResp.items) ? employeesResp.items : [];
-            window.calendarTodosCache = todos;
-            window.calendarEmployeesCache = employees;
+            const forceReload = !!options.forceReload;
+            let todos = Array.isArray(window.calendarTodosCache) ? window.calendarTodosCache : null;
+            let employees = Array.isArray(window.calendarEmployeesCache) ? window.calendarEmployeesCache : null;
+
+            if (forceReload || !todos || !employees) {
+                const [todoItems, employeeItems] = await Promise.all([
+                    loadTodos().catch(() => []),
+                    loadEmployees().catch(() => [])
+                ]);
+                todos = Array.isArray(todoItems) ? todoItems : [];
+                employees = Array.isArray(employeeItems) ? employeeItems : [];
+            }
 
             const firstDay = new Date(year, month - 1, 1).getDay();
             const daysInMonth = new Date(year, month, 0).getDate();
@@ -1334,9 +1344,9 @@
             checkAuth().then(() => {
                 buildCalendarControls();
                 bindEvents();
-                loadCalendar();
-                loadTodos();
-                loadEmployees();
+                Promise.all([loadTodos(), loadEmployees()])
+                    .then(() => loadCalendar())
+                    .catch(() => loadCalendar());
             });
         });
     </script>

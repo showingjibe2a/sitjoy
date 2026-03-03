@@ -29,10 +29,12 @@ import time
 import cgi
 import tempfile
 import zipfile
+import xml.etree.ElementTree as ET
 import hmac
 import hashlib
 import secrets
 import unicodedata
+import threading
 try:
     from PIL import Image
     _pillow_import_error = None
@@ -74,12 +76,33 @@ class WSGIApp:
         self._platform_types_ready = False
         self._brands_ready = False
         self._shops_ready = False
+        self._amazon_account_health_ready = False
         self._amazon_ad_ready = False
+        self._amazon_ad_delivery_ready = False
+        self._amazon_ad_product_ready = False
+        self._amazon_ad_adjustment_ready = False
         self._amazon_ad_subtypes_ready = False
         self._amazon_ad_operation_types_ready = False
+        self._amazon_keyword_ready = False
+        self._sales_parent_ready = False
         self._sales_product_ready = False
         self._todo_ready = False
+        self._todo_schema_migrated = False
+        self._todo_ensure_lock = threading.Lock()
         self._user_session = {}
+        self._template_options_cache = {}
+
+    def _get_cached_template_options(self, cache_key, loader, ttl_seconds=120):
+        try:
+            now = time.time()
+            cached = self._template_options_cache.get(cache_key)
+            if cached and (now - cached.get('ts', 0) <= ttl_seconds):
+                return cached.get('data')
+            data = loader()
+            self._template_options_cache[cache_key] = {'ts': now, 'data': data}
+            return data
+        except Exception:
+            return loader()
 
     def _get_session_id(self, environ):
         """从 cookie 获取 session_id"""
@@ -137,10 +160,14 @@ class WSGIApp:
     def _get_session_user(self, environ):
         """从cookie读取登录用户ID"""
         session_id = self._get_session_id(environ)
+        token = self._get_cookie_value(environ, 'session_token')
+        token_user = self._verify_stateless_token(token)
+        if token_user:
+            if session_id and session_id not in self._user_session:
+                self._user_session[session_id] = token_user
+            return token_user
         if not session_id:
             # stateless fallback for environments where DB sessions fail
-            token = self._get_cookie_value(environ, 'session_token')
-            token_user = self._verify_stateless_token(token)
             if token_user:
                 return token_user
         if session_id:
@@ -164,8 +191,6 @@ class WSGIApp:
             except Exception as e:
                 print(f"Session DB lookup failed: {type(e).__name__}: {e}")
             # session_id 无效时，尝试 stateless token 作为回退
-            token = self._get_cookie_value(environ, 'session_token')
-            token_user = self._verify_stateless_token(token)
             if token_user:
                 return token_user
         return None
@@ -494,8 +519,6 @@ class WSGIApp:
                 return self.serve_file('templates/gallery.html', 'text/html', start_response)
             elif path == '/product-management':
                 return self.serve_file('templates/product_management.html', 'text/html', start_response)
-            elif path == '/category-management':
-                return self.serve_file('templates/category_management.html', 'text/html', start_response)
             elif path == '/fabric-management':
                 return self.serve_file('templates/fabric_management.html', 'text/html', start_response)
             elif path == '/feature-management':
@@ -508,14 +531,24 @@ class WSGIApp:
                 return self.serve_file('templates/order_product_management.html', 'text/html', start_response)
             elif path == '/shop-brand-management':
                 return self.serve_file('templates/shop_brand_management.html', 'text/html', start_response)
+            elif path == '/amazon-account-health-management':
+                return self.serve_file('templates/amazon_account_health_management.html', 'text/html', start_response)
             elif path == '/sales-product-management':
                 return self.serve_file('templates/sales_product_management.html', 'text/html', start_response)
             elif path == '/parent-management':
                 return self.serve_file('templates/parent_management.html', 'text/html', start_response)
             elif path == '/amazon-ad-management':
                 return self.serve_file('templates/amazon_ad_management.html', 'text/html', start_response)
+            elif path == '/amazon-ad-delivery-management':
+                return self.serve_file('templates/amazon_ad_delivery_management.html', 'text/html', start_response)
+            elif path == '/amazon-ad-product-management':
+                return self.serve_file('templates/amazon_ad_product_management.html', 'text/html', start_response)
+            elif path == '/amazon-ad-adjustment-management':
+                return self.serve_file('templates/amazon_ad_adjustment_management.html', 'text/html', start_response)
             elif path == '/amazon-ad-subtype-management':
                 return self.serve_file('templates/amazon_ad_subtype_management.html', 'text/html', start_response)
+            elif path == '/amazon-ad-keyword-management':
+                return self.serve_file('templates/amazon_ad_keyword_management.html', 'text/html', start_response)
             elif path.startswith('/api/hello'):
                 return self.handle_hello_api(environ, path, method, start_response)
             elif path == '/api/employee':
@@ -554,12 +587,30 @@ class WSGIApp:
                 return self.handle_brand_api(environ, method, start_response)
             elif path == '/api/shop':
                 return self.handle_shop_api(environ, method, start_response)
+            elif path == '/api/amazon-account-health':
+                return self.handle_amazon_account_health_api(environ, method, start_response)
+            elif path == '/api/amazon-account-health-template':
+                return self.handle_amazon_account_health_template_api(environ, method, start_response)
+            elif path == '/api/amazon-account-health-import':
+                return self.handle_amazon_account_health_import_api(environ, method, start_response)
             elif path == '/api/amazon-ad-subtype':
                 return self.handle_amazon_ad_subtype_api(environ, method, start_response)
             elif path == '/api/amazon-ad-operation-type':
                 return self.handle_amazon_ad_operation_type_api(environ, method, start_response)
             elif path == '/api/amazon-ad':
                 return self.handle_amazon_ad_api(environ, method, start_response)
+            elif path == '/api/amazon-ad-delivery':
+                return self.handle_amazon_ad_delivery_api(environ, method, start_response)
+            elif path == '/api/amazon-ad-product':
+                return self.handle_amazon_ad_product_api(environ, method, start_response)
+            elif path == '/api/amazon-ad-adjustment':
+                return self.handle_amazon_ad_adjustment_api(environ, method, start_response)
+            elif path == '/api/amazon-ad-keyword':
+                return self.handle_amazon_ad_keyword_api(environ, method, start_response)
+            elif path == '/api/amazon-ad-keyword-template':
+                return self.handle_amazon_ad_keyword_template_api(environ, method, start_response)
+            elif path == '/api/amazon-ad-keyword-import':
+                return self.handle_amazon_ad_keyword_import_api(environ, method, start_response)
             elif path == '/api/certification':
                 return self.handle_certification_api(environ, method, start_response)
             elif path == '/api/certification-images':
@@ -624,12 +675,12 @@ class WSGIApp:
     def handle_auth_api(self, environ, method, start_response):
         """用户认证 API"""
         try:
-            self._ensure_todo_tables()
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
             action = query_params.get('action', [''])[0]
 
             if method == 'POST' and action == 'login':
+                self._ensure_todo_tables(lightweight=True)
                 data = self._read_json_body(environ)
                 username = (data.get('username') or '').strip()
                 password = (data.get('password') or '').strip()
@@ -695,6 +746,7 @@ class WSGIApp:
                 return [json.dumps({'status': 'success'}).encode('utf-8', errors='surrogatepass')]
 
             elif method == 'GET' and action == 'current':
+                self._ensure_todo_tables(lightweight=True)
                 user_id = self._get_session_user(environ)
                 if not user_id:
                     return self.send_json({'status': 'error', 'message': '未登录'}, start_response)
@@ -722,6 +774,7 @@ class WSGIApp:
                         return self.send_json({'status': 'error', 'message': '用户信息未找到'}, start_response)
 
             elif method == 'GET' and action == 'debug':
+                self._ensure_todo_tables(lightweight=True)
                 session_id = self._get_session_id(environ)
                 db_found = False
                 employee_id = None
@@ -747,6 +800,7 @@ class WSGIApp:
                 }, start_response)
 
             elif method == 'POST' and action == 'register':
+                self._ensure_todo_tables(lightweight=True)
                 data = self._read_json_body(environ)
                 username = (data.get('username') or '').strip()
                 password = (data.get('password') or '').strip()
@@ -1879,6 +1933,48 @@ class WSGIApp:
                 cur.execute(create_sql)
         self._shops_ready = True
 
+    def _ensure_amazon_account_health_table(self):
+        if self._amazon_account_health_ready:
+            return
+        self._ensure_shops_table()
+        create_sql = """
+        CREATE TABLE IF NOT EXISTS amazon_account_health (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            shop_id INT UNSIGNED NOT NULL,
+            account_health_rating INT NOT NULL,
+            suspected_ip_infringement INT NOT NULL DEFAULT 0,
+            intellectual_property_complaints INT NOT NULL DEFAULT 0,
+            authenticity_customer_complaints INT NOT NULL DEFAULT 0,
+            condition_customer_complaints INT NOT NULL DEFAULT 0,
+            food_safety_issues INT NOT NULL DEFAULT 0,
+            listing_policy_violations INT NOT NULL DEFAULT 0,
+            restricted_product_policy_violations INT NOT NULL DEFAULT 0,
+            customer_review_policy_violations INT NOT NULL DEFAULT 0,
+            other_policy_violations INT NOT NULL DEFAULT 0,
+            regulatory_compliance_issues INT NOT NULL DEFAULT 0,
+            order_defect_rate DECIMAL(8,4) NOT NULL DEFAULT 0,
+            negative_feedback_rate DECIMAL(8,4) NOT NULL DEFAULT 0,
+            a_to_z_rate DECIMAL(8,4) NOT NULL DEFAULT 0,
+            chargeback_rate DECIMAL(8,4) NOT NULL DEFAULT 0,
+            late_shipment_rate DECIMAL(8,4) NOT NULL DEFAULT 0,
+            pre_fulfillment_cancel_rate DECIMAL(8,4) NOT NULL DEFAULT 0,
+            valid_tracking_rate DECIMAL(8,4) NOT NULL DEFAULT 0,
+            on_time_delivery_rate DECIMAL(8,4) NOT NULL DEFAULT 0,
+            record_datetime DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            remark VARCHAR(500) NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_aah_shop_date (shop_id, record_datetime),
+            INDEX idx_aah_record_datetime (record_datetime),
+            CONSTRAINT fk_aah_shop FOREIGN KEY (shop_id)
+                REFERENCES shops(id) ON DELETE RESTRICT
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+        with self._get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(create_sql)
+        self._amazon_account_health_ready = True
+
     def _ensure_amazon_ad_subtypes_table(self):
         if self._amazon_ad_subtypes_ready:
             return
@@ -1918,15 +2014,46 @@ class WSGIApp:
         CREATE TABLE IF NOT EXISTS amazon_ad_operation_types (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(128) NOT NULL UNIQUE,
+            apply_portfolio TINYINT(1) NOT NULL DEFAULT 1,
             apply_campaign TINYINT(1) NOT NULL DEFAULT 1,
             apply_group TINYINT(1) NOT NULL DEFAULT 1,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """
+        create_reason_sql = """
+        CREATE TABLE IF NOT EXISTS amazon_ad_operation_reasons (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            operation_type_id INT UNSIGNED NOT NULL,
+            reason_name VARCHAR(255) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_ad_op_reason (operation_type_id, reason_name),
+            INDEX idx_ad_op_reason_type (operation_type_id),
+            CONSTRAINT fk_ad_op_reason_type FOREIGN KEY (operation_type_id)
+                REFERENCES amazon_ad_operation_types(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
         with self._get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(create_sql)
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS cnt
+                    FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'amazon_ad_operation_types'
+                      AND COLUMN_NAME = 'apply_portfolio'
+                    """
+                )
+                row = cur.fetchone()
+                if row and row.get('cnt', 0) == 0:
+                    try:
+                        cur.execute("ALTER TABLE amazon_ad_operation_types ADD COLUMN apply_portfolio TINYINT(1) NOT NULL DEFAULT 1")
+                    except Exception as e:
+                        if pymysql and isinstance(e, pymysql.err.OperationalError) and getattr(e, 'args', [None])[0] == 1060:
+                            pass
+                        else:
+                            raise
                 cur.execute(
                     """
                     SELECT COUNT(*) AS cnt
@@ -1963,6 +2090,7 @@ class WSGIApp:
                             pass
                         else:
                             raise
+                cur.execute(create_reason_sql)
         self._amazon_ad_operation_types_ready = True
 
     def _ensure_amazon_ad_tables(self):
@@ -2005,6 +2133,195 @@ class WSGIApp:
             with conn.cursor() as cur:
                 cur.execute(create_sql)
         self._amazon_ad_ready = True
+
+    def _ensure_amazon_ad_delivery_table(self):
+        if self._amazon_ad_delivery_ready:
+            return
+        self._ensure_amazon_ad_tables()
+        create_sql = """
+        CREATE TABLE IF NOT EXISTS amazon_ad_deliveries (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            status VARCHAR(16) NOT NULL DEFAULT '启动',
+            ad_item_id INT UNSIGNED NOT NULL,
+            delivery_desc VARCHAR(255) NOT NULL,
+            bid_value VARCHAR(32) NULL,
+            observe_interval VARCHAR(64) NULL,
+            next_observe_at DATETIME NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_ad_delivery_item (ad_item_id),
+            INDEX idx_ad_delivery_status (status),
+            INDEX idx_ad_delivery_next_observe (next_observe_at),
+            CONSTRAINT fk_ad_delivery_item FOREIGN KEY (ad_item_id)
+                REFERENCES amazon_ad_items(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+        with self._get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(create_sql)
+        self._amazon_ad_delivery_ready = True
+
+    def _ensure_amazon_ad_product_table(self):
+        if self._amazon_ad_product_ready:
+            return
+        self._ensure_amazon_ad_tables()
+        self._ensure_sales_product_tables()
+        create_sql = """
+        CREATE TABLE IF NOT EXISTS amazon_ad_products (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            status VARCHAR(16) NOT NULL DEFAULT '启动',
+            ad_item_id INT UNSIGNED NOT NULL,
+            sales_product_id INT UNSIGNED NOT NULL,
+            observe_interval VARCHAR(64) NULL,
+            next_observe_at DATETIME NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_ad_product_item (ad_item_id),
+            INDEX idx_ad_product_sales (sales_product_id),
+            INDEX idx_ad_product_status (status),
+            INDEX idx_ad_product_next_observe (next_observe_at),
+            CONSTRAINT fk_ad_product_item FOREIGN KEY (ad_item_id)
+                REFERENCES amazon_ad_items(id) ON DELETE CASCADE,
+            CONSTRAINT fk_ad_product_sales FOREIGN KEY (sales_product_id)
+                REFERENCES sales_products(id) ON DELETE RESTRICT
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+        with self._get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(create_sql)
+        self._amazon_ad_product_ready = True
+
+    def _ensure_amazon_ad_adjustment_table(self):
+        if self._amazon_ad_adjustment_ready:
+            return
+        self._ensure_amazon_ad_tables()
+        self._ensure_amazon_ad_operation_types_table()
+        create_sql = """
+        CREATE TABLE IF NOT EXISTS amazon_ad_adjustments (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            adjust_date DATETIME NOT NULL,
+            ad_item_id INT UNSIGNED NOT NULL,
+            operation_type_id INT UNSIGNED NOT NULL,
+            target_object VARCHAR(255) NOT NULL,
+            before_value VARCHAR(64) NULL,
+            after_value VARCHAR(64) NULL,
+            reason_id INT UNSIGNED NULL,
+            start_time DATETIME NULL,
+            end_time DATETIME NULL,
+            impressions VARCHAR(32) NULL,
+            clicks VARCHAR(32) NULL,
+            cost VARCHAR(32) NULL,
+            orders VARCHAR(32) NULL,
+            sales VARCHAR(32) NULL,
+            acos VARCHAR(32) NULL,
+            cpc VARCHAR(32) NULL,
+            ctr VARCHAR(32) NULL,
+            cvr VARCHAR(32) NULL,
+            attribution_checked TINYINT(1) NOT NULL DEFAULT 0,
+            attribution_orders VARCHAR(32) NULL,
+            attribution_sales VARCHAR(32) NULL,
+            remark VARCHAR(255) NULL,
+            is_quick_submit TINYINT(1) NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_ad_adjustment_ad_item (ad_item_id),
+            INDEX idx_ad_adjustment_operation (operation_type_id),
+            INDEX idx_ad_adjustment_reason (reason_id),
+            INDEX idx_ad_adjustment_date (adjust_date),
+            CONSTRAINT fk_ad_adjustment_item FOREIGN KEY (ad_item_id)
+                REFERENCES amazon_ad_items(id) ON DELETE RESTRICT,
+            CONSTRAINT fk_ad_adjustment_operation FOREIGN KEY (operation_type_id)
+                REFERENCES amazon_ad_operation_types(id) ON DELETE RESTRICT,
+            CONSTRAINT fk_ad_adjustment_reason FOREIGN KEY (reason_id)
+                REFERENCES amazon_ad_operation_reasons(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+        with self._get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(create_sql)
+        self._amazon_ad_adjustment_ready = True
+
+    def _ensure_amazon_keyword_tables(self):
+        if self._amazon_keyword_ready:
+            return
+        self._ensure_category_table()
+        self._ensure_product_table()
+
+        create_keywords_sql = """
+        CREATE TABLE IF NOT EXISTS amazon_keywords (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            category_id INT UNSIGNED NOT NULL,
+            user_search_term VARCHAR(255) NOT NULL,
+            search_rank INT NULL,
+            rank_updated_at DATETIME NULL,
+            previous_search_rank INT NULL,
+            previous_rank_updated_at DATETIME NULL,
+            top_click_asin1 VARCHAR(64) NULL,
+            top_click_asin1_click_share VARCHAR(32) NULL,
+            top_click_asin1_conversion_share VARCHAR(32) NULL,
+            top_click_asin2 VARCHAR(64) NULL,
+            top_click_asin2_click_share VARCHAR(32) NULL,
+            top_click_asin2_conversion_share VARCHAR(32) NULL,
+            top_click_asin3 VARCHAR(64) NULL,
+            top_click_asin3_click_share VARCHAR(32) NULL,
+            top_click_asin3_conversion_share VARCHAR(32) NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_amazon_keyword_term (user_search_term),
+            INDEX idx_amazon_keyword_category (category_id),
+            INDEX idx_amazon_keyword_rank_updated (rank_updated_at),
+            CONSTRAINT fk_amazon_keyword_category FOREIGN KEY (category_id)
+                REFERENCES product_categories(id) ON DELETE RESTRICT
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+
+        create_tags_sql = """
+        CREATE TABLE IF NOT EXISTS amazon_keyword_tags (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            category_id INT UNSIGNED NOT NULL,
+            tag_name VARCHAR(64) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_keyword_tag (category_id, tag_name),
+            INDEX idx_keyword_tag_category (category_id),
+            CONSTRAINT fk_keyword_tag_category FOREIGN KEY (category_id)
+                REFERENCES product_categories(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+
+        create_tag_rel_sql = """
+        CREATE TABLE IF NOT EXISTS amazon_keyword_tag_rel (
+            keyword_id INT UNSIGNED NOT NULL,
+            tag_id INT UNSIGNED NOT NULL,
+            PRIMARY KEY (keyword_id, tag_id),
+            CONSTRAINT fk_keyword_tag_rel_keyword FOREIGN KEY (keyword_id)
+                REFERENCES amazon_keywords(id) ON DELETE CASCADE,
+            CONSTRAINT fk_keyword_tag_rel_tag FOREIGN KEY (tag_id)
+                REFERENCES amazon_keyword_tags(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+
+        create_sku_rel_sql = """
+        CREATE TABLE IF NOT EXISTS amazon_keyword_sku_rel (
+            keyword_id INT UNSIGNED NOT NULL,
+            sku_family_id INT UNSIGNED NOT NULL,
+            relevance_score TINYINT UNSIGNED NOT NULL DEFAULT 1,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (keyword_id, sku_family_id),
+            INDEX idx_keyword_sku_rel_sku (sku_family_id),
+            CONSTRAINT fk_keyword_sku_rel_keyword FOREIGN KEY (keyword_id)
+                REFERENCES amazon_keywords(id) ON DELETE CASCADE,
+            CONSTRAINT fk_keyword_sku_rel_sku FOREIGN KEY (sku_family_id)
+                REFERENCES product_families(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+
+        with self._get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(create_keywords_sql)
+                cur.execute(create_tags_sql)
+                cur.execute(create_tag_rel_sql)
+                cur.execute(create_sku_rel_sql)
+
+        self._amazon_keyword_ready = True
 
     def _ensure_certification_table(self):
         create_sql = """
@@ -2075,7 +2392,9 @@ class WSGIApp:
             version_no VARCHAR(64) NOT NULL,
             fabric_id INT UNSIGNED NULL,
             spec_qty_short VARCHAR(128) NOT NULL,
+            contents_desc_en VARCHAR(255) NULL,
             is_iteration TINYINT(1) NOT NULL DEFAULT 0,
+            is_dachene_product TINYINT(1) NOT NULL DEFAULT 0,
             source_order_product_id INT UNSIGNED NULL,
             finished_length_in DECIMAL(10,2) NULL,
             finished_width_in DECIMAL(10,2) NULL,
@@ -2250,6 +2569,38 @@ class WSGIApp:
                     FROM information_schema.COLUMNS
                     WHERE TABLE_SCHEMA = DATABASE()
                       AND TABLE_NAME = 'order_products'
+                      AND COLUMN_NAME = 'is_dachene_product'
+                    """
+                )
+                row = cur.fetchone()
+                if row and row.get('cnt', 0) == 0:
+                    try:
+                        cur.execute("ALTER TABLE order_products ADD COLUMN is_dachene_product TINYINT(1) NOT NULL DEFAULT 0 AFTER is_iteration")
+                    except Exception:
+                        pass
+
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS cnt
+                    FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'order_products'
+                      AND COLUMN_NAME = 'contents_desc_en'
+                    """
+                )
+                row = cur.fetchone()
+                if row and row.get('cnt', 0) == 0:
+                    try:
+                        cur.execute("ALTER TABLE order_products ADD COLUMN contents_desc_en VARCHAR(255) NULL AFTER spec_qty_short")
+                    except Exception:
+                        pass
+
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS cnt
+                    FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'order_products'
                       AND COLUMN_NAME = 'source_order_product_id'
                     """
                 )
@@ -2278,22 +2629,83 @@ class WSGIApp:
         self._order_product_ready = True
 
     def _ensure_sales_parent_tables(self):
+        if self._sales_parent_ready:
+            return
+        self._ensure_shops_table()
         create_sales_parents = """
         CREATE TABLE IF NOT EXISTS sales_parents (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
             parent_code VARCHAR(64) NOT NULL UNIQUE,
+            is_enabled TINYINT(1) NOT NULL DEFAULT 1,
+            shop_id INT UNSIGNED NULL,
+            sku_marker VARCHAR(128) NULL,
             estimated_refund_rate DECIMAL(8,4) NULL,
             estimated_discount_rate DECIMAL(8,4) NULL,
             commission_rate DECIMAL(8,4) NULL,
             estimated_acoas DECIMAL(8,4) NULL,
+            sales_title VARCHAR(200) NULL,
+            sales_intro VARCHAR(500) NULL,
+            sales_bullet_1 VARCHAR(500) NULL,
+            sales_bullet_2 VARCHAR(500) NULL,
+            sales_bullet_3 VARCHAR(500) NULL,
+            sales_bullet_4 VARCHAR(500) NULL,
+            sales_bullet_5 VARCHAR(500) NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            INDEX idx_parent_code (parent_code)
+            INDEX idx_parent_code (parent_code),
+            INDEX idx_parent_shop (shop_id),
+            CONSTRAINT fk_sales_parents_shop FOREIGN KEY (shop_id)
+                REFERENCES shops(id) ON DELETE SET NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """
         with self._get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(create_sales_parents)
+                migration_columns = [
+                    ("is_enabled", "ALTER TABLE sales_parents ADD COLUMN is_enabled TINYINT(1) NOT NULL DEFAULT 1 AFTER parent_code"),
+                    ("shop_id", "ALTER TABLE sales_parents ADD COLUMN shop_id INT UNSIGNED NULL AFTER is_enabled"),
+                    ("sku_marker", "ALTER TABLE sales_parents ADD COLUMN sku_marker VARCHAR(128) NULL AFTER parent_code"),
+                    ("sales_title", "ALTER TABLE sales_parents ADD COLUMN sales_title VARCHAR(200) NULL AFTER estimated_acoas"),
+                    ("sales_intro", "ALTER TABLE sales_parents ADD COLUMN sales_intro VARCHAR(500) NULL AFTER sales_title"),
+                    ("sales_bullet_1", "ALTER TABLE sales_parents ADD COLUMN sales_bullet_1 VARCHAR(500) NULL AFTER sales_intro"),
+                    ("sales_bullet_2", "ALTER TABLE sales_parents ADD COLUMN sales_bullet_2 VARCHAR(500) NULL AFTER sales_bullet_1"),
+                    ("sales_bullet_3", "ALTER TABLE sales_parents ADD COLUMN sales_bullet_3 VARCHAR(500) NULL AFTER sales_bullet_2"),
+                    ("sales_bullet_4", "ALTER TABLE sales_parents ADD COLUMN sales_bullet_4 VARCHAR(500) NULL AFTER sales_bullet_3"),
+                    ("sales_bullet_5", "ALTER TABLE sales_parents ADD COLUMN sales_bullet_5 VARCHAR(500) NULL AFTER sales_bullet_4")
+                ]
+                for col_name, alter_sql in migration_columns:
+                    try:
+                        cur.execute(
+                            """
+                            SELECT COUNT(*) AS cnt
+                            FROM information_schema.COLUMNS
+                            WHERE TABLE_SCHEMA=DATABASE()
+                              AND TABLE_NAME='sales_parents'
+                              AND COLUMN_NAME=%s
+                            """,
+                            (col_name,)
+                        )
+                        row = cur.fetchone()
+                        if row and row.get('cnt', 0) == 0:
+                            cur.execute(alter_sql)
+                    except Exception:
+                        pass
+                try:
+                    cur.execute("ALTER TABLE sales_parents ADD INDEX idx_parent_shop (shop_id)")
+                except Exception:
+                    pass
+                try:
+                    cur.execute(
+                        """
+                        ALTER TABLE sales_parents
+                        ADD CONSTRAINT fk_sales_parents_shop
+                        FOREIGN KEY (shop_id) REFERENCES shops(id)
+                        ON DELETE SET NULL
+                        """
+                    )
+                except Exception:
+                    pass
+        self._sales_parent_ready = True
 
     def _ensure_sales_product_tables(self):
         if self._sales_product_ready:
@@ -2306,30 +2718,42 @@ class WSGIApp:
         create_sales_products = """
         CREATE TABLE IF NOT EXISTS sales_products (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            shop_id INT UNSIGNED NOT NULL,
+            shop_id INT UNSIGNED NULL,
             portfolio_id INT UNSIGNED NOT NULL,
             platform_sku VARCHAR(128) NOT NULL UNIQUE,
+            product_status VARCHAR(16) NOT NULL DEFAULT 'enabled',
+            sku_family_id INT UNSIGNED NULL,
             parent_id INT UNSIGNED NULL,
             child_code VARCHAR(64) NULL,
+            dachene_yuncang_no VARCHAR(128) NULL,
             fabric VARCHAR(255) NULL,
             spec_name VARCHAR(255) NULL,
+            sales_title VARCHAR(200) NULL,
+            sales_intro VARCHAR(500) NULL,
+            sales_bullet_1 VARCHAR(500) NULL,
+            sales_bullet_2 VARCHAR(500) NULL,
+            sales_bullet_3 VARCHAR(500) NULL,
+            sales_bullet_4 VARCHAR(500) NULL,
+            sales_bullet_5 VARCHAR(500) NULL,
             sale_price_usd DECIMAL(10,2) NULL,
             warehouse_cost_usd DECIMAL(10,2) NULL,
             last_mile_cost_usd DECIMAL(10,2) NULL,
+            finished_length_in DECIMAL(10,2) NULL,
+            finished_width_in DECIMAL(10,2) NULL,
+            finished_height_in DECIMAL(10,2) NULL,
             package_length_in DECIMAL(10,2) NULL,
             package_width_in DECIMAL(10,2) NULL,
             package_height_in DECIMAL(10,2) NULL,
             net_weight_lbs DECIMAL(10,2) NULL,
             gross_weight_lbs DECIMAL(10,2) NULL,
-            assembled_length_in DECIMAL(10,2) NULL,
-            assembled_width_in DECIMAL(10,2) NULL,
-            assembled_height_in DECIMAL(10,2) NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             INDEX idx_sp_shop (shop_id),
+            INDEX idx_sp_sku_family (sku_family_id),
             INDEX idx_sp_parent (parent_id),
             INDEX idx_sp_portfolio (portfolio_id),
-            CONSTRAINT fk_sp_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE RESTRICT,
+            CONSTRAINT fk_sp_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE SET NULL,
+            CONSTRAINT fk_sp_sku_family FOREIGN KEY (sku_family_id) REFERENCES product_families(id) ON DELETE SET NULL,
             CONSTRAINT fk_sp_parent FOREIGN KEY (parent_id) REFERENCES sales_parents(id) ON DELETE SET NULL,
             CONSTRAINT fk_sp_portfolio FOREIGN KEY (portfolio_id) REFERENCES amazon_ad_items(id) ON DELETE RESTRICT
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -2391,49 +2815,31 @@ class WSGIApp:
                 except Exception:
                     pass
 
-                # 删除 sku_family_id 兼容迁移
-                try:
-                    cur.execute(
-                        """
-                        SELECT COUNT(*) AS cnt
-                        FROM information_schema.COLUMNS
-                        WHERE TABLE_SCHEMA=DATABASE()
-                          AND TABLE_NAME='sales_products'
-                          AND COLUMN_NAME='sku_family_id'
-                        """
-                    )
-                    row = cur.fetchone()
-                    if row and row.get('cnt', 0) > 0:
-                        try:
-                            cur.execute("ALTER TABLE sales_products DROP FOREIGN KEY fk_sp_sku_family")
-                        except Exception:
-                            pass
-                        try:
-                            cur.execute("ALTER TABLE sales_products DROP INDEX idx_sp_sku_family")
-                        except Exception:
-                            pass
-                        try:
-                            cur.execute("ALTER TABLE sales_products DROP COLUMN sku_family_id")
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-
                 # 兼容迁移：旧字段重命名/新增
                 migration_columns = [
+                    ("product_status", "ALTER TABLE sales_products ADD COLUMN product_status VARCHAR(16) NOT NULL DEFAULT 'enabled' AFTER platform_sku"),
+                    ("sku_family_id", "ALTER TABLE sales_products ADD COLUMN sku_family_id INT UNSIGNED NULL AFTER platform_sku"),
                     ("parent_id", "ALTER TABLE sales_products ADD COLUMN parent_id INT UNSIGNED NULL AFTER platform_sku"),
                     ("child_code", "ALTER TABLE sales_products ADD COLUMN child_code VARCHAR(64) NULL AFTER parent_id"),
+                    ("dachene_yuncang_no", "ALTER TABLE sales_products ADD COLUMN dachene_yuncang_no VARCHAR(128) NULL AFTER child_code"),
+                    ("sales_title", "ALTER TABLE sales_products ADD COLUMN sales_title VARCHAR(200) NULL AFTER spec_name"),
+                    ("sales_intro", "ALTER TABLE sales_products ADD COLUMN sales_intro VARCHAR(500) NULL AFTER sales_title"),
+                    ("sales_bullet_1", "ALTER TABLE sales_products ADD COLUMN sales_bullet_1 VARCHAR(500) NULL AFTER sales_intro"),
+                    ("sales_bullet_2", "ALTER TABLE sales_products ADD COLUMN sales_bullet_2 VARCHAR(500) NULL AFTER sales_bullet_1"),
+                    ("sales_bullet_3", "ALTER TABLE sales_products ADD COLUMN sales_bullet_3 VARCHAR(500) NULL AFTER sales_bullet_2"),
+                    ("sales_bullet_4", "ALTER TABLE sales_products ADD COLUMN sales_bullet_4 VARCHAR(500) NULL AFTER sales_bullet_3"),
+                    ("sales_bullet_5", "ALTER TABLE sales_products ADD COLUMN sales_bullet_5 VARCHAR(500) NULL AFTER sales_bullet_4"),
                     ("sale_price_usd", "ALTER TABLE sales_products ADD COLUMN sale_price_usd DECIMAL(10,2) NULL AFTER spec_name"),
                     ("warehouse_cost_usd", "ALTER TABLE sales_products ADD COLUMN warehouse_cost_usd DECIMAL(10,2) NULL AFTER sale_price_usd"),
                     ("last_mile_cost_usd", "ALTER TABLE sales_products ADD COLUMN last_mile_cost_usd DECIMAL(10,2) NULL AFTER warehouse_cost_usd"),
-                    ("package_length_in", "ALTER TABLE sales_products ADD COLUMN package_length_in DECIMAL(10,2) NULL AFTER last_mile_cost_usd"),
+                    ("finished_length_in", "ALTER TABLE sales_products ADD COLUMN finished_length_in DECIMAL(10,2) NULL AFTER last_mile_cost_usd"),
+                    ("finished_width_in", "ALTER TABLE sales_products ADD COLUMN finished_width_in DECIMAL(10,2) NULL AFTER finished_length_in"),
+                    ("finished_height_in", "ALTER TABLE sales_products ADD COLUMN finished_height_in DECIMAL(10,2) NULL AFTER finished_width_in"),
+                    ("package_length_in", "ALTER TABLE sales_products ADD COLUMN package_length_in DECIMAL(10,2) NULL AFTER finished_height_in"),
                     ("package_width_in", "ALTER TABLE sales_products ADD COLUMN package_width_in DECIMAL(10,2) NULL AFTER package_length_in"),
                     ("package_height_in", "ALTER TABLE sales_products ADD COLUMN package_height_in DECIMAL(10,2) NULL AFTER package_width_in"),
                     ("net_weight_lbs", "ALTER TABLE sales_products ADD COLUMN net_weight_lbs DECIMAL(10,2) NULL AFTER package_height_in"),
-                    ("gross_weight_lbs", "ALTER TABLE sales_products ADD COLUMN gross_weight_lbs DECIMAL(10,2) NULL AFTER net_weight_lbs"),
-                    ("assembled_length_in", "ALTER TABLE sales_products ADD COLUMN assembled_length_in DECIMAL(10,2) NULL AFTER gross_weight_lbs"),
-                    ("assembled_width_in", "ALTER TABLE sales_products ADD COLUMN assembled_width_in DECIMAL(10,2) NULL AFTER assembled_length_in"),
-                    ("assembled_height_in", "ALTER TABLE sales_products ADD COLUMN assembled_height_in DECIMAL(10,2) NULL AFTER assembled_width_in")
+                    ("gross_weight_lbs", "ALTER TABLE sales_products ADD COLUMN gross_weight_lbs DECIMAL(10,2) NULL AFTER net_weight_lbs")
                 ]
                 for col_name, alter_sql in migration_columns:
                     try:
@@ -2452,6 +2858,45 @@ class WSGIApp:
                             cur.execute(alter_sql)
                     except Exception:
                         pass
+
+                try:
+                    cur.execute(
+                        """
+                        SELECT COUNT(*) AS cnt
+                        FROM information_schema.STATISTICS
+                        WHERE TABLE_SCHEMA=DATABASE()
+                          AND TABLE_NAME='sales_products'
+                          AND INDEX_NAME='idx_sp_sku_family'
+                        """
+                    )
+                    idx_row = cur.fetchone()
+                    if not idx_row or idx_row.get('cnt', 0) == 0:
+                        cur.execute("ALTER TABLE sales_products ADD INDEX idx_sp_sku_family (sku_family_id)")
+                except Exception:
+                    pass
+
+                try:
+                    cur.execute(
+                        """
+                        SELECT COUNT(*) AS cnt
+                        FROM information_schema.KEY_COLUMN_USAGE
+                        WHERE TABLE_SCHEMA=DATABASE()
+                          AND TABLE_NAME='sales_products'
+                          AND CONSTRAINT_NAME='fk_sp_sku_family'
+                        """
+                    )
+                    fk_row = cur.fetchone()
+                    if not fk_row or fk_row.get('cnt', 0) == 0:
+                        cur.execute(
+                            """
+                            ALTER TABLE sales_products
+                            ADD CONSTRAINT fk_sp_sku_family
+                            FOREIGN KEY (sku_family_id) REFERENCES product_families(id)
+                            ON DELETE SET NULL
+                            """
+                        )
+                except Exception:
+                    pass
 
                 # 旧 parent_asin/child_asin 字段迁移
                 try:
@@ -2502,8 +2947,30 @@ class WSGIApp:
                 except Exception:
                     pass
 
+                for old_col in ['assembled_length_in', 'assembled_width_in', 'assembled_height_in']:
+                    try:
+                        cur.execute(
+                            """
+                            SELECT COUNT(*) AS cnt
+                            FROM information_schema.COLUMNS
+                            WHERE TABLE_SCHEMA=DATABASE()
+                              AND TABLE_NAME='sales_products'
+                              AND COLUMN_NAME=%s
+                            """,
+                            (old_col,)
+                        )
+                        row = cur.fetchone()
+                        if row and row.get('cnt', 0) > 0:
+                            cur.execute(f"ALTER TABLE sales_products DROP COLUMN {old_col}")
+                    except Exception:
+                        pass
+
                 try:
                     cur.execute("ALTER TABLE sales_products ADD INDEX idx_sp_parent (parent_id)")
+                except Exception:
+                    pass
+                try:
+                    cur.execute("ALTER TABLE sales_products MODIFY COLUMN shop_id INT UNSIGNED NULL")
                 except Exception:
                     pass
                 try:
@@ -2518,198 +2985,208 @@ class WSGIApp:
                     pass
         self._sales_product_ready = True
 
-    def _ensure_todo_tables(self):
-        if self._todo_ready:
+    def _ensure_todo_tables(self, lightweight=False):
+        if self._todo_ready and (lightweight or self._todo_schema_migrated):
             return
 
-        create_users = """
-        CREATE TABLE IF NOT EXISTS users (
-            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            username VARCHAR(64) NOT NULL UNIQUE,
-            password_hash VARCHAR(255) NOT NULL,
-            name VARCHAR(128) NULL,
-            phone VARCHAR(64) NULL,
-            birthday DATE NULL,
-            is_admin TINYINT UNSIGNED NOT NULL DEFAULT 0,
-            can_manage_todos TINYINT UNSIGNED NOT NULL DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            INDEX idx_username (username),
-            INDEX idx_birthday (birthday),
-            INDEX idx_name (name)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        """
+        with self._todo_ensure_lock:
+            if self._todo_ready and (lightweight or self._todo_schema_migrated):
+                return
 
-        create_todos = """
-        CREATE TABLE IF NOT EXISTS todos (
-            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            title VARCHAR(255) NOT NULL,
-            detail TEXT NULL,
-            start_date DATE NOT NULL,
-            due_date DATE NOT NULL,
-            reminder_interval_days INT UNSIGNED NOT NULL DEFAULT 1,
-            last_check_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            next_check_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            is_recurring TINYINT UNSIGNED NOT NULL DEFAULT 0,
-            status VARCHAR(16) NOT NULL DEFAULT 'open',
-            priority TINYINT UNSIGNED NOT NULL DEFAULT 2,
-            created_by INT UNSIGNED NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            INDEX idx_due_date (due_date),
-            INDEX idx_status (status),
-            INDEX idx_created_by (created_by),
-            CONSTRAINT fk_todos_created_by FOREIGN KEY (created_by)
-                REFERENCES users(id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        """
+            create_users = """
+            CREATE TABLE IF NOT EXISTS users (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(64) NOT NULL UNIQUE,
+                password_hash VARCHAR(255) NOT NULL,
+                name VARCHAR(128) NULL,
+                phone VARCHAR(64) NULL,
+                birthday DATE NULL,
+                is_admin TINYINT UNSIGNED NOT NULL DEFAULT 0,
+                can_manage_todos TINYINT UNSIGNED NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_username (username),
+                INDEX idx_birthday (birthday),
+                INDEX idx_name (name)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """
 
-        create_todo_assignments = """
-        CREATE TABLE IF NOT EXISTS todo_assignments (
-            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            todo_id INT UNSIGNED NOT NULL,
-            assignee_id INT UNSIGNED NOT NULL,
-            assignment_status VARCHAR(16) NOT NULL DEFAULT 'pending',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE KEY uk_todo_assignee (todo_id, assignee_id),
-            CONSTRAINT fk_ta_todo FOREIGN KEY (todo_id)
-                REFERENCES todos(id) ON DELETE CASCADE,
-            CONSTRAINT fk_ta_assignee FOREIGN KEY (assignee_id)
-                REFERENCES users(id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        """
+            create_todos = """
+            CREATE TABLE IF NOT EXISTS todos (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                title VARCHAR(255) NOT NULL,
+                detail TEXT NULL,
+                start_date DATE NOT NULL,
+                due_date DATE NOT NULL,
+                reminder_interval_days INT UNSIGNED NOT NULL DEFAULT 1,
+                last_check_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                next_check_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                is_recurring TINYINT UNSIGNED NOT NULL DEFAULT 0,
+                status VARCHAR(16) NOT NULL DEFAULT 'open',
+                priority TINYINT UNSIGNED NOT NULL DEFAULT 2,
+                created_by INT UNSIGNED NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_due_date (due_date),
+                INDEX idx_status (status),
+                INDEX idx_created_by (created_by),
+                CONSTRAINT fk_todos_created_by FOREIGN KEY (created_by)
+                    REFERENCES users(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """
 
-        create_sessions = """
-        CREATE TABLE IF NOT EXISTS sessions (
-            session_id VARCHAR(128) PRIMARY KEY,
-            employee_id INT UNSIGNED NOT NULL,
-            expires_at DATETIME NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            INDEX idx_emp (employee_id),
-            CONSTRAINT fk_sessions_user FOREIGN KEY (employee_id) REFERENCES users(id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        """
+            create_todo_assignments = """
+            CREATE TABLE IF NOT EXISTS todo_assignments (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                todo_id INT UNSIGNED NOT NULL,
+                assignee_id INT UNSIGNED NOT NULL,
+                assignment_status VARCHAR(16) NOT NULL DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uk_todo_assignee (todo_id, assignee_id),
+                CONSTRAINT fk_ta_todo FOREIGN KEY (todo_id)
+                    REFERENCES todos(id) ON DELETE CASCADE,
+                CONSTRAINT fk_ta_assignee FOREIGN KEY (assignee_id)
+                    REFERENCES users(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """
 
-        with self._get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(create_users)
-                cur.execute(create_todos)
-                cur.execute(create_todo_assignments)
-                cur.execute(create_sessions)
+            create_sessions = """
+            CREATE TABLE IF NOT EXISTS sessions (
+                session_id VARCHAR(128) PRIMARY KEY,
+                employee_id INT UNSIGNED NOT NULL,
+                expires_at DATETIME NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_emp (employee_id),
+                CONSTRAINT fk_sessions_user FOREIGN KEY (employee_id) REFERENCES users(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """
 
-                # Ensure users schema has required columns
-                for col, ddl in (
-                    ('name', "ALTER TABLE users ADD COLUMN name VARCHAR(128) NULL"),
-                    ('phone', "ALTER TABLE users ADD COLUMN phone VARCHAR(64) NULL"),
-                    ('birthday', "ALTER TABLE users ADD COLUMN birthday DATE NULL"),
-                    ('is_admin', "ALTER TABLE users ADD COLUMN is_admin TINYINT UNSIGNED NOT NULL DEFAULT 0"),
-                    ('can_manage_todos', "ALTER TABLE users ADD COLUMN can_manage_todos TINYINT UNSIGNED NOT NULL DEFAULT 0"),
-                ):
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(create_users)
+                    cur.execute(create_todos)
+                    cur.execute(create_todo_assignments)
+                    cur.execute(create_sessions)
+                    self._todo_ready = True
+
+                    if lightweight:
+                        return
+
+                    for col, ddl in (
+                        ('name', "ALTER TABLE users ADD COLUMN name VARCHAR(128) NULL"),
+                        ('phone', "ALTER TABLE users ADD COLUMN phone VARCHAR(64) NULL"),
+                        ('birthday', "ALTER TABLE users ADD COLUMN birthday DATE NULL"),
+                        ('is_admin', "ALTER TABLE users ADD COLUMN is_admin TINYINT UNSIGNED NOT NULL DEFAULT 0"),
+                        ('can_manage_todos', "ALTER TABLE users ADD COLUMN can_manage_todos TINYINT UNSIGNED NOT NULL DEFAULT 0"),
+                    ):
+                        cur.execute(
+                            """
+                            SELECT COUNT(*) AS cnt
+                            FROM information_schema.COLUMNS
+                            WHERE TABLE_SCHEMA = DATABASE()
+                              AND TABLE_NAME = 'users'
+                              AND COLUMN_NAME = %s
+                            """,
+                            (col,)
+                        )
+                        row = cur.fetchone()
+                        if row and row.get('cnt', 0) == 0:
+                            cur.execute(ddl)
+
                     cur.execute(
                         """
                         SELECT COUNT(*) AS cnt
                         FROM information_schema.COLUMNS
                         WHERE TABLE_SCHEMA = DATABASE()
                           AND TABLE_NAME = 'users'
-                          AND COLUMN_NAME = %s
-                        """,
-                        (col,)
-                    )
-                    row = cur.fetchone()
-                    if row and row.get('cnt', 0) == 0:
-                        cur.execute(ddl)
-
-                # Drop legacy employee_id column on users if present
-                cur.execute(
-                    """
-                    SELECT COUNT(*) AS cnt
-                    FROM information_schema.COLUMNS
-                    WHERE TABLE_SCHEMA = DATABASE()
-                      AND TABLE_NAME = 'users'
-                      AND COLUMN_NAME = 'employee_id'
-                    """
-                )
-                emp_col = cur.fetchone()
-                if emp_col and emp_col.get('cnt', 0) > 0:
-                    cur.execute(
-                        """
-                        SELECT CONSTRAINT_NAME
-                        FROM information_schema.KEY_COLUMN_USAGE
-                        WHERE TABLE_SCHEMA = DATABASE()
-                          AND TABLE_NAME = 'users'
                           AND COLUMN_NAME = 'employee_id'
-                          AND REFERENCED_TABLE_NAME IS NOT NULL
                         """
                     )
-                    for fk in cur.fetchall() or []:
-                        try:
-                            cur.execute(f"ALTER TABLE users DROP FOREIGN KEY {fk['CONSTRAINT_NAME']}")
-                        except Exception:
-                            pass
-                    try:
-                        cur.execute("ALTER TABLE users MODIFY COLUMN employee_id INT UNSIGNED NULL")
-                    except Exception:
-                        pass
-                    try:
-                        cur.execute("ALTER TABLE users DROP COLUMN employee_id")
-                    except Exception:
-                        pass
-
-                # Drop legacy foreign keys that reference employees
-                for table_name in ('users', 'todos', 'todo_assignments', 'sessions'):
-                    cur.execute(
-                        """
-                        SELECT CONSTRAINT_NAME
-                        FROM information_schema.KEY_COLUMN_USAGE
-                        WHERE TABLE_SCHEMA = DATABASE()
-                          AND TABLE_NAME = %s
-                          AND REFERENCED_TABLE_NAME = 'employees'
-                        """,
-                        (table_name,)
-                    )
-                    for fk in cur.fetchall() or []:
-                        try:
-                            cur.execute(f"ALTER TABLE {table_name} DROP FOREIGN KEY {fk['CONSTRAINT_NAME']}")
-                        except Exception:
-                            pass
-
-                # Drop legacy employees table if it still exists
-                try:
-                    cur.execute("DROP TABLE IF EXISTS employees")
-                except Exception:
-                    pass
-
-                # Ensure at least one admin exists
-                cur.execute("SELECT COUNT(*) AS cnt FROM users WHERE is_admin=1")
-                admin_row = cur.fetchone()
-                if admin_row and admin_row.get('cnt', 0) == 0:
-                    cur.execute("SELECT id FROM users ORDER BY id ASC LIMIT 1")
-                    first_user = cur.fetchone()
-                    if first_user and first_user.get('id'):
+                    emp_col = cur.fetchone()
+                    if emp_col and emp_col.get('cnt', 0) > 0:
                         cur.execute(
-                            "UPDATE users SET is_admin=1, can_manage_todos=1 WHERE id=%s",
-                            (first_user['id'],)
+                            """
+                            SELECT CONSTRAINT_NAME
+                            FROM information_schema.KEY_COLUMN_USAGE
+                            WHERE TABLE_SCHEMA = DATABASE()
+                              AND TABLE_NAME = 'users'
+                              AND COLUMN_NAME = 'employee_id'
+                              AND REFERENCED_TABLE_NAME IS NOT NULL
+                            """
                         )
+                        for fk in cur.fetchall() or []:
+                            try:
+                                cur.execute(f"ALTER TABLE users DROP FOREIGN KEY {fk['CONSTRAINT_NAME']}")
+                            except Exception:
+                                pass
+                        try:
+                            cur.execute("ALTER TABLE users MODIFY COLUMN employee_id INT UNSIGNED NULL")
+                        except Exception:
+                            pass
+                        try:
+                            cur.execute("ALTER TABLE users DROP COLUMN employee_id")
+                        except Exception:
+                            pass
 
-                # Ensure foreign keys point to users
-                try:
-                    cur.execute(
-                        "ALTER TABLE todos ADD CONSTRAINT fk_todos_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE"
-                    )
-                except Exception:
-                    pass
-                try:
-                    cur.execute(
-                        "ALTER TABLE todo_assignments ADD CONSTRAINT fk_ta_assignee FOREIGN KEY (assignee_id) REFERENCES users(id) ON DELETE CASCADE"
-                    )
-                except Exception:
-                    pass
-                try:
-                    cur.execute(
-                        "ALTER TABLE sessions ADD CONSTRAINT fk_sessions_user FOREIGN KEY (employee_id) REFERENCES users(id) ON DELETE CASCADE"
-                    )
-                except Exception:
-                    pass
+                    for table_name in ('users', 'todos', 'todo_assignments', 'sessions'):
+                        cur.execute(
+                            """
+                            SELECT CONSTRAINT_NAME
+                            FROM information_schema.KEY_COLUMN_USAGE
+                            WHERE TABLE_SCHEMA = DATABASE()
+                              AND TABLE_NAME = %s
+                              AND REFERENCED_TABLE_NAME = 'employees'
+                            """,
+                            (table_name,)
+                        )
+                        for fk in cur.fetchall() or []:
+                            try:
+                                cur.execute(f"ALTER TABLE {table_name} DROP FOREIGN KEY {fk['CONSTRAINT_NAME']}")
+                            except Exception:
+                                pass
 
-        self._todo_ready = True
+                    try:
+                        cur.execute("DROP TABLE IF EXISTS employees")
+                    except Exception:
+                        pass
+
+                    cur.execute("SELECT COUNT(*) AS cnt FROM users WHERE is_admin=1")
+                    admin_row = cur.fetchone()
+                    if admin_row and admin_row.get('cnt', 0) == 0:
+                        cur.execute("SELECT id FROM users ORDER BY id ASC LIMIT 1")
+                        first_user = cur.fetchone()
+                        if first_user and first_user.get('id'):
+                            cur.execute(
+                                "UPDATE users SET is_admin=1, can_manage_todos=1 WHERE id=%s",
+                                (first_user['id'],)
+                            )
+
+                    try:
+                        cur.execute(
+                            "ALTER TABLE todos ADD CONSTRAINT fk_todos_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE"
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        cur.execute(
+                            "ALTER TABLE todo_assignments ADD CONSTRAINT fk_ta_assignee FOREIGN KEY (assignee_id) REFERENCES users(id) ON DELETE CASCADE"
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        cur.execute(
+                            "ALTER TABLE sessions ADD CONSTRAINT fk_sessions_user FOREIGN KEY (employee_id) REFERENCES users(id) ON DELETE CASCADE"
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        cur.execute("ALTER TABLE todo_assignments ADD INDEX idx_ta_assignee_todo (assignee_id, todo_id)")
+                    except Exception:
+                        pass
+                    try:
+                        cur.execute("ALTER TABLE todos ADD INDEX idx_todos_creator_due_priority (created_by, due_date, priority, id)")
+                    except Exception:
+                        pass
+
+            self._todo_schema_migrated = True
 
     def _split_multi_values(self, value):
         if value is None:
@@ -2753,6 +3230,183 @@ class WSGIApp:
         except Exception:
             return None
 
+    def _sanitize_xlsx_bool_cells(self, file_bytes):
+        if not file_bytes:
+            return file_bytes
+        try:
+            zin = zipfile.ZipFile(io.BytesIO(file_bytes), 'r')
+        except Exception:
+            return file_bytes
+
+        out_buffer = io.BytesIO()
+        changed = False
+        ns = {'x': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+        valid_bool_values = {'0', '1', 'true', 'false'}
+
+        with zin:
+            with zipfile.ZipFile(out_buffer, 'w', compression=zipfile.ZIP_DEFLATED) as zout:
+                for info in zin.infolist():
+                    name = info.filename
+                    data = zin.read(name)
+
+                    if name.startswith('xl/worksheets/') and name.endswith('.xml'):
+                        try:
+                            root = ET.fromstring(data)
+                            sheet_changed = False
+                            for cell in root.findall('.//x:c', ns):
+                                if cell.get('t') != 'b':
+                                    continue
+                                value_node = cell.find('x:v', ns)
+                                raw_text = '' if value_node is None or value_node.text is None else str(value_node.text).strip()
+                                if raw_text.lower() not in valid_bool_values:
+                                    cell.set('t', 'str')
+                                    if value_node is None:
+                                        value_node = ET.SubElement(cell, '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}v')
+                                    value_node.text = raw_text
+                                    sheet_changed = True
+                            if sheet_changed:
+                                data = ET.tostring(root, encoding='utf-8', xml_declaration=True)
+                                changed = True
+                        except Exception:
+                            pass
+
+                    zout.writestr(info, data)
+
+        if changed:
+            return out_buffer.getvalue()
+        return file_bytes
+
+    def _scan_xlsx_invalid_bool_cells(self, file_bytes, max_samples=8):
+        if not file_bytes:
+            return {'count': 0, 'samples': []}
+        try:
+            zin = zipfile.ZipFile(io.BytesIO(file_bytes), 'r')
+        except Exception:
+            return {'count': 0, 'samples': []}
+
+        ns = {'x': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+        valid_bool_values = {'0', '1', 'true', 'false'}
+        count = 0
+        samples = []
+
+        with zin:
+            for name in zin.namelist():
+                if not (name.startswith('xl/worksheets/') and name.endswith('.xml')):
+                    continue
+                try:
+                    root = ET.fromstring(zin.read(name))
+                except Exception:
+                    continue
+                for cell in root.findall('.//x:c', ns):
+                    if cell.get('t') != 'b':
+                        continue
+                    value_node = cell.find('x:v', ns)
+                    raw_text = '' if value_node is None or value_node.text is None else str(value_node.text).strip()
+                    if raw_text.lower() in valid_bool_values:
+                        continue
+                    count += 1
+                    if len(samples) < max_samples:
+                        samples.append({
+                            'sheet_xml': name,
+                            'cell': cell.get('r') or '',
+                            'value': raw_text
+                        })
+
+        return {'count': count, 'samples': samples}
+
+    def _xlsx_cell_ref_to_rc(self, ref):
+        ref_text = (ref or '').strip().upper()
+        match = re.match(r'^([A-Z]+)(\d+)$', ref_text)
+        if not match:
+            return None, None
+        letters, row_text = match.group(1), match.group(2)
+        col = 0
+        for ch in letters:
+            col = col * 26 + (ord(ch) - ord('A') + 1)
+        try:
+            row = int(row_text)
+        except Exception:
+            return None, None
+        return row, col
+
+    def _extract_xlsx_shared_strings(self, zin):
+        ns = {'x': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+        if 'xl/sharedStrings.xml' not in zin.namelist():
+            return []
+        try:
+            root = ET.fromstring(zin.read('xl/sharedStrings.xml'))
+            items = []
+            for si in root.findall('.//x:si', ns):
+                texts = []
+                for t_node in si.findall('.//x:t', ns):
+                    texts.append(t_node.text or '')
+                items.append(''.join(texts))
+            return items
+        except Exception:
+            return []
+
+    def _rebuild_workbook_from_xlsx_xml(self, file_bytes):
+        try:
+            zin = zipfile.ZipFile(io.BytesIO(file_bytes), 'r')
+        except Exception:
+            return None
+
+        ns = {'x': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+        with zin:
+            sheet_names = [name for name in zin.namelist() if name.startswith('xl/worksheets/') and name.endswith('.xml')]
+            if not sheet_names:
+                return None
+            sheet_name = 'xl/worksheets/sheet1.xml' if 'xl/worksheets/sheet1.xml' in sheet_names else sorted(sheet_names)[0]
+            try:
+                sheet_root = ET.fromstring(zin.read(sheet_name))
+            except Exception:
+                return None
+            shared_strings = self._extract_xlsx_shared_strings(zin)
+
+        wb = Workbook()
+        ws = wb.active
+
+        for row_node in sheet_root.findall('.//x:sheetData/x:row', ns):
+            row_index = self._parse_int(row_node.get('r')) or 1
+            fallback_col = 1
+            for cell_node in row_node.findall('x:c', ns):
+                ref = cell_node.get('r')
+                parsed_row, parsed_col = self._xlsx_cell_ref_to_rc(ref) if ref else (None, None)
+                target_row = parsed_row or row_index
+                target_col = parsed_col or fallback_col
+                fallback_col = target_col + 1
+
+                cell_type = (cell_node.get('t') or '').strip()
+                if cell_type == 'inlineStr':
+                    text_parts = []
+                    for t_node in cell_node.findall('.//x:t', ns):
+                        text_parts.append(t_node.text or '')
+                    value = ''.join(text_parts)
+                else:
+                    v_node = cell_node.find('x:v', ns)
+                    raw_text = '' if v_node is None or v_node.text is None else str(v_node.text)
+                    if cell_type == 's':
+                        idx = self._parse_int(raw_text)
+                        if idx is not None and 0 <= idx < len(shared_strings):
+                            value = shared_strings[idx]
+                        else:
+                            value = raw_text
+                    elif cell_type == 'b':
+                        lowered = raw_text.strip().lower()
+                        if lowered in ('1', 'true'):
+                            value = '1'
+                        elif lowered in ('0', 'false'):
+                            value = '0'
+                        else:
+                            value = raw_text
+                    else:
+                        value = raw_text
+
+                if value != '':
+                    ws.cell(row=target_row, column=target_col, value=value)
+
+        return wb
+
     def _parse_date_str(self, value):
         if value is None:
             return None
@@ -2778,6 +3432,65 @@ class WSGIApp:
         if text in ('启动', '暂停', '存档'):
             return text
         return None
+
+    def _normalize_observe_interval(self, value):
+        text = ('' if value is None else str(value)).strip()
+        if not text:
+            return None
+        return text[:64]
+
+    def _normalize_observe_days(self, value):
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        m = re.search(r'\d+', text)
+        if not m:
+            return None
+        days = self._parse_int(m.group(0))
+        if days is None:
+            return None
+        if days < 0:
+            return None
+        return days
+
+    def _normalize_datetime_text(self, value):
+        text = ('' if value is None else str(value)).strip()
+        if not text:
+            return None
+        formats = (
+            '%Y-%m-%d %H:%M:%S',
+            '%Y-%m-%d %H:%M',
+            '%Y-%m-%dT%H:%M:%S',
+            '%Y-%m-%dT%H:%M'
+        )
+        for fmt in formats:
+            try:
+                dt = datetime.strptime(text, fmt)
+                return dt.strftime('%Y-%m-%d %H:%M:%S')
+            except Exception:
+                continue
+        return None
+
+    def _normalize_bid_value(self, value):
+        text = ('' if value is None else str(value)).strip().replace(' ', '')
+        if not text:
+            return None
+        if not re.match(r'^(?:\d+(?:\.\d+)?|\.\d+)%?$', text):
+            return None
+        is_percent = text.endswith('%')
+        num_text = text[:-1] if is_percent else text
+        if num_text.startswith('.'):
+            num_text = '0' + num_text
+        try:
+            num = float(num_text)
+        except Exception:
+            return None
+        normalized = ('%.6f' % num).rstrip('0').rstrip('.')
+        if normalized == '':
+            normalized = '0'
+        return normalized + ('%' if is_percent else '')
 
     def _get_sku_family_with_category_short(self, conn, sku_family_id):
         with conn.cursor() as cur:
@@ -2955,12 +3668,12 @@ class WSGIApp:
             material_ids.extend(frame_ids)
         if not material_ids:
             return
+        material_ids = sorted(set(material_ids))
         with conn.cursor() as cur:
-            for material_id in material_ids:
-                cur.execute(
-                    "INSERT IGNORE INTO order_product_materials (order_product_id, material_id) VALUES (%s, %s)",
-                    (order_product_id, material_id)
-                )
+            cur.executemany(
+                "INSERT IGNORE INTO order_product_materials (order_product_id, material_id) VALUES (%s, %s)",
+                [(order_product_id, material_id) for material_id in material_ids]
+            )
 
     def _replace_order_product_feature_ids(self, conn, order_product_id, feature_ids):
         with conn.cursor() as cur:
@@ -2968,12 +3681,12 @@ class WSGIApp:
 
         if not feature_ids:
             return
+        feature_ids = sorted(set(feature_ids))
         with conn.cursor() as cur:
-            for feature_id in feature_ids:
-                cur.execute(
-                    "INSERT IGNORE INTO order_product_features (order_product_id, feature_id) VALUES (%s, %s)",
-                    (order_product_id, feature_id)
-                )
+            cur.executemany(
+                "INSERT IGNORE INTO order_product_features (order_product_id, feature_id) VALUES (%s, %s)",
+                [(order_product_id, feature_id) for feature_id in feature_ids]
+            )
 
     def _replace_order_product_certification_ids(self, conn, order_product_id, certification_ids):
         with conn.cursor() as cur:
@@ -2981,12 +3694,12 @@ class WSGIApp:
 
         if not certification_ids:
             return
+        certification_ids = sorted(set(certification_ids))
         with conn.cursor() as cur:
-            for certification_id in certification_ids:
-                cur.execute(
-                    "INSERT IGNORE INTO order_product_certifications (order_product_id, certification_id) VALUES (%s, %s)",
-                    (order_product_id, certification_id)
-                )
+            cur.executemany(
+                "INSERT IGNORE INTO order_product_certifications (order_product_id, certification_id) VALUES (%s, %s)",
+                [(order_product_id, certification_id) for certification_id in certification_ids]
+            )
 
     def _replace_feature_categories(self, conn, feature_id, category_ids):
         with conn.cursor() as cur:
@@ -3040,6 +3753,42 @@ class WSGIApp:
                     (subtype_id, operation_type_id)
                 )
 
+    def _normalize_ad_operation_reasons(self, reasons):
+        items = []
+        seen = set()
+        if not isinstance(reasons, list):
+            return items
+        for entry in reasons:
+            reason_name = ''
+            if isinstance(entry, dict):
+                reason_name = (entry.get('reason_name') or entry.get('name') or '').strip()
+            elif entry is not None:
+                reason_name = str(entry).strip()
+            if not reason_name:
+                continue
+            norm = reason_name.lower()
+            if norm in seen:
+                continue
+            seen.add(norm)
+            items.append({'reason_name': reason_name})
+        return items
+
+    def _replace_ad_operation_type_reasons(self, conn, operation_type_id, reasons):
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM amazon_ad_operation_reasons WHERE operation_type_id=%s", (operation_type_id,))
+
+        if not reasons:
+            return
+        with conn.cursor() as cur:
+            for reason in reasons:
+                reason_name = (reason.get('reason_name') or '').strip()
+                if not reason_name:
+                    continue
+                cur.execute(
+                    "INSERT IGNORE INTO amazon_ad_operation_reasons (operation_type_id, reason_name) VALUES (%s, %s)",
+                    (operation_type_id, reason_name)
+                )
+
     def _normalize_sales_order_links(self, links):
         items = []
         if not isinstance(links, list):
@@ -3054,20 +3803,103 @@ class WSGIApp:
             items.append({'order_product_id': order_product_id, 'quantity': max(1, quantity)})
         return items
 
+    def _normalize_keyword_tag_names(self, value):
+        if value is None:
+            return []
+        raw_items = []
+        if isinstance(value, list):
+            raw_items = value
+        else:
+            raw_items = re.split(r'[\n\r;,；]+', str(value))
+        seen = set()
+        result = []
+        for item in raw_items:
+            name = ('' if item is None else str(item)).strip()
+            if not name:
+                continue
+            key = name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(name[:64])
+        return result
+
+    def _normalize_keyword_sku_ids(self, value):
+        items = []
+        if value is None:
+            return items
+        if isinstance(value, list):
+            raw = value
+        else:
+            raw = re.split(r'[\n\r,;；]+', str(value))
+        for entry in raw:
+            sku_id = self._parse_int(entry)
+            if sku_id:
+                items.append(sku_id)
+        return sorted(set(items))
+
+    def _ensure_keyword_tags(self, conn, category_id, tag_names):
+        if not tag_names:
+            return []
+        with conn.cursor() as cur:
+            for name in tag_names:
+                cur.execute(
+                    """
+                    INSERT INTO amazon_keyword_tags (category_id, tag_name)
+                    VALUES (%s, %s)
+                    ON DUPLICATE KEY UPDATE tag_name=VALUES(tag_name)
+                    """,
+                    (category_id, name)
+                )
+            placeholders = ','.join(['%s'] * len(tag_names))
+            cur.execute(
+                f"""
+                SELECT id, tag_name
+                FROM amazon_keyword_tags
+                WHERE category_id=%s
+                  AND tag_name IN ({placeholders})
+                """,
+                [category_id] + tag_names
+            )
+            rows = cur.fetchall() or []
+        name_to_id = {str(row.get('tag_name')): int(row.get('id')) for row in rows if row.get('id')}
+        return [name_to_id[name] for name in tag_names if name in name_to_id]
+
+    def _replace_keyword_tags(self, conn, keyword_id, category_id, tag_names):
+        tag_ids = self._ensure_keyword_tags(conn, category_id, tag_names)
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM amazon_keyword_tag_rel WHERE keyword_id=%s", (keyword_id,))
+            if tag_ids:
+                cur.executemany(
+                    "INSERT IGNORE INTO amazon_keyword_tag_rel (keyword_id, tag_id) VALUES (%s, %s)",
+                    [(keyword_id, tag_id) for tag_id in tag_ids]
+                )
+
+    def _replace_keyword_sku_relevance(self, conn, keyword_id, sku_family_ids):
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM amazon_keyword_sku_rel WHERE keyword_id=%s", (keyword_id,))
+            if sku_family_ids:
+                cur.executemany(
+                    """
+                    INSERT INTO amazon_keyword_sku_rel (keyword_id, sku_family_id, relevance_score)
+                    VALUES (%s, %s, 1)
+                    """,
+                    [(keyword_id, sku_id) for sku_id in sku_family_ids]
+                )
+
     def _replace_sales_order_links(self, conn, sales_product_id, links):
         with conn.cursor() as cur:
             cur.execute("DELETE FROM sales_product_order_links WHERE sales_product_id=%s", (sales_product_id,))
         if not links:
             return
         with conn.cursor() as cur:
-            for entry in links:
-                cur.execute(
-                    """
-                    INSERT INTO sales_product_order_links (sales_product_id, order_product_id, quantity)
-                    VALUES (%s, %s, %s)
-                    """,
-                    (sales_product_id, entry['order_product_id'], entry['quantity'])
-                )
+            cur.executemany(
+                """
+                INSERT INTO sales_product_order_links (sales_product_id, order_product_id, quantity)
+                VALUES (%s, %s, %s)
+                """,
+                [(sales_product_id, entry['order_product_id'], entry['quantity']) for entry in links]
+            )
 
     def _derive_sales_fields(self, conn, sku_family_id, links):
         """自动推导销售产品的面料、规格名称和平台SKU"""
@@ -3089,7 +3921,7 @@ class WSGIApp:
         with conn.cursor() as cur:
             cur.execute(
                 f"""
-                SELECT op.id, op.sku, op.spec_qty_short, fm.fabric_name_en
+                SELECT op.id, op.sku, op.spec_qty_short, fm.fabric_code, fm.fabric_name_en
                 FROM order_products op
                 LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
                 WHERE op.id IN ({placeholders})
@@ -3105,9 +3937,11 @@ class WSGIApp:
             row = row_map.get(entry['order_product_id'])
             if not row:
                 continue
-            fabric_name = (row.get('fabric_name_en') or '').strip()
-            if fabric_name and fabric_name not in fabrics:
-                fabrics.append(fabric_name)
+            fabric_code = self._code_before_dash(row.get('fabric_code'))
+            if not fabric_code:
+                fabric_code = self._code_before_dash(row.get('fabric_name_en'))
+            if fabric_code and fabric_code not in fabrics:
+                fabrics.append(fabric_code)
             spec_short = (row.get('spec_qty_short') or '').strip()
             if spec_short:
                 spec_parts.append(f"{entry['quantity']}{spec_short}")
@@ -3115,12 +3949,11 @@ class WSGIApp:
         fabric = ' / '.join(fabrics)
         spec_name = ''.join(spec_parts)
         
-        # 自动生成平台SKU: 货号-面料-规格
+        # 自动生成平台SKU: 货号-规格名称-面料编号
         platform_sku = ''
         if sku_family_code and fabric and spec_name:
-            # 使用第一个面料（如果有多个面料，用第一个）
             first_fabric = fabrics[0] if fabrics else ''
-            platform_sku = f"{sku_family_code}-{first_fabric}-{spec_name}"
+            platform_sku = self._build_sales_platform_sku(sku_family_code, spec_name, first_fabric)
         
         return fabric, spec_name, platform_sku
 
@@ -3130,6 +3963,9 @@ class WSGIApp:
             return {
                 'warehouse_cost_usd': 0.0,
                 'last_mile_cost_usd': 0.0,
+                'finished_length_in': 0.0,
+                'finished_width_in': 0.0,
+                'finished_height_in': 0.0,
                 'package_length_in': 0.0,
                 'package_width_in': 0.0,
                 'package_height_in': 0.0,
@@ -3145,6 +3981,7 @@ class WSGIApp:
                 f"""
                 SELECT id, sku_family_id,
                        cost_usd, last_mile_avg_freight_usd,
+                      finished_length_in, finished_width_in, finished_height_in,
                        package_length_in, package_width_in, package_height_in,
                        net_weight_lbs, gross_weight_lbs
                 FROM order_products
@@ -3157,6 +3994,9 @@ class WSGIApp:
         row_map = {row['id']: row for row in rows}
         warehouse_cost_usd = 0.0
         last_mile_cost_usd = 0.0
+        finished_length_in = 0.0
+        finished_width_in = 0.0
+        finished_height_in = 0.0
         package_length_in = 0.0
         package_width_in = 0.0
         package_height_in = 0.0
@@ -3174,6 +4014,9 @@ class WSGIApp:
 
             warehouse_cost_usd += float(row.get('cost_usd') or 0) * qty
             last_mile_cost_usd += float(row.get('last_mile_avg_freight_usd') or 0) * qty
+            finished_length_in += float(row.get('finished_length_in') or 0) * qty
+            finished_width_in += float(row.get('finished_width_in') or 0) * qty
+            finished_height_in += float(row.get('finished_height_in') or 0) * qty
             package_length_in += float(row.get('package_length_in') or 0) * qty
             package_width_in += float(row.get('package_width_in') or 0) * qty
             package_height_in += float(row.get('package_height_in') or 0) * qty
@@ -3183,6 +4026,9 @@ class WSGIApp:
         return {
             'warehouse_cost_usd': round(warehouse_cost_usd, 2),
             'last_mile_cost_usd': round(last_mile_cost_usd, 2),
+            'finished_length_in': round(finished_length_in, 2),
+            'finished_width_in': round(finished_width_in, 2),
+            'finished_height_in': round(finished_height_in, 2),
             'package_length_in': round(package_length_in, 2),
             'package_width_in': round(package_width_in, 2),
             'package_height_in': round(package_height_in, 2),
@@ -3223,7 +4069,7 @@ class WSGIApp:
         if not os.path.exists(target):
             os.makedirs(target, exist_ok=True)
         # Create standard subfolders for the SKU
-        for sub in ('源文件', '主图', 'A+'):
+        for sub in ('源文件', '主图', 'A+', '说明书', '视频'):
             try:
                 sub_bytes = os.fsencode(sub)
             except Exception:
@@ -3231,6 +4077,79 @@ class WSGIApp:
             sub_path = os.path.join(target, sub_bytes)
             if not os.path.exists(sub_path):
                 os.makedirs(sub_path, exist_ok=True)
+
+        # Ensure default common folders under 主图 and A+
+        for parent_sub in ('主图', 'A+'):
+            try:
+                parent_sub_bytes = os.fsencode(parent_sub)
+            except Exception:
+                parent_sub_bytes = str(parent_sub).encode('utf-8', errors='surrogatepass')
+            parent_path = os.path.join(target, parent_sub_bytes)
+            try:
+                common_sub_bytes = os.fsencode('通用')
+            except Exception:
+                common_sub_bytes = '通用'.encode('utf-8', errors='surrogatepass')
+            common_path = os.path.join(parent_path, common_sub_bytes)
+            if not os.path.exists(common_path):
+                os.makedirs(common_path, exist_ok=True)
+
+    def _rename_listing_sku_folder(self, old_sku_family, new_sku_family):
+        old_name = (old_sku_family or '').strip()
+        new_name = (new_sku_family or '').strip()
+        if (not old_name) or (not new_name) or old_name == new_name:
+            return {'status': 'success', 'renamed': False}
+
+        base_folder = self._ensure_listing_folder()
+        old_path = os.path.join(base_folder, self._safe_fsencode(old_name))
+        new_path = os.path.join(base_folder, self._safe_fsencode(new_name))
+
+        if not os.path.exists(old_path):
+            # 旧目录不存在时按新名称补齐目录
+            self._ensure_listing_sku_folder(new_name)
+            return {'status': 'success', 'renamed': False}
+
+        if os.path.exists(new_path):
+            return {'status': 'error', 'message': f'目标目录已存在: {new_name}'}
+
+        try:
+            os.rename(old_path, new_path)
+            return {'status': 'success', 'renamed': True}
+        except Exception as e:
+            return {'status': 'error', 'message': f'重命名目录失败: {e}'}
+
+    def _code_before_dash(self, value):
+        text = (value or '').strip()
+        if not text:
+            return ''
+        return text.split('-', 1)[0].strip() or text
+
+    def _build_sales_platform_sku(self, sku_family_code, spec_name, fabric_code):
+        sku_part = (sku_family_code or '').strip()
+        spec_part = (spec_name or '').strip()
+        fabric_part = self._code_before_dash(fabric_code)
+        if not (sku_part and spec_part and fabric_part):
+            return ''
+        return f"{sku_part}-{spec_part}-{fabric_part}"
+
+    def _ensure_listing_sales_variant_folder(self, sku_family, spec_name, fabric_code):
+        sku_name = (sku_family or '').strip()
+        if not sku_name:
+            return
+        self._ensure_listing_sku_folder(sku_name)
+        base_folder = self._ensure_listing_folder()
+        sku_folder = os.path.join(base_folder, self._safe_fsencode(sku_name))
+        main_folder = os.path.join(sku_folder, self._safe_fsencode('主图'))
+        if not os.path.exists(main_folder):
+            os.makedirs(main_folder, exist_ok=True)
+
+        spec_part = (spec_name or '').strip().replace('/', '-').replace('\\', '-')
+        fabric_part = self._code_before_dash(fabric_code).replace('/', '-').replace('\\', '-')
+        if not (spec_part and fabric_part):
+            return
+        variant_folder_name = f"{spec_part}-{fabric_part}"
+        variant_folder = os.path.join(main_folder, self._safe_fsencode(variant_folder_name))
+        if not os.path.exists(variant_folder):
+            os.makedirs(variant_folder, exist_ok=True)
 
     def _get_certification_folder_bytes(self):
         return self._join_resources('『认证』')
@@ -3414,17 +4333,40 @@ class WSGIApp:
                 fabric_ids = [v for v in fabric_ids if v]
                 if not item_id or not sku_family or not category:
                     return self.send_json({'status': 'error', 'message': 'Missing id or fields'}, start_response)
+
+                old_sku_family = None
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute(
-                            """
-                            UPDATE product_families
-                            SET sku_family=%s, category=%s
-                            WHERE id=%s
-                            """,
-                            (sku_family, category, item_id)
-                        )
-                    self._replace_sku_family_fabric_ids(conn, item_id, fabric_ids)
+                        cur.execute("SELECT sku_family FROM product_families WHERE id=%s", (item_id,))
+                        row = cur.fetchone()
+                        if not row:
+                            return self.send_json({'status': 'error', 'message': 'SKU not found'}, start_response)
+                        old_sku_family = (row.get('sku_family') or '').strip()
+
+                rename_result = self._rename_listing_sku_folder(old_sku_family, sku_family)
+                if rename_result.get('status') != 'success':
+                    return self.send_json({'status': 'error', 'message': rename_result.get('message') or '重命名目录失败'}, start_response)
+
+                db_updated = False
+                with self._get_db_connection() as conn:
+                    try:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                """
+                                UPDATE product_families
+                                SET sku_family=%s, category=%s
+                                WHERE id=%s
+                                """,
+                                (sku_family, category, item_id)
+                            )
+                        self._replace_sku_family_fabric_ids(conn, item_id, fabric_ids)
+                        db_updated = True
+                    except Exception:
+                        if rename_result.get('renamed'):
+                            self._rename_listing_sku_folder(sku_family, old_sku_family)
+                        raise
+                if db_updated:
+                    self._ensure_listing_sku_folder(sku_family)
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':
@@ -3515,14 +4457,7 @@ class WSGIApp:
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':
-                data = self._read_json_body(environ)
-                item_id = data.get('id')
-                if not item_id:
-                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
-                with self._get_db_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("DELETE FROM product_categories WHERE id=%s", (item_id,))
-                return self.send_json({'status': 'success'}, start_response)
+                return self.send_json({'status': 'error', 'message': '不允许删除品类，请使用编辑维护'}, start_response)
 
             return self.send_error(405, 'Method not allowed', start_response)
         except RuntimeError as e:
@@ -4279,7 +5214,7 @@ class WSGIApp:
                 sku_family_ids = [self._parse_int(v) for v in (data.get('sku_family_ids') or [])]
                 sku_family_ids = [v for v in sku_family_ids if v]
                 
-                if not fabric_code or not fabric_name_en or not material_id or not images:
+                if not fabric_code or not fabric_name_en or not material_id:
                     return self.send_json({'status': 'error', 'message': 'Missing fields'}, start_response)
 
                 plan = self._build_fabric_image_plan(images, fabric_code)
@@ -4348,7 +5283,7 @@ class WSGIApp:
                 sku_family_ids = [self._parse_int(v) for v in (data.get('sku_family_ids') or [])]
                 sku_family_ids = [v for v in sku_family_ids if v]
                 
-                if not item_id or not fabric_code or not fabric_name_en or not material_id or not images:
+                if not item_id or not fabric_code or not fabric_name_en or not material_id:
                     return self.send_json({'status': 'error', 'message': 'Missing fields'}, start_response)
 
                 plan = self._build_fabric_image_plan(images, fabric_code)
@@ -4426,19 +5361,11 @@ class WSGIApp:
     def handle_employee_api(self, environ, method, start_response):
         """员工信息 API（CRUD，仅管理权限可修改他人）"""
         try:
-            self._ensure_todo_tables()
+            self._ensure_todo_tables(lightweight=True)
             user_id = self._get_session_user(environ)
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
-
-            # 检查当前用户是否为管理员
             user_is_admin = False
-            if user_id:
-                with self._get_db_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("SELECT is_admin FROM users WHERE id=%s", (user_id,))
-                        row = cur.fetchone()
-                        user_is_admin = row and row.get('is_admin', 0) == 1
 
             if method == 'GET':
                 # 任何人都能获取员工列表（用于待办分配）
@@ -4465,6 +5392,14 @@ class WSGIApp:
                             )
                         rows = cur.fetchall()
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
+
+            # 仅非 GET 场景才需要管理员权限判断，避免首页加载冗余查询
+            if user_id:
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT is_admin FROM users WHERE id=%s", (user_id,))
+                        row = cur.fetchone()
+                        user_is_admin = row and row.get('is_admin', 0) == 1
 
             if method == 'POST':
                 # 仅管理员可新增账号
@@ -4575,7 +5510,7 @@ class WSGIApp:
     def handle_todo_api(self, environ, method, start_response):
         """待办事项 API（CRUD，每人独立待办）"""
         try:
-            self._ensure_todo_tables()
+            self._ensure_todo_tables(lightweight=True)
             user_id = self._get_session_user(environ)
             if not user_id:
                 return self.send_json({'status': 'error', 'message': '未登录'}, start_response)
@@ -4589,35 +5524,66 @@ class WSGIApp:
                     with conn.cursor() as cur:
                         cur.execute(
                             """
-                            SELECT DISTINCT t.id, t.title, t.detail, t.start_date, t.due_date, 
-                                t.reminder_interval_days, t.last_check_time, t.next_check_time,
-                                t.is_recurring, t.status, t.priority, t.created_by, 
-                                COALESCE(NULLIF(u.name, ''), u.username) AS created_by_name, t.created_at
-                            FROM todos t
-                            LEFT JOIN todo_assignments ta ON t.id = ta.todo_id
-                            JOIN users u ON t.created_by = u.id
-                            WHERE t.created_by = %s OR ta.assignee_id = %s
-                            ORDER BY t.due_date ASC, t.priority DESC, t.id ASC
-                            LIMIT 500
+                            SELECT x.id, x.title, x.detail, x.start_date, x.due_date,
+                                   x.reminder_interval_days, x.last_check_time, x.next_check_time,
+                                   x.is_recurring, x.status, x.priority, x.created_by,
+                                   x.created_by_name, x.created_at
+                            FROM (
+                                SELECT t.id, t.title, t.detail, t.start_date, t.due_date,
+                                       t.reminder_interval_days, t.last_check_time, t.next_check_time,
+                                       t.is_recurring, t.status, t.priority, t.created_by,
+                                       COALESCE(NULLIF(u.name, ''), u.username) AS created_by_name, t.created_at
+                                FROM todos t
+                                JOIN users u ON t.created_by = u.id
+                                WHERE t.created_by = %s
+
+                                UNION DISTINCT
+
+                                SELECT t.id, t.title, t.detail, t.start_date, t.due_date,
+                                       t.reminder_interval_days, t.last_check_time, t.next_check_time,
+                                       t.is_recurring, t.status, t.priority, t.created_by,
+                                       COALESCE(NULLIF(u.name, ''), u.username) AS created_by_name, t.created_at
+                                FROM todo_assignments ta
+                                JOIN todos t ON t.id = ta.todo_id
+                                JOIN users u ON t.created_by = u.id
+                                WHERE ta.assignee_id = %s
+                            ) x
+                            ORDER BY x.due_date ASC, x.priority DESC, x.id ASC
+                            LIMIT 300
                             """,
                             (user_id, user_id)
                         )
                         rows = cur.fetchall()
-                        todos = []
-                        for row in rows:
-                            todo_dict = dict(row)
-                            # 获取分配给这个待办的所有人
+                        todo_ids = [row['id'] for row in rows if row.get('id')]
+                        assignee_map = {}
+                        if todo_ids:
+                            placeholders = ','.join(['%s'] * len(todo_ids))
                             cur.execute(
-                                """
+                                f"""
                                     SELECT ta.assignee_id, ta.assignment_status,
+                                        ta.todo_id,
                                         COALESCE(NULLIF(u.name, ''), u.username) AS name
                                     FROM todo_assignments ta
                                     JOIN users u ON ta.assignee_id = u.id
-                                    WHERE ta.todo_id = %s
+                                    WHERE ta.todo_id IN ({placeholders})
+                                    ORDER BY ta.todo_id ASC, ta.id ASC
                                 """,
-                                (row['id'],)
+                                tuple(todo_ids)
                             )
-                            assignees = cur.fetchall()
+                            for item in cur.fetchall() or []:
+                                todo_id = item.get('todo_id')
+                                if todo_id not in assignee_map:
+                                    assignee_map[todo_id] = []
+                                assignee_map[todo_id].append({
+                                    'assignee_id': item.get('assignee_id'),
+                                    'assignment_status': item.get('assignment_status'),
+                                    'name': item.get('name')
+                                })
+
+                        todos = []
+                        for row in rows:
+                            todo_dict = dict(row)
+                            assignees = assignee_map.get(row['id'], [])
                             todo_dict['assignees'] = assignees
                             todos.append(todo_dict)
                 return self.send_json({'status': 'success', 'items': todos}, start_response)
@@ -4769,7 +5735,7 @@ class WSGIApp:
             if method != 'GET':
                 return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
 
-            self._ensure_todo_tables()
+            self._ensure_todo_tables(lightweight=True)
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
             now = datetime.now()
@@ -5323,6 +6289,614 @@ class WSGIApp:
             print("Shop API error: " + str(e))
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def handle_amazon_account_health_api(self, environ, method, start_response):
+        """Amazon 账户健康管理 API（CRUD + 图表）"""
+        try:
+            self._ensure_amazon_account_health_table()
+            query_string = environ.get('QUERY_STRING', '')
+            query_params = parse_qs(query_string)
+
+            int_fields = [
+                'account_health_rating',
+                'suspected_ip_infringement',
+                'intellectual_property_complaints',
+                'authenticity_customer_complaints',
+                'condition_customer_complaints',
+                'food_safety_issues',
+                'listing_policy_violations',
+                'restricted_product_policy_violations',
+                'customer_review_policy_violations',
+                'other_policy_violations',
+                'regulatory_compliance_issues'
+            ]
+            percent_fields = [
+                'order_defect_rate',
+                'negative_feedback_rate',
+                'a_to_z_rate',
+                'chargeback_rate',
+                'late_shipment_rate',
+                'pre_fulfillment_cancel_rate',
+                'valid_tracking_rate',
+                'on_time_delivery_rate'
+            ]
+
+            if method == 'GET':
+                mode = (query_params.get('mode', [''])[0] or '').strip().lower()
+                keyword = (query_params.get('q', [''])[0] or '').strip()
+                shop_id = self._parse_int((query_params.get('shop_id', [''])[0] or '').strip())
+                start_date = self._parse_date_str((query_params.get('start_date', [''])[0] or '').strip())
+                end_date = self._parse_date_str((query_params.get('end_date', [''])[0] or '').strip())
+
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT id FROM platform_types
+                            WHERE LOWER(TRIM(name))='amazon'
+                            ORDER BY id ASC
+                            LIMIT 1
+                            """
+                        )
+                        amazon_platform = cur.fetchone() or {}
+                        amazon_platform_id = amazon_platform.get('id')
+                        if not amazon_platform_id:
+                            return self.send_json({'status': 'success', 'items': []}, start_response)
+
+                        if mode == 'chart':
+                            if not shop_id:
+                                return self.send_json({'status': 'error', 'message': 'Missing shop_id'}, start_response)
+                            cur.execute(
+                                "SELECT id FROM shops WHERE id=%s AND platform_type_id=%s",
+                                (shop_id, amazon_platform_id)
+                            )
+                            selected_shop = cur.fetchone()
+                            if not selected_shop:
+                                return self.send_json({'status': 'error', 'message': 'Shop is not Amazon platform'}, start_response)
+                            sql = [
+                                """
+                                SELECT DATE(a.record_datetime) AS record_date,
+                                       ROUND(AVG(a.account_health_rating), 2) AS account_health_rating,
+                                       ROUND(AVG(a.order_defect_rate), 4) AS order_defect_rate,
+                                       ROUND(AVG(a.late_shipment_rate), 4) AS late_shipment_rate,
+                                       ROUND(AVG(a.pre_fulfillment_cancel_rate), 4) AS pre_fulfillment_cancel_rate,
+                                       ROUND(AVG(a.valid_tracking_rate), 4) AS valid_tracking_rate,
+                                       ROUND(AVG(a.on_time_delivery_rate), 4) AS on_time_delivery_rate
+                                FROM amazon_account_health a
+                                LEFT JOIN shops s ON s.id = a.shop_id
+                                WHERE a.shop_id=%s AND s.platform_type_id=%s
+                                """
+                            ]
+                            params = [shop_id, amazon_platform_id]
+                            if start_date:
+                                sql.append("AND DATE(a.record_datetime) >= %s")
+                                params.append(start_date)
+                            if end_date:
+                                sql.append("AND DATE(a.record_datetime) <= %s")
+                                params.append(end_date)
+                            sql.append("GROUP BY DATE(a.record_datetime) ORDER BY DATE(a.record_datetime) ASC")
+                            cur.execute("\n".join(sql), params)
+                            rows = cur.fetchall()
+                            return self.send_json({'status': 'success', 'items': rows}, start_response)
+
+                        sql = [
+                            """
+                            SELECT a.*, s.shop_name
+                            FROM amazon_account_health a
+                            LEFT JOIN shops s ON s.id = a.shop_id
+                            WHERE s.platform_type_id=%s
+                            """
+                        ]
+                        params = [amazon_platform_id]
+                        if shop_id:
+                            sql.append("AND a.shop_id=%s")
+                            params.append(shop_id)
+                        if start_date:
+                            sql.append("AND DATE(a.record_datetime) >= %s")
+                            params.append(start_date)
+                        if end_date:
+                            sql.append("AND DATE(a.record_datetime) <= %s")
+                            params.append(end_date)
+                        if keyword:
+                            sql.append("AND (s.shop_name LIKE %s OR a.remark LIKE %s)")
+                            params.extend([f"%{keyword}%", f"%{keyword}%"])
+                        sql.append("ORDER BY a.record_datetime DESC, a.id DESC")
+                        cur.execute("\n".join(sql), params)
+                        rows = cur.fetchall()
+                return self.send_json({'status': 'success', 'items': rows}, start_response)
+
+            if method == 'POST':
+                data = self._read_json_body(environ)
+                shop_id = self._parse_int(data.get('shop_id'))
+                if not shop_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing shop_id'}, start_response)
+
+                values = {}
+                for key in int_fields:
+                    parsed = self._parse_int(data.get(key))
+                    if parsed is None:
+                        return self.send_json({'status': 'error', 'message': f'Missing or invalid {key}'}, start_response)
+                    values[key] = parsed
+                for key in percent_fields:
+                    parsed = self._parse_float(data.get(key))
+                    if parsed is None:
+                        return self.send_json({'status': 'error', 'message': f'Missing or invalid {key}'}, start_response)
+                    values[key] = parsed
+
+                record_datetime = self._normalize_datetime_text(data.get('record_datetime')) or datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                remark = (data.get('remark') or '').strip()[:500]
+
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT s.id
+                            FROM shops s
+                            JOIN platform_types pt ON pt.id = s.platform_type_id
+                            WHERE s.id=%s AND LOWER(TRIM(pt.name))='amazon'
+                            """,
+                            (shop_id,)
+                        )
+                        allowed_shop = cur.fetchone()
+                        if not allowed_shop:
+                            return self.send_json({'status': 'error', 'message': 'Only Amazon platform shop is allowed'}, start_response)
+                        cur.execute(
+                            """
+                            INSERT INTO amazon_account_health (
+                                shop_id, account_health_rating,
+                                suspected_ip_infringement, intellectual_property_complaints,
+                                authenticity_customer_complaints, condition_customer_complaints,
+                                food_safety_issues, listing_policy_violations,
+                                restricted_product_policy_violations, customer_review_policy_violations,
+                                other_policy_violations, regulatory_compliance_issues,
+                                order_defect_rate, negative_feedback_rate, a_to_z_rate, chargeback_rate,
+                                late_shipment_rate, pre_fulfillment_cancel_rate, valid_tracking_rate, on_time_delivery_rate,
+                                record_datetime, remark
+                            ) VALUES (
+                                %s, %s,
+                                %s, %s,
+                                %s, %s,
+                                %s, %s,
+                                %s, %s,
+                                %s, %s,
+                                %s, %s, %s, %s,
+                                %s, %s, %s, %s,
+                                %s, %s
+                            )
+                            """,
+                            (
+                                shop_id, values['account_health_rating'],
+                                values['suspected_ip_infringement'], values['intellectual_property_complaints'],
+                                values['authenticity_customer_complaints'], values['condition_customer_complaints'],
+                                values['food_safety_issues'], values['listing_policy_violations'],
+                                values['restricted_product_policy_violations'], values['customer_review_policy_violations'],
+                                values['other_policy_violations'], values['regulatory_compliance_issues'],
+                                values['order_defect_rate'], values['negative_feedback_rate'], values['a_to_z_rate'], values['chargeback_rate'],
+                                values['late_shipment_rate'], values['pre_fulfillment_cancel_rate'], values['valid_tracking_rate'], values['on_time_delivery_rate'],
+                                record_datetime, remark
+                            )
+                        )
+                        new_id = cur.lastrowid
+                return self.send_json({'status': 'success', 'id': new_id}, start_response)
+
+            if method == 'PUT':
+                data = self._read_json_body(environ)
+                item_id = self._parse_int(data.get('id'))
+                shop_id = self._parse_int(data.get('shop_id'))
+                if not item_id or not shop_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id or shop_id'}, start_response)
+
+                values = {}
+                for key in int_fields:
+                    parsed = self._parse_int(data.get(key))
+                    if parsed is None:
+                        return self.send_json({'status': 'error', 'message': f'Missing or invalid {key}'}, start_response)
+                    values[key] = parsed
+                for key in percent_fields:
+                    parsed = self._parse_float(data.get(key))
+                    if parsed is None:
+                        return self.send_json({'status': 'error', 'message': f'Missing or invalid {key}'}, start_response)
+                    values[key] = parsed
+
+                record_datetime = self._normalize_datetime_text(data.get('record_datetime')) or datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                remark = (data.get('remark') or '').strip()[:500]
+
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT s.id
+                            FROM shops s
+                            JOIN platform_types pt ON pt.id = s.platform_type_id
+                            WHERE s.id=%s AND LOWER(TRIM(pt.name))='amazon'
+                            """,
+                            (shop_id,)
+                        )
+                        allowed_shop = cur.fetchone()
+                        if not allowed_shop:
+                            return self.send_json({'status': 'error', 'message': 'Only Amazon platform shop is allowed'}, start_response)
+                        cur.execute("SELECT id FROM amazon_account_health WHERE id=%s", (item_id,))
+                        exists = cur.fetchone()
+                        if not exists:
+                            return self.send_json({'status': 'error', 'message': 'Not found'}, start_response)
+                        cur.execute(
+                            """
+                            UPDATE amazon_account_health
+                            SET shop_id=%s,
+                                account_health_rating=%s,
+                                suspected_ip_infringement=%s,
+                                intellectual_property_complaints=%s,
+                                authenticity_customer_complaints=%s,
+                                condition_customer_complaints=%s,
+                                food_safety_issues=%s,
+                                listing_policy_violations=%s,
+                                restricted_product_policy_violations=%s,
+                                customer_review_policy_violations=%s,
+                                other_policy_violations=%s,
+                                regulatory_compliance_issues=%s,
+                                order_defect_rate=%s,
+                                negative_feedback_rate=%s,
+                                a_to_z_rate=%s,
+                                chargeback_rate=%s,
+                                late_shipment_rate=%s,
+                                pre_fulfillment_cancel_rate=%s,
+                                valid_tracking_rate=%s,
+                                on_time_delivery_rate=%s,
+                                record_datetime=%s,
+                                remark=%s
+                            WHERE id=%s
+                            """,
+                            (
+                                shop_id,
+                                values['account_health_rating'],
+                                values['suspected_ip_infringement'],
+                                values['intellectual_property_complaints'],
+                                values['authenticity_customer_complaints'],
+                                values['condition_customer_complaints'],
+                                values['food_safety_issues'],
+                                values['listing_policy_violations'],
+                                values['restricted_product_policy_violations'],
+                                values['customer_review_policy_violations'],
+                                values['other_policy_violations'],
+                                values['regulatory_compliance_issues'],
+                                values['order_defect_rate'],
+                                values['negative_feedback_rate'],
+                                values['a_to_z_rate'],
+                                values['chargeback_rate'],
+                                values['late_shipment_rate'],
+                                values['pre_fulfillment_cancel_rate'],
+                                values['valid_tracking_rate'],
+                                values['on_time_delivery_rate'],
+                                record_datetime,
+                                remark,
+                                item_id
+                            )
+                        )
+                return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'DELETE':
+                data = self._read_json_body(environ)
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM amazon_account_health WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except RuntimeError as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        except Exception as e:
+            print("AmazonAccountHealth API error: " + str(e))
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_amazon_account_health_template_api(self, environ, method, start_response):
+        """Amazon 账户健康模板下载"""
+        try:
+            if method != 'GET':
+                return self.send_error(405, 'Method not allowed', start_response)
+            if Workbook is None:
+                return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
+
+            from openpyxl.styles import PatternFill, Font, Alignment
+            from openpyxl.worksheet.datavalidation import DataValidation
+            from openpyxl.utils import get_column_letter
+
+            self._ensure_amazon_account_health_table()
+            shop_names = []
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT s.shop_name
+                        FROM shops s
+                        JOIN platform_types pt ON pt.id = s.platform_type_id
+                        WHERE LOWER(TRIM(pt.name))='amazon'
+                        ORDER BY s.shop_name
+                        """
+                    )
+                    shop_names = [str(row.get('shop_name') or '').strip() for row in (cur.fetchall() or []) if str(row.get('shop_name') or '').strip()]
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = 'amazon_account_health'
+
+            headers = [
+                '店铺*', '记录日期时间*', '账户状况评级*',
+                '涉嫌侵犯知识产权*', '知识产权投诉*', '商品真实性买家投诉*', '商品状况买家投诉*',
+                '食品和商品安全问题*', '上架政策违规*', '违反受限商品政策*', '违反买家商品评论政策*', '其他违反政策*', '监管合规性*',
+                '订单缺陷率(%)*', '负面反馈(%)*', 'A-to-z(%)*', '信用卡拒付(%)*',
+                '迟发率(%)*', '配送前取消率(%)*', '有效追踪率(%)*', '准时交货率(%)*',
+                '备注'
+            ]
+            ws.append(headers)
+
+            sample_shop = shop_names[0] if shop_names else ''
+            ws.append([
+                sample_shop, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 260,
+                0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0,
+                0.35, 0.00, 0.00, 0.00,
+                1.20, 0.80, 97.50, 95.20,
+                '示例行（请勿修改，此行不会导入）'
+            ])
+
+            for cell in ws[1]:
+                cell.fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
+                cell.font = Font(bold=True, color='2A2420')
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            for cell in ws[2]:
+                cell.fill = PatternFill(start_color='E8E8E8', end_color='E8E8E8', fill_type='solid')
+                cell.font = Font(italic=True, color='888888')
+
+            widths = [20, 20, 14, 16, 14, 18, 18, 18, 14, 18, 20, 14, 14, 14, 12, 12, 12, 12, 14, 14, 14, 28]
+            for idx, width in enumerate(widths, start=1):
+                ws.column_dimensions[get_column_letter(idx)].width = width
+
+            options_ws = wb.create_sheet('options')
+            options_ws.sheet_state = 'hidden'
+            options_ws.cell(row=1, column=1, value='amazon_shop_name')
+            for idx, name in enumerate(shop_names, start=2):
+                options_ws.cell(row=idx, column=1, value=name)
+
+            if shop_names:
+                shop_validation = DataValidation(type='list', formula1=f'=options!$A$2:$A${len(shop_names) + 1}', allow_blank=False)
+                ws.add_data_validation(shop_validation)
+                for row_idx in range(3, 500):
+                    shop_validation.add(f'A{row_idx}')
+
+            ws.freeze_panes = 'A3'
+            return self._send_excel_workbook(wb, 'amazon_account_health_template.xlsx', start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_amazon_account_health_import_api(self, environ, method, start_response):
+        """Amazon 账户健康批量导入"""
+        try:
+            if method != 'POST':
+                return self.send_error(405, 'Method not allowed', start_response)
+            if load_workbook is None:
+                return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
+
+            content_type = environ.get('CONTENT_TYPE', '')
+            if 'multipart/form-data' not in content_type:
+                return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
+
+            content_length = int(environ.get('CONTENT_LENGTH', 0) or 0)
+            raw_body = environ['wsgi.input'].read(content_length) if content_length > 0 else b''
+            env_copy = dict(environ)
+            env_copy['CONTENT_LENGTH'] = str(len(raw_body))
+            form = cgi.FieldStorage(fp=io.BytesIO(raw_body), environ=env_copy, keep_blank_values=True)
+            file_item = form['file'] if 'file' in form else None
+            if file_item is None or getattr(file_item, 'file', None) is None:
+                return self.send_json({'status': 'error', 'message': 'Missing file'}, start_response)
+            file_bytes = file_item.file.read() or b''
+            if not file_bytes:
+                return self.send_json({'status': 'error', 'message': 'Empty file'}, start_response)
+
+            wb = load_workbook(io.BytesIO(file_bytes))
+            ws = wb.active
+            headers = [str(cell.value or '').strip() for cell in ws[1]]
+            header_map = {name: idx for idx, name in enumerate(headers)}
+
+            def get_cell(row, name):
+                idx = header_map.get(name)
+                if idx is None or idx >= len(row):
+                    return None
+                return row[idx].value
+
+            required_headers = [
+                '店铺*', '记录日期时间*', '账户状况评级*',
+                '涉嫌侵犯知识产权*', '知识产权投诉*', '商品真实性买家投诉*', '商品状况买家投诉*',
+                '食品和商品安全问题*', '上架政策违规*', '违反受限商品政策*', '违反买家商品评论政策*', '其他违反政策*', '监管合规性*',
+                '订单缺陷率(%)*', '负面反馈(%)*', 'A-to-z(%)*', '信用卡拒付(%)*',
+                '迟发率(%)*', '配送前取消率(%)*', '有效追踪率(%)*', '准时交货率(%)*'
+            ]
+            for col_name in required_headers:
+                if col_name not in header_map:
+                    return self.send_json({'status': 'error', 'message': f'模板缺少列: {col_name}'}, start_response)
+
+            self._ensure_amazon_account_health_table()
+            created = 0
+            updated = 0
+            unchanged = 0
+            errors = []
+
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT s.id, s.shop_name
+                        FROM shops s
+                        JOIN platform_types pt ON pt.id = s.platform_type_id
+                        WHERE LOWER(TRIM(pt.name))='amazon'
+                        """
+                    )
+                    shop_rows = cur.fetchall() or []
+                    shop_map = {str(row.get('shop_name') or '').strip(): int(row.get('id')) for row in shop_rows if row.get('id')}
+
+                for row_idx in range(2, ws.max_row + 1):
+                    if row_idx == 2:
+                        continue
+                    row = ws[row_idx]
+                    if not any(cell.value is not None and str(cell.value).strip() for cell in row):
+                        continue
+                    try:
+                        shop_name = str(get_cell(row, '店铺*') or '').strip()
+                        shop_id = shop_map.get(shop_name)
+                        if not shop_id:
+                            raise ValueError(f'店铺不存在或非Amazon平台: {shop_name}')
+
+                        record_datetime = self._normalize_datetime_text(get_cell(row, '记录日期时间*'))
+                        if not record_datetime:
+                            raise ValueError('记录日期时间格式错误，请使用 YYYY-MM-DD HH:MM:SS 或 YYYY-MM-DDTHH:MM')
+
+                        parsed = {
+                            'account_health_rating': self._parse_int(get_cell(row, '账户状况评级*')),
+                            'suspected_ip_infringement': self._parse_int(get_cell(row, '涉嫌侵犯知识产权*')),
+                            'intellectual_property_complaints': self._parse_int(get_cell(row, '知识产权投诉*')),
+                            'authenticity_customer_complaints': self._parse_int(get_cell(row, '商品真实性买家投诉*')),
+                            'condition_customer_complaints': self._parse_int(get_cell(row, '商品状况买家投诉*')),
+                            'food_safety_issues': self._parse_int(get_cell(row, '食品和商品安全问题*')),
+                            'listing_policy_violations': self._parse_int(get_cell(row, '上架政策违规*')),
+                            'restricted_product_policy_violations': self._parse_int(get_cell(row, '违反受限商品政策*')),
+                            'customer_review_policy_violations': self._parse_int(get_cell(row, '违反买家商品评论政策*')),
+                            'other_policy_violations': self._parse_int(get_cell(row, '其他违反政策*')),
+                            'regulatory_compliance_issues': self._parse_int(get_cell(row, '监管合规性*')),
+                            'order_defect_rate': self._parse_float(get_cell(row, '订单缺陷率(%)*')),
+                            'negative_feedback_rate': self._parse_float(get_cell(row, '负面反馈(%)*')),
+                            'a_to_z_rate': self._parse_float(get_cell(row, 'A-to-z(%)*')),
+                            'chargeback_rate': self._parse_float(get_cell(row, '信用卡拒付(%)*')),
+                            'late_shipment_rate': self._parse_float(get_cell(row, '迟发率(%)*')),
+                            'pre_fulfillment_cancel_rate': self._parse_float(get_cell(row, '配送前取消率(%)*')),
+                            'valid_tracking_rate': self._parse_float(get_cell(row, '有效追踪率(%)*')),
+                            'on_time_delivery_rate': self._parse_float(get_cell(row, '准时交货率(%)*')),
+                            'remark': str(get_cell(row, '备注') or '').strip()[:500]
+                        }
+
+                        for key, value in parsed.items():
+                            if key == 'remark':
+                                continue
+                            if value is None:
+                                raise ValueError(f'{key} 为空或格式错误')
+
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                """
+                                SELECT * FROM amazon_account_health
+                                WHERE shop_id=%s AND record_datetime=%s
+                                ORDER BY id ASC
+                                LIMIT 1
+                                """,
+                                (shop_id, record_datetime)
+                            )
+                            existing = cur.fetchone()
+
+                            if existing:
+                                cur.execute(
+                                    """
+                                    UPDATE amazon_account_health
+                                    SET account_health_rating=%s,
+                                        suspected_ip_infringement=%s,
+                                        intellectual_property_complaints=%s,
+                                        authenticity_customer_complaints=%s,
+                                        condition_customer_complaints=%s,
+                                        food_safety_issues=%s,
+                                        listing_policy_violations=%s,
+                                        restricted_product_policy_violations=%s,
+                                        customer_review_policy_violations=%s,
+                                        other_policy_violations=%s,
+                                        regulatory_compliance_issues=%s,
+                                        order_defect_rate=%s,
+                                        negative_feedback_rate=%s,
+                                        a_to_z_rate=%s,
+                                        chargeback_rate=%s,
+                                        late_shipment_rate=%s,
+                                        pre_fulfillment_cancel_rate=%s,
+                                        valid_tracking_rate=%s,
+                                        on_time_delivery_rate=%s,
+                                        remark=%s
+                                    WHERE id=%s
+                                    """,
+                                    (
+                                        parsed['account_health_rating'],
+                                        parsed['suspected_ip_infringement'],
+                                        parsed['intellectual_property_complaints'],
+                                        parsed['authenticity_customer_complaints'],
+                                        parsed['condition_customer_complaints'],
+                                        parsed['food_safety_issues'],
+                                        parsed['listing_policy_violations'],
+                                        parsed['restricted_product_policy_violations'],
+                                        parsed['customer_review_policy_violations'],
+                                        parsed['other_policy_violations'],
+                                        parsed['regulatory_compliance_issues'],
+                                        parsed['order_defect_rate'],
+                                        parsed['negative_feedback_rate'],
+                                        parsed['a_to_z_rate'],
+                                        parsed['chargeback_rate'],
+                                        parsed['late_shipment_rate'],
+                                        parsed['pre_fulfillment_cancel_rate'],
+                                        parsed['valid_tracking_rate'],
+                                        parsed['on_time_delivery_rate'],
+                                        parsed['remark'],
+                                        existing.get('id')
+                                    )
+                                )
+                                if cur.rowcount:
+                                    updated += 1
+                                else:
+                                    unchanged += 1
+                            else:
+                                cur.execute(
+                                    """
+                                    INSERT INTO amazon_account_health (
+                                        shop_id, account_health_rating,
+                                        suspected_ip_infringement, intellectual_property_complaints,
+                                        authenticity_customer_complaints, condition_customer_complaints,
+                                        food_safety_issues, listing_policy_violations,
+                                        restricted_product_policy_violations, customer_review_policy_violations,
+                                        other_policy_violations, regulatory_compliance_issues,
+                                        order_defect_rate, negative_feedback_rate, a_to_z_rate, chargeback_rate,
+                                        late_shipment_rate, pre_fulfillment_cancel_rate, valid_tracking_rate, on_time_delivery_rate,
+                                        record_datetime, remark
+                                    ) VALUES (
+                                        %s, %s,
+                                        %s, %s,
+                                        %s, %s,
+                                        %s, %s,
+                                        %s, %s,
+                                        %s, %s,
+                                        %s, %s, %s, %s,
+                                        %s, %s, %s, %s,
+                                        %s, %s
+                                    )
+                                    """,
+                                    (
+                                        shop_id, parsed['account_health_rating'],
+                                        parsed['suspected_ip_infringement'], parsed['intellectual_property_complaints'],
+                                        parsed['authenticity_customer_complaints'], parsed['condition_customer_complaints'],
+                                        parsed['food_safety_issues'], parsed['listing_policy_violations'],
+                                        parsed['restricted_product_policy_violations'], parsed['customer_review_policy_violations'],
+                                        parsed['other_policy_violations'], parsed['regulatory_compliance_issues'],
+                                        parsed['order_defect_rate'], parsed['negative_feedback_rate'], parsed['a_to_z_rate'], parsed['chargeback_rate'],
+                                        parsed['late_shipment_rate'], parsed['pre_fulfillment_cancel_rate'], parsed['valid_tracking_rate'], parsed['on_time_delivery_rate'],
+                                        record_datetime, parsed['remark']
+                                    )
+                                )
+                                created += 1
+                    except Exception as row_error:
+                        errors.append({'row': row_idx, 'error': str(row_error)})
+
+            return self.send_json({
+                'status': 'success',
+                'created': created,
+                'updated': updated,
+                'unchanged': unchanged,
+                'errors': errors
+            }, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
     def handle_amazon_ad_subtype_api(self, environ, method, start_response):
         """Amazon 广告细分类管理 API（CRUD）"""
         try:
@@ -5450,7 +7024,7 @@ class WSGIApp:
                         if keyword:
                             cur.execute(
                                 """
-                                SELECT id, name, apply_campaign, apply_group, created_at, updated_at
+                                SELECT id, name, apply_portfolio, apply_campaign, apply_group, created_at, updated_at
                                 FROM amazon_ad_operation_types
                                 WHERE name LIKE %s
                                 ORDER BY id DESC
@@ -5460,44 +7034,96 @@ class WSGIApp:
                         else:
                             cur.execute(
                                 """
-                                SELECT id, name, apply_campaign, apply_group, created_at, updated_at
+                                SELECT id, name, apply_portfolio, apply_campaign, apply_group, created_at, updated_at
                                 FROM amazon_ad_operation_types
                                 ORDER BY id DESC
                                 """
                             )
                         rows = cur.fetchall()
+                        if rows:
+                            operation_type_ids = [int(row.get('id')) for row in rows if row.get('id')]
+                            placeholders = ','.join(['%s'] * len(operation_type_ids))
+                            cur.execute(
+                                f"""
+                                SELECT id, operation_type_id, reason_name
+                                FROM amazon_ad_operation_reasons
+                                WHERE operation_type_id IN ({placeholders})
+                                ORDER BY id ASC
+                                """,
+                                operation_type_ids
+                            )
+                            reason_rows = cur.fetchall()
+                            reason_map = {}
+                            for reason in reason_rows:
+                                op_id = int(reason.get('operation_type_id'))
+                                reason_map.setdefault(op_id, []).append({
+                                    'id': reason.get('id'),
+                                    'reason_name': reason.get('reason_name') or ''
+                                })
+                            for row in rows:
+                                row['reasons'] = reason_map.get(int(row.get('id')), [])
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             if method == 'POST':
                 data = self._read_json_body(environ)
                 name = (data.get('name') or '').strip()
+                apply_portfolio = 1 if self._parse_int(data.get('apply_portfolio')) else 0
                 apply_campaign = 1 if self._parse_int(data.get('apply_campaign')) else 0
                 apply_group = 1 if self._parse_int(data.get('apply_group')) else 0
+                reasons = self._normalize_ad_operation_reasons(data.get('reasons') or [])
                 if not name:
                     return self.send_json({'status': 'error', 'message': 'Missing name'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
-                            "INSERT INTO amazon_ad_operation_types (name, apply_campaign, apply_group) VALUES (%s, %s, %s)",
-                            (name, apply_campaign, apply_group)
+                            "INSERT INTO amazon_ad_operation_types (name, apply_portfolio, apply_campaign, apply_group) VALUES (%s, %s, %s, %s)",
+                            (name, apply_portfolio, apply_campaign, apply_group)
                         )
                         new_id = cur.lastrowid
+                    self._replace_ad_operation_type_reasons(conn, new_id, reasons)
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
             if method == 'PUT':
                 data = self._read_json_body(environ)
-                item_id = data.get('id')
-                name = (data.get('name') or '').strip()
-                apply_campaign = 1 if self._parse_int(data.get('apply_campaign')) else 0
-                apply_group = 1 if self._parse_int(data.get('apply_group')) else 0
-                if not item_id or not name:
-                    return self.send_json({'status': 'error', 'message': 'Missing id or name'}, start_response)
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
                 with self._get_db_connection() as conn:
+                    current = None
                     with conn.cursor() as cur:
                         cur.execute(
-                            "UPDATE amazon_ad_operation_types SET name=%s, apply_campaign=%s, apply_group=%s WHERE id=%s",
-                            (name, apply_campaign, apply_group, item_id)
+                            "SELECT id, name, apply_portfolio, apply_campaign, apply_group FROM amazon_ad_operation_types WHERE id=%s",
+                            (item_id,)
                         )
+                        current = cur.fetchone()
+                        if not current:
+                            return self.send_json({'status': 'error', 'message': 'Not found'}, start_response)
+
+                        has_name = 'name' in data
+                        name = (data.get('name') or '').strip() if has_name else (current.get('name') or '')
+                        if has_name and not name:
+                            return self.send_json({'status': 'error', 'message': 'Missing name'}, start_response)
+
+                        apply_portfolio = current.get('apply_portfolio')
+                        if 'apply_portfolio' in data:
+                            apply_portfolio = 1 if self._parse_int(data.get('apply_portfolio')) else 0
+
+                        apply_campaign = current.get('apply_campaign')
+                        if 'apply_campaign' in data:
+                            apply_campaign = 1 if self._parse_int(data.get('apply_campaign')) else 0
+
+                        apply_group = current.get('apply_group')
+                        if 'apply_group' in data:
+                            apply_group = 1 if self._parse_int(data.get('apply_group')) else 0
+
+                        cur.execute(
+                            "UPDATE amazon_ad_operation_types SET name=%s, apply_portfolio=%s, apply_campaign=%s, apply_group=%s WHERE id=%s",
+                            (name, apply_portfolio, apply_campaign, apply_group, item_id)
+                        )
+
+                    if 'reasons' in data:
+                        reasons = self._normalize_ad_operation_reasons(data.get('reasons') or [])
+                        self._replace_ad_operation_type_reasons(conn, item_id, reasons)
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':
@@ -5592,10 +7218,11 @@ class WSGIApp:
                             portfolio_id = self._parse_int(data.get('portfolio_id'))
                             strategy_code = (data.get('strategy_code') or '').strip().upper()
                             subtype_id = self._parse_int(data.get('subtype_id'))
+                            status = self._normalize_ad_status(data.get('status'))
                             budget = self._parse_float(data.get('budget'))
                             custom_name = (data.get('name') or '').strip()
-                            if not portfolio_id or strategy_code not in ('BE', 'BD', 'PC') or not subtype_id:
-                                return self.send_json({'status': 'error', 'message': 'Missing portfolio_id/strategy_code/subtype_id'}, start_response)
+                            if not portfolio_id or strategy_code not in ('BE', 'BD', 'PC') or not subtype_id or not status:
+                                return self.send_json({'status': 'error', 'message': 'Missing portfolio_id/strategy_code/subtype_id/status'}, start_response)
                             row = self._get_ad_item_by_id(conn, portfolio_id)
                             if not row or row.get('ad_level') != 'portfolio':
                                 return self.send_json({'status': 'error', 'message': 'Invalid portfolio_id'}, start_response)
@@ -5606,14 +7233,15 @@ class WSGIApp:
                             cur.execute(
                                 """
                                 INSERT INTO amazon_ad_items
-                                (ad_level, portfolio_id, strategy_code, subtype_id, name, budget)
-                                VALUES ('campaign', %s, %s, %s, %s, %s)
+                                (ad_level, portfolio_id, strategy_code, subtype_id, name, status, budget)
+                                VALUES ('campaign', %s, %s, %s, %s, %s, %s)
                                 """,
-                                (portfolio_id, strategy_code, subtype_id, campaign_name, budget)
+                                (portfolio_id, strategy_code, subtype_id, campaign_name, status, budget)
                             )
                             return self.send_json({'status': 'success', 'id': cur.lastrowid}, start_response)
 
                         campaign_id = self._parse_int(data.get('campaign_id'))
+                        provided_portfolio_id = self._parse_int(data.get('portfolio_id'))
                         status = self._normalize_ad_status(data.get('status'))
                         group_name = (data.get('name') or '').strip()
                         if not campaign_id or not group_name:
@@ -5621,13 +7249,16 @@ class WSGIApp:
                         row = self._get_ad_item_by_id(conn, campaign_id)
                         if not row or row.get('ad_level') != 'campaign':
                             return self.send_json({'status': 'error', 'message': 'Invalid campaign_id'}, start_response)
+                        campaign_portfolio_id = row.get('portfolio_id')
+                        if provided_portfolio_id and str(provided_portfolio_id) != str(campaign_portfolio_id or ''):
+                            return self.send_json({'status': 'error', 'message': 'portfolio_id does not match campaign'}, start_response)
                         cur.execute(
                             """
                             INSERT INTO amazon_ad_items
                             (ad_level, campaign_id, portfolio_id, name, status)
                             VALUES ('group', %s, %s, %s, %s)
                             """,
-                            (campaign_id, row.get('portfolio_id'), group_name, status)
+                            (campaign_id, campaign_portfolio_id, group_name, status)
                         )
                         return self.send_json({'status': 'success', 'id': cur.lastrowid}, start_response)
 
@@ -5666,10 +7297,11 @@ class WSGIApp:
                             portfolio_id = self._parse_int(data.get('portfolio_id'))
                             strategy_code = (data.get('strategy_code') or '').strip().upper()
                             subtype_id = self._parse_int(data.get('subtype_id'))
+                            status = self._normalize_ad_status(data.get('status'))
                             budget = self._parse_float(data.get('budget'))
                             custom_name = (data.get('name') or '').strip()
-                            if not portfolio_id or strategy_code not in ('BE', 'BD', 'PC') or not subtype_id:
-                                return self.send_json({'status': 'error', 'message': 'Missing portfolio_id/strategy_code/subtype_id'}, start_response)
+                            if not portfolio_id or strategy_code not in ('BE', 'BD', 'PC') or not subtype_id or not status:
+                                return self.send_json({'status': 'error', 'message': 'Missing portfolio_id/strategy_code/subtype_id/status'}, start_response)
                             row = self._get_ad_item_by_id(conn, portfolio_id)
                             if not row or row.get('ad_level') != 'portfolio':
                                 return self.send_json({'status': 'error', 'message': 'Invalid portfolio_id'}, start_response)
@@ -5680,14 +7312,15 @@ class WSGIApp:
                             cur.execute(
                                 """
                                 UPDATE amazon_ad_items
-                                SET portfolio_id=%s, strategy_code=%s, subtype_id=%s, name=%s, budget=%s
+                                SET portfolio_id=%s, strategy_code=%s, subtype_id=%s, name=%s, status=%s, budget=%s
                                 WHERE id=%s
                                 """,
-                                (portfolio_id, strategy_code, subtype_id, campaign_name, budget, item_id)
+                                (portfolio_id, strategy_code, subtype_id, campaign_name, status, budget, item_id)
                             )
                             return self.send_json({'status': 'success'}, start_response)
 
                         campaign_id = self._parse_int(data.get('campaign_id'))
+                        provided_portfolio_id = self._parse_int(data.get('portfolio_id'))
                         group_name = (data.get('name') or '').strip()
                         status = self._normalize_ad_status(data.get('status'))
                         if not campaign_id or not group_name:
@@ -5695,15 +7328,40 @@ class WSGIApp:
                         row = self._get_ad_item_by_id(conn, campaign_id)
                         if not row or row.get('ad_level') != 'campaign':
                             return self.send_json({'status': 'error', 'message': 'Invalid campaign_id'}, start_response)
+                        campaign_portfolio_id = row.get('portfolio_id')
+                        if provided_portfolio_id and str(provided_portfolio_id) != str(campaign_portfolio_id or ''):
+                            return self.send_json({'status': 'error', 'message': 'portfolio_id does not match campaign'}, start_response)
                         cur.execute(
                             """
                             UPDATE amazon_ad_items
                             SET campaign_id=%s, portfolio_id=%s, name=%s, status=%s
                             WHERE id=%s
                             """,
-                            (campaign_id, row.get('portfolio_id'), group_name, status, item_id)
+                            (campaign_id, campaign_portfolio_id, group_name, status, item_id)
                         )
                         return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'PATCH':
+                data = self._read_json_body(environ)
+                item_id = self._parse_int(data.get('id'))
+                status = self._normalize_ad_status(data.get('status'))
+                if not item_id or not status:
+                    return self.send_json({'status': 'error', 'message': 'Missing id or status'}, start_response)
+
+                with self._get_db_connection() as conn:
+                    current = self._get_ad_item_by_id(conn, item_id)
+                    if not current:
+                        return self.send_json({'status': 'error', 'message': 'Not found'}, start_response)
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            UPDATE amazon_ad_items
+                            SET status=%s
+                            WHERE id=%s
+                            """,
+                            (status, item_id)
+                        )
+                return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':
                 data = self._read_json_body(environ)
@@ -5722,6 +7380,696 @@ class WSGIApp:
             if pymysql and isinstance(e, pymysql.err.IntegrityError):
                 return self.send_json({'status': 'error', 'message': '广告记录已存在或被引用'}, start_response)
             print("Amazon ad API error: " + str(e))
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_amazon_ad_delivery_api(self, environ, method, start_response):
+        """Amazon 广告投放管理 API"""
+        try:
+            self._ensure_amazon_ad_delivery_table()
+            query_string = environ.get('QUERY_STRING', '')
+            query_params = parse_qs(query_string)
+
+            def _resolve_schedule(data):
+                updated_at_text = self._normalize_datetime_text(data.get('updated_at'))
+                if not updated_at_text:
+                    updated_at_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                observe_days = self._normalize_observe_days(data.get('observe_days'))
+                if observe_days is None:
+                    observe_days = self._normalize_observe_days(data.get('observe_interval'))
+                if observe_days is None:
+                    observe_days = 1
+                observe_interval = f"{observe_days}天"
+                next_observe_at = self._normalize_datetime_text(data.get('next_observe_at'))
+                if not next_observe_at:
+                    base_dt = datetime.strptime(updated_at_text, '%Y-%m-%d %H:%M:%S')
+                    next_observe_at = (base_dt + timedelta(days=observe_days)).strftime('%Y-%m-%d %H:%M:%S')
+                return updated_at_text, observe_interval, next_observe_at
+
+            if method == 'GET':
+                keyword = (query_params.get('q', [''])[0] or '').strip()
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        sql = """
+                            SELECT
+                                d.id,
+                                d.status,
+                                d.ad_item_id,
+                                d.delivery_desc,
+                                d.bid_value,
+                                d.observe_interval,
+                                d.next_observe_at,
+                                d.created_at,
+                                d.updated_at,
+                                ai.ad_level,
+                                ai.name AS ad_name,
+                                p.name AS portfolio_name
+                            FROM amazon_ad_deliveries d
+                            LEFT JOIN amazon_ad_items ai ON ai.id = d.ad_item_id
+                            LEFT JOIN amazon_ad_items p ON p.id = ai.portfolio_id
+                        """
+                        filters = []
+                        params = []
+                        if keyword:
+                            filters.append("(d.delivery_desc LIKE %s OR ai.name LIKE %s OR p.name LIKE %s OR (CASE WHEN ai.ad_level='group' THEN '广告组' WHEN ai.ad_level='campaign' THEN '广告活动' ELSE '' END) LIKE %s)")
+                            params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
+                        where_sql = (' WHERE ' + ' AND '.join(filters)) if filters else ''
+                        cur.execute(sql + where_sql + ' ORDER BY d.id DESC', params)
+                        rows = cur.fetchall()
+                return self.send_json({'status': 'success', 'items': rows}, start_response)
+
+            if method == 'POST':
+                data = self._read_json_body(environ)
+                status = self._normalize_ad_status(data.get('status') or '启动')
+                ad_item_id = self._parse_int(data.get('ad_item_id'))
+                delivery_desc = (data.get('delivery_desc') or '').strip()
+                bid_value = self._normalize_bid_value(data.get('bid_value'))
+                updated_at_text, observe_interval, next_observe_at = _resolve_schedule(data)
+                if not status or not ad_item_id or not delivery_desc or not bid_value:
+                    return self.send_json({'status': 'error', 'message': 'Missing status/ad_item_id/delivery_desc/bid_value'}, start_response)
+                if bid_value is None:
+                    return self.send_json({'status': 'error', 'message': 'Invalid bid_value'}, start_response)
+
+                with self._get_db_connection() as conn:
+                    ad_item = self._get_ad_item_by_id(conn, ad_item_id)
+                    if not ad_item or ad_item.get('ad_level') not in ('campaign', 'group'):
+                        return self.send_json({'status': 'error', 'message': '广告关联仅支持广告活动或广告组'}, start_response)
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            INSERT INTO amazon_ad_deliveries
+                            (status, ad_item_id, delivery_desc, bid_value, observe_interval, next_observe_at, updated_at)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            """,
+                            (status, ad_item_id, delivery_desc, bid_value, observe_interval, next_observe_at, updated_at_text)
+                        )
+                        new_id = cur.lastrowid
+                return self.send_json({'status': 'success', 'id': new_id}, start_response)
+
+            if method == 'PUT':
+                data = self._read_json_body(environ)
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+
+                status = self._normalize_ad_status(data.get('status'))
+                ad_item_id = self._parse_int(data.get('ad_item_id'))
+                delivery_desc = (data.get('delivery_desc') or '').strip()
+                bid_value = self._normalize_bid_value(data.get('bid_value'))
+                updated_at_text, observe_interval, next_observe_at = _resolve_schedule(data)
+                if not status or not ad_item_id or not delivery_desc or not bid_value:
+                    return self.send_json({'status': 'error', 'message': 'Missing status/ad_item_id/delivery_desc/bid_value'}, start_response)
+                if bid_value is None:
+                    return self.send_json({'status': 'error', 'message': 'Invalid bid_value'}, start_response)
+
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT id FROM amazon_ad_deliveries WHERE id=%s", (item_id,))
+                        if not cur.fetchone():
+                            return self.send_json({'status': 'error', 'message': 'Not found'}, start_response)
+                    ad_item = self._get_ad_item_by_id(conn, ad_item_id)
+                    if not ad_item or ad_item.get('ad_level') not in ('campaign', 'group'):
+                        return self.send_json({'status': 'error', 'message': '广告关联仅支持广告活动或广告组'}, start_response)
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            UPDATE amazon_ad_deliveries
+                            SET status=%s, ad_item_id=%s, delivery_desc=%s, bid_value=%s, observe_interval=%s, next_observe_at=%s, updated_at=%s
+                            WHERE id=%s
+                            """,
+                            (status, ad_item_id, delivery_desc, bid_value, observe_interval, next_observe_at, updated_at_text, item_id)
+                        )
+                return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'PATCH':
+                data = self._read_json_body(environ)
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT id FROM amazon_ad_deliveries WHERE id=%s", (item_id,))
+                        if not cur.fetchone():
+                            return self.send_json({'status': 'error', 'message': 'Not found'}, start_response)
+
+                        updates = []
+                        params = []
+                        if 'status' in data:
+                            status = self._normalize_ad_status(data.get('status'))
+                            if not status:
+                                return self.send_json({'status': 'error', 'message': 'Invalid status'}, start_response)
+                            updates.append('status=%s')
+                            params.append(status)
+                        if 'bid_value' in data:
+                            raw_bid = data.get('bid_value')
+                            bid_value = self._normalize_bid_value(raw_bid)
+                            if bid_value is None:
+                                return self.send_json({'status': 'error', 'message': 'Invalid bid_value'}, start_response)
+                            updates.append('bid_value=%s')
+                            params.append(bid_value)
+
+                        if not updates:
+                            return self.send_json({'status': 'error', 'message': 'No fields to update'}, start_response)
+                        params.append(item_id)
+                        cur.execute(f"UPDATE amazon_ad_deliveries SET {', '.join(updates)} WHERE id=%s", params)
+                return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'DELETE':
+                data = self._read_json_body(environ)
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM amazon_ad_deliveries WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except RuntimeError as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        except Exception as e:
+            if pymysql and isinstance(e, pymysql.err.IntegrityError):
+                return self.send_json({'status': 'error', 'message': '广告投放记录已存在或被引用'}, start_response)
+            print("Amazon ad delivery API error: " + str(e))
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_amazon_ad_product_api(self, environ, method, start_response):
+        """Amazon 广告商品管理 API"""
+        try:
+            self._ensure_amazon_ad_product_table()
+            query_string = environ.get('QUERY_STRING', '')
+            query_params = parse_qs(query_string)
+
+            def _resolve_schedule(data):
+                updated_at_text = self._normalize_datetime_text(data.get('updated_at'))
+                if not updated_at_text:
+                    updated_at_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                observe_days = self._normalize_observe_days(data.get('observe_days'))
+                if observe_days is None:
+                    observe_days = self._normalize_observe_days(data.get('observe_interval'))
+                if observe_days is None:
+                    observe_days = 1
+                observe_interval = f"{observe_days}天"
+                next_observe_at = self._normalize_datetime_text(data.get('next_observe_at'))
+                if not next_observe_at:
+                    base_dt = datetime.strptime(updated_at_text, '%Y-%m-%d %H:%M:%S')
+                    next_observe_at = (base_dt + timedelta(days=observe_days)).strftime('%Y-%m-%d %H:%M:%S')
+                return updated_at_text, observe_interval, next_observe_at
+
+            if method == 'GET':
+                keyword = (query_params.get('q', [''])[0] or '').strip()
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        sql = """
+                            SELECT
+                                p.id,
+                                p.status,
+                                p.ad_item_id,
+                                p.sales_product_id,
+                                p.observe_interval,
+                                p.next_observe_at,
+                                p.created_at,
+                                p.updated_at,
+                                ai.ad_level,
+                                ai.name AS ad_name,
+                                adp.name AS portfolio_name,
+                                sp.platform_sku
+                            FROM amazon_ad_products p
+                            LEFT JOIN amazon_ad_items ai ON ai.id = p.ad_item_id
+                            LEFT JOIN amazon_ad_items adp ON adp.id = ai.portfolio_id
+                            LEFT JOIN sales_products sp ON sp.id = p.sales_product_id
+                        """
+                        filters = []
+                        params = []
+                        if keyword:
+                            filters.append("(ai.name LIKE %s OR sp.platform_sku LIKE %s OR adp.name LIKE %s OR (CASE WHEN ai.ad_level='group' THEN '广告组' WHEN ai.ad_level='campaign' THEN '广告活动' ELSE '' END) LIKE %s)")
+                            params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
+                        where_sql = (' WHERE ' + ' AND '.join(filters)) if filters else ''
+                        cur.execute(sql + where_sql + ' ORDER BY p.id DESC', params)
+                        rows = cur.fetchall()
+                return self.send_json({'status': 'success', 'items': rows}, start_response)
+
+            if method == 'POST':
+                data = self._read_json_body(environ)
+                status = self._normalize_ad_status(data.get('status') or '启动')
+                ad_item_id = self._parse_int(data.get('ad_item_id'))
+                sales_product_id = self._parse_int(data.get('sales_product_id'))
+                updated_at_text, observe_interval, next_observe_at = _resolve_schedule(data)
+                if not status or not ad_item_id or not sales_product_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing status/ad_item_id/sales_product_id'}, start_response)
+
+                with self._get_db_connection() as conn:
+                    ad_item = self._get_ad_item_by_id(conn, ad_item_id)
+                    if not ad_item or ad_item.get('ad_level') not in ('campaign', 'group'):
+                        return self.send_json({'status': 'error', 'message': '广告关联仅支持广告活动或广告组'}, start_response)
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT id FROM sales_products WHERE id=%s", (sales_product_id,))
+                        if not cur.fetchone():
+                            return self.send_json({'status': 'error', 'message': 'Invalid sales_product_id'}, start_response)
+                        cur.execute(
+                            """
+                            INSERT INTO amazon_ad_products
+                            (status, ad_item_id, sales_product_id, observe_interval, next_observe_at, updated_at)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                            """,
+                            (status, ad_item_id, sales_product_id, observe_interval, next_observe_at, updated_at_text)
+                        )
+                        new_id = cur.lastrowid
+                return self.send_json({'status': 'success', 'id': new_id}, start_response)
+
+            if method == 'PUT':
+                data = self._read_json_body(environ)
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+
+                status = self._normalize_ad_status(data.get('status'))
+                ad_item_id = self._parse_int(data.get('ad_item_id'))
+                sales_product_id = self._parse_int(data.get('sales_product_id'))
+                updated_at_text, observe_interval, next_observe_at = _resolve_schedule(data)
+                if not status or not ad_item_id or not sales_product_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing status/ad_item_id/sales_product_id'}, start_response)
+
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT id FROM amazon_ad_products WHERE id=%s", (item_id,))
+                        if not cur.fetchone():
+                            return self.send_json({'status': 'error', 'message': 'Not found'}, start_response)
+                    ad_item = self._get_ad_item_by_id(conn, ad_item_id)
+                    if not ad_item or ad_item.get('ad_level') not in ('campaign', 'group'):
+                        return self.send_json({'status': 'error', 'message': '广告关联仅支持广告活动或广告组'}, start_response)
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT id FROM sales_products WHERE id=%s", (sales_product_id,))
+                        if not cur.fetchone():
+                            return self.send_json({'status': 'error', 'message': 'Invalid sales_product_id'}, start_response)
+                        cur.execute(
+                            """
+                            UPDATE amazon_ad_products
+                            SET status=%s, ad_item_id=%s, sales_product_id=%s, observe_interval=%s, next_observe_at=%s, updated_at=%s
+                            WHERE id=%s
+                            """,
+                            (status, ad_item_id, sales_product_id, observe_interval, next_observe_at, updated_at_text, item_id)
+                        )
+                return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'DELETE':
+                data = self._read_json_body(environ)
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM amazon_ad_products WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except RuntimeError as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        except Exception as e:
+            if pymysql and isinstance(e, pymysql.err.IntegrityError):
+                return self.send_json({'status': 'error', 'message': '广告商品记录已存在或被引用'}, start_response)
+            print("Amazon ad product API error: " + str(e))
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_amazon_ad_adjustment_api(self, environ, method, start_response):
+        """Amazon 广告调整 API（搜索广告、获取默认信息、记录调整）"""
+        try:
+            self._ensure_amazon_ad_adjustment_table()
+            query_string = environ.get('QUERY_STRING', '')
+            query_params = parse_qs(query_string)
+
+            def _normalize_short_text(value, max_len=64):
+                text = ('' if value is None else str(value)).strip()
+                return text[:max_len] if text else None
+
+            def _normalize_long_text(value, max_len=255):
+                text = ('' if value is None else str(value)).strip()
+                return text[:max_len] if text else None
+
+            def _normalize_bool(value):
+                text = ('' if value is None else str(value)).strip().lower()
+                return 1 if text in ('1', 'true', 'yes', 'y', '是') else 0
+
+            def _resolve_ad_info(conn, ad_item_id):
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT
+                            ai.id,
+                            ai.ad_level,
+                            ai.name AS self_name,
+                            ai.portfolio_id,
+                            ai.campaign_id,
+                            p.name AS portfolio_name,
+                            c.name AS campaign_name,
+                            ai.subtype_id,
+                            c.subtype_id AS campaign_subtype_id,
+                            st.description AS self_subtype_desc,
+                            st.ad_class AS self_ad_class,
+                            st.subtype_code AS self_subtype_code,
+                            cst.description AS campaign_subtype_desc,
+                            cst.ad_class AS campaign_ad_class,
+                            cst.subtype_code AS campaign_subtype_code
+                        FROM amazon_ad_items ai
+                        LEFT JOIN amazon_ad_items p ON p.id = ai.portfolio_id
+                        LEFT JOIN amazon_ad_items c ON c.id = ai.campaign_id
+                        LEFT JOIN amazon_ad_subtypes st ON st.id = ai.subtype_id
+                        LEFT JOIN amazon_ad_subtypes cst ON cst.id = c.subtype_id
+                        WHERE ai.id=%s
+                        """,
+                        (ad_item_id,)
+                    )
+                    row = cur.fetchone()
+                if not row:
+                    return None
+                effective_subtype_id = row.get('subtype_id') or row.get('campaign_subtype_id')
+                ad_class = row.get('self_ad_class') or row.get('campaign_ad_class') or ''
+                subtype_code = row.get('self_subtype_code') or row.get('campaign_subtype_code') or ''
+                subtype_desc = row.get('self_subtype_desc') or row.get('campaign_subtype_desc') or ''
+
+                ad_level = row.get('ad_level')
+                portfolio_name = row.get('portfolio_name') or ''
+                campaign_name = row.get('campaign_name') or ''
+                group_name = ''
+                if ad_level == 'campaign':
+                    campaign_name = row.get('self_name') or campaign_name
+                elif ad_level == 'group':
+                    group_name = row.get('self_name') or ''
+
+                return {
+                    'id': row.get('id'),
+                    'ad_level': ad_level,
+                    'portfolio_name': portfolio_name,
+                    'campaign_name': campaign_name,
+                    'group_name': group_name,
+                    'ad_name': row.get('self_name') or '',
+                    'subtype_id': effective_subtype_id,
+                    'subtype_description': subtype_desc,
+                    'ad_class': ad_class,
+                    'subtype_code': subtype_code,
+                    'ad_type_text': f"{ad_class}-{subtype_code}" if (ad_class or subtype_code) else ''
+                }
+
+            def _fetch_allowed_operations(conn, subtype_id, ad_level):
+                if not subtype_id:
+                    return []
+                level_col = 'apply_group' if ad_level == 'group' else ('apply_campaign' if ad_level == 'campaign' else 'apply_portfolio')
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""
+                        SELECT t.id, t.name
+                        FROM amazon_ad_subtype_operation_types so
+                        JOIN amazon_ad_operation_types t ON t.id = so.operation_type_id
+                        WHERE so.subtype_id=%s AND t.{level_col}=1
+                        ORDER BY t.id ASC
+                        """,
+                        (subtype_id,)
+                    )
+                    ops = cur.fetchall() or []
+                    if not ops:
+                        return []
+                    op_ids = [int(row.get('id')) for row in ops if row.get('id')]
+                    placeholders = ','.join(['%s'] * len(op_ids))
+                    cur.execute(
+                        f"""
+                        SELECT id, operation_type_id, reason_name
+                        FROM amazon_ad_operation_reasons
+                        WHERE operation_type_id IN ({placeholders})
+                        ORDER BY id ASC
+                        """,
+                        op_ids
+                    )
+                    reason_rows = cur.fetchall() or []
+                reason_map = {}
+                for reason in reason_rows:
+                    op_id = int(reason.get('operation_type_id'))
+                    reason_map.setdefault(op_id, []).append({
+                        'id': reason.get('id'),
+                        'reason_name': reason.get('reason_name') or ''
+                    })
+                for op in ops:
+                    op_id = int(op.get('id'))
+                    op['reasons'] = reason_map.get(op_id, [])
+                return ops
+
+            def _get_default_time_window(conn, ad_item_id):
+                us_now = datetime.utcnow() - timedelta(hours=5)
+                us_yesterday_date = (us_now - timedelta(days=1)).strftime('%Y-%m-%d')
+                end_time = f"{us_yesterday_date} 23:59:59"
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT adjust_date FROM amazon_ad_adjustments WHERE ad_item_id=%s ORDER BY adjust_date DESC LIMIT 1",
+                        (ad_item_id,)
+                    )
+                    last_row = cur.fetchone()
+                if last_row and last_row.get('adjust_date'):
+                    start_time = datetime.strftime(last_row.get('adjust_date'), '%Y-%m-%d %H:%M:%S')
+                else:
+                    start_time = f"{us_yesterday_date} 00:00:00"
+                return start_time, end_time
+
+            if method == 'GET':
+                action = (query_params.get('action', ['records'])[0] or 'records').strip().lower()
+
+                if action == 'ad-search':
+                    keyword = (query_params.get('q', [''])[0] or '').strip()
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            sql = """
+                                SELECT
+                                    ai.id,
+                                    ai.ad_level,
+                                    ai.name AS ad_name,
+                                    p.name AS portfolio_name,
+                                    c.name AS campaign_name,
+                                    st.description AS self_subtype_desc,
+                                    st.ad_class AS self_ad_class,
+                                    st.subtype_code AS self_subtype_code,
+                                    cst.description AS campaign_subtype_desc,
+                                    cst.ad_class AS campaign_ad_class,
+                                    cst.subtype_code AS campaign_subtype_code
+                                FROM amazon_ad_items ai
+                                LEFT JOIN amazon_ad_items p ON p.id = ai.portfolio_id
+                                LEFT JOIN amazon_ad_items c ON c.id = ai.campaign_id
+                                LEFT JOIN amazon_ad_subtypes st ON st.id = ai.subtype_id
+                                LEFT JOIN amazon_ad_subtypes cst ON cst.id = c.subtype_id
+                                WHERE ai.ad_level IN ('campaign', 'group')
+                            """
+                            params = []
+                            if keyword:
+                                sql += " AND (ai.name LIKE %s OR p.name LIKE %s OR c.name LIKE %s OR st.description LIKE %s OR cst.description LIKE %s)"
+                                like = f"%{keyword}%"
+                                params.extend([like, like, like, like, like])
+                            sql += " ORDER BY ai.id DESC LIMIT 200"
+                            cur.execute(sql, params)
+                            rows = cur.fetchall() or []
+                    items = []
+                    for row in rows:
+                        ad_level = row.get('ad_level')
+                        subtype_desc = row.get('self_subtype_desc') or row.get('campaign_subtype_desc') or ''
+                        ad_class = row.get('self_ad_class') or row.get('campaign_ad_class') or ''
+                        subtype_code = row.get('self_subtype_code') or row.get('campaign_subtype_code') or ''
+                        campaign_name = row.get('campaign_name') or ''
+                        group_name = ''
+                        if ad_level == 'campaign':
+                            campaign_name = row.get('ad_name') or campaign_name
+                        elif ad_level == 'group':
+                            group_name = row.get('ad_name') or ''
+                        items.append({
+                            'id': row.get('id'),
+                            'ad_level': ad_level,
+                            'ad_name': row.get('ad_name') or '',
+                            'portfolio_name': row.get('portfolio_name') or '',
+                            'campaign_name': campaign_name,
+                            'group_name': group_name,
+                            'subtype_description': subtype_desc,
+                            'ad_type_text': f"{ad_class}-{subtype_code}" if (ad_class or subtype_code) else ''
+                        })
+                    return self.send_json({'status': 'success', 'items': items}, start_response)
+
+                if action == 'defaults':
+                    ad_item_id = self._parse_int(query_params.get('ad_item_id', [''])[0])
+                    if not ad_item_id:
+                        return self.send_json({'status': 'error', 'message': 'Missing ad_item_id'}, start_response)
+                    with self._get_db_connection() as conn:
+                        ad_info = _resolve_ad_info(conn, ad_item_id)
+                        if not ad_info:
+                            return self.send_json({'status': 'error', 'message': '广告信息不存在'}, start_response)
+                        operations = _fetch_allowed_operations(conn, ad_info.get('subtype_id'), ad_info.get('ad_level'))
+                        start_time, end_time = _get_default_time_window(conn, ad_item_id)
+                    return self.send_json({
+                        'status': 'success',
+                        'ad_info': ad_info,
+                        'allowed_operations': operations,
+                        'defaults': {
+                            'adjust_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                            'start_time': start_time,
+                            'end_time': end_time
+                        }
+                    }, start_response)
+
+                keyword = (query_params.get('q', [''])[0] or '').strip()
+                ad_item_id = self._parse_int(query_params.get('ad_item_id', [''])[0])
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        sql = """
+                            SELECT
+                                r.id,
+                                r.adjust_date,
+                                r.ad_item_id,
+                                r.operation_type_id,
+                                r.target_object,
+                                r.before_value,
+                                r.after_value,
+                                r.reason_id,
+                                r.start_time,
+                                r.end_time,
+                                r.impressions,
+                                r.clicks,
+                                r.cost,
+                                r.orders,
+                                r.sales,
+                                r.acos,
+                                r.cpc,
+                                r.ctr,
+                                r.cvr,
+                                r.attribution_checked,
+                                r.attribution_orders,
+                                r.attribution_sales,
+                                r.remark,
+                                r.is_quick_submit,
+                                ai.name AS ad_name,
+                                ai.ad_level,
+                                p.name AS portfolio_name,
+                                c.name AS campaign_name,
+                                t.name AS operation_name,
+                                reason.reason_name
+                            FROM amazon_ad_adjustments r
+                            JOIN amazon_ad_items ai ON ai.id = r.ad_item_id
+                            LEFT JOIN amazon_ad_items p ON p.id = ai.portfolio_id
+                            LEFT JOIN amazon_ad_items c ON c.id = ai.campaign_id
+                            JOIN amazon_ad_operation_types t ON t.id = r.operation_type_id
+                            LEFT JOIN amazon_ad_operation_reasons reason ON reason.id = r.reason_id
+                        """
+                        filters = []
+                        params = []
+                        if ad_item_id:
+                            filters.append("r.ad_item_id=%s")
+                            params.append(ad_item_id)
+                        if keyword:
+                            filters.append("(ai.name LIKE %s OR t.name LIKE %s OR r.target_object LIKE %s OR reason.reason_name LIKE %s)")
+                            like = f"%{keyword}%"
+                            params.extend([like, like, like, like])
+                        where_sql = (' WHERE ' + ' AND '.join(filters)) if filters else ''
+                        cur.execute(sql + where_sql + ' ORDER BY r.adjust_date DESC, r.id DESC LIMIT 500', params)
+                        rows = cur.fetchall() or []
+                return self.send_json({'status': 'success', 'items': rows}, start_response)
+
+            if method == 'POST':
+                data = self._read_json_body(environ)
+                is_quick_submit = _normalize_bool(data.get('is_quick_submit'))
+                ad_item_id = self._parse_int(data.get('ad_item_id'))
+                operation_type_id = self._parse_int(data.get('operation_type_id'))
+                target_object = _normalize_long_text(data.get('target_object'), 255)
+                before_value = _normalize_short_text(data.get('before_value'), 64)
+                after_value = _normalize_short_text(data.get('after_value'), 64)
+                adjust_date = self._normalize_datetime_text(data.get('adjust_date')) or datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+                if not ad_item_id or not operation_type_id or not target_object:
+                    return self.send_json({'status': 'error', 'message': 'Missing ad_item_id/operation_type_id/target_object'}, start_response)
+
+                with self._get_db_connection() as conn:
+                    ad_info = _resolve_ad_info(conn, ad_item_id)
+                    if not ad_info:
+                        return self.send_json({'status': 'error', 'message': '广告信息不存在'}, start_response)
+
+                    allowed_ops = _fetch_allowed_operations(conn, ad_info.get('subtype_id'), ad_info.get('ad_level'))
+                    allowed_op_ids = {int(item.get('id')) for item in allowed_ops if item.get('id')}
+                    if operation_type_id not in allowed_op_ids:
+                        return self.send_json({'status': 'error', 'message': '该广告类型不允许当前操作类型'}, start_response)
+
+                    reason_id = self._parse_int(data.get('reason_id'))
+                    reason_allowed = set()
+                    for op in allowed_ops:
+                        if int(op.get('id')) == operation_type_id:
+                            for reason in op.get('reasons') or []:
+                                if reason.get('id'):
+                                    reason_allowed.add(int(reason.get('id')))
+                            break
+
+                    if reason_id and reason_id not in reason_allowed:
+                        return self.send_json({'status': 'error', 'message': '当前操作类型不允许该修改原因'}, start_response)
+
+                    if not is_quick_submit:
+                        start_time = self._normalize_datetime_text(data.get('start_time'))
+                        end_time = self._normalize_datetime_text(data.get('end_time'))
+                        if not reason_id:
+                            return self.send_json({'status': 'error', 'message': '提交并记录需要选择修改原因'}, start_response)
+                        if not before_value or not after_value:
+                            return self.send_json({'status': 'error', 'message': '提交并记录需要填写修改前和修改后'}, start_response)
+                        if not start_time or not end_time:
+                            return self.send_json({'status': 'error', 'message': '提交并记录需要填写开始时间和结束时间'}, start_response)
+                    else:
+                        start_time = None
+                        end_time = None
+                        reason_id = reason_id if reason_id in reason_allowed else None
+
+                    impressions = _normalize_short_text(data.get('impressions'), 32)
+                    clicks = _normalize_short_text(data.get('clicks'), 32)
+                    cost = _normalize_short_text(data.get('cost'), 32)
+                    orders = _normalize_short_text(data.get('orders'), 32)
+                    sales = _normalize_short_text(data.get('sales'), 32)
+                    acos = _normalize_short_text(data.get('acos'), 32)
+                    cpc = _normalize_short_text(data.get('cpc'), 32)
+                    ctr = _normalize_short_text(data.get('ctr'), 32)
+                    cvr = _normalize_short_text(data.get('cvr'), 32)
+                    attribution_checked = _normalize_bool(data.get('attribution_checked'))
+                    attribution_orders = _normalize_short_text(data.get('attribution_orders'), 32)
+                    attribution_sales = _normalize_short_text(data.get('attribution_sales'), 32)
+                    remark = _normalize_long_text(data.get('remark'), 255)
+
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            INSERT INTO amazon_ad_adjustments (
+                                adjust_date, ad_item_id, operation_type_id, target_object,
+                                before_value, after_value, reason_id, start_time, end_time,
+                                impressions, clicks, cost, orders, sales, acos, cpc, ctr, cvr,
+                                attribution_checked, attribution_orders, attribution_sales, remark, is_quick_submit
+                            ) VALUES (
+                                %s, %s, %s, %s,
+                                %s, %s, %s, %s, %s,
+                                %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                                %s, %s, %s, %s, %s
+                            )
+                            """,
+                            (
+                                adjust_date, ad_item_id, operation_type_id, target_object,
+                                before_value, after_value, reason_id, start_time, end_time,
+                                impressions, clicks, cost, orders, sales, acos, cpc, ctr, cvr,
+                                attribution_checked, attribution_orders, attribution_sales, remark, is_quick_submit
+                            )
+                        )
+                        new_id = cur.lastrowid
+                return self.send_json({'status': 'success', 'id': new_id}, start_response)
+
+            if method == 'DELETE':
+                data = self._read_json_body(environ)
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM amazon_ad_adjustments WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except RuntimeError as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        except Exception as e:
+            if pymysql and isinstance(e, pymysql.err.IntegrityError):
+                return self.send_json({'status': 'error', 'message': '广告调整记录保存失败，存在无效外键'}, start_response)
+            print("Amazon ad adjustment API error: " + str(e))
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_material_api(self, environ, method, start_response):
@@ -6062,7 +8410,7 @@ class WSGIApp:
                                 """
                                 SELECT
                                     op.id, op.sku, op.sku_family_id, op.version_no, op.fabric_id,
-                                    op.spec_qty_short, op.is_iteration, op.source_order_product_id,
+                                    op.spec_qty_short, op.contents_desc_en, op.is_iteration, op.is_dachene_product, op.source_order_product_id,
                                     op.finished_length_in, op.finished_width_in, op.finished_height_in,
                                     op.net_weight_lbs, op.package_length_in, op.package_width_in,
                                     op.package_height_in, op.gross_weight_lbs, op.cost_usd,
@@ -6104,7 +8452,7 @@ class WSGIApp:
                                 """
                                 SELECT
                                     op.id, op.sku, op.sku_family_id, op.version_no, op.fabric_id,
-                                    op.spec_qty_short, op.is_iteration, op.source_order_product_id,
+                                    op.spec_qty_short, op.contents_desc_en, op.is_iteration, op.is_dachene_product, op.source_order_product_id,
                                     op.finished_length_in, op.finished_width_in, op.finished_height_in,
                                     op.net_weight_lbs, op.package_length_in, op.package_width_in,
                                     op.package_height_in, op.gross_weight_lbs, op.cost_usd,
@@ -6146,10 +8494,12 @@ class WSGIApp:
                 version_no = (data.get('version_no') or '').strip()
                 fabric_id = data.get('fabric_id')
                 spec_qty_short = (data.get('spec_qty_short') or '').strip()
+                contents_desc_en = (data.get('contents_desc_en') or '').strip()
                 is_iteration = 1 if str(data.get('is_iteration') or '').lower() in ('1', 'true', 'yes', 'on') else 0
+                is_dachene_product = 1 if str(data.get('is_dachene_product') or '').lower() in ('1', 'true', 'yes', 'on') else 0
                 source_order_product_id = self._parse_int(data.get('source_order_product_id'))
 
-                if not sku or not sku_family_id or not fabric_id or not spec_qty_short:
+                if not sku or not sku_family_id or not fabric_id:
                     return self.send_json({'status': 'error', 'message': 'Missing required fields'}, start_response)
                 if is_iteration and not source_order_product_id:
                     return self.send_json({'status': 'error', 'message': 'Missing source SKU'}, start_response)
@@ -6162,7 +8512,9 @@ class WSGIApp:
                     'version_no': version_no,
                     'fabric_id': self._parse_int(fabric_id),
                     'spec_qty_short': spec_qty_short,
+                    'contents_desc_en': contents_desc_en or None,
                     'is_iteration': is_iteration,
+                    'is_dachene_product': is_dachene_product,
                     'source_order_product_id': source_order_product_id,
                     'finished_length_in': self._parse_float(data.get('finished_length_in')),
                     'finished_width_in': self._parse_float(data.get('finished_width_in')),
@@ -6192,14 +8544,14 @@ class WSGIApp:
                         cur.execute(
                             """
                             INSERT INTO order_products (
-                                sku, sku_family_id, version_no, fabric_id, spec_qty_short,
-                                is_iteration, source_order_product_id,
+                                sku, sku_family_id, version_no, fabric_id, spec_qty_short, contents_desc_en,
+                                is_iteration, is_dachene_product, source_order_product_id,
                                 finished_length_in, finished_width_in, finished_height_in,
                                 net_weight_lbs, package_length_in, package_width_in, package_height_in,
                                 gross_weight_lbs, cost_usd, carton_qty, package_size_class, last_mile_avg_freight_usd
                             ) VALUES (
-                                %(sku)s, %(sku_family_id)s, %(version_no)s, %(fabric_id)s, %(spec_qty_short)s,
-                                %(is_iteration)s, %(source_order_product_id)s,
+                                %(sku)s, %(sku_family_id)s, %(version_no)s, %(fabric_id)s, %(spec_qty_short)s, %(contents_desc_en)s,
+                                %(is_iteration)s, %(is_dachene_product)s, %(source_order_product_id)s,
                                 %(finished_length_in)s, %(finished_width_in)s, %(finished_height_in)s,
                                 %(net_weight_lbs)s, %(package_length_in)s, %(package_width_in)s, %(package_height_in)s,
                                 %(gross_weight_lbs)s, %(cost_usd)s, %(carton_qty)s, %(package_size_class)s, %(last_mile_avg_freight_usd)s
@@ -6223,10 +8575,12 @@ class WSGIApp:
                 version_no = (data.get('version_no') or '').strip()
                 fabric_id = data.get('fabric_id')
                 spec_qty_short = (data.get('spec_qty_short') or '').strip()
+                contents_desc_en = (data.get('contents_desc_en') or '').strip()
                 is_iteration = 1 if str(data.get('is_iteration') or '').lower() in ('1', 'true', 'yes', 'on') else 0
+                is_dachene_product = 1 if str(data.get('is_dachene_product') or '').lower() in ('1', 'true', 'yes', 'on') else 0
                 source_order_product_id = self._parse_int(data.get('source_order_product_id'))
 
-                if not item_id or not sku or not sku_family_id or not fabric_id or not spec_qty_short:
+                if not item_id or not sku or not sku_family_id or not fabric_id:
                     return self.send_json({'status': 'error', 'message': 'Missing id or fields'}, start_response)
                 if is_iteration and not source_order_product_id:
                     return self.send_json({'status': 'error', 'message': 'Missing source SKU'}, start_response)
@@ -6242,7 +8596,9 @@ class WSGIApp:
                     'version_no': version_no,
                     'fabric_id': self._parse_int(fabric_id),
                     'spec_qty_short': spec_qty_short,
+                    'contents_desc_en': contents_desc_en or None,
                     'is_iteration': is_iteration,
+                    'is_dachene_product': is_dachene_product,
                     'source_order_product_id': source_order_product_id,
                     'finished_length_in': self._parse_float(data.get('finished_length_in')),
                     'finished_width_in': self._parse_float(data.get('finished_width_in')),
@@ -6277,7 +8633,9 @@ class WSGIApp:
                                 version_no=%(version_no)s,
                                 fabric_id=%(fabric_id)s,
                                 spec_qty_short=%(spec_qty_short)s,
+                                contents_desc_en=%(contents_desc_en)s,
                                 is_iteration=%(is_iteration)s,
+                                is_dachene_product=%(is_dachene_product)s,
                                 source_order_product_id=%(source_order_product_id)s,
                                 finished_length_in=%(finished_length_in)s,
                                 finished_width_in=%(finished_width_in)s,
@@ -6328,47 +8686,177 @@ class WSGIApp:
                 return self.send_error(405, 'Method not allowed', start_response)
             if Workbook is None:
                 return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
-            
-            from openpyxl.styles import PatternFill, Font, Alignment
+
+            from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
             from openpyxl.worksheet.datavalidation import DataValidation
-            
+
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            selected_ids = []
+            for raw in query_params.get('ids', []):
+                for token in re.split(r'[,，;；\s]+', str(raw or '').strip()):
+                    if not token:
+                        continue
+                    item_id = self._parse_int(token)
+                    if item_id and item_id not in selected_ids:
+                        selected_ids.append(item_id)
+
             self._ensure_order_product_tables()
             wb = Workbook()
             ws = wb.active
             ws.title = 'order_products'
-            
-            # 获取所有可用的数据用于下拉菜单
+
+            max_multi_columns = {
+                'filling_materials': 3,
+                'frame_materials': 3,
+                'features': 3,
+                'certifications': 3,
+            }
+            export_rows = []
+            filling_rel = {}
+            frame_rel = {}
+            feature_rel = {}
+            cert_rel = {}
+
+            # 获取所有可用的数据用于下拉菜单 + 勾选导出数据
             with self._get_db_connection() as conn:
+                def _load_order_template_options():
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT sku_family FROM product_families ORDER BY sku_family")
+                        sku_families_local = [row['sku_family'] for row in cur.fetchall()]
+
+                        cur.execute("SELECT fabric_code FROM fabric_materials ORDER BY fabric_code")
+                        fabrics_local = [row['fabric_code'] for row in cur.fetchall()]
+
+                        cur.execute("""
+                            SELECT m.name
+                            FROM materials m
+                            JOIN material_types mt ON m.material_type_id = mt.id
+                            WHERE mt.name = '填充'
+                            ORDER BY m.name
+                        """)
+                        filling_local = [row['name'] for row in cur.fetchall()]
+
+                        cur.execute("""
+                            SELECT m.name
+                            FROM materials m
+                            JOIN material_types mt ON m.material_type_id = mt.id
+                            WHERE mt.name = '框架'
+                            ORDER BY m.name
+                        """)
+                        frame_local = [row['name'] for row in cur.fetchall()]
+
+                        cur.execute("SELECT name FROM features ORDER BY name")
+                        feature_local = [row['name'] for row in cur.fetchall()]
+
+                        cur.execute("SELECT name FROM certifications ORDER BY name")
+                        cert_local = [row['name'] for row in cur.fetchall()]
+                    return (sku_families_local, fabrics_local, filling_local, frame_local, feature_local, cert_local)
+
+                sku_families, fabrics, filling_materials, frame_materials, features, certifications = self._get_cached_template_options(
+                    'order_product_template_options_v1',
+                    _load_order_template_options,
+                    ttl_seconds=180
+                )
+
                 with conn.cursor() as cur:
-                    cur.execute("SELECT id, sku_family FROM product_families ORDER BY sku_family")
-                    sku_families = [row['sku_family'] for row in cur.fetchall()]
-                    
-                    cur.execute("SELECT id, fabric_code FROM fabric_materials ORDER BY fabric_code")
-                    fabrics = [row['fabric_code'] for row in cur.fetchall()]
-                    
-                    cur.execute("""
-                        SELECT m.id, m.name
-                        FROM materials m
-                        JOIN material_types mt ON m.material_type_id = mt.id
-                        WHERE mt.name = '填充'
-                        ORDER BY m.name
-                    """)
-                    filling_materials = [row['name'] for row in cur.fetchall()]
-                    
-                    cur.execute("""
-                        SELECT m.id, m.name
-                        FROM materials m
-                        JOIN material_types mt ON m.material_type_id = mt.id
-                        WHERE mt.name = '框架'
-                        ORDER BY m.name
-                    """)
-                    frame_materials = [row['name'] for row in cur.fetchall()]
-                    
-                    cur.execute("SELECT id, name FROM features ORDER BY name")
-                    features = [row['name'] for row in cur.fetchall()]
-                    
-                    cur.execute("SELECT id, name FROM certifications ORDER BY name")
-                    certifications = [row['name'] for row in cur.fetchall()]
+
+                    if selected_ids:
+                        placeholders = ','.join(['%s'] * len(selected_ids))
+                        cur.execute(
+                            f"""
+                            SELECT
+                                op.id,
+                                op.sku,
+                                pf.sku_family,
+                                op.version_no,
+                                fm.fabric_code,
+                                op.spec_qty_short,
+                                op.contents_desc_en,
+                                op.is_iteration,
+                                op.is_dachene_product,
+                                src.sku AS source_sku,
+                                op.finished_length_in,
+                                op.finished_width_in,
+                                op.finished_height_in,
+                                op.net_weight_lbs,
+                                op.package_length_in,
+                                op.package_width_in,
+                                op.package_height_in,
+                                op.gross_weight_lbs,
+                                op.cost_usd,
+                                op.carton_qty,
+                                op.package_size_class,
+                                op.last_mile_avg_freight_usd
+                            FROM order_products op
+                            LEFT JOIN product_families pf ON op.sku_family_id = pf.id
+                            LEFT JOIN fabric_materials fm ON op.fabric_id = fm.id
+                            LEFT JOIN order_products src ON op.source_order_product_id = src.id
+                            WHERE op.id IN ({placeholders})
+                            """,
+                            tuple(selected_ids)
+                        )
+                        selected_rows = cur.fetchall() or []
+                        order_map = {sid: idx for idx, sid in enumerate(selected_ids)}
+                        selected_rows.sort(key=lambda x: order_map.get(x.get('id'), 10 ** 6))
+                        export_rows = selected_rows
+
+                        if selected_rows:
+                            row_ids = [row['id'] for row in selected_rows]
+                            rel_placeholders = ','.join(['%s'] * len(row_ids))
+
+                            cur.execute(
+                                f"""
+                                SELECT opm.order_product_id, m.name, mt.name AS type_name
+                                FROM order_product_materials opm
+                                JOIN materials m ON opm.material_id = m.id
+                                JOIN material_types mt ON m.material_type_id = mt.id
+                                WHERE opm.order_product_id IN ({rel_placeholders})
+                                ORDER BY opm.order_product_id, m.name
+                                """,
+                                tuple(row_ids)
+                            )
+                            for rel in cur.fetchall() or []:
+                                target = filling_rel if rel.get('type_name') == '填充' else frame_rel
+                                target.setdefault(rel['order_product_id'], [])
+                                if rel['name'] not in target[rel['order_product_id']]:
+                                    target[rel['order_product_id']].append(rel['name'])
+
+                            cur.execute(
+                                f"""
+                                SELECT opf.order_product_id, f.name
+                                FROM order_product_features opf
+                                JOIN features f ON opf.feature_id = f.id
+                                WHERE opf.order_product_id IN ({rel_placeholders})
+                                ORDER BY opf.order_product_id, f.name
+                                """,
+                                tuple(row_ids)
+                            )
+                            for rel in cur.fetchall() or []:
+                                feature_rel.setdefault(rel['order_product_id'], [])
+                                if rel['name'] not in feature_rel[rel['order_product_id']]:
+                                    feature_rel[rel['order_product_id']].append(rel['name'])
+
+                            cur.execute(
+                                f"""
+                                SELECT opc.order_product_id, c.name
+                                FROM order_product_certifications opc
+                                JOIN certifications c ON opc.certification_id = c.id
+                                WHERE opc.order_product_id IN ({rel_placeholders})
+                                ORDER BY opc.order_product_id, c.name
+                                """,
+                                tuple(row_ids)
+                            )
+                            for rel in cur.fetchall() or []:
+                                cert_rel.setdefault(rel['order_product_id'], [])
+                                if rel['name'] not in cert_rel[rel['order_product_id']]:
+                                    cert_rel[rel['order_product_id']].append(rel['name'])
+
+                            for row in selected_rows:
+                                rid = row['id']
+                                max_multi_columns['filling_materials'] = max(max_multi_columns['filling_materials'], len(filling_rel.get(rid, [])))
+                                max_multi_columns['frame_materials'] = max(max_multi_columns['frame_materials'], len(frame_rel.get(rid, [])))
+                                max_multi_columns['features'] = max(max_multi_columns['features'], len(feature_rel.get(rid, [])))
+                                max_multi_columns['certifications'] = max(max_multi_columns['certifications'], len(cert_rel.get(rid, [])))
             
             # 定义组件和字段（带中文标签）
             sections = [
@@ -6377,6 +8865,7 @@ class WSGIApp:
                     'bg_color': 'E8DFD4',
                     'fields': [
                         ('is_iteration', '是否迭代款', 'dropdown', ['否', '是']),
+                        ('is_dachene_product', '是否为大健云仓产品（在下单SKU处填写大健云仓Item Code）', 'dropdown', ['否', '是']),
                         ('source_sku', '来源下单SKU', 'text', None),
                         ('version_no', '版本号', 'text', None)
                     ]
@@ -6388,7 +8877,8 @@ class WSGIApp:
                         ('sku', '下单SKU *', 'text', None),
                         ('sku_family', '归属货号 *', 'dropdown', sku_families),
                         ('fabric_code', '面料 *', 'dropdown', fabrics),
-                        ('spec_qty_short', '规格与数量简称', 'text', None)
+                        ('spec_qty_short', '规格与数量简称', 'text', None),
+                        ('contents_desc_en', '内含物英文描述', 'text', None)
                     ]
                 },
                 {
@@ -6408,16 +8898,16 @@ class WSGIApp:
                         ('package_length_in', '包裹长(inch)', 'number', None),
                         ('package_width_in', '包裹宽(inch)', 'number', None),
                         ('package_height_in', '包裹高(inch)', 'number', None),
-                        ('gross_weight_lbs', '毛重(lbs)', 'number', None)
+                        ('gross_weight_lbs', '毛重(lbs)', 'number', None),
+                        ('carton_qty', '装箱量', 'number', None),
+                        ('package_size_class', '包裹大小归类(Fedx)', 'text', None)
                     ]
                 },
                 {
-                    'title': '成本与物流',
+                    'title': '成本',
                     'bg_color': 'E8DFD4',
                     'fields': [
-                        ('cost_usd', '成本价(美元)', 'number', None),
-                        ('carton_qty', '装箱量', 'number', None),
-                        ('package_size_class', '包裹大小归类(Fedx)', 'text', None),
+                        ('cost_usd', '产品成本及发货至海外仓成本估算(USD，不含仓储费)', 'number', None),
                         ('last_mile_avg_freight_usd', '尾程平均运费(美元)', 'number', None)
                     ]
                 },
@@ -6451,8 +8941,7 @@ class WSGIApp:
                     field_options = field_info[3] if len(field_info) > 3 else None
                     
                     if field_type == 'multi_dropdown':
-                        # 对于多选字段，检测需要多少列（基于选项数或默认10列）
-                        num_cols = max(3, len(field_options) // 5 + 1) if field_options else 3
+                        num_cols = max_multi_columns.get(field_code, 3)
                         for i in range(1, num_cols + 1):
                             col_name = f"{field_code}_{i}"
                             column_headers.append(field_label if i == 1 else '')
@@ -6468,25 +8957,31 @@ class WSGIApp:
                 
                 # 填充模块标题（需要合并的列数）
                 section_span = col_idx - section_start_col
-                section_headers.append((section_title, section_start_col, section_span))
+                section_headers.append((section_title, section_start_col, section_span, section.get('bg_color') or 'CFC7BD'))
             
             # 第1行：模块标题（合并单元格）
             for i in range(col_idx):
                 ws.cell(row=1, column=i+1).value = ''  # 先填充空值
             
-            current_col = 1
-            title_fill = PatternFill(start_color='CFC7BD', end_color='CFC7BD', fill_type='solid')
             title_font = Font(bold=True, color='2A2420', size=11)
             title_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            thin_border = Border(
+                left=Side(style='thin', color='B7AEA4'),
+                right=Side(style='thin', color='B7AEA4'),
+                top=Side(style='thin', color='B7AEA4'),
+                bottom=Side(style='thin', color='B7AEA4')
+            )
             
-            for title, start_col, span in section_headers:
+            for title, start_col, span, bg_color in section_headers:
                 if span > 1:
                     ws.merge_cells(start_row=1, start_column=start_col+1, end_row=1, end_column=start_col+span)
                 ws.cell(row=1, column=start_col+1).value = title
+                title_fill = PatternFill(start_color=bg_color, end_color=bg_color, fill_type='solid')
                 for col in range(start_col, start_col + span):
                     ws.cell(row=1, column=col+1).fill = title_fill
                     ws.cell(row=1, column=col+1).font = title_font
                     ws.cell(row=1, column=col+1).alignment = title_alignment
+                    ws.cell(row=1, column=col+1).border = thin_border
             
             # 第2行：列名
             for idx, header in enumerate(column_headers):
@@ -6495,6 +8990,7 @@ class WSGIApp:
                 cell.fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
                 cell.font = Font(bold=True, color='2A2420')
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                cell.border = thin_border
             
             # 第3行：示例行
             example_row_idx = 3
@@ -6505,6 +9001,8 @@ class WSGIApp:
                 
                 if field_base == 'is_iteration':
                     example_row_data.append(('是否迭代款', 0, '否'))
+                elif field_base == 'is_dachene_product':
+                    example_row_data.append(('是否为大健云仓产品（在下单SKU处填写大健云仓Item Code）', 0, '否'))
                 elif field_base == 'sku':
                     example_row_data.append(('下单SKU', 0, 'MS01A-Brown'))
                 elif field_base == 'sku_family':
@@ -6513,6 +9011,8 @@ class WSGIApp:
                     example_row_data.append(('面料', 0, 'Brown'))
                 elif field_base == 'spec_qty_short':
                     example_row_data.append(('规格与数量简称', 0, 'A'))
+                elif field_base == 'contents_desc_en':
+                    example_row_data.append(('内含物英文描述', 0, 'memory foam + metal frame'))
                 elif field_base == 'version_no':
                     example_row_data.append(('版本号', 0, '1'))
                 elif field_base == 'source_sku':
@@ -6534,7 +9034,7 @@ class WSGIApp:
                 elif field_base == 'gross_weight_lbs':
                     example_row_data.append(('毛重(lbs)', 0, 6.5))
                 elif field_base == 'cost_usd':
-                    example_row_data.append(('成本价(美元)', 0, 25.00))
+                    example_row_data.append(('产品成本及发货至海外仓成本估算(USD，不含仓储费)', 0, 25.00))
                 elif field_base == 'carton_qty':
                     example_row_data.append(('装箱量', 0, 50))
                 elif field_base == 'package_size_class':
@@ -6575,11 +9075,13 @@ class WSGIApp:
             # 添加数据验证
             yes_no_validation = DataValidation(type='list', formula1='"否,是"', allow_blank=True)
             ws.add_data_validation(yes_no_validation)
+            max_validation_row = 400
             
-            if 'is_iteration' in header_to_column:
-                col_letter = col_idx_to_letter(header_to_column['is_iteration'])
-                for row in range(4, 1000):
-                    yes_no_validation.add(f'{col_letter}{row}')
+            for bool_field in ('is_iteration', 'is_dachene_product'):
+                if bool_field in header_to_column:
+                    col_letter = col_idx_to_letter(header_to_column[bool_field])
+                    for row in range(4, max_validation_row + 1):
+                        yes_no_validation.add(f'{col_letter}{row}')
             
             # 为下拉字段添加验证
             for field_name, options in field_to_options.items():
@@ -6589,9 +9091,57 @@ class WSGIApp:
                     
                     validation = DataValidation(type='list', formula1=f'"{",".join(options)}"', allow_blank=True)
                     ws.add_data_validation(validation)
-                    
-                    for row in range(4, 1000):
+
+                    for row in range(4, max_validation_row + 1):
                         validation.add(f'{col_letter}{row}')
+
+            if export_rows:
+                def set_multi_values(row_idx, field_name, values):
+                    values = values or []
+                    total = max_multi_columns.get(field_name, 3)
+                    for i in range(1, total + 1):
+                        key = f'{field_name}_{i}'
+                        if key not in header_to_column:
+                            continue
+                        value = values[i - 1] if i - 1 < len(values) else None
+                        ws.cell(row=row_idx, column=header_to_column[key] + 1).value = value
+
+                data_row = 4
+                for item in export_rows:
+                    row_id = item.get('id')
+                    direct_values = {
+                        'is_iteration': '是' if str(item.get('is_iteration') or '0') in ('1', 'True', 'true') else '否',
+                        'is_dachene_product': '是' if str(item.get('is_dachene_product') or '0') in ('1', 'True', 'true') else '否',
+                        'source_sku': item.get('source_sku') or '',
+                        'version_no': item.get('version_no') or '',
+                        'sku': item.get('sku') or '',
+                        'sku_family': item.get('sku_family') or '',
+                        'fabric_code': item.get('fabric_code') or '',
+                        'spec_qty_short': item.get('spec_qty_short') or '',
+                        'contents_desc_en': item.get('contents_desc_en') or '',
+                        'finished_length_in': item.get('finished_length_in'),
+                        'finished_width_in': item.get('finished_width_in'),
+                        'finished_height_in': item.get('finished_height_in'),
+                        'net_weight_lbs': item.get('net_weight_lbs'),
+                        'package_length_in': item.get('package_length_in'),
+                        'package_width_in': item.get('package_width_in'),
+                        'package_height_in': item.get('package_height_in'),
+                        'gross_weight_lbs': item.get('gross_weight_lbs'),
+                        'cost_usd': item.get('cost_usd'),
+                        'carton_qty': item.get('carton_qty'),
+                        'package_size_class': item.get('package_size_class') or '',
+                        'last_mile_avg_freight_usd': item.get('last_mile_avg_freight_usd'),
+                    }
+                    for field_name, value in direct_values.items():
+                        if field_name not in header_to_column:
+                            continue
+                        ws.cell(row=data_row, column=header_to_column[field_name] + 1).value = value
+
+                    set_multi_values(data_row, 'filling_materials', filling_rel.get(row_id, []))
+                    set_multi_values(data_row, 'frame_materials', frame_rel.get(row_id, []))
+                    set_multi_values(data_row, 'features', feature_rel.get(row_id, []))
+                    set_multi_values(data_row, 'certifications', cert_rel.get(row_id, []))
+                    data_row += 1
             
             # 设置列宽
             for idx, header in enumerate(column_headers):
@@ -6606,7 +9156,7 @@ class WSGIApp:
                     ws.column_dimensions[col_letter].width = 14
             
             # 冻结表头
-            ws.freeze_panes = 'A3'
+            ws.freeze_panes = 'A4'
             
             return self._send_excel_workbook(wb, 'order_product_template.xlsx', start_response)
         except Exception as e:
@@ -6620,6 +9170,9 @@ class WSGIApp:
             if load_workbook is None:
                 return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
 
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            preview_mode = str((query_params.get('preview', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
+
             content_type = environ.get('CONTENT_TYPE', '')
             if 'multipart/form-data' not in content_type:
                 return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
@@ -6630,29 +9183,62 @@ class WSGIApp:
             env_copy['CONTENT_LENGTH'] = str(len(raw_body))
             form = cgi.FieldStorage(fp=io.BytesIO(raw_body), environ=env_copy, keep_blank_values=True)
             file_item = form['file'] if 'file' in form else None
-            if not file_item or not getattr(file_item, 'file', None):
+            if file_item is None or getattr(file_item, 'file', None) is None:
                 return self.send_json({'status': 'error', 'message': 'Missing file'}, start_response)
             file_bytes = file_item.file.read() or b''
             if not file_bytes:
                 return self.send_json({'status': 'error', 'message': 'Empty file'}, start_response)
 
-            wb = load_workbook(io.BytesIO(file_bytes))
+            file_bytes = self._sanitize_xlsx_bool_cells(file_bytes)
+
+            # load and sanitize workbook
+            try:
+                wb = load_workbook(io.BytesIO(file_bytes))
+            except Exception as e:
+                if 'Cannot be converted to bool' in str(e):
+                    wb = self._rebuild_workbook_from_xlsx_xml(file_bytes)
+                    if wb is None:
+                        diag = self._scan_xlsx_invalid_bool_cells(file_bytes)
+                        return self.send_json({
+                            'status': 'error',
+                            'message': (
+                                '导入失败：文件中存在异常布尔字段且无法自动修复，'
+                                '请另存为新的xlsx后重试'
+                            ),
+                            'debug': {
+                                'cause': 'Cannot be converted to bool',
+                                'invalid_bool_cells': diag.get('count', 0),
+                                'samples': diag.get('samples', [])
+                            }
+                        }, start_response)
+                else:
+                    return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+            for sheet in wb.worksheets:
+                for row in sheet.iter_rows():
+                    for cell in row:
+                        if cell.data_type == 'b' and not isinstance(cell.value, bool):
+                            cell.data_type = 's'
+                            cell.value = str(cell.value)
+
             ws = wb.active
 
             # 支持两种表头格式：新的中文表头（从第2行）或旧的字段代码表头（从第1行）
-            header_row_idx = 2 if ws.cell(row=1, column=1).value in ['迭代款', '基础信息', '成品尺寸/重量', '包裹尺寸/重量', '成本与物流', '材料与卖点'] else 1
+            header_row_idx = 2 if ws.cell(row=1, column=1).value in ['迭代款', '基础信息', '成品尺寸/重量', '包裹尺寸/重量', '成本与物流', '成本', '材料与卖点'] else 1
             
             headers = [cell.value for cell in ws[header_row_idx]]
             
             # 中文字段标签到字段代码的映射
             label_to_code = {
                 '是否迭代款': 'is_iteration',
+                '是否为大健云仓产品（在下单SKU处填写大健云仓Item Code）': 'is_dachene_product',
                 '来源下单SKU': 'source_sku',
                 '版本号': 'version_no',
                 '下单SKU *': 'sku',
                 '归属货号 *': 'sku_family',
                 '面料 *': 'fabric_code',
                 '规格与数量简称': 'spec_qty_short',
+                '内含物英文描述': 'contents_desc_en',
                 '成品长(inch)': 'finished_length_in',
                 '成品宽(inch)': 'finished_width_in',
                 '成品高(inch)': 'finished_height_in',
@@ -6662,6 +9248,7 @@ class WSGIApp:
                 '包裹高(inch)': 'package_height_in',
                 '毛重(lbs)': 'gross_weight_lbs',
                 '成本价(美元)': 'cost_usd',
+                '产品成本及发货至海外仓成本估算(USD，不含仓储费)': 'cost_usd',
                 '装箱量': 'carton_qty',
                 '包裹大小归类(Fedx)': 'package_size_class',
                 '尾程平均运费(美元)': 'last_mile_avg_freight_usd',
@@ -6670,31 +9257,50 @@ class WSGIApp:
                 '卖点特点(可多项)': 'features',
                 '认证(可多项)': 'certifications'
             }
+
+            multi_base_fields = {'filling_materials', 'frame_materials', 'features', 'certifications'}
+            single_fields = {
+                'sku', 'sku_family', 'fabric_code', 'spec_qty_short', 'is_iteration', 'is_dachene_product', 'source_sku', 'version_no',
+                'contents_desc_en',
+                'finished_length_in', 'finished_width_in', 'finished_height_in', 'net_weight_lbs',
+                'package_length_in', 'package_width_in', 'package_height_in', 'gross_weight_lbs',
+                'cost_usd', 'carton_qty', 'package_size_class', 'last_mile_avg_freight_usd'
+            }
             
             # 构建列映射，支持中文标签或字段代码
             header_map = {}
+            active_multi_base = None
+            active_multi_index = 0
             for idx, h in enumerate(headers):
-                if h:
-                    h_stripped = str(h).strip()
-                    # 先尝试翻译中文标签
-                    if h_stripped in label_to_code:
-                        field_code = label_to_code[h_stripped]
+                h_stripped = str(h).strip() if h is not None else ''
+                if not h_stripped:
+                    if active_multi_base:
+                        active_multi_index += 1
+                        header_map[f'{active_multi_base}_{active_multi_index}'] = idx
+                    continue
+
+                field_code = label_to_code.get(h_stripped, h_stripped)
+                base_field = field_code.rsplit('_', 1)[0] if '_' in field_code and field_code[-1].isdigit() else field_code
+
+                if base_field in multi_base_fields:
+                    active_multi_base = base_field
+                    if '_' in field_code and field_code[-1].isdigit():
+                        active_multi_index = int(field_code.rsplit('_', 1)[1])
                     else:
-                        field_code = h_stripped
-                    
-                    # 检测是否是多列字段（带后缀 _1, _2, _3 等）
-                    base_field = field_code.rsplit('_', 1)[0] if '_' in field_code and field_code[-1].isdigit() else field_code
-                    
-                    mapped_key = field_code if field_code in ['sku', 'sku_family', 'fabric_code', 'spec_qty_short', 'is_iteration', 'source_sku', 'version_no',
-                                                               'finished_length_in', 'finished_width_in', 'finished_height_in', 'net_weight_lbs',
-                                                               'package_length_in', 'package_width_in', 'package_height_in', 'gross_weight_lbs',
-                                                               'cost_usd', 'carton_qty', 'package_size_class', 'last_mile_avg_freight_usd'] else base_field
-                    
-                    # 对于多列字段，保留后缀
-                    if field_code != mapped_key and '_' in field_code and field_code[-1].isdigit():
-                        mapped_key = f"{base_field}_{field_code.rsplit('_', 1)[1]}"
-                    
-                    header_map[mapped_key] = idx
+                        active_multi_index = 1
+                    header_map[f'{base_field}_{active_multi_index}'] = idx
+                    if f'{base_field}_1' not in header_map:
+                        header_map[f'{base_field}_1'] = idx
+                    if base_field not in header_map:
+                        header_map[base_field] = idx
+                elif base_field in single_fields:
+                    active_multi_base = None
+                    active_multi_index = 0
+                    header_map[base_field] = idx
+                else:
+                    active_multi_base = None
+                    active_multi_index = 0
+                    header_map[field_code] = idx
 
             def get_cell(row, key):
                 idx = header_map.get(key)
@@ -6732,6 +9338,8 @@ class WSGIApp:
             self._ensure_order_product_tables()
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
+                    cur.execute("SELECT id, sku_family FROM product_families")
+                    sku_map = {row['sku_family']: row['id'] for row in cur.fetchall()}
                     cur.execute("SELECT id, fabric_code FROM fabric_materials")
                     fabric_map = {row['fabric_code']: row['id'] for row in cur.fetchall()}
                     cur.execute(
@@ -6748,28 +9356,86 @@ class WSGIApp:
                     feature_map = {row['name']: row['id'] for row in cur.fetchall()}
                     cur.execute("SELECT id, name FROM certifications")
                     cert_map = {row['name']: row['id'] for row in cur.fetchall()}
-                    cur.execute("SELECT id, sku FROM order_products")
-                    order_map = {row['sku']: row['id'] for row in cur.fetchall()}
+                    cur.execute(
+                        """
+                        SELECT id, sku, sku_family_id, version_no, fabric_id, spec_qty_short,
+                               contents_desc_en,
+                               is_iteration, is_dachene_product, source_order_product_id,
+                               finished_length_in, finished_width_in, finished_height_in,
+                               net_weight_lbs, package_length_in, package_width_in, package_height_in,
+                               gross_weight_lbs, cost_usd, carton_qty, package_size_class, last_mile_avg_freight_usd
+                        FROM order_products
+                        """
+                    )
+                    order_rows = cur.fetchall() or []
+                    order_map = {row['sku']: row['id'] for row in order_rows}
+                    order_row_map = {row['id']: row for row in order_rows}
+
+                    cur.execute("SELECT order_product_id, material_id FROM order_product_materials")
+                    material_rows = cur.fetchall() or []
+                    material_map = {}
+                    for mr in material_rows:
+                        material_map.setdefault(mr['order_product_id'], set()).add(mr['material_id'])
+
+                    cur.execute("SELECT order_product_id, feature_id FROM order_product_features")
+                    feature_rows = cur.fetchall() or []
+                    feature_rel_map = {}
+                    for fr in feature_rows:
+                        feature_rel_map.setdefault(fr['order_product_id'], set()).add(fr['feature_id'])
+
+                    cur.execute("SELECT order_product_id, certification_id FROM order_product_certifications")
+                    cert_rows = cur.fetchall() or []
+                    cert_rel_map = {}
+                    for cr in cert_rows:
+                        cert_rel_map.setdefault(cr['order_product_id'], set()).add(cr['certification_id'])
+
+                def _norm(v):
+                    if v is None:
+                        return None
+                    try:
+                        if isinstance(v, float):
+                            return round(v, 4)
+                        return round(float(v), 4)
+                    except Exception:
+                        return str(v).strip()
 
                 created = 0
+                updated = 0
+                unchanged = 0
+                relation_added = 0
+                relation_deleted = 0
+                total_rows = 0
                 errors = []
-                data_start_row = header_row_idx + 1
+                preview_temp_id = -1
+                tx_enabled = False
+                batch_write_count = 0
+                batch_size = 200
+                if not preview_mode:
+                    try:
+                        conn.autocommit(False)
+                        tx_enabled = True
+                    except Exception:
+                        tx_enabled = False
+                data_start_row = 4 if header_row_idx == 2 else 2
                 
                 for row_idx in range(data_start_row, ws.max_row + 1):
                     row = ws[row_idx]
                     row_values = [cell.value for cell in row]
                     if not any(v is not None and str(v).strip() for v in row_values):
                         continue
+                    total_rows += 1
 
                     sku = (get_cell(row, 'sku') or '').strip()
                     sku_family = (get_cell(row, 'sku_family') or '').strip()
                     version_no = (get_cell(row, 'version_no') or '').strip()
                     fabric_code = (get_cell(row, 'fabric_code') or '').strip()
                     spec_qty_short = (get_cell(row, 'spec_qty_short') or '').strip()
+                    contents_desc_en = (get_cell(row, 'contents_desc_en') or '').strip()
                     is_iteration = parse_bool(get_cell(row, 'is_iteration'))
                     source_sku = (get_cell(row, 'source_sku') or '').strip()
+                    is_dachene_product = parse_bool(get_cell(row, 'is_dachene_product'))
 
-                    if not sku or not sku_family or not fabric_code or not spec_qty_short:
+                    if not sku or not sku_family or not fabric_code:
                         errors.append({'row': row_idx, 'error': 'Missing required fields'})
                         continue
                     if is_iteration and not version_no:
@@ -6795,7 +9461,9 @@ class WSGIApp:
                         'version_no': version_no,
                         'fabric_id': fabric_id,
                         'spec_qty_short': spec_qty_short,
+                        'contents_desc_en': contents_desc_en or None,
                         'is_iteration': is_iteration,
+                        'is_dachene_product': is_dachene_product,
                         'source_order_product_id': source_order_product_id,
                         'finished_length_in': self._parse_float(get_cell(row, 'finished_length_in')),
                         'finished_width_in': self._parse_float(get_cell(row, 'finished_width_in')),
@@ -6817,56 +9485,216 @@ class WSGIApp:
                     feature_ids = collect_multi_select_values(row, 'features', feature_map)
                     cert_ids = collect_multi_select_values(row, 'certifications', cert_map)
 
+                    dedup_material_ids = set((filling_ids or []) + (frame_ids or []))
+                    dedup_feature_ids = set(feature_ids or [])
+                    dedup_cert_ids = set(cert_ids or [])
+
+                    target_id = order_map.get(sku)
+                    old_material_ids = material_map.get(target_id, set()) if target_id else set()
+                    old_feature_ids = feature_rel_map.get(target_id, set()) if target_id else set()
+                    old_cert_ids = cert_rel_map.get(target_id, set()) if target_id else set()
+
+                    relation_added += len(dedup_material_ids - old_material_ids)
+                    relation_added += len(dedup_feature_ids - old_feature_ids)
+                    relation_added += len(dedup_cert_ids - old_cert_ids)
+                    relation_deleted += len(old_material_ids - dedup_material_ids)
+                    relation_deleted += len(old_feature_ids - dedup_feature_ids)
+                    relation_deleted += len(old_cert_ids - dedup_cert_ids)
+
+                    payload_keys = [
+                        'sku_family_id', 'version_no', 'fabric_id', 'spec_qty_short', 'contents_desc_en', 'is_iteration', 'is_dachene_product', 'source_order_product_id',
+                        'finished_length_in', 'finished_width_in', 'finished_height_in', 'net_weight_lbs',
+                        'package_length_in', 'package_width_in', 'package_height_in', 'gross_weight_lbs',
+                        'cost_usd', 'carton_qty', 'package_size_class', 'last_mile_avg_freight_usd'
+                    ]
+                    is_payload_changed = True
+                    if target_id and target_id in order_row_map:
+                        old_row = order_row_map[target_id]
+                        is_payload_changed = any(_norm(payload.get(k)) != _norm(old_row.get(k)) for k in payload_keys)
+                    is_relation_changed = (dedup_material_ids != old_material_ids) or (dedup_feature_ids != old_feature_ids) or (dedup_cert_ids != old_cert_ids)
+
+                    if target_id and (not is_payload_changed) and (not is_relation_changed):
+                        unchanged += 1
+                        continue
+
+                    if preview_mode:
+                        if target_id:
+                            updated += 1
+                            order_row_map[target_id] = {**payload, 'id': target_id}
+                            material_map[target_id] = dedup_material_ids
+                            feature_rel_map[target_id] = dedup_feature_ids
+                            cert_rel_map[target_id] = dedup_cert_ids
+                        else:
+                            created += 1
+                            target_id = preview_temp_id
+                            preview_temp_id -= 1
+                            order_map[sku] = target_id
+                            order_row_map[target_id] = {**payload, 'id': target_id}
+                            material_map[target_id] = dedup_material_ids
+                            feature_rel_map[target_id] = dedup_feature_ids
+                            cert_rel_map[target_id] = dedup_cert_ids
+                        continue
+
                     try:
                         with conn.cursor() as cur:
-                            cur.execute(
-                                """
-                                INSERT INTO order_products (
-                                    sku, sku_family_id, version_no, fabric_id, spec_qty_short,
-                                    is_iteration, source_order_product_id,
-                                    finished_length_in, finished_width_in, finished_height_in,
-                                    net_weight_lbs, package_length_in, package_width_in, package_height_in,
-                                    gross_weight_lbs, cost_usd, carton_qty, package_size_class, last_mile_avg_freight_usd
-                                ) VALUES (
-                                    %(sku)s, %(sku_family_id)s, %(version_no)s, %(fabric_id)s, %(spec_qty_short)s,
-                                    %(is_iteration)s, %(source_order_product_id)s,
-                                    %(finished_length_in)s, %(finished_width_in)s, %(finished_height_in)s,
-                                    %(net_weight_lbs)s, %(package_length_in)s, %(package_width_in)s, %(package_height_in)s,
-                                    %(gross_weight_lbs)s, %(cost_usd)s, %(carton_qty)s, %(package_size_class)s, %(last_mile_avg_freight_usd)s
+                            if target_id:
+                                cur.execute(
+                                    """
+                                    UPDATE order_products
+                                    SET sku_family_id=%(sku_family_id)s,
+                                        version_no=%(version_no)s,
+                                        fabric_id=%(fabric_id)s,
+                                        spec_qty_short=%(spec_qty_short)s,
+                                        contents_desc_en=%(contents_desc_en)s,
+                                        is_iteration=%(is_iteration)s,
+                                        is_dachene_product=%(is_dachene_product)s,
+                                        source_order_product_id=%(source_order_product_id)s,
+                                        finished_length_in=%(finished_length_in)s,
+                                        finished_width_in=%(finished_width_in)s,
+                                        finished_height_in=%(finished_height_in)s,
+                                        net_weight_lbs=%(net_weight_lbs)s,
+                                        package_length_in=%(package_length_in)s,
+                                        package_width_in=%(package_width_in)s,
+                                        package_height_in=%(package_height_in)s,
+                                        gross_weight_lbs=%(gross_weight_lbs)s,
+                                        cost_usd=%(cost_usd)s,
+                                        carton_qty=%(carton_qty)s,
+                                        package_size_class=%(package_size_class)s,
+                                        last_mile_avg_freight_usd=%(last_mile_avg_freight_usd)s
+                                    WHERE id=%(id)s
+                                    """,
+                                    {**payload, 'id': target_id}
                                 )
-                                """,
-                                payload
-                            )
-                            new_id = cur.lastrowid
-                        self._replace_order_product_material_ids(conn, new_id, filling_ids, frame_ids)
-                        self._replace_order_product_feature_ids(conn, new_id, feature_ids)
-                        self._replace_order_product_certification_ids(conn, new_id, cert_ids)
-                        created += 1
+                                new_id = target_id
+                            else:
+                                cur.execute(
+                                    """
+                                    INSERT INTO order_products (
+                                        sku, sku_family_id, version_no, fabric_id, spec_qty_short, contents_desc_en,
+                                        is_iteration, is_dachene_product, source_order_product_id,
+                                        finished_length_in, finished_width_in, finished_height_in,
+                                        net_weight_lbs, package_length_in, package_width_in, package_height_in,
+                                        gross_weight_lbs, cost_usd, carton_qty, package_size_class, last_mile_avg_freight_usd
+                                    ) VALUES (
+                                        %(sku)s, %(sku_family_id)s, %(version_no)s, %(fabric_id)s, %(spec_qty_short)s, %(contents_desc_en)s,
+                                        %(is_iteration)s, %(is_dachene_product)s, %(source_order_product_id)s,
+                                        %(finished_length_in)s, %(finished_width_in)s, %(finished_height_in)s,
+                                        %(net_weight_lbs)s, %(package_length_in)s, %(package_width_in)s, %(package_height_in)s,
+                                        %(gross_weight_lbs)s, %(cost_usd)s, %(carton_qty)s, %(package_size_class)s, %(last_mile_avg_freight_usd)s
+                                    )
+                                    """,
+                                    payload
+                                )
+                                new_id = cur.lastrowid
+                        if (not target_id) or is_relation_changed:
+                            self._replace_order_product_material_ids(conn, new_id, filling_ids, frame_ids)
+                            self._replace_order_product_feature_ids(conn, new_id, feature_ids)
+                            self._replace_order_product_certification_ids(conn, new_id, cert_ids)
+
+                        material_map[new_id] = dedup_material_ids
+                        feature_rel_map[new_id] = dedup_feature_ids
+                        cert_rel_map[new_id] = dedup_cert_ids
+                        order_row_map[new_id] = {**payload, 'id': new_id}
+                        if target_id:
+                            updated += 1
+                        else:
+                            created += 1
+                            order_map[sku] = new_id
+
+                        if tx_enabled:
+                            batch_write_count += 1
+                            if batch_write_count >= batch_size:
+                                conn.commit()
+                                batch_write_count = 0
                     except Exception as e:
                         errors.append({'row': row_idx, 'error': str(e)})
 
-            return self.send_json({'status': 'success', 'created': created, 'errors': errors}, start_response)
+                if tx_enabled:
+                    if batch_write_count > 0:
+                        conn.commit()
+                    conn.autocommit(True)
+
+            return self.send_json({
+                'status': 'success',
+                'preview': 1 if preview_mode else 0,
+                'total_rows': total_rows,
+                'created': created,
+                'updated': updated,
+                'unchanged': unchanged,
+                'relation_added': relation_added,
+                'relation_deleted': relation_deleted,
+                'errors': errors
+            }, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_parent_api(self, environ, method, start_response):
         """父体管理 API（CRUD）"""
         try:
-            self._ensure_sales_parent_tables()
+            if method != 'GET':
+                self._ensure_sales_parent_tables()
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+
+            def limited_text(value, max_len):
+                text = (value or '').strip()
+                if not text:
+                    return None
+                if len(text) > max_len:
+                    raise ValueError(f'文本长度超限（>{max_len}）')
+                return text
+
             if method == 'GET':
+                keyword = (query_params.get('q', [''])[0] or '').strip()
+                item_id = self._parse_int((query_params.get('id', [''])[0] or '').strip())
+                simple_mode = str((query_params.get('simple', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute(
+                        if simple_mode:
+                            sql = """
+                                SELECT sp.id, sp.parent_code, sp.is_enabled, sp.shop_id, sp.sku_marker,
+                                       estimated_refund_rate, estimated_discount_rate,
+                                       commission_rate, estimated_acoas,
+                                       sp.created_at, sp.updated_at,
+                                       s.shop_name, b.name AS brand_name, pt.name AS platform_type_name
+                                FROM sales_parents sp
+                                LEFT JOIN shops s ON s.id = sp.shop_id
+                                LEFT JOIN brands b ON b.id = s.brand_id
+                                LEFT JOIN platform_types pt ON pt.id = s.platform_type_id
                             """
-                            SELECT id, parent_code,
-                                   estimated_refund_rate, estimated_discount_rate,
-                                   commission_rate, estimated_acoas,
-                                   created_at, updated_at
-                            FROM sales_parents
-                            ORDER BY id DESC
+                        else:
+                            sql = """
+                                SELECT sp.id, sp.parent_code, sp.is_enabled, sp.shop_id, sp.sku_marker,
+                                       estimated_refund_rate, estimated_discount_rate,
+                                       commission_rate, estimated_acoas,
+                                       sales_title, sales_intro,
+                                       sales_bullet_1, sales_bullet_2, sales_bullet_3, sales_bullet_4, sales_bullet_5,
+                                    sp.created_at, sp.updated_at,
+                                    s.shop_name, b.name AS brand_name, pt.name AS platform_type_name
+                                FROM sales_parents sp
+                                LEFT JOIN shops s ON s.id = sp.shop_id
+                                LEFT JOIN brands b ON b.id = s.brand_id
+                                LEFT JOIN platform_types pt ON pt.id = s.platform_type_id
                             """
-                        )
+                        params = []
+                        filters = []
+                        if item_id:
+                            filters.append("sp.id = %s")
+                            params.append(item_id)
+                        if keyword:
+                            like_kw = f"%{keyword}%"
+                            if simple_mode:
+                                filters.append("(sp.parent_code LIKE %s OR sp.sku_marker LIKE %s)")
+                                params.extend([like_kw, like_kw])
+                            else:
+                                filters.append("(sp.parent_code LIKE %s OR sp.sku_marker LIKE %s OR sp.sales_title LIKE %s OR sp.sales_intro LIKE %s)")
+                                params.extend([like_kw, like_kw, like_kw, like_kw])
+                        if filters:
+                            sql += " WHERE " + " AND ".join(filters)
+                        sql += " ORDER BY sp.id DESC"
+                        cur.execute(sql, params)
                         rows = cur.fetchall() or []
+                if item_id:
+                    return self.send_json({'status': 'success', 'item': rows[0] if rows else None}, start_response)
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             if method == 'POST':
@@ -6874,20 +9702,45 @@ class WSGIApp:
                 parent_code = (data.get('parent_code') or '').strip()
                 if not parent_code:
                     return self.send_json({'status': 'error', 'message': 'Missing parent_code'}, start_response)
+                is_enabled_raw = data.get('is_enabled', 1)
+                is_enabled = 1 if str(is_enabled_raw).strip().lower() in ('1', 'true', 'yes', 'on') else 0
+                shop_id = self._parse_int(data.get('shop_id'))
+                try:
+                    sku_marker = limited_text(data.get('sku_marker'), 128)
+                    sales_title = limited_text(data.get('sales_title'), 200)
+                    sales_intro = limited_text(data.get('sales_intro'), 500)
+                    sales_bullet_1 = limited_text(data.get('sales_bullet_1'), 500)
+                    sales_bullet_2 = limited_text(data.get('sales_bullet_2'), 500)
+                    sales_bullet_3 = limited_text(data.get('sales_bullet_3'), 500)
+                    sales_bullet_4 = limited_text(data.get('sales_bullet_4'), 500)
+                    sales_bullet_5 = limited_text(data.get('sales_bullet_5'), 500)
+                except ValueError as ve:
+                    return self.send_json({'status': 'error', 'message': str(ve)}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
                             """
                             INSERT INTO sales_parents
-                            (parent_code, estimated_refund_rate, estimated_discount_rate, commission_rate, estimated_acoas)
-                            VALUES (%s, %s, %s, %s, %s)
+                            (parent_code, is_enabled, shop_id, sku_marker, estimated_refund_rate, estimated_discount_rate, commission_rate, estimated_acoas,
+                             sales_title, sales_intro, sales_bullet_1, sales_bullet_2, sales_bullet_3, sales_bullet_4, sales_bullet_5)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             """,
                             (
                                 parent_code,
+                                is_enabled,
+                                shop_id,
+                                sku_marker,
                                 self._parse_float(data.get('estimated_refund_rate')),
                                 self._parse_float(data.get('estimated_discount_rate')),
                                 self._parse_float(data.get('commission_rate')),
-                                self._parse_float(data.get('estimated_acoas'))
+                                self._parse_float(data.get('estimated_acoas')),
+                                sales_title,
+                                sales_intro,
+                                sales_bullet_1,
+                                sales_bullet_2,
+                                sales_bullet_3,
+                                sales_bullet_4,
+                                sales_bullet_5
                             )
                         )
                         new_id = cur.lastrowid
@@ -6898,24 +9751,58 @@ class WSGIApp:
                 item_id = self._parse_int(data.get('id'))
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                is_enabled_raw = data.get('is_enabled', 1)
+                is_enabled = 1 if str(is_enabled_raw).strip().lower() in ('1', 'true', 'yes', 'on') else 0
+                shop_id = self._parse_int(data.get('shop_id'))
+                try:
+                    sku_marker = limited_text(data.get('sku_marker'), 128)
+                    sales_title = limited_text(data.get('sales_title'), 200)
+                    sales_intro = limited_text(data.get('sales_intro'), 500)
+                    sales_bullet_1 = limited_text(data.get('sales_bullet_1'), 500)
+                    sales_bullet_2 = limited_text(data.get('sales_bullet_2'), 500)
+                    sales_bullet_3 = limited_text(data.get('sales_bullet_3'), 500)
+                    sales_bullet_4 = limited_text(data.get('sales_bullet_4'), 500)
+                    sales_bullet_5 = limited_text(data.get('sales_bullet_5'), 500)
+                except ValueError as ve:
+                    return self.send_json({'status': 'error', 'message': str(ve)}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
                             """
                             UPDATE sales_parents
                             SET parent_code=%s,
+                                is_enabled=%s,
+                                shop_id=%s,
+                                sku_marker=%s,
                                 estimated_refund_rate=%s,
                                 estimated_discount_rate=%s,
                                 commission_rate=%s,
-                                estimated_acoas=%s
+                                estimated_acoas=%s,
+                                sales_title=%s,
+                                sales_intro=%s,
+                                sales_bullet_1=%s,
+                                sales_bullet_2=%s,
+                                sales_bullet_3=%s,
+                                sales_bullet_4=%s,
+                                sales_bullet_5=%s
                             WHERE id=%s
                             """,
                             (
                                 (data.get('parent_code') or '').strip(),
+                                is_enabled,
+                                shop_id,
+                                sku_marker,
                                 self._parse_float(data.get('estimated_refund_rate')),
                                 self._parse_float(data.get('estimated_discount_rate')),
                                 self._parse_float(data.get('commission_rate')),
                                 self._parse_float(data.get('estimated_acoas')),
+                                sales_title,
+                                sales_intro,
+                                sales_bullet_1,
+                                sales_bullet_2,
+                                sales_bullet_3,
+                                sales_bullet_4,
+                                sales_bullet_5,
                                 item_id
                             )
                         )
@@ -6943,75 +9830,118 @@ class WSGIApp:
             if Workbook is None:
                 return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
             
-            from openpyxl.styles import PatternFill, Font, Alignment
+            from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
             from openpyxl.worksheet.datavalidation import DataValidation
             
             self._ensure_sales_product_tables()
             wb = Workbook()
             ws = wb.active
             ws.title = 'sales_products'
-            
+
             # 获取可选项
             with self._get_db_connection() as conn:
-                with conn.cursor() as cur:
-                    # 获取所有店铺-品牌-平台组合
-                    cur.execute("""
-                        SELECT DISTINCT s.shop_name, b.name AS brand_name, pt.name AS platform_type
-                        FROM shops s
-                        JOIN brands b ON b.id = s.brand_id
-                        JOIN platform_types pt ON pt.id = s.platform_type_id
-                        ORDER BY s.shop_name, b.name, pt.name
-                    """)
-                    shops = [f"{row['shop_name']} | {row['brand_name']} | {row['platform_type']}" for row in cur.fetchall()]
-                    cur.execute("SELECT parent_code FROM sales_parents ORDER BY parent_code")
-                    parent_codes = [row['parent_code'] for row in cur.fetchall()]
+                def _load_sales_template_options():
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT id, shop_name FROM shops ORDER BY shop_name")
+                        shop_options_local = [row for row in (cur.fetchall() or []) if row.get('shop_name')]
+                        cur.execute("SELECT parent_code FROM sales_parents ORDER BY parent_code")
+                        parent_codes_local = [row['parent_code'] for row in cur.fetchall()]
+                        cur.execute("SELECT sku_family FROM product_families ORDER BY sku_family")
+                        sku_family_local = [str(row['sku_family']).strip() for row in (cur.fetchall() or []) if row.get('sku_family')]
+                        cur.execute("SELECT fabric_name_en FROM fabric_materials ORDER BY fabric_name_en")
+                        fabric_local = [str(row['fabric_name_en']).strip() for row in (cur.fetchall() or []) if row.get('fabric_name_en')]
+                    return (shop_options_local, parent_codes_local, sku_family_local, fabric_local)
+
+                shop_options, parent_codes, sku_family_options, fabric_options = self._get_cached_template_options(
+                    'sales_product_template_options_v1',
+                    _load_sales_template_options,
+                    ttl_seconds=180
+                )
             
-            # 第1行：模块标题
+            # 第1行：模块标题（合并单元格）
             section_headers = [
-                '基础信息', '基础信息', '基础信息', '基础信息', '基础信息', '基础信息',
-                '成本', '成本', '成本',
-                '尺寸', '尺寸', '尺寸', '尺寸', '尺寸', '尺寸', '尺寸', '尺寸'
+                ('产品状态', 1, 1),
+                ('父体关联', 2, 4),
+                ('基础信息', 5, 10),
+                ('销售信息', 11, 17),
+                ('成本', 18, 20),
+                ('成品尺寸/重量', 21, 24),
+                ('包裹尺寸/重量', 25, 28)
             ]
             # 第2行：字段标题
             cn_headers = [
-                '店铺 | 品牌 | 平台', '销售平台SKU', '父体编号', '子体编号', '面料', '规格名称',
-                '售价(USD)', '海外仓成本(自动)', '尾程物流成本(自动)',
-                '包裹长(in,自动)', '包裹宽(in,自动)', '包裹高(in,自动)',
-                '净重(lbs,自动)', '毛重(lbs,自动)',
-                '组装后长(in)', '组装后宽(in)', '组装后高(in)',
-                '关联下单SKU\n(支持换行|;分隔)'
+                '产品状态(启用/留用/弃用)',
+                '店铺(必填)', '父体编号', '新父体SKU标识(父体不存在时选填)',
+                '销售平台SKU', '子体编号', '大健云仓编号(选填，需先在下单产品管理页维护子Item Code)', '货号', '规格名称', '面料',
+                '标题(<=200英文字符)', '简介(<=500英文字符)',
+                '五点描述1(<=500英文字符)', '五点描述2(<=500英文字符)', '五点描述3(<=500英文字符)',
+                '五点描述4(<=500英文字符)', '五点描述5(<=500英文字符)',
+                '关联下单SKU及数量(必填，支持换行|;分隔，示例:MS01A-Brown*2)', '售价(USD)', '产品成本及发货至海外仓成本估算(USD，不含仓储费)(自动)', '尾程物流成本(自动)',
+                '成品长(in,自动)', '成品宽(in,自动)', '成品高(in,自动)', '净重(lbs,自动)',
+                '包裹长(in,自动)', '包裹宽(in,自动)', '包裹高(in,自动)', '毛重(lbs,自动)'
             ]
 
-            ws.append(section_headers)
+            ws.append([''] * len(cn_headers))
             ws.append(cn_headers)
             title_fill = PatternFill(start_color='CFC7BD', end_color='CFC7BD', fill_type='solid')
             header_fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
             header_font = Font(bold=True, color='2A2420', size=11)
             header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            thin_border = Border(
+                left=Side(style='thin', color='B7AEA4'),
+                right=Side(style='thin', color='B7AEA4'),
+                top=Side(style='thin', color='B7AEA4'),
+                bottom=Side(style='thin', color='B7AEA4')
+            )
 
-            for cell in ws[1]:
+            for col in range(1, len(cn_headers) + 1):
+                cell = ws.cell(row=1, column=col)
                 cell.fill = title_fill
                 cell.font = header_font
                 cell.alignment = header_alignment
+                cell.border = thin_border
+
+            section_title_colors = ['E8DFD4', 'F5F1ED', 'E8DFD4', 'F5F1ED', 'E8DFD4']
+            for idx, (title, start_col, end_col) in enumerate(section_headers):
+                if end_col > start_col:
+                    ws.merge_cells(start_row=1, start_column=start_col, end_row=1, end_column=end_col)
+                ws.cell(row=1, column=start_col).value = title
+                fill = PatternFill(start_color=section_title_colors[idx % len(section_title_colors)], end_color=section_title_colors[idx % len(section_title_colors)], fill_type='solid')
+                for col in range(start_col, end_col + 1):
+                    ws.cell(row=1, column=col).fill = fill
+                    ws.cell(row=1, column=col).border = thin_border
+
             for cell in ws[2]:
                 cell.fill = header_fill
                 cell.font = header_font
                 cell.alignment = header_alignment
+                cell.border = thin_border
             
             # 第3行：示例行
             ws.append([
-                '店铺A | 品牌A | Amazon',
-                'MS01-Brown-1A',
+                '启用',
+                '',
                 'PARENT-001',
+                'MS01-MARKER',
+                'MS01-Brown-1A',
                 'CHILD-001',
-                '棕色/Brown',
+                'DACHENE-001',
+                'MS01',
                 'A款',
+                '棕色/Brown',
+                'Recliner Sofa for Living Room',
+                'Comfortable modern recliner with durable fabric and easy assembly.',
+                'Ergonomic seating support',
+                'Soft-touch premium fabric',
+                'Stable reinforced frame',
+                'Easy assembly in minutes',
+                'Suitable for living room use',
+                'MS01A-Brown*2\nMS01B-Gray',
                 199.99,
                 '',
                 '',
-                '', '', '', '', '',
-                78, 32, 30,
-                'MS01A-Brown*2\nMS01B-Gray'
+                '', '', '', '',
+                '', '', '', ''
             ])
             
             example_fill = PatternFill(start_color='E8E8E8', end_color='E8E8E8', fill_type='solid')
@@ -7021,40 +9951,71 @@ class WSGIApp:
                 cell.font = example_font
             
             # 添加数据验证
-            if shops:
-                shop_validation = DataValidation(type='list', formula1=f'"{";".join(shops[:100])}"', allow_blank=False)
-                ws.add_data_validation(shop_validation)
-                for row in range(4, 1000):
-                    shop_validation.add(f'A{row}')
+            status_validation = DataValidation(type='list', formula1='"启用,留用,弃用"', allow_blank=True)
+            ws.add_data_validation(status_validation)
+            max_validation_row = 400
+            for row in range(4, max_validation_row + 1):
+                status_validation.add(f'A{row}')
+
+            if shop_options:
+                shop_names = [str(row.get('shop_name')).strip() for row in shop_options if row.get('shop_name')]
+                shop_names = [name for name in shop_names if name]
+                if shop_names:
+                    shop_validation = DataValidation(type='list', formula1=f'"{",".join(shop_names[:100])}"', allow_blank=False)
+                    ws.add_data_validation(shop_validation)
+                    for row in range(4, max_validation_row + 1):
+                        shop_validation.add(f'B{row}')
+
+            if sku_family_options:
+                sku_validation = DataValidation(type='list', formula1=f'"{",".join(sku_family_options[:100])}"', allow_blank=True)
+                ws.add_data_validation(sku_validation)
+                for row in range(4, max_validation_row + 1):
+                    sku_validation.add(f'H{row}')
+
+            if fabric_options:
+                fabric_validation = DataValidation(type='list', formula1=f'"{",".join(fabric_options[:100])}"', allow_blank=True)
+                ws.add_data_validation(fabric_validation)
+                for row in range(4, max_validation_row + 1):
+                    fabric_validation.add(f'J{row}')
 
             if parent_codes:
-                parent_validation = DataValidation(type='list', formula1=f'"{";".join(parent_codes[:100])}"', allow_blank=True)
+                parent_validation = DataValidation(type='list', formula1=f'"{",".join(parent_codes[:100])}"', allow_blank=True)
                 ws.add_data_validation(parent_validation)
-                for row in range(4, 1000):
+                for row in range(4, max_validation_row + 1):
                     parent_validation.add(f'C{row}')
             
             
             # 设置列宽
-            ws.column_dimensions['A'].width = 25
-            ws.column_dimensions['B'].width = 18
-            ws.column_dimensions['C'].width = 12
-            ws.column_dimensions['D'].width = 12
-            ws.column_dimensions['E'].width = 14
-            ws.column_dimensions['F'].width = 15
+            ws.column_dimensions['A'].width = 16
+            ws.column_dimensions['B'].width = 12
+            ws.column_dimensions['C'].width = 14
+            ws.column_dimensions['D'].width = 22
+            ws.column_dimensions['E'].width = 18
+            ws.column_dimensions['F'].width = 12
             ws.column_dimensions['G'].width = 12
-            ws.column_dimensions['H'].width = 16
-            ws.column_dimensions['I'].width = 18
-            ws.column_dimensions['J'].width = 14
-            ws.column_dimensions['K'].width = 14
-            ws.column_dimensions['L'].width = 14
-            ws.column_dimensions['M'].width = 14
-            ws.column_dimensions['N'].width = 14
-            ws.column_dimensions['O'].width = 14
-            ws.column_dimensions['P'].width = 14
-            ws.column_dimensions['Q'].width = 14
+            ws.column_dimensions['H'].width = 14
+            ws.column_dimensions['I'].width = 15
+            ws.column_dimensions['J'].width = 24
+            ws.column_dimensions['K'].width = 28
+            ws.column_dimensions['L'].width = 36
+            ws.column_dimensions['M'].width = 26
+            ws.column_dimensions['N'].width = 26
+            ws.column_dimensions['O'].width = 26
+            ws.column_dimensions['P'].width = 26
+            ws.column_dimensions['Q'].width = 26
             ws.column_dimensions['R'].width = 24
+            ws.column_dimensions['S'].width = 14
+            ws.column_dimensions['T'].width = 14
+            ws.column_dimensions['U'].width = 14
+            ws.column_dimensions['V'].width = 14
+            ws.column_dimensions['W'].width = 14
+            ws.column_dimensions['X'].width = 14
+            ws.column_dimensions['Y'].width = 14
+            ws.column_dimensions['Z'].width = 14
+            ws.column_dimensions['AA'].width = 14
+            ws.column_dimensions['AB'].width = 14
             
-            ws.freeze_panes = 'A3'
+            ws.freeze_panes = 'A4'
             
             return self._send_excel_workbook(wb, 'sales_product_template.xlsx', start_response)
         except Exception as e:
@@ -7068,6 +10029,9 @@ class WSGIApp:
             if load_workbook is None:
                 return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
 
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            preview_mode = str((query_params.get('preview', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
+
             content_type = environ.get('CONTENT_TYPE', '')
             if 'multipart/form-data' not in content_type:
                 return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
@@ -7078,13 +10042,43 @@ class WSGIApp:
             env_copy['CONTENT_LENGTH'] = str(len(raw_body))
             form = cgi.FieldStorage(fp=io.BytesIO(raw_body), environ=env_copy, keep_blank_values=True)
             file_item = form['file'] if 'file' in form else None
-            if not file_item or not getattr(file_item, 'file', None):
+            if file_item is None or getattr(file_item, 'file', None) is None:
                 return self.send_json({'status': 'error', 'message': 'Missing file'}, start_response)
             file_bytes = file_item.file.read() or b''
             if not file_bytes:
                 return self.send_json({'status': 'error', 'message': 'Empty file'}, start_response)
 
-            wb = load_workbook(io.BytesIO(file_bytes))
+            file_bytes = self._sanitize_xlsx_bool_cells(file_bytes)
+
+            try:
+                wb = load_workbook(io.BytesIO(file_bytes))
+            except Exception as e:
+                if 'Cannot be converted to bool' in str(e):
+                    wb = self._rebuild_workbook_from_xlsx_xml(file_bytes)
+                    if wb is None:
+                        diag = self._scan_xlsx_invalid_bool_cells(file_bytes)
+                        return self.send_json({
+                            'status': 'error',
+                            'message': (
+                                '导入失败：文件中存在异常布尔字段且无法自动修复，'
+                                '请另存为新的xlsx后重试'
+                            ),
+                            'debug': {
+                                'cause': 'Cannot be converted to bool',
+                                'invalid_bool_cells': diag.get('count', 0),
+                                'samples': diag.get('samples', [])
+                            }
+                        }, start_response)
+                else:
+                    return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+            for sheet in wb.worksheets:
+                for row in sheet.iter_rows():
+                    for cell in row:
+                        if cell.data_type == 'b' and not isinstance(cell.value, bool):
+                            cell.data_type = 's'
+                            cell.value = str(cell.value)
+
             ws = wb.active
 
             header_row_idx = 2 if str(ws.cell(row=1, column=1).value or '').strip() == '基础信息' else 1
@@ -7092,40 +10086,73 @@ class WSGIApp:
             
             # 中文标签到字段代码的映射
             label_to_code = {
-                '店铺 | 品牌 | 平台': 'shop_info',
+                '产品状态(启用/留用/弃用)': 'product_status',
+                '店铺(必填)': 'shop_name',
+                '店铺(可选)': 'shop_name',
+                '店铺': 'shop_name',
                 '平台SKU': 'platform_sku',
                 '销售平台SKU': 'platform_sku',
                 '父体编号': 'parent_code',
+                '新父体SKU标识(父体不存在时选填)': 'parent_sku_marker',
                 '子体编号': 'child_code',
+                '大健云仓编号': 'dachene_yuncang_no',
+                '大健云仓编号(选填，需先在下单产品管理页维护子Item Code)': 'dachene_yuncang_no',
+                '货号': 'sku_family',
                 '面料(选填)': 'fabric',
                 '规格名(选填)': 'spec_name',
                 '面料': 'fabric',
                 '规格名称': 'spec_name',
+                '关联下单SKU\n(支持换行|;分隔)': 'order_sku_links',
+                '关联下单SKU及数量(必填，支持换行|;分隔，示例:MS01A-Brown*2)': 'order_sku_links',
+                '标题(<=200英文字符)': 'sales_title',
+                '简介(<=500英文字符)': 'sales_intro',
+                '五点描述1(<=500英文字符)': 'sales_bullet_1',
+                '五点描述2(<=500英文字符)': 'sales_bullet_2',
+                '五点描述3(<=500英文字符)': 'sales_bullet_3',
+                '五点描述4(<=500英文字符)': 'sales_bullet_4',
+                '五点描述5(<=500英文字符)': 'sales_bullet_5',
                 '售价(USD)': 'sale_price_usd',
+                '产品成本及发货至海外仓成本估算(USD，不含仓储费)': 'warehouse_cost_usd',
+                '产品成本及发货至海外仓成本估算(USD，不含仓储费)(自动)': 'warehouse_cost_usd',
                 '海外仓成本(自动)': 'warehouse_cost_usd',
                 '尾程物流成本(自动)': 'last_mile_cost_usd',
+                '成品长(in,自动)': 'finished_length_in',
+                '成品宽(in,自动)': 'finished_width_in',
+                '成品高(in,自动)': 'finished_height_in',
                 '包裹长(in,自动)': 'package_length_in',
                 '包裹宽(in,自动)': 'package_width_in',
                 '包裹高(in,自动)': 'package_height_in',
                 '净重(lbs,自动)': 'net_weight_lbs',
                 '毛重(lbs,自动)': 'gross_weight_lbs',
-                '组装后长(in)': 'assembled_length_in',
-                '组装后宽(in)': 'assembled_width_in',
-                '组装后高(in)': 'assembled_height_in',
-                '关联下单SKU\n(支持换行|;分隔)': 'order_sku_links',
+                '组装后长(in)': 'finished_length_in',
+                '组装后宽(in)': 'finished_width_in',
+                '组装后高(in)': 'finished_height_in',
                 # 兼容旧字段名
                 'shop_name': 'shop_name',
                 'brand_name': 'brand_name',
                 'platform_type': 'platform_type',
+                'product_status': 'product_status',
                 'platform_sku': 'platform_sku',
                 'parent_asin': 'parent_code',
                 'child_asin': 'child_code',
+                'dachene_yuncang_no': 'dachene_yuncang_no',
+                'sku_family': 'sku_family',
                 'fabric': 'fabric',
                 'spec_name': 'spec_name',
+                'sales_title': 'sales_title',
+                'sales_intro': 'sales_intro',
+                'sales_bullet_1': 'sales_bullet_1',
+                'sales_bullet_2': 'sales_bullet_2',
+                'sales_bullet_3': 'sales_bullet_3',
+                'sales_bullet_4': 'sales_bullet_4',
+                'sales_bullet_5': 'sales_bullet_5',
                 'sale_price_usd': 'sale_price_usd',
-                'assembled_length_in': 'assembled_length_in',
-                'assembled_width_in': 'assembled_width_in',
-                'assembled_height_in': 'assembled_height_in',
+                'finished_length_in': 'finished_length_in',
+                'finished_width_in': 'finished_width_in',
+                'finished_height_in': 'finished_height_in',
+                'assembled_length_in': 'finished_length_in',
+                'assembled_width_in': 'finished_width_in',
+                'assembled_height_in': 'finished_height_in',
                 'order_sku_links': 'order_sku_links'
             }
             
@@ -7187,29 +10214,155 @@ class WSGIApp:
                 
                 return result
 
+            def link_signature(entries):
+                if not entries:
+                    return tuple()
+                return tuple(sorted((int(e.get('order_product_id')), int(e.get('quantity') or 1)) for e in entries if e.get('order_product_id')))
+
+            def aggregate_order_links(links):
+                if not links:
+                    return {
+                        'auto_fabric': '',
+                        'auto_spec_name': '',
+                        'first_fabric_code': '',
+                        'sku_family_id': None,
+                        'warehouse_cost_usd': 0.0,
+                        'last_mile_cost_usd': 0.0,
+                        'finished_length_in': 0.0,
+                        'finished_width_in': 0.0,
+                        'finished_height_in': 0.0,
+                        'package_length_in': 0.0,
+                        'package_width_in': 0.0,
+                        'package_height_in': 0.0,
+                        'net_weight_lbs': 0.0,
+                        'gross_weight_lbs': 0.0
+                    }
+
+                fabrics = []
+                spec_parts = []
+                sku_family_id = None
+                warehouse_cost_usd = 0.0
+                last_mile_cost_usd = 0.0
+                finished_length_in = 0.0
+                finished_width_in = 0.0
+                finished_height_in = 0.0
+                package_length_in = 0.0
+                package_width_in = 0.0
+                package_height_in = 0.0
+                net_weight_lbs = 0.0
+                gross_weight_lbs = 0.0
+
+                for entry in links:
+                    row = order_detail_by_id.get(entry['order_product_id'])
+                    if not row:
+                        continue
+                    qty = max(1, int(entry.get('quantity') or 1))
+                    if sku_family_id is None:
+                        sku_family_id = row.get('sku_family_id')
+
+                    fabric_code = self._code_before_dash(row.get('fabric_code'))
+                    if not fabric_code:
+                        fabric_code = self._code_before_dash(row.get('fabric_name_en'))
+                    if fabric_code and fabric_code not in fabrics:
+                        fabrics.append(fabric_code)
+
+                    spec_short = (row.get('spec_qty_short') or '').strip()
+                    if spec_short:
+                        spec_parts.append(f"{qty}{spec_short}")
+
+                    warehouse_cost_usd += float(row.get('cost_usd') or 0) * qty
+                    last_mile_cost_usd += float(row.get('last_mile_avg_freight_usd') or 0) * qty
+                    finished_length_in += float(row.get('finished_length_in') or 0) * qty
+                    finished_width_in += float(row.get('finished_width_in') or 0) * qty
+                    finished_height_in += float(row.get('finished_height_in') or 0) * qty
+                    package_length_in += float(row.get('package_length_in') or 0) * qty
+                    package_width_in += float(row.get('package_width_in') or 0) * qty
+                    package_height_in += float(row.get('package_height_in') or 0) * qty
+                    net_weight_lbs += float(row.get('net_weight_lbs') or 0) * qty
+                    gross_weight_lbs += float(row.get('gross_weight_lbs') or 0) * qty
+
+                return {
+                    'auto_fabric': ' / '.join(fabrics),
+                    'auto_spec_name': ''.join(spec_parts),
+                    'first_fabric_code': fabrics[0] if fabrics else '',
+                    'sku_family_id': sku_family_id,
+                    'warehouse_cost_usd': round(warehouse_cost_usd, 2),
+                    'last_mile_cost_usd': round(last_mile_cost_usd, 2),
+                    'finished_length_in': round(finished_length_in, 2),
+                    'finished_width_in': round(finished_width_in, 2),
+                    'finished_height_in': round(finished_height_in, 2),
+                    'package_length_in': round(package_length_in, 2),
+                    'package_width_in': round(package_width_in, 2),
+                    'package_height_in': round(package_height_in, 2),
+                    'net_weight_lbs': round(net_weight_lbs, 2),
+                    'gross_weight_lbs': round(gross_weight_lbs, 2)
+                }
+
             self._ensure_sales_product_tables()
             with self._get_db_connection() as conn:
+                tx_enabled = False
+                batch_write_count = 0
+                batch_size = 200
+                if not preview_mode:
+                    try:
+                        conn.autocommit(False)
+                        tx_enabled = True
+                    except Exception:
+                        tx_enabled = False
+
                 with conn.cursor() as cur:
+                    cur.execute("SELECT id, parent_code, shop_id FROM sales_parents")
+                    parent_map = {row['parent_code']: row for row in (cur.fetchall() or [])}
+
+                    cur.execute("SELECT id, shop_name FROM shops")
+                    shop_map = {str(row['shop_name']).strip(): row['id'] for row in (cur.fetchall() or []) if row.get('shop_name')}
+
                     cur.execute(
                         """
-                        SELECT s.id, s.shop_name, pt.name AS platform_type_name, b.name AS brand_name
-                        FROM shops s
-                        JOIN platform_types pt ON pt.id = s.platform_type_id
-                        JOIN brands b ON b.id = s.brand_id
+                        SELECT op.id, op.sku, op.sku_family_id, op.spec_qty_short,
+                               op.cost_usd, op.last_mile_avg_freight_usd,
+                               op.finished_length_in, op.finished_width_in, op.finished_height_in,
+                               op.package_length_in, op.package_width_in, op.package_height_in,
+                               op.net_weight_lbs, op.gross_weight_lbs,
+                               fm.fabric_code, fm.fabric_name_en
+                        FROM order_products op
+                        LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
                         """
                     )
-                    shop_map = {}
-                    for row in cur.fetchall():
-                        key = (row['shop_name'], row['brand_name'], row['platform_type_name'])
-                        shop_map[key] = row['id']
+                    order_rows = cur.fetchall() or []
+                    order_map = {row['sku']: row['id'] for row in order_rows if row.get('sku')}
+                    order_detail_by_id = {row['id']: row for row in order_rows if row.get('id')}
 
-                    cur.execute("SELECT id, sku FROM order_products")
-                    order_map = {row['sku']: row['id'] for row in cur.fetchall()}
+                    cur.execute("SELECT id, sku_family FROM product_families")
+                    sku_family_rows = cur.fetchall() or []
+                    sku_family_map = {str(row['sku_family']).strip(): row['id'] for row in sku_family_rows if row.get('sku_family')}
+                    sku_family_code_map = {row['id']: (row.get('sku_family') or '').strip() for row in sku_family_rows if row.get('id')}
 
-                    cur.execute("SELECT id, sku_family_id FROM order_products")
-                    order_family = {row['id']: row['sku_family_id'] for row in cur.fetchall()}
+                    cur.execute("SELECT id, platform_sku FROM sales_products")
+                    sales_map = {row['platform_sku']: row['id'] for row in cur.fetchall()}
+
+                    cur.execute(
+                        """
+                        SELECT sp.platform_sku, spol.order_product_id, spol.quantity
+                        FROM sales_products sp
+                        LEFT JOIN sales_product_order_links spol ON spol.sales_product_id = sp.id
+                        """
+                    )
+                    existing_link_map = {}
+                    for row in (cur.fetchall() or []):
+                        sku = row.get('platform_sku')
+                        if not sku:
+                            continue
+                        existing_link_map.setdefault(sku, [])
+                        if row.get('order_product_id'):
+                            existing_link_map[sku].append((int(row['order_product_id']), int(row.get('quantity') or 1)))
+                    for sku in list(existing_link_map.keys()):
+                        existing_link_map[sku] = tuple(sorted(existing_link_map[sku]))
 
                 created = 0
+                updated = 0
+                relation_created = 0
+                total_rows = 0
                 errors = []
                 data_start_row = header_row_idx + 2
                 for row_idx in range(data_start_row, ws.max_row + 1):
@@ -7217,37 +10370,80 @@ class WSGIApp:
                     row_values = [cell.value for cell in row]
                     if not any(v is not None and str(v).strip() for v in row_values):
                         continue
+                    total_rows += 1
 
                     # 支持两种格式：新的合并列 vs 旧的分开列
-                    shop_info = (get_cell(row, 'shop_info') or '').strip()
-                    if shop_info and '|' in shop_info:
-                        # 新格式："店铺A | 品牌A | Amazon"
-                        parts = [p.strip() for p in shop_info.split('|')]
-                        if len(parts) >= 3:
-                            shop_name, brand_name, platform_type = parts[0], parts[1], parts[2]
-                        else:
-                            errors.append({'row': row_idx, 'error': 'Invalid shop format'})
-                            continue
-                    else:
-                        # 旧格式：分开的列
-                        shop_name = (get_cell(row, 'shop_name') or '').strip()
-                        brand_name = (get_cell(row, 'brand_name') or '').strip()
-                        platform_type = (get_cell(row, 'platform_type') or '').strip()
-                    
                     platform_sku = (get_cell(row, 'platform_sku') or '').strip()
+                    product_status_text = (get_cell(row, 'product_status') or '').strip()
+                    status_map = {'启用': 'enabled', '留用': 'retained', '弃用': 'discarded'}
+                    product_status = status_map.get(product_status_text, (product_status_text or 'enabled').lower())
+                    if product_status not in ('enabled', 'retained', 'discarded'):
+                        product_status = 'enabled'
                     parent_code = (get_cell(row, 'parent_code') or '').strip() or None
+                    parent_sku_marker = (get_cell(row, 'parent_sku_marker') or '').strip() or None
                     child_code = (get_cell(row, 'child_code') or '').strip() or None
+                    dachene_yuncang_no = (get_cell(row, 'dachene_yuncang_no') or '').strip() or None
+                    sku_family_name = (get_cell(row, 'sku_family') or '').strip() or None
                     fabric = (get_cell(row, 'fabric') or '').strip()
                     spec_name = (get_cell(row, 'spec_name') or '').strip()
+                    sales_title = (get_cell(row, 'sales_title') or '').strip()
+                    sales_intro = (get_cell(row, 'sales_intro') or '').strip()
+                    sales_bullet_1 = (get_cell(row, 'sales_bullet_1') or '').strip()
+                    sales_bullet_2 = (get_cell(row, 'sales_bullet_2') or '').strip()
+                    sales_bullet_3 = (get_cell(row, 'sales_bullet_3') or '').strip()
+                    sales_bullet_4 = (get_cell(row, 'sales_bullet_4') or '').strip()
+                    sales_bullet_5 = (get_cell(row, 'sales_bullet_5') or '').strip()
                     sale_price_usd = self._parse_float(get_cell(row, 'sale_price_usd'))
-                    assembled_length_in = self._parse_float(get_cell(row, 'assembled_length_in'))
-                    assembled_width_in = self._parse_float(get_cell(row, 'assembled_width_in'))
-                    assembled_height_in = self._parse_float(get_cell(row, 'assembled_height_in'))
+                    finished_length_in = self._parse_float(get_cell(row, 'finished_length_in'))
+                    finished_width_in = self._parse_float(get_cell(row, 'finished_width_in'))
+                    finished_height_in = self._parse_float(get_cell(row, 'finished_height_in'))
+                    package_length_in = self._parse_float(get_cell(row, 'package_length_in'))
+                    package_width_in = self._parse_float(get_cell(row, 'package_width_in'))
+                    package_height_in = self._parse_float(get_cell(row, 'package_height_in'))
+                    net_weight_lbs = self._parse_float(get_cell(row, 'net_weight_lbs'))
+                    gross_weight_lbs = self._parse_float(get_cell(row, 'gross_weight_lbs'))
                     order_sku_links = (get_cell(row, 'order_sku_links') or '').strip()
 
-                    shop_id = shop_map.get((shop_name, brand_name, platform_type))
+                    if not parent_code:
+                        errors.append({'row': row_idx, 'error': 'Missing parent_code'})
+                        continue
+
+                    shop_name_text = (get_cell(row, 'shop_name') or '').strip()
+                    if not shop_name_text:
+                        errors.append({'row': row_idx, 'error': 'Missing shop_name'})
+                        continue
+                    shop_id_from_file = shop_map.get(shop_name_text)
+                    if not shop_id_from_file:
+                        errors.append({'row': row_idx, 'error': f'Unknown shop_name: {shop_name_text}'})
+                        continue
+
+                    parent_row = parent_map.get(parent_code)
+                    if not parent_row:
+                        if preview_mode:
+                            parent_row = {'id': None, 'parent_code': parent_code, 'shop_id': shop_id_from_file}
+                            parent_map[parent_code] = parent_row
+                        else:
+                            with conn.cursor() as cur:
+                                cur.execute(
+                                    """
+                                    INSERT INTO sales_parents (parent_code, shop_id, sku_marker)
+                                    VALUES (%s, %s, %s)
+                                    """,
+                                    (parent_code, shop_id_from_file, parent_sku_marker)
+                                )
+                                new_parent_id = cur.lastrowid
+                            parent_row = {'id': new_parent_id, 'parent_code': parent_code, 'shop_id': shop_id_from_file}
+                            parent_map[parent_code] = parent_row
+
+                    shop_id = parent_row.get('shop_id')
                     if not shop_id:
-                        errors.append({'row': row_idx, 'error': 'Invalid shop'})
+                        if (not preview_mode) and parent_row.get('id'):
+                            with conn.cursor() as cur:
+                                cur.execute("UPDATE sales_parents SET shop_id=%s WHERE id=%s", (shop_id_from_file, parent_row['id']))
+                        shop_id = shop_id_from_file
+                        parent_row['shop_id'] = shop_id
+                    elif int(shop_id) != int(shop_id_from_file):
+                        errors.append({'row': row_idx, 'error': f'Parent/shop mismatch: {parent_code} -> {shop_name_text}'})
                         continue
 
                     link_entries = []
@@ -7262,22 +10458,29 @@ class WSGIApp:
                         errors.append({'row': row_idx, 'error': 'Missing order_sku_links'})
                         continue
 
-                    derived = self._derive_sales_cost_size(conn, link_entries)
-                    sku_family_id = derived.get('sku_family_id')
+                    relation_created += len(link_entries)
+
+                    agg = aggregate_order_links(link_entries)
+                    sku_family_id = sku_family_map.get(sku_family_name) if sku_family_name else agg.get('sku_family_id')
+                    if sku_family_name and not sku_family_id:
+                        errors.append({'row': row_idx, 'error': f'Unknown sku_family: {sku_family_name}'})
+                        continue
                     if not sku_family_id:
                         errors.append({'row': row_idx, 'error': '无法根据订单SKU推断归属货号'})
                         continue
 
                     parent_id = None
                     if parent_code:
-                        with conn.cursor() as cur:
-                            cur.execute("INSERT IGNORE INTO sales_parents (parent_code) VALUES (%s)", (parent_code,))
-                            cur.execute("SELECT id FROM sales_parents WHERE parent_code=%s", (parent_code,))
-                            p_row = cur.fetchone()
-                            parent_id = p_row['id'] if p_row else None
+                        parent_id = parent_row.get('id')
 
                     manual_platform_sku = bool(platform_sku)
-                    auto_fabric, auto_spec_name, auto_platform_sku = self._derive_sales_fields(conn, sku_family_id, link_entries)
+                    auto_fabric = agg.get('auto_fabric') or ''
+                    auto_spec_name = agg.get('auto_spec_name') or ''
+                    auto_platform_sku = ''
+                    sku_family_code = sku_family_code_map.get(sku_family_id) or ''
+                    if sku_family_code and auto_fabric and auto_spec_name:
+                        auto_platform_sku = self._build_sales_platform_sku(sku_family_code, auto_spec_name, agg.get('first_fabric_code') or '')
+
                     final_fabric = fabric or auto_fabric
                     final_spec_name = spec_name or auto_spec_name
                     final_platform_sku = platform_sku or auto_platform_sku
@@ -7286,137 +10489,323 @@ class WSGIApp:
                         errors.append({'row': row_idx, 'error': 'Platform SKU missing'})
                         continue
 
+                    if preview_mode:
+                        if sales_map.get(final_platform_sku):
+                            updated += 1
+                        else:
+                            created += 1
+                            sales_map[final_platform_sku] = -1
+                        continue
+
                     try:
+                        target_id = sales_map.get(final_platform_sku)
                         with conn.cursor() as cur:
-                            cur.execute(
-                                """
-                                INSERT INTO sales_products
-                                (shop_id, platform_sku, parent_id, child_code, fabric, spec_name,
-                                 sale_price_usd, warehouse_cost_usd, last_mile_cost_usd,
-                                 package_length_in, package_width_in, package_height_in,
-                                 net_weight_lbs, gross_weight_lbs,
-                                 assembled_length_in, assembled_width_in, assembled_height_in)
-                                VALUES (%s, %s, %s, %s, %s, %s,
-                                        %s, %s, %s,
-                                        %s, %s, %s,
-                                        %s, %s,
-                                        %s, %s, %s)
-                                """,
-                                (
-                                    shop_id, final_platform_sku, parent_id, child_code, final_fabric, final_spec_name,
-                                    sale_price_usd, derived.get('warehouse_cost_usd'), derived.get('last_mile_cost_usd'),
-                                    derived.get('package_length_in'), derived.get('package_width_in'), derived.get('package_height_in'),
-                                    derived.get('net_weight_lbs'), derived.get('gross_weight_lbs'),
-                                    assembled_length_in, assembled_width_in, assembled_height_in
-                                )
+                            payload = (
+                                shop_id, final_platform_sku, product_status, sku_family_id, parent_id, child_code, dachene_yuncang_no, final_fabric, final_spec_name,
+                                sales_title or None,
+                                sales_intro or None,
+                                sales_bullet_1 or None,
+                                sales_bullet_2 or None,
+                                sales_bullet_3 or None,
+                                sales_bullet_4 or None,
+                                sales_bullet_5 or None,
+                                sale_price_usd, agg.get('warehouse_cost_usd'), agg.get('last_mile_cost_usd'),
+                                finished_length_in if finished_length_in is not None else agg.get('finished_length_in'),
+                                finished_width_in if finished_width_in is not None else agg.get('finished_width_in'),
+                                finished_height_in if finished_height_in is not None else agg.get('finished_height_in'),
+                                package_length_in if package_length_in is not None else agg.get('package_length_in'),
+                                package_width_in if package_width_in is not None else agg.get('package_width_in'),
+                                package_height_in if package_height_in is not None else agg.get('package_height_in'),
+                                net_weight_lbs if net_weight_lbs is not None else agg.get('net_weight_lbs'),
+                                gross_weight_lbs if gross_weight_lbs is not None else agg.get('gross_weight_lbs')
                             )
-                            new_id = cur.lastrowid
-                        self._replace_sales_order_links(conn, new_id, link_entries)
-                        created += 1
+                            if target_id:
+                                cur.execute(
+                                    """
+                                    UPDATE sales_products
+                                    SET shop_id=%s,
+                                        platform_sku=%s,
+                                        product_status=%s,
+                                        sku_family_id=%s,
+                                        parent_id=%s,
+                                        child_code=%s,
+                                        dachene_yuncang_no=%s,
+                                        fabric=%s,
+                                        spec_name=%s,
+                                        sales_title=%s,
+                                        sales_intro=%s,
+                                        sales_bullet_1=%s,
+                                        sales_bullet_2=%s,
+                                        sales_bullet_3=%s,
+                                        sales_bullet_4=%s,
+                                        sales_bullet_5=%s,
+                                        sale_price_usd=%s,
+                                        warehouse_cost_usd=%s,
+                                        last_mile_cost_usd=%s,
+                                        finished_length_in=%s,
+                                        finished_width_in=%s,
+                                        finished_height_in=%s,
+                                        package_length_in=%s,
+                                        package_width_in=%s,
+                                        package_height_in=%s,
+                                        net_weight_lbs=%s,
+                                        gross_weight_lbs=%s
+                                    WHERE id=%s
+                                    """,
+                                    payload + (target_id,)
+                                )
+                                new_id = target_id
+                            else:
+                                cur.execute(
+                                    """
+                                    INSERT INTO sales_products
+                                        (shop_id, platform_sku, product_status, sku_family_id, parent_id, child_code, dachene_yuncang_no, fabric, spec_name,
+                                     sales_title, sales_intro, sales_bullet_1, sales_bullet_2, sales_bullet_3, sales_bullet_4, sales_bullet_5,
+                                     sale_price_usd, warehouse_cost_usd, last_mile_cost_usd,
+                                     finished_length_in, finished_width_in, finished_height_in,
+                                     package_length_in, package_width_in, package_height_in,
+                                     net_weight_lbs, gross_weight_lbs)
+                                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s,
+                                            %s, %s, %s, %s, %s, %s, %s,
+                                            %s, %s, %s,
+                                            %s, %s, %s,
+                                            %s, %s, %s,
+                                            %s, %s)
+                                    """,
+                                    payload
+                                )
+                                new_id = cur.lastrowid
+                        new_link_sig = link_signature(link_entries)
+                        old_link_sig = existing_link_map.get(final_platform_sku, tuple())
+                        if (not target_id) or (new_link_sig != old_link_sig):
+                            self._replace_sales_order_links(conn, new_id, link_entries)
+                        existing_link_map[final_platform_sku] = new_link_sig
+                        if target_id:
+                            updated += 1
+                        else:
+                            created += 1
+                            sales_map[final_platform_sku] = new_id
+
+                        if tx_enabled:
+                            batch_write_count += 1
+                            if batch_write_count >= batch_size:
+                                conn.commit()
+                                batch_write_count = 0
                     except Exception as e:
                         errors.append({'row': row_idx, 'error': str(e)})
 
-            return self.send_json({'status': 'success', 'created': created, 'errors': errors}, start_response)
+                if tx_enabled:
+                    if batch_write_count > 0:
+                        conn.commit()
+                    conn.autocommit(True)
+
+            return self.send_json({
+                'status': 'success',
+                'preview': 1 if preview_mode else 0,
+                'total_rows': total_rows,
+                'created': created,
+                'updated': updated,
+                'relation_created': relation_created,
+                'errors': errors
+            }, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_sales_product_api(self, environ, method, start_response):
         """销售产品管理 API（CRUD）"""
         try:
-            self._ensure_sales_product_tables()
+            if method in ('POST', 'PUT', 'DELETE'):
+                self._ensure_sales_product_tables()
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
 
+            def limited_text(value, max_len):
+                text = (value or '').strip()
+                if not text:
+                    return None
+                if len(text) > max_len:
+                    raise ValueError(f'文本长度超限（>{max_len}）')
+                return text
+
             if method == 'GET':
                 keyword = query_params.get('q', [''])[0].strip()
+                item_id = self._parse_int((query_params.get('id', [''])[0] or '').strip())
+                include_links = str((query_params.get('include_links', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        base_sql = """
-                            SELECT
-                                sp.id, sp.shop_id,
-                                sp.platform_sku, sp.parent_id, sp.child_code,
-                                sp.fabric, sp.spec_name,
-                                sp.sale_price_usd, sp.warehouse_cost_usd, sp.last_mile_cost_usd,
-                                sp.package_length_in, sp.package_width_in, sp.package_height_in,
-                                sp.net_weight_lbs, sp.gross_weight_lbs,
-                                sp.assembled_length_in, sp.assembled_width_in, sp.assembled_height_in,
-                                sp.created_at, sp.updated_at,
-                                s.shop_name, pt.name AS platform_type_name, b.name AS brand_name,
-                                p.parent_code,
-                                GROUP_CONCAT(CONCAT(op.id, ':', op.sku, ':', spol.quantity) ORDER BY op.id SEPARATOR '|') AS order_sku_links
-                            FROM sales_products sp
-                            LEFT JOIN shops s ON s.id = sp.shop_id
-                            LEFT JOIN platform_types pt ON pt.id = s.platform_type_id
-                            LEFT JOIN brands b ON b.id = s.brand_id
-                            LEFT JOIN sales_parents p ON p.id = sp.parent_id
-                            LEFT JOIN sales_product_order_links spol ON spol.sales_product_id = sp.id
-                            LEFT JOIN order_products op ON op.id = spol.order_product_id
-                        """
+                        if item_id:
+                            base_sql = """
+                                SELECT
+                                    sp.id, COALESCE(p.shop_id, sp.shop_id) AS shop_id,
+                                    sp.platform_sku, sp.product_status, sp.sku_family_id, pf.sku_family, sp.parent_id, sp.child_code, sp.dachene_yuncang_no,
+                                    sp.fabric, sp.spec_name,
+                                    sp.sales_title, sp.sales_intro,
+                                    sp.sales_bullet_1, sp.sales_bullet_2, sp.sales_bullet_3, sp.sales_bullet_4, sp.sales_bullet_5,
+                                    sp.sale_price_usd, sp.warehouse_cost_usd, sp.last_mile_cost_usd,
+                                    sp.finished_length_in, sp.finished_width_in, sp.finished_height_in,
+                                    sp.package_length_in, sp.package_width_in, sp.package_height_in,
+                                    sp.net_weight_lbs, sp.gross_weight_lbs,
+                                    sp.created_at, sp.updated_at,
+                                    s.shop_name, pt.name AS platform_type_name, b.name AS brand_name,
+                                    p.parent_code
+                                FROM sales_products sp
+                                LEFT JOIN sales_parents p ON p.id = sp.parent_id
+                                LEFT JOIN product_families pf ON pf.id = sp.sku_family_id
+                                LEFT JOIN shops s ON s.id = COALESCE(p.shop_id, sp.shop_id)
+                                LEFT JOIN platform_types pt ON pt.id = s.platform_type_id
+                                LEFT JOIN brands b ON b.id = s.brand_id
+                            """
+                        else:
+                            base_sql = """
+                                SELECT
+                                    sp.id, sp.platform_sku, sp.product_status, sp.sku_family_id, pf.sku_family,
+                                    sp.child_code, sp.dachene_yuncang_no,
+                                    sp.fabric, sp.spec_name,
+                                    sp.sale_price_usd, sp.warehouse_cost_usd, sp.last_mile_cost_usd,
+                                    sp.created_at,
+                                    p.parent_code
+                                FROM sales_products sp
+                                LEFT JOIN sales_parents p ON p.id = sp.parent_id
+                                LEFT JOIN product_families pf ON pf.id = sp.sku_family_id
+                            """
                         filters = []
                         params = []
+                        if item_id:
+                            filters.append("sp.id = %s")
+                            params.append(item_id)
                         if keyword:
-                            filters.append("(sp.platform_sku LIKE %s OR s.shop_name LIKE %s OR p.parent_code LIKE %s OR sp.child_code LIKE %s)")
-                            params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
+                            if item_id:
+                                filters.append("(sp.platform_sku LIKE %s OR s.shop_name LIKE %s OR p.parent_code LIKE %s OR sp.child_code LIKE %s OR sp.dachene_yuncang_no LIKE %s OR pf.sku_family LIKE %s)")
+                                params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%", f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
+                            else:
+                                filters.append("(sp.platform_sku LIKE %s OR p.parent_code LIKE %s OR sp.child_code LIKE %s OR sp.dachene_yuncang_no LIKE %s OR pf.sku_family LIKE %s)")
+                                params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
                         where_sql = (" WHERE " + " AND ".join(filters)) if filters else ""
-                        cur.execute(base_sql + where_sql + " GROUP BY sp.id ORDER BY sp.id DESC", params)
+                        cur.execute(base_sql + where_sql + " ORDER BY sp.id DESC", params)
                         rows = cur.fetchall() or []
-                for row in rows:
-                    raw = row.get('order_sku_links') or ''
-                    links = []
-                    if raw:
-                        for chunk in raw.split('|'):
-                            parts = chunk.split(':', 2)
-                            if len(parts) != 3:
-                                continue
-                            try:
-                                links.append({
-                                    'order_product_id': int(parts[0]),
-                                    'sku': parts[1],
-                                    'quantity': int(parts[2])
-                                })
-                            except Exception:
-                                continue
-                    row['order_sku_links'] = links
+                if include_links and rows:
+                    row_ids = [int(row['id']) for row in rows if row.get('id')]
+                    link_map = {row_id: [] for row_id in row_ids}
+                    if row_ids:
+                        placeholders = ','.join(['%s'] * len(row_ids))
+                        with self._get_db_connection() as conn:
+                            with conn.cursor() as cur:
+                                cur.execute(
+                                    f"""
+                                    SELECT spol.sales_product_id, op.id AS order_product_id, op.sku, spol.quantity
+                                    FROM sales_product_order_links spol
+                                    JOIN order_products op ON op.id = spol.order_product_id
+                                    WHERE spol.sales_product_id IN ({placeholders})
+                                    ORDER BY spol.sales_product_id ASC, op.id ASC
+                                    """,
+                                    row_ids
+                                )
+                                for rel in (cur.fetchall() or []):
+                                    sales_product_id = int(rel.get('sales_product_id'))
+                                    if sales_product_id not in link_map:
+                                        link_map[sales_product_id] = []
+                                    link_map[sales_product_id].append({
+                                        'order_product_id': int(rel.get('order_product_id')),
+                                        'sku': rel.get('sku') or '',
+                                        'quantity': int(rel.get('quantity') or 1)
+                                    })
+                    for row in rows:
+                        row['order_sku_links'] = link_map.get(int(row.get('id') or 0), [])
+                elif item_id:
+                    for row in rows:
+                        row['order_sku_links'] = []
+
+                if item_id:
+                    return self.send_json({'status': 'success', 'item': rows[0] if rows else None}, start_response)
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             if method == 'POST':
                 data = self._read_json_body(environ)
-                shop_id = self._parse_int(data.get('shop_id'))
                 platform_sku_manual = (data.get('platform_sku') or '').strip()
+                product_status = (data.get('product_status') or 'enabled').strip().lower()
+                if product_status not in ('enabled', 'retained', 'discarded'):
+                    product_status = 'enabled'
+                sku_family_id_input = self._parse_int(data.get('sku_family_id'))
+                shop_id_input = self._parse_int(data.get('shop_id'))
                 parent_code = (data.get('parent_code') or '').strip() or None
+                parent_sku_marker = (data.get('parent_sku_marker') or '').strip() or None
                 child_code = (data.get('child_code') or '').strip() or None
+                dachene_yuncang_no = (data.get('dachene_yuncang_no') or '').strip() or None
                 sale_price_usd = self._parse_float(data.get('sale_price_usd'))
-                assembled_length_in = self._parse_float(data.get('assembled_length_in'))
-                assembled_width_in = self._parse_float(data.get('assembled_width_in'))
-                assembled_height_in = self._parse_float(data.get('assembled_height_in'))
+                finished_length_in = self._parse_float(data.get('finished_length_in'))
+                finished_width_in = self._parse_float(data.get('finished_width_in'))
+                finished_height_in = self._parse_float(data.get('finished_height_in'))
+                package_length_in = self._parse_float(data.get('package_length_in'))
+                package_width_in = self._parse_float(data.get('package_width_in'))
+                package_height_in = self._parse_float(data.get('package_height_in'))
+                net_weight_lbs = self._parse_float(data.get('net_weight_lbs'))
+                gross_weight_lbs = self._parse_float(data.get('gross_weight_lbs'))
                 links = self._normalize_sales_order_links(data.get('order_sku_links'))
+                try:
+                    sales_title = limited_text(data.get('sales_title'), 200)
+                    sales_intro = limited_text(data.get('sales_intro'), 500)
+                    sales_bullet_1 = limited_text(data.get('sales_bullet_1'), 500)
+                    sales_bullet_2 = limited_text(data.get('sales_bullet_2'), 500)
+                    sales_bullet_3 = limited_text(data.get('sales_bullet_3'), 500)
+                    sales_bullet_4 = limited_text(data.get('sales_bullet_4'), 500)
+                    sales_bullet_5 = limited_text(data.get('sales_bullet_5'), 500)
+                except ValueError as ve:
+                    return self.send_json({'status': 'error', 'message': str(ve)}, start_response)
                 
                 # 检查是否手动编辑了platform_sku
                 manual_platform_sku = bool(data.get('manual_platform_sku'))
                 
-                if not shop_id or not links:
-                    return self.send_json({'status': 'error', 'message': 'Missing required fields'}, start_response)
+                if not links:
+                    return self.send_json({'status': 'error', 'message': '关联下单SKU及数量为必填'}, start_response)
 
                 with self._get_db_connection() as conn:
-                    derived = self._derive_sales_cost_size(conn, links)
-                    sku_family_id = derived.get('sku_family_id')
+                    derived = self._derive_sales_cost_size(conn, links) if links else self._derive_sales_cost_size(conn, [])
+                    sku_family_id = sku_family_id_input or derived.get('sku_family_id')
                     if not sku_family_id:
                         return self.send_json({'status': 'error', 'message': '无法根据下单SKU推断归属货号'}, start_response)
 
+                    sku_family_code = ''
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT sku_family FROM product_families WHERE id=%s", (sku_family_id,))
+                        sku_row = cur.fetchone()
+                        if sku_row:
+                            sku_family_code = (sku_row.get('sku_family') or '').strip()
+
                     parent_id = None
+                    parent_shop_id = None
                     if parent_code:
                         with conn.cursor() as cur:
-                            cur.execute("INSERT IGNORE INTO sales_parents (parent_code) VALUES (%s)", (parent_code,))
-                            cur.execute("SELECT id FROM sales_parents WHERE parent_code=%s", (parent_code,))
+                            cur.execute("SELECT id, shop_id FROM sales_parents WHERE parent_code=%s", (parent_code,))
                             row = cur.fetchone()
-                            parent_id = row['id'] if row else None
+                            if row:
+                                parent_id = row['id']
+                                parent_shop_id = row.get('shop_id')
+                                if (not parent_shop_id) and shop_id_input:
+                                    cur.execute("UPDATE sales_parents SET shop_id=%s WHERE id=%s", (shop_id_input, parent_id))
+                                    parent_shop_id = shop_id_input
+                            else:
+                                cur.execute(
+                                    """
+                                    INSERT INTO sales_parents (parent_code, shop_id, sku_marker)
+                                    VALUES (%s, %s, %s)
+                                    """,
+                                    (parent_code, shop_id_input, parent_sku_marker)
+                                )
+                                parent_id = cur.lastrowid
+                                parent_shop_id = shop_id_input
+                    final_shop_id = parent_shop_id if parent_id else shop_id_input
+                    if not final_shop_id:
+                        return self.send_json({'status': 'error', 'message': 'Missing required field: shop_id'}, start_response)
 
                     auto_fabric, auto_spec_name, auto_platform_sku = self._derive_sales_fields(conn, sku_family_id, links)
-                    fabric = (data.get('fabric') or '').strip() or auto_fabric
-                    spec_name = (data.get('spec_name') or '').strip() or auto_spec_name
+                    final_fabric = (data.get('fabric') or '').strip() or auto_fabric
+                    final_spec_name = (data.get('spec_name') or '').strip() or auto_spec_name
                     
                     # 如果没有手动编辑，使用自动生成的platform_sku；否则使用手动输入的
-                    platform_sku = platform_sku_manual if manual_platform_sku else auto_platform_sku
+                    if manual_platform_sku:
+                        platform_sku = platform_sku_manual
+                    else:
+                        platform_sku = auto_platform_sku or self._build_sales_platform_sku(sku_family_code, final_spec_name, final_fabric)
                     
                     if not platform_sku:
                         return self.send_json({'status': 'error', 'message': '无法生成销售平台SKU，请手动输入'}, start_response)
@@ -7425,68 +10814,134 @@ class WSGIApp:
                         cur.execute(
                             """
                             INSERT INTO sales_products
-                            (shop_id, platform_sku, parent_id, child_code, fabric, spec_name,
+                            (shop_id, platform_sku, product_status, sku_family_id, parent_id, child_code, dachene_yuncang_no, fabric, spec_name,
+                             sales_title, sales_intro, sales_bullet_1, sales_bullet_2, sales_bullet_3, sales_bullet_4, sales_bullet_5,
                              sale_price_usd, warehouse_cost_usd, last_mile_cost_usd,
+                             finished_length_in, finished_width_in, finished_height_in,
                              package_length_in, package_width_in, package_height_in,
-                             net_weight_lbs, gross_weight_lbs,
-                             assembled_length_in, assembled_width_in, assembled_height_in)
-                            VALUES (%s, %s, %s, %s, %s, %s,
+                             net_weight_lbs, gross_weight_lbs)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s,
+                                    %s, %s, %s, %s, %s, %s, %s,
                                     %s, %s, %s,
                                     %s, %s, %s,
-                                    %s, %s,
-                                    %s, %s, %s)
+                                    %s, %s, %s,
+                                    %s, %s)
                             """,
                             (
-                                shop_id, platform_sku, parent_id, child_code, fabric, spec_name,
+                                final_shop_id, platform_sku, product_status, sku_family_id, parent_id, child_code, dachene_yuncang_no, final_fabric, final_spec_name,
+                                sales_title,
+                                sales_intro,
+                                sales_bullet_1,
+                                sales_bullet_2,
+                                sales_bullet_3,
+                                sales_bullet_4,
+                                sales_bullet_5,
                                 sale_price_usd, derived.get('warehouse_cost_usd'), derived.get('last_mile_cost_usd'),
-                                derived.get('package_length_in'), derived.get('package_width_in'), derived.get('package_height_in'),
-                                derived.get('net_weight_lbs'), derived.get('gross_weight_lbs'),
-                                assembled_length_in, assembled_width_in, assembled_height_in
+                                finished_length_in if finished_length_in is not None else derived.get('finished_length_in'),
+                                finished_width_in if finished_width_in is not None else derived.get('finished_width_in'),
+                                finished_height_in if finished_height_in is not None else derived.get('finished_height_in'),
+                                package_length_in if package_length_in is not None else derived.get('package_length_in'),
+                                package_width_in if package_width_in is not None else derived.get('package_width_in'),
+                                package_height_in if package_height_in is not None else derived.get('package_height_in'),
+                                net_weight_lbs if net_weight_lbs is not None else derived.get('net_weight_lbs'),
+                                gross_weight_lbs if gross_weight_lbs is not None else derived.get('gross_weight_lbs')
                             )
                         )
                         new_id = cur.lastrowid
                     self._replace_sales_order_links(conn, new_id, links)
+                    self._ensure_listing_sales_variant_folder(sku_family_code, final_spec_name, final_fabric)
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
             if method == 'PUT':
                 data = self._read_json_body(environ)
                 item_id = self._parse_int(data.get('id'))
-                shop_id = self._parse_int(data.get('shop_id'))
                 platform_sku_manual = (data.get('platform_sku') or '').strip()
+                product_status = (data.get('product_status') or 'enabled').strip().lower()
+                if product_status not in ('enabled', 'retained', 'discarded'):
+                    product_status = 'enabled'
+                sku_family_id_input = self._parse_int(data.get('sku_family_id'))
+                shop_id_input = self._parse_int(data.get('shop_id'))
                 parent_code = (data.get('parent_code') or '').strip() or None
+                parent_sku_marker = (data.get('parent_sku_marker') or '').strip() or None
                 child_code = (data.get('child_code') or '').strip() or None
+                dachene_yuncang_no = (data.get('dachene_yuncang_no') or '').strip() or None
                 sale_price_usd = self._parse_float(data.get('sale_price_usd'))
-                assembled_length_in = self._parse_float(data.get('assembled_length_in'))
-                assembled_width_in = self._parse_float(data.get('assembled_width_in'))
-                assembled_height_in = self._parse_float(data.get('assembled_height_in'))
+                finished_length_in = self._parse_float(data.get('finished_length_in'))
+                finished_width_in = self._parse_float(data.get('finished_width_in'))
+                finished_height_in = self._parse_float(data.get('finished_height_in'))
+                package_length_in = self._parse_float(data.get('package_length_in'))
+                package_width_in = self._parse_float(data.get('package_width_in'))
+                package_height_in = self._parse_float(data.get('package_height_in'))
+                net_weight_lbs = self._parse_float(data.get('net_weight_lbs'))
+                gross_weight_lbs = self._parse_float(data.get('gross_weight_lbs'))
                 links = self._normalize_sales_order_links(data.get('order_sku_links'))
+                try:
+                    sales_title = limited_text(data.get('sales_title'), 200)
+                    sales_intro = limited_text(data.get('sales_intro'), 500)
+                    sales_bullet_1 = limited_text(data.get('sales_bullet_1'), 500)
+                    sales_bullet_2 = limited_text(data.get('sales_bullet_2'), 500)
+                    sales_bullet_3 = limited_text(data.get('sales_bullet_3'), 500)
+                    sales_bullet_4 = limited_text(data.get('sales_bullet_4'), 500)
+                    sales_bullet_5 = limited_text(data.get('sales_bullet_5'), 500)
+                except ValueError as ve:
+                    return self.send_json({'status': 'error', 'message': str(ve)}, start_response)
                 
                 # 检查是否手动编辑了platform_sku
                 manual_platform_sku = bool(data.get('manual_platform_sku'))
                 
-                if not item_id or not shop_id or not links:
-                    return self.send_json({'status': 'error', 'message': 'Missing required fields'}, start_response)
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing required field: id'}, start_response)
+                if not links:
+                    return self.send_json({'status': 'error', 'message': '关联下单SKU及数量为必填'}, start_response)
 
                 with self._get_db_connection() as conn:
-                    derived = self._derive_sales_cost_size(conn, links)
-                    sku_family_id = derived.get('sku_family_id')
+                    derived = self._derive_sales_cost_size(conn, links) if links else self._derive_sales_cost_size(conn, [])
+                    sku_family_id = sku_family_id_input or derived.get('sku_family_id')
                     if not sku_family_id:
                         return self.send_json({'status': 'error', 'message': '无法根据下单SKU推断归属货号'}, start_response)
 
+                    sku_family_code = ''
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT sku_family FROM product_families WHERE id=%s", (sku_family_id,))
+                        sku_row = cur.fetchone()
+                        if sku_row:
+                            sku_family_code = (sku_row.get('sku_family') or '').strip()
+
                     parent_id = None
+                    parent_shop_id = None
                     if parent_code:
                         with conn.cursor() as cur:
-                            cur.execute("INSERT IGNORE INTO sales_parents (parent_code) VALUES (%s)", (parent_code,))
-                            cur.execute("SELECT id FROM sales_parents WHERE parent_code=%s", (parent_code,))
+                            cur.execute("SELECT id, shop_id FROM sales_parents WHERE parent_code=%s", (parent_code,))
                             row = cur.fetchone()
-                            parent_id = row['id'] if row else None
+                            if row:
+                                parent_id = row['id']
+                                parent_shop_id = row.get('shop_id')
+                                if (not parent_shop_id) and shop_id_input:
+                                    cur.execute("UPDATE sales_parents SET shop_id=%s WHERE id=%s", (shop_id_input, parent_id))
+                                    parent_shop_id = shop_id_input
+                            else:
+                                cur.execute(
+                                    """
+                                    INSERT INTO sales_parents (parent_code, shop_id, sku_marker)
+                                    VALUES (%s, %s, %s)
+                                    """,
+                                    (parent_code, shop_id_input, parent_sku_marker)
+                                )
+                                parent_id = cur.lastrowid
+                                parent_shop_id = shop_id_input
+                    final_shop_id = parent_shop_id if parent_id else shop_id_input
+                    if not final_shop_id:
+                        return self.send_json({'status': 'error', 'message': 'Missing required field: shop_id'}, start_response)
 
                     auto_fabric, auto_spec_name, auto_platform_sku = self._derive_sales_fields(conn, sku_family_id, links)
-                    fabric = (data.get('fabric') or '').strip() or auto_fabric
-                    spec_name = (data.get('spec_name') or '').strip() or auto_spec_name
+                    final_fabric = (data.get('fabric') or '').strip() or auto_fabric
+                    final_spec_name = (data.get('spec_name') or '').strip() or auto_spec_name
                     
                     # 如果没有手动编辑，使用自动生成的platform_sku；否则使用手动输入的
-                    platform_sku = platform_sku_manual if manual_platform_sku else auto_platform_sku
+                    if manual_platform_sku:
+                        platform_sku = platform_sku_manual
+                    else:
+                        platform_sku = auto_platform_sku or self._build_sales_platform_sku(sku_family_code, final_spec_name, final_fabric)
                     
                     if not platform_sku:
                         return self.send_json({'status': 'error', 'message': '无法生成销售平台SKU，请手动输入'}, start_response)
@@ -7496,44 +10951,73 @@ class WSGIApp:
                             """
                             UPDATE sales_products
                             SET shop_id=%s,
-                                platform_sku=%s, parent_id=%s, child_code=%s,
+                                platform_sku=%s, product_status=%s, sku_family_id=%s, parent_id=%s, child_code=%s,
+                                dachene_yuncang_no=%s,
                                 fabric=%s, spec_name=%s,
+                                sales_title=%s,
+                                sales_intro=%s,
+                                sales_bullet_1=%s,
+                                sales_bullet_2=%s,
+                                sales_bullet_3=%s,
+                                sales_bullet_4=%s,
+                                sales_bullet_5=%s,
                                 sale_price_usd=%s,
                                 warehouse_cost_usd=%s,
                                 last_mile_cost_usd=%s,
+                                finished_length_in=%s,
+                                finished_width_in=%s,
+                                finished_height_in=%s,
                                 package_length_in=%s,
                                 package_width_in=%s,
                                 package_height_in=%s,
                                 net_weight_lbs=%s,
-                                gross_weight_lbs=%s,
-                                assembled_length_in=%s,
-                                assembled_width_in=%s,
-                                assembled_height_in=%s
+                                gross_weight_lbs=%s
                             WHERE id=%s
                             """,
                             (
-                                shop_id, platform_sku, parent_id, child_code,
-                                fabric, spec_name,
+                                final_shop_id, platform_sku, product_status, sku_family_id, parent_id, child_code, dachene_yuncang_no,
+                                final_fabric, final_spec_name,
+                                sales_title,
+                                sales_intro,
+                                sales_bullet_1,
+                                sales_bullet_2,
+                                sales_bullet_3,
+                                sales_bullet_4,
+                                sales_bullet_5,
                                 sale_price_usd,
                                 derived.get('warehouse_cost_usd'),
                                 derived.get('last_mile_cost_usd'),
-                                derived.get('package_length_in'),
-                                derived.get('package_width_in'),
-                                derived.get('package_height_in'),
-                                derived.get('net_weight_lbs'),
-                                derived.get('gross_weight_lbs'),
-                                assembled_length_in,
-                                assembled_width_in,
-                                assembled_height_in,
+                                finished_length_in if finished_length_in is not None else derived.get('finished_length_in'),
+                                finished_width_in if finished_width_in is not None else derived.get('finished_width_in'),
+                                finished_height_in if finished_height_in is not None else derived.get('finished_height_in'),
+                                package_length_in if package_length_in is not None else derived.get('package_length_in'),
+                                package_width_in if package_width_in is not None else derived.get('package_width_in'),
+                                package_height_in if package_height_in is not None else derived.get('package_height_in'),
+                                net_weight_lbs if net_weight_lbs is not None else derived.get('net_weight_lbs'),
+                                gross_weight_lbs if gross_weight_lbs is not None else derived.get('gross_weight_lbs'),
                                 item_id
                             )
                         )
                     self._replace_sales_order_links(conn, item_id, links)
                 return self.send_json({'status': 'success'}, start_response)
 
+            if method == 'PATCH':
+                data = self._read_json_body(environ)
+                item_id = self._parse_int(data.get('id'))
+                product_status = (data.get('product_status') or '').strip().lower()
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                if product_status not in ('enabled', 'retained', 'discarded'):
+                    return self.send_json({'status': 'error', 'message': 'Invalid product_status'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("UPDATE sales_products SET product_status=%s WHERE id=%s AND product_status<>%s", (product_status, item_id, product_status))
+                        changed = int(cur.rowcount or 0)
+                return self.send_json({'status': 'success', 'changed': changed}, start_response)
+
             if method == 'DELETE':
                 data = self._read_json_body(environ)
-                item_id = data.get('id')
+                item_id = self._parse_int(data.get('id'))
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
                 with self._get_db_connection() as conn:
@@ -7548,6 +11032,565 @@ class WSGIApp:
             if pymysql and isinstance(e, pymysql.err.IntegrityError):
                 return self.send_json({'status': 'error', 'message': '销售平台SKU已存在或关联数据无效'}, start_response)
             print("Sales product API error: " + str(e))
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_amazon_ad_keyword_api(self, environ, method, start_response):
+        """Amazon 关键词管理 API"""
+        try:
+            self._ensure_amazon_keyword_tables()
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+
+            if method == 'GET':
+                action = (query_params.get('action', ['list'])[0] or 'list').strip().lower()
+                category_id = self._parse_int(query_params.get('category_id', [''])[0])
+                if not category_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing category_id'}, start_response)
+
+                if action == 'options':
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                """
+                                SELECT id, tag_name
+                                FROM amazon_keyword_tags
+                                WHERE category_id=%s
+                                ORDER BY tag_name ASC
+                                """,
+                                (category_id,)
+                            )
+                            tags = cur.fetchall() or []
+
+                            cur.execute(
+                                """
+                                SELECT pf.id, pf.sku_family
+                                FROM product_families pf
+                                JOIN product_categories pc ON pc.category_cn = pf.category
+                                WHERE pc.id=%s
+                                ORDER BY pf.sku_family ASC
+                                """,
+                                (category_id,)
+                            )
+                            skus = cur.fetchall() or []
+                    return self.send_json({'status': 'success', 'tags': tags, 'sku_families': skus}, start_response)
+
+                keyword = (query_params.get('q', [''])[0] or '').strip()
+                tag_filter = (query_params.get('tag', [''])[0] or '').strip()
+                current_sku_family_id = self._parse_int(query_params.get('sku_family_id', [''])[0])
+
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        sql = """
+                            SELECT
+                                k.id,
+                                k.category_id,
+                                k.user_search_term,
+                                k.search_rank,
+                                k.rank_updated_at,
+                                k.previous_search_rank,
+                                k.previous_rank_updated_at,
+                                k.top_click_asin1,
+                                k.top_click_asin1_click_share,
+                                k.top_click_asin1_conversion_share,
+                                k.top_click_asin2,
+                                k.top_click_asin2_click_share,
+                                k.top_click_asin2_conversion_share,
+                                k.top_click_asin3,
+                                k.top_click_asin3_click_share,
+                                k.top_click_asin3_conversion_share,
+                                k.updated_at,
+                                GROUP_CONCAT(DISTINCT t.id ORDER BY t.id) AS tag_ids,
+                                GROUP_CONCAT(DISTINCT t.tag_name ORDER BY t.tag_name SEPARATOR '\n') AS tag_names,
+                                GROUP_CONCAT(DISTINCT r.sku_family_id ORDER BY r.sku_family_id) AS related_sku_family_ids,
+                                MAX(CASE WHEN r.sku_family_id=%s THEN r.relevance_score END) AS current_relevance_score
+                            FROM amazon_keywords k
+                            LEFT JOIN amazon_keyword_tag_rel tr ON tr.keyword_id = k.id
+                            LEFT JOIN amazon_keyword_tags t ON t.id = tr.tag_id
+                            LEFT JOIN amazon_keyword_sku_rel r ON r.keyword_id = k.id
+                        """
+                        filters = ["k.category_id=%s"]
+                        params = [current_sku_family_id or 0, category_id]
+                        if keyword:
+                            filters.append("k.user_search_term LIKE %s")
+                            params.append(f"%{keyword}%")
+                        if tag_filter:
+                            filters.append("t.tag_name=%s")
+                            params.append(tag_filter)
+                        where_sql = ' WHERE ' + ' AND '.join(filters)
+                        cur.execute(sql + where_sql + " GROUP BY k.id ORDER BY k.updated_at DESC, k.id DESC", params)
+                        rows = cur.fetchall() or []
+
+                items = []
+                relevance_label_map = {
+                    3: '高相关精准词',
+                    2: '中相关普通词',
+                    1: '低相关大词',
+                    4: '变体相关',
+                    0: '不相关',
+                }
+                for row in rows:
+                    raw_tag_ids = (row.get('tag_ids') or '').strip()
+                    raw_tag_names = row.get('tag_names') or ''
+                    raw_sku_ids = (row.get('related_sku_family_ids') or '').strip()
+                    tag_ids = [int(v) for v in raw_tag_ids.split(',') if str(v).strip()] if raw_tag_ids else []
+                    tag_names = [v for v in str(raw_tag_names).split('\n') if str(v).strip()] if raw_tag_names else []
+                    related_sku_ids = [int(v) for v in raw_sku_ids.split(',') if str(v).strip()] if raw_sku_ids else []
+                    current_relevance_score = row.get('current_relevance_score')
+                    if current_relevance_score is not None:
+                        try:
+                            current_relevance_score = int(current_relevance_score)
+                        except Exception:
+                            current_relevance_score = None
+                    row['tag_ids'] = tag_ids
+                    row['tag_names'] = tag_names
+                    row['related_sku_family_ids'] = related_sku_ids
+                    row['current_relevance_score'] = current_relevance_score
+                    row['current_relevance_level'] = relevance_label_map.get(current_relevance_score)
+                    row['is_related_current_sku'] = 1 if (current_relevance_score is not None and current_relevance_score > 0) else 0
+                    items.append(row)
+
+                return self.send_json({'status': 'success', 'items': items}, start_response)
+
+            if method == 'POST':
+                data = self._read_json_body(environ)
+                category_id = self._parse_int(data.get('category_id'))
+                user_search_term = (data.get('user_search_term') or '').strip()
+                if not category_id or not user_search_term:
+                    return self.send_json({'status': 'error', 'message': 'Missing category_id or user_search_term'}, start_response)
+
+                search_rank = self._parse_int(data.get('search_rank'))
+                now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                tag_names = self._normalize_keyword_tag_names(data.get('tag_names'))
+                sku_family_ids = self._normalize_keyword_sku_ids(data.get('related_sku_family_ids'))
+
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            INSERT INTO amazon_keywords (
+                                category_id, user_search_term,
+                                search_rank, rank_updated_at,
+                                top_click_asin1, top_click_asin1_click_share, top_click_asin1_conversion_share,
+                                top_click_asin2, top_click_asin2_click_share, top_click_asin2_conversion_share,
+                                top_click_asin3, top_click_asin3_click_share, top_click_asin3_conversion_share
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """,
+                            (
+                                category_id, user_search_term,
+                                search_rank, now_text if search_rank is not None else None,
+                                (data.get('top_click_asin1') or '').strip() or None,
+                                (data.get('top_click_asin1_click_share') or '').strip() or None,
+                                (data.get('top_click_asin1_conversion_share') or '').strip() or None,
+                                (data.get('top_click_asin2') or '').strip() or None,
+                                (data.get('top_click_asin2_click_share') or '').strip() or None,
+                                (data.get('top_click_asin2_conversion_share') or '').strip() or None,
+                                (data.get('top_click_asin3') or '').strip() or None,
+                                (data.get('top_click_asin3_click_share') or '').strip() or None,
+                                (data.get('top_click_asin3_conversion_share') or '').strip() or None,
+                            )
+                        )
+                        new_id = cur.lastrowid
+                    self._replace_keyword_tags(conn, new_id, category_id, tag_names)
+                    self._replace_keyword_sku_relevance(conn, new_id, sku_family_ids)
+
+                return self.send_json({'status': 'success', 'id': new_id}, start_response)
+
+            if method == 'PUT':
+                data = self._read_json_body(environ)
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT * FROM amazon_keywords WHERE id=%s", (item_id,))
+                        current = cur.fetchone()
+                        if not current:
+                            return self.send_json({'status': 'error', 'message': 'Not found'}, start_response)
+
+                    category_id = self._parse_int(data.get('category_id')) or int(current.get('category_id'))
+                    user_search_term = (data.get('user_search_term') or current.get('user_search_term') or '').strip()
+                    if not category_id or not user_search_term:
+                        return self.send_json({'status': 'error', 'message': 'Missing category_id or user_search_term'}, start_response)
+
+                    new_rank = self._parse_int(data.get('search_rank')) if ('search_rank' in data) else current.get('search_rank')
+                    old_rank = current.get('search_rank')
+                    old_rank_updated = current.get('rank_updated_at')
+                    previous_rank = current.get('previous_search_rank')
+                    previous_rank_updated = current.get('previous_rank_updated_at')
+                    rank_updated_at = old_rank_updated
+                    if ('search_rank' in data) and (new_rank != old_rank):
+                        previous_rank = old_rank
+                        previous_rank_updated = old_rank_updated
+                        rank_updated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            UPDATE amazon_keywords
+                            SET category_id=%s,
+                                user_search_term=%s,
+                                search_rank=%s,
+                                rank_updated_at=%s,
+                                previous_search_rank=%s,
+                                previous_rank_updated_at=%s,
+                                top_click_asin1=%s,
+                                top_click_asin1_click_share=%s,
+                                top_click_asin1_conversion_share=%s,
+                                top_click_asin2=%s,
+                                top_click_asin2_click_share=%s,
+                                top_click_asin2_conversion_share=%s,
+                                top_click_asin3=%s,
+                                top_click_asin3_click_share=%s,
+                                top_click_asin3_conversion_share=%s
+                            WHERE id=%s
+                            """,
+                            (
+                                category_id,
+                                user_search_term,
+                                new_rank,
+                                rank_updated_at,
+                                previous_rank,
+                                previous_rank_updated,
+                                (data.get('top_click_asin1') if 'top_click_asin1' in data else current.get('top_click_asin1')) or None,
+                                (data.get('top_click_asin1_click_share') if 'top_click_asin1_click_share' in data else current.get('top_click_asin1_click_share')) or None,
+                                (data.get('top_click_asin1_conversion_share') if 'top_click_asin1_conversion_share' in data else current.get('top_click_asin1_conversion_share')) or None,
+                                (data.get('top_click_asin2') if 'top_click_asin2' in data else current.get('top_click_asin2')) or None,
+                                (data.get('top_click_asin2_click_share') if 'top_click_asin2_click_share' in data else current.get('top_click_asin2_click_share')) or None,
+                                (data.get('top_click_asin2_conversion_share') if 'top_click_asin2_conversion_share' in data else current.get('top_click_asin2_conversion_share')) or None,
+                                (data.get('top_click_asin3') if 'top_click_asin3' in data else current.get('top_click_asin3')) or None,
+                                (data.get('top_click_asin3_click_share') if 'top_click_asin3_click_share' in data else current.get('top_click_asin3_click_share')) or None,
+                                (data.get('top_click_asin3_conversion_share') if 'top_click_asin3_conversion_share' in data else current.get('top_click_asin3_conversion_share')) or None,
+                                item_id
+                            )
+                        )
+
+                    if 'tag_names' in data:
+                        self._replace_keyword_tags(conn, item_id, category_id, self._normalize_keyword_tag_names(data.get('tag_names')))
+                    if 'related_sku_family_ids' in data:
+                        self._replace_keyword_sku_relevance(conn, item_id, self._normalize_keyword_sku_ids(data.get('related_sku_family_ids')))
+
+                return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'PATCH':
+                data = self._read_json_body(environ)
+                category_id = self._parse_int(data.get('category_id'))
+                keyword_ids = [self._parse_int(v) for v in (data.get('keyword_ids') or [])]
+                keyword_ids = [v for v in keyword_ids if v]
+                if not category_id or not keyword_ids:
+                    return self.send_json({'status': 'error', 'message': 'Missing category_id or keyword_ids'}, start_response)
+
+                tag_names = self._normalize_keyword_tag_names(data.get('tag_names')) if ('tag_names' in data) else None
+                current_sku_family_id = self._parse_int(data.get('sku_family_id'))
+                set_related = data.get('set_related') if ('set_related' in data) else None
+                relevance_level = (data.get('relevance_level') or '').strip()
+                relevance_score_map = {
+                    '高相关精准词': 3,
+                    '中相关普通词': 2,
+                    '低相关大词': 1,
+                    '变体相关': 4,
+                    '不相关': 0,
+                }
+
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        placeholders = ','.join(['%s'] * len(keyword_ids))
+                        cur.execute(
+                            f"SELECT id FROM amazon_keywords WHERE category_id=%s AND id IN ({placeholders})",
+                            [category_id] + keyword_ids
+                        )
+                        existing_ids = [int(row.get('id')) for row in (cur.fetchall() or []) if row.get('id')]
+                    if not existing_ids:
+                        return self.send_json({'status': 'error', 'message': 'No valid keywords in this category'}, start_response)
+
+                    if tag_names is not None:
+                        tag_ids = self._ensure_keyword_tags(conn, category_id, tag_names)
+                        if tag_ids:
+                            with conn.cursor() as cur:
+                                rel_values = []
+                                for keyword_id in existing_ids:
+                                    for tag_id in tag_ids:
+                                        rel_values.append((keyword_id, tag_id))
+                                cur.executemany(
+                                    "INSERT IGNORE INTO amazon_keyword_tag_rel (keyword_id, tag_id) VALUES (%s, %s)",
+                                    rel_values
+                                )
+
+                    if current_sku_family_id and relevance_level in relevance_score_map:
+                        score = relevance_score_map.get(relevance_level)
+                        with conn.cursor() as cur:
+                            cur.executemany(
+                                """
+                                INSERT INTO amazon_keyword_sku_rel (keyword_id, sku_family_id, relevance_score)
+                                VALUES (%s, %s, %s)
+                                ON DUPLICATE KEY UPDATE relevance_score=VALUES(relevance_score)
+                                """,
+                                [(keyword_id, current_sku_family_id, score) for keyword_id in existing_ids]
+                            )
+                    elif current_sku_family_id and set_related is not None:
+                        with conn.cursor() as cur:
+                            if bool(set_related):
+                                cur.executemany(
+                                    """
+                                    INSERT INTO amazon_keyword_sku_rel (keyword_id, sku_family_id, relevance_score)
+                                    VALUES (%s, %s, 1)
+                                    ON DUPLICATE KEY UPDATE relevance_score=VALUES(relevance_score)
+                                    """,
+                                    [(keyword_id, current_sku_family_id) for keyword_id in existing_ids]
+                                )
+                            else:
+                                cur.executemany(
+                                    "DELETE FROM amazon_keyword_sku_rel WHERE keyword_id=%s AND sku_family_id=%s",
+                                    [(keyword_id, current_sku_family_id) for keyword_id in existing_ids]
+                                )
+
+                return self.send_json({'status': 'success', 'updated_count': len(existing_ids)}, start_response)
+
+            if method == 'DELETE':
+                data = self._read_json_body(environ)
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM amazon_keywords WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except RuntimeError as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        except Exception as e:
+            if pymysql and isinstance(e, pymysql.err.IntegrityError):
+                return self.send_json({'status': 'error', 'message': '搜索词已存在或关联数据无效'}, start_response)
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_amazon_ad_keyword_template_api(self, environ, method, start_response):
+        """Amazon 关键词模板下载"""
+        try:
+            if method != 'GET':
+                return self.send_error(405, 'Method not allowed', start_response)
+            if Workbook is None:
+                return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
+
+            category_id = self._parse_int(parse_qs(environ.get('QUERY_STRING', '')).get('category_id', [''])[0])
+            if not category_id:
+                return self.send_json({'status': 'error', 'message': 'Missing category_id'}, start_response)
+
+            from openpyxl.styles import PatternFill, Font, Alignment
+            wb = Workbook()
+            ws = wb.active
+            ws.title = 'amazon_keywords'
+
+            headers = [
+                '用户搜索词*', '搜索词排名',
+                '最高点击ASIN1', '最高点击ASIN1点击占比', '最高点击ASIN1转化占比',
+                '最高点击ASIN2', '最高点击ASIN2点击占比', '最高点击ASIN2转化占比',
+                '最高点击ASIN3', '最高点击ASIN3点击占比', '最高点击ASIN3转化占比',
+                '标签(换行分隔，自动创建新标签)',
+                '关联货号(换行分隔，仅当前品类)'
+            ]
+            ws.append(headers)
+            ws.append([
+                'recliner sofa', 3,
+                'B0XXXXXX01', '22.1%', '12.5%',
+                'B0XXXXXX02', '16.7%', '9.8%',
+                'B0XXXXXX03', '13.3%', '7.1%',
+                '高转化\n核心词',
+                'MS01\nMS02'
+            ])
+
+            for cell in ws[1]:
+                cell.fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
+                cell.font = Font(bold=True, color='2A2420')
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            for cell in ws[2]:
+                cell.fill = PatternFill(start_color='E8E8E8', end_color='E8E8E8', fill_type='solid')
+                cell.font = Font(italic=True, color='888888')
+
+            widths = [24, 12, 16, 16, 16, 16, 16, 16, 16, 16, 16, 28, 24]
+            for idx, width in enumerate(widths, start=1):
+                col = chr(64 + idx) if idx <= 26 else 'A'
+                ws.column_dimensions[col].width = width
+            ws.freeze_panes = 'A3'
+
+            return self._send_excel_workbook(wb, 'amazon_keyword_template.xlsx', start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_amazon_ad_keyword_import_api(self, environ, method, start_response):
+        """Amazon 关键词批量导入"""
+        try:
+            if method != 'POST':
+                return self.send_error(405, 'Method not allowed', start_response)
+            if load_workbook is None:
+                return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
+
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            category_id = self._parse_int(query_params.get('category_id', [''])[0])
+            if not category_id:
+                return self.send_json({'status': 'error', 'message': 'Missing category_id'}, start_response)
+
+            content_type = environ.get('CONTENT_TYPE', '')
+            if 'multipart/form-data' not in content_type:
+                return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
+
+            content_length = int(environ.get('CONTENT_LENGTH', 0) or 0)
+            raw_body = environ['wsgi.input'].read(content_length) if content_length > 0 else b''
+            env_copy = dict(environ)
+            env_copy['CONTENT_LENGTH'] = str(len(raw_body))
+            form = cgi.FieldStorage(fp=io.BytesIO(raw_body), environ=env_copy, keep_blank_values=True)
+            file_item = form['file'] if 'file' in form else None
+            if file_item is None or getattr(file_item, 'file', None) is None:
+                return self.send_json({'status': 'error', 'message': 'Missing file'}, start_response)
+            file_bytes = file_item.file.read() or b''
+            if not file_bytes:
+                return self.send_json({'status': 'error', 'message': 'Empty file'}, start_response)
+
+            wb = load_workbook(io.BytesIO(file_bytes))
+            ws = wb.active
+            headers = [str(cell.value or '').strip() for cell in ws[1]]
+            header_map = {name: idx for idx, name in enumerate(headers)}
+
+            def get_cell(row, name):
+                idx = header_map.get(name)
+                if idx is None or idx >= len(row):
+                    return None
+                return row[idx].value
+
+            self._ensure_amazon_keyword_tables()
+            created = 0
+            updated = 0
+            errors = []
+
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT pf.id, pf.sku_family
+                        FROM product_families pf
+                        JOIN product_categories pc ON pc.category_cn = pf.category
+                        WHERE pc.id=%s
+                        """,
+                        (category_id,)
+                    )
+                    sku_map = {str(row.get('sku_family') or '').strip(): int(row.get('id')) for row in (cur.fetchall() or []) if row.get('id')}
+
+                for row_idx in range(2, ws.max_row + 1):
+                    row = ws[row_idx]
+                    if not any(cell.value is not None and str(cell.value).strip() for cell in row):
+                        continue
+
+                    try:
+                        term = (get_cell(row, '用户搜索词*') or '').strip()
+                        if not term:
+                            errors.append({'row': row_idx, 'error': '用户搜索词不能为空'})
+                            continue
+
+                        rank = self._parse_int(get_cell(row, '搜索词排名'))
+                        tag_names = self._normalize_keyword_tag_names(get_cell(row, '标签(换行分隔，自动创建新标签)'))
+                        sku_text = get_cell(row, '关联货号(换行分隔，仅当前品类)')
+                        sku_codes = self._normalize_keyword_tag_names(sku_text)
+                        sku_ids = []
+                        for sku_code in sku_codes:
+                            sku_id = sku_map.get(sku_code)
+                            if not sku_id:
+                                raise ValueError(f'未知货号: {sku_code}')
+                            sku_ids.append(sku_id)
+                        sku_ids = sorted(set(sku_ids))
+
+                        with conn.cursor() as cur:
+                            cur.execute("SELECT * FROM amazon_keywords WHERE user_search_term=%s", (term,))
+                            existing = cur.fetchone()
+
+                        now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        if existing:
+                            old_rank = existing.get('search_rank')
+                            old_rank_updated = existing.get('rank_updated_at')
+                            previous_rank = existing.get('previous_search_rank')
+                            previous_rank_updated = existing.get('previous_rank_updated_at')
+                            rank_updated_at = old_rank_updated
+                            if rank != old_rank:
+                                previous_rank = old_rank
+                                previous_rank_updated = old_rank_updated
+                                rank_updated_at = now_text
+
+                            with conn.cursor() as cur:
+                                cur.execute(
+                                    """
+                                    UPDATE amazon_keywords
+                                    SET category_id=%s,
+                                        search_rank=%s,
+                                        rank_updated_at=%s,
+                                        previous_search_rank=%s,
+                                        previous_rank_updated_at=%s,
+                                        top_click_asin1=%s,
+                                        top_click_asin1_click_share=%s,
+                                        top_click_asin1_conversion_share=%s,
+                                        top_click_asin2=%s,
+                                        top_click_asin2_click_share=%s,
+                                        top_click_asin2_conversion_share=%s,
+                                        top_click_asin3=%s,
+                                        top_click_asin3_click_share=%s,
+                                        top_click_asin3_conversion_share=%s
+                                    WHERE id=%s
+                                    """,
+                                    (
+                                        category_id,
+                                        rank,
+                                        rank_updated_at,
+                                        previous_rank,
+                                        previous_rank_updated,
+                                        (get_cell(row, '最高点击ASIN1') or '').strip() or None,
+                                        (get_cell(row, '最高点击ASIN1点击占比') or '').strip() or None,
+                                        (get_cell(row, '最高点击ASIN1转化占比') or '').strip() or None,
+                                        (get_cell(row, '最高点击ASIN2') or '').strip() or None,
+                                        (get_cell(row, '最高点击ASIN2点击占比') or '').strip() or None,
+                                        (get_cell(row, '最高点击ASIN2转化占比') or '').strip() or None,
+                                        (get_cell(row, '最高点击ASIN3') or '').strip() or None,
+                                        (get_cell(row, '最高点击ASIN3点击占比') or '').strip() or None,
+                                        (get_cell(row, '最高点击ASIN3转化占比') or '').strip() or None,
+                                        existing.get('id')
+                                    )
+                                )
+                            keyword_id = int(existing.get('id'))
+                            updated += 1
+                        else:
+                            with conn.cursor() as cur:
+                                cur.execute(
+                                    """
+                                    INSERT INTO amazon_keywords (
+                                        category_id, user_search_term,
+                                        search_rank, rank_updated_at,
+                                        top_click_asin1, top_click_asin1_click_share, top_click_asin1_conversion_share,
+                                        top_click_asin2, top_click_asin2_click_share, top_click_asin2_conversion_share,
+                                        top_click_asin3, top_click_asin3_click_share, top_click_asin3_conversion_share
+                                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                    """,
+                                    (
+                                        category_id,
+                                        term,
+                                        rank,
+                                        now_text if rank is not None else None,
+                                        (get_cell(row, '最高点击ASIN1') or '').strip() or None,
+                                        (get_cell(row, '最高点击ASIN1点击占比') or '').strip() or None,
+                                        (get_cell(row, '最高点击ASIN1转化占比') or '').strip() or None,
+                                        (get_cell(row, '最高点击ASIN2') or '').strip() or None,
+                                        (get_cell(row, '最高点击ASIN2点击占比') or '').strip() or None,
+                                        (get_cell(row, '最高点击ASIN2转化占比') or '').strip() or None,
+                                        (get_cell(row, '最高点击ASIN3') or '').strip() or None,
+                                        (get_cell(row, '最高点击ASIN3点击占比') or '').strip() or None,
+                                        (get_cell(row, '最高点击ASIN3转化占比') or '').strip() or None,
+                                    )
+                                )
+                                keyword_id = cur.lastrowid
+                            created += 1
+
+                        self._replace_keyword_tags(conn, keyword_id, category_id, tag_names)
+                        self._replace_keyword_sku_relevance(conn, keyword_id, sku_ids)
+                    except Exception as row_error:
+                        errors.append({'row': row_idx, 'error': str(row_error)})
+
+            return self.send_json({'status': 'success', 'created': created, 'updated': updated, 'errors': errors}, start_response)
+        except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def serve_file(self, filepath, content_type, start_response):
