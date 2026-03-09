@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>物流仓储管理 - 货代管理</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div id="site-header"></div>
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1.5rem;">
+            <h2>货代管理</h2>
+            <p>维护货代基础信息</p>
+        </section>
+
+        <section class="pm-layout">
+            <div class="card pm-card">
+                <div class="pm-toolbar">
+                    <div class="pm-toolbar-actions">
+                        <div class="form-group pm-search" style="margin:0;">
+                            <span class="pm-search-title">搜索</span>
+                            <input type="text" id="searchInput" placeholder="搜索货代名称">
+                            <button class="btn-primary" onclick="loadList()">搜索</button>
+                            <button class="btn-secondary" onclick="resetSearch()">清空</button>
+                        </div>
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-accent" onclick="openCreateModal()">新增</button>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <table class="pm-table" id="mainTable">
+                    <thead>
+                        <tr>
+                            <th>货代名称</th>
+                            <th style="width:180px;">创建时间</th>
+                            <th style="width:160px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody><tr><td colspan="3" style="text-align:center;">加载中...</td></tr></tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div class="pm-modal" id="pm-modal">
+        <div class="pm-modal-content">
+            <h3 id="pm-modal-title" style="margin-top:0;">新增货代</h3>
+            <div class="pm-form">
+                <div class="form-group pm-form-full">
+                    <label for="forwarderName">货代名称<span class="required-asterisk">*</span></label>
+                    <input type="text" id="forwarderName" class="required-field" placeholder="请输入货代名称">
+                </div>
+            </div>
+            <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeModal()">取消</button>
+                <button class="btn-primary" onclick="saveFromModal()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
+
+    <script>
+        let editId = null;
+        function showStatus(msg, err){ const el = document.getElementById('modalStatus'); el.style.display='block'; el.style.background=err?'#ffecec':'#f0fff0'; el.style.color=err?'#a33':'#2f6f2f'; el.innerText=msg; }
+        function resetStatus(){ const el = document.getElementById('modalStatus'); el.style.display='none'; el.innerText=''; }
+        function resetSearch(){ document.getElementById('searchInput').value=''; loadList(); }
+        function openCreateModal(){ editId=null; document.getElementById('pm-modal-title').innerText='新增货代'; document.getElementById('forwarderName').value=''; resetStatus(); document.getElementById('pm-modal').classList.add('active'); }
+        function openEditModal(item){ editId=item.id; document.getElementById('pm-modal-title').innerText='编辑货代'; document.getElementById('forwarderName').value=item.forwarder_name||''; resetStatus(); document.getElementById('pm-modal').classList.add('active'); }
+        function closeModal(){ document.getElementById('pm-modal').classList.remove('active'); editId=null; }
+        function saveFromModal(){
+            const forwarder_name = document.getElementById('forwarderName').value.trim();
+            if(!forwarder_name){ showStatus('请填写货代名称', true); return; }
+            const payload = { forwarder_name };
+            let method = 'POST';
+            if(editId){ payload.id = editId; method = 'PUT'; }
+            fetch('/api/logistics-forwarder', { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
+                .then(r=>r.json()).then(data=>{ if(data.status==='success'){ showStatus('保存成功', false); setTimeout(()=>{ closeModal(); loadList(); }, 300); } else { showStatus(data.message||'操作失败', true); } })
+                .catch(err=>showStatus('请求失败: '+err, true));
+        }
+        function removeItem(id){
+            if(!confirm('确认删除该货代？')) return;
+            fetch('/api/logistics-forwarder', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id}) })
+                .then(r=>r.json()).then(data=>{ if(data.status==='success') loadList(); else alert(data.message || '删除失败'); })
+                .catch(err=>alert('删除失败: '+err));
+        }
+        function loadList(){
+            const q = document.getElementById('searchInput').value.trim();
+            const url = q ? `/api/logistics-forwarder?q=${encodeURIComponent(q)}` : '/api/logistics-forwarder';
+            fetch(url).then(r=>r.json()).then(data=>{
+                const tbody = document.querySelector('#mainTable tbody');
+                if(data.status!=='success'){ tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:#a33;">${data.message||'加载失败'}</td></tr>`; return; }
+                const items = data.items || [];
+                if(!items.length){ tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;">暂无数据</td></tr>'; return; }
+                tbody.innerHTML = items.map(item => `<tr><td>${item.forwarder_name||''}</td><td>${item.created_at?new Date(item.created_at).toLocaleString('zh-CN'):''}</td><td><div class="pm-actions"><button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button><button class="btn-danger" onclick='removeItem(${item.id})'>删除</button></div></td></tr>`).join('');
+            }).catch(err=>{ document.querySelector('#mainTable tbody').innerHTML = `<tr><td colspan="3" style="text-align:center;color:#a33;">加载失败: ${err}</td></tr>`; });
+        }
+        document.getElementById('pm-modal').addEventListener('click', function(e){ if(e.target===this) closeModal(); });
+        document.getElementById('searchInput').addEventListener('keydown', function(e){ if(e.key==='Enter') loadList(); });
+        window.addEventListener('load', loadList);
+    </script>
+</body>
+<script src="/static/js/header.js"></script>
+</html>

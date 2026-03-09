@@ -105,6 +105,17 @@
         if(!state || state.trigger.disabled) return;
         closeAllDropdowns();
         renderDropdownOptions(select, state);
+        state.wrapper.classList.remove('open-upward');
+        const triggerRect = state.trigger.getBoundingClientRect();
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+        const spaceBelow = viewportHeight - triggerRect.bottom;
+        const spaceAbove = triggerRect.top;
+        const preferHeight = 280;
+        if(spaceBelow < 180 && spaceAbove > spaceBelow && spaceAbove >= 140){
+            state.wrapper.classList.add('open-upward');
+        }
+        const maxHeight = Math.max(120, Math.min(preferHeight, state.wrapper.classList.contains('open-upward') ? (spaceAbove - 20) : (spaceBelow - 20)));
+        state.list.style.maxHeight = `${maxHeight}px`;
         state.wrapper.classList.add('expanded');
         window.setTimeout(() => {
             state.wrapper.classList.add('open');
@@ -216,6 +227,36 @@
         }, 400);
     }
 
+    function normalizeDateText(raw){
+        const digits = String(raw || '').replace(/\D/g, '').slice(0, 8);
+        if(!digits) return '';
+        if(digits.length <= 4) return digits;
+        if(digits.length <= 6) return `${digits.slice(0, 4)}/${digits.slice(4)}`;
+        return `${digits.slice(0, 4)}/${digits.slice(4, 6)}/${digits.slice(6, 8)}`;
+    }
+
+    function enhanceDateInput(input){
+        if(!input || input.dataset.slashDateEnhanced === '1') return;
+        input.dataset.slashDateEnhanced = '1';
+        const current = input.value || '';
+        input.type = 'text';
+        input.inputMode = 'numeric';
+        input.autocomplete = 'off';
+        if(!input.placeholder) input.placeholder = 'yyyy/mm/dd';
+        input.value = normalizeDateText(current);
+        input.addEventListener('input', () => {
+            input.value = normalizeDateText(input.value);
+        });
+        input.addEventListener('blur', () => {
+            input.value = normalizeDateText(input.value);
+        });
+    }
+
+    function initSlashDateInputs(root){
+        const scope = root && root.querySelectorAll ? root : document;
+        scope.querySelectorAll('input[type="date"], input[data-date-input="1"]').forEach(enhanceDateInput);
+    }
+
     window.initUniversalSingleSelects = initUniversalSingleSelects;
     window.refreshUniversalSingleSelect = refreshUniversalSingleSelect;
     window.refreshAllUniversalSingleSelects = function(){
@@ -225,6 +266,7 @@
             syncTriggerFromSelect(select, state);
         });
     };
+    window.initSlashDateInputs = initSlashDateInputs;
 
     function loadHeader(){
         fetch('/static/partials/header.html')
@@ -245,6 +287,8 @@
                     const elG = document.querySelector('.nav-gallery'); if(elG) elG.classList.add('active');
                 } else if(path.startsWith('/amazon-ad-management') || path.startsWith('/amazon-ad-subtype-management') || path.startsWith('/amazon-ad-delivery-management') || path.startsWith('/amazon-ad-product-management') || path.startsWith('/amazon-ad-adjustment-management') || path.startsWith('/amazon-ad-keyword-management')){
                     const elAd = document.querySelector('.nav-amazon-ad'); if(elAd) elAd.classList.add('active');
+                } else if(path.startsWith('/logistics-factory-management') || path.startsWith('/logistics-forwarder-management') || path.startsWith('/logistics-warehouse-management') || path.startsWith('/logistics-warehouse-inventory-management') || path.startsWith('/logistics-in-transit-management')){
+                    const elL = document.querySelector('.nav-logistics'); if(elL) elL.classList.add('active');
                 } else if(path.startsWith('/product-management') || path.startsWith('/fabric-management') || path.startsWith('/feature-management') || path.startsWith('/material-management') || path.startsWith('/certification-management') || path.startsWith('/order-product-management')){
                     const elP = document.querySelector('.nav-product'); if(elP) elP.classList.add('active');
                 } else if(path.startsWith('/sales-product-management') || path.startsWith('/parent-management')){
@@ -265,6 +309,7 @@
     const boot = () => {
         loadHeader();
         initUniversalSingleSelects(document);
+        initSlashDateInputs(document);
         startUniversalSelectValueSync();
     };
 

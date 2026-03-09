@@ -247,6 +247,7 @@
                             <button class="btn-secondary" onclick="resetSearch()">清空</button>
                         </div>
                         <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-secondary" onclick="updateSelectedCartonQty()">更新装箱量</button>
                         <button class="btn-secondary" onclick="downloadOrderProductTemplate()">下载模板</button>
                         <button class="btn-secondary" onclick="triggerOrderProductUpload()">批量上传</button>
                         <input type="file" id="orderProductUploadInput" accept=".xlsx" style="display:none;">
@@ -668,6 +669,7 @@
             resetModalStatus();
             document.getElementById('pm-modal').classList.add('active');
             document.getElementById('modalSku').focus();
+            autoCalcCartonQtyFromPackage();
             // 初始化选填项样式
             setTimeout(initOptionalFieldListeners, 50);
         }
@@ -710,6 +712,7 @@
             resetModalStatus();
             document.getElementById('pm-modal').classList.add('active');
             document.getElementById('modalSku').focus();
+            autoCalcCartonQtyFromPackage();
             // 初始化选填项样式
             setTimeout(initOptionalFieldListeners, 50);
         }
@@ -761,6 +764,28 @@
             if (!text) return null;
             const num = Number(text);
             return Number.isFinite(num) ? num : null;
+        }
+
+        function calcCartonQtyBy40HQ(lengthIn, widthIn, heightIn) {
+            const l = parseNumber(lengthIn);
+            const w = parseNumber(widthIn);
+            const h = parseNumber(heightIn);
+            if (l === null || w === null || h === null) return null;
+            if (l <= 0 || w <= 0 || h <= 0) return null;
+            const inchToMeter = 0.0254;
+            const volumeM3 = l * inchToMeter * w * inchToMeter * h * inchToMeter;
+            if (!Number.isFinite(volumeM3) || volumeM3 <= 0) return null;
+            const qty = Math.floor(69 / volumeM3);
+            return qty >= 0 ? qty : null;
+        }
+
+        function autoCalcCartonQtyFromPackage() {
+            const qty = calcCartonQtyBy40HQ(
+                document.getElementById('modalPackageLength').value,
+                document.getElementById('modalPackageWidth').value,
+                document.getElementById('modalPackageHeight').value
+            );
+            setInputValue('modalCartonQty', qty === null ? '' : String(qty));
         }
 
         function getSelectedSkuFamilyText() {
@@ -859,6 +884,7 @@
             setPickerSelected('frame', source.frame_material_ids || []);
             setPickerSelected('feature', source.feature_ids || []);
             setPickerSelected('cert', source.certification_ids || []);
+            autoCalcCartonQtyFromPackage();
             updateSkuFromInputs();
         }
 
@@ -1238,6 +1264,42 @@
                 else selectedOrderProductIds.delete(id);
             });
             syncSelectAllCheckbox();
+        }
+
+        function updateSelectedCartonQty() {
+            const ids = Array.from(selectedOrderProductIds);
+            if (!ids.length) {
+                showUploadDialog({ title: '提示', message: '请先勾选需要更新装箱量的SKU' });
+                return;
+            }
+            showUploadDialog({
+                title: '确认更新',
+                message: `将按 40HQ=69m³ 自动计算并更新已勾选 ${ids.length} 条SKU的装箱量，确认继续？`,
+                confirmText: '确认更新',
+                cancelText: '取消',
+                onConfirm: function() {
+                    fetch('/api/order-product-carton-calc', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ids })
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.status !== 'success') {
+                            showUploadDialog({ title: '更新失败', message: data.message || '更新失败' });
+                            return;
+                        }
+                        const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
+                        showUploadDialog({
+                            title: '更新完成',
+                            message: `已更新 ${data.updated || 0} 条，跳过 ${data.skipped || 0} 条${errCount ? `，异常 ${errCount} 条` : ''}`,
+                            errors: data.errors || []
+                        });
+                        loadOrderProductList();
+                    })
+                    .catch(err => showUploadDialog({ title: '请求失败', message: '请求失败: ' + err }));
+                }
+            });
         }
 
         function downloadOrderProductTemplate() {
@@ -1785,6 +1847,9 @@
         });
         document.getElementById('modalVersion').addEventListener('input', updateSkuFromInputs);
         document.getElementById('modalSpecQtyShort').addEventListener('input', updateSkuFromInputs);
+        document.getElementById('modalPackageLength').addEventListener('input', autoCalcCartonQtyFromPackage);
+        document.getElementById('modalPackageWidth').addEventListener('input', autoCalcCartonQtyFromPackage);
+        document.getElementById('modalPackageHeight').addEventListener('input', autoCalcCartonQtyFromPackage);
         document.getElementById('modalFabricTrigger').addEventListener('click', function() {
             toggleSelectPanel('fabric');
         });

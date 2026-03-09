@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>物流仓储管理 - 海外仓库存管理</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .inv-import-status {
+            display:none;
+            font-size:0.82rem;
+            color:var(--morandi-ink);
+            padding:0.25rem 0.55rem;
+            border-radius:999px;
+            border:1px solid rgba(74, 78, 87, 0.2);
+            background:rgba(236,231,223,0.65);
+        }
+        .inv-import-status.show { display:inline-flex; align-items:center; }
+    </style>
+</head>
+<body>
+    <div id="site-header"></div>
+    <div class="container">
+        <section class="hero" style="margin-bottom:1.5rem;">
+            <h2>海外仓库存管理</h2>
+            <p>维护仓库与下单SKU库存（支持模板导入）</p>
+        </section>
+
+        <section class="pm-layout">
+            <div class="card pm-card">
+                <div class="pm-toolbar">
+                    <div class="pm-toolbar-actions">
+                        <div class="form-group pm-search" style="margin:0;">
+                            <span class="pm-search-title">搜索</span>
+                            <input type="text" id="searchInput" placeholder="搜索SKU/仓库">
+                            <button class="btn-primary" onclick="loadList()">搜索</button>
+                            <button class="btn-secondary" onclick="resetSearch()">清空</button>
+                        </div>
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-secondary" onclick="downloadTemplate()">下载模板</button>
+                        <button class="btn-secondary" onclick="triggerUpload()">批量上传</button>
+                        <input type="file" id="uploadInput" accept=".xlsx" style="display:none;">
+                        <span id="importStatus" class="inv-import-status"></span>
+                        <button class="btn-accent" onclick="openCreateModal()">新增</button>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <table class="pm-table" id="mainTable">
+                    <thead>
+                        <tr>
+                            <th>仓库</th>
+                            <th>SKU</th>
+                            <th>在库数量</th>
+                            <th>在途数量</th>
+                            <th style="width:170px;">更新时间</th>
+                            <th style="width:160px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody><tr><td colspan="6" style="text-align:center;">加载中...</td></tr></tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div class="pm-modal" id="pm-modal">
+        <div class="pm-modal-content pm-modal-content--wide">
+            <h3 id="pm-modal-title" style="margin-top:0;">新增库存记录</h3>
+            <div class="pm-form">
+                <div class="form-group">
+                    <label for="warehouseId">海外仓<span class="required-asterisk">*</span></label>
+                    <select id="warehouseId" class="required-field"></select>
+                </div>
+                <div class="form-group">
+                    <label for="orderProductId">下单SKU<span class="required-asterisk">*</span></label>
+                    <select id="orderProductId" class="required-field"></select>
+                </div>
+                <div class="form-group">
+                    <label for="availableQty">在库数量<span class="required-asterisk">*</span></label>
+                    <input type="number" id="availableQty" class="required-field" step="1" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="inTransitQty">在途数量</label>
+                    <input type="number" id="inTransitQty" class="optional-field" step="1" min="0" value="0">
+                </div>
+            </div>
+            <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeModal()">取消</button>
+                <button class="btn-primary" onclick="saveFromModal()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
+
+    <script>
+        let editId = null;
+        let warehouses = [];
+        let orderProducts = [];
+        function showStatus(msg, err){ const el=document.getElementById('modalStatus'); el.style.display='block'; el.style.background=err?'#ffecec':'#f0fff0'; el.style.color=err?'#a33':'#2f6f2f'; el.innerText=msg; }
+        function resetStatus(){ const el=document.getElementById('modalStatus'); el.style.display='none'; el.innerText=''; }
+        function showImportStatus(msg, err){ const el=document.getElementById('importStatus'); el.textContent=msg||''; el.classList.add('show'); el.style.color=err?'#9b2226':'var(--morandi-ink)'; }
+        function resetSearch(){ document.getElementById('searchInput').value=''; loadList(); }
+        function renderOptions(){
+            const wh = document.getElementById('warehouseId');
+            const op = document.getElementById('orderProductId');
+            wh.innerHTML = '<option value="">请选择海外仓</option>' + warehouses.map(x=>`<option value="${x.id}">${x.warehouse_name||''}</option>`).join('');
+            op.innerHTML = '<option value="">请选择下单SKU</option>' + orderProducts.map(x=>`<option value="${x.id}">${x.sku||''}</option>`).join('');
+            if(window.refreshUniversalSingleSelect){ window.refreshUniversalSingleSelect(wh); window.refreshUniversalSingleSelect(op); }
+        }
+        function loadOptions(){
+            return fetch('/api/logistics-warehouse-inventory?action=options').then(r=>r.json()).then(data=>{
+                if(data.status==='success'){
+                    warehouses = data.warehouses || [];
+                    orderProducts = data.order_products || [];
+                    renderOptions();
+                }
+            });
+        }
+        function openCreateModal(){
+            editId = null;
+            document.getElementById('pm-modal-title').innerText = '新增库存记录';
+            document.getElementById('warehouseId').value = '';
+            document.getElementById('orderProductId').value = '';
+            document.getElementById('availableQty').value = '';
+            document.getElementById('inTransitQty').value = '0';
+            if(window.refreshUniversalSingleSelect){ window.refreshUniversalSingleSelect('warehouseId'); window.refreshUniversalSingleSelect('orderProductId'); }
+            resetStatus();
+            document.getElementById('pm-modal').classList.add('active');
+        }
+        function openEditModal(item){
+            editId = item.id;
+            document.getElementById('pm-modal-title').innerText = '编辑库存记录';
+            document.getElementById('warehouseId').value = item.warehouse_id || '';
+            document.getElementById('orderProductId').value = item.order_product_id || '';
+            document.getElementById('availableQty').value = item.available_qty ?? 0;
+            document.getElementById('inTransitQty').value = item.in_transit_qty ?? 0;
+            if(window.refreshUniversalSingleSelect){ window.refreshUniversalSingleSelect('warehouseId'); window.refreshUniversalSingleSelect('orderProductId'); }
+            resetStatus();
+            document.getElementById('pm-modal').classList.add('active');
+        }
+        function closeModal(){ document.getElementById('pm-modal').classList.remove('active'); editId = null; }
+        function saveFromModal(){
+            const payload = {
+                warehouse_id: document.getElementById('warehouseId').value,
+                order_product_id: document.getElementById('orderProductId').value,
+                available_qty: document.getElementById('availableQty').value,
+                in_transit_qty: document.getElementById('inTransitQty').value
+            };
+            if(!payload.warehouse_id || !payload.order_product_id || payload.available_qty===''){ showStatus('请填写必填字段', true); return; }
+            let method = 'POST';
+            if(editId){ payload.id = editId; method = 'PUT'; }
+            fetch('/api/logistics-warehouse-inventory', { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
+                .then(r=>r.json()).then(data=>{ if(data.status==='success'){ showStatus('保存成功', false); setTimeout(()=>{ closeModal(); loadList(); }, 300); } else { showStatus(data.message||'操作失败', true); } })
+                .catch(err=>showStatus('请求失败: '+err, true));
+        }
+        function removeItem(id){
+            if(!confirm('确认删除该库存记录？')) return;
+            fetch('/api/logistics-warehouse-inventory', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id}) })
+                .then(r=>r.json()).then(data=>{ if(data.status==='success') loadList(); else alert(data.message || '删除失败'); })
+                .catch(err=>alert('删除失败: '+err));
+        }
+        function loadList(){
+            const q = document.getElementById('searchInput').value.trim();
+            const url = q ? `/api/logistics-warehouse-inventory?q=${encodeURIComponent(q)}` : '/api/logistics-warehouse-inventory';
+            fetch(url).then(r=>r.json()).then(data=>{
+                const tbody = document.querySelector('#mainTable tbody');
+                if(data.status!=='success'){ tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">${data.message||'加载失败'}</td></tr>`; return; }
+                const items = data.items || [];
+                if(!items.length){ tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无数据</td></tr>'; return; }
+                tbody.innerHTML = items.map(item => `<tr><td>${item.warehouse_name||''}</td><td>${item.sku||''}</td><td>${item.available_qty??0}</td><td>${item.in_transit_qty??0}</td><td>${item.updated_at?new Date(item.updated_at).toLocaleString('zh-CN'):''}</td><td><div class="pm-actions"><button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button><button class="btn-danger" onclick='removeItem(${item.id})'>删除</button></div></td></tr>`).join('');
+            }).catch(err=>{ document.querySelector('#mainTable tbody').innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">加载失败: ${err}</td></tr>`; });
+        }
+        function downloadTemplate(){ window.location.href = '/api/logistics-warehouse-inventory-template'; }
+        function triggerUpload(){ const input = document.getElementById('uploadInput'); input.value=''; input.click(); }
+        function uploadTemplate(file){
+            const fd = new FormData(); fd.append('file', file);
+            showImportStatus('导入处理中...', false);
+            fetch('/api/logistics-warehouse-inventory-import', { method:'POST', body: fd })
+                .then(r=>r.json()).then(data=>{
+                    if(data.status!=='success'){ showImportStatus(data.message || '导入失败', true); return; }
+                    const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
+                    showImportStatus(`导入完成：新增 ${data.created||0}，更新 ${data.updated||0}，未变更 ${data.unchanged||0}${errCount?`，失败 ${errCount}`:''}`, errCount>0);
+                    loadList();
+                }).catch(err=>showImportStatus('导入失败: '+err, true));
+        }
+        document.getElementById('searchInput').addEventListener('keydown', function(e){ if(e.key==='Enter') loadList(); });
+        document.getElementById('pm-modal').addEventListener('click', function(e){ if(e.target===this) closeModal(); });
+        document.getElementById('uploadInput').addEventListener('change', function(e){ const file=e.target.files&&e.target.files[0]; if(file) uploadTemplate(file); });
+        window.addEventListener('load', function(){ loadOptions().then(loadList); });
+    </script>
+</body>
+<script src="/static/js/header.js"></script>
+</html>

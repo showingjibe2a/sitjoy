@@ -690,12 +690,12 @@
                 btn.className = 'feature-category-option';
                 const categoryText = item.category ? ` - ${item.category}` : '';
                 btn.textContent = `${item.sku_family}${categoryText}`;
-                btn.addEventListener('click', () => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
                     if (!selectedSkuFamilyIds.includes(String(item.id))) {
                         selectedSkuFamilyIds.push(String(item.id));
                     }
                     renderSkuFamilyPicker();
-                    closeSkuMenu();
                 });
                 list.appendChild(btn);
             });
@@ -946,7 +946,20 @@
             .then(r => r.json())
             .then(data => {
                 if (data.status === 'success') {
+                    const isCreate = !editId;
                     showModalStatus(editId ? '更新成功' : '新增成功', false);
+                    if (isCreate && window.opener && !window.opener.closed) {
+                        try {
+                            window.opener.postMessage({
+                                type: 'fabric-created',
+                                fabric: {
+                                    id: data.id || null,
+                                    fabric_code: fabricCode,
+                                    fabric_name_en: fabricNameEn
+                                }
+                            }, '*');
+                        } catch (e) {}
+                    }
                     setTimeout(() => {
                         closeModal();
                         loadFabricList();
@@ -1013,7 +1026,7 @@
                         const imageCount = imageNames.length > 1 ? `<div class="fabric-image-count">${imageNames.length}</div>` : '';
                         const thumbWrap = imageThumb
                             ? `<div class="fabric-thumb-wrap">${imageThumb}${imageCount}</div>`
-                            : '<span class="fabric-thumb-empty">-</span>';
+                            : '<span class="fabric-thumb-empty"></span>';
                         const materialText = item.material_name ? `${item.material_name} / ${item.material_name_en || ''}` : '';
                         return `
                             <tr>
@@ -1392,6 +1405,12 @@
         window.addEventListener('load', loadFabricImages);
         window.addEventListener('load', loadFabricMaterials);
         window.addEventListener('load', loadSkuFamilies);
+        window.addEventListener('load', function() {
+            const params = new URLSearchParams(window.location.search || '');
+            if (params.get('openCreate') === '1') {
+                setTimeout(() => openCreateModal(), 120);
+            }
+        });
         document.getElementById('pm-modal').addEventListener('click', function(e) {
             if (e.target === this) {
                 closeModal();

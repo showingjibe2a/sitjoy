@@ -6,21 +6,6 @@
     <title>Amazon广告管理 - 广告信息</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
-        .ad-row-portfolio td { font-weight: 600; background: rgba(236, 231, 223, 0.65); }
-        .ad-row-campaign td { background: rgba(236, 231, 223, 0.35); }
-        .ad-row-group td { background: rgba(236, 231, 223, 0.2); }
-        .ad-name-indent-1 { padding-left: 1.1rem; }
-        .ad-name-indent-2 { padding-left: 2rem; }
-        .ad-expand-cell { width: 36px; text-align: center; }
-        .ad-toggle {
-            border: none;
-            background: transparent;
-            color: var(--morandi-ink);
-            cursor: pointer;
-            font-size: 1.1rem;
-            width: 1.2rem;
-            text-align: center;
-        }
         .ad-red-segment {
             display: inline-flex;
             gap: 0.4rem;
@@ -122,6 +107,36 @@
             opacity: 0.65;
             pointer-events: none;
         }
+        .ad-import-status {
+            display: none;
+            font-size: 0.82rem;
+            color: var(--morandi-ink);
+            padding: 0.25rem 0.55rem;
+            border-radius: 999px;
+            border: 1px solid rgba(74, 78, 87, 0.2);
+            background: rgba(236, 231, 223, 0.65);
+        }
+        .ad-import-status.show {
+            display: inline-flex;
+            align-items: center;
+        }
+        .toast-notice {
+            position: fixed;
+            right: 18px;
+            bottom: 18px;
+            min-width: 280px;
+            max-width: 420px;
+            padding: 0.7rem 0.85rem;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 10px;
+            background: #fff;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+            color: var(--morandi-ink);
+            font-size: 0.9rem;
+            line-height: 1.5;
+            z-index: 70;
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -144,6 +159,10 @@
                             <button class="btn-secondary" onclick="resetSearch()">清空</button>
                         </div>
                         <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-secondary" onclick="downloadAdTemplate()">下载模板</button>
+                        <button class="btn-secondary" onclick="triggerAdUpload()">批量上传</button>
+                        <input type="file" id="adUploadInput" accept=".xlsx" style="display:none;">
+                        <span id="adImportStatus" class="ad-import-status"></span>
                         <button class="btn-accent" onclick="openCreateModal()">新增</button>
                     </div>
                 </div>
@@ -194,12 +213,12 @@
                     </div>
                 </div>
                 <div class="form-group level-portfolio">
-                    <label for="modalSkuFamily">关联货号<span class="required-asterisk">*</span></label>
+                    <label for="modalSkuFamily">关联货号（选填）</label>
                     <select id="modalSkuFamily" onchange="onPortfolioSkuChanged()" data-search-placeholder="搜索货号"></select>
                 </div>
                 <div class="form-group level-portfolio">
                     <label for="modalPortfolioName">广告组合名称<span class="required-asterisk">*</span></label>
-                    <input type="text" id="modalPortfolioName" readonly>
+                    <input type="text" id="modalPortfolioName" placeholder="可手动输入或通过货号自动生成">
                 </div>
                 <div class="form-group level-portfolio">
                     <label>是否共享预算<span class="required-asterisk">*</span></label>
@@ -280,6 +299,8 @@
         <p>&copy; 2026 SITJOY | 内部使用</p>
     </footer>
 
+    <div id="timeoutToast" class="toast-notice"></div>
+
     <script>
         let adEditId = null;
         let adItemsCache = [];
@@ -291,6 +312,7 @@
         let subtypeOptions = [];
         const expandedPortfolios = new Set();
         const expandedCampaigns = new Set();
+        let toastTimer = null;
 
         function resetSearch() {
             document.getElementById('searchInput').value = '';
@@ -307,6 +329,26 @@
             el.style.background = isError ? '#ffecec' : '#f0fff0';
             el.style.color = isError ? '#a33' : '#2f6f2f';
             el.innerText = message;
+        }
+
+        function showTimeoutToast(message) {
+            const toast = document.getElementById('timeoutToast');
+            toast.textContent = message || '';
+            toast.style.display = 'block';
+            if (toastTimer) clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
+                toast.style.display = 'none';
+            }, 5000);
+        }
+
+        function showAdImportStatus(message, isError) {
+            const el = document.getElementById('adImportStatus');
+            if (!el) return;
+            el.textContent = message || '';
+            el.classList.add('show');
+            el.style.color = isError ? '#9b2226' : 'var(--morandi-ink)';
+            el.style.borderColor = isError ? 'rgba(201,29,29,0.35)' : 'rgba(74, 78, 87, 0.2)';
+            el.style.background = isError ? 'rgba(201,29,29,0.12)' : 'rgba(236,231,223,0.65)';
         }
 
         function resetAdStatus() {
@@ -353,14 +395,15 @@
                 body: JSON.stringify({ id, status })
             }).then(r => r.json()).then(data => {
                 if (data.status !== 'success') {
-                    showAdStatus(data.message || '状态更新失败', true);
+                    showTimeoutToast(data.message || '状态更新失败');
                     return;
                 }
                 target.status = status;
                 if (adItemsById[String(id)]) adItemsById[String(id)].status = status;
                 renderAdTable(adItemsCache || []);
+                showTimeoutToast(`状态已更新为：${status}`);
             }).catch(err => {
-                showAdStatus(`状态更新失败: ${err}`, true);
+                showTimeoutToast(`状态更新失败: ${err}`);
             });
         }
 
@@ -650,7 +693,13 @@
 
         function onPortfolioSkuChanged() {
             const skuId = document.getElementById('modalSkuFamily').value;
-            document.getElementById('modalPortfolioName').value = buildPortfolioNameBySkuId(skuId);
+            const input = document.getElementById('modalPortfolioName');
+            const built = buildPortfolioNameBySkuId(skuId);
+            if (!input) return;
+            if (!input.value.trim() || input.dataset.auto === '1') {
+                input.value = built;
+                input.dataset.auto = built ? '1' : '0';
+            }
         }
 
         function buildCampaignName() {
@@ -693,6 +742,7 @@
             document.getElementById('modalSkuFamily').value = '';
             renderSkuFamilySelect('');
             document.getElementById('modalPortfolioName').value = '';
+            document.getElementById('modalPortfolioName').dataset.auto = '1';
             document.getElementById('modalSharedBudgetSwitch').checked = true;
             onSharedBudgetSwitchChange();
             document.getElementById('modalStatusPortfolio').value = '启动';
@@ -735,7 +785,10 @@
                 document.getElementById('modalSharedBudgetSwitch').checked = (item.is_shared_budget === 1);
                 onSharedBudgetSwitchChange();
                 document.getElementById('modalStatusPortfolio').value = item.status || '启动';
-                onPortfolioSkuChanged();
+                const nameInput = document.getElementById('modalPortfolioName');
+                const autoName = buildPortfolioNameBySkuId(item.sku_family_id || '');
+                nameInput.value = item.name || '';
+                nameInput.dataset.auto = (autoName && (item.name || '') === autoName) ? '1' : '0';
             } else if (item.ad_level === 'campaign') {
                 document.getElementById('modalCampaignPortfolio').value = item.portfolio_id || '';
                 renderCampaignPortfolioSelect(item.portfolio_id || '');
@@ -780,7 +833,8 @@
                 payload.is_shared_budget = document.getElementById('modalSharedBudget').value;
                 payload.status = document.getElementById('modalStatusPortfolio').value;
                 const portfolioName = (document.getElementById('modalPortfolioName').value || '').trim();
-                if (!payload.sku_family_id || !payload.is_shared_budget || !payload.status || !portfolioName) {
+                payload.name = portfolioName;
+                if (!payload.is_shared_budget || !payload.status || !portfolioName) {
                     showAdStatus('请完整填写广告组合信息', true);
                     return;
                 }
@@ -838,11 +892,42 @@
                 if (data.status === 'success') {
                     closeAdModal();
                     Promise.all([loadAdList(), loadPortfolioOptions(), loadCampaignOptions()]);
+                    showTimeoutToast('保存成功');
                 } else {
                     showAdStatus(data.message || '操作失败', true);
                 }
             })
             .catch(err => showAdStatus('请求失败: ' + err, true));
+        }
+
+        function downloadAdTemplate() {
+            window.location.href = '/api/amazon-ad-template';
+        }
+
+        function triggerAdUpload() {
+            const input = document.getElementById('adUploadInput');
+            if (!input) return;
+            input.value = '';
+            input.click();
+        }
+
+        function uploadAdTemplate(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+            showAdImportStatus('上传处理中...', false);
+            fetch('/api/amazon-ad-import', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        showAdImportStatus(data.message || '导入失败', true);
+                        return;
+                    }
+                    const countError = Array.isArray(data.errors) ? data.errors.length : 0;
+                    const msg = `导入完成：新增 ${data.created || 0}，更新 ${data.updated || 0}，未变更 ${data.unchanged || 0}${countError ? `，失败 ${countError}` : ''}`;
+                    showAdImportStatus(msg, !!countError);
+                    Promise.all([loadAdList(), loadPortfolioOptions(), loadCampaignOptions()]);
+                })
+                .catch(err => showAdImportStatus('导入失败: ' + err, true));
         }
 
         function deleteAd(id) {
@@ -908,11 +993,25 @@
             const campaignName = selectedCampaign?.name || '';
             this.dataset.auto = campaignName && this.value.trim() === campaignName ? '1' : (this.value.trim() ? '0' : '1');
         });
+        document.getElementById('modalPortfolioName').addEventListener('input', function() {
+            this.dataset.auto = this.value.trim() ? '0' : '1';
+        });
+        document.getElementById('adUploadInput').addEventListener('change', function(e) {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+            uploadAdTemplate(file);
+        });
         document.getElementById('ad-modal').addEventListener('click', function(e) {
             if (e.target === this) closeAdModal();
         });
 
-        window.addEventListener('load', initData);
+        window.addEventListener('load', function() {
+            initData();
+            const params = new URLSearchParams(window.location.search || '');
+            if (params.get('openCreate') === '1') {
+                setTimeout(() => openCreateModal(), 120);
+            }
+        });
     </script>
 </body>
 <script src="/static/js/header.js"></script>

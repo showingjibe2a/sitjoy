@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>物流仓储管理 - 海外仓仓库管理</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .wh-import-status {
+            display:none;
+            font-size:0.82rem;
+            color:var(--morandi-ink);
+            padding:0.25rem 0.55rem;
+            border-radius:999px;
+            border:1px solid rgba(74, 78, 87, 0.2);
+            background:rgba(236,231,223,0.65);
+        }
+        .wh-import-status.show { display:inline-flex; align-items:center; }
+        .supplier-manage-bar {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+            padding: 0.45rem 0.6rem;
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.18);
+            backdrop-filter: blur(2px);
+        }
+        .material-type-add {
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            border: 1px solid rgba(155, 74, 74, 0.2);
+            background: #9b4a4a;
+            color: #fff;
+            font-size: 18px;
+            line-height: 1;
+            cursor: pointer;
+            box-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .material-type-radio {
+            background: transparent;
+            padding: 0;
+            margin: 0;
+            border: none;
+            display: inline-flex;
+            cursor: pointer;
+        }
+        .material-type-radio input {
+            display: none;
+        }
+        .material-type-radio span {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 0.55rem 0.95rem;
+            border-radius: 8px;
+            background: var(--morandi-mist);
+            color: var(--morandi-ink);
+            border: 1px solid var(--morandi-sand);
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            user-select: none;
+        }
+        .material-type-radio span:hover {
+            color: var(--morandi-ink);
+            background: rgba(207, 199, 189, 0.55);
+        }
+        .material-type-radio input:checked + span {
+            background: #9b4a4a;
+            color: #fff;
+            border-color: #9b4a4a;
+        }
+        .material-type-option {
+            background: transparent;
+            padding: 0;
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="site-header"></div>
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1.5rem;">
+            <h2>海外仓仓库管理</h2>
+            <p>维护仓库、供应商与区域信息</p>
+        </section>
+
+        <section class="pm-layout">
+            <div class="card pm-card">
+                <div class="pm-toolbar">
+                    <div class="pm-toolbar-actions">
+                        <div class="form-group pm-search" style="margin:0;">
+                            <span class="pm-search-title">搜索</span>
+                            <input type="text" id="searchInput" placeholder="搜索仓库/供应商/区域">
+                            <button class="btn-primary" onclick="loadList()">搜索</button>
+                            <button class="btn-secondary" onclick="resetSearch()">清空</button>
+                        </div>
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-secondary" onclick="downloadWarehouseTemplate()">下载模板</button>
+                        <button class="btn-secondary" onclick="triggerWarehouseUpload()">批量上传</button>
+                        <input type="file" id="warehouseUploadInput" accept=".xlsx" style="display:none;">
+                        <span id="warehouseImportStatus" class="wh-import-status"></span>
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-accent" onclick="openCreateModal()">新增</button>
+                    </div>
+                </div>
+                <div class="pm-toolbar" style="margin-top: 0.85rem;">
+                    <div class="pm-toolbar-actions">
+                        <span class="pm-search-title">海外仓供应商管理</span>
+                    </div>
+                </div>
+                <div class="supplier-manage-bar" id="supplierManageBar" style="margin-top: 0.6rem;">
+                    <button class="material-type-add" type="button" aria-label="新增供应商" onclick="openSupplierManageModal()">+</button>
+                </div>
+            </div>
+
+            <div>
+                <table class="pm-table" id="mainTable">
+                    <thead>
+                        <tr>
+                            <th>仓库名称</th>
+                            <th>供应商</th>
+                            <th>仓库简称</th>
+                            <th>区域</th>
+                            <th style="width:180px;">创建时间</th>
+                            <th style="width:160px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody><tr><td colspan="6" style="text-align:center;">加载中...</td></tr></tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div class="pm-modal" id="pm-modal">
+        <div class="pm-modal-content">
+            <h3 id="pm-modal-title" style="margin-top:0;">新增海外仓仓库</h3>
+            <div class="pm-form">
+                <div class="form-group pm-form-full">
+                    <label for="warehouseName">仓库名称<span class="required-asterisk">*</span></label>
+                    <input type="text" id="warehouseName" class="required-field" placeholder="默认格式：供应商 仓库简称">
+                </div>
+                <div class="form-group">
+                    <label for="supplierSelect">供应商<span class="required-asterisk">*</span></label>
+                    <select id="supplierSelect" class="required-field"></select>
+                </div>
+                <div class="form-group">
+                    <label for="warehouseShortName">仓库简称<span class="required-asterisk">*</span></label>
+                    <input type="text" id="warehouseShortName" class="required-field" placeholder="如：LAX1">
+                </div>
+                <div class="form-group">
+                    <label for="region">区域<span class="required-asterisk">*</span></label>
+                    <select id="region" class="required-field">
+                        <option value="">请选择区域</option>
+                        <option value="美西">美西</option>
+                        <option value="美中">美中</option>
+                        <option value="美东南">美东南</option>
+                        <option value="美东">美东</option>
+                    </select>
+                </div>
+            </div>
+            <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeModal()">取消</button>
+                <button class="btn-primary" onclick="saveFromModal()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="pm-modal" id="supplier-modal">
+        <div class="pm-modal-content">
+            <h3 id="supplierModalTitle" style="margin-top:0;">新增供应商</h3>
+            <div class="pm-form">
+                <div class="form-group pm-form-full">
+                    <label for="supplierName">供应商名称<span class="required-asterisk">*</span></label>
+                    <input type="text" id="supplierName" class="required-field" placeholder="请输入供应商名称">
+                </div>
+            </div>
+            <div id="supplierStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeSupplierModal()">取消</button>
+                <button class="btn-primary" onclick="saveSupplier()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
+
+    <script>
+        let editId = null;
+        let supplierEditId = null;
+        let activeSupplierFilterId = null;
+        let supplierOptions = [];
+        function showStatus(msg, err){ const el=document.getElementById('modalStatus'); el.style.display='block'; el.style.background=err?'#ffecec':'#f0fff0'; el.style.color=err?'#a33':'#2f6f2f'; el.innerText=msg; }
+        function resetStatus(){ const el=document.getElementById('modalStatus'); el.style.display='none'; el.innerText=''; }
+        function showSupplierStatus(msg, err){ const el=document.getElementById('supplierStatus'); el.style.display='block'; el.style.background=err?'#ffecec':'#f0fff0'; el.style.color=err?'#a33':'#2f6f2f'; el.innerText=msg; }
+        function resetSupplierStatus(){ const el=document.getElementById('supplierStatus'); el.style.display='none'; el.innerText=''; }
+        function showImportStatus(msg, err){ const el=document.getElementById('warehouseImportStatus'); el.textContent=msg||''; el.classList.add('show'); el.style.color=err?'#9b2226':'var(--morandi-ink)'; }
+        function resetSearch(){ document.getElementById('searchInput').value=''; loadList(); }
+        function fillSupplierSelect(selected){
+            const select = document.getElementById('supplierSelect');
+            select.innerHTML = '<option value="">请选择供应商</option>' + (supplierOptions||[]).map(x => `<option value="${x.id}">${x.supplier_name||''}</option>`).join('');
+            if(selected) select.value = String(selected);
+            if(window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(select);
+        }
+        function renderSupplierManageBar(){
+            const wrap = document.getElementById('supplierManageBar');
+            if(!wrap) return;
+            wrap.innerHTML = '';
+            const addBtn = document.createElement('button');
+            addBtn.className = 'material-type-add';
+            addBtn.type = 'button';
+            addBtn.setAttribute('aria-label', '新增供应商');
+            addBtn.innerText = '+';
+            addBtn.addEventListener('click', () => openSupplierManageModal());
+            wrap.appendChild(addBtn);
+
+            const allLabel = document.createElement('label');
+            allLabel.className = 'material-type-option material-type-radio';
+            allLabel.innerHTML = '<input type="radio" name="supplierFilter" value=""><span>全部</span>';
+            const allInput = allLabel.querySelector('input');
+            if(!activeSupplierFilterId){ allInput.checked = true; }
+            allInput.addEventListener('click', () => { activeSupplierFilterId = null; loadList(); });
+            wrap.appendChild(allLabel);
+
+            (supplierOptions || []).forEach(item => {
+                const label = document.createElement('label');
+                label.className = 'material-type-option material-type-radio';
+                label.innerHTML = `<input type="radio" name="supplierFilter" value="${item.id}"><span>${item.supplier_name || ''}</span>`;
+                const input = label.querySelector('input');
+                if(String(activeSupplierFilterId || '') === String(item.id)){ input.checked = true; }
+                input.addEventListener('click', () => { activeSupplierFilterId = item.id; loadList(); });
+                label.addEventListener('dblclick', () => openSupplierManageModal(item));
+                wrap.appendChild(label);
+            });
+        }
+        function getSupplierName(id){ const found=(supplierOptions||[]).find(x => String(x.id)===String(id)); return found?String(found.supplier_name||'').trim():''; }
+        function syncNameByParts(){
+            const supplierName = getSupplierName(document.getElementById('supplierSelect').value);
+            const shortName = document.getElementById('warehouseShortName').value.trim();
+            if(supplierName && shortName){ document.getElementById('warehouseName').value = `${supplierName} ${shortName}`; }
+        }
+        function syncPartsByName(){
+            const name = document.getElementById('warehouseName').value.trim();
+            const supplierId = document.getElementById('supplierSelect').value;
+            const supplierName = getSupplierName(supplierId);
+            if(!name) return;
+            if(supplierName && name.startsWith(supplierName + ' ')){
+                document.getElementById('warehouseShortName').value = name.slice(supplierName.length + 1).trim();
+                return;
+            }
+            const parts = name.split(' ').filter(Boolean);
+            if(parts.length >= 2){
+                if(!supplierId){
+                    const found = (supplierOptions||[]).find(x => String(x.supplier_name||'').trim() === parts[0]);
+                    if(found){
+                        document.getElementById('supplierSelect').value = String(found.id);
+                        if(window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(document.getElementById('supplierSelect'));
+                    }
+                }
+                document.getElementById('warehouseShortName').value = parts.slice(1).join(' ');
+            }
+        }
+        function openCreateModal(){
+            editId=null;
+            document.getElementById('pm-modal-title').innerText='新增海外仓仓库';
+            document.getElementById('warehouseName').value='';
+            document.getElementById('warehouseShortName').value='';
+            document.getElementById('supplierSelect').value='';
+            document.getElementById('region').value='';
+            if(window.refreshUniversalSingleSelect){ window.refreshUniversalSingleSelect('supplierSelect'); window.refreshUniversalSingleSelect('region'); }
+            resetStatus();
+            document.getElementById('pm-modal').classList.add('active');
+        }
+        function openEditModal(item){
+            editId=item.id;
+            document.getElementById('pm-modal-title').innerText='编辑海外仓仓库';
+            document.getElementById('warehouseName').value=item.warehouse_name||'';
+            document.getElementById('warehouseShortName').value=item.warehouse_short_name||'';
+            fillSupplierSelect(item.supplier_id || '');
+            document.getElementById('region').value=item.region||'';
+            if(window.refreshUniversalSingleSelect){ window.refreshUniversalSingleSelect('region'); }
+            resetStatus();
+            document.getElementById('pm-modal').classList.add('active');
+        }
+        function closeModal(){ document.getElementById('pm-modal').classList.remove('active'); editId=null; }
+        function openSupplierManageModal(item){
+            supplierEditId = item && item.id ? item.id : null;
+            document.getElementById('supplierModalTitle').innerText = supplierEditId ? '编辑供应商' : '新增供应商';
+            document.getElementById('supplierName').value = item && item.supplier_name ? item.supplier_name : '';
+            resetSupplierStatus();
+            document.getElementById('supplier-modal').classList.add('active');
+        }
+        function closeSupplierModal(){ document.getElementById('supplier-modal').classList.remove('active'); supplierEditId = null; }
+        function saveSupplier(){
+            const supplier_name = document.getElementById('supplierName').value.trim();
+            if(!supplier_name){ showSupplierStatus('请填写供应商名称', true); return; }
+            const payload = supplierEditId ? { id: supplierEditId, supplier_name } : { supplier_name };
+            const method = supplierEditId ? 'PUT' : 'POST';
+            fetch('/api/logistics-supplier', { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
+                .then(r=>r.json()).then(data=>{
+                    if(data.status!=='success'){ showSupplierStatus(data.message||'保存失败', true); return; }
+                    const createdOrEditedId = supplierEditId || data.id || '';
+                    loadSuppliers().then(() => {
+                        if(createdOrEditedId){
+                            activeSupplierFilterId = String(createdOrEditedId);
+                            renderSupplierManageBar();
+                            document.getElementById('supplierSelect').value = String(createdOrEditedId);
+                        }
+                        if(window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect('supplierSelect');
+                        syncNameByParts();
+                        closeSupplierModal();
+                        loadList();
+                    });
+                }).catch(err=>showSupplierStatus('请求失败: '+err, true));
+        }
+        function saveFromModal(){
+            const payload = {
+                warehouse_name: document.getElementById('warehouseName').value.trim(),
+                supplier_id: document.getElementById('supplierSelect').value,
+                warehouse_short_name: document.getElementById('warehouseShortName').value.trim(),
+                region: document.getElementById('region').value
+            };
+            if(!payload.supplier_id || !payload.region){ showStatus('请填写供应商和区域', true); return; }
+            if(!payload.warehouse_name && !payload.warehouse_short_name){ showStatus('请填写仓库名称或仓库简称', true); return; }
+            let method = 'POST';
+            if(editId){ payload.id = editId; method = 'PUT'; }
+            fetch('/api/logistics-warehouse', { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
+                .then(r=>r.json()).then(data=>{ if(data.status==='success'){ showStatus('保存成功', false); setTimeout(()=>{ closeModal(); loadList(); }, 300); } else { showStatus(data.message||'操作失败', true); } })
+                .catch(err=>showStatus('请求失败: '+err, true));
+        }
+        function removeItem(id){
+            if(!confirm('确认删除该仓库？')) return;
+            fetch('/api/logistics-warehouse', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id}) })
+                .then(r=>r.json()).then(data=>{ if(data.status==='success') loadList(); else alert(data.message||'删除失败'); })
+                .catch(err=>alert('删除失败: '+err));
+        }
+        function loadSuppliers(){
+            return fetch('/api/logistics-supplier').then(r=>r.json()).then(data=>{
+                supplierOptions = data.status==='success' ? (data.items||[]) : [];
+                const old = document.getElementById('supplierSelect').value;
+                fillSupplierSelect(old);
+                renderSupplierManageBar();
+            }).catch(()=>{ supplierOptions=[]; fillSupplierSelect(''); renderSupplierManageBar(); });
+        }
+        function loadList(){
+            const q = document.getElementById('searchInput').value.trim();
+            const params = [];
+            if(q){ params.push(`q=${encodeURIComponent(q)}`); }
+            if(activeSupplierFilterId){ params.push(`supplier_id=${encodeURIComponent(activeSupplierFilterId)}`); }
+            const url = params.length ? `/api/logistics-warehouse?${params.join('&')}` : '/api/logistics-warehouse';
+            fetch(url).then(r=>r.json()).then(data=>{
+                const tbody = document.querySelector('#mainTable tbody');
+                if(data.status!=='success'){ tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">${data.message||'加载失败'}</td></tr>`; return; }
+                const items = data.items || [];
+                if(!items.length){ tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无数据</td></tr>'; return; }
+                tbody.innerHTML = items.map(item => `<tr><td>${item.warehouse_name||''}</td><td>${item.supplier_name||''}</td><td>${item.warehouse_short_name||''}</td><td>${item.region||''}</td><td>${item.created_at?new Date(item.created_at).toLocaleString('zh-CN'):''}</td><td><div class="pm-actions"><button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button><button class="btn-danger" onclick='removeItem(${item.id})'>删除</button></div></td></tr>`).join('');
+            }).catch(err=>{ document.querySelector('#mainTable tbody').innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">加载失败: ${err}</td></tr>`; });
+        }
+        function downloadWarehouseTemplate(){ window.location.href = '/api/logistics-warehouse-template'; }
+        function triggerWarehouseUpload(){ const input=document.getElementById('warehouseUploadInput'); input.value=''; input.click(); }
+        function uploadWarehouseTemplate(file){
+            const fd = new FormData(); fd.append('file', file);
+            showImportStatus('导入处理中...', false);
+            fetch('/api/logistics-warehouse-import', { method:'POST', body: fd })
+                .then(r=>r.json()).then(data=>{
+                    if(data.status!=='success'){ showImportStatus(data.message || '导入失败', true); return; }
+                    const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
+                    showImportStatus(`导入完成：新增 ${data.created||0}，更新 ${data.updated||0}，未变更 ${data.unchanged||0}${errCount?`，失败 ${errCount}`:''}`, errCount>0);
+                    loadSuppliers().then(loadList);
+                }).catch(err=>showImportStatus('导入失败: '+err, true));
+        }
+        document.getElementById('warehouseName').addEventListener('input', syncPartsByName);
+        document.getElementById('warehouseShortName').addEventListener('input', syncNameByParts);
+        document.getElementById('supplierSelect').addEventListener('change', function(){ syncPartsByName(); syncNameByParts(); });
+        document.getElementById('warehouseUploadInput').addEventListener('change', function(e){ const file=e.target.files&&e.target.files[0]; if(file) uploadWarehouseTemplate(file); });
+        document.getElementById('searchInput').addEventListener('keydown', function(e){ if(e.key==='Enter') loadList(); });
+        document.getElementById('pm-modal').addEventListener('click', function(e){ if(e.target===this) closeModal(); });
+        document.getElementById('supplier-modal').addEventListener('click', function(e){ if(e.target===this) closeSupplierModal(); });
+        window.addEventListener('load', function(){ loadSuppliers().then(loadList); });
+    </script>
+</body>
+<script src="/static/js/header.js"></script>
+</html>

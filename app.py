@@ -86,6 +86,7 @@ class WSGIApp:
         self._amazon_keyword_ready = False
         self._sales_parent_ready = False
         self._sales_product_ready = False
+        self._logistics_ready = False
         self._todo_ready = False
         self._todo_schema_migrated = False
         self._todo_ensure_lock = threading.Lock()
@@ -529,6 +530,16 @@ class WSGIApp:
                 return self.serve_file('templates/certification_management.html', 'text/html', start_response)
             elif path == '/order-product-management':
                 return self.serve_file('templates/order_product_management.html', 'text/html', start_response)
+            elif path == '/logistics-factory-management':
+                return self.serve_file('templates/logistics_factory_management.html', 'text/html', start_response)
+            elif path == '/logistics-forwarder-management':
+                return self.serve_file('templates/logistics_forwarder_management.html', 'text/html', start_response)
+            elif path == '/logistics-warehouse-management':
+                return self.serve_file('templates/logistics_warehouse_management.html', 'text/html', start_response)
+            elif path == '/logistics-warehouse-inventory-management':
+                return self.serve_file('templates/logistics_warehouse_inventory_management.html', 'text/html', start_response)
+            elif path == '/logistics-in-transit-management':
+                return self.serve_file('templates/logistics_in_transit_management.html', 'text/html', start_response)
             elif path == '/shop-brand-management':
                 return self.serve_file('templates/shop_brand_management.html', 'text/html', start_response)
             elif path == '/amazon-account-health-management':
@@ -599,6 +610,10 @@ class WSGIApp:
                 return self.handle_amazon_ad_operation_type_api(environ, method, start_response)
             elif path == '/api/amazon-ad':
                 return self.handle_amazon_ad_api(environ, method, start_response)
+            elif path == '/api/amazon-ad-template':
+                return self.handle_amazon_ad_template_api(environ, method, start_response)
+            elif path == '/api/amazon-ad-import':
+                return self.handle_amazon_ad_import_api(environ, method, start_response)
             elif path == '/api/amazon-ad-delivery':
                 return self.handle_amazon_ad_delivery_api(environ, method, start_response)
             elif path == '/api/amazon-ad-product':
@@ -621,6 +636,30 @@ class WSGIApp:
                 return self.handle_order_product_template_api(environ, method, start_response)
             elif path == '/api/order-product-import':
                 return self.handle_order_product_import_api(environ, method, start_response)
+            elif path == '/api/order-product-carton-calc':
+                return self.handle_order_product_carton_calc_api(environ, method, start_response)
+            elif path == '/api/logistics-factory':
+                return self.handle_logistics_factory_api(environ, method, start_response)
+            elif path == '/api/logistics-forwarder':
+                return self.handle_logistics_forwarder_api(environ, method, start_response)
+            elif path == '/api/logistics-supplier':
+                return self.handle_logistics_supplier_api(environ, method, start_response)
+            elif path == '/api/logistics-warehouse':
+                return self.handle_logistics_warehouse_api(environ, method, start_response)
+            elif path == '/api/logistics-warehouse-template':
+                return self.handle_logistics_warehouse_template_api(environ, method, start_response)
+            elif path == '/api/logistics-warehouse-import':
+                return self.handle_logistics_warehouse_import_api(environ, method, start_response)
+            elif path == '/api/logistics-warehouse-inventory':
+                return self.handle_logistics_warehouse_inventory_api(environ, method, start_response)
+            elif path == '/api/logistics-warehouse-inventory-template':
+                return self.handle_logistics_warehouse_inventory_template_api(environ, method, start_response)
+            elif path == '/api/logistics-warehouse-inventory-import':
+                return self.handle_logistics_warehouse_inventory_import_api(environ, method, start_response)
+            elif path == '/api/logistics-in-transit':
+                return self.handle_logistics_in_transit_api(environ, method, start_response)
+            elif path == '/api/logistics-in-transit-doc-upload':
+                return self.handle_logistics_in_transit_doc_upload_api(environ, start_response)
             elif path == '/api/sales-product':
                 return self.handle_sales_product_api(environ, method, start_response)
             elif path == '/api/parent':
@@ -3230,6 +3269,21 @@ class WSGIApp:
         except Exception:
             return None
 
+    def _calc_carton_qty_by_40hq(self, package_length_in, package_width_in, package_height_in):
+        length_in = self._parse_float(package_length_in)
+        width_in = self._parse_float(package_width_in)
+        height_in = self._parse_float(package_height_in)
+        if length_in is None or width_in is None or height_in is None:
+            return None
+        if length_in <= 0 or width_in <= 0 or height_in <= 0:
+            return None
+        inch_to_meter = 0.0254
+        volume_m3 = length_in * inch_to_meter * width_in * inch_to_meter * height_in * inch_to_meter
+        if volume_m3 <= 0:
+            return None
+        qty = int(69.0 / volume_m3)
+        return qty if qty >= 0 else None
+
     def _sanitize_xlsx_bool_cells(self, file_bytes):
         if not file_bytes:
             return file_bytes
@@ -4069,7 +4123,7 @@ class WSGIApp:
         if not os.path.exists(target):
             os.makedirs(target, exist_ok=True)
         # Create standard subfolders for the SKU
-        for sub in ('源文件', '主图', 'A+', '说明书', '视频'):
+        for sub in ('源文件', '主图', 'A+', '说明书', '视频', '上传模板'):
             try:
                 sub_bytes = os.fsencode(sub)
             except Exception:
@@ -7152,6 +7206,71 @@ class WSGIApp:
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
 
+            def _record_create_adjustment(conn, ad_item_id):
+                self._ensure_amazon_ad_adjustment_table()
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT id FROM amazon_ad_operation_types
+                        WHERE name=%s
+                        LIMIT 1
+                        """,
+                        ('【新建】',)
+                    )
+                    op_row = cur.fetchone()
+                    operation_type_id = op_row.get('id') if op_row else None
+                    if not operation_type_id:
+                        cur.execute(
+                            """
+                            INSERT INTO amazon_ad_operation_types (name, apply_portfolio, apply_campaign, apply_group)
+                            VALUES (%s, 1, 1, 1)
+                            """,
+                            ('【新建】',)
+                        )
+                        operation_type_id = cur.lastrowid
+
+                    cur.execute(
+                        """
+                        SELECT id FROM amazon_ad_operation_reasons
+                        WHERE operation_type_id=%s AND reason_name=%s
+                        LIMIT 1
+                        """,
+                        (operation_type_id, '-')
+                    )
+                    reason_row = cur.fetchone()
+                    reason_id = reason_row.get('id') if reason_row else None
+                    if not reason_id:
+                        cur.execute(
+                            """
+                            INSERT INTO amazon_ad_operation_reasons (operation_type_id, reason_name)
+                            VALUES (%s, %s)
+                            """,
+                            (operation_type_id, '-')
+                        )
+                        reason_id = cur.lastrowid
+
+                    cur.execute(
+                        """
+                        INSERT INTO amazon_ad_adjustments (
+                            adjust_date, ad_item_id, operation_type_id, target_object,
+                            before_value, after_value, reason_id, start_time, end_time,
+                            impressions, clicks, cost, orders, sales, acos, cpc, ctr, cvr,
+                            attribution_checked, attribution_orders, attribution_sales, remark, is_quick_submit
+                        ) VALUES (
+                            %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s
+                        )
+                        """,
+                        (
+                            datetime.now().strftime('%Y-%m-%d %H:%M:%S'), ad_item_id, operation_type_id, '-',
+                            '-', '-', reason_id, None, None,
+                            None, None, None, None, None, None, None, None, None,
+                            0, None, None, '-', 1
+                        )
+                    )
+
             if method == 'GET':
                 keyword = query_params.get('q', [''])[0].strip()
                 level = (query_params.get('level', [''])[0] or '').strip().lower()
@@ -7199,11 +7318,12 @@ class WSGIApp:
                             sku_family_id = self._parse_int(data.get('sku_family_id'))
                             is_shared_budget = self._normalize_yes_no(data.get('is_shared_budget'))
                             status = self._normalize_ad_status(data.get('status'))
-                            if not sku_family_id or is_shared_budget is None or not status:
-                                return self.send_json({'status': 'error', 'message': 'Missing sku_family_id/is_shared_budget/status'}, start_response)
-                            portfolio_name = self._build_portfolio_name(conn, sku_family_id)
+                            custom_name = (data.get('name') or '').strip()
+                            if is_shared_budget is None or not status:
+                                return self.send_json({'status': 'error', 'message': 'Missing is_shared_budget/status'}, start_response)
+                            portfolio_name = custom_name or (self._build_portfolio_name(conn, sku_family_id) if sku_family_id else '')
                             if not portfolio_name:
-                                return self.send_json({'status': 'error', 'message': 'Unable to build portfolio name from sku'}, start_response)
+                                return self.send_json({'status': 'error', 'message': 'Missing name'}, start_response)
                             cur.execute(
                                 """
                                 INSERT INTO amazon_ad_items
@@ -7212,7 +7332,9 @@ class WSGIApp:
                                 """,
                                 (sku_family_id, portfolio_name, is_shared_budget, status)
                             )
-                            return self.send_json({'status': 'success', 'id': cur.lastrowid}, start_response)
+                            new_id = cur.lastrowid
+                            _record_create_adjustment(conn, new_id)
+                            return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
                         if ad_level == 'campaign':
                             portfolio_id = self._parse_int(data.get('portfolio_id'))
@@ -7238,7 +7360,9 @@ class WSGIApp:
                                 """,
                                 (portfolio_id, strategy_code, subtype_id, campaign_name, status, budget)
                             )
-                            return self.send_json({'status': 'success', 'id': cur.lastrowid}, start_response)
+                            new_id = cur.lastrowid
+                            _record_create_adjustment(conn, new_id)
+                            return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
                         campaign_id = self._parse_int(data.get('campaign_id'))
                         provided_portfolio_id = self._parse_int(data.get('portfolio_id'))
@@ -7260,7 +7384,9 @@ class WSGIApp:
                             """,
                             (campaign_id, campaign_portfolio_id, group_name, status)
                         )
-                        return self.send_json({'status': 'success', 'id': cur.lastrowid}, start_response)
+                        new_id = cur.lastrowid
+                        _record_create_adjustment(conn, new_id)
+                        return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
             if method == 'PUT':
                 data = self._read_json_body(environ)
@@ -7278,11 +7404,12 @@ class WSGIApp:
                             sku_family_id = self._parse_int(data.get('sku_family_id'))
                             is_shared_budget = self._normalize_yes_no(data.get('is_shared_budget'))
                             status = self._normalize_ad_status(data.get('status'))
-                            if not sku_family_id or is_shared_budget is None or not status:
-                                return self.send_json({'status': 'error', 'message': 'Missing sku_family_id/is_shared_budget/status'}, start_response)
-                            portfolio_name = self._build_portfolio_name(conn, sku_family_id)
+                            custom_name = (data.get('name') or '').strip()
+                            if is_shared_budget is None or not status:
+                                return self.send_json({'status': 'error', 'message': 'Missing is_shared_budget/status'}, start_response)
+                            portfolio_name = custom_name or (self._build_portfolio_name(conn, sku_family_id) if sku_family_id else '')
                             if not portfolio_name:
-                                return self.send_json({'status': 'error', 'message': 'Unable to build portfolio name from sku'}, start_response)
+                                return self.send_json({'status': 'error', 'message': 'Missing name'}, start_response)
                             cur.execute(
                                 """
                                 UPDATE amazon_ad_items
@@ -7380,6 +7507,352 @@ class WSGIApp:
             if pymysql and isinstance(e, pymysql.err.IntegrityError):
                 return self.send_json({'status': 'error', 'message': '广告记录已存在或被引用'}, start_response)
             print("Amazon ad API error: " + str(e))
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_amazon_ad_template_api(self, environ, method, start_response):
+        """Amazon 广告信息模板下载"""
+        try:
+            if method != 'GET':
+                return self.send_error(405, 'Method not allowed', start_response)
+            if Workbook is None:
+                return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
+
+            from openpyxl.styles import PatternFill, Font, Alignment
+            from openpyxl.worksheet.datavalidation import DataValidation
+            from openpyxl.utils import get_column_letter
+            from openpyxl.formatting.rule import FormulaRule
+
+            self._ensure_amazon_ad_tables()
+
+            sku_values = []
+            portfolio_values = []
+            campaign_values = []
+            subtype_values = []
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT pf.sku_family
+                        FROM product_families pf
+                        ORDER BY pf.sku_family
+                        """
+                    )
+                    sku_values = [str(r.get('sku_family') or '').strip() for r in (cur.fetchall() or []) if str(r.get('sku_family') or '').strip()]
+
+                    cur.execute("SELECT name FROM amazon_ad_items WHERE ad_level='portfolio' ORDER BY name")
+                    portfolio_values = [str(r.get('name') or '').strip() for r in (cur.fetchall() or []) if str(r.get('name') or '').strip()]
+
+                    cur.execute("SELECT name FROM amazon_ad_items WHERE ad_level='campaign' ORDER BY name")
+                    campaign_values = [str(r.get('name') or '').strip() for r in (cur.fetchall() or []) if str(r.get('name') or '').strip()]
+
+                    cur.execute(
+                        """
+                        SELECT ad_class, subtype_code
+                        FROM amazon_ad_subtypes
+                        ORDER BY id ASC
+                        """
+                    )
+                    subtype_values = [
+                        f"{str(r.get('ad_class') or '').strip()}-{str(r.get('subtype_code') or '').strip()}"
+                        for r in (cur.fetchall() or [])
+                        if str(r.get('ad_class') or '').strip() or str(r.get('subtype_code') or '').strip()
+                    ]
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = 'amazon_ad_items'
+            headers = [
+                '广告类型*', '状态*', '广告名称*',
+                '关联货号(仅Portfolio可填)', '是否共享预算(仅Portfolio必填)',
+                '归属广告组合(仅Campaign/Group必填)', '策略(仅Campaign必填)', '细分类(仅Campaign必填，格式 ad_class-subtype_code)',
+                '预算(仅Campaign选填)', '归属广告活动(仅Group必填)',
+                '备注(导入忽略)'
+            ]
+            ws.append(headers)
+            ws.append([
+                'portfolio', '启动', '示例-广告组合',
+                '', '是',
+                '', '', '',
+                '', '',
+                '示例行（请勿修改，此行不会导入）'
+            ])
+
+            for cell in ws[1]:
+                cell.fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
+                cell.font = Font(bold=True, color='2A2420')
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            for cell in ws[2]:
+                cell.fill = PatternFill(start_color='E8E8E8', end_color='E8E8E8', fill_type='solid')
+                cell.font = Font(italic=True, color='888888')
+
+            widths = [14, 10, 30, 22, 20, 30, 14, 28, 14, 30, 26]
+            for idx, width in enumerate(widths, start=1):
+                ws.column_dimensions[get_column_letter(idx)].width = width
+
+            options_ws = wb.create_sheet('options')
+            options_ws.sheet_state = 'hidden'
+            option_groups = {
+                'ad_level': ['portfolio', 'campaign', 'group'],
+                'status': ['启动', '暂停', '存档'],
+                'yes_no': ['是', '否'],
+                'strategy': ['BE', 'BD', 'PC'],
+                'sku': sku_values,
+                'portfolio': portfolio_values,
+                'campaign': campaign_values,
+                'subtype': subtype_values,
+            }
+
+            col_idx = 1
+            option_ranges = {}
+            for key, values in option_groups.items():
+                options_ws.cell(row=1, column=col_idx, value=key)
+                for r, val in enumerate(values, start=2):
+                    options_ws.cell(row=r, column=col_idx, value=val)
+                if values:
+                    letter = get_column_letter(col_idx)
+                    option_ranges[key] = f"=options!${letter}$2:${letter}${len(values)+1}"
+                col_idx += 1
+
+            def _add_validation(col_letter, formula, allow_blank=True):
+                if not formula:
+                    return
+                validation = DataValidation(type='list', formula1=formula, allow_blank=allow_blank)
+                ws.add_data_validation(validation)
+                for row_idx in range(3, 501):
+                    validation.add(f'{col_letter}{row_idx}')
+
+            _add_validation('A', option_ranges.get('ad_level'), allow_blank=False)
+            _add_validation('B', option_ranges.get('status'), allow_blank=False)
+            _add_validation('D', option_ranges.get('sku'))
+            _add_validation('E', option_ranges.get('yes_no'))
+            _add_validation('F', option_ranges.get('portfolio'))
+            _add_validation('G', option_ranges.get('strategy'))
+            _add_validation('H', option_ranges.get('subtype'))
+            _add_validation('J', option_ranges.get('campaign'))
+
+            gray_fill = PatternFill(start_color='E8E8E8', end_color='E8E8E8', fill_type='solid')
+            ws.conditional_formatting.add('D3:E500', FormulaRule(formula=['$A3<>"portfolio"'], stopIfTrue=False, fill=gray_fill))
+            ws.conditional_formatting.add('F3:F500', FormulaRule(formula=['$A3="portfolio"'], stopIfTrue=False, fill=gray_fill))
+            ws.conditional_formatting.add('G3:I500', FormulaRule(formula=['$A3<>"campaign"'], stopIfTrue=False, fill=gray_fill))
+            ws.conditional_formatting.add('J3:J500', FormulaRule(formula=['$A3<>"group"'], stopIfTrue=False, fill=gray_fill))
+
+            ws.freeze_panes = 'A3'
+            return self._send_excel_workbook(wb, 'amazon_ad_template.xlsx', start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_amazon_ad_import_api(self, environ, method, start_response):
+        """Amazon 广告信息批量导入"""
+        try:
+            if method != 'POST':
+                return self.send_error(405, 'Method not allowed', start_response)
+            if load_workbook is None:
+                return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
+
+            content_type = environ.get('CONTENT_TYPE', '')
+            if 'multipart/form-data' not in content_type:
+                return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
+
+            content_length = int(environ.get('CONTENT_LENGTH', 0) or 0)
+            raw_body = environ['wsgi.input'].read(content_length) if content_length > 0 else b''
+            env_copy = dict(environ)
+            env_copy['CONTENT_LENGTH'] = str(len(raw_body))
+            form = cgi.FieldStorage(fp=io.BytesIO(raw_body), environ=env_copy, keep_blank_values=True)
+            file_item = form['file'] if 'file' in form else None
+            if file_item is None or getattr(file_item, 'file', None) is None:
+                return self.send_json({'status': 'error', 'message': 'Missing file'}, start_response)
+            file_bytes = file_item.file.read() or b''
+            if not file_bytes:
+                return self.send_json({'status': 'error', 'message': 'Empty file'}, start_response)
+
+            wb = load_workbook(io.BytesIO(file_bytes))
+            ws = wb.active
+            headers = [str(cell.value or '').strip() for cell in ws[1]]
+            header_map = {name: idx for idx, name in enumerate(headers)}
+
+            def get_cell(row, name):
+                idx = header_map.get(name)
+                if idx is None or idx >= len(row):
+                    return None
+                return row[idx].value
+
+            required_headers = ['广告类型*', '状态*', '广告名称*']
+            for col_name in required_headers:
+                if col_name not in header_map:
+                    return self.send_json({'status': 'error', 'message': f'模板缺少列: {col_name}'}, start_response)
+
+            self._ensure_amazon_ad_tables()
+            created = 0
+            updated = 0
+            unchanged = 0
+            errors = []
+
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id, sku_family FROM product_families")
+                    sku_map = {str(r.get('sku_family') or '').strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
+
+                    cur.execute("SELECT id, name FROM amazon_ad_items WHERE ad_level='portfolio' ORDER BY id ASC")
+                    portfolio_rows = cur.fetchall() or []
+                    portfolio_map = {str(r.get('name') or '').strip(): int(r.get('id')) for r in portfolio_rows if str(r.get('name') or '').strip()}
+
+                    cur.execute("SELECT id, name, portfolio_id FROM amazon_ad_items WHERE ad_level='campaign' ORDER BY id ASC")
+                    campaign_rows = cur.fetchall() or []
+                    campaign_map = {str(r.get('name') or '').strip(): {'id': int(r.get('id')), 'portfolio_id': r.get('portfolio_id')} for r in campaign_rows if str(r.get('name') or '').strip() and r.get('id')}
+
+                    cur.execute("SELECT id, ad_class, subtype_code FROM amazon_ad_subtypes")
+                    subtype_rows = cur.fetchall() or []
+                    subtype_map = {
+                        f"{str(r.get('ad_class') or '').strip()}-{str(r.get('subtype_code') or '').strip()}": int(r.get('id'))
+                        for r in subtype_rows if r.get('id')
+                    }
+
+                for row_idx in range(2, ws.max_row + 1):
+                    if row_idx == 2:
+                        continue
+                    row = ws[row_idx]
+                    if not any(cell.value is not None and str(cell.value).strip() for cell in row):
+                        continue
+                    try:
+                        raw_level = str(get_cell(row, '广告类型*') or '').strip().lower()
+                        level_map = {'广告组合': 'portfolio', '广告活动': 'campaign', '广告组': 'group'}
+                        ad_level = level_map.get(raw_level, raw_level)
+                        if ad_level not in ('portfolio', 'campaign', 'group'):
+                            raise ValueError('广告类型仅支持 portfolio/campaign/group')
+
+                        status = self._normalize_ad_status(get_cell(row, '状态*'))
+                        name = str(get_cell(row, '广告名称*') or '').strip()
+                        if not status or not name:
+                            raise ValueError('状态和广告名称不能为空')
+
+                        if ad_level == 'portfolio':
+                            sku_family_text = str(get_cell(row, '关联货号(仅Portfolio可填)') or '').strip()
+                            sku_family_id = sku_map.get(sku_family_text) if sku_family_text else None
+                            shared_budget = self._normalize_yes_no(get_cell(row, '是否共享预算(仅Portfolio必填)'))
+                            if shared_budget is None:
+                                raise ValueError('Portfolio 的“是否共享预算”必填，且仅支持 是/否')
+
+                            with conn.cursor() as cur:
+                                cur.execute("SELECT id FROM amazon_ad_items WHERE ad_level='portfolio' AND name=%s LIMIT 1", (name,))
+                                existing = cur.fetchone()
+                                if existing:
+                                    cur.execute(
+                                        """
+                                        UPDATE amazon_ad_items
+                                        SET sku_family_id=%s, is_shared_budget=%s, status=%s
+                                        WHERE id=%s
+                                        """,
+                                        (sku_family_id, shared_budget, status, existing.get('id'))
+                                    )
+                                    if cur.rowcount:
+                                        updated += 1
+                                    else:
+                                        unchanged += 1
+                                else:
+                                    cur.execute(
+                                        """
+                                        INSERT INTO amazon_ad_items (ad_level, sku_family_id, name, is_shared_budget, status)
+                                        VALUES ('portfolio', %s, %s, %s, %s)
+                                        """,
+                                        (sku_family_id, name, shared_budget, status)
+                                    )
+                                    created += 1
+                                    portfolio_map[name] = int(cur.lastrowid)
+
+                        elif ad_level == 'campaign':
+                            portfolio_name = str(get_cell(row, '归属广告组合(仅Campaign/Group必填)') or '').strip()
+                            strategy_code = str(get_cell(row, '策略(仅Campaign必填)') or '').strip().upper()
+                            subtype_text = str(get_cell(row, '细分类(仅Campaign必填，格式 ad_class-subtype_code)') or '').strip()
+                            budget = self._parse_float(get_cell(row, '预算(仅Campaign选填)'))
+                            portfolio_id = portfolio_map.get(portfolio_name)
+                            subtype_id = subtype_map.get(subtype_text)
+                            if not portfolio_id:
+                                raise ValueError(f'无效归属广告组合: {portfolio_name}')
+                            if strategy_code not in ('BE', 'BD', 'PC'):
+                                raise ValueError('Campaign 的策略仅支持 BE/BD/PC')
+                            if not subtype_id:
+                                raise ValueError(f'无效细分类: {subtype_text}')
+
+                            with conn.cursor() as cur:
+                                cur.execute("SELECT id FROM amazon_ad_items WHERE ad_level='campaign' AND portfolio_id=%s AND name=%s LIMIT 1", (portfolio_id, name))
+                                existing = cur.fetchone()
+                                if existing:
+                                    cur.execute(
+                                        """
+                                        UPDATE amazon_ad_items
+                                        SET strategy_code=%s, subtype_id=%s, status=%s, budget=%s
+                                        WHERE id=%s
+                                        """,
+                                        (strategy_code, subtype_id, status, budget, existing.get('id'))
+                                    )
+                                    if cur.rowcount:
+                                        updated += 1
+                                    else:
+                                        unchanged += 1
+                                else:
+                                    cur.execute(
+                                        """
+                                        INSERT INTO amazon_ad_items (ad_level, portfolio_id, strategy_code, subtype_id, name, status, budget)
+                                        VALUES ('campaign', %s, %s, %s, %s, %s, %s)
+                                        """,
+                                        (portfolio_id, strategy_code, subtype_id, name, status, budget)
+                                    )
+                                    created += 1
+                                    campaign_map[name] = {'id': int(cur.lastrowid), 'portfolio_id': portfolio_id}
+
+                        else:
+                            portfolio_name = str(get_cell(row, '归属广告组合(仅Campaign/Group必填)') or '').strip()
+                            campaign_name = str(get_cell(row, '归属广告活动(仅Group必填)') or '').strip()
+                            campaign_info = campaign_map.get(campaign_name)
+                            if not campaign_info:
+                                raise ValueError(f'无效归属广告活动: {campaign_name}')
+                            campaign_id = int(campaign_info.get('id'))
+                            campaign_portfolio_id = campaign_info.get('portfolio_id')
+                            if portfolio_name:
+                                portfolio_id = portfolio_map.get(portfolio_name)
+                                if not portfolio_id:
+                                    raise ValueError(f'无效归属广告组合: {portfolio_name}')
+                                if str(portfolio_id) != str(campaign_portfolio_id or ''):
+                                    raise ValueError('Group 的归属广告组合与归属广告活动不一致')
+                            else:
+                                portfolio_id = campaign_portfolio_id
+
+                            with conn.cursor() as cur:
+                                cur.execute("SELECT id FROM amazon_ad_items WHERE ad_level='group' AND campaign_id=%s AND name=%s LIMIT 1", (campaign_id, name))
+                                existing = cur.fetchone()
+                                if existing:
+                                    cur.execute(
+                                        """
+                                        UPDATE amazon_ad_items
+                                        SET portfolio_id=%s, status=%s
+                                        WHERE id=%s
+                                        """,
+                                        (portfolio_id, status, existing.get('id'))
+                                    )
+                                    if cur.rowcount:
+                                        updated += 1
+                                    else:
+                                        unchanged += 1
+                                else:
+                                    cur.execute(
+                                        """
+                                        INSERT INTO amazon_ad_items (ad_level, campaign_id, portfolio_id, name, status)
+                                        VALUES ('group', %s, %s, %s, %s)
+                                        """,
+                                        (campaign_id, portfolio_id, name, status)
+                                    )
+                                    created += 1
+                    except Exception as row_error:
+                        errors.append({'row': row_idx, 'error': str(row_error)})
+
+            return self.send_json({
+                'status': 'success',
+                'created': created,
+                'updated': updated,
+                'unchanged': unchanged,
+                'errors': errors
+            }, start_response)
+        except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_amazon_ad_delivery_api(self, environ, method, start_response):
@@ -7780,10 +8253,10 @@ class WSGIApp:
                         SELECT t.id, t.name
                         FROM amazon_ad_subtype_operation_types so
                         JOIN amazon_ad_operation_types t ON t.id = so.operation_type_id
-                        WHERE so.subtype_id=%s AND t.{level_col}=1
+                        WHERE so.subtype_id=%s AND t.{level_col}=1 AND t.name<>%s
                         ORDER BY t.id ASC
                         """,
-                        (subtype_id,)
+                        (subtype_id, '【新建】')
                     )
                     ops = cur.fetchall() or []
                     if not ops:
@@ -8070,6 +8543,1304 @@ class WSGIApp:
             if pymysql and isinstance(e, pymysql.err.IntegrityError):
                 return self.send_json({'status': 'error', 'message': '广告调整记录保存失败，存在无效外键'}, start_response)
             print("Amazon ad adjustment API error: " + str(e))
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def _ensure_logistics_tables(self):
+        if self._logistics_ready:
+            return
+        self._ensure_order_product_tables()
+        create_factory_sql = """
+        CREATE TABLE IF NOT EXISTS logistics_factories (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            factory_name VARCHAR(255) NOT NULL UNIQUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+        create_forwarder_sql = """
+        CREATE TABLE IF NOT EXISTS logistics_forwarders (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            forwarder_name VARCHAR(255) NOT NULL UNIQUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+        create_supplier_sql = """
+        CREATE TABLE IF NOT EXISTS logistics_suppliers (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            supplier_name VARCHAR(255) NOT NULL UNIQUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+        create_warehouse_sql = """
+        CREATE TABLE IF NOT EXISTS logistics_overseas_warehouses (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            warehouse_name VARCHAR(255) NOT NULL,
+            supplier_id INT UNSIGNED NOT NULL,
+            warehouse_short_name VARCHAR(128) NOT NULL,
+            region VARCHAR(32) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_wh_name (warehouse_name),
+            UNIQUE KEY uniq_wh_supplier_short (supplier_id, warehouse_short_name),
+            INDEX idx_wh_region (region),
+            CONSTRAINT fk_wh_supplier FOREIGN KEY (supplier_id)
+                REFERENCES logistics_suppliers(id) ON DELETE RESTRICT
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+        create_inventory_sql = """
+        CREATE TABLE IF NOT EXISTS logistics_overseas_inventory (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            warehouse_id INT UNSIGNED NOT NULL,
+            order_product_id INT UNSIGNED NOT NULL,
+            available_qty INT NOT NULL DEFAULT 0,
+            in_transit_qty INT NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_wh_order (warehouse_id, order_product_id),
+            INDEX idx_inv_warehouse (warehouse_id),
+            INDEX idx_inv_order_product (order_product_id),
+            CONSTRAINT fk_inv_warehouse FOREIGN KEY (warehouse_id)
+                REFERENCES logistics_overseas_warehouses(id) ON DELETE CASCADE,
+            CONSTRAINT fk_inv_order_product FOREIGN KEY (order_product_id)
+                REFERENCES order_products(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+        create_transit_sql = """
+        CREATE TABLE IF NOT EXISTS logistics_in_transit (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            factory_id INT UNSIGNED NOT NULL,
+            factory_ship_date_initial DATE NULL,
+            factory_ship_date_previous DATE NULL,
+            factory_ship_date_latest DATE NULL,
+            forwarder_id INT UNSIGNED NOT NULL,
+            logistics_box_no VARCHAR(128) NOT NULL,
+            customs_clearance_no VARCHAR(128) NOT NULL,
+            etd_initial DATE NULL,
+            etd_previous DATE NULL,
+            etd_latest DATE NULL,
+            eta_initial DATE NULL,
+            eta_previous DATE NULL,
+            eta_latest DATE NULL,
+            arrival_port_date DATE NULL,
+            expected_warehouse_date DATE NULL,
+            listed_date DATE NULL,
+            shipping_company VARCHAR(128) NULL,
+            vessel_voyage VARCHAR(128) NULL,
+            bill_of_lading_no VARCHAR(128) NULL,
+            declaration_docs_provided TINYINT(1) NOT NULL DEFAULT 0,
+            inventory_registered TINYINT(1) NOT NULL DEFAULT 0,
+            clearance_docs_provided TINYINT(1) NOT NULL DEFAULT 0,
+            qty_verified TINYINT(1) NOT NULL DEFAULT 0,
+            port_of_loading VARCHAR(128) NULL,
+            port_of_destination VARCHAR(128) NULL,
+            destination_warehouse_id INT UNSIGNED NULL,
+            inbound_order_no VARCHAR(128) NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_transit_box_no (logistics_box_no),
+            UNIQUE KEY uniq_transit_customs_no (customs_clearance_no),
+            UNIQUE KEY uniq_transit_bl_no (bill_of_lading_no),
+            INDEX idx_transit_factory (factory_id),
+            INDEX idx_transit_forwarder (forwarder_id),
+            INDEX idx_transit_wh (destination_warehouse_id),
+            CONSTRAINT fk_transit_factory FOREIGN KEY (factory_id)
+                REFERENCES logistics_factories(id) ON DELETE RESTRICT,
+            CONSTRAINT fk_transit_forwarder FOREIGN KEY (forwarder_id)
+                REFERENCES logistics_forwarders(id) ON DELETE RESTRICT,
+            CONSTRAINT fk_transit_wh FOREIGN KEY (destination_warehouse_id)
+                REFERENCES logistics_overseas_warehouses(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+        create_transit_items_sql = """
+        CREATE TABLE IF NOT EXISTS logistics_in_transit_items (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            transit_id INT UNSIGNED NOT NULL,
+            order_product_id INT UNSIGNED NOT NULL,
+            shipped_qty INT NOT NULL DEFAULT 0,
+            listed_qty INT NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_transit_item (transit_id, order_product_id),
+            INDEX idx_transit_item_transit (transit_id),
+            INDEX idx_transit_item_order (order_product_id),
+            CONSTRAINT fk_transit_item_transit FOREIGN KEY (transit_id)
+                REFERENCES logistics_in_transit(id) ON DELETE CASCADE,
+            CONSTRAINT fk_transit_item_order FOREIGN KEY (order_product_id)
+                REFERENCES order_products(id) ON DELETE RESTRICT
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+        with self._get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(create_factory_sql)
+                cur.execute(create_forwarder_sql)
+                cur.execute(create_supplier_sql)
+                cur.execute(create_warehouse_sql)
+                cur.execute(create_inventory_sql)
+                cur.execute(create_transit_sql)
+                cur.execute(create_transit_items_sql)
+        self._logistics_ready = True
+
+    def _get_logistics_link_root_bytes(self):
+        return os.path.join(_RESOURCES_PARENT_BYTES, self._safe_fsencode('『物流仓储关联文件』'))
+
+    def _ensure_logistics_bl_folder(self, bill_of_lading_no):
+        name = (bill_of_lading_no or '').strip()
+        if not name:
+            return
+        root = self._get_logistics_link_root_bytes()
+        if not os.path.exists(root):
+            os.makedirs(root, exist_ok=True)
+        folder = os.path.join(root, self._safe_fsencode(name))
+        if not os.path.exists(folder):
+            os.makedirs(folder, exist_ok=True)
+        for sub in ('报关资料', '清关资料'):
+            sub_folder = os.path.join(folder, self._safe_fsencode(sub))
+            if not os.path.exists(sub_folder):
+                os.makedirs(sub_folder, exist_ok=True)
+
+    def _rename_logistics_bl_folder(self, old_no, new_no):
+        old_name = (old_no or '').strip()
+        new_name = (new_no or '').strip()
+        if not old_name or not new_name or old_name == new_name:
+            if new_name:
+                self._ensure_logistics_bl_folder(new_name)
+            return
+        root = self._get_logistics_link_root_bytes()
+        if not os.path.exists(root):
+            os.makedirs(root, exist_ok=True)
+        old_path = os.path.join(root, self._safe_fsencode(old_name))
+        new_path = os.path.join(root, self._safe_fsencode(new_name))
+        if os.path.exists(old_path):
+            if os.path.exists(new_path):
+                raise RuntimeError(f'目标提单目录已存在: {new_name}')
+            os.rename(old_path, new_path)
+        else:
+            self._ensure_logistics_bl_folder(new_name)
+
+    def handle_logistics_factory_api(self, environ, method, start_response):
+        try:
+            self._ensure_logistics_tables()
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            if method == 'GET':
+                keyword = (query_params.get('q', [''])[0] or '').strip()
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        if keyword:
+                            cur.execute(
+                                "SELECT id, factory_name, created_at, updated_at FROM logistics_factories WHERE factory_name LIKE %s ORDER BY id DESC",
+                                (f"%{keyword}%",)
+                            )
+                        else:
+                            cur.execute("SELECT id, factory_name, created_at, updated_at FROM logistics_factories ORDER BY id DESC")
+                        rows = cur.fetchall() or []
+                return self.send_json({'status': 'success', 'items': rows}, start_response)
+
+            data = self._read_json_body(environ)
+            if method == 'POST':
+                name = (data.get('factory_name') or '').strip()
+                if not name:
+                    return self.send_json({'status': 'error', 'message': 'Missing factory_name'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("INSERT INTO logistics_factories (factory_name) VALUES (%s)", (name,))
+                        new_id = cur.lastrowid
+                return self.send_json({'status': 'success', 'id': new_id}, start_response)
+
+            if method == 'PUT':
+                item_id = self._parse_int(data.get('id'))
+                name = (data.get('factory_name') or '').strip()
+                if not item_id or not name:
+                    return self.send_json({'status': 'error', 'message': 'Missing id or factory_name'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("UPDATE logistics_factories SET factory_name=%s WHERE id=%s", (name, item_id))
+                return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'DELETE':
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM logistics_factories WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_logistics_forwarder_api(self, environ, method, start_response):
+        try:
+            self._ensure_logistics_tables()
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            if method == 'GET':
+                keyword = (query_params.get('q', [''])[0] or '').strip()
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        if keyword:
+                            cur.execute(
+                                "SELECT id, forwarder_name, created_at, updated_at FROM logistics_forwarders WHERE forwarder_name LIKE %s ORDER BY id DESC",
+                                (f"%{keyword}%",)
+                            )
+                        else:
+                            cur.execute("SELECT id, forwarder_name, created_at, updated_at FROM logistics_forwarders ORDER BY id DESC")
+                        rows = cur.fetchall() or []
+                return self.send_json({'status': 'success', 'items': rows}, start_response)
+
+            data = self._read_json_body(environ)
+            if method == 'POST':
+                name = (data.get('forwarder_name') or '').strip()
+                if not name:
+                    return self.send_json({'status': 'error', 'message': 'Missing forwarder_name'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("INSERT INTO logistics_forwarders (forwarder_name) VALUES (%s)", (name,))
+                        new_id = cur.lastrowid
+                return self.send_json({'status': 'success', 'id': new_id}, start_response)
+
+            if method == 'PUT':
+                item_id = self._parse_int(data.get('id'))
+                name = (data.get('forwarder_name') or '').strip()
+                if not item_id or not name:
+                    return self.send_json({'status': 'error', 'message': 'Missing id or forwarder_name'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("UPDATE logistics_forwarders SET forwarder_name=%s WHERE id=%s", (name, item_id))
+                return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'DELETE':
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM logistics_forwarders WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_logistics_supplier_api(self, environ, method, start_response):
+        try:
+            self._ensure_logistics_tables()
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            if method == 'GET':
+                keyword = (query_params.get('q', [''])[0] or '').strip()
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        if keyword:
+                            cur.execute(
+                                "SELECT id, supplier_name, created_at, updated_at FROM logistics_suppliers WHERE supplier_name LIKE %s ORDER BY id DESC",
+                                (f"%{keyword}%",)
+                            )
+                        else:
+                            cur.execute("SELECT id, supplier_name, created_at, updated_at FROM logistics_suppliers ORDER BY id DESC")
+                        rows = cur.fetchall() or []
+                return self.send_json({'status': 'success', 'items': rows}, start_response)
+
+            data = self._read_json_body(environ)
+            if method == 'POST':
+                name = (data.get('supplier_name') or '').strip()
+                if not name:
+                    return self.send_json({'status': 'error', 'message': 'Missing supplier_name'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("INSERT INTO logistics_suppliers (supplier_name) VALUES (%s)", (name,))
+                        new_id = cur.lastrowid
+                return self.send_json({'status': 'success', 'id': new_id}, start_response)
+
+            if method == 'PUT':
+                item_id = self._parse_int(data.get('id'))
+                name = (data.get('supplier_name') or '').strip()
+                if not item_id or not name:
+                    return self.send_json({'status': 'error', 'message': 'Missing id or supplier_name'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("UPDATE logistics_suppliers SET supplier_name=%s WHERE id=%s", (name, item_id))
+                return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'DELETE':
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM logistics_suppliers WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_logistics_warehouse_api(self, environ, method, start_response):
+        try:
+            self._ensure_logistics_tables()
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            allowed_regions = {'美西', '美中', '美东南', '美东'}
+
+            def _resolve_name_short(conn, supplier_id, warehouse_name, warehouse_short_name):
+                with conn.cursor() as cur:
+                    cur.execute("SELECT supplier_name FROM logistics_suppliers WHERE id=%s", (supplier_id,))
+                    supplier = cur.fetchone()
+                if not supplier:
+                    return None, None, '供应商不存在'
+                supplier_name = (supplier.get('supplier_name') or '').strip()
+                name = (warehouse_name or '').strip()
+                short_name = (warehouse_short_name or '').strip()
+
+                if name and not short_name:
+                    if name.startswith(supplier_name + ' '):
+                        short_name = name[len(supplier_name) + 1:].strip()
+                    elif ' ' in name:
+                        parts = [p for p in name.split(' ') if p]
+                        if len(parts) >= 2:
+                            short_name = ' '.join(parts[1:]).strip() if parts[0] == supplier_name else parts[-1].strip()
+                if short_name and not name:
+                    name = f"{supplier_name} {short_name}".strip()
+
+                if not name or not short_name:
+                    return None, None, '仓库名称和仓库简称至少需要一个完整可推导'
+                return name, short_name, None
+
+            if method == 'GET':
+                action = (query_params.get('action', [''])[0] or '').strip().lower()
+                if action == 'options':
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute("SELECT id, supplier_name FROM logistics_suppliers ORDER BY id DESC")
+                            suppliers = cur.fetchall() or []
+                    return self.send_json({'status': 'success', 'suppliers': suppliers, 'regions': sorted(list(allowed_regions))}, start_response)
+
+                keyword = (query_params.get('q', [''])[0] or '').strip()
+                supplier_id = self._parse_int(query_params.get('supplier_id', [''])[0])
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        sql = """
+                            SELECT w.id, w.warehouse_name, w.supplier_id, w.warehouse_short_name, w.region,
+                                   w.created_at, w.updated_at, s.supplier_name
+                            FROM logistics_overseas_warehouses w
+                            JOIN logistics_suppliers s ON s.id = w.supplier_id
+                        """
+                        filters = []
+                        params = []
+                        if supplier_id:
+                            filters.append("w.supplier_id=%s")
+                            params.append(supplier_id)
+                        if keyword:
+                            like = f"%{keyword}%"
+                            filters.append("(w.warehouse_name LIKE %s OR s.supplier_name LIKE %s OR w.warehouse_short_name LIKE %s OR w.region LIKE %s)")
+                            params.extend([like, like, like, like])
+                        where_sql = (' WHERE ' + ' AND '.join(filters)) if filters else ''
+                        cur.execute(sql + where_sql + " ORDER BY w.id DESC", params)
+                        rows = cur.fetchall() or []
+                return self.send_json({'status': 'success', 'items': rows}, start_response)
+
+            data = self._read_json_body(environ)
+            if method in ('POST', 'PUT'):
+                supplier_id = self._parse_int(data.get('supplier_id'))
+                region = (data.get('region') or '').strip()
+                if not supplier_id or region not in allowed_regions:
+                    return self.send_json({'status': 'error', 'message': '供应商和区域必填且区域需为指定选项'}, start_response)
+                with self._get_db_connection() as conn:
+                    name, short_name, err = _resolve_name_short(conn, supplier_id, data.get('warehouse_name'), data.get('warehouse_short_name'))
+                    if err:
+                        return self.send_json({'status': 'error', 'message': err}, start_response)
+                    with conn.cursor() as cur:
+                        if method == 'POST':
+                            cur.execute(
+                                """
+                                INSERT INTO logistics_overseas_warehouses
+                                (warehouse_name, supplier_id, warehouse_short_name, region)
+                                VALUES (%s, %s, %s, %s)
+                                """,
+                                (name, supplier_id, short_name, region)
+                            )
+                            return self.send_json({'status': 'success', 'id': cur.lastrowid}, start_response)
+                        item_id = self._parse_int(data.get('id'))
+                        if not item_id:
+                            return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                        cur.execute(
+                            """
+                            UPDATE logistics_overseas_warehouses
+                            SET warehouse_name=%s, supplier_id=%s, warehouse_short_name=%s, region=%s
+                            WHERE id=%s
+                            """,
+                            (name, supplier_id, short_name, region, item_id)
+                        )
+                        return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'DELETE':
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM logistics_overseas_warehouses WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_logistics_warehouse_template_api(self, environ, method, start_response):
+        try:
+            if method != 'GET':
+                return self.send_error(405, 'Method not allowed', start_response)
+            if Workbook is None:
+                return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
+
+            self._ensure_logistics_tables()
+            from openpyxl.styles import PatternFill, Font, Alignment
+            from openpyxl.utils import get_column_letter
+            from openpyxl.worksheet.datavalidation import DataValidation
+
+            allowed_regions = ['美西', '美中', '美东南', '美东']
+            supplier_names = []
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT supplier_name FROM logistics_suppliers ORDER BY supplier_name ASC")
+                    supplier_names = [str(r.get('supplier_name') or '').strip() for r in (cur.fetchall() or []) if str(r.get('supplier_name') or '').strip()]
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = 'warehouse_import'
+            headers = ['仓库名称', '供应商', '仓库简称', '区域']
+            ws.append(headers)
+
+            for cell in ws[1]:
+                cell.fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
+                cell.font = Font(bold=True, color='2A2420')
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+            widths = [28, 22, 18, 12]
+            for idx, width in enumerate(widths, start=1):
+                ws.column_dimensions[get_column_letter(idx)].width = width
+            ws.freeze_panes = 'A2'
+
+            option_ws = wb.create_sheet('_options')
+            option_ws.append(['supplier_options', 'region_options'])
+            max_len = max(len(supplier_names), len(allowed_regions))
+            for i in range(max_len):
+                option_ws.append([
+                    supplier_names[i] if i < len(supplier_names) else None,
+                    allowed_regions[i] if i < len(allowed_regions) else None
+                ])
+            option_ws.sheet_state = 'hidden'
+
+            if supplier_names:
+                supplier_end_row = 1 + len(supplier_names)
+                dv_supplier = DataValidation(type='list', formula1=f"='_options'!$A$2:$A${supplier_end_row}", allow_blank=False)
+                ws.add_data_validation(dv_supplier)
+                dv_supplier.add('B2:B1000')
+
+            region_end_row = 1 + len(allowed_regions)
+            dv_region = DataValidation(type='list', formula1=f"='_options'!$B$2:$B${region_end_row}", allow_blank=False)
+            ws.add_data_validation(dv_region)
+            dv_region.add('D2:D1000')
+
+            return self._send_excel_workbook(wb, 'logistics_warehouse_template.xlsx', start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_logistics_warehouse_import_api(self, environ, method, start_response):
+        try:
+            if method != 'POST':
+                return self.send_error(405, 'Method not allowed', start_response)
+            if load_workbook is None:
+                return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
+
+            self._ensure_logistics_tables()
+            content_type = environ.get('CONTENT_TYPE', '')
+            if 'multipart/form-data' not in content_type:
+                return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
+
+            content_length = int(environ.get('CONTENT_LENGTH', 0) or 0)
+            raw_body = environ['wsgi.input'].read(content_length) if content_length > 0 else b''
+            env_copy = dict(environ)
+            env_copy['CONTENT_LENGTH'] = str(len(raw_body))
+            form = cgi.FieldStorage(fp=io.BytesIO(raw_body), environ=env_copy, keep_blank_values=True)
+            file_item = form['file'] if 'file' in form else None
+            if file_item is None or getattr(file_item, 'file', None) is None:
+                return self.send_json({'status': 'error', 'message': 'Missing file'}, start_response)
+
+            file_bytes = file_item.file.read() or b''
+            if not file_bytes:
+                return self.send_json({'status': 'error', 'message': 'Empty file'}, start_response)
+
+            wb = load_workbook(io.BytesIO(file_bytes))
+            ws = wb.active
+            headers = [str(cell.value or '').strip() for cell in ws[1]]
+            header_map = {name: idx for idx, name in enumerate(headers)}
+            required_headers = ['仓库名称', '供应商', '仓库简称', '区域']
+            for col_name in required_headers:
+                if col_name not in header_map:
+                    return self.send_json({'status': 'error', 'message': f'模板缺少列: {col_name}'}, start_response)
+
+            allowed_regions = {'美西', '美中', '美东南', '美东'}
+            created = 0
+            updated = 0
+            unchanged = 0
+            errors = []
+
+            def get_cell(row, name):
+                idx = header_map.get(name)
+                if idx is None or idx >= len(row):
+                    return None
+                return row[idx].value
+
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id, supplier_name FROM logistics_suppliers")
+                    supplier_rows = cur.fetchall() or []
+                    supplier_map = {str(r.get('supplier_name') or '').strip(): int(r.get('id')) for r in supplier_rows if r.get('id') and str(r.get('supplier_name') or '').strip()}
+
+                for row_idx in range(2, ws.max_row + 1):
+                    row = ws[row_idx]
+                    if not any(cell.value is not None and str(cell.value).strip() for cell in row):
+                        continue
+                    try:
+                        warehouse_name = str(get_cell(row, '仓库名称') or '').strip()
+                        supplier_name = str(get_cell(row, '供应商') or '').strip()
+                        warehouse_short_name = str(get_cell(row, '仓库简称') or '').strip()
+                        region = str(get_cell(row, '区域') or '').strip()
+
+                        if supplier_name not in supplier_map:
+                            raise ValueError(f'供应商必须为系统可选项: {supplier_name or "[空]"}')
+                        if region not in allowed_regions:
+                            raise ValueError(f'区域必须为系统可选项: {region or "[空]"}')
+
+                        supplier_id = supplier_map.get(supplier_name)
+                        if not warehouse_name and warehouse_short_name:
+                            warehouse_name = f"{supplier_name} {warehouse_short_name}".strip()
+                        if warehouse_name and not warehouse_short_name:
+                            if warehouse_name.startswith(supplier_name + ' '):
+                                warehouse_short_name = warehouse_name[len(supplier_name) + 1:].strip()
+                        if not warehouse_name or not warehouse_short_name:
+                            raise ValueError('仓库名称/仓库简称无效，至少需形成可推导的完整名称')
+
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "SELECT id, supplier_id, warehouse_short_name, region FROM logistics_overseas_warehouses WHERE warehouse_name=%s LIMIT 1",
+                                (warehouse_name,)
+                            )
+                            existing = cur.fetchone()
+                            if existing:
+                                if int(existing.get('supplier_id') or 0) == int(supplier_id or 0) and str(existing.get('warehouse_short_name') or '').strip() == warehouse_short_name and str(existing.get('region') or '').strip() == region:
+                                    unchanged += 1
+                                else:
+                                    cur.execute(
+                                        "UPDATE logistics_overseas_warehouses SET supplier_id=%s, warehouse_short_name=%s, region=%s WHERE id=%s",
+                                        (supplier_id, warehouse_short_name, region, existing.get('id'))
+                                    )
+                                    updated += 1
+                            else:
+                                cur.execute(
+                                    "INSERT INTO logistics_overseas_warehouses (warehouse_name, supplier_id, warehouse_short_name, region) VALUES (%s, %s, %s, %s)",
+                                    (warehouse_name, supplier_id, warehouse_short_name, region)
+                                )
+                                created += 1
+                    except Exception as row_error:
+                        errors.append({'row': row_idx, 'error': str(row_error)})
+
+            return self.send_json({
+                'status': 'success',
+                'created': created,
+                'updated': updated,
+                'unchanged': unchanged,
+                'errors': errors
+            }, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_logistics_warehouse_inventory_api(self, environ, method, start_response):
+        try:
+            self._ensure_logistics_tables()
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+
+            if method == 'GET':
+                action = (query_params.get('action', [''])[0] or '').strip().lower()
+                if action == 'options':
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute("SELECT id, warehouse_name FROM logistics_overseas_warehouses ORDER BY warehouse_name ASC")
+                            warehouses = cur.fetchall() or []
+                            cur.execute("SELECT id, sku FROM order_products ORDER BY sku ASC")
+                            order_products = cur.fetchall() or []
+                    return self.send_json({'status': 'success', 'warehouses': warehouses, 'order_products': order_products}, start_response)
+
+                keyword = (query_params.get('q', [''])[0] or '').strip()
+                warehouse_id = self._parse_int(query_params.get('warehouse_id', [''])[0])
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        sql = """
+                            SELECT i.id, i.warehouse_id, i.order_product_id, i.available_qty, i.in_transit_qty,
+                                   i.updated_at, w.warehouse_name, op.sku
+                            FROM logistics_overseas_inventory i
+                            JOIN logistics_overseas_warehouses w ON w.id = i.warehouse_id
+                            JOIN order_products op ON op.id = i.order_product_id
+                        """
+                        filters = []
+                        params = []
+                        if warehouse_id:
+                            filters.append("i.warehouse_id=%s")
+                            params.append(warehouse_id)
+                        if keyword:
+                            filters.append("(op.sku LIKE %s OR w.warehouse_name LIKE %s)")
+                            like = f"%{keyword}%"
+                            params.extend([like, like])
+                        where_sql = (' WHERE ' + ' AND '.join(filters)) if filters else ''
+                        cur.execute(sql + where_sql + " ORDER BY i.id DESC", params)
+                        rows = cur.fetchall() or []
+                return self.send_json({'status': 'success', 'items': rows}, start_response)
+
+            data = self._read_json_body(environ)
+            if method == 'POST':
+                warehouse_id = self._parse_int(data.get('warehouse_id'))
+                order_product_id = self._parse_int(data.get('order_product_id'))
+                available_qty = self._parse_int(data.get('available_qty'))
+                in_transit_qty = self._parse_int(data.get('in_transit_qty'))
+                if not warehouse_id or not order_product_id or available_qty is None:
+                    return self.send_json({'status': 'error', 'message': 'Missing warehouse_id/order_product_id/available_qty'}, start_response)
+                in_transit_qty = 0 if in_transit_qty is None else in_transit_qty
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            INSERT INTO logistics_overseas_inventory (warehouse_id, order_product_id, available_qty, in_transit_qty)
+                            VALUES (%s, %s, %s, %s)
+                            ON DUPLICATE KEY UPDATE
+                                available_qty=VALUES(available_qty),
+                                in_transit_qty=VALUES(in_transit_qty)
+                            """,
+                            (warehouse_id, order_product_id, available_qty, in_transit_qty)
+                        )
+                return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'PUT':
+                item_id = self._parse_int(data.get('id'))
+                warehouse_id = self._parse_int(data.get('warehouse_id'))
+                order_product_id = self._parse_int(data.get('order_product_id'))
+                available_qty = self._parse_int(data.get('available_qty'))
+                in_transit_qty = self._parse_int(data.get('in_transit_qty'))
+                if not item_id or not warehouse_id or not order_product_id or available_qty is None:
+                    return self.send_json({'status': 'error', 'message': 'Missing required fields'}, start_response)
+                in_transit_qty = 0 if in_transit_qty is None else in_transit_qty
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            UPDATE logistics_overseas_inventory
+                            SET warehouse_id=%s, order_product_id=%s, available_qty=%s, in_transit_qty=%s
+                            WHERE id=%s
+                            """,
+                            (warehouse_id, order_product_id, available_qty, in_transit_qty, item_id)
+                        )
+                return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'DELETE':
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM logistics_overseas_inventory WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_logistics_warehouse_inventory_template_api(self, environ, method, start_response):
+        try:
+            if method != 'GET':
+                return self.send_error(405, 'Method not allowed', start_response)
+            if Workbook is None:
+                return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
+
+            from openpyxl.styles import PatternFill, Font, Alignment
+            from openpyxl.utils import get_column_letter
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = 'warehouse_inventory'
+            headers = ['SKU', '仓库', '可用量', '在途数量']
+            ws.append(headers)
+            for cell in ws[1]:
+                cell.fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
+                cell.font = Font(bold=True, color='2A2420')
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            widths = [24, 28, 12, 12]
+            for idx, width in enumerate(widths, start=1):
+                ws.column_dimensions[get_column_letter(idx)].width = width
+            ws.freeze_panes = 'A2'
+            return self._send_excel_workbook(wb, 'warehouse_inventory_template.xlsx', start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_logistics_warehouse_inventory_import_api(self, environ, method, start_response):
+        try:
+            if method != 'POST':
+                return self.send_error(405, 'Method not allowed', start_response)
+            if load_workbook is None:
+                return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
+
+            content_type = environ.get('CONTENT_TYPE', '')
+            if 'multipart/form-data' not in content_type:
+                return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
+
+            content_length = int(environ.get('CONTENT_LENGTH', 0) or 0)
+            raw_body = environ['wsgi.input'].read(content_length) if content_length > 0 else b''
+            env_copy = dict(environ)
+            env_copy['CONTENT_LENGTH'] = str(len(raw_body))
+            form = cgi.FieldStorage(fp=io.BytesIO(raw_body), environ=env_copy, keep_blank_values=True)
+            file_item = form['file'] if 'file' in form else None
+            if file_item is None or getattr(file_item, 'file', None) is None:
+                return self.send_json({'status': 'error', 'message': 'Missing file'}, start_response)
+            file_bytes = file_item.file.read() or b''
+            if not file_bytes:
+                return self.send_json({'status': 'error', 'message': 'Empty file'}, start_response)
+
+            wb = load_workbook(io.BytesIO(file_bytes))
+            ws = wb.active
+            headers = [str(cell.value or '').strip() for cell in ws[1]]
+            header_map = {name: idx for idx, name in enumerate(headers)}
+            required_headers = ['SKU', '仓库', '可用量']
+            for col_name in required_headers:
+                if col_name not in header_map:
+                    return self.send_json({'status': 'error', 'message': f'模板缺少列: {col_name}'}, start_response)
+            has_in_transit_col = '在途数量' in header_map
+
+            def get_cell(row, name):
+                idx = header_map.get(name)
+                if idx is None or idx >= len(row):
+                    return None
+                return row[idx].value
+
+            self._ensure_logistics_tables()
+            created = 0
+            updated = 0
+            unchanged = 0
+            errors = []
+
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id, sku FROM order_products")
+                    sku_map = {str(r.get('sku') or '').strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
+                    cur.execute("SELECT id, warehouse_name FROM logistics_overseas_warehouses")
+                    wh_map = {str(r.get('warehouse_name') or '').strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
+
+                for row_idx in range(2, ws.max_row + 1):
+                    row = ws[row_idx]
+                    if not any(cell.value is not None and str(cell.value).strip() for cell in row):
+                        continue
+                    try:
+                        sku = str(get_cell(row, 'SKU') or '').strip()
+                        warehouse_name = str(get_cell(row, '仓库') or '').strip()
+                        available_qty = self._parse_int(get_cell(row, '可用量'))
+                        if not sku or not warehouse_name or available_qty is None:
+                            raise ValueError('SKU、仓库、可用量不能为空且可用量需为整数')
+                        order_product_id = sku_map.get(sku)
+                        warehouse_id = wh_map.get(warehouse_name)
+                        if not order_product_id:
+                            raise ValueError(f'未找到SKU: {sku}')
+                        if not warehouse_id:
+                            raise ValueError(f'未找到仓库: {warehouse_name}')
+
+                        in_transit_qty = None
+                        if has_in_transit_col:
+                            parsed_in_transit = self._parse_int(get_cell(row, '在途数量'))
+                            in_transit_qty = 0 if parsed_in_transit is None else parsed_in_transit
+
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "SELECT id, available_qty, in_transit_qty FROM logistics_overseas_inventory WHERE warehouse_id=%s AND order_product_id=%s LIMIT 1",
+                                (warehouse_id, order_product_id)
+                            )
+                            existing = cur.fetchone()
+                            if existing:
+                                if has_in_transit_col:
+                                    cur.execute(
+                                        "UPDATE logistics_overseas_inventory SET available_qty=%s, in_transit_qty=%s WHERE id=%s",
+                                        (available_qty, in_transit_qty, existing.get('id'))
+                                    )
+                                else:
+                                    cur.execute(
+                                        "UPDATE logistics_overseas_inventory SET available_qty=%s WHERE id=%s",
+                                        (available_qty, existing.get('id'))
+                                    )
+                                if cur.rowcount:
+                                    updated += 1
+                                else:
+                                    unchanged += 1
+                            else:
+                                cur.execute(
+                                    "INSERT INTO logistics_overseas_inventory (warehouse_id, order_product_id, available_qty, in_transit_qty) VALUES (%s, %s, %s, %s)",
+                                    (warehouse_id, order_product_id, available_qty, 0 if in_transit_qty is None else in_transit_qty)
+                                )
+                                created += 1
+                    except Exception as row_error:
+                        errors.append({'row': row_idx, 'error': str(row_error)})
+
+            return self.send_json({
+                'status': 'success',
+                'created': created,
+                'updated': updated,
+                'unchanged': unchanged,
+                'errors': errors
+            }, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_logistics_in_transit_api(self, environ, method, start_response):
+        try:
+            self._ensure_logistics_tables()
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            action = (query_params.get('action', [''])[0] or '').strip().lower()
+
+            def _to_bool_flag(value):
+                return 1 if str(value or '').strip().lower() in ('1', 'true', 'yes', 'on') else 0
+
+            def _normalize_date(value):
+                text = ('' if value is None else str(value)).strip()
+                if not text:
+                    return None
+                for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%Y-%m-%d %H:%M:%S'):
+                    try:
+                        return datetime.strptime(text, fmt).strftime('%Y-%m-%d')
+                    except Exception:
+                        continue
+                return None
+
+            if method == 'GET':
+                if action == 'options':
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute("SELECT id, factory_name FROM logistics_factories ORDER BY factory_name ASC")
+                            factories = cur.fetchall() or []
+                            cur.execute("SELECT id, forwarder_name FROM logistics_forwarders ORDER BY forwarder_name ASC")
+                            forwarders = cur.fetchall() or []
+                            cur.execute("SELECT id, warehouse_name FROM logistics_overseas_warehouses ORDER BY warehouse_name ASC")
+                            warehouses = cur.fetchall() or []
+                            cur.execute("SELECT id, sku FROM order_products ORDER BY sku ASC")
+                            order_products = cur.fetchall() or []
+                    return self.send_json({
+                        'status': 'success',
+                        'factories': factories,
+                        'forwarders': forwarders,
+                        'warehouses': warehouses,
+                        'order_products': order_products
+                    }, start_response)
+
+                item_id = self._parse_int(query_params.get('id', [''])[0])
+                keyword = (query_params.get('q', [''])[0] or '').strip()
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        sql = """
+                            SELECT t.id, t.factory_id, t.factory_ship_date_initial, t.factory_ship_date_previous, t.factory_ship_date_latest,
+                                   t.forwarder_id, t.logistics_box_no, t.customs_clearance_no,
+                                   t.etd_initial, t.etd_previous, t.etd_latest,
+                                   t.eta_initial, t.eta_previous, t.eta_latest,
+                                   t.arrival_port_date, t.expected_warehouse_date, t.listed_date,
+                                   t.shipping_company, t.vessel_voyage, t.bill_of_lading_no,
+                                   t.declaration_docs_provided, t.inventory_registered, t.clearance_docs_provided, t.qty_verified,
+                                   t.port_of_loading, t.port_of_destination, t.destination_warehouse_id, t.inbound_order_no,
+                                   t.created_at, t.updated_at,
+                                   f.factory_name, fw.forwarder_name, w.warehouse_name AS destination_warehouse_name
+                            FROM logistics_in_transit t
+                            LEFT JOIN logistics_factories f ON f.id = t.factory_id
+                            LEFT JOIN logistics_forwarders fw ON fw.id = t.forwarder_id
+                            LEFT JOIN logistics_overseas_warehouses w ON w.id = t.destination_warehouse_id
+                        """
+                        params = []
+                        filters = []
+                        if item_id:
+                            filters.append('t.id=%s')
+                            params.append(item_id)
+                        if keyword:
+                            filters.append('(t.logistics_box_no LIKE %s OR t.customs_clearance_no LIKE %s OR t.bill_of_lading_no LIKE %s OR fw.forwarder_name LIKE %s OR f.factory_name LIKE %s)')
+                            like = f"%{keyword}%"
+                            params.extend([like, like, like, like, like])
+                        where_sql = (' WHERE ' + ' AND '.join(filters)) if filters else ''
+                        cur.execute(sql + where_sql + ' ORDER BY t.id DESC', params)
+                        rows = cur.fetchall() or []
+
+                        if not rows:
+                            if item_id:
+                                return self.send_json({'status': 'success', 'item': None}, start_response)
+                            return self.send_json({'status': 'success', 'items': []}, start_response)
+
+                        ids = [int(r.get('id')) for r in rows if r.get('id')]
+                        placeholders = ','.join(['%s'] * len(ids))
+                        cur.execute(
+                            f"""
+                            SELECT li.transit_id, li.order_product_id, li.shipped_qty, li.listed_qty, op.sku
+                            FROM logistics_in_transit_items li
+                            JOIN order_products op ON op.id = li.order_product_id
+                            WHERE li.transit_id IN ({placeholders})
+                            ORDER BY li.transit_id, li.id
+                            """,
+                            ids
+                        )
+                        item_rows = cur.fetchall() or []
+                        item_map = {}
+                        for irow in item_rows:
+                            transit_id = int(irow.get('transit_id') or 0)
+                            if not transit_id:
+                                continue
+                            item_map.setdefault(transit_id, []).append({
+                                'order_product_id': irow.get('order_product_id'),
+                                'sku': irow.get('sku'),
+                                'shipped_qty': irow.get('shipped_qty'),
+                                'listed_qty': irow.get('listed_qty')
+                            })
+
+                        for row in rows:
+                            row['items'] = item_map.get(int(row.get('id') or 0), [])
+                            row['listed_status'] = '已上架' if row.get('listed_date') else '未上架'
+
+                if item_id:
+                    return self.send_json({'status': 'success', 'item': rows[0]}, start_response)
+                return self.send_json({'status': 'success', 'items': rows}, start_response)
+
+            data = self._read_json_body(environ)
+
+            if method == 'POST' and action == 'register_inventory':
+                item_id = self._parse_int(data.get('id'))
+                confirm = 1 if self._parse_int(data.get('confirm')) == 1 else 0
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT id, destination_warehouse_id, listed_date, declaration_docs_provided,
+                                   clearance_docs_provided, qty_verified, inventory_registered
+                            FROM logistics_in_transit WHERE id=%s LIMIT 1
+                            """,
+                            (item_id,)
+                        )
+                        transit = cur.fetchone()
+                        if not transit:
+                            return self.send_json({'status': 'error', 'message': '在途物流记录不存在'}, start_response)
+                        if not transit.get('destination_warehouse_id'):
+                            return self.send_json({'status': 'error', 'message': '请先填写目的仓库后再登记库存'}, start_response)
+                        if not transit.get('listed_date'):
+                            return self.send_json({'status': 'error', 'message': '未上架状态不能登记库存，请先填写上架日期'}, start_response)
+                        if not transit.get('declaration_docs_provided'):
+                            return self.send_json({'status': 'error', 'message': '请先上传报关资料'}, start_response)
+                        if not transit.get('clearance_docs_provided'):
+                            return self.send_json({'status': 'error', 'message': '请先上传清关资料'}, start_response)
+                        if not transit.get('qty_verified'):
+                            return self.send_json({'status': 'error', 'message': '请先完成数量核对'}, start_response)
+
+                        cur.execute(
+                            """
+                            SELECT li.order_product_id, op.sku, li.shipped_qty, li.listed_qty
+                            FROM logistics_in_transit_items li
+                            JOIN order_products op ON op.id = li.order_product_id
+                            WHERE li.transit_id=%s
+                            ORDER BY li.id
+                            """,
+                            (item_id,)
+                        )
+                        item_rows = cur.fetchall() or []
+                        if not item_rows:
+                            return self.send_json({'status': 'error', 'message': '请先维护SKU数量明细'}, start_response)
+
+                        warehouse_id = int(transit.get('destination_warehouse_id'))
+                        changes = []
+                        for row in item_rows:
+                            order_product_id = int(row.get('order_product_id') or 0)
+                            add_qty = self._parse_int(row.get('listed_qty'))
+                            if add_qty is None or add_qty <= 0:
+                                add_qty = self._parse_int(row.get('shipped_qty')) or 0
+                            if add_qty <= 0:
+                                continue
+                            cur.execute(
+                                "SELECT available_qty FROM logistics_overseas_inventory WHERE warehouse_id=%s AND order_product_id=%s LIMIT 1",
+                                (warehouse_id, order_product_id)
+                            )
+                            inv = cur.fetchone() or {}
+                            before_qty = self._parse_int(inv.get('available_qty')) or 0
+                            after_qty = before_qty + add_qty
+                            changes.append({
+                                'order_product_id': order_product_id,
+                                'sku': row.get('sku'),
+                                'before_qty': before_qty,
+                                'add_qty': add_qty,
+                                'after_qty': after_qty
+                            })
+
+                        if not changes:
+                            return self.send_json({'status': 'error', 'message': '没有可登记的SKU数量'}, start_response)
+
+                        if not confirm:
+                            return self.send_json({'status': 'success', 'changes': changes, 'confirmed': False}, start_response)
+
+                        for ch in changes:
+                            cur.execute(
+                                """
+                                INSERT INTO logistics_overseas_inventory (warehouse_id, order_product_id, available_qty, in_transit_qty)
+                                VALUES (%s, %s, %s, 0)
+                                ON DUPLICATE KEY UPDATE available_qty=VALUES(available_qty)
+                                """,
+                                (warehouse_id, ch['order_product_id'], ch['after_qty'])
+                            )
+                        cur.execute("UPDATE logistics_in_transit SET inventory_registered=1 WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success', 'changes': changes, 'confirmed': True}, start_response)
+
+            if method in ('POST', 'PUT'):
+                item_id = self._parse_int(data.get('id'))
+                factory_id = self._parse_int(data.get('factory_id'))
+                forwarder_id = self._parse_int(data.get('forwarder_id'))
+                logistics_box_no = (data.get('logistics_box_no') or '').strip()
+                customs_clearance_no = (data.get('customs_clearance_no') or '').strip()
+                if not factory_id or not forwarder_id or not logistics_box_no or not customs_clearance_no:
+                    return self.send_json({'status': 'error', 'message': '工厂、货代、物流箱号、清关单号为必填'}, start_response)
+
+                payload = {
+                    'factory_id': factory_id,
+                    'forwarder_id': forwarder_id,
+                    'logistics_box_no': logistics_box_no,
+                    'customs_clearance_no': customs_clearance_no,
+                    'arrival_port_date': _normalize_date(data.get('arrival_port_date')),
+                    'expected_warehouse_date': _normalize_date(data.get('expected_warehouse_date')),
+                    'listed_date': _normalize_date(data.get('listed_date')),
+                    'shipping_company': (data.get('shipping_company') or '').strip() or None,
+                    'vessel_voyage': (data.get('vessel_voyage') or '').strip() or None,
+                    'bill_of_lading_no': (data.get('bill_of_lading_no') or '').strip() or None,
+                    'declaration_docs_provided': _to_bool_flag(data.get('declaration_docs_provided')),
+                    'inventory_registered': _to_bool_flag(data.get('inventory_registered')),
+                    'clearance_docs_provided': _to_bool_flag(data.get('clearance_docs_provided')),
+                    'qty_verified': _to_bool_flag(data.get('qty_verified')),
+                    'port_of_loading': (data.get('port_of_loading') or '').strip() or None,
+                    'port_of_destination': (data.get('port_of_destination') or '').strip() or None,
+                    'destination_warehouse_id': self._parse_int(data.get('destination_warehouse_id')),
+                    'inbound_order_no': (data.get('inbound_order_no') or '').strip() or None
+                }
+
+                factory_ship_latest = _normalize_date(data.get('factory_ship_date_latest'))
+                etd_latest = _normalize_date(data.get('etd_latest'))
+                eta_latest = _normalize_date(data.get('eta_latest'))
+                items = data.get('items') if isinstance(data.get('items'), list) else []
+                normalized_items = []
+                for entry in items:
+                    if not isinstance(entry, dict):
+                        continue
+                    order_product_id = self._parse_int(entry.get('order_product_id'))
+                    if not order_product_id:
+                        continue
+                    normalized_items.append({
+                        'order_product_id': order_product_id,
+                        'shipped_qty': self._parse_int(entry.get('shipped_qty')) or 0,
+                        'listed_qty': self._parse_int(entry.get('listed_qty')) or 0
+                    })
+
+                with self._get_db_connection() as conn:
+                    old_bl = None
+                    if method == 'PUT':
+                        if not item_id:
+                            return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "SELECT id, bill_of_lading_no, factory_ship_date_initial, factory_ship_date_latest, etd_initial, etd_latest, eta_initial, eta_latest FROM logistics_in_transit WHERE id=%s LIMIT 1",
+                                (item_id,)
+                            )
+                            existing = cur.fetchone()
+                        if not existing:
+                            return self.send_json({'status': 'error', 'message': '在途物流记录不存在'}, start_response)
+                        old_bl = (existing.get('bill_of_lading_no') or '').strip() or None
+
+                        payload['factory_ship_date_initial'] = existing.get('factory_ship_date_initial') or factory_ship_latest
+                        payload['factory_ship_date_previous'] = existing.get('factory_ship_date_latest') if factory_ship_latest and str(existing.get('factory_ship_date_latest') or '') != str(factory_ship_latest) else existing.get('factory_ship_date_previous')
+                        payload['factory_ship_date_latest'] = factory_ship_latest or existing.get('factory_ship_date_latest')
+                        payload['etd_initial'] = existing.get('etd_initial') or etd_latest
+                        payload['etd_previous'] = existing.get('etd_latest') if etd_latest and str(existing.get('etd_latest') or '') != str(etd_latest) else existing.get('etd_previous')
+                        payload['etd_latest'] = etd_latest or existing.get('etd_latest')
+                        payload['eta_initial'] = existing.get('eta_initial') or eta_latest
+                        payload['eta_previous'] = existing.get('eta_latest') if eta_latest and str(existing.get('eta_latest') or '') != str(eta_latest) else existing.get('eta_previous')
+                        payload['eta_latest'] = eta_latest or existing.get('eta_latest')
+                    else:
+                        payload['factory_ship_date_initial'] = factory_ship_latest
+                        payload['factory_ship_date_previous'] = None
+                        payload['factory_ship_date_latest'] = factory_ship_latest
+                        payload['etd_initial'] = etd_latest
+                        payload['etd_previous'] = None
+                        payload['etd_latest'] = etd_latest
+                        payload['eta_initial'] = eta_latest
+                        payload['eta_previous'] = None
+                        payload['eta_latest'] = eta_latest
+
+                    with conn.cursor() as cur:
+                        if method == 'POST':
+                            cur.execute(
+                                """
+                                INSERT INTO logistics_in_transit (
+                                    factory_id, factory_ship_date_initial, factory_ship_date_previous, factory_ship_date_latest,
+                                    forwarder_id, logistics_box_no, customs_clearance_no,
+                                    etd_initial, etd_previous, etd_latest,
+                                    eta_initial, eta_previous, eta_latest,
+                                    arrival_port_date, expected_warehouse_date, listed_date,
+                                    shipping_company, vessel_voyage, bill_of_lading_no,
+                                    declaration_docs_provided, inventory_registered, clearance_docs_provided, qty_verified,
+                                    port_of_loading, port_of_destination, destination_warehouse_id, inbound_order_no
+                                ) VALUES (
+                                    %(factory_id)s, %(factory_ship_date_initial)s, %(factory_ship_date_previous)s, %(factory_ship_date_latest)s,
+                                    %(forwarder_id)s, %(logistics_box_no)s, %(customs_clearance_no)s,
+                                    %(etd_initial)s, %(etd_previous)s, %(etd_latest)s,
+                                    %(eta_initial)s, %(eta_previous)s, %(eta_latest)s,
+                                    %(arrival_port_date)s, %(expected_warehouse_date)s, %(listed_date)s,
+                                    %(shipping_company)s, %(vessel_voyage)s, %(bill_of_lading_no)s,
+                                    %(declaration_docs_provided)s, %(inventory_registered)s, %(clearance_docs_provided)s, %(qty_verified)s,
+                                    %(port_of_loading)s, %(port_of_destination)s, %(destination_warehouse_id)s, %(inbound_order_no)s
+                                )
+                                """,
+                                payload
+                            )
+                            item_id = cur.lastrowid
+                        else:
+                            payload['id'] = item_id
+                            cur.execute(
+                                """
+                                UPDATE logistics_in_transit
+                                SET factory_id=%(factory_id)s,
+                                    factory_ship_date_initial=%(factory_ship_date_initial)s,
+                                    factory_ship_date_previous=%(factory_ship_date_previous)s,
+                                    factory_ship_date_latest=%(factory_ship_date_latest)s,
+                                    forwarder_id=%(forwarder_id)s,
+                                    logistics_box_no=%(logistics_box_no)s,
+                                    customs_clearance_no=%(customs_clearance_no)s,
+                                    etd_initial=%(etd_initial)s,
+                                    etd_previous=%(etd_previous)s,
+                                    etd_latest=%(etd_latest)s,
+                                    eta_initial=%(eta_initial)s,
+                                    eta_previous=%(eta_previous)s,
+                                    eta_latest=%(eta_latest)s,
+                                    arrival_port_date=%(arrival_port_date)s,
+                                    expected_warehouse_date=%(expected_warehouse_date)s,
+                                    listed_date=%(listed_date)s,
+                                    shipping_company=%(shipping_company)s,
+                                    vessel_voyage=%(vessel_voyage)s,
+                                    bill_of_lading_no=%(bill_of_lading_no)s,
+                                    declaration_docs_provided=%(declaration_docs_provided)s,
+                                    inventory_registered=%(inventory_registered)s,
+                                    clearance_docs_provided=%(clearance_docs_provided)s,
+                                    qty_verified=%(qty_verified)s,
+                                    port_of_loading=%(port_of_loading)s,
+                                    port_of_destination=%(port_of_destination)s,
+                                    destination_warehouse_id=%(destination_warehouse_id)s,
+                                    inbound_order_no=%(inbound_order_no)s
+                                WHERE id=%(id)s
+                                """,
+                                payload
+                            )
+
+                        cur.execute("DELETE FROM logistics_in_transit_items WHERE transit_id=%s", (item_id,))
+                        if normalized_items:
+                            cur.executemany(
+                                "INSERT INTO logistics_in_transit_items (transit_id, order_product_id, shipped_qty, listed_qty) VALUES (%s, %s, %s, %s)",
+                                [(item_id, x['order_product_id'], x['shipped_qty'], x['listed_qty']) for x in normalized_items]
+                            )
+
+                new_bl = (payload.get('bill_of_lading_no') or '').strip()
+                if method == 'POST' and new_bl:
+                    self._ensure_logistics_bl_folder(new_bl)
+                elif method == 'PUT':
+                    old_bl = (old_bl or '').strip()
+                    if old_bl != new_bl:
+                        if new_bl:
+                            self._rename_logistics_bl_folder(old_bl, new_bl)
+                    elif new_bl:
+                        self._ensure_logistics_bl_folder(new_bl)
+
+                return self.send_json({'status': 'success', 'id': item_id}, start_response)
+
+            if method == 'DELETE':
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM logistics_in_transit WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except RuntimeError as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_logistics_in_transit_doc_upload_api(self, environ, start_response):
+        try:
+            if environ.get('REQUEST_METHOD') != 'POST':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+            self._ensure_logistics_tables()
+            content_type = environ.get('CONTENT_TYPE', '')
+            if 'multipart/form-data' not in content_type:
+                return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
+
+            form = cgi.FieldStorage(fp=environ['wsgi.input'], environ=environ, keep_blank_values=True)
+            transit_id = self._parse_int(form.getfirst('transit_id'))
+            doc_type = (form.getfirst('doc_type', '') or '').strip().lower()
+            if not transit_id:
+                return self.send_json({'status': 'error', 'message': 'Missing transit_id'}, start_response)
+            if doc_type not in ('declaration', 'clearance'):
+                return self.send_json({'status': 'error', 'message': 'Invalid doc_type'}, start_response)
+
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id, bill_of_lading_no FROM logistics_in_transit WHERE id=%s LIMIT 1", (transit_id,))
+                    item = cur.fetchone()
+            if not item:
+                return self.send_json({'status': 'error', 'message': '在途物流记录不存在'}, start_response)
+
+            bl_no = (item.get('bill_of_lading_no') or '').strip()
+            if not bl_no:
+                return self.send_json({'status': 'error', 'message': '请先填写提单号后再上传资料'}, start_response)
+
+            self._ensure_logistics_bl_folder(bl_no)
+            root = self._get_logistics_link_root_bytes()
+            parent = os.path.join(root, self._safe_fsencode(bl_no))
+            sub_name = '报关资料' if doc_type == 'declaration' else '清关资料'
+            target_dir = os.path.join(parent, self._safe_fsencode(sub_name))
+            os.makedirs(target_dir, exist_ok=True)
+
+            parts = getattr(form, 'list', []) or []
+            uploads = [p for p in parts if getattr(p, 'filename', None)]
+            if not uploads:
+                return self.send_json({'status': 'error', 'message': '未检测到上传文件'}, start_response)
+
+            saved = []
+            for up in uploads:
+                filename = os.path.basename(up.filename or '').strip()
+                if not filename:
+                    continue
+                content = up.file.read() if getattr(up, 'file', None) else b''
+                if content is None:
+                    content = b''
+                stem, ext = os.path.splitext(filename)
+                candidate = filename
+                idx = 1
+                while os.path.exists(os.path.join(target_dir, self._safe_fsencode(candidate))):
+                    candidate = f"{stem}_{idx}{ext}"
+                    idx += 1
+                with open(os.path.join(target_dir, self._safe_fsencode(candidate)), 'wb') as f:
+                    f.write(content)
+                saved.append(candidate)
+
+            if not saved:
+                return self.send_json({'status': 'error', 'message': '没有可保存的文件'}, start_response)
+
+            flag_column = 'declaration_docs_provided' if doc_type == 'declaration' else 'clearance_docs_provided'
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(f"UPDATE logistics_in_transit SET {flag_column}=1 WHERE id=%s", (transit_id,))
+
+            return self.send_json({'status': 'success', 'saved': saved}, start_response)
+        except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_material_api(self, environ, method, start_response):
@@ -8678,6 +10449,68 @@ class WSGIApp:
                 return self.send_json({'status': 'error', 'message': 'SKU 已存在'}, start_response)
             print("Order product API error: " + str(e))
             return self.send_error(500, str(e), start_response)
+
+    def handle_order_product_carton_calc_api(self, environ, method, start_response):
+        """批量根据包裹尺寸计算并更新装箱量（40HQ=69m³，向下取整）"""
+        try:
+            self._ensure_order_product_tables()
+            if method != 'POST':
+                return self.send_error(405, 'Method not allowed', start_response)
+
+            data = self._read_json_body(environ)
+            ids = data.get('ids') or []
+            normalized_ids = []
+            for value in ids:
+                parsed = self._parse_int(value)
+                if parsed and parsed not in normalized_ids:
+                    normalized_ids.append(parsed)
+            if not normalized_ids:
+                return self.send_json({'status': 'error', 'message': '请先选择需要更新的SKU'}, start_response)
+
+            placeholders = ','.join(['%s'] * len(normalized_ids))
+            updated = 0
+            skipped = 0
+            errors = []
+
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""
+                        SELECT id, sku, package_length_in, package_width_in, package_height_in
+                        FROM order_products
+                        WHERE id IN ({placeholders})
+                        """,
+                        normalized_ids
+                    )
+                    rows = cur.fetchall() or []
+
+                for row in rows:
+                    item_id = row.get('id')
+                    sku = row.get('sku') or ''
+                    carton_qty = self._calc_carton_qty_by_40hq(
+                        row.get('package_length_in'),
+                        row.get('package_width_in'),
+                        row.get('package_height_in')
+                    )
+                    if carton_qty is None:
+                        skipped += 1
+                        errors.append({'row': sku or item_id, 'error': '包裹长宽高缺失或无效，无法计算装箱量'})
+                        continue
+                    with conn.cursor() as cur:
+                        cur.execute("UPDATE order_products SET carton_qty=%s WHERE id=%s", (carton_qty, item_id))
+                        if cur.rowcount:
+                            updated += 1
+                        else:
+                            skipped += 1
+
+            return self.send_json({
+                'status': 'success',
+                'updated': updated,
+                'skipped': skipped,
+                'errors': errors
+            }, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_order_product_template_api(self, environ, method, start_response):
         """下单产品模板下载"""
@@ -9832,6 +11665,16 @@ class WSGIApp:
             
             from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
             from openpyxl.worksheet.datavalidation import DataValidation
+
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            selected_ids = []
+            for raw in query_params.get('ids', []):
+                for token in re.split(r'[,，;；\s]+', str(raw or '').strip()):
+                    if not token:
+                        continue
+                    item_id = self._parse_int(token)
+                    if item_id and item_id not in selected_ids:
+                        selected_ids.append(item_id)
             
             self._ensure_sales_product_tables()
             wb = Workbook()
@@ -9857,6 +11700,84 @@ class WSGIApp:
                     _load_sales_template_options,
                     ttl_seconds=180
                 )
+
+                export_rows = []
+                if selected_ids:
+                    placeholders = ','.join(['%s'] * len(selected_ids))
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            f"""
+                            SELECT sp.id, sp.product_status, sh.shop_name, pa.parent_code, pa.sku_marker,
+                                   sp.platform_sku, sp.child_code, sp.dachene_yuncang_no,
+                                   pf.sku_family, sp.spec_name, sp.fabric,
+                                   sp.sales_title, sp.sales_intro,
+                                   sp.sales_bullet_1, sp.sales_bullet_2, sp.sales_bullet_3, sp.sales_bullet_4, sp.sales_bullet_5,
+                                   sp.sale_price_usd, sp.warehouse_cost_usd, sp.last_mile_cost_usd,
+                                   sp.finished_length_in, sp.finished_width_in, sp.finished_height_in,
+                                   sp.net_weight_lbs, sp.package_length_in, sp.package_width_in, sp.package_height_in, sp.gross_weight_lbs
+                            FROM sales_products sp
+                            LEFT JOIN shops sh ON sh.id = sp.shop_id
+                            LEFT JOIN sales_parents pa ON pa.id = sp.parent_id
+                            LEFT JOIN product_families pf ON pf.id = sp.sku_family_id
+                            WHERE sp.id IN ({placeholders})
+                            ORDER BY sp.id DESC
+                            """,
+                            selected_ids
+                        )
+                        rows = cur.fetchall() or []
+                        cur.execute(
+                            f"""
+                            SELECT l.sales_product_id, op.sku, l.quantity
+                            FROM sales_product_order_links l
+                            JOIN order_products op ON op.id = l.order_product_id
+                            WHERE l.sales_product_id IN ({placeholders})
+                            ORDER BY l.sales_product_id, op.sku
+                            """,
+                            selected_ids
+                        )
+                        link_rows = cur.fetchall() or []
+                    link_map = {}
+                    for link in link_rows:
+                        sp_id = int(link.get('sales_product_id') or 0)
+                        if not sp_id:
+                            continue
+                        sku = str(link.get('sku') or '').strip()
+                        qty = int(link.get('quantity') or 1)
+                        if not sku:
+                            continue
+                        link_map.setdefault(sp_id, []).append(f"{sku}*{qty}")
+                    for row in rows:
+                        export_rows.append([
+                            {'enabled': '启用', 'retained': '留用', 'discarded': '弃用'}.get(str(row.get('product_status') or '').strip(), '启用'),
+                            row.get('shop_name') or '',
+                            row.get('parent_code') or '',
+                            row.get('sku_marker') or '',
+                            row.get('platform_sku') or '',
+                            row.get('child_code') or '',
+                            row.get('dachene_yuncang_no') or '',
+                            row.get('sku_family') or '',
+                            row.get('spec_name') or '',
+                            row.get('fabric') or '',
+                            row.get('sales_title') or '',
+                            row.get('sales_intro') or '',
+                            row.get('sales_bullet_1') or '',
+                            row.get('sales_bullet_2') or '',
+                            row.get('sales_bullet_3') or '',
+                            row.get('sales_bullet_4') or '',
+                            row.get('sales_bullet_5') or '',
+                            '\n'.join(link_map.get(int(row.get('id') or 0), [])),
+                            row.get('sale_price_usd') or '',
+                            row.get('warehouse_cost_usd') or '',
+                            row.get('last_mile_cost_usd') or '',
+                            row.get('finished_length_in') or '',
+                            row.get('finished_width_in') or '',
+                            row.get('finished_height_in') or '',
+                            row.get('net_weight_lbs') or '',
+                            row.get('package_length_in') or '',
+                            row.get('package_width_in') or '',
+                            row.get('package_height_in') or '',
+                            row.get('gross_weight_lbs') or ''
+                        ])
             
             # 第1行：模块标题（合并单元格）
             section_headers = [
@@ -9917,38 +11838,41 @@ class WSGIApp:
                 cell.alignment = header_alignment
                 cell.border = thin_border
             
-            # 第3行：示例行
-            ws.append([
-                '启用',
-                '',
-                'PARENT-001',
-                'MS01-MARKER',
-                'MS01-Brown-1A',
-                'CHILD-001',
-                'DACHENE-001',
-                'MS01',
-                'A款',
-                '棕色/Brown',
-                'Recliner Sofa for Living Room',
-                'Comfortable modern recliner with durable fabric and easy assembly.',
-                'Ergonomic seating support',
-                'Soft-touch premium fabric',
-                'Stable reinforced frame',
-                'Easy assembly in minutes',
-                'Suitable for living room use',
-                'MS01A-Brown*2\nMS01B-Gray',
-                199.99,
-                '',
-                '',
-                '', '', '', '',
-                '', '', '', ''
-            ])
-            
-            example_fill = PatternFill(start_color='E8E8E8', end_color='E8E8E8', fill_type='solid')
-            example_font = Font(italic=True, color='888888')
-            for cell in ws[3]:
-                cell.fill = example_fill
-                cell.font = example_font
+            # 第3行：示例行（有勾选导出时改为导出数据）
+            if export_rows:
+                for row in export_rows:
+                    ws.append(row)
+            else:
+                ws.append([
+                    '启用',
+                    '',
+                    'PARENT-001',
+                    'MS01-MARKER',
+                    'MS01-Brown-1A',
+                    'CHILD-001',
+                    'DACHENE-001',
+                    'MS01',
+                    'A款',
+                    '棕色/Brown',
+                    'Recliner Sofa for Living Room',
+                    'Comfortable modern recliner with durable fabric and easy assembly.',
+                    'Ergonomic seating support',
+                    'Soft-touch premium fabric',
+                    'Stable reinforced frame',
+                    'Easy assembly in minutes',
+                    'Suitable for living room use',
+                    'MS01A-Brown*2\nMS01B-Gray',
+                    199.99,
+                    '',
+                    '',
+                    '', '', '', '',
+                    '', '', '', ''
+                ])
+                example_fill = PatternFill(start_color='E8E8E8', end_color='E8E8E8', fill_type='solid')
+                example_font = Font(italic=True, color='888888')
+                for cell in ws[3]:
+                    cell.fill = example_fill
+                    cell.font = example_font
             
             # 添加数据验证
             status_validation = DataValidation(type='list', formula1='"启用,留用,弃用"', allow_blank=True)

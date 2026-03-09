@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>物流仓储管理 - 在途物流管理</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .triple-date {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.5rem;
+        }
+        .triple-date label { font-size: 0.82rem; color: var(--morandi-slate); }
+        .triple-date .slot { display: grid; gap: 0.28rem; }
+        .tiny-tag { font-size: 0.78rem; color: var(--morandi-slate); }
+        .transit-item-box {
+            border: 1px solid rgba(207, 199, 189, 0.55);
+            border-radius: 10px;
+            padding: 0.7rem;
+            background: rgba(255,255,255,0.7);
+            display: grid;
+            gap: 0.55rem;
+        }
+        .transit-item-row {
+            display: grid;
+            grid-template-columns: minmax(220px, 1fr) 110px 110px 64px;
+            gap: 0.45rem;
+            align-items: center;
+        }
+        .workflow-note {
+            font-size: 0.84rem;
+            color: var(--morandi-slate);
+        }
+        .status-tools {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.4rem;
+        }
+    </style>
+</head>
+<body>
+    <div id="site-header"></div>
+    <div class="container">
+        <section class="hero" style="margin-bottom:1.5rem;">
+            <h2>在途物流管理</h2>
+            <p>管理在途物流节点、提单信息与SKU到货上架数量</p>
+        </section>
+
+        <section class="pm-layout">
+            <div class="card pm-card">
+                <div class="pm-toolbar">
+                    <div class="pm-toolbar-actions">
+                        <div class="form-group pm-search" style="margin:0;">
+                            <span class="pm-search-title">搜索</span>
+                            <input type="text" id="searchInput" placeholder="搜索箱号/清关单号/提单号/工厂/货代">
+                            <button class="btn-primary" onclick="loadList()">搜索</button>
+                            <button class="btn-secondary" onclick="resetSearch()">清空</button>
+                        </div>
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-accent" onclick="openCreateModal()">新增</button>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <table class="pm-table" id="mainTable">
+                    <thead>
+                        <tr>
+                            <th>上架状态</th>
+                            <th>物流箱号</th>
+                            <th>清关单号</th>
+                            <th>提单号</th>
+                            <th>工厂</th>
+                            <th>货代</th>
+                            <th>目的仓库</th>
+                            <th>ETA(最新)</th>
+                            <th style="width:160px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody><tr><td colspan="9" style="text-align:center;">加载中...</td></tr></tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div class="pm-modal" id="pm-modal">
+        <div class="pm-modal-content pm-modal-content--wide">
+            <h3 id="pm-modal-title" style="margin-top:0;">新增在途物流</h3>
+            <div class="pm-form">
+                <div class="pm-section pm-form-full">
+                    <h4>状态</h4>
+                    <div class="pm-section-body pm-form">
+                        <div class="form-group">
+                            <label for="listedStatus">是否已上架<span class="required-asterisk">*</span></label>
+                            <select id="listedStatus" class="required-field"><option value="0">否</option><option value="1">是</option></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="listedDate">上架日期</label>
+                            <input type="date" id="listedDate" class="optional-field" data-date-input="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="qtyVerified">数量是否已核对</label>
+                            <select id="qtyVerified" class="optional-field"><option value="0">否</option><option value="1">是</option></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="inventoryRegistered">库存是否已登记</label>
+                            <select id="inventoryRegistered" class="optional-field"><option value="0">否</option><option value="1">是</option></select>
+                        </div>
+                        <div class="form-group pm-form-full">
+                            <label>资料与流程</label>
+                            <div class="status-tools">
+                                <button type="button" class="btn-secondary" onclick="triggerUpload('declaration')">上传报关资料</button>
+                                <button type="button" class="btn-secondary" onclick="triggerUpload('clearance')">上传清关资料</button>
+                                <button type="button" class="btn-secondary" onclick="markQtyVerified()">核对SKU数量</button>
+                                <button type="button" class="btn-primary" onclick="registerInventoryNow()">登记库存</button>
+                            </div>
+                            <div class="workflow-note">登记库存前必须完成: 已上架、报关资料、清关资料、数量核对。</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pm-section pm-form-full">
+                    <h4>工厂及发货SKU与数量</h4>
+                    <div class="pm-section-body pm-form">
+                        <div class="form-group">
+                            <label for="factoryId">工厂<span class="required-asterisk">*</span></label>
+                            <select id="factoryId" class="required-field"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="logisticsBoxNo">物流箱号<span class="required-asterisk">*</span></label>
+                            <input type="text" id="logisticsBoxNo" class="required-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="customsClearanceNo">清关单号<span class="required-asterisk">*</span></label>
+                            <input type="text" id="customsClearanceNo" class="required-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="billOfLadingNo">提单号</label>
+                            <input type="text" id="billOfLadingNo" class="optional-field" placeholder="更新会自动同步提单号目录">
+                        </div>
+                        <div class="form-group pm-form-full">
+                            <label>工厂发货日期（最初/上次/最新）</label>
+                            <div class="triple-date">
+                                <div class="slot"><label>最初</label><input type="date" id="factoryShipDateInitial" class="optional-field" data-date-input="1" disabled></div>
+                                <div class="slot"><label>上次</label><input type="date" id="factoryShipDatePrevious" class="optional-field" data-date-input="1" disabled></div>
+                                <div class="slot"><label>最新</label><input type="date" id="factoryShipDateLatest" class="optional-field" data-date-input="1"></div>
+                            </div>
+                        </div>
+                        <div class="form-group pm-form-full">
+                            <label>内容物及数量（发货/实际上架）</label>
+                            <div class="transit-item-box">
+                                <div class="transit-item-row tiny-tag"><span>下单SKU</span><span>发货数量</span><span>上架数量</span><span></span></div>
+                                <div id="transitItems"></div>
+                                <button type="button" class="btn-secondary" onclick="addTransitItemRow()">新增SKU明细</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pm-section pm-form-full">
+                    <h4>货代及物流情况</h4>
+                    <div class="pm-section-body pm-form">
+                        <div class="form-group">
+                            <label for="forwarderId">货代<span class="required-asterisk">*</span></label>
+                            <select id="forwarderId" class="required-field"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="destinationWarehouseId">目的仓库</label>
+                            <select id="destinationWarehouseId" class="optional-field"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="arrivalPortDate">到港日期</label>
+                            <input type="date" id="arrivalPortDate" class="optional-field" data-date-input="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="expectedWarehouseDate">预计送仓日期</label>
+                            <input type="date" id="expectedWarehouseDate" class="optional-field" data-date-input="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="shippingCompany">船公司</label>
+                            <input type="text" id="shippingCompany" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="vesselVoyage">船名航次</label>
+                            <input type="text" id="vesselVoyage" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="inboundOrderNo">入库单号</label>
+                            <input type="text" id="inboundOrderNo" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="portOfLoading">起运港</label>
+                            <input type="text" id="portOfLoading" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="portOfDestination">目的港</label>
+                            <input type="text" id="portOfDestination" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="declarationDocsProvided">报关资料已提供</label>
+                            <select id="declarationDocsProvided" class="optional-field"><option value="0">否</option><option value="1">是</option></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="clearanceDocsProvided">清关资料已提供</label>
+                            <select id="clearanceDocsProvided" class="optional-field"><option value="0">否</option><option value="1">是</option></select>
+                        </div>
+                        <div class="form-group pm-form-full">
+                            <label>ETD（最初/上次/最新）</label>
+                            <div class="triple-date">
+                                <div class="slot"><label>最初</label><input type="date" id="etdInitial" class="optional-field" data-date-input="1" disabled></div>
+                                <div class="slot"><label>上次</label><input type="date" id="etdPrevious" class="optional-field" data-date-input="1" disabled></div>
+                                <div class="slot"><label>最新</label><input type="date" id="etdLatest" class="optional-field" data-date-input="1"></div>
+                            </div>
+                        </div>
+                        <div class="form-group pm-form-full">
+                            <label>ETA（最初/上次/最新）</label>
+                            <div class="triple-date">
+                                <div class="slot"><label>最初</label><input type="date" id="etaInitial" class="optional-field" data-date-input="1" disabled></div>
+                                <div class="slot"><label>上次</label><input type="date" id="etaPrevious" class="optional-field" data-date-input="1" disabled></div>
+                                <div class="slot"><label>最新</label><input type="date" id="etaLatest" class="optional-field" data-date-input="1"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeModal()">取消</button>
+                <button class="btn-primary" onclick="saveFromModal()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <input type="file" id="transitDocUploadInput" style="display:none;" multiple>
+
+    <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
+
+    <script>
+        let editId = null;
+        let optionFactories = [];
+        let optionForwarders = [];
+        let optionWarehouses = [];
+        let optionOrderProducts = [];
+        let currentEditItem = null;
+        let currentUploadDocType = null;
+
+        function showStatus(msg, err){ const el=document.getElementById('modalStatus'); el.style.display='block'; el.style.background=err?'#ffecec':'#f0fff0'; el.style.color=err?'#a33':'#2f6f2f'; el.innerText=msg; }
+        function resetStatus(){ const el=document.getElementById('modalStatus'); el.style.display='none'; el.innerText=''; }
+        function resetSearch(){ document.getElementById('searchInput').value=''; loadList(); }
+
+        function fillSelect(id, items, valueKey, textKey, placeholder){
+            const select = document.getElementById(id);
+            if(!select) return;
+            select.innerHTML = `<option value="">${placeholder || '请选择'}</option>` + (items || []).map(x => `<option value="${x[valueKey]}">${x[textKey] || ''}</option>`).join('');
+            if(window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(select);
+        }
+
+        function loadOptions(){
+            return fetch('/api/logistics-in-transit?action=options').then(r=>r.json()).then(data=>{
+                if(data.status !== 'success') return;
+                optionFactories = data.factories || [];
+                optionForwarders = data.forwarders || [];
+                optionWarehouses = data.warehouses || [];
+                optionOrderProducts = data.order_products || [];
+                fillSelect('factoryId', optionFactories, 'id', 'factory_name', '请选择工厂');
+                fillSelect('forwarderId', optionForwarders, 'id', 'forwarder_name', '请选择货代');
+                fillSelect('destinationWarehouseId', optionWarehouses, 'id', 'warehouse_name', '请选择目的仓库');
+                if(window.initSlashDateInputs) window.initSlashDateInputs(document.getElementById('pm-modal'));
+            });
+        }
+
+        function syncListedStatusRules(){
+            const listedStatus = document.getElementById('listedStatus').value;
+            const listedDate = document.getElementById('listedDate');
+            const isListed = listedStatus === '1';
+            listedDate.disabled = !isListed;
+            if(!isListed){ listedDate.value = ''; }
+            if(window.initSlashDateInputs) window.initSlashDateInputs(document.getElementById('pm-modal'));
+        }
+
+        function addTransitItemRow(item){
+            const wrap = document.getElementById('transitItems');
+            const row = document.createElement('div');
+            row.className = 'transit-item-row';
+            const options = ['<option value="">请选择下单SKU</option>'].concat((optionOrderProducts || []).map(x => `<option value="${x.id}">${x.sku || ''}</option>`));
+            row.innerHTML = `
+                <select class="required-field transit-item-sku">${options.join('')}</select>
+                <input type="number" min="0" step="1" class="optional-field transit-item-shipped" value="${item && item.shipped_qty != null ? item.shipped_qty : 0}">
+                <input type="number" min="0" step="1" class="optional-field transit-item-listed" value="${item && item.listed_qty != null ? item.listed_qty : 0}">
+                <button type="button" class="btn-danger">删除</button>
+            `;
+            row.querySelector('.btn-danger').addEventListener('click', () => row.remove());
+            wrap.appendChild(row);
+            if(item && item.order_product_id){ row.querySelector('.transit-item-sku').value = String(item.order_product_id); }
+            if(window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(row.querySelector('.transit-item-sku'));
+        }
+
+        function openCreateModal(){
+            editId = null;
+            currentEditItem = null;
+            document.getElementById('pm-modal-title').innerText = '新增在途物流';
+            const ids = ['factoryId','forwarderId','logisticsBoxNo','customsClearanceNo','billOfLadingNo','destinationWarehouseId','arrivalPortDate','expectedWarehouseDate','listedDate','shippingCompany','vesselVoyage','inboundOrderNo','portOfLoading','portOfDestination','factoryShipDateInitial','factoryShipDatePrevious','factoryShipDateLatest','etdInitial','etdPrevious','etdLatest','etaInitial','etaPrevious','etaLatest'];
+            ids.forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+            document.getElementById('listedStatus').value = '0';
+            ['declarationDocsProvided','inventoryRegistered','clearanceDocsProvided','qtyVerified'].forEach(id => { document.getElementById(id).value = '0'; if(window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(id); });
+            if(window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect('listedStatus');
+            syncListedStatusRules();
+            document.getElementById('transitItems').innerHTML = '';
+            addTransitItemRow();
+            resetStatus();
+            document.getElementById('pm-modal').classList.add('active');
+        }
+
+        function openEditModal(id){
+            fetch(`/api/logistics-in-transit?id=${encodeURIComponent(id)}`).then(r=>r.json()).then(data=>{
+                if(data.status !== 'success' || !data.item){ alert(data.message || '加载失败'); return; }
+                const item = data.item;
+                editId = item.id;
+                currentEditItem = item;
+                document.getElementById('pm-modal-title').innerText = '编辑在途物流';
+                document.getElementById('factoryId').value = item.factory_id || '';
+                document.getElementById('forwarderId').value = item.forwarder_id || '';
+                document.getElementById('logisticsBoxNo').value = item.logistics_box_no || '';
+                document.getElementById('customsClearanceNo').value = item.customs_clearance_no || '';
+                document.getElementById('billOfLadingNo').value = item.bill_of_lading_no || '';
+                document.getElementById('destinationWarehouseId').value = item.destination_warehouse_id || '';
+                document.getElementById('arrivalPortDate').value = item.arrival_port_date || '';
+                document.getElementById('expectedWarehouseDate').value = item.expected_warehouse_date || '';
+                document.getElementById('listedDate').value = item.listed_date || '';
+                document.getElementById('listedStatus').value = item.listed_date ? '1' : '0';
+                document.getElementById('shippingCompany').value = item.shipping_company || '';
+                document.getElementById('vesselVoyage').value = item.vessel_voyage || '';
+                document.getElementById('inboundOrderNo').value = item.inbound_order_no || '';
+                document.getElementById('portOfLoading').value = item.port_of_loading || '';
+                document.getElementById('portOfDestination').value = item.port_of_destination || '';
+                document.getElementById('factoryShipDateInitial').value = item.factory_ship_date_initial || '';
+                document.getElementById('factoryShipDatePrevious').value = item.factory_ship_date_previous || '';
+                document.getElementById('factoryShipDateLatest').value = item.factory_ship_date_latest || '';
+                document.getElementById('etdInitial').value = item.etd_initial || '';
+                document.getElementById('etdPrevious').value = item.etd_previous || '';
+                document.getElementById('etdLatest').value = item.etd_latest || '';
+                document.getElementById('etaInitial').value = item.eta_initial || '';
+                document.getElementById('etaPrevious').value = item.eta_previous || '';
+                document.getElementById('etaLatest').value = item.eta_latest || '';
+                document.getElementById('declarationDocsProvided').value = String(item.declaration_docs_provided || 0);
+                document.getElementById('inventoryRegistered').value = String(item.inventory_registered || 0);
+                document.getElementById('clearanceDocsProvided').value = String(item.clearance_docs_provided || 0);
+                document.getElementById('qtyVerified').value = String(item.qty_verified || 0);
+                ['factoryId','forwarderId','destinationWarehouseId','declarationDocsProvided','inventoryRegistered','clearanceDocsProvided','qtyVerified','listedStatus'].forEach(id => { if(window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(id); });
+                syncListedStatusRules();
+                document.getElementById('transitItems').innerHTML = '';
+                (item.items || []).forEach(addTransitItemRow);
+                if(!(item.items || []).length){ addTransitItemRow(); }
+                resetStatus();
+                document.getElementById('pm-modal').classList.add('active');
+            }).catch(err => alert('加载失败: ' + err));
+        }
+
+        function closeModal(){ document.getElementById('pm-modal').classList.remove('active'); editId = null; }
+
+        function collectTransitItems(){
+            const rows = Array.from(document.querySelectorAll('#transitItems .transit-item-row'));
+            return rows.map(row => ({
+                order_product_id: row.querySelector('.transit-item-sku').value,
+                shipped_qty: row.querySelector('.transit-item-shipped').value,
+                listed_qty: row.querySelector('.transit-item-listed').value
+            })).filter(x => x.order_product_id);
+        }
+
+        function saveFromModal(){
+            const listedStatus = document.getElementById('listedStatus').value;
+            const payload = {
+                factory_id: document.getElementById('factoryId').value,
+                forwarder_id: document.getElementById('forwarderId').value,
+                logistics_box_no: document.getElementById('logisticsBoxNo').value.trim(),
+                customs_clearance_no: document.getElementById('customsClearanceNo').value.trim(),
+                bill_of_lading_no: document.getElementById('billOfLadingNo').value.trim(),
+                destination_warehouse_id: document.getElementById('destinationWarehouseId').value,
+                factory_ship_date_latest: document.getElementById('factoryShipDateLatest').value,
+                etd_latest: document.getElementById('etdLatest').value,
+                eta_latest: document.getElementById('etaLatest').value,
+                arrival_port_date: document.getElementById('arrivalPortDate').value,
+                expected_warehouse_date: document.getElementById('expectedWarehouseDate').value,
+                listed_date: listedStatus === '1' ? document.getElementById('listedDate').value : '',
+                shipping_company: document.getElementById('shippingCompany').value.trim(),
+                vessel_voyage: document.getElementById('vesselVoyage').value.trim(),
+                declaration_docs_provided: document.getElementById('declarationDocsProvided').value,
+                inventory_registered: document.getElementById('inventoryRegistered').value,
+                clearance_docs_provided: document.getElementById('clearanceDocsProvided').value,
+                qty_verified: document.getElementById('qtyVerified').value,
+                port_of_loading: document.getElementById('portOfLoading').value.trim(),
+                port_of_destination: document.getElementById('portOfDestination').value.trim(),
+                inbound_order_no: document.getElementById('inboundOrderNo').value.trim(),
+                items: collectTransitItems()
+            };
+            if(!payload.factory_id || !payload.forwarder_id || !payload.logistics_box_no || !payload.customs_clearance_no){ showStatus('工厂、货代、物流箱号、清关单号为必填', true); return; }
+            if(listedStatus === '1' && !payload.listed_date){ showStatus('已上架时，上架日期为必填', true); return; }
+            let method = 'POST';
+            if(editId){ payload.id = editId; method = 'PUT'; }
+            fetch('/api/logistics-in-transit', { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
+                .then(r=>r.json()).then(data=>{
+                    if(data.status === 'success'){ showStatus('保存成功', false); setTimeout(() => { closeModal(); loadList(); }, 280); }
+                    else { showStatus(data.message || '操作失败', true); }
+                }).catch(err => showStatus('请求失败: ' + err, true));
+        }
+
+        function triggerUpload(type){
+            if(!editId){ showStatus('请先保存当前在途物流记录后再上传资料', true); return; }
+            currentUploadDocType = type;
+            const input = document.getElementById('transitDocUploadInput');
+            if(!input) return;
+            input.value = '';
+            input.click();
+        }
+
+        function uploadTransitDocs(files){
+            if(!editId || !currentUploadDocType || !files || !files.length) return;
+            const form = new FormData();
+            form.append('transit_id', String(editId));
+            form.append('doc_type', currentUploadDocType);
+            Array.from(files).forEach(file => form.append('files', file));
+            fetch('/api/logistics-in-transit-doc-upload', { method: 'POST', body: form })
+                .then(r => r.json())
+                .then(data => {
+                    if(data.status !== 'success'){ showStatus(data.message || '上传失败', true); return; }
+                    if(currentUploadDocType === 'declaration'){
+                        document.getElementById('declarationDocsProvided').value = '1';
+                        if(window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect('declarationDocsProvided');
+                    } else {
+                        document.getElementById('clearanceDocsProvided').value = '1';
+                        if(window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect('clearanceDocsProvided');
+                    }
+                    showStatus('资料上传成功', false);
+                }).catch(err => showStatus('上传失败: ' + err, true));
+        }
+
+        function markQtyVerified(){
+            const items = collectTransitItems();
+            if(!items.length){ showStatus('请先维护SKU及数量后再核对', true); return; }
+            const preview = items.map(x => {
+                const skuObj = optionOrderProducts.find(op => String(op.id) === String(x.order_product_id));
+                return `${skuObj ? skuObj.sku : x.order_product_id}: 发货${Number(x.shipped_qty || 0)} / 上架${Number(x.listed_qty || 0)}`;
+            }).join('\n');
+            if(!window.confirm(`请核对以下SKU数量:\n${preview}\n\n确认无误后将标记为“已核对”。`)) return;
+            document.getElementById('qtyVerified').value = '1';
+            if(window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect('qtyVerified');
+            showStatus('已标记为数量已核对，请点击保存。', false);
+        }
+
+        function registerInventoryNow(){
+            if(!editId){ showStatus('请先保存记录后再登记库存', true); return; }
+            fetch('/api/logistics-in-transit?action=register_inventory', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ id: editId, confirm: 0 })
+            }).then(r => r.json()).then(preview => {
+                if(preview.status !== 'success'){ showStatus(preview.message || '登记库存失败', true); return; }
+                const changes = preview.changes || [];
+                if(!changes.length){ showStatus('没有可登记的SKU数量', true); return; }
+                const lines = changes.map(x => `${x.sku}: ${x.before_qty} + ${x.add_qty} = ${x.after_qty}`).join('\n');
+                if(!window.confirm(`登记库存将执行以下加和:\n${lines}\n\n确认继续？`)) return;
+                return fetch('/api/logistics-in-transit?action=register_inventory', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ id: editId, confirm: 1 })
+                }).then(r => r.json()).then(result => {
+                    if(result.status !== 'success'){ showStatus(result.message || '登记库存失败', true); return; }
+                    document.getElementById('inventoryRegistered').value = '1';
+                    if(window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect('inventoryRegistered');
+                    showStatus('库存登记完成，已加和到目的仓库存。请点击保存。', false);
+                    loadList();
+                });
+            }).catch(err => showStatus('登记库存失败: ' + err, true));
+        }
+
+        function removeItem(id){
+            if(!confirm('确认删除该在途物流记录？')) return;
+            fetch('/api/logistics-in-transit', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id}) })
+                .then(r=>r.json()).then(data => { if(data.status==='success') loadList(); else alert(data.message || '删除失败'); })
+                .catch(err => alert('删除失败: ' + err));
+        }
+
+        function loadList(){
+            const q = document.getElementById('searchInput').value.trim();
+            const url = q ? `/api/logistics-in-transit?q=${encodeURIComponent(q)}` : '/api/logistics-in-transit';
+            fetch(url).then(r=>r.json()).then(data=>{
+                const tbody = document.querySelector('#mainTable tbody');
+                if(data.status !== 'success'){ tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:#a33;">${data.message || '加载失败'}</td></tr>`; return; }
+                const items = data.items || [];
+                if(!items.length){ tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">暂无数据</td></tr>'; return; }
+                tbody.innerHTML = items.map(item => `
+                    <tr>
+                        <td>${item.listed_status || '未上架'}</td>
+                        <td>${item.logistics_box_no || ''}</td>
+                        <td>${item.customs_clearance_no || ''}</td>
+                        <td>${item.bill_of_lading_no || ''}</td>
+                        <td>${item.factory_name || ''}</td>
+                        <td>${item.forwarder_name || ''}</td>
+                        <td>${item.destination_warehouse_name || ''}</td>
+                        <td>${item.eta_latest || ''}</td>
+                        <td><div class="pm-actions"><button class="btn-secondary" onclick='openEditModal(${item.id})'>编辑</button><button class="btn-danger" onclick='removeItem(${item.id})'>删除</button></div></td>
+                    </tr>
+                `).join('');
+            }).catch(err => { document.querySelector('#mainTable tbody').innerHTML = `<tr><td colspan="9" style="text-align:center;color:#a33;">加载失败: ${err}</td></tr>`; });
+        }
+
+        document.getElementById('searchInput').addEventListener('keydown', function(e){ if(e.key === 'Enter') loadList(); });
+        document.getElementById('pm-modal').addEventListener('click', function(e){ if(e.target===this) closeModal(); });
+        document.getElementById('listedStatus').addEventListener('change', syncListedStatusRules);
+        document.getElementById('transitDocUploadInput').addEventListener('change', function(){ uploadTransitDocs(this.files); this.value = ''; });
+        window.addEventListener('load', function(){ loadOptions().then(loadList); });
+    </script>
+</body>
+<script src="/static/js/header.js"></script>
+</html>

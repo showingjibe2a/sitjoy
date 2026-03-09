@@ -81,6 +81,11 @@
                             <input type="text" id="adSearchInput" placeholder="搜索广告类型/组合/活动/组">
                             <button class="btn-primary" onclick="loadAdList()">搜索</button>
                             <button class="btn-secondary" onclick="resetAdSearch()">清空</button>
+                            <span class="pm-divider" aria-hidden="true"></span>
+                            <button class="btn-accent" onclick="openAdCreateFromAdjustment()">新增广告信息</button>
+                            <button class="btn-secondary" onclick="downloadAdTemplateFromAdjustment()">下载模板</button>
+                            <button class="btn-secondary" onclick="triggerAdUploadFromAdjustment()">批量上传</button>
+                            <input type="file" id="adUploadInput" accept=".xlsx" style="display:none;">
                         </div>
                     </div>
                 </div>
@@ -317,6 +322,39 @@
             loadAdList();
         }
 
+        function openAdCreateFromAdjustment() {
+            window.open('/amazon-ad-management?openCreate=1', '_blank');
+        }
+
+        function downloadAdTemplateFromAdjustment() {
+            window.location.href = '/api/amazon-ad-template';
+        }
+
+        function triggerAdUploadFromAdjustment() {
+            const input = document.getElementById('adUploadInput');
+            if (!input) return;
+            input.value = '';
+            input.click();
+        }
+
+        function uploadAdTemplateFromAdjustment(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+            showFormStatus('模板上传处理中...', false);
+            fetch('/api/amazon-ad-import', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        showFormStatus(data.message || '导入失败', true);
+                        return;
+                    }
+                    const countError = Array.isArray(data.errors) ? data.errors.length : 0;
+                    showFormStatus(`导入完成：新增 ${data.created || 0}，更新 ${data.updated || 0}，未变更 ${data.unchanged || 0}${countError ? `，失败 ${countError}` : ''}`, !!countError);
+                    loadAdList();
+                })
+                .catch(err => showFormStatus('导入失败: ' + err, true));
+        }
+
         function renderAdList() {
             const wrap = document.getElementById('adList');
             if (!adItems.length) {
@@ -365,6 +403,7 @@
             const current = String(selectedId || '');
             opSelect.innerHTML = '<option value="">请选择操作类型</option>';
             allowedOperations.forEach(op => {
+                if (String(op.name || '').trim() === '【新建】') return;
                 const option = document.createElement('option');
                 option.value = op.id;
                 option.textContent = op.name || `操作${op.id}`;
@@ -614,6 +653,11 @@
         }
 
         document.getElementById('operationType').addEventListener('change', syncReasonOptions);
+        document.getElementById('adUploadInput').addEventListener('change', function(e) {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+            uploadAdTemplateFromAdjustment(file);
+        });
         ['targetObject', 'beforeValue', 'afterValue', 'operationReason', 'startTime', 'endTime'].forEach(id => {
             document.getElementById(id).addEventListener('input', updateSubmitButtonState);
             document.getElementById(id).addEventListener('change', updateSubmitButtonState);
