@@ -56,7 +56,7 @@
         }
         .order-link-head {
             display: grid;
-            grid-template-columns: minmax(210px, 1fr) 110px 64px;
+            grid-template-columns: minmax(220px, 1fr) 110px 64px;
             gap: 0.45rem;
             font-size: 0.82rem;
             color: var(--morandi-slate);
@@ -65,7 +65,7 @@
         .order-link-selected { display: grid; gap: 0.4rem; }
         .order-link-row {
             display: grid;
-            grid-template-columns: minmax(210px, 1fr) 110px 64px;
+            grid-template-columns: minmax(220px, 1fr) 110px 64px;
             gap: 0.45rem;
             align-items: center;
         }
@@ -74,49 +74,6 @@
             font-size: 0.82rem;
             line-height: 1.15;
         }
-        .label-help {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.35rem;
-        }
-        .help-dot {
-            position: relative;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 15px;
-            height: 15px;
-            border-radius: 50%;
-            font-size: 11px;
-            line-height: 1;
-            border: 1px solid var(--morandi-sand);
-            color: var(--morandi-slate);
-            background: #fff;
-            cursor: help;
-        }
-        .help-dot::after {
-            content: attr(data-tip);
-            position: absolute;
-            left: 50%;
-            bottom: calc(100% + 8px);
-            transform: translateX(-50%);
-            min-width: 170px;
-            max-width: 260px;
-            padding: 0.4rem 0.55rem;
-            border-radius: 6px;
-            border: 1px solid var(--morandi-sand);
-            background: #fff;
-            color: var(--morandi-ink);
-            font-size: 0.8rem;
-            white-space: normal;
-            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
-            opacity: 0;
-            visibility: hidden;
-            pointer-events: none;
-            transition: opacity 0.15s ease;
-            z-index: 20;
-        }
-        .help-dot:hover::after { opacity: 1; visibility: visible; }
         .upload-progress {
             position: fixed;
             right: 18px;
@@ -1061,15 +1018,12 @@
                     (orderSkuOptions || []).map(item => `<option value="${item.id}">${item.sku || ''}${item.fabric_name_en ? `（${item.fabric_name_en}）` : ''}</option>`)
                 );
                 row.innerHTML = `
-                    <select class="required-field order-link-sku">${options.join('')}</select>
+                    <select class="required-field order-link-sku no-searchable-select">${options.join('')}</select>
                     <input type="number" min="1" step="1" class="required-field order-link-qty" value="${link.quantity || 1}">
                     <button type="button" class="btn-danger">移除</button>
                 `;
                 const skuEl = row.querySelector('.order-link-sku');
                 skuEl.value = link.order_product_id ? String(link.order_product_id) : '';
-                if (window.refreshUniversalSingleSelect) {
-                    window.refreshUniversalSingleSelect(skuEl);
-                }
                 skuEl.addEventListener('change', function() {
                     link.order_product_id = this.value ? Number(this.value) : null;
                     const selectedItem = orderSkuOptions.find(x => String(x.id) === String(link.order_product_id));

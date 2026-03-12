@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>在途资料文件管理</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>.confirm-body{white-space:pre-wrap;line-height:1.45}.hidden{display:none!important}</style>
+</head>
+<body>
+<div id="site-header"></div>
+<div class="container">
+  <section class="hero" style="margin-bottom:1.2rem;"><h2 id="pageTitle">资料文件管理</h2><p id="pageDesc">支持下载、重命名、删除</p></section>
+  <section class="pm-layout">
+    <div class="card pm-card"><div class="pm-toolbar"><div class="pm-toolbar-actions"><button class="btn-secondary" onclick="reloadFiles()">刷新</button><button class="btn-secondary" onclick="triggerUpload()">上传文件</button><input type="file" id="uploadInput" style="display:none;" multiple></div></div><div id="status" class="response" style="display:none;margin-top:.7rem;"></div></div>
+    <div><table class="pm-table" id="fileTable"><thead><tr><th>文件名</th><th style="width:120px;">大小</th><th style="width:180px;">更新时间</th><th style="width:220px;">操作</th></tr></thead><tbody><tr><td colspan="4" style="text-align:center;">加载中...</td></tr></tbody></table></div>
+  </section>
+</div>
+<div class="pm-modal" id="confirm-modal"><div class="pm-modal-content" style="max-width:640px;"><h3 id="confirmTitle" style="margin-top:0;">提示</h3><div id="confirmBody" class="confirm-body"></div><input id="confirmInput" class="hidden" style="margin-top:.7rem;" type="text"><div class="pm-modal-actions" style="margin-top:.8rem;"><button class="btn-secondary" id="confirmCancelBtn">取消</button><button class="btn-primary" id="confirmOkBtn">确定</button></div></div></div>
+<script>
+const qs=(s)=>document.querySelector(s);const params=new URLSearchParams(window.location.search||'');const transitId=Number(params.get('transit_id')||0);const docType=String(params.get('doc_type')||'').trim().toLowerCase();
+function normalizeName(n){const t=String(n||'').trim();if(t.startsWith("b'")&&t.endsWith("'"))return t.slice(2,-1);if(t.startsWith('b"')&&t.endsWith('"'))return t.slice(2,-1);return t}
+function showStatus(m,e){const el=qs('#status');el.style.display='block';el.style.background=e?'#ffecec':'#f0fff0';el.style.color=e?'#a33':'#2f6f2f';el.textContent=m}
+function fmtSize(n){n=Number(n||0);if(n<1024)return `${n} B`;if(n<1024*1024)return `${(n/1024).toFixed(1)} KB`;return `${(n/(1024*1024)).toFixed(1)} MB`}
+function showDialog(o){const m=qs('#confirm-modal'),t=qs('#confirmTitle'),b=qs('#confirmBody'),i=qs('#confirmInput'),ok=qs('#confirmOkBtn'),ca=qs('#confirmCancelBtn');t.textContent=o.title||'提示';b.textContent=o.message||'';ok.textContent=o.okText||'确定';ca.textContent=o.cancelText||'取消';const ask=!!o.withInput;i.classList.toggle('hidden',!ask);if(ask){i.value=o.inputValue||'';i.placeholder=o.inputPlaceholder||''}ca.style.display=o.showCancel===false?'none':'';m.classList.add('active');return new Promise(r=>{const done=v=>{m.classList.remove('active');ok.onclick=null;ca.onclick=null;m.onclick=null;r(v)};ok.onclick=()=>done({ok:true,value:ask?i.value:''});ca.onclick=()=>done({ok:false,value:''});m.onclick=e=>{if(e.target===m&&o.showCancel!==false)done({ok:false,value:''})};if(ask)i.focus()})}
+function safeDocLabel(){return docType==='declaration'?'报关资料':'清关资料'}
+function reloadFiles(){if(!transitId||!['declaration','clearance'].includes(docType)){showStatus('参数无效，无法加载文件',true);return}fetch(`/api/logistics-in-transit-doc-files?transit_id=${encodeURIComponent(transitId)}&doc_type=${encodeURIComponent(docType)}`).then(r=>r.json()).then(d=>{const tb=qs('#fileTable tbody');if(d.status!=='success'){tb.innerHTML=`<tr><td colspan="4" style="text-align:center;color:#a33;">${d.message||'加载失败'}</td></tr>`;return}const arr=(d.items||[]).map(x=>({...x,name:normalizeName(x.name)}));if(!arr.length){tb.innerHTML='<tr><td colspan="4" style="text-align:center;">暂无文件</td></tr>';return}tb.innerHTML=arr.map(i=>`<tr><td>${i.name||''}</td><td>${fmtSize(i.size)}</td><td>${i.updated_at||''}</td><td><div class="pm-actions"><button class="btn-secondary" onclick="downloadFile(${JSON.stringify(i.name)})">下载</button><button class="btn-secondary" onclick="renameFile(${JSON.stringify(i.name)})">重命名</button><button class="btn-danger" onclick="deleteFile(${JSON.stringify(i.name)})">删除</button></div></td></tr>`).join('')}).catch(e=>showStatus('加载失败: '+e,true))}
+function triggerUpload(){const i=qs('#uploadInput');i.value='';i.click()}
+function uploadFiles(files){if(!files||!files.length)return;const fd=new FormData();fd.append('transit_id',String(transitId));fd.append('doc_type',docType);Array.from(files).forEach(f=>fd.append('files',f));fetch('/api/logistics-in-transit-doc-upload',{method:'POST',body:fd}).then(r=>r.json()).then(d=>{if(d.status!=='success'){showStatus(d.message||'上传失败',true);return}showStatus(`上传成功：${(d.saved||[]).length} 个文件`,false);reloadFiles()}).catch(e=>showStatus('上传失败: '+e,true))}
+function downloadFile(name){const n=normalizeName(name);window.location.href=`/api/logistics-in-transit-doc-files?action=download&transit_id=${encodeURIComponent(transitId)}&doc_type=${encodeURIComponent(docType)}&name=${encodeURIComponent(n||'')}`}
+function renameFile(oldName){const oldN=normalizeName(oldName);showDialog({title:'重命名文件',message:`请输入新文件名（原文件：${oldN}）`,withInput:true,inputValue:oldN,okText:'下一步',cancelText:'取消'}).then(a=>{if(!a.ok)return;const newN=String(a.value||'').trim();if(!newN||newN===oldN)return;showDialog({title:'确认重命名',message:`确认将文件重命名为 ${newN} ？`,okText:'确认',cancelText:'取消'}).then(b=>{if(!b.ok)return;fetch('/api/logistics-in-transit-doc-files',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({transit_id:transitId,doc_type:docType,old_name:oldN,new_name:newN})}).then(r=>r.json()).then(d=>{if(d.status!=='success'){showStatus(d.message||'重命名失败',true);return}showStatus('重命名成功',false);reloadFiles()}).catch(e=>showStatus('重命名失败: '+e,true))})})}
+function deleteFile(name){const n=normalizeName(name);showDialog({title:'确认删除',message:`确认删除文件 ${n} ？`,okText:'删除',cancelText:'取消'}).then(x=>{if(!x.ok)return;fetch('/api/logistics-in-transit-doc-files',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({transit_id:transitId,doc_type:docType,name:n})}).then(r=>r.json()).then(d=>{if(d.status!=='success'){showStatus(d.message||'删除失败',true);return}showStatus('删除成功',false);reloadFiles()}).catch(e=>showStatus('删除失败: '+e,true))})}
+qs('#uploadInput').addEventListener('change',function(){uploadFiles(this.files);this.value=''});
+window.addEventListener('load',()=>{qs('#pageTitle').textContent=`${safeDocLabel()}文件管理`;qs('#pageDesc').textContent=`在途物流ID: ${transitId||'-'} | ${safeDocLabel()}`;reloadFiles()});
+</script>
+</body>
+<script src="/static/js/header.js"></script>
+</html>

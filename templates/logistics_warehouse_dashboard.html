@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>仓储看板</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    .board-tools { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+    .board-tools .board-search { min-width: 260px; }
+    .col-toggle-panel { display: flex; gap: .6rem; flex-wrap: wrap; padding: .55rem .65rem; border: 1px dashed rgba(207,199,189,.85); border-radius: 10px; margin-top: .55rem; }
+    .col-toggle-panel label { display: inline-flex; gap: .25rem; align-items: center; font-size: .86rem; color: var(--morandi-slate); }
+    .col-toggle-panel input[type="checkbox"] { width: 16px; min-width: 16px; height: 16px; flex: 0 0 16px; }
+    .board-wrap { overflow: auto; text-align: left; }
+    .board-table {
+      width: max-content;
+      min-width: 0;
+      table-layout: auto;
+      margin-right: auto;
+    }
+    .sku-cell { position: relative; }
+    .wh-cell { position: relative; }
+    .badge-tip {
+      position: absolute;
+      top: 2px;
+      right: 6px;
+      font-size: .74rem;
+      line-height: 1;
+      padding: .2rem .36rem;
+      border-radius: 999px;
+      background: rgba(173,111,111,.92);
+      color: #fff;
+      cursor: help;
+    }
+    .wip-input {
+      width: 88px;
+      border: 1px solid rgba(207,199,189,.95);
+      border-radius: 6px;
+      padding: .22rem .38rem;
+    }
+    .group-row td {
+      cursor: pointer;
+      font-weight: 700;
+      border-top: 1px solid rgba(207,199,189,.85);
+    }
+    .group-row .group-toggle {
+      display: inline-flex;
+      width: 18px;
+      justify-content: center;
+      margin-right: .35rem;
+      color: #7a7269;
+    }
+    .group-row.group-bg-0 td,
+    .sku-row.group-bg-0 td { background: rgba(255, 255, 255, .78); }
+    .group-row.group-bg-1 td,
+    .sku-row.group-bg-1 td { background: rgba(244, 241, 236, .92); }
+    .sku-row.hidden-row { display: none; }
+
+    /* 区域分组看板筛选 */
+    .col-toggle-region-group { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; padding: .35rem .55rem; border: 1px dashed rgba(207,199,189,.7); border-radius: 8px; }
+    .col-toggle-region-header { display: flex; align-items: center; gap: .4rem; }
+    .col-toggle-region-name { font-size: .82rem; font-weight: 700; color: var(--morandi-slate); white-space: nowrap; }
+    .col-toggle-select-all {
+      padding: 0 .42rem !important;
+      font-size: .72rem !important;
+      border-radius: 999px;
+      border: 1px solid var(--morandi-sand) !important;
+      background: var(--morandi-mist) !important;
+      color: var(--morandi-ink) !important;
+      cursor: pointer;
+      width: 56px !important;
+      min-width: 56px !important;
+      min-height: 24px !important;
+      height: 24px !important;
+      line-height: 1 !important;
+      box-shadow: none !important;
+    }
+    .col-toggle-select-all:hover {
+      background: rgba(207, 199, 189, 0.55) !important;
+      color: var(--morandi-ink) !important;
+      transform: none !important;
+    }
+    .col-toggle-divider { width: 1px; height: 18px; background: rgba(207,199,189,.7); align-self: center; }
+    .wh-group-toggle {
+      display: flex;
+      align-items: center;
+      gap: .42rem;
+      width: 100%;
+      cursor: pointer;
+      user-select: none;
+    }
+    .wh-group-toggle.is-static {
+      cursor: default;
+    }
+    .wh-group-label {
+      white-space: nowrap;
+      flex: 0 0 auto;
+    }
+    .wh-group-line {
+      flex: 1 1 auto;
+      min-width: 14px;
+      border-bottom: 1px dashed rgba(143,134,126,.78);
+      transform: translateY(1px);
+      opacity: .95;
+    }
+    .wh-group-circle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      min-width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      border: 1px solid rgba(143,134,126,.75);
+      background: rgba(255,255,255,.82);
+      color: var(--morandi-ink);
+      font-size: .82rem;
+      line-height: 1;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, .08);
+    }
+    .wh-group-toggle:hover .wh-group-circle {
+      background: rgba(255,255,255,.96);
+    }
+    .wh-group-toggle.is-static .wh-group-circle {
+      opacity: .45;
+      box-shadow: none;
+    }
+    .wh-group-toggle.is-static .wh-group-line {
+      opacity: .55;
+    }
+    .wh-th-region,
+    .wh-th-supplier {
+      padding-top: .36rem !important;
+      padding-bottom: .36rem !important;
+    }
+    .wh-th-region .wh-group-label {
+      font-size: .78rem;
+      font-weight: 700;
+      color: var(--morandi-slate);
+    }
+    .wh-th-supplier .wh-group-label {
+      font-size: .8rem;
+    }
+    /* 仓库列三行表头 */
+    .wh-th-region,
+    .wh-th-supplier,
+    .wh-th-short { text-align: center; }
+    .wh-th-region { font-size: .78rem; font-weight: 700; color: var(--morandi-slate); }
+    .wh-th-supplier { font-size: .8rem; }
+    .wh-th-short {
+      font-size: .74rem;
+      color: var(--morandi-slate);
+      white-space: normal;
+      word-break: break-all;
+      line-height: 1.2;
+    }
+    .wh-th-region { background: rgba(236, 231, 223, 0.78) !important; }
+    .wh-head-band-a { background: rgba(255, 255, 255, .72) !important; }
+    .wh-head-band-b { background: rgba(244, 241, 236, .92) !important; }
+    #boardTable th.wh-col,
+    #boardTable td.wh-cell {
+      min-width: 68px;
+      width: 68px;
+      text-align: center;
+      padding-left: .45rem;
+      padding-right: .45rem;
+    }
+    #boardTable th.inv-col,
+    #boardTable td.inv-col {
+      min-width: 110px;
+      width: 110px;
+      text-align: center;
+    }
+    #boardTable td.inv-col .wip-input {
+      width: 90px;
+      margin: 0 auto;
+      display: block;
+    }
+    .wh-region-sep {
+      border-right: 2px solid rgba(143,134,126,.38) !important;
+    }
+    .region-total-cell {
+      font-weight: 700;
+    }
+    .floating-save {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      z-index: 70;
+      display: none;
+      width: min(360px, calc(100vw - 24px));
+      padding: .88rem .92rem;
+      border-radius: 16px;
+      border: 1px solid rgba(143,134,126,.58);
+      background: rgba(255,255,255,.97);
+      color: var(--morandi-ink);
+      box-shadow: 0 18px 42px rgba(15, 23, 42, .18);
+      backdrop-filter: blur(6px);
+    }
+    .floating-save.active { display: block; }
+    .floating-save-title {
+      font-size: .94rem;
+      font-weight: 700;
+      margin-bottom: .22rem;
+    }
+    .floating-save-desc {
+      font-size: .84rem;
+      color: var(--morandi-slate);
+      line-height: 1.45;
+      margin-bottom: .72rem;
+    }
+    .floating-save-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: .55rem;
+    }
+  </style>
+</head>
+<body>
+<div id="site-header"></div>
+<div class="container">
+  <section class="hero" style="margin-bottom:1.2rem;">
+    <h2>仓储看板</h2>
+    <p>SKU 维度库存概览、在途角标与工厂在制库存批量更新</p>
+  </section>
+
+  <section class="pm-layout">
+    <div class="card pm-card">
+      <div class="board-tools">
+        <input id="boardSearchInput" class="board-search" type="text" placeholder="搜索货号/SKU" />
+        <button class="btn-primary" onclick="loadBoard()">刷新</button>
+        <button class="btn-secondary" onclick="expandAllGroups()">展开列表</button>
+        <button class="btn-secondary" onclick="collapseAllGroups()">收起列表</button>
+        <button class="btn-secondary" onclick="downloadBoard()">下载库存数据</button>
+      </div>
+      <div class="col-toggle-panel" id="warehouseTogglePanel"></div>
+      <div id="status" class="response" style="display:none; margin-top:.65rem;"></div>
+    </div>
+
+    <div class="board-wrap">
+      <table class="pm-table board-table" id="boardTable" data-disable-table-manage="1">
+        <thead></thead>
+        <tbody><tr><td colspan="5" style="text-align:center;">加载中...</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+<div id="floatingBoardSave" class="floating-save" aria-live="polite">
+  <div class="floating-save-title">检测到未保存的批量修改</div>
+  <div class="floating-save-desc" id="floatingBoardSaveDesc">你修改了仓储看板中的在制库存，确认后会批量保存到下单产品。</div>
+  <div class="floating-save-actions">
+    <button type="button" class="btn-secondary" onclick="discardWipBatch()">撤销修改</button>
+    <button type="button" class="btn-primary" onclick="saveWipBatch()">确认修改</button>
+  </div>
+</div>
+
+<script>
+let boardWarehouses = [];
+let boardRows = [];
+let visibleWarehouseIds = new Set();
+let dirtyWipMap = new Map();
+let collapsedFamilies = new Set();
+let activeSearchText = '';
+let collapsedRegionKeys = new Set();
+const REGION_ORDER = ['美西', '美中', '美东南', '美东'];
+
+function $(s){ return document.querySelector(s); }
+function showStatus(msg, isErr){ const el = $('#status'); el.style.display='block'; el.style.background=isErr?'#ffecec':'#f0fff0'; el.style.color=isErr?'#a33':'#2f6f2f'; el.textContent=msg; }
+
+function regionRank(regionText){
+  const text = String(regionText || '');
+  for(let idx = 0; idx < REGION_ORDER.length; idx += 1){
+    if(text.includes(REGION_ORDER[idx])) return idx;
+  }
+  return 99;
+}
+
+function supplierBandClass(index){
+  return index % 2 === 0 ? 'wh-head-band-a' : 'wh-head-band-b';
+}
+
+function supplierGroupKey(regionName, supplierName){
+  return `${regionName}__${supplierName}`;
+}
+
+function getOrderedVisibleWarehouses(){
+  return boardWarehouses
+    .filter(wh => visibleWarehouseIds.has(String(wh.id)))
+    .slice()
+    .sort((a, b) => {
+      const rankDelta = regionRank(a.region) - regionRank(b.region);
+      if(rankDelta !== 0) return rankDelta;
+      const as = String(a.supplier_name || '');
+      const bs = String(b.supplier_name || '');
+      if(as !== bs) return as.localeCompare(bs, 'zh');
+      const an = String(a.warehouse_short_name || a.warehouse_name || '');
+      const bn = String(b.warehouse_short_name || b.warehouse_name || '');
+      return an.localeCompare(bn, 'zh');
+    });
+}
+
+function buildColumnGroups(visibleWh){
+  const regions = [];
+  visibleWh.forEach(wh => {
+    const regionName = String(wh.region || '-');
+    const supplierName = String(wh.supplier_name || '-');
+    let region = regions[regions.length - 1];
+    if(!region || region.name !== regionName){
+      region = { name: regionName, suppliers: [], warehouses: [] };
+      regions.push(region);
+    }
+    region.warehouses.push(wh);
+    let supplier = region.suppliers[region.suppliers.length - 1];
+    if(!supplier || supplier.name !== supplierName){
+      supplier = {
+        name: supplierName,
+        key: supplierGroupKey(regionName, supplierName),
+        warehouses: [],
+        band: supplierBandClass(region.suppliers.length)
+      };
+      region.suppliers.push(supplier);
+    }
+    supplier.warehouses.push(wh);
+  });
+  return regions;
+}
+
+function buildLeafColumns(regionGroups){
+  const leaves = [];
+  regionGroups.forEach(region => {
+    const regionCollapsed = region.warehouses.length > 1 && collapsedRegionKeys.has(region.name);
+    if(regionCollapsed){
+      leaves.push({ type: 'region', regionName: region.name, warehouses: region.warehouses.slice(), band: region.suppliers[0] ? region.suppliers[0].band : 'wh-head-band-a' });
+      return;
+    }
+    region.suppliers.forEach(supplier => {
+      supplier.warehouses.forEach(wh => {
+        leaves.push({ type: 'warehouse', regionName: region.name, supplierKey: supplier.key, supplierName: supplier.name, warehouse: wh, warehouses: [wh], band: supplier.band });
+      });
+    });
+  });
+  leaves.forEach((leaf, idx) => {
+    const next = leaves[idx + 1];
+    leaf.regionBoundary = Boolean(next && next.regionName !== leaf.regionName);
+  });
+  return leaves;
+}
+
+function sumForWarehouses(row, warehouses, field){
+  return warehouses.reduce((total, wh) => total + (Number((row[field] || {})[String(wh.id)] || 0) || 0), 0);
+}
+
+function syncFloatingSaveButton(){
+  const btn = $('#floatingBoardSave');
+  if(!btn) return;
+  const desc = $('#floatingBoardSaveDesc');
+  if(desc){
+    desc.textContent = dirtyWipMap.size > 0
+      ? `你已修改 ${dirtyWipMap.size} 条在制库存，确认后会批量保存到下单产品。`
+      : '你修改了仓储看板中的在制库存，确认后会批量保存到下单产品。';
+  }
+  btn.classList.toggle('active', dirtyWipMap.size > 0);
+}
+
+function discardWipBatch(){
+  if(!dirtyWipMap.size) return;
+  dirtyWipMap.clear();
+  renderBoard();
+  syncFloatingSaveButton();
+  showStatus('已撤销未保存的批量修改', false);
+}
+
+function toggleRegionColumnGroup(regionName){
+  if(collapsedRegionKeys.has(regionName)) collapsedRegionKeys.delete(regionName);
+  else collapsedRegionKeys.add(regionName);
+  renderBoard();
+}
+
+function buildTogglePanel(){
+  const wrap = $('#warehouseTogglePanel');
+  wrap.innerHTML = '';
+  const regionGroups = {};
+  boardWarehouses.forEach(wh => {
+    const r = String(wh.region || '');
+    let rKey = '-';
+    for (const k of REGION_ORDER) { if (r.includes(k)) { rKey = k; break; } }
+    (regionGroups[rKey] = regionGroups[rKey] || []).push(wh);
+  });
+  const regions = [...REGION_ORDER, '-'].filter(k => regionGroups[k]);
+  regions.forEach((rKey, rIdx) => {
+    if (rIdx > 0) {
+      const div = document.createElement('span');
+      div.className = 'col-toggle-divider';
+      wrap.appendChild(div);
+    }
+    const group = document.createElement('div');
+    group.className = 'col-toggle-region-group';
+    const header = document.createElement('div');
+    header.className = 'col-toggle-region-header';
+    const nameEl = document.createElement('span');
+    nameEl.className = 'col-toggle-region-name';
+    nameEl.textContent = rKey;
+    const allBtn = document.createElement('button');
+    allBtn.type = 'button';
+    allBtn.className = 'col-toggle-select-all';
+    const whs = regionGroups[rKey];
+    const allChecked = whs.every(wh => visibleWarehouseIds.has(String(wh.id)));
+    allBtn.textContent = allChecked ? '全取消' : '全选';
+    allBtn.addEventListener('click', () => {
+      if (allChecked) whs.forEach(wh => visibleWarehouseIds.delete(String(wh.id)));
+      else whs.forEach(wh => visibleWarehouseIds.add(String(wh.id)));
+      buildTogglePanel();
+      renderBoard();
+    });
+    header.appendChild(nameEl);
+    header.appendChild(allBtn);
+    group.appendChild(header);
+    whs.forEach(wh => {
+      const id = String(wh.id);
+      const label = document.createElement('label');
+      label.innerHTML = `<input type="checkbox" data-wh="${id}" ${visibleWarehouseIds.has(id) ? 'checked' : ''
+        }>${wh.warehouse_short_name || wh.warehouse_name}`;
+      label.querySelector('input').addEventListener('change', function(){
+        if (this.checked) visibleWarehouseIds.add(id); else visibleWarehouseIds.delete(id);
+        buildTogglePanel();
+        renderBoard();
+      });
+      group.appendChild(label);
+    });
+    wrap.appendChild(group);
+  });
+}
+
+function renderBoard(){
+  const thead = $('#boardTable thead');
+  const tbody = $('#boardTable tbody');
+  const visibleWh = getOrderedVisibleWarehouses();
+  const keyword = activeSearchText.trim().toLowerCase();
+  const allVisible = visibleWh.length === boardWarehouses.length;
+  const regionGroups = buildColumnGroups(visibleWh);
+  const leafColumns = buildLeafColumns(regionGroups);
+
+  const grouped = [];
+  const groupMap = new Map();
+  boardRows.forEach(row => {
+    const famName = String(row.sku_family || '-').trim() || '-';
+    if (!groupMap.has(famName)) {
+      const node = { family: famName, rows: [] };
+      groupMap.set(famName, node);
+      grouped.push(node);
+    }
+    groupMap.get(famName).rows.push(row);
+  });
+
+  const filteredGroups = grouped
+    .map(group => {
+      const rows = keyword
+        ? group.rows.filter(row => {
+            const skuText = String(row.sku || '').toLowerCase();
+            const famText = String(group.family || '').toLowerCase();
+            return skuText.includes(keyword) || famText.includes(keyword);
+          })
+        : group.rows;
+      // When not all warehouses are visible, additionally filter by inventory in visible WH
+      const whFilteredRows = allVisible
+        ? rows
+        : rows.filter(row => visibleWh.some(wh => ((row.warehouse_qty || {})[String(wh.id)] || 0) > 0));
+      return { family: group.family, rows: whFilteredRows };
+    })
+    .filter(group => group.rows.length > 0);
+
+  thead.innerHTML = `
+    <tr>
+      <th rowspan="3">货号</th>
+      <th rowspan="3">SKU</th>
+      <th rowspan="3" class="inv-col">现货库存</th>
+      <th rowspan="3" class="inv-col">在途数量</th>
+      <th rowspan="3" class="inv-col">工厂在制库存</th>
+      ${regionGroups.map((region, regionIndex) => {
+        const leafCount = leafColumns.filter(col => col.regionName === region.name).length;
+        const canFold = region.warehouses.length > 1;
+        const folded = canFold && collapsedRegionKeys.has(region.name);
+        const sepClass = regionIndex < regionGroups.length - 1 ? 'wh-region-sep' : '';
+        return `<th colspan="${leafCount}" class="wh-th-region ${region.suppliers[0] ? region.suppliers[0].band : 'wh-head-band-a'} ${sepClass}" ${canFold ? `data-toggle-kind="region" data-region-name="${String(region.name).replace(/"/g, '&quot;')}"` : ''}><div class="wh-group-toggle ${canFold ? '' : 'is-static'}"><span class="wh-group-label">${region.name}</span><span class="wh-group-line"></span><span class="wh-group-circle">${canFold ? (folded ? '+' : '-') : ''}</span></div></th>`;
+      }).join('')}
+    </tr>
+    <tr>
+      ${regionGroups.map((region, regionIndex) => {
+        const regionFolded = region.warehouses.length > 1 && collapsedRegionKeys.has(region.name);
+        const sepClass = regionIndex < regionGroups.length - 1 ? 'wh-region-sep' : '';
+        if(regionFolded){
+          return `<th colspan="1" class="wh-th-supplier ${region.suppliers[0] ? region.suppliers[0].band : 'wh-head-band-a'} ${sepClass}"><div class="wh-group-toggle is-static"><span class="wh-group-label">区域汇总</span><span class="wh-group-line"></span><span class="wh-group-circle"></span></div></th>`;
+        }
+        return region.suppliers.map((supplier, supplierIndex) => {
+          const supplierSepClass = supplierIndex === region.suppliers.length - 1 ? sepClass : '';
+          return `<th colspan="${supplier.warehouses.length}" class="wh-th-supplier ${supplier.band} ${supplierSepClass}"><div class="wh-group-toggle is-static"><span class="wh-group-label">${supplier.name}</span></div></th>`;
+        }).join('');
+      }).join('')}
+    </tr>
+    <tr>
+      ${leafColumns.map(col => {
+        const sepClass = col.regionBoundary ? 'wh-region-sep' : '';
+        if(col.type === 'region') return `<th class="wh-th-short wh-col ${col.band} ${sepClass}">合计</th>`;
+        return `<th data-wh="${col.warehouse.id}" class="wh-th-short wh-col ${col.band} ${sepClass}">${col.warehouse.warehouse_short_name || col.warehouse.warehouse_name}</th>`;
+      }).join('')}
+    </tr>
+  `;
+
+  if (!filteredGroups.length){
+    tbody.innerHTML = `<tr><td colspan="${5 + leafColumns.length}" style="text-align:center;">暂无数据</td></tr>`;
+    return;
+  }
+
+  let html = '';
+  filteredGroups.forEach((group, groupIndex) => {
+    const familyKey = String(group.family || '-');
+    const isCollapsed = keyword ? false : collapsedFamilies.has(familyKey);
+    const groupClass = `group-bg-${groupIndex % 2}`;
+    html += `<tr class="group-row ${groupClass}" data-family="${familyKey.replace(/"/g,'&quot;')}">`
+      + `<td colspan="${5 + leafColumns.length}"><span class="group-toggle">${isCollapsed ? '▸' : '▾'}</span>${group.family || '-'}（${group.rows.length}）</td>`
+      + `</tr>`;
+
+    group.rows.forEach(row => {
+      const badge = Number(row.in_transit_total || 0) > 0
+        ? `<span class="badge-tip" title="${(row.in_transit_tip || '').replace(/"/g,'&quot;')}">${row.in_transit_total}</span>`
+        : '';
+      const whCols = leafColumns.map(col => {
+        const totalQty = col.type === 'warehouse'
+          ? ((row.warehouse_qty || {})[String(col.warehouse.id)] || 0)
+          : sumForWarehouses(row, col.warehouses, 'warehouse_qty');
+        const totalTransit = col.type === 'warehouse'
+          ? ((row.in_transit_by_warehouse || {})[String(col.warehouse.id)] || 0)
+          : sumForWarehouses(row, col.warehouses, 'in_transit_by_warehouse');
+        const whBadge = totalTransit > 0 ? `<span class="badge-tip" title="在途中：${totalTransit}">${totalTransit}</span>` : '';
+        const sepClass = col.regionBoundary ? 'wh-region-sep' : '';
+        const regionTotalClass = col.type === 'region' ? 'region-total-cell' : '';
+        return `<td class="wh-cell wh-col ${col.band} ${sepClass} ${regionTotalClass}">${totalQty}${whBadge}</td>`;
+      }).join('');
+
+      const wipValue = dirtyWipMap.has(String(row.order_product_id)) ? dirtyWipMap.get(String(row.order_product_id)) : (row.factory_wip_stock || 0);
+      html += `<tr class="sku-row ${groupClass} ${isCollapsed ? 'hidden-row' : ''}" data-family="${familyKey.replace(/"/g,'&quot;')}">`;
+      html += `<td>${group.family || '-'}</td>`;
+      html += `<td class="sku-cell">${row.sku || ''}${badge}</td>`;
+      html += `<td class="inv-col">${row.available_total || 0}</td>`;
+      html += `<td class="inv-col">${row.in_transit_total || 0}</td>`;
+      html += `<td class="inv-col"><input class="wip-input" type="number" min="0" step="1" data-op="${row.order_product_id}" value="${wipValue}"></td>`;
+      html += whCols;
+      html += `</tr>`;
+    });
+  });
+
+  tbody.innerHTML = html;
+  document.querySelectorAll('.group-row').forEach(row => {
+    row.addEventListener('click', function(){
+      const family = String(this.getAttribute('data-family') || '');
+      if (!family) return;
+      if (collapsedFamilies.has(family)) collapsedFamilies.delete(family);
+      else collapsedFamilies.add(family);
+      renderBoard();
+    });
+  });
+  thead.querySelectorAll('th[data-toggle-kind]').forEach(cell => {
+    cell.addEventListener('click', function(){
+      const kind = String(this.getAttribute('data-toggle-kind') || '');
+      if(kind === 'region'){
+        toggleRegionColumnGroup(String(this.getAttribute('data-region-name') || ''));
+      }
+    });
+  });
+  document.querySelectorAll('.wip-input').forEach(el => {
+    el.addEventListener('change', function(){
+      const op = String(this.getAttribute('data-op') || '');
+      const val = Math.max(0, parseInt(this.value || '0', 10) || 0);
+      dirtyWipMap.set(op, val);
+      this.value = String(val);
+      syncFloatingSaveButton();
+    });
+  });
+}
+
+function loadBoard(){
+  fetch('/api/logistics-warehouse-dashboard')
+    .then(r => r.json())
+    .then(d => {
+      if (d.status !== 'success'){
+        showStatus(d.message || '加载失败', true);
+        return;
+      }
+      boardWarehouses = d.warehouses || [];
+      boardRows = d.items || [];
+      if (!visibleWarehouseIds.size){
+        boardWarehouses.forEach(wh => visibleWarehouseIds.add(String(wh.id)));
+      }
+      collapsedFamilies.clear();
+      collapsedRegionKeys.clear();
+      dirtyWipMap.clear();
+      buildTogglePanel();
+      renderBoard();
+      syncFloatingSaveButton();
+      showStatus('看板已刷新', false);
+    })
+    .catch(err => showStatus('加载失败: ' + err, true));
+}
+
+function saveWipBatch(){
+  if (!dirtyWipMap.size){
+    showStatus('没有需要更新的在制库存', true);
+    return;
+  }
+  const items = Array.from(dirtyWipMap.entries()).map(([order_product_id, factory_wip_stock]) => ({
+    order_product_id: Number(order_product_id),
+    factory_wip_stock: Number(factory_wip_stock)
+  }));
+  fetch('/api/logistics-warehouse-dashboard?action=update_wip', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({items})
+  })
+    .then(r => r.json())
+    .then(d => {
+      if (d.status !== 'success'){
+        showStatus(d.message || '更新失败', true);
+        return;
+      }
+      dirtyWipMap.clear();
+      syncFloatingSaveButton();
+      showStatus(`已更新 ${d.updated || 0} 条在制库存`, false);
+      loadBoard();
+    })
+    .catch(err => showStatus('更新失败: ' + err, true));
+}
+
+function downloadBoard(){
+  window.location.href = '/api/logistics-warehouse-dashboard?action=export';
+}
+
+function expandAllGroups(){
+  collapsedFamilies.clear();
+  renderBoard();
+}
+
+function collapseAllGroups(){
+  const grouped = new Set();
+  boardRows.forEach(row => grouped.add(String(row.sku_family || '-').trim() || '-'));
+  collapsedFamilies = grouped;
+  renderBoard();
+}
+
+window.addEventListener('load', function(){
+  const searchInput = $('#boardSearchInput');
+  searchInput.addEventListener('input', function(){
+    activeSearchText = String(this.value || '');
+    renderBoard();
+  });
+  searchInput.addEventListener('keydown', function(e){
+    if (e.key === 'Enter') {
+      activeSearchText = String(this.value || '');
+      renderBoard();
+    }
+  });
+  loadBoard();
+});
+</script>
+</body>
+<script src="/static/js/header.js"></script>
+</html>

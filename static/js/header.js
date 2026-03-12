@@ -1,6 +1,13 @@
 // 在页面加载时动态注入顶部导航，保持各模板统一
 (function(){
     const universalSelectState = new Map();
+    const managedTableState = new Map();
+    const PAGE_SIZE_OPTIONS = [20, 50, 100, 300, 500, 1000];
+    const responseToastState = new WeakMap();
+    let toastStack = null;
+    let activeColumnsPanelState = null;
+    let activeResizeState = null;
+    let suppressSortUntil = 0;
 
     function isElementVisibleForEnhance(el){
         if(!el) return false;
@@ -39,7 +46,7 @@
             } else {
                 select.dispatchEvent(new Event('change', { bubbles: true }));
             }
-            state.searchInput.value = '';
+            if(state.searchInput) state.searchInput.value = '';
             renderDropdownOptions(select, state);
             closeDropdown(select, state);
             syncTriggerFromSelect(select, state);
@@ -71,7 +78,7 @@
 
     function renderDropdownOptions(select, state){
         if(!state) return;
-        const keyword = (state.searchInput.value || '').trim().toLowerCase();
+        const keyword = state.searchInput ? (state.searchInput.value || '').trim().toLowerCase() : '';
         const currentValue = String(select.value || '');
         state.list.innerHTML = '';
 
@@ -119,8 +126,10 @@
         state.wrapper.classList.add('expanded');
         window.setTimeout(() => {
             state.wrapper.classList.add('open');
-            state.searchInput.focus();
-            state.searchInput.select();
+            if(state.searchInput){
+                state.searchInput.focus();
+                state.searchInput.select();
+            }
         }, 90);
     }
 
@@ -132,6 +141,7 @@
 
     function enhanceSingleSelect(select){
         if(!shouldEnhanceSelect(select)) return;
+        const noSearch = select.dataset.universalNoSearch === '1';
 
         const wrapper = document.createElement('div');
         wrapper.className = 'feature-category-dropdown universal-select-dropdown';
@@ -144,15 +154,19 @@
         const menu = document.createElement('div');
         menu.className = 'feature-category-menu';
 
-        const searchInput = document.createElement('input');
-        searchInput.type = 'text';
-        searchInput.className = 'universal-select-search';
-        searchInput.placeholder = select.dataset.searchPlaceholder || '搜索';
-
         const list = document.createElement('div');
         list.className = 'feature-category-list universal-select-list';
 
-        menu.appendChild(searchInput);
+        let searchInput = null;
+        if(!noSearch){
+            searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.className = 'universal-select-search';
+            searchInput.placeholder = select.dataset.searchPlaceholder || '搜索';
+            menu.appendChild(searchInput);
+        } else {
+            menu.classList.add('menu-no-search');
+        }
         menu.appendChild(list);
         wrapper.appendChild(trigger);
         wrapper.appendChild(menu);
@@ -180,7 +194,9 @@
             openDropdown(select, state);
         });
 
-        searchInput.addEventListener('input', () => renderDropdownOptions(select, state));
+        if(searchInput){
+            searchInput.addEventListener('input', () => renderDropdownOptions(select, state));
+        }
 
         select.addEventListener('change', () => {
             renderDropdownOptions(select, state);
@@ -227,34 +243,835 @@
         }, 400);
     }
 
-    function normalizeDateText(raw){
-        const digits = String(raw || '').replace(/\D/g, '').slice(0, 8);
-        if(!digits) return '';
-        if(digits.length <= 4) return digits;
-        if(digits.length <= 6) return `${digits.slice(0, 4)}/${digits.slice(4)}`;
-        return `${digits.slice(0, 4)}/${digits.slice(4, 6)}/${digits.slice(6, 8)}`;
+    function ensureToastStack(){
+        if(toastStack && document.body.contains(toastStack)) return toastStack;
+        toastStack = document.createElement('div');
+        toastStack.className = 'app-toast-stack';
+        document.body.appendChild(toastStack);
+        return toastStack;
     }
 
-    function enhanceDateInput(input){
-        if(!input || input.dataset.slashDateEnhanced === '1') return;
-        input.dataset.slashDateEnhanced = '1';
-        const current = input.value || '';
-        input.type = 'text';
-        input.inputMode = 'numeric';
-        input.autocomplete = 'off';
-        if(!input.placeholder) input.placeholder = 'yyyy/mm/dd';
-        input.value = normalizeDateText(current);
-        input.addEventListener('input', () => {
-            input.value = normalizeDateText(input.value);
-        });
-        input.addEventListener('blur', () => {
-            input.value = normalizeDateText(input.value);
-        });
+    function showAppToast(message, isError, duration){
+        const text = String(message || '').trim();
+        if(!text) return;
+        const stack = ensureToastStack();
+        const toast = document.createElement('div');
+        toast.className = `app-toast ${isError ? 'error' : 'success'}`;
+        toast.textContent = text;
+        stack.appendChild(toast);
+        window.requestAnimationFrame(() => toast.classList.add('show'));
+
+        const timeout = Number(duration || 2600);
+        window.setTimeout(() => {
+            toast.classList.remove('show');
+            window.setTimeout(() => {
+                if(toast.parentNode) toast.parentNode.removeChild(toast);
+            }, 180);
+        }, Math.max(800, timeout));
     }
 
-    function initSlashDateInputs(root){
+    function inferErrorFromResponseEl(el){
+        const cls = String(el.className || '').toLowerCase();
+        const style = String(el.getAttribute('style') || '').toLowerCase();
+        if(cls.includes('error') || style.includes('ffecec') || style.includes('#a33') || style.includes('rgb(163')) return true;
+        if(cls.includes('success') || style.includes('f0fff0') || style.includes('2f6f2f')) return false;
+        return false;
+    }
+
+    function bridgeLegacyResponseToToast(root){
         const scope = root && root.querySelectorAll ? root : document;
-        scope.querySelectorAll('input[type="date"], input[data-date-input="1"]').forEach(enhanceDateInput);
+        scope.querySelectorAll('.response').forEach(el => {
+            if(responseToastState.has(el)) return;
+            const state = { lastSig: '' };
+            responseToastState.set(el, state);
+            el.style.display = 'none';
+
+            const flushToast = () => {
+                const text = String(el.textContent || '').trim();
+                if(!text) return;
+                const sig = `${text}|${inferErrorFromResponseEl(el) ? 'e' : 's'}`;
+                if(sig === state.lastSig) return;
+                state.lastSig = sig;
+                showAppToast(text, inferErrorFromResponseEl(el));
+            };
+
+            const observer = new MutationObserver(() => {
+                flushToast();
+            });
+            observer.observe(el, { childList: true, subtree: true, characterData: true });
+
+            state.observer = observer;
+            flushToast();
+        });
+    }
+
+    function makeStorageKey(table, suffix){
+        const pathKey = String(location.pathname || '/').replace(/[^a-zA-Z0-9/_-]+/g, '_');
+        const tableKey = table.id || table.dataset.manageKey || 'table';
+        return `sitjoy:${pathKey}:${tableKey}:${suffix}`;
+    }
+
+    function enhanceHeroSections(root){
+        const scope = root && root.querySelectorAll ? root : document;
+        scope.querySelectorAll('.hero').forEach(hero => {
+            const title = hero.querySelector('h2');
+            if(!title) return;
+            hero.classList.add('is-standard-page-hero');
+
+            let titleRow = hero.querySelector('.hero-title-row');
+            if(!titleRow){
+                titleRow = document.createElement('div');
+                titleRow.className = 'hero-title-row';
+                title.parentNode.insertBefore(titleRow, title);
+                titleRow.appendChild(title);
+            }
+
+            const note = hero.querySelector('p');
+            if(!note) return;
+
+            let dot = titleRow.querySelector('.hero-help-dot');
+            if(!dot){
+                dot = document.createElement('span');
+                dot.className = 'help-dot hero-help-dot';
+                dot.textContent = '?';
+                titleRow.appendChild(dot);
+            }
+            dot.dataset.tip = (note.textContent || '').trim();
+            dot.style.display = dot.dataset.tip ? '' : 'none';
+
+            if(!note.dataset.heroNoteObserved){
+                note.dataset.heroNoteObserved = '1';
+                const observer = new MutationObserver(() => {
+                    dot.dataset.tip = (note.textContent || '').trim();
+                    dot.style.display = dot.dataset.tip ? '' : 'none';
+                });
+                observer.observe(note, { childList: true, subtree: true, characterData: true });
+            }
+        });
+    }
+
+    function shouldManageTable(table){
+        if(!table || table.tagName !== 'TABLE') return false;
+        if(table.dataset.disableTableManage === '1') return false;
+        if(!table.tHead || !table.tBodies || !table.tBodies[0]) return false;
+        if(!table.tHead.rows.length) return false;
+        const firstRow = table.tHead.rows[0];
+        if(!firstRow || firstRow.cells.length < 2) return false;
+        return true;
+    }
+
+    function getHeaderMeta(table){
+        if(!table.tHead || !table.tHead.rows.length) return [];
+        const cells = Array.from(table.tHead.rows[0].cells || []);
+        return cells.map((cell, idx) => {
+            if(!cell.dataset.manageColOrigin) cell.dataset.manageColOrigin = String(idx);
+            const origin = Number(cell.dataset.manageColOrigin);
+            const rawLabel = (cell.textContent || '').trim();
+            const fallback = cell.querySelector('input[type="checkbox"]') ? '多选框' : `字段${origin + 1}`;
+            return {
+                origin,
+                label: rawLabel || fallback,
+                cell
+            };
+        });
+    }
+
+    function computeDefaultColumnWidth(state, meta){
+        if(!meta || !meta.cell) return 80;
+        if(meta.cell.querySelector('input[type="checkbox"]')) return 64;
+
+        const inlineW = parseInt(meta.cell.style.width, 10) || 0;
+        if(inlineW > 0) return inlineW;
+
+        const rows = getDataRows(state);
+        const sampleCount = Math.min(rows.length, 120);
+        let maxLen = String(meta.label || '').trim().length;
+
+        for(let i = 0; i < sampleCount; i += 1){
+            const row = rows[i];
+            if(!row) continue;
+            const cell = mapRowByOrigin(row).get(meta.origin);
+            if(!cell) continue;
+            let len = String(cell.textContent || '').trim().length;
+            if(cell.querySelector('img')) len = Math.max(len, 4);
+            maxLen = Math.max(maxLen, Math.min(len, 40));
+        }
+
+        return Math.max(44, Math.min(200, Math.ceil(maxLen * 13 + 26)));
+    }
+
+    function readPersistedColumns(table, validOrigins){
+        try {
+            const raw = localStorage.getItem(makeStorageKey(table, 'visible-columns'));
+            if(!raw) return new Set(validOrigins);
+            const arr = JSON.parse(raw);
+            const valid = Array.isArray(arr) ? arr.map(v => Number(v)).filter(v => validOrigins.includes(v)) : [];
+            return new Set(valid.length ? valid : validOrigins);
+        } catch (_) {
+            return new Set(validOrigins);
+        }
+    }
+
+    function readPersistedOrder(table, validOrigins){
+        try {
+            const raw = localStorage.getItem(makeStorageKey(table, 'column-order'));
+            if(!raw) return validOrigins.slice();
+            const arr = JSON.parse(raw);
+            const inOrder = Array.isArray(arr) ? arr.map(v => Number(v)).filter(v => validOrigins.includes(v)) : [];
+            validOrigins.forEach(v => {
+                if(!inOrder.includes(v)) inOrder.push(v);
+            });
+            return inOrder;
+        } catch (_) {
+            return validOrigins.slice();
+        }
+    }
+
+    function persistColumns(state){
+        try {
+            localStorage.setItem(makeStorageKey(state.table, 'visible-columns'), JSON.stringify(Array.from(state.visibleColumns.values())));
+        } catch (_) {}
+    }
+
+    function persistColumnOrder(state){
+        try {
+            localStorage.setItem(makeStorageKey(state.table, 'column-order'), JSON.stringify(state.columnOrder.slice()));
+        } catch (_) {}
+    }
+
+    function readPersistedPageSize(table){
+        try {
+            const raw = Number(localStorage.getItem(makeStorageKey(table, 'page-size')) || '50');
+            return PAGE_SIZE_OPTIONS.includes(raw) ? raw : 50;
+        } catch (_) {
+            return 50;
+        }
+    }
+
+    function persistPageSize(state){
+        try {
+            localStorage.setItem(makeStorageKey(state.table, 'page-size'), String(state.pageSize));
+        } catch (_) {}
+    }
+
+    function readPersistedColumnWidths(table){
+        try {
+            const raw = localStorage.getItem(makeStorageKey(table, 'column-widths'));
+            const data = raw ? JSON.parse(raw) : {};
+            return data && typeof data === 'object' ? data : {};
+        } catch (_) {
+            return {};
+        }
+    }
+
+    function persistColumnWidths(state){
+        try {
+            localStorage.setItem(makeStorageKey(state.table, 'column-widths'), JSON.stringify(state.columnWidths || {}));
+        } catch (_) {}
+    }
+
+    function isPlaceholderRow(row, headerCount){
+        if(!row) return false;
+        if(row.cells.length !== 1) return false;
+        const onlyCell = row.cells[0];
+        return Number(onlyCell.colSpan || 1) >= Math.max(headerCount, 2);
+    }
+
+    function getDataRows(state){
+        const rows = Array.from(state.tbody.rows || []);
+        if(rows.length === 1 && isPlaceholderRow(rows[0], state.headerCount)) return [];
+        return rows;
+    }
+
+    function mapRowByOrigin(row){
+        const map = new Map();
+        Array.from(row.cells || []).forEach((cell, idx) => {
+            if(!cell.dataset.manageColOrigin) cell.dataset.manageColOrigin = String(idx);
+            map.set(Number(cell.dataset.manageColOrigin), cell);
+        });
+        return map;
+    }
+
+    function applyColumnOrder(state){
+        const expected = state.headerCount;
+        Array.from(state.table.rows || []).forEach(row => {
+            if((row.cells || []).length !== expected) return;
+            const currentOrder = Array.from(row.cells).map(cell => Number(cell.dataset.manageColOrigin || '-1'));
+            if(currentOrder.length === state.columnOrder.length && currentOrder.every((v, i) => v === state.columnOrder[i])) {
+                return;
+            }
+            const byOrigin = mapRowByOrigin(row);
+            state.columnOrder.forEach(origin => {
+                const cell = byOrigin.get(origin);
+                if(cell) row.appendChild(cell);
+            });
+        });
+    }
+
+    function applyColumnVisibility(state){
+        const visible = state.visibleColumns;
+        Array.from(state.table.rows || []).forEach(row => {
+            if((row.cells || []).length !== state.headerCount) return;
+            Array.from(row.cells).forEach(cell => {
+                const origin = Number(cell.dataset.manageColOrigin || '-1');
+                cell.classList.toggle('pm-table-hide-col', !visible.has(origin));
+            });
+        });
+    }
+
+    function setColumnWidthByOrigin(state, origin, widthPx){
+        const width = Math.max(36, Math.round(Number(widthPx) || 0));
+        state.columnWidths[String(origin)] = width;
+
+        Array.from(state.table.rows || []).forEach(row => {
+            if((row.cells || []).length !== state.headerCount) return;
+            Array.from(row.cells).forEach(cell => {
+                if(Number(cell.dataset.manageColOrigin || '-1') !== Number(origin)) return;
+                cell.style.width = `${width}px`;
+                cell.style.minWidth = `${width}px`;
+                cell.style.maxWidth = `${width}px`;
+            });
+        });
+    }
+
+    function applyColumnWidths(state){
+        const widths = state.columnWidths || {};
+        Object.keys(widths).forEach(origin => setColumnWidthByOrigin(state, Number(origin), Number(widths[origin])));
+    }
+
+    function ensureResizeHandles(state){
+        if(!state.table.tHead || !state.table.tHead.rows.length) return;
+        const headerRow = state.table.tHead.rows[0];
+        if(!headerRow || headerRow.cells.length !== state.headerCount) return;
+
+        Array.from(headerRow.cells).forEach(cell => {
+            if(cell.querySelector('.pm-col-resizer')) return;
+            const handle = document.createElement('span');
+            handle.className = 'pm-col-resizer';
+            handle.addEventListener('mousedown', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const origin = Number(cell.dataset.manageColOrigin || '0');
+                activeResizeState = {
+                    state,
+                    origin,
+                    startX: event.clientX,
+                    startWidth: cell.getBoundingClientRect().width,
+                    handle,
+                    hasMoved: false
+                };
+                handle.classList.add('is-active');
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+            });
+            cell.appendChild(handle);
+        });
+    }
+
+    function repositionColumnsPanel(state){
+        if(!state || !state.columnPanel.classList.contains('open')) return;
+        const triggerRect = state.columnsTrigger.getBoundingClientRect();
+        const panel = state.columnPanel;
+        panel.style.visibility = 'hidden';
+        panel.style.display = 'grid';
+        const panelRect = panel.getBoundingClientRect();
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+        const alignLeft = state.headerCount <= 5;
+        let left = alignLeft ? triggerRect.left : (triggerRect.right - panelRect.width);
+        let top = triggerRect.bottom + 8;
+        left = Math.max(8, Math.min(left, viewportWidth - panelRect.width - 8));
+        top = Math.max(8, Math.min(top, viewportHeight - panelRect.height - 8));
+        panel.style.left = `${left}px`;
+        panel.style.top = `${top}px`;
+        panel.style.visibility = 'visible';
+    }
+
+    function closeColumnsPanel(state){
+        if(!state) return;
+        state.columnPanel.classList.remove('open');
+        state.columnPanel.style.visibility = 'hidden';
+        state.columnPanel.style.display = 'none';
+        state.columnPanel.style.pointerEvents = 'none';
+        state.columnsTrigger.setAttribute('aria-expanded', 'false');
+        if(activeColumnsPanelState === state) activeColumnsPanelState = null;
+    }
+
+    function openColumnsPanel(state){
+        if(activeColumnsPanelState && activeColumnsPanelState !== state) {
+            closeColumnsPanel(activeColumnsPanelState);
+        }
+        state.columnPanel.classList.add('open');
+        state.columnPanel.style.pointerEvents = 'auto';
+        state.columnsTrigger.setAttribute('aria-expanded', 'true');
+        activeColumnsPanelState = state;
+        repositionColumnsPanel(state);
+    }
+
+    function renderColumnPanel(state){
+        const panel = state.columnPanel;
+        panel.innerHTML = '';
+
+        state.columnOrder.forEach((origin, orderIdx) => {
+            const header = state.headers.find(h => h.origin === origin);
+            if(!header) return;
+
+            const item = document.createElement('label');
+            item.className = 'pm-table-columns-item';
+            item.draggable = true;
+            item.dataset.origin = String(origin);
+
+            const main = document.createElement('span');
+            main.className = 'pm-table-columns-item-main';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            const isLocked = state.lockedColumns.has(origin);
+            checkbox.checked = isLocked ? true : state.visibleColumns.has(origin);
+            checkbox.disabled = isLocked;
+            checkbox.addEventListener('change', () => {
+                if(!checkbox.checked && state.visibleColumns.size <= 1){
+                    checkbox.checked = true;
+                    return;
+                }
+                if(isLocked){
+                    checkbox.checked = true;
+                    return;
+                }
+                if(checkbox.checked) state.visibleColumns.add(origin);
+                else state.visibleColumns.delete(origin);
+                persistColumns(state);
+                applyColumnVisibility(state);
+            });
+
+            const text = document.createElement('span');
+            text.textContent = header.label;
+            if(isLocked) text.title = '该列为多选/选择列，不能隐藏';
+            main.appendChild(checkbox);
+            main.appendChild(text);
+
+            const drag = document.createElement('span');
+            drag.className = 'pm-table-columns-item-drag';
+            drag.textContent = '⋮⋮';
+
+            item.appendChild(main);
+            item.appendChild(drag);
+
+            item.addEventListener('dragstart', () => {
+                state.dragOrigin = origin;
+                state.dragPlacement = null;
+                item.classList.add('is-dragging');
+            });
+            item.addEventListener('dragend', () => {
+                state.dragOrigin = null;
+                state.dragPlacement = null;
+                panel.querySelectorAll('.pm-table-columns-item').forEach(node => node.classList.remove('is-dragging', 'is-drop-target', 'is-drop-before', 'is-drop-after'));
+            });
+            item.addEventListener('dragover', (event) => {
+                event.preventDefault();
+                const rect = item.getBoundingClientRect();
+                const before = event.clientY < (rect.top + rect.height / 2);
+                state.dragPlacement = { origin, before };
+                panel.querySelectorAll('.pm-table-columns-item').forEach(node => node.classList.remove('is-drop-target', 'is-drop-before', 'is-drop-after'));
+                item.classList.add('is-drop-target');
+                item.classList.add(before ? 'is-drop-before' : 'is-drop-after');
+            });
+            item.addEventListener('drop', (event) => {
+                event.preventDefault();
+                const fromOrigin = Number(state.dragOrigin);
+                if(!Number.isFinite(fromOrigin) || fromOrigin === origin) return;
+                const fromIdx = state.columnOrder.indexOf(fromOrigin);
+                const placement = state.dragPlacement && state.dragPlacement.origin === origin ? state.dragPlacement : { origin, before: false };
+                let toIdx = state.columnOrder.indexOf(origin);
+                if(fromIdx < 0 || toIdx < 0) return;
+                toIdx += placement.before ? 0 : 1;
+                if(fromIdx < toIdx) toIdx -= 1;
+                if(fromIdx === toIdx) return;
+                state.columnOrder.splice(fromIdx, 1);
+                state.columnOrder.splice(toIdx, 0, fromOrigin);
+                persistColumnOrder(state);
+                applyColumnOrder(state);
+                applyColumnVisibility(state);
+                applyColumnWidths(state);
+                ensureResizeHandles(state);
+                renderColumnPanel(state);
+            });
+
+            panel.appendChild(item);
+            if(orderIdx === state.columnOrder.length - 1){
+                item.classList.remove('is-drop-target');
+            }
+        });
+    }
+
+    function applyPagination(state){
+        const rows = getDataRows(state);
+        const total = rows.length;
+        if(!total){
+            state.currentPage = 1;
+            state.info.textContent = '共 0 条';
+            state.pageCurrent.textContent = '1 / 1';
+            state.prevBtn.disabled = true;
+            state.nextBtn.disabled = true;
+            return;
+        }
+
+        const totalPages = Math.max(1, Math.ceil(total / state.pageSize));
+        state.currentPage = Math.max(1, Math.min(state.currentPage, totalPages));
+        const start = (state.currentPage - 1) * state.pageSize;
+        const end = Math.min(start + state.pageSize, total);
+
+        rows.forEach((row, idx) => {
+            row.style.display = (idx >= start && idx < end) ? '' : 'none';
+        });
+
+        state.info.textContent = `显示 ${start + 1}-${end} / 共 ${total} 条`;
+        state.pageCurrent.textContent = `${state.currentPage} / ${totalPages}`;
+        state.prevBtn.disabled = state.currentPage <= 1;
+        state.nextBtn.disabled = state.currentPage >= totalPages;
+    }
+
+    function isMultiSelectColumn(headerCell, label){
+        if(!headerCell) return false;
+        if(headerCell.querySelector('input[type="checkbox"]')) return true;
+        const t = String(label || '').trim();
+        if(!t) return false;
+        return /多选|选择|勾选/.test(t);
+    }
+
+    function ensureRowSortOrigin(state){
+        const rows = Array.from(state.tbody.rows || []);
+        rows.forEach((row, idx) => {
+            if((row.cells || []).length !== state.headerCount) return;
+            if(!row.dataset.sortOrigin) row.dataset.sortOrigin = String(idx);
+        });
+    }
+
+    function readCellComparableValue(cell){
+        if(!cell) return '';
+        const text = String(cell.textContent || '').trim();
+        const normalized = text.replace(/,/g, '');
+        const numeric = Number(normalized);
+        if(normalized && !Number.isNaN(numeric) && /^-?\d+(\.\d+)?$/.test(normalized)) return numeric;
+        return text.toLowerCase();
+    }
+
+    function applySort(state){
+        const sortOrigin = state.sortOrigin;
+        const sortDir = state.sortDir;
+        const rows = getDataRows(state);
+        if(!rows.length) return;
+
+        if((sortOrigin === null || sortOrigin === undefined) || !sortDir){
+            if(!state.sortApplied) return;
+            rows.sort((a, b) => Number(a.dataset.sortOrigin || '0') - Number(b.dataset.sortOrigin || '0'));
+            const sortedOrigins = rows.map(r => Number(r.dataset.sortOrigin || '0'));
+            const sameOrder = Array.from(state.tbody.rows || []).every((r, idx) => Number(r.dataset.sortOrigin || '0') === sortedOrigins[idx]);
+            if(!sameOrder) rows.forEach(row => state.tbody.appendChild(row));
+            state.sortApplied = false;
+            return;
+        }
+
+        rows.sort((a, b) => {
+            const aCell = mapRowByOrigin(a).get(sortOrigin);
+            const bCell = mapRowByOrigin(b).get(sortOrigin);
+            const av = readCellComparableValue(aCell);
+            const bv = readCellComparableValue(bCell);
+            if(typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? (av - bv) : (bv - av);
+            if(av === bv) return Number(a.dataset.sortOrigin || '0') - Number(b.dataset.sortOrigin || '0');
+            return sortDir === 'asc' ? String(av).localeCompare(String(bv), 'zh') : String(bv).localeCompare(String(av), 'zh');
+        });
+
+        const sortedOrigins = rows.map(r => Number(r.dataset.sortOrigin || '0'));
+        const sameOrder = Array.from(state.tbody.rows || []).every((r, idx) => Number(r.dataset.sortOrigin || '0') === sortedOrigins[idx]);
+        if(!sameOrder) rows.forEach(row => state.tbody.appendChild(row));
+        state.sortApplied = true;
+    }
+
+    function refreshSortHeaderUi(state){
+        if(!state.table.tHead || !state.table.tHead.rows.length) return;
+        Array.from(state.table.tHead.rows[0].cells || []).forEach(cell => {
+            const origin = Number(cell.dataset.manageColOrigin || '-1');
+            cell.classList.remove('pm-sortable', 'pm-sort-asc', 'pm-sort-desc');
+            if(state.lockedColumns.has(origin)) return;
+            cell.classList.add('pm-sortable');
+            if(state.sortOrigin !== origin || !state.sortDir) return;
+            if(state.sortDir === 'asc') cell.classList.add('pm-sort-asc');
+            if(state.sortDir === 'desc') cell.classList.add('pm-sort-desc');
+        });
+    }
+
+    function ensureSortableHeaders(state){
+        if(!state.table.tHead || !state.table.tHead.rows.length) return;
+        const headerRow = state.table.tHead.rows[0];
+        Array.from(headerRow.cells).forEach(cell => {
+            if(cell.dataset.sortBound === '1') return;
+            cell.dataset.sortBound = '1';
+            cell.addEventListener('click', (event) => {
+                if(Date.now() < suppressSortUntil) return;
+                if(event.target.closest('.pm-col-resizer')) return;
+                const origin = Number(cell.dataset.manageColOrigin || '-1');
+                if(state.lockedColumns.has(origin)) return;
+                if(state.sortOrigin !== origin){
+                    state.sortOrigin = origin;
+                    state.sortDir = 'desc';
+                } else if(state.sortDir === 'desc'){
+                    state.sortDir = 'asc';
+                } else if(state.sortDir === 'asc'){
+                    state.sortDir = null;
+                } else {
+                    state.sortDir = 'desc';
+                }
+                refreshSortHeaderUi(state);
+                applySort(state);
+                applyPagination(state);
+            });
+        });
+    }
+
+    function syncTopScroll(state){
+        if(!state.topScroll || !state.topScrollInner || !state.wrap) return;
+        let headerWidth = 0;
+        if(state.table.tHead && state.table.tHead.rows && state.table.tHead.rows[0]){
+            Array.from(state.table.tHead.rows[0].cells || []).forEach(cell => {
+                if(cell.classList.contains('pm-table-hide-col')) return;
+                const styled = parseFloat(cell.style.width || '0') || 0;
+                const measured = Math.ceil(cell.getBoundingClientRect().width || 0);
+                headerWidth += Math.max(styled, measured, 36);
+            });
+        }
+        const width = Math.max(state.table.scrollWidth, state.wrap.scrollWidth, headerWidth, state.wrap.clientWidth);
+        state.topScrollInner.style.width = `${width}px`;
+        const shouldShow = width > (state.wrap.clientWidth + 1) || state.wrap.scrollWidth > (state.wrap.clientWidth + 1);
+        state.topScroll.style.display = shouldShow ? '' : 'none';
+        state.topScroll.scrollLeft = state.wrap.scrollLeft;
+    }
+
+    function refreshManagedTable(state){
+        if(state.isRefreshing){
+            state.needRefresh = true;
+            return;
+        }
+        state.isRefreshing = true;
+
+        const headerMeta = getHeaderMeta(state.table);
+        const headerCount = headerMeta.length;
+        if(!headerCount) {
+            state.isRefreshing = false;
+            return;
+        }
+
+        const validOrigins = headerMeta.map(meta => meta.origin);
+        const headerSignature = headerMeta
+            .slice()
+            .sort((a, b) => a.origin - b.origin)
+            .map(meta => `${meta.origin}:${meta.label}`)
+            .join('|');
+
+        if(headerSignature !== state.headerSignature){
+            state.headerSignature = headerSignature;
+            state.headerCount = headerCount;
+            state.headers = headerMeta.map(meta => ({ origin: meta.origin, label: meta.label }));
+            state.visibleColumns = readPersistedColumns(state.table, validOrigins);
+            state.columnOrder = readPersistedOrder(state.table, validOrigins);
+            state.columnWidths = readPersistedColumnWidths(state.table);
+            state.defaultColumnWidths = {};
+            headerMeta.forEach(meta => {
+                const key = String(meta.origin);
+                const compact = computeDefaultColumnWidth(state, meta);
+                state.defaultColumnWidths[key] = compact;
+                if(state.columnWidths[key]) return;
+                state.columnWidths[key] = compact;
+            });
+            state.lockedColumns = new Set(
+                headerMeta
+                    .filter(meta => isMultiSelectColumn(meta.cell, meta.label))
+                    .map(meta => meta.origin)
+            );
+            state.lockedColumns.forEach(origin => state.visibleColumns.add(origin));
+            state.columnsWrap.style.display = headerCount >= 2 ? '' : 'none';
+            renderColumnPanel(state);
+        }
+
+        ensureRowSortOrigin(state);
+        applyColumnOrder(state);
+        applyColumnVisibility(state);
+        applyColumnWidths(state);
+        ensureSortableHeaders(state);
+        refreshSortHeaderUi(state);
+        applySort(state);
+        ensureResizeHandles(state);
+        applyPagination(state);
+        syncTopScroll(state);
+        if(activeColumnsPanelState === state) repositionColumnsPanel(state);
+
+        state.isRefreshing = false;
+        if(state.needRefresh){
+            state.needRefresh = false;
+            window.requestAnimationFrame(() => refreshManagedTable(state));
+        }
+    }
+
+    function createManagedTable(table, index){
+        if(managedTableState.has(table) || !shouldManageTable(table)) return;
+
+        if(!table.id) table.dataset.manageKey = `managed-${index + 1}`;
+        table.classList.add('is-managed-table');
+        table.classList.add('pm-table');
+
+        let wrap = table.parentElement;
+        if(!wrap || !wrap.classList.contains('pm-table-wrap')){
+            wrap = document.createElement('div');
+            wrap.className = 'pm-table-wrap';
+            table.parentNode.insertBefore(wrap, table);
+            wrap.appendChild(table);
+        }
+        wrap.classList.add('is-managed-wrap');
+
+        const toolbar = document.createElement('div');
+        toolbar.className = 'pm-table-toolbar';
+        toolbar.innerHTML = `
+            <div class="pm-table-toolbar-left">
+                <label>每页</label>
+                <select class="pm-table-page-size" data-universal-no-search="1"></select>
+                <span class="pm-table-info"></span>
+            </div>
+            <div class="pm-table-toolbar-right">
+                <button type="button" class="pm-table-columns-reset" title="恢复默认列宽">重置列宽</button>
+                <div class="pm-table-columns">
+                    <button type="button" class="pm-table-columns-trigger" aria-expanded="false">字段显示</button>
+                    <div class="pm-table-columns-panel"></div>
+                </div>
+                <div class="pm-table-pager">
+                    <button type="button" class="pm-table-prev">上一页</button>
+                    <span class="pm-table-pager-current">1 / 1</span>
+                    <button type="button" class="pm-table-next">下一页</button>
+                </div>
+            </div>
+        `;
+        wrap.parentNode.insertBefore(toolbar, wrap);
+
+        const topScroll = document.createElement('div');
+        topScroll.className = 'pm-table-top-scroll';
+        const topScrollInner = document.createElement('div');
+        topScrollInner.className = 'pm-table-top-scroll-inner';
+        topScroll.appendChild(topScrollInner);
+        wrap.parentNode.insertBefore(topScroll, wrap);
+
+        const state = {
+            table,
+            tbody: table.tBodies[0],
+            wrap,
+            toolbar,
+            topScroll,
+            topScrollInner,
+            pageSizeSelect: toolbar.querySelector('.pm-table-page-size'),
+            info: toolbar.querySelector('.pm-table-info'),
+            prevBtn: toolbar.querySelector('.pm-table-prev'),
+            nextBtn: toolbar.querySelector('.pm-table-next'),
+            pageCurrent: toolbar.querySelector('.pm-table-pager-current'),
+            columnsWrap: toolbar.querySelector('.pm-table-columns'),
+            columnsTrigger: toolbar.querySelector('.pm-table-columns-trigger'),
+            columnPanel: toolbar.querySelector('.pm-table-columns-panel'),
+            resetBtn: toolbar.querySelector('.pm-table-columns-reset'),
+            pageSize: readPersistedPageSize(table),
+            currentPage: 1,
+            headerSignature: '',
+            headerCount: 0,
+            headers: [],
+            visibleColumns: new Set(),
+            lockedColumns: new Set(),
+            columnOrder: [],
+            columnWidths: {},
+            defaultColumnWidths: {},
+            dragOrigin: null,
+            dragPlacement: null,
+            sortOrigin: null,
+            sortDir: null,
+            sortApplied: false,
+            isRefreshing: false,
+            needRefresh: false,
+            refreshScheduled: false
+        };
+        managedTableState.set(table, state);
+
+        if(state.columnPanel && state.columnPanel.parentNode !== document.body){
+            document.body.appendChild(state.columnPanel);
+        }
+
+        PAGE_SIZE_OPTIONS.forEach(size => {
+            const option = document.createElement('option');
+            option.value = String(size);
+            option.textContent = String(size);
+            if(size === state.pageSize) option.selected = true;
+            state.pageSizeSelect.appendChild(option);
+        });
+
+        enhanceSingleSelect(state.pageSizeSelect);
+
+        state.pageSizeSelect.addEventListener('change', () => {
+            state.pageSize = Number(state.pageSizeSelect.value || '50');
+            state.currentPage = 1;
+            persistPageSize(state);
+            applyPagination(state);
+        });
+
+        state.prevBtn.addEventListener('click', () => {
+            if(state.currentPage <= 1) return;
+            state.currentPage -= 1;
+            applyPagination(state);
+        });
+
+        state.nextBtn.addEventListener('click', () => {
+            state.currentPage += 1;
+            applyPagination(state);
+        });
+
+        state.columnsTrigger.addEventListener('click', (event) => {
+            event.stopPropagation();
+            if(state.columnPanel.classList.contains('open')) closeColumnsPanel(state);
+            else openColumnsPanel(state);
+        });
+
+        state.resetBtn.addEventListener('click', () => {
+            try { localStorage.removeItem(makeStorageKey(state.table, 'column-widths')); } catch (_) {}
+            state.columnWidths = Object.assign({}, state.defaultColumnWidths || {});
+            persistColumnWidths(state);
+            applyColumnWidths(state);
+            syncTopScroll(state);
+        });
+
+        state.wrap.addEventListener('scroll', () => {
+            if(Math.abs(state.topScroll.scrollLeft - state.wrap.scrollLeft) > 1){
+                state.topScroll.scrollLeft = state.wrap.scrollLeft;
+            }
+        });
+
+        state.topScroll.addEventListener('scroll', () => {
+            if(Math.abs(state.wrap.scrollLeft - state.topScroll.scrollLeft) > 1){
+                state.wrap.scrollLeft = state.topScroll.scrollLeft;
+            }
+        });
+
+        const scheduleRefresh = () => {
+            if(state.refreshScheduled) return;
+            state.refreshScheduled = true;
+            window.requestAnimationFrame(() => {
+                state.refreshScheduled = false;
+                refreshManagedTable(state);
+            });
+        };
+
+        const observer = new MutationObserver(() => scheduleRefresh());
+        observer.observe(state.tbody, { childList: true, subtree: false });
+        state.observer = observer;
+
+        refreshManagedTable(state);
+    }
+
+    function enhanceManagedTables(root){
+        const scope = root && root.querySelectorAll ? root : document;
+        scope.querySelectorAll('table').forEach((table, index) => createManagedTable(table, index));
     }
 
     window.initUniversalSingleSelects = initUniversalSingleSelects;
@@ -266,7 +1083,6 @@
             syncTriggerFromSelect(select, state);
         });
     };
-    window.initSlashDateInputs = initSlashDateInputs;
 
     function loadHeader(){
         fetch('/static/partials/header.html')
@@ -287,7 +1103,7 @@
                     const elG = document.querySelector('.nav-gallery'); if(elG) elG.classList.add('active');
                 } else if(path.startsWith('/amazon-ad-management') || path.startsWith('/amazon-ad-subtype-management') || path.startsWith('/amazon-ad-delivery-management') || path.startsWith('/amazon-ad-product-management') || path.startsWith('/amazon-ad-adjustment-management') || path.startsWith('/amazon-ad-keyword-management')){
                     const elAd = document.querySelector('.nav-amazon-ad'); if(elAd) elAd.classList.add('active');
-                } else if(path.startsWith('/logistics-factory-management') || path.startsWith('/logistics-forwarder-management') || path.startsWith('/logistics-warehouse-management') || path.startsWith('/logistics-warehouse-inventory-management') || path.startsWith('/logistics-in-transit-management')){
+                } else if(path.startsWith('/logistics-factory-management') || path.startsWith('/logistics-forwarder-management') || path.startsWith('/logistics-warehouse-management') || path.startsWith('/logistics-warehouse-inventory-management') || path.startsWith('/logistics-in-transit-management') || path.startsWith('/logistics-warehouse-dashboard')){
                     const elL = document.querySelector('.nav-logistics'); if(elL) elL.classList.add('active');
                 } else if(path.startsWith('/product-management') || path.startsWith('/fabric-management') || path.startsWith('/feature-management') || path.startsWith('/material-management') || path.startsWith('/certification-management') || path.startsWith('/order-product-management')){
                     const elP = document.querySelector('.nav-product'); if(elP) elP.classList.add('active');
@@ -304,13 +1120,74 @@
         if(!e.target.closest('.universal-select-dropdown')) {
             closeAllDropdowns();
         }
+        if(!e.target.closest('.pm-table-columns') && !e.target.closest('.pm-table-columns-panel')) {
+            closeColumnsPanel(activeColumnsPanelState);
+        }
     });
+
+    document.addEventListener('mousedown', (e) => {
+        if(!e.target.closest('.pm-table-columns') && !e.target.closest('.pm-table-columns-panel')) {
+            closeColumnsPanel(activeColumnsPanelState);
+        }
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if(e.key === 'Escape'){
+            closeColumnsPanel(activeColumnsPanelState);
+            closeAllDropdowns();
+        }
+    });
+
+    document.addEventListener('mousemove', (event) => {
+        if(!activeResizeState) return;
+        const delta = event.clientX - activeResizeState.startX;
+        if(Math.abs(delta) > 2) activeResizeState.hasMoved = true;
+        const width = activeResizeState.startWidth + delta;
+        setColumnWidthByOrigin(activeResizeState.state, activeResizeState.origin, width);
+    });
+
+    document.addEventListener('mouseup', () => {
+        if(!activeResizeState) return;
+        if(activeResizeState.hasMoved) suppressSortUntil = Date.now() + 260;
+        activeResizeState.handle.classList.remove('is-active');
+        persistColumnWidths(activeResizeState.state);
+        activeResizeState = null;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+    });
+
+    window.addEventListener('resize', () => {
+        if(activeColumnsPanelState) repositionColumnsPanel(activeColumnsPanelState);
+    });
+
+    window.addEventListener('scroll', () => {
+        if(activeColumnsPanelState) repositionColumnsPanel(activeColumnsPanelState);
+    }, true);
 
     const boot = () => {
         loadHeader();
         initUniversalSingleSelects(document);
-        initSlashDateInputs(document);
+        enhanceHeroSections(document);
+        enhanceManagedTables(document);
+        bridgeLegacyResponseToToast(document);
         startUniversalSelectValueSync();
+
+        window.showAppToast = function(message, isError, duration){
+            showAppToast(message, !!isError, duration);
+        };
+
+        let bodyEnhanceScheduled = false;
+        const bodyObserver = new MutationObserver(() => {
+            if(bodyEnhanceScheduled) return;
+            bodyEnhanceScheduled = true;
+            window.requestAnimationFrame(() => {
+                bodyEnhanceScheduled = false;
+                enhanceHeroSections(document);
+                enhanceManagedTables(document);
+                bridgeLegacyResponseToToast(document);
+            });
+        });
+        bodyObserver.observe(document.body, { childList: true, subtree: true });
     };
 
     if(document.readyState === 'loading'){

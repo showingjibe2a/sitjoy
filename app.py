@@ -16,8 +16,9 @@ if hasattr(sys.stderr, 'reconfigure'):
 
 os.environ['PYTHONIOENCODING'] = 'utf-8'
 
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote
 import json
+import ast
 import re
 from datetime import datetime, timedelta
 import calendar
@@ -538,8 +539,12 @@ class WSGIApp:
                 return self.serve_file('templates/logistics_warehouse_management.html', 'text/html', start_response)
             elif path == '/logistics-warehouse-inventory-management':
                 return self.serve_file('templates/logistics_warehouse_inventory_management.html', 'text/html', start_response)
+            elif path == '/logistics-warehouse-dashboard':
+                return self.serve_file('templates/logistics_warehouse_dashboard.html', 'text/html', start_response)
             elif path == '/logistics-in-transit-management':
                 return self.serve_file('templates/logistics_in_transit_management.html', 'text/html', start_response)
+            elif path == '/logistics-in-transit-doc-files':
+                return self.serve_file('templates/logistics_in_transit_doc_files.html', 'text/html', start_response)
             elif path == '/shop-brand-management':
                 return self.serve_file('templates/shop_brand_management.html', 'text/html', start_response)
             elif path == '/amazon-account-health-management':
@@ -656,10 +661,18 @@ class WSGIApp:
                 return self.handle_logistics_warehouse_inventory_template_api(environ, method, start_response)
             elif path == '/api/logistics-warehouse-inventory-import':
                 return self.handle_logistics_warehouse_inventory_import_api(environ, method, start_response)
+            elif path == '/api/logistics-warehouse-dashboard':
+                return self.handle_logistics_warehouse_dashboard_api(environ, method, start_response)
             elif path == '/api/logistics-in-transit':
                 return self.handle_logistics_in_transit_api(environ, method, start_response)
+            elif path == '/api/logistics-in-transit-template':
+                return self.handle_logistics_in_transit_template_api(environ, method, start_response)
+            elif path == '/api/logistics-in-transit-import':
+                return self.handle_logistics_in_transit_import_api(environ, method, start_response)
             elif path == '/api/logistics-in-transit-doc-upload':
                 return self.handle_logistics_in_transit_doc_upload_api(environ, start_response)
+            elif path == '/api/logistics-in-transit-doc-files':
+                return self.handle_logistics_in_transit_doc_files_api(environ, method, start_response)
             elif path == '/api/sales-product':
                 return self.handle_sales_product_api(environ, method, start_response)
             elif path == '/api/parent':
@@ -674,6 +687,8 @@ class WSGIApp:
                 return self.handle_fabric_attach_api(environ, start_response)
             elif path == '/api/fabric-upload':
                 return self.handle_fabric_upload_api(environ, start_response)
+            elif path == '/api/fabric-image-delete':
+                return self.handle_fabric_image_delete_api(environ, method, start_response)
             elif path == '/api/upload':
                 return self.handle_upload_api(environ, start_response)
             elif path == '/api/download-zip':
@@ -2447,6 +2462,7 @@ class WSGIApp:
             carton_qty INT UNSIGNED NULL,
             package_size_class VARCHAR(64) NULL,
             last_mile_avg_freight_usd DECIMAL(10,2) NULL,
+            factory_wip_stock INT NOT NULL DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_sku_family (sku_family_id),
             INDEX idx_fabric (fabric_id),
@@ -2631,6 +2647,22 @@ class WSGIApp:
                 if row and row.get('cnt', 0) == 0:
                     try:
                         cur.execute("ALTER TABLE order_products ADD COLUMN contents_desc_en VARCHAR(255) NULL AFTER spec_qty_short")
+                    except Exception:
+                        pass
+
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS cnt
+                    FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'order_products'
+                      AND COLUMN_NAME = 'factory_wip_stock'
+                    """
+                )
+                row = cur.fetchone()
+                if row and row.get('cnt', 0) == 0:
+                    try:
+                        cur.execute("ALTER TABLE order_products ADD COLUMN factory_wip_stock INT NOT NULL DEFAULT 0 AFTER last_mile_avg_freight_usd")
                     except Exception:
                         pass
 
@@ -4921,6 +4953,111 @@ class WSGIApp:
             return self.send_json({'status': 'success', 'image_names': saved_names}, start_response)
         except Exception as e:
             print("Fabric upload error: " + str(e))
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_fabric_image_delete_api(self, environ, method, start_response):
+        """永久删除面料图片文件（并移除绑定关系）"""
+        try:
+            if method != 'POST':
+                return self.send_error(405, 'Method not allowed', start_response)
+
+            data = self._read_json_body(environ)
+            image_name = (data.get('image_name') or '').strip()
+            raw_b64 = (data.get('image_name_raw_b64') or '').strip()
+            current_fabric_id = self._parse_int(data.get('fabric_id'))
+
+            if not image_name and not raw_b64:
+                return self.send_json({'status': 'error', 'message': 'Missing image_name'}, start_response)
+
+            raw_bytes = None
+            if raw_b64:
+                try:
+                    raw_bytes = base64.b64decode(raw_b64)
+                except Exception:
+                    raw_bytes = None
+
+            folder = self._get_fabric_folder_bytes()
+            if not os.path.exists(folder):
+                return self.send_json({'status': 'error', 'message': '面料图片目录不存在'}, start_response)
+
+            name_variants = set()
+            if image_name:
+                name_variants.add(image_name)
+                name_variants.add(os.path.basename(image_name))
+            if raw_bytes is not None:
+                try:
+                    decoded_name = os.fsdecode(raw_bytes)
+                    if decoded_name:
+                        name_variants.add(decoded_name)
+                        name_variants.add(os.path.basename(decoded_name))
+                except Exception:
+                    pass
+
+            file_candidates = []
+            if raw_bytes is not None:
+                file_candidates.append(os.path.join(folder, raw_bytes))
+            if image_name:
+                file_candidates.append(os.path.join(folder, self._safe_fsencode(os.path.basename(image_name))))
+
+            file_path = None
+            for candidate in file_candidates:
+                if os.path.exists(candidate):
+                    file_path = candidate
+                    break
+
+            if file_path is None and image_name:
+                target_name = os.path.basename(image_name).strip().lower()
+                if target_name:
+                    with os.scandir(folder) as it:
+                        for entry in it:
+                            if not entry.is_file(follow_symlinks=False):
+                                continue
+                            entry_name = str(entry.name or '').strip().lower()
+                            if entry_name == target_name:
+                                file_path = entry.path
+                                break
+
+            if file_path is None:
+                return self.send_json({'status': 'error', 'message': '图片文件不存在'}, start_response)
+
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    variants = [v for v in name_variants if v]
+                    if variants:
+                        placeholders = ','.join(['%s'] * len(variants))
+                        cur.execute(
+                            f"SELECT id, fabric_id, image_name FROM fabric_images WHERE image_name IN ({placeholders})",
+                            tuple(variants)
+                        )
+                        bound_rows = cur.fetchall() or []
+                    else:
+                        bound_rows = []
+
+                    if current_fabric_id:
+                        other_rows = [r for r in bound_rows if self._parse_int(r.get('fabric_id')) != current_fabric_id]
+                        if other_rows:
+                            return self.send_json({'status': 'error', 'message': '该图片仍被其他面料关联，无法永久删除'}, start_response)
+
+                    if variants:
+                        placeholders = ','.join(['%s'] * len(variants))
+                        if current_fabric_id:
+                            cur.execute(
+                                f"DELETE FROM fabric_images WHERE fabric_id=%s AND image_name IN ({placeholders})",
+                                tuple([current_fabric_id] + variants)
+                            )
+                        else:
+                            cur.execute(
+                                f"DELETE FROM fabric_images WHERE image_name IN ({placeholders})",
+                                tuple(variants)
+                            )
+
+            try:
+                os.remove(file_path)
+            except Exception as remove_err:
+                return self.send_json({'status': 'error', 'message': f'删除文件失败: {remove_err}'}, start_response)
+
+            return self.send_json({'status': 'success'}, start_response)
+        except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_fabric_attach_api(self, environ, start_response):
@@ -7924,8 +8061,8 @@ class WSGIApp:
 
                 with self._get_db_connection() as conn:
                     ad_item = self._get_ad_item_by_id(conn, ad_item_id)
-                    if not ad_item or ad_item.get('ad_level') not in ('campaign', 'group'):
-                        return self.send_json({'status': 'error', 'message': '广告关联仅支持广告活动或广告组'}, start_response)
+                    if not ad_item or ad_item.get('ad_level') != 'group':
+                        return self.send_json({'status': 'error', 'message': '广告关联仅支持广告组'}, start_response)
                     with conn.cursor() as cur:
                         cur.execute(
                             """
@@ -7960,8 +8097,8 @@ class WSGIApp:
                         if not cur.fetchone():
                             return self.send_json({'status': 'error', 'message': 'Not found'}, start_response)
                     ad_item = self._get_ad_item_by_id(conn, ad_item_id)
-                    if not ad_item or ad_item.get('ad_level') not in ('campaign', 'group'):
-                        return self.send_json({'status': 'error', 'message': '广告关联仅支持广告活动或广告组'}, start_response)
+                    if not ad_item or ad_item.get('ad_level') != 'group':
+                        return self.send_json({'status': 'error', 'message': '广告关联仅支持广告组'}, start_response)
                     with conn.cursor() as cur:
                         cur.execute(
                             """
@@ -8625,6 +8762,8 @@ class WSGIApp:
             eta_latest DATE NULL,
             arrival_port_date DATE NULL,
             expected_warehouse_date DATE NULL,
+            expected_listed_date_initial DATE NULL,
+            expected_listed_date_latest DATE NULL,
             listed_date DATE NULL,
             shipping_company VARCHAR(128) NULL,
             vessel_voyage VARCHAR(128) NULL,
@@ -8680,6 +8819,12 @@ class WSGIApp:
                 cur.execute(create_inventory_sql)
                 cur.execute(create_transit_sql)
                 cur.execute(create_transit_items_sql)
+                cur.execute("SHOW COLUMNS FROM logistics_in_transit")
+                transit_cols = {str((x or {}).get('Field') or '') for x in (cur.fetchall() or [])}
+                if 'expected_listed_date_initial' not in transit_cols:
+                    cur.execute("ALTER TABLE logistics_in_transit ADD COLUMN expected_listed_date_initial DATE NULL AFTER expected_warehouse_date")
+                if 'expected_listed_date_latest' not in transit_cols:
+                    cur.execute("ALTER TABLE logistics_in_transit ADD COLUMN expected_listed_date_latest DATE NULL AFTER expected_listed_date_initial")
         self._logistics_ready = True
 
     def _get_logistics_link_root_bytes(self):
@@ -8718,6 +8863,25 @@ class WSGIApp:
             os.rename(old_path, new_path)
         else:
             self._ensure_logistics_bl_folder(new_name)
+
+    def _resolve_logistics_doc_folder(self, transit_id, doc_type):
+        doc_kind = (doc_type or '').strip().lower()
+        if doc_kind not in ('declaration', 'clearance'):
+            raise RuntimeError('Invalid doc_type')
+        with self._get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT bill_of_lading_no FROM logistics_in_transit WHERE id=%s LIMIT 1", (transit_id,))
+                row = cur.fetchone() or {}
+        bill_no = (row.get('bill_of_lading_no') or '').strip()
+        if not bill_no:
+            raise RuntimeError('请先填写提单号后再操作资料文件')
+        self._ensure_logistics_bl_folder(bill_no)
+        sub_name = '报关资料' if doc_kind == 'declaration' else '清关资料'
+        parent = os.path.join(self._get_logistics_link_root_bytes(), self._safe_fsencode(bill_no))
+        folder = os.path.join(parent, self._safe_fsencode(sub_name))
+        if not os.path.exists(folder):
+            os.makedirs(folder, exist_ok=True)
+        return folder
 
     def handle_logistics_factory_api(self, environ, method, start_response):
         try:
@@ -9176,7 +9340,7 @@ class WSGIApp:
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         sql = """
-                            SELECT i.id, i.warehouse_id, i.order_product_id, i.available_qty, i.in_transit_qty,
+                            SELECT i.id, i.warehouse_id, i.order_product_id, i.available_qty,
                                    i.updated_at, w.warehouse_name, op.sku
                             FROM logistics_overseas_inventory i
                             JOIN logistics_overseas_warehouses w ON w.id = i.warehouse_id
@@ -9201,10 +9365,8 @@ class WSGIApp:
                 warehouse_id = self._parse_int(data.get('warehouse_id'))
                 order_product_id = self._parse_int(data.get('order_product_id'))
                 available_qty = self._parse_int(data.get('available_qty'))
-                in_transit_qty = self._parse_int(data.get('in_transit_qty'))
                 if not warehouse_id or not order_product_id or available_qty is None:
                     return self.send_json({'status': 'error', 'message': 'Missing warehouse_id/order_product_id/available_qty'}, start_response)
-                in_transit_qty = 0 if in_transit_qty is None else in_transit_qty
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
@@ -9212,10 +9374,9 @@ class WSGIApp:
                             INSERT INTO logistics_overseas_inventory (warehouse_id, order_product_id, available_qty, in_transit_qty)
                             VALUES (%s, %s, %s, %s)
                             ON DUPLICATE KEY UPDATE
-                                available_qty=VALUES(available_qty),
-                                in_transit_qty=VALUES(in_transit_qty)
+                                available_qty=VALUES(available_qty)
                             """,
-                            (warehouse_id, order_product_id, available_qty, in_transit_qty)
+                            (warehouse_id, order_product_id, available_qty, 0)
                         )
                 return self.send_json({'status': 'success'}, start_response)
 
@@ -9224,19 +9385,17 @@ class WSGIApp:
                 warehouse_id = self._parse_int(data.get('warehouse_id'))
                 order_product_id = self._parse_int(data.get('order_product_id'))
                 available_qty = self._parse_int(data.get('available_qty'))
-                in_transit_qty = self._parse_int(data.get('in_transit_qty'))
                 if not item_id or not warehouse_id or not order_product_id or available_qty is None:
                     return self.send_json({'status': 'error', 'message': 'Missing required fields'}, start_response)
-                in_transit_qty = 0 if in_transit_qty is None else in_transit_qty
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
                             """
                             UPDATE logistics_overseas_inventory
-                            SET warehouse_id=%s, order_product_id=%s, available_qty=%s, in_transit_qty=%s
+                            SET warehouse_id=%s, order_product_id=%s, available_qty=%s
                             WHERE id=%s
                             """,
-                            (warehouse_id, order_product_id, available_qty, in_transit_qty, item_id)
+                            (warehouse_id, order_product_id, available_qty, item_id)
                         )
                 return self.send_json({'status': 'success'}, start_response)
 
@@ -9266,13 +9425,13 @@ class WSGIApp:
             wb = Workbook()
             ws = wb.active
             ws.title = 'warehouse_inventory'
-            headers = ['SKU', '仓库', '可用量', '在途数量']
+            headers = ['SKU', '仓库', '可用量']
             ws.append(headers)
             for cell in ws[1]:
                 cell.fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
                 cell.font = Font(bold=True, color='2A2420')
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-            widths = [24, 28, 12, 12]
+            widths = [24, 28, 12]
             for idx, width in enumerate(widths, start=1):
                 ws.column_dimensions[get_column_letter(idx)].width = width
             ws.freeze_panes = 'A2'
@@ -9303,21 +9462,22 @@ class WSGIApp:
             if not file_bytes:
                 return self.send_json({'status': 'error', 'message': 'Empty file'}, start_response)
 
-            wb = load_workbook(io.BytesIO(file_bytes))
+            wb = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
             ws = wb.active
-            headers = [str(cell.value or '').strip() for cell in ws[1]]
+            header_rows = ws.iter_rows(min_row=1, max_row=1, values_only=True)
+            header_values = next(header_rows, tuple())
+            headers = [str(value or '').strip() for value in header_values]
             header_map = {name: idx for idx, name in enumerate(headers)}
             required_headers = ['SKU', '仓库', '可用量']
             for col_name in required_headers:
                 if col_name not in header_map:
                     return self.send_json({'status': 'error', 'message': f'模板缺少列: {col_name}'}, start_response)
-            has_in_transit_col = '在途数量' in header_map
 
             def get_cell(row, name):
                 idx = header_map.get(name)
                 if idx is None or idx >= len(row):
                     return None
-                return row[idx].value
+                return row[idx]
 
             self._ensure_logistics_tables()
             created = 0
@@ -9331,58 +9491,78 @@ class WSGIApp:
                     sku_map = {str(r.get('sku') or '').strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
                     cur.execute("SELECT id, warehouse_name FROM logistics_overseas_warehouses")
                     wh_map = {str(r.get('warehouse_name') or '').strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
+                    normalized_rows = []
+                    warehouse_ids = set()
+                    order_product_ids = set()
+                    for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+                        if not any(value is not None and str(value).strip() for value in row):
+                            continue
+                        try:
+                            sku = str(get_cell(row, 'SKU') or '').strip()
+                            warehouse_name = str(get_cell(row, '仓库') or '').strip()
+                            available_qty = self._parse_int(get_cell(row, '可用量'))
+                            if not sku or not warehouse_name or available_qty is None:
+                                raise ValueError('SKU、仓库、可用量不能为空且可用量需为整数')
+                            order_product_id = sku_map.get(sku)
+                            warehouse_id = wh_map.get(warehouse_name)
+                            if not order_product_id:
+                                raise ValueError(f'未找到SKU: {sku}')
+                            if not warehouse_id:
+                                raise ValueError(f'未找到仓库: {warehouse_name}')
+                            warehouse_ids.add(warehouse_id)
+                            order_product_ids.add(order_product_id)
+                            normalized_rows.append((row_idx, warehouse_id, order_product_id, available_qty))
+                        except Exception as row_error:
+                            errors.append({'row': row_idx, 'error': str(row_error)})
 
-                for row_idx in range(2, ws.max_row + 1):
-                    row = ws[row_idx]
-                    if not any(cell.value is not None and str(cell.value).strip() for cell in row):
-                        continue
-                    try:
-                        sku = str(get_cell(row, 'SKU') or '').strip()
-                        warehouse_name = str(get_cell(row, '仓库') or '').strip()
-                        available_qty = self._parse_int(get_cell(row, '可用量'))
-                        if not sku or not warehouse_name or available_qty is None:
-                            raise ValueError('SKU、仓库、可用量不能为空且可用量需为整数')
-                        order_product_id = sku_map.get(sku)
-                        warehouse_id = wh_map.get(warehouse_name)
-                        if not order_product_id:
-                            raise ValueError(f'未找到SKU: {sku}')
-                        if not warehouse_id:
-                            raise ValueError(f'未找到仓库: {warehouse_name}')
+                    existing_map = {}
+                    if warehouse_ids and order_product_ids:
+                        wh_placeholders = ','.join(['%s'] * len(warehouse_ids))
+                        op_placeholders = ','.join(['%s'] * len(order_product_ids))
+                        cur.execute(
+                            f"""
+                            SELECT id, warehouse_id, order_product_id, available_qty
+                            FROM logistics_overseas_inventory
+                            WHERE warehouse_id IN ({wh_placeholders})
+                              AND order_product_id IN ({op_placeholders})
+                            """,
+                            tuple(warehouse_ids) + tuple(order_product_ids)
+                        )
+                        for existing in (cur.fetchall() or []):
+                            key = (self._parse_int(existing.get('warehouse_id')), self._parse_int(existing.get('order_product_id')))
+                            if key[0] and key[1]:
+                                existing_map[key] = {
+                                    'id': self._parse_int(existing.get('id')),
+                                    'available_qty': self._parse_int(existing.get('available_qty')),
+                                }
 
-                        in_transit_qty = None
-                        if has_in_transit_col:
-                            parsed_in_transit = self._parse_int(get_cell(row, '在途数量'))
-                            in_transit_qty = 0 if parsed_in_transit is None else parsed_in_transit
-
-                        with conn.cursor() as cur:
-                            cur.execute(
-                                "SELECT id, available_qty, in_transit_qty FROM logistics_overseas_inventory WHERE warehouse_id=%s AND order_product_id=%s LIMIT 1",
-                                (warehouse_id, order_product_id)
-                            )
-                            existing = cur.fetchone()
-                            if existing:
-                                if has_in_transit_col:
-                                    cur.execute(
-                                        "UPDATE logistics_overseas_inventory SET available_qty=%s, in_transit_qty=%s WHERE id=%s",
-                                        (available_qty, in_transit_qty, existing.get('id'))
-                                    )
-                                else:
-                                    cur.execute(
-                                        "UPDATE logistics_overseas_inventory SET available_qty=%s WHERE id=%s",
-                                        (available_qty, existing.get('id'))
-                                    )
-                                if cur.rowcount:
-                                    updated += 1
-                                else:
-                                    unchanged += 1
+                    to_update = []
+                    to_insert = []
+                    for row_idx, warehouse_id, order_product_id, available_qty in normalized_rows:
+                        key = (warehouse_id, order_product_id)
+                        existing = existing_map.get(key)
+                        if existing:
+                            if (existing.get('available_qty') or 0) != available_qty:
+                                to_update.append((available_qty, existing.get('id')))
+                                existing['available_qty'] = available_qty
                             else:
-                                cur.execute(
-                                    "INSERT INTO logistics_overseas_inventory (warehouse_id, order_product_id, available_qty, in_transit_qty) VALUES (%s, %s, %s, %s)",
-                                    (warehouse_id, order_product_id, available_qty, 0 if in_transit_qty is None else in_transit_qty)
-                                )
-                                created += 1
-                    except Exception as row_error:
-                        errors.append({'row': row_idx, 'error': str(row_error)})
+                                unchanged += 1
+                        else:
+                            to_insert.append((warehouse_id, order_product_id, available_qty, 0))
+                            existing_map[key] = {'id': None, 'available_qty': available_qty}
+
+                    if to_update:
+                        cur.executemany(
+                            "UPDATE logistics_overseas_inventory SET available_qty=%s WHERE id=%s",
+                            to_update
+                        )
+                    if to_insert:
+                        cur.executemany(
+                            "INSERT INTO logistics_overseas_inventory (warehouse_id, order_product_id, available_qty, in_transit_qty) VALUES (%s, %s, %s, %s)",
+                            to_insert
+                        )
+                    updated += len(to_update)
+                    created += len(to_insert)
 
             return self.send_json({
                 'status': 'success',
@@ -9391,6 +9571,197 @@ class WSGIApp:
                 'unchanged': unchanged,
                 'errors': errors
             }, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_logistics_warehouse_dashboard_api(self, environ, method, start_response):
+        """仓储看板：SKU库存聚合 + 仓库分列 + 在途角标 + 工厂在制库存批量更新"""
+        try:
+            self._ensure_logistics_tables()
+            self._ensure_order_product_tables()
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            action = (query_params.get('action', [''])[0] or '').strip().lower()
+
+            region_order = {
+                '美西': 1,
+                '美中': 2,
+                '美东南': 3,
+                '美东': 4,
+            }
+
+            def _region_rank(region_name):
+                text = str(region_name or '').strip()
+                for key, rank in region_order.items():
+                    if key in text:
+                        return rank
+                return 99
+
+            if method == 'POST' and action == 'update_wip':
+                data = self._read_json_body(environ)
+                items = data.get('items') if isinstance(data.get('items'), list) else []
+                normalized = []
+                for it in items:
+                    if not isinstance(it, dict):
+                        continue
+                    op_id = self._parse_int(it.get('order_product_id'))
+                    wip = self._parse_int(it.get('factory_wip_stock'))
+                    if not op_id:
+                        continue
+                    normalized.append((op_id, max(0, wip or 0)))
+                if not normalized:
+                    return self.send_json({'status': 'error', 'message': '没有可更新的数据'}, start_response)
+
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.executemany(
+                            "UPDATE order_products SET factory_wip_stock=%s WHERE id=%s",
+                            [(wip, op_id) for op_id, wip in normalized]
+                        )
+                return self.send_json({'status': 'success', 'updated': len(normalized)}, start_response)
+
+            if method != 'GET':
+                return self.send_error(405, 'Method not allowed', start_response)
+
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT w.id, w.warehouse_name, w.warehouse_short_name, w.region, s.supplier_name
+                        FROM logistics_overseas_warehouses w
+                        JOIN logistics_suppliers s ON s.id = w.supplier_id
+                        """
+                    )
+                    warehouse_rows = cur.fetchall() or []
+
+                    cur.execute(
+                        """
+                        SELECT
+                            op.id,
+                            op.sku,
+                            COALESCE(op.factory_wip_stock, 0) AS factory_wip_stock,
+                            pf.sku_family
+                        FROM order_products op
+                        LEFT JOIN product_families pf ON pf.id = op.sku_family_id
+                        ORDER BY op.sku DESC
+                        """
+                    )
+                    sku_rows = cur.fetchall() or []
+
+                    cur.execute(
+                        """
+                        SELECT order_product_id, warehouse_id, SUM(available_qty) AS qty
+                        FROM logistics_overseas_inventory
+                        GROUP BY order_product_id, warehouse_id
+                        """
+                    )
+                    inv_rows = cur.fetchall() or []
+
+                    cur.execute(
+                        """
+                        SELECT
+                            li.order_product_id,
+                            t.destination_warehouse_id AS warehouse_id,
+                            t.logistics_box_no,
+                            SUM(li.shipped_qty) AS qty
+                        FROM logistics_in_transit_items li
+                        JOIN logistics_in_transit t ON t.id = li.transit_id
+                        WHERE t.listed_date IS NULL
+                        GROUP BY li.order_product_id, t.destination_warehouse_id, t.logistics_box_no
+                        """
+                    )
+                    transit_rows = cur.fetchall() or []
+
+            warehouses = sorted(
+                [
+                    {
+                        'id': int(w.get('id')),
+                        'warehouse_name': w.get('warehouse_name') or '',
+                        'warehouse_short_name': w.get('warehouse_short_name') or '',
+                        'region': w.get('region') or '',
+                        'supplier_name': w.get('supplier_name') or ''
+                    }
+                    for w in warehouse_rows if w.get('id')
+                ],
+                key=lambda x: (_region_rank(x.get('region')), str(x.get('warehouse_name') or ''))
+            )
+
+            inv_map = {}
+            for row in inv_rows:
+                op_id = self._parse_int(row.get('order_product_id'))
+                wh_id = self._parse_int(row.get('warehouse_id'))
+                qty = self._parse_int(row.get('qty')) or 0
+                if not op_id or not wh_id:
+                    continue
+                inv_map[(op_id, wh_id)] = qty
+
+            transit_total_map = {}
+            transit_wh_map = {}
+            transit_tip_map = {}
+            for row in transit_rows:
+                op_id = self._parse_int(row.get('order_product_id'))
+                wh_id = self._parse_int(row.get('warehouse_id'))
+                box_no = (row.get('logistics_box_no') or '').strip()
+                qty = self._parse_int(row.get('qty')) or 0
+                if not op_id or qty <= 0:
+                    continue
+                transit_total_map[op_id] = transit_total_map.get(op_id, 0) + qty
+                tip_text = f"{box_no}: {qty}" if box_no else str(qty)
+                transit_tip_map.setdefault(op_id, []).append(tip_text)
+                if wh_id:
+                    transit_wh_map[(op_id, wh_id)] = transit_wh_map.get((op_id, wh_id), 0) + qty
+
+            rows = []
+            for row in sku_rows:
+                op_id = self._parse_int(row.get('id'))
+                if not op_id:
+                    continue
+                warehouse_qty = {}
+                available_total = 0
+                for wh in warehouses:
+                    wh_id = wh['id']
+                    qty = inv_map.get((op_id, wh_id), 0)
+                    warehouse_qty[str(wh_id)] = qty
+                    available_total += qty
+                transit_total = transit_total_map.get(op_id, 0)
+                rows.append({
+                    'order_product_id': op_id,
+                    'sku_family': row.get('sku_family') or '',
+                    'sku': row.get('sku') or '',
+                    'available_total': available_total,
+                    'in_transit_total': transit_total,
+                    'factory_wip_stock': self._parse_int(row.get('factory_wip_stock')) or 0,
+                    'warehouse_qty': warehouse_qty,
+                    'in_transit_by_warehouse': {
+                        str(wh['id']): transit_wh_map.get((op_id, wh['id']), 0) for wh in warehouses
+                    },
+                    'in_transit_tip': '\n'.join(transit_tip_map.get(op_id, []))
+                })
+
+            if action == 'export':
+                if Workbook is None:
+                    return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
+                wb = Workbook()
+                ws = wb.active
+                ws.title = 'warehouse_dashboard'
+                headers = ['SKU', '现货库存', '在途数量', '工厂在制库存'] + [w['warehouse_name'] for w in warehouses]
+                for idx, title in enumerate(headers, start=1):
+                    ws.cell(row=1, column=idx, value=title)
+                line = 2
+                for item in rows:
+                    data_line = [
+                        item.get('sku') or '',
+                        item.get('available_total') or 0,
+                        item.get('in_transit_total') or 0,
+                        item.get('factory_wip_stock') or 0,
+                    ]
+                    for wh in warehouses:
+                        data_line.append((item.get('warehouse_qty') or {}).get(str(wh['id']), 0))
+                    for col, value in enumerate(data_line, start=1):
+                        ws.cell(row=line, column=col, value=value)
+                    line += 1
+                return self._send_excel_workbook(wb, 'logistics_warehouse_dashboard.xlsx', start_response)
+
+            return self.send_json({'status': 'success', 'warehouses': warehouses, 'items': rows}, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
@@ -9443,7 +9814,7 @@ class WSGIApp:
                                    t.forwarder_id, t.logistics_box_no, t.customs_clearance_no,
                                    t.etd_initial, t.etd_previous, t.etd_latest,
                                    t.eta_initial, t.eta_previous, t.eta_latest,
-                                   t.arrival_port_date, t.expected_warehouse_date, t.listed_date,
+                                   t.arrival_port_date, t.expected_warehouse_date, t.expected_listed_date_initial, t.expected_listed_date_latest, t.listed_date,
                                    t.shipping_company, t.vessel_voyage, t.bill_of_lading_no,
                                    t.declaration_docs_provided, t.inventory_registered, t.clearance_docs_provided, t.qty_verified,
                                    t.port_of_loading, t.port_of_destination, t.destination_warehouse_id, t.inbound_order_no,
@@ -9516,8 +9887,7 @@ class WSGIApp:
                     with conn.cursor() as cur:
                         cur.execute(
                             """
-                            SELECT id, destination_warehouse_id, listed_date, declaration_docs_provided,
-                                   clearance_docs_provided, qty_verified, inventory_registered
+                            SELECT id, destination_warehouse_id, listed_date, qty_verified, inventory_registered
                             FROM logistics_in_transit WHERE id=%s LIMIT 1
                             """,
                             (item_id,)
@@ -9529,10 +9899,6 @@ class WSGIApp:
                             return self.send_json({'status': 'error', 'message': '请先填写目的仓库后再登记库存'}, start_response)
                         if not transit.get('listed_date'):
                             return self.send_json({'status': 'error', 'message': '未上架状态不能登记库存，请先填写上架日期'}, start_response)
-                        if not transit.get('declaration_docs_provided'):
-                            return self.send_json({'status': 'error', 'message': '请先上传报关资料'}, start_response)
-                        if not transit.get('clearance_docs_provided'):
-                            return self.send_json({'status': 'error', 'message': '请先上传清关资料'}, start_response)
                         if not transit.get('qty_verified'):
                             return self.send_json({'status': 'error', 'message': '请先完成数量核对'}, start_response)
 
@@ -9608,6 +9974,7 @@ class WSGIApp:
                     'customs_clearance_no': customs_clearance_no,
                     'arrival_port_date': _normalize_date(data.get('arrival_port_date')),
                     'expected_warehouse_date': _normalize_date(data.get('expected_warehouse_date')),
+                    'expected_listed_date_latest': _normalize_date(data.get('expected_listed_date_latest')),
                     'listed_date': _normalize_date(data.get('listed_date')),
                     'shipping_company': (data.get('shipping_company') or '').strip() or None,
                     'vessel_voyage': (data.get('vessel_voyage') or '').strip() or None,
@@ -9646,7 +10013,7 @@ class WSGIApp:
                             return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
                         with conn.cursor() as cur:
                             cur.execute(
-                                "SELECT id, bill_of_lading_no, factory_ship_date_initial, factory_ship_date_latest, etd_initial, etd_latest, eta_initial, eta_latest FROM logistics_in_transit WHERE id=%s LIMIT 1",
+                                "SELECT id, bill_of_lading_no, factory_ship_date_initial, factory_ship_date_latest, expected_listed_date_initial, expected_listed_date_latest, etd_initial, etd_latest, eta_initial, eta_latest FROM logistics_in_transit WHERE id=%s LIMIT 1",
                                 (item_id,)
                             )
                             existing = cur.fetchone()
@@ -9657,6 +10024,8 @@ class WSGIApp:
                         payload['factory_ship_date_initial'] = existing.get('factory_ship_date_initial') or factory_ship_latest
                         payload['factory_ship_date_previous'] = existing.get('factory_ship_date_latest') if factory_ship_latest and str(existing.get('factory_ship_date_latest') or '') != str(factory_ship_latest) else existing.get('factory_ship_date_previous')
                         payload['factory_ship_date_latest'] = factory_ship_latest or existing.get('factory_ship_date_latest')
+                        payload['expected_listed_date_initial'] = existing.get('expected_listed_date_initial') or payload.get('expected_listed_date_latest')
+                        payload['expected_listed_date_latest'] = payload.get('expected_listed_date_latest') or existing.get('expected_listed_date_latest')
                         payload['etd_initial'] = existing.get('etd_initial') or etd_latest
                         payload['etd_previous'] = existing.get('etd_latest') if etd_latest and str(existing.get('etd_latest') or '') != str(etd_latest) else existing.get('etd_previous')
                         payload['etd_latest'] = etd_latest or existing.get('etd_latest')
@@ -9667,6 +10036,7 @@ class WSGIApp:
                         payload['factory_ship_date_initial'] = factory_ship_latest
                         payload['factory_ship_date_previous'] = None
                         payload['factory_ship_date_latest'] = factory_ship_latest
+                        payload['expected_listed_date_initial'] = payload.get('expected_listed_date_latest')
                         payload['etd_initial'] = etd_latest
                         payload['etd_previous'] = None
                         payload['etd_latest'] = etd_latest
@@ -9683,7 +10053,7 @@ class WSGIApp:
                                     forwarder_id, logistics_box_no, customs_clearance_no,
                                     etd_initial, etd_previous, etd_latest,
                                     eta_initial, eta_previous, eta_latest,
-                                    arrival_port_date, expected_warehouse_date, listed_date,
+                                    arrival_port_date, expected_warehouse_date, expected_listed_date_initial, expected_listed_date_latest, listed_date,
                                     shipping_company, vessel_voyage, bill_of_lading_no,
                                     declaration_docs_provided, inventory_registered, clearance_docs_provided, qty_verified,
                                     port_of_loading, port_of_destination, destination_warehouse_id, inbound_order_no
@@ -9692,7 +10062,7 @@ class WSGIApp:
                                     %(forwarder_id)s, %(logistics_box_no)s, %(customs_clearance_no)s,
                                     %(etd_initial)s, %(etd_previous)s, %(etd_latest)s,
                                     %(eta_initial)s, %(eta_previous)s, %(eta_latest)s,
-                                    %(arrival_port_date)s, %(expected_warehouse_date)s, %(listed_date)s,
+                                    %(arrival_port_date)s, %(expected_warehouse_date)s, %(expected_listed_date_initial)s, %(expected_listed_date_latest)s, %(listed_date)s,
                                     %(shipping_company)s, %(vessel_voyage)s, %(bill_of_lading_no)s,
                                     %(declaration_docs_provided)s, %(inventory_registered)s, %(clearance_docs_provided)s, %(qty_verified)s,
                                     %(port_of_loading)s, %(port_of_destination)s, %(destination_warehouse_id)s, %(inbound_order_no)s
@@ -9721,6 +10091,8 @@ class WSGIApp:
                                     eta_latest=%(eta_latest)s,
                                     arrival_port_date=%(arrival_port_date)s,
                                     expected_warehouse_date=%(expected_warehouse_date)s,
+                                    expected_listed_date_initial=%(expected_listed_date_initial)s,
+                                    expected_listed_date_latest=%(expected_listed_date_latest)s,
                                     listed_date=%(listed_date)s,
                                     shipping_company=%(shipping_company)s,
                                     vessel_voyage=%(vessel_voyage)s,
@@ -9770,6 +10142,597 @@ class WSGIApp:
             return self.send_error(405, 'Method not allowed', start_response)
         except RuntimeError as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_logistics_in_transit_template_api(self, environ, method, start_response):
+        """在途物流模板下载（Sheet1在途信息 + Sheet2 SKU明细）"""
+        try:
+            if method != 'GET':
+                return self.send_error(405, 'Method not allowed', start_response)
+            if Workbook is None:
+                return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
+
+            from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+            from openpyxl.worksheet.datavalidation import DataValidation
+
+            self._ensure_logistics_tables()
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            selected_ids = []
+            for raw in query_params.get('ids', []):
+                for token in re.split(r'[,，;；\s]+', str(raw or '').strip()):
+                    if not token:
+                        continue
+                    item_id = self._parse_int(token)
+                    if item_id and item_id not in selected_ids:
+                        selected_ids.append(item_id)
+
+            wb = Workbook()
+            ws_info = wb.active
+            ws_info.title = '在途信息'
+            ws_items = wb.create_sheet('SKU明细')
+            ws_opt = wb.create_sheet('下拉选项')
+
+            info_headers = [
+                '物流箱号*', '清关单号*', '工厂*', '货代*', '目的仓库*',
+                '工厂发货最新日期', 'ETD最新日期', 'ETA最新日期', '到港日期',
+                '预计送仓日期', '最新预计上架日期', '上架日期', '船公司', '船名航次',
+                '提单号', '起运港', '目的港', '入库单号',
+                '是否上传报关资料', '是否上传清关资料', '数量是否已核对', '库存表已登记'
+            ]
+            item_headers = ['物流箱号*', '下单SKU*', '发货数量*']
+
+            header_fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
+            header_font = Font(bold=True, color='2A2420')
+            thin_border = Border(
+                left=Side(style='thin', color='B7AEA4'),
+                right=Side(style='thin', color='B7AEA4'),
+                top=Side(style='thin', color='B7AEA4'),
+                bottom=Side(style='thin', color='B7AEA4')
+            )
+
+            def _col_letter(index_1_based):
+                idx = int(index_1_based)
+                text = ''
+                while idx > 0:
+                    idx, rem = divmod(idx - 1, 26)
+                    text = chr(65 + rem) + text
+                return text
+
+            groups = [
+                ('基础标识', 1, 5),
+                ('物流信息', 6, 18),
+                ('状态', 19, 22),
+            ]
+            for title, start_col, end_col in groups:
+                ws_info.merge_cells(start_row=1, start_column=start_col, end_row=1, end_column=end_col)
+                cell = ws_info.cell(row=1, column=start_col, value=title)
+                cell.fill = PatternFill(start_color='E8DFD4', end_color='E8DFD4', fill_type='solid')
+                cell.font = Font(bold=True, color='2A2420')
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+            for col, title in enumerate(info_headers, start=1):
+                cell = ws_info.cell(row=2, column=col, value=title)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                cell.border = thin_border
+                ws_info.column_dimensions[_col_letter(col)].width = 18 if '*' in title else 16
+
+            ws_items.merge_cells(start_row=1, start_column=1, end_row=1, end_column=3)
+            ws_items.cell(row=1, column=1, value='SKU明细关联').alignment = Alignment(horizontal='center', vertical='center')
+            ws_items.cell(row=1, column=1).fill = PatternFill(start_color='E8DFD4', end_color='E8DFD4', fill_type='solid')
+            ws_items.cell(row=1, column=1).font = Font(bold=True, color='2A2420')
+            for col, title in enumerate(item_headers, start=1):
+                cell = ws_items.cell(row=2, column=col, value=title)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                cell.border = thin_border
+                ws_items.column_dimensions[_col_letter(col)].width = 24 if col == 1 else 18
+
+            export_rows = []
+            export_items = []
+
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id, factory_name FROM logistics_factories ORDER BY factory_name")
+                    factories = cur.fetchall() or []
+                    cur.execute("SELECT id, forwarder_name FROM logistics_forwarders ORDER BY forwarder_name")
+                    forwarders = cur.fetchall() or []
+                    cur.execute("SELECT id, warehouse_name FROM logistics_overseas_warehouses ORDER BY warehouse_name")
+                    warehouses = cur.fetchall() or []
+                    cur.execute("SELECT id, sku FROM order_products ORDER BY sku")
+                    products = cur.fetchall() or []
+
+                    if selected_ids:
+                        placeholders = ','.join(['%s'] * len(selected_ids))
+                        cur.execute(
+                            f"""
+                            SELECT
+                                t.id, t.logistics_box_no, t.customs_clearance_no,
+                                f.factory_name, fw.forwarder_name, w.warehouse_name,
+                                t.factory_ship_date_latest, t.etd_latest, t.eta_latest,
+                                t.arrival_port_date, t.expected_warehouse_date, t.expected_listed_date_latest,
+                                t.listed_date, t.shipping_company, t.vessel_voyage,
+                                t.bill_of_lading_no, t.port_of_loading, t.port_of_destination,
+                                t.inbound_order_no, t.declaration_docs_provided, t.clearance_docs_provided,
+                                t.qty_verified, t.inventory_registered
+                            FROM logistics_in_transit t
+                            LEFT JOIN logistics_factories f ON f.id = t.factory_id
+                            LEFT JOIN logistics_forwarders fw ON fw.id = t.forwarder_id
+                            LEFT JOIN logistics_overseas_warehouses w ON w.id = t.destination_warehouse_id
+                            WHERE t.id IN ({placeholders})
+                            """,
+                            tuple(selected_ids)
+                        )
+                        selected_rows = cur.fetchall() or []
+                        order_map = {sid: idx for idx, sid in enumerate(selected_ids)}
+                        selected_rows.sort(key=lambda x: order_map.get(x.get('id'), 10 ** 6))
+                        export_rows = selected_rows
+
+                        if selected_rows:
+                            row_ids = [r.get('id') for r in selected_rows if r.get('id')]
+                            if row_ids:
+                                ph2 = ','.join(['%s'] * len(row_ids))
+                                cur.execute(
+                                    f"""
+                                    SELECT t.id AS transit_id, t.logistics_box_no, op.sku, li.shipped_qty
+                                    FROM logistics_in_transit_items li
+                                    JOIN logistics_in_transit t ON t.id = li.transit_id
+                                    JOIN order_products op ON op.id = li.order_product_id
+                                    WHERE li.transit_id IN ({ph2})
+                                    ORDER BY li.transit_id, li.id
+                                    """,
+                                    tuple(row_ids)
+                                )
+                                export_items = cur.fetchall() or []
+
+            ws_opt.cell(row=1, column=1, value='工厂')
+            ws_opt.cell(row=1, column=2, value='货代')
+            ws_opt.cell(row=1, column=3, value='仓库')
+            ws_opt.cell(row=1, column=4, value='SKU')
+            max_options = max(len(factories), len(forwarders), len(warehouses), len(products), 1)
+            for i in range(max_options):
+                row_idx = i + 2
+                ws_opt.cell(row=row_idx, column=1, value=(factories[i]['factory_name'] if i < len(factories) else None))
+                ws_opt.cell(row=row_idx, column=2, value=(forwarders[i]['forwarder_name'] if i < len(forwarders) else None))
+                ws_opt.cell(row=row_idx, column=3, value=(warehouses[i]['warehouse_name'] if i < len(warehouses) else None))
+                ws_opt.cell(row=row_idx, column=4, value=(products[i]['sku'] if i < len(products) else None))
+            ws_opt.sheet_state = 'hidden'
+
+            max_validation_row = 400
+            bool_validation = DataValidation(type='list', formula1='"否,是"', allow_blank=True)
+            ws_info.add_data_validation(bool_validation)
+            for col in (19, 20, 21, 22):
+                letter = _col_letter(col)
+                for row in range(3, max_validation_row + 1):
+                    bool_validation.add(f'{letter}{row}')
+
+            def _add_list_validation(ws, col, options_col, count):
+                if count <= 0:
+                    return
+                letter = _col_letter(col)
+                opt_letter = _col_letter(options_col)
+                formula = f"'下拉选项'!${opt_letter}$2:${opt_letter}${count + 1}"
+                dv = DataValidation(type='list', formula1=formula, allow_blank=True)
+                ws.add_data_validation(dv)
+                for row in range(3, max_validation_row + 1):
+                    dv.add(f'{letter}{row}')
+
+            _add_list_validation(ws_info, 3, 1, len(factories))
+            _add_list_validation(ws_info, 4, 2, len(forwarders))
+            _add_list_validation(ws_info, 5, 3, len(warehouses))
+            _add_list_validation(ws_items, 2, 4, len(products))
+
+            def _fmt_date(value):
+                if value is None:
+                    return ''
+                if isinstance(value, datetime):
+                    return value.strftime('%Y-%m-%d')
+                text = str(value).strip()
+                if not text:
+                    return ''
+                for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%Y-%m-%d %H:%M:%S'):
+                    try:
+                        return datetime.strptime(text, fmt).strftime('%Y-%m-%d')
+                    except Exception:
+                        continue
+                return text
+
+            out_row = 3
+            for row in export_rows:
+                values = [
+                    row.get('logistics_box_no') or '',
+                    row.get('customs_clearance_no') or '',
+                    row.get('factory_name') or '',
+                    row.get('forwarder_name') or '',
+                    row.get('warehouse_name') or '',
+                    _fmt_date(row.get('factory_ship_date_latest')),
+                    _fmt_date(row.get('etd_latest')),
+                    _fmt_date(row.get('eta_latest')),
+                    _fmt_date(row.get('arrival_port_date')),
+                    _fmt_date(row.get('expected_warehouse_date')),
+                    _fmt_date(row.get('expected_listed_date_latest')),
+                    _fmt_date(row.get('listed_date')),
+                    row.get('shipping_company') or '',
+                    row.get('vessel_voyage') or '',
+                    row.get('bill_of_lading_no') or '',
+                    row.get('port_of_loading') or '',
+                    row.get('port_of_destination') or '',
+                    row.get('inbound_order_no') or '',
+                    '是' if str(row.get('declaration_docs_provided') or '0') in ('1', 'True', 'true') else '否',
+                    '是' if str(row.get('clearance_docs_provided') or '0') in ('1', 'True', 'true') else '否',
+                    '是' if str(row.get('qty_verified') or '0') in ('1', 'True', 'true') else '否',
+                    '是' if str(row.get('inventory_registered') or '0') in ('1', 'True', 'true') else '否',
+                ]
+                for col, val in enumerate(values, start=1):
+                    ws_info.cell(row=out_row, column=col, value=val)
+                out_row += 1
+
+            item_row = 3
+            for row in export_items:
+                ws_items.cell(row=item_row, column=1, value=row.get('logistics_box_no') or '')
+                ws_items.cell(row=item_row, column=2, value=row.get('sku') or '')
+                ws_items.cell(row=item_row, column=3, value=self._parse_int(row.get('shipped_qty')) or 0)
+                item_row += 1
+
+            ws_info.freeze_panes = 'A3'
+            ws_items.freeze_panes = 'A3'
+            return self._send_excel_workbook(wb, 'logistics_in_transit_template.xlsx', start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_logistics_in_transit_import_api(self, environ, method, start_response):
+        """在途物流模板导入（Sheet1在途信息 + Sheet2 SKU明细）"""
+        try:
+            if method != 'POST':
+                return self.send_error(405, 'Method not allowed', start_response)
+            if load_workbook is None:
+                return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
+
+            self._ensure_logistics_tables()
+            content_type = environ.get('CONTENT_TYPE', '')
+            if 'multipart/form-data' not in content_type:
+                return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
+
+            content_length = int(environ.get('CONTENT_LENGTH', 0) or 0)
+            raw_body = environ['wsgi.input'].read(content_length) if content_length > 0 else b''
+            env_copy = dict(environ)
+            env_copy['CONTENT_LENGTH'] = str(len(raw_body))
+            form = cgi.FieldStorage(fp=io.BytesIO(raw_body), environ=env_copy, keep_blank_values=True)
+            file_item = form['file'] if 'file' in form else None
+            if file_item is None or getattr(file_item, 'file', None) is None:
+                return self.send_json({'status': 'error', 'message': 'Missing file'}, start_response)
+            file_bytes = file_item.file.read() or b''
+            if not file_bytes:
+                return self.send_json({'status': 'error', 'message': 'Empty file'}, start_response)
+
+            file_bytes = self._sanitize_xlsx_bool_cells(file_bytes)
+            wb = load_workbook(io.BytesIO(file_bytes), data_only=True)
+            ws_info = wb['在途信息'] if '在途信息' in wb.sheetnames else wb.worksheets[0]
+            ws_items = wb['SKU明细'] if 'SKU明细' in wb.sheetnames else (wb.worksheets[1] if len(wb.worksheets) > 1 else None)
+            if ws_items is None:
+                return self.send_json({'status': 'error', 'message': '缺少SKU明细工作表'}, start_response)
+
+            def _cell_text(v):
+                if v is None:
+                    return ''
+                if isinstance(v, datetime):
+                    return v.strftime('%Y-%m-%d')
+                return str(v).strip()
+
+            def _norm_date(v):
+                if v is None:
+                    return None
+                if isinstance(v, datetime):
+                    return v.strftime('%Y-%m-%d')
+                text = str(v).strip()
+                if not text:
+                    return None
+                for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%Y-%m-%d %H:%M:%S'):
+                    try:
+                        return datetime.strptime(text, fmt).strftime('%Y-%m-%d')
+                    except Exception:
+                        continue
+                return None
+
+            def _norm_bool(v):
+                text = _cell_text(v).lower()
+                return 1 if text in ('1', 'true', 'yes', 'on', '是', 'y') else 0
+
+            header_row_info = 2 if _cell_text(ws_info.cell(row=1, column=1).value) in ('基础标识', '物流信息', '状态', '扩展信息') else 1
+            header_row_item = 2 if _cell_text(ws_items.cell(row=1, column=1).value) in ('SKU明细关联', 'SKU明细') else 1
+            headers_info = [_cell_text(c.value) for c in ws_info[header_row_info]]
+            headers_item = [_cell_text(c.value) for c in ws_items[header_row_item]]
+            idx_info = {h: i for i, h in enumerate(headers_info)}
+            idx_item = {h: i for i, h in enumerate(headers_item)}
+
+            required_info = ['物流箱号*', '清关单号*', '工厂*', '货代*', '目的仓库*']
+            required_item = ['物流箱号*', '下单SKU*', '发货数量*']
+            for h in required_info:
+                if h not in idx_info:
+                    return self.send_json({'status': 'error', 'message': f'Sheet 在途信息 缺少列: {h}'}, start_response)
+            for h in required_item:
+                if h not in idx_item:
+                    return self.send_json({'status': 'error', 'message': f'Sheet SKU明细 缺少列: {h}'}, start_response)
+
+            errors = []
+            info_rows = []
+            seen_box = set()
+
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id, factory_name FROM logistics_factories")
+                    factory_map = {str((r.get('factory_name') or '')).strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
+                    cur.execute("SELECT id, forwarder_name FROM logistics_forwarders")
+                    forwarder_map = {str((r.get('forwarder_name') or '')).strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
+                    cur.execute("SELECT id, warehouse_name FROM logistics_overseas_warehouses")
+                    warehouse_map = {str((r.get('warehouse_name') or '')).strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
+                    cur.execute("SELECT id, sku FROM order_products")
+                    sku_map = {str((r.get('sku') or '')).strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
+
+                    for row_idx in range(header_row_info + 1, ws_info.max_row + 1):
+                        row_values = [ws_info.cell(row=row_idx, column=i + 1).value for i in range(len(headers_info))]
+                        if not any(_cell_text(v) for v in row_values):
+                            continue
+
+                        box_no = _cell_text(row_values[idx_info['物流箱号*']])
+                        customs_no = _cell_text(row_values[idx_info['清关单号*']])
+                        factory_name = _cell_text(row_values[idx_info['工厂*']])
+                        forwarder_name = _cell_text(row_values[idx_info['货代*']])
+                        warehouse_name = _cell_text(row_values[idx_info['目的仓库*']])
+
+                        if not box_no or not customs_no or not factory_name or not forwarder_name or not warehouse_name:
+                            errors.append({'row': f'在途信息!{row_idx}', 'error': '物流箱号/清关单号/工厂/货代/目的仓库为必填'})
+                            continue
+                        if box_no in seen_box:
+                            errors.append({'row': f'在途信息!{row_idx}', 'error': f'物流箱号重复: {box_no}'})
+                            continue
+                        seen_box.add(box_no)
+
+                        factory_id = factory_map.get(factory_name)
+                        forwarder_id = forwarder_map.get(forwarder_name)
+                        warehouse_id = warehouse_map.get(warehouse_name)
+                        if not factory_id:
+                            errors.append({'row': f'在途信息!{row_idx}', 'error': f'工厂不存在: {factory_name}'})
+                            continue
+                        if not forwarder_id:
+                            errors.append({'row': f'在途信息!{row_idx}', 'error': f'货代不存在: {forwarder_name}'})
+                            continue
+                        if not warehouse_id:
+                            errors.append({'row': f'在途信息!{row_idx}', 'error': f'目的仓库不存在: {warehouse_name}'})
+                            continue
+
+                        def _get(name):
+                            return row_values[idx_info[name]] if name in idx_info else None
+
+                        info_rows.append({
+                            'row_idx': row_idx,
+                            'logistics_box_no': box_no,
+                            'customs_clearance_no': customs_no,
+                            'factory_id': factory_id,
+                            'forwarder_id': forwarder_id,
+                            'destination_warehouse_id': warehouse_id,
+                            'factory_ship_date_latest': _norm_date(_get('工厂发货最新日期')),
+                            'etd_latest': _norm_date(_get('ETD最新日期')),
+                            'eta_latest': _norm_date(_get('ETA最新日期')),
+                            'arrival_port_date': _norm_date(_get('到港日期')),
+                            'expected_warehouse_date': _norm_date(_get('预计送仓日期')),
+                            'expected_listed_date_latest': _norm_date(_get('最新预计上架日期')),
+                            'listed_date': _norm_date(_get('上架日期')),
+                            'shipping_company': _cell_text(_get('船公司')) or None,
+                            'vessel_voyage': _cell_text(_get('船名航次')) or None,
+                            'bill_of_lading_no': _cell_text(_get('提单号')) or None,
+                            'port_of_loading': _cell_text(_get('起运港')) or None,
+                            'port_of_destination': _cell_text(_get('目的港')) or None,
+                            'inbound_order_no': _cell_text(_get('入库单号')) or None,
+                            'declaration_docs_provided': _norm_bool(_get('是否上传报关资料')),
+                            'clearance_docs_provided': _norm_bool(_get('是否上传清关资料')),
+                            'qty_verified': _norm_bool(_get('数量是否已核对')),
+                            'inventory_registered': _norm_bool(_get('库存表已登记')),
+                        })
+
+                    item_rows = {}
+                    for row_idx in range(header_row_item + 1, ws_items.max_row + 1):
+                        row_values = [ws_items.cell(row=row_idx, column=i + 1).value for i in range(len(headers_item))]
+                        if not any(_cell_text(v) for v in row_values):
+                            continue
+                        box_no = _cell_text(row_values[idx_item['物流箱号*']])
+                        sku = _cell_text(row_values[idx_item['下单SKU*']])
+                        shipped_qty = self._parse_int(row_values[idx_item['发货数量*']])
+                        if not box_no or not sku or shipped_qty is None:
+                            errors.append({'row': f'SKU明细!{row_idx}', 'error': '物流箱号/下单SKU/发货数量为必填'})
+                            continue
+                        if shipped_qty < 0:
+                            errors.append({'row': f'SKU明细!{row_idx}', 'error': '发货数量不能为负数'})
+                            continue
+                        order_product_id = sku_map.get(sku)
+                        if not order_product_id:
+                            errors.append({'row': f'SKU明细!{row_idx}', 'error': f'SKU不存在: {sku}'})
+                            continue
+                        item_rows.setdefault(box_no, {})
+                        item_rows[box_no][order_product_id] = item_rows[box_no].get(order_product_id, 0) + shipped_qty
+
+                    if not info_rows and not item_rows:
+                        return self.send_json({'status': 'error', 'message': '未检测到可导入数据'}, start_response)
+
+                    created = 0
+                    updated = 0
+                    item_updated = 0
+                    transit_id_by_box = {}
+
+                    for row in info_rows:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                """
+                                SELECT id, bill_of_lading_no, factory_ship_date_initial, factory_ship_date_previous, factory_ship_date_latest,
+                                       expected_listed_date_initial, expected_listed_date_latest,
+                                       etd_initial, etd_previous, etd_latest,
+                                       eta_initial, eta_previous, eta_latest
+                                FROM logistics_in_transit
+                                WHERE logistics_box_no=%s
+                                LIMIT 1
+                                """,
+                                (row['logistics_box_no'],)
+                            )
+                            existing = cur.fetchone()
+
+                        payload = {
+                            'factory_id': row['factory_id'],
+                            'forwarder_id': row['forwarder_id'],
+                            'logistics_box_no': row['logistics_box_no'],
+                            'customs_clearance_no': row['customs_clearance_no'],
+                            'arrival_port_date': row['arrival_port_date'],
+                            'expected_warehouse_date': row['expected_warehouse_date'],
+                            'expected_listed_date_latest': row['expected_listed_date_latest'],
+                            'listed_date': row['listed_date'],
+                            'shipping_company': row['shipping_company'],
+                            'vessel_voyage': row['vessel_voyage'],
+                            'bill_of_lading_no': row['bill_of_lading_no'],
+                            'declaration_docs_provided': row['declaration_docs_provided'],
+                            'inventory_registered': row['inventory_registered'],
+                            'clearance_docs_provided': row['clearance_docs_provided'],
+                            'qty_verified': row['qty_verified'],
+                            'port_of_loading': row['port_of_loading'],
+                            'port_of_destination': row['port_of_destination'],
+                            'destination_warehouse_id': row['destination_warehouse_id'],
+                            'inbound_order_no': row['inbound_order_no']
+                        }
+
+                        factory_ship_latest = row['factory_ship_date_latest']
+                        etd_latest = row['etd_latest']
+                        eta_latest = row['eta_latest']
+
+                        if existing:
+                            payload['factory_ship_date_initial'] = existing.get('factory_ship_date_initial') or factory_ship_latest
+                            payload['factory_ship_date_previous'] = existing.get('factory_ship_date_latest') if factory_ship_latest and str(existing.get('factory_ship_date_latest') or '') != str(factory_ship_latest) else existing.get('factory_ship_date_previous')
+                            payload['factory_ship_date_latest'] = factory_ship_latest or existing.get('factory_ship_date_latest')
+                            payload['expected_listed_date_initial'] = existing.get('expected_listed_date_initial') or payload.get('expected_listed_date_latest')
+                            payload['expected_listed_date_latest'] = payload.get('expected_listed_date_latest') or existing.get('expected_listed_date_latest')
+                            payload['etd_initial'] = existing.get('etd_initial') or etd_latest
+                            payload['etd_previous'] = existing.get('etd_latest') if etd_latest and str(existing.get('etd_latest') or '') != str(etd_latest) else existing.get('etd_previous')
+                            payload['etd_latest'] = etd_latest or existing.get('etd_latest')
+                            payload['eta_initial'] = existing.get('eta_initial') or eta_latest
+                            payload['eta_previous'] = existing.get('eta_latest') if eta_latest and str(existing.get('eta_latest') or '') != str(eta_latest) else existing.get('eta_previous')
+                            payload['eta_latest'] = eta_latest or existing.get('eta_latest')
+
+                            payload['id'] = existing['id']
+                            with conn.cursor() as cur:
+                                cur.execute(
+                                    """
+                                    UPDATE logistics_in_transit
+                                    SET factory_id=%(factory_id)s,
+                                        factory_ship_date_initial=%(factory_ship_date_initial)s,
+                                        factory_ship_date_previous=%(factory_ship_date_previous)s,
+                                        factory_ship_date_latest=%(factory_ship_date_latest)s,
+                                        forwarder_id=%(forwarder_id)s,
+                                        logistics_box_no=%(logistics_box_no)s,
+                                        customs_clearance_no=%(customs_clearance_no)s,
+                                        etd_initial=%(etd_initial)s,
+                                        etd_previous=%(etd_previous)s,
+                                        etd_latest=%(etd_latest)s,
+                                        eta_initial=%(eta_initial)s,
+                                        eta_previous=%(eta_previous)s,
+                                        eta_latest=%(eta_latest)s,
+                                        arrival_port_date=%(arrival_port_date)s,
+                                        expected_warehouse_date=%(expected_warehouse_date)s,
+                                        expected_listed_date_initial=%(expected_listed_date_initial)s,
+                                        expected_listed_date_latest=%(expected_listed_date_latest)s,
+                                        listed_date=%(listed_date)s,
+                                        shipping_company=%(shipping_company)s,
+                                        vessel_voyage=%(vessel_voyage)s,
+                                        bill_of_lading_no=%(bill_of_lading_no)s,
+                                        declaration_docs_provided=%(declaration_docs_provided)s,
+                                        inventory_registered=%(inventory_registered)s,
+                                        clearance_docs_provided=%(clearance_docs_provided)s,
+                                        qty_verified=%(qty_verified)s,
+                                        port_of_loading=%(port_of_loading)s,
+                                        port_of_destination=%(port_of_destination)s,
+                                        destination_warehouse_id=%(destination_warehouse_id)s,
+                                        inbound_order_no=%(inbound_order_no)s
+                                    WHERE id=%(id)s
+                                    """,
+                                    payload
+                                )
+                            transit_id_by_box[row['logistics_box_no']] = existing['id']
+                            updated += 1
+                        else:
+                            payload['factory_ship_date_initial'] = factory_ship_latest
+                            payload['factory_ship_date_previous'] = None
+                            payload['factory_ship_date_latest'] = factory_ship_latest
+                            payload['expected_listed_date_initial'] = payload.get('expected_listed_date_latest')
+                            payload['etd_initial'] = etd_latest
+                            payload['etd_previous'] = None
+                            payload['etd_latest'] = etd_latest
+                            payload['eta_initial'] = eta_latest
+                            payload['eta_previous'] = None
+                            payload['eta_latest'] = eta_latest
+                            with conn.cursor() as cur:
+                                cur.execute(
+                                    """
+                                    INSERT INTO logistics_in_transit (
+                                        factory_id, factory_ship_date_initial, factory_ship_date_previous, factory_ship_date_latest,
+                                        forwarder_id, logistics_box_no, customs_clearance_no,
+                                        etd_initial, etd_previous, etd_latest,
+                                        eta_initial, eta_previous, eta_latest,
+                                        arrival_port_date, expected_warehouse_date, expected_listed_date_initial, expected_listed_date_latest, listed_date,
+                                        shipping_company, vessel_voyage, bill_of_lading_no,
+                                        declaration_docs_provided, inventory_registered, clearance_docs_provided, qty_verified,
+                                        port_of_loading, port_of_destination, destination_warehouse_id, inbound_order_no
+                                    ) VALUES (
+                                        %(factory_id)s, %(factory_ship_date_initial)s, %(factory_ship_date_previous)s, %(factory_ship_date_latest)s,
+                                        %(forwarder_id)s, %(logistics_box_no)s, %(customs_clearance_no)s,
+                                        %(etd_initial)s, %(etd_previous)s, %(etd_latest)s,
+                                        %(eta_initial)s, %(eta_previous)s, %(eta_latest)s,
+                                        %(arrival_port_date)s, %(expected_warehouse_date)s, %(expected_listed_date_initial)s, %(expected_listed_date_latest)s, %(listed_date)s,
+                                        %(shipping_company)s, %(vessel_voyage)s, %(bill_of_lading_no)s,
+                                        %(declaration_docs_provided)s, %(inventory_registered)s, %(clearance_docs_provided)s, %(qty_verified)s,
+                                        %(port_of_loading)s, %(port_of_destination)s, %(destination_warehouse_id)s, %(inbound_order_no)s
+                                    )
+                                    """,
+                                    payload
+                                )
+                                transit_id_by_box[row['logistics_box_no']] = cur.lastrowid
+                            created += 1
+
+                    if item_rows:
+                        all_item_boxes = list(item_rows.keys())
+                        unresolved_boxes = [b for b in all_item_boxes if b not in transit_id_by_box]
+                        if unresolved_boxes:
+                            placeholders = ','.join(['%s'] * len(unresolved_boxes))
+                            with conn.cursor() as cur:
+                                cur.execute(
+                                    f"SELECT id, logistics_box_no FROM logistics_in_transit WHERE logistics_box_no IN ({placeholders})",
+                                    tuple(unresolved_boxes)
+                                )
+                                for rr in cur.fetchall() or []:
+                                    transit_id_by_box[str(rr.get('logistics_box_no') or '')] = rr.get('id')
+
+                        for box_no, sku_qty_map in item_rows.items():
+                            transit_id = transit_id_by_box.get(box_no)
+                            if not transit_id:
+                                errors.append({'row': f'SKU明细({box_no})', 'error': '找不到对应物流箱号，请先在在途信息Sheet维护该箱号'})
+                                continue
+                            with conn.cursor() as cur:
+                                cur.execute("DELETE FROM logistics_in_transit_items WHERE transit_id=%s", (transit_id,))
+                                rows_to_insert = []
+                                for op_id, qty in sku_qty_map.items():
+                                    rows_to_insert.append((transit_id, op_id, int(qty), 0))
+                                if rows_to_insert:
+                                    cur.executemany(
+                                        "INSERT INTO logistics_in_transit_items (transit_id, order_product_id, shipped_qty, listed_qty) VALUES (%s, %s, %s, %s)",
+                                        rows_to_insert
+                                    )
+                            item_updated += 1
+
+            return self.send_json({
+                'status': 'success',
+                'created': created,
+                'updated': updated,
+                'item_updated': item_updated,
+                'errors': errors
+            }, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
@@ -9840,6 +10803,135 @@ class WSGIApp:
                     cur.execute(f"UPDATE logistics_in_transit SET {flag_column}=1 WHERE id=%s", (transit_id,))
 
             return self.send_json({'status': 'success', 'saved': saved}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_logistics_in_transit_doc_files_api(self, environ, method, start_response):
+        try:
+            self._ensure_logistics_tables()
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            action = (query_params.get('action', ['list'])[0] or 'list').strip().lower()
+
+            def _decode_name(value):
+                if value is None:
+                    return ''
+                if isinstance(value, bytes):
+                    for enc in ('utf-8', 'gbk', 'latin-1'):
+                        try:
+                            return value.decode(enc)
+                        except Exception:
+                            continue
+                    return value.decode('utf-8', errors='ignore')
+                text = str(value)
+                if text.startswith("b'") or text.startswith('b"'):
+                    try:
+                        parsed = ast.literal_eval(text)
+                        if isinstance(parsed, bytes):
+                            return _decode_name(parsed)
+                    except Exception:
+                        pass
+                return text
+
+            if method == 'GET' and action == 'counts':
+                transit_id = self._parse_int(query_params.get('transit_id', [''])[0])
+                if not transit_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing transit_id'}, start_response)
+                declaration_dir = self._resolve_logistics_doc_folder(transit_id, 'declaration')
+                clearance_dir = self._resolve_logistics_doc_folder(transit_id, 'clearance')
+                decl_count = 0
+                clear_count = 0
+                try:
+                    with os.scandir(declaration_dir) as it:
+                        decl_count = sum(1 for x in it if x.is_file())
+                except Exception:
+                    pass
+                try:
+                    with os.scandir(clearance_dir) as it:
+                        clear_count = sum(1 for x in it if x.is_file())
+                except Exception:
+                    pass
+                return self.send_json({'status': 'success', 'declaration_count': decl_count, 'clearance_count': clear_count}, start_response)
+
+            if method == 'GET' and action == 'download':
+                transit_id = self._parse_int(query_params.get('transit_id', [''])[0])
+                doc_type = (query_params.get('doc_type', [''])[0] or '').strip().lower()
+                file_name = _decode_name((query_params.get('name', [''])[0] or '')).strip()
+                if not transit_id or not file_name:
+                    return self.send_json({'status': 'error', 'message': 'Missing transit_id/name'}, start_response)
+                folder = self._resolve_logistics_doc_folder(transit_id, doc_type)
+                file_path = os.path.join(folder, self._safe_fsencode(os.path.basename(file_name)))
+                if not os.path.exists(file_path):
+                    return self.send_json({'status': 'error', 'message': '文件不存在'}, start_response)
+                with open(file_path, 'rb') as f:
+                    content = f.read()
+                content_type, _ = mimetypes.guess_type(os.fsdecode(file_path))
+                safe_name = os.path.basename(file_name)
+                headers = [
+                    ('Content-Type', content_type or 'application/octet-stream'),
+                    ('Content-Disposition', f"attachment; filename*=UTF-8''{quote(safe_name)}"),
+                    ('Content-Length', str(len(content))),
+                ]
+                start_response('200 OK', headers)
+                return [content]
+
+            if method == 'GET':
+                transit_id = self._parse_int(query_params.get('transit_id', [''])[0])
+                doc_type = (query_params.get('doc_type', [''])[0] or '').strip().lower()
+                if not transit_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing transit_id'}, start_response)
+                if doc_type not in ('declaration', 'clearance'):
+                    return self.send_json({'status': 'error', 'message': 'Invalid doc_type'}, start_response)
+                folder = self._resolve_logistics_doc_folder(transit_id, doc_type)
+                files = []
+                with os.scandir(folder) as it:
+                    for entry in it:
+                        if not entry.is_file():
+                            continue
+                        stat = entry.stat()
+                        safe_entry_name = _decode_name(entry.name)
+                        files.append({
+                            'name': safe_entry_name,
+                            'size': int(getattr(stat, 'st_size', 0) or 0),
+                            'updated_at': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S') if getattr(stat, 'st_mtime', None) else ''
+                        })
+                files.sort(key=lambda x: (x.get('updated_at') or '', x.get('name') or ''), reverse=True)
+                return self.send_json({'status': 'success', 'items': files}, start_response)
+
+            data = self._read_json_body(environ)
+
+            if method == 'PUT':
+                transit_id = self._parse_int(data.get('transit_id'))
+                doc_type = (data.get('doc_type') or '').strip().lower()
+                old_name = os.path.basename(_decode_name((data.get('old_name') or '')).strip())
+                new_name = os.path.basename(_decode_name((data.get('new_name') or '')).strip())
+                if not transit_id or not old_name or not new_name:
+                    return self.send_json({'status': 'error', 'message': 'Missing fields'}, start_response)
+                folder = self._resolve_logistics_doc_folder(transit_id, doc_type)
+                old_path = os.path.join(folder, self._safe_fsencode(old_name))
+                new_path = os.path.join(folder, self._safe_fsencode(new_name))
+                if not os.path.exists(old_path):
+                    return self.send_json({'status': 'error', 'message': '原文件不存在'}, start_response)
+                if os.path.exists(new_path):
+                    return self.send_json({'status': 'error', 'message': '新文件名已存在'}, start_response)
+                os.rename(old_path, new_path)
+                return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'DELETE':
+                transit_id = self._parse_int(data.get('transit_id'))
+                doc_type = (data.get('doc_type') or '').strip().lower()
+                file_name = os.path.basename(_decode_name((data.get('name') or '')).strip())
+                if not transit_id or not file_name:
+                    return self.send_json({'status': 'error', 'message': 'Missing fields'}, start_response)
+                folder = self._resolve_logistics_doc_folder(transit_id, doc_type)
+                file_path = os.path.join(folder, self._safe_fsencode(file_name))
+                if not os.path.exists(file_path):
+                    return self.send_json({'status': 'error', 'message': '文件不存在'}, start_response)
+                os.remove(file_path)
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except RuntimeError as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
@@ -10185,7 +11277,7 @@ class WSGIApp:
                                     op.finished_length_in, op.finished_width_in, op.finished_height_in,
                                     op.net_weight_lbs, op.package_length_in, op.package_width_in,
                                     op.package_height_in, op.gross_weight_lbs, op.cost_usd,
-                                    op.carton_qty, op.package_size_class, op.last_mile_avg_freight_usd,
+                                    op.carton_qty, op.package_size_class, op.last_mile_avg_freight_usd, op.factory_wip_stock,
                                     op.created_at,
                                     pf.sku_family, pf.category,
                                     fm.fabric_code, fm.fabric_name_en,
@@ -10227,7 +11319,7 @@ class WSGIApp:
                                     op.finished_length_in, op.finished_width_in, op.finished_height_in,
                                     op.net_weight_lbs, op.package_length_in, op.package_width_in,
                                     op.package_height_in, op.gross_weight_lbs, op.cost_usd,
-                                    op.carton_qty, op.package_size_class, op.last_mile_avg_freight_usd,
+                                    op.carton_qty, op.package_size_class, op.last_mile_avg_freight_usd, op.factory_wip_stock,
                                     op.created_at,
                                     pf.sku_family, pf.category,
                                     fm.fabric_code, fm.fabric_name_en,
@@ -10298,7 +11390,8 @@ class WSGIApp:
                     'cost_usd': self._parse_float(data.get('cost_usd')),
                     'carton_qty': self._parse_int(data.get('carton_qty')),
                     'package_size_class': (data.get('package_size_class') or '').strip() or None,
-                    'last_mile_avg_freight_usd': self._parse_float(data.get('last_mile_avg_freight_usd'))
+                    'last_mile_avg_freight_usd': self._parse_float(data.get('last_mile_avg_freight_usd')),
+                    'factory_wip_stock': max(0, self._parse_int(data.get('factory_wip_stock')) or 0)
                 }
 
                 filling_material_ids = [self._parse_int(v) for v in (data.get('filling_material_ids') or [])]
@@ -10319,13 +11412,13 @@ class WSGIApp:
                                 is_iteration, is_dachene_product, source_order_product_id,
                                 finished_length_in, finished_width_in, finished_height_in,
                                 net_weight_lbs, package_length_in, package_width_in, package_height_in,
-                                gross_weight_lbs, cost_usd, carton_qty, package_size_class, last_mile_avg_freight_usd
+                                gross_weight_lbs, cost_usd, carton_qty, package_size_class, last_mile_avg_freight_usd, factory_wip_stock
                             ) VALUES (
                                 %(sku)s, %(sku_family_id)s, %(version_no)s, %(fabric_id)s, %(spec_qty_short)s, %(contents_desc_en)s,
                                 %(is_iteration)s, %(is_dachene_product)s, %(source_order_product_id)s,
                                 %(finished_length_in)s, %(finished_width_in)s, %(finished_height_in)s,
                                 %(net_weight_lbs)s, %(package_length_in)s, %(package_width_in)s, %(package_height_in)s,
-                                %(gross_weight_lbs)s, %(cost_usd)s, %(carton_qty)s, %(package_size_class)s, %(last_mile_avg_freight_usd)s
+                                %(gross_weight_lbs)s, %(cost_usd)s, %(carton_qty)s, %(package_size_class)s, %(last_mile_avg_freight_usd)s, %(factory_wip_stock)s
                             )
                             """,
                             payload
@@ -10382,7 +11475,8 @@ class WSGIApp:
                     'cost_usd': self._parse_float(data.get('cost_usd')),
                     'carton_qty': self._parse_int(data.get('carton_qty')),
                     'package_size_class': (data.get('package_size_class') or '').strip() or None,
-                    'last_mile_avg_freight_usd': self._parse_float(data.get('last_mile_avg_freight_usd'))
+                    'last_mile_avg_freight_usd': self._parse_float(data.get('last_mile_avg_freight_usd')),
+                    'factory_wip_stock': max(0, self._parse_int(data.get('factory_wip_stock')) or 0)
                 }
 
                 filling_material_ids = [self._parse_int(v) for v in (data.get('filling_material_ids') or [])]
@@ -10419,7 +11513,8 @@ class WSGIApp:
                                 cost_usd=%(cost_usd)s,
                                 carton_qty=%(carton_qty)s,
                                 package_size_class=%(package_size_class)s,
-                                last_mile_avg_freight_usd=%(last_mile_avg_freight_usd)s
+                                last_mile_avg_freight_usd=%(last_mile_avg_freight_usd)s,
+                                factory_wip_stock=%(factory_wip_stock)s
                             WHERE id=%(id)s
                             """,
                             payload
@@ -11549,6 +12644,7 @@ class WSGIApp:
                     sales_bullet_5 = limited_text(data.get('sales_bullet_5'), 500)
                 except ValueError as ve:
                     return self.send_json({'status': 'error', 'message': str(ve)}, start_response)
+
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(

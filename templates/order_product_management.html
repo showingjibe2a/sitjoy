@@ -6,13 +6,6 @@
     <title>下单产品管理</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
-        :root {
-            --morandi-sand: #cfc7bd;
-            --morandi-ink: #2a2420;
-            --morandi-mist: #e8dfd4;
-            --morandi-slate: #8b8680;
-        }
-        
         .required-field {
             padding: 0.65rem 0.8rem !important;
             border-radius: 6px !important;
@@ -270,12 +263,13 @@
                             <th>内含物英文描述</th>
                             <th>成本价($)</th>
                             <th>包裹归类</th>
+                            <th>工厂在制库存</th>
                             <th style="width:160px;">创建时间</th>
                             <th style="width:160px;">操作</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="11" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="12" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -423,6 +417,10 @@
                         <div class="form-group">
                             <label for="modalLastMile">尾程平均运费（美元）</label>
                             <input type="number" step="0.01" id="modalLastMile" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalFactoryWip">工厂在制库存</label>
+                            <input type="number" step="1" min="0" id="modalFactoryWip" class="optional-field">
                         </div>
                     </div>
                 </div>
@@ -661,6 +659,7 @@
             setInputValue('modalCartonQty', '');
             setInputValue('modalPackageClass', '');
             setInputValue('modalLastMile', '');
+            setInputValue('modalFactoryWip', '');
             setPickerSelected('filling', []);
             setPickerSelected('frame', []);
             setPickerSelected('feature', []);
@@ -704,6 +703,7 @@
             setInputValue('modalCartonQty', item.carton_qty ?? '');
             setInputValue('modalPackageClass', item.package_size_class || '');
             setInputValue('modalLastMile', item.last_mile_avg_freight_usd ?? '');
+            setInputValue('modalFactoryWip', item.factory_wip_stock ?? '');
             setPickerSelected('filling', item.filling_material_ids || []);
             setPickerSelected('frame', item.frame_material_ids || []);
             setPickerSelected('feature', item.feature_ids || []);
@@ -1101,6 +1101,7 @@
                 carton_qty: parseNumber(document.getElementById('modalCartonQty').value),
                 package_size_class: document.getElementById('modalPackageClass').value.trim(),
                 last_mile_avg_freight_usd: parseNumber(document.getElementById('modalLastMile').value),
+                factory_wip_stock: Math.max(0, parseInt(document.getElementById('modalFactoryWip').value || '0', 10) || 0),
                 filling_material_ids: selectedFillingMaterialIds,
                 frame_material_ids: selectedFrameMaterialIds,
                 feature_ids: selectedFeatureIds,
@@ -1179,7 +1180,7 @@
                 .then(data => {
                     const tbody = document.querySelector('#orderProductTable tbody');
                     if (data.status !== 'success') {
-                        tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                         return;
                     }
                     const items = data.items || [];
@@ -1187,13 +1188,14 @@
                     const availableIdSet = new Set(items.map(x => String(x.id)));
                     selectedOrderProductIds = new Set(Array.from(selectedOrderProductIds).filter(id => availableIdSet.has(String(id))));
                     if (items.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">暂无数据</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;">暂无数据</td></tr>';
                         syncSelectAllCheckbox();
                         return;
                     }
                     tbody.innerHTML = items.map(item => {
                         const dateText = item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : '';
                         const costText = item.cost_usd !== null && item.cost_usd !== undefined ? item.cost_usd : '';
+                        const wipText = item.factory_wip_stock !== null && item.factory_wip_stock !== undefined ? item.factory_wip_stock : 0;
                         const fabricText = item.fabric_code ? `${item.fabric_code}` : '';
                         const checked = selectedOrderProductIds.has(String(item.id)) ? 'checked' : '';
                         return `
@@ -1207,6 +1209,7 @@
                                 <td>${item.contents_desc_en || ''}</td>
                                 <td>${costText}</td>
                                 <td>${item.package_size_class || ''}</td>
+                                <td>${wipText}</td>
                                 <td>${dateText}</td>
                                 <td>
                                     <div class="pm-actions">
@@ -1222,7 +1225,7 @@
                 })
                 .catch(err => {
                     const tbody = document.querySelector('#orderProductTable tbody');
-                    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
                 });
         }
 

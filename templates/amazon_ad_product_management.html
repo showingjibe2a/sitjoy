@@ -45,7 +45,7 @@
     <div class="container">
         <section class="hero" style="margin-bottom: 1.5rem;">
             <h2>Amazon广告管理 - 广告商品管理</h2>
-            <p>维护广告活动/广告组与销售平台SKU的投放关系</p>
+            <p>维护广告组与销售平台SKU的投放关系</p>
         </section>
 
         <section class="pm-layout">
@@ -100,7 +100,7 @@
                 </div>
                 <div class="form-group pm-form-full">
                     <label for="modalAdItem">广告关联<span class="required-asterisk">*</span></label>
-                    <select id="modalAdItem" data-search-placeholder="搜索广告活动/广告组"></select>
+                    <select id="modalAdItem" data-search-placeholder="搜索广告组"></select>
                 </div>
                 <div class="form-group pm-form-full">
                     <label for="modalSalesProduct">投放商品<span class="required-asterisk">*</span></label>
@@ -137,6 +137,10 @@
         let salesOptions = [];
         let rowsCache = [];
         let lastSelectedAdItemId = '';
+        let adOptionsLoaded = false;
+        let salesOptionsLoaded = false;
+        const AD_OPTIONS_CACHE_KEY = 'amazonAdProduct:groupOptions';
+        const SALES_OPTIONS_CACHE_KEY = 'amazonAdProduct:salesOptions';
 
         function resetSearch() {
             document.getElementById('searchInput').value = '';
@@ -206,7 +210,7 @@
         }
 
         function adRelationText(item) {
-            const levelText = item.ad_level === 'group' ? '广告组' : '广告活动';
+            const levelText = '广告组';
             const adName = (item && (item.ad_name || item.name)) ? (item.ad_name || item.name) : '';
             return `${adName}（${levelText}）`;
         }
@@ -214,7 +218,7 @@
         function renderAdOptions(selectedValue) {
             const select = document.getElementById('modalAdItem');
             const current = String(selectedValue !== undefined ? selectedValue : (select.value || ''));
-            select.innerHTML = '<option value="">请选择广告活动或广告组</option>';
+            select.innerHTML = '<option value="">请选择广告组</option>';
             let hasCurrent = false;
             adOptions.forEach(item => {
                 const option = document.createElement('option');
@@ -250,30 +254,82 @@
             if (window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(select);
         }
 
-        function loadAdOptions() {
-            const req1 = fetch('/api/amazon-ad?level=campaign').then(r => r.json());
-            const req2 = fetch('/api/amazon-ad?level=group').then(r => r.json());
-            return Promise.all([req1, req2]).then(([c, g]) => {
-                const campaigns = c.status === 'success' ? (c.items || []) : [];
-                const groups = g.status === 'success' ? (g.items || []) : [];
-                adOptions = [...campaigns, ...groups];
-                renderAdOptions();
-            }).catch(() => {
-                adOptions = [];
-                renderAdOptions();
-            });
+        function readCache(key) {
+            try {
+                const text = sessionStorage.getItem(key);
+                if (!text) return null;
+                const parsed = JSON.parse(text);
+                return Array.isArray(parsed) ? parsed : null;
+            } catch (_) {
+                return null;
+            }
         }
 
-        function loadSalesOptions() {
+        function writeCache(key, value) {
+            try {
+                sessionStorage.setItem(key, JSON.stringify(Array.isArray(value) ? value : []));
+            } catch (_) {}
+        }
+
+        function loadAdOptions(forceReload = false) {
+            if (!forceReload) {
+                if (adOptionsLoaded && adOptions.length) {
+                    renderAdOptions();
+                    return Promise.resolve(adOptions);
+                }
+                const cached = readCache(AD_OPTIONS_CACHE_KEY);
+                if (cached && cached.length) {
+                    adOptions = cached;
+                    adOptionsLoaded = true;
+                    renderAdOptions();
+                    return Promise.resolve(adOptions);
+                }
+            }
+            return fetch('/api/amazon-ad?level=group')
+                .then(r => r.json())
+                .then(data => {
+                    adOptions = data.status === 'success' ? (data.items || []) : [];
+                    adOptionsLoaded = true;
+                    writeCache(AD_OPTIONS_CACHE_KEY, adOptions);
+                    renderAdOptions();
+                    return adOptions;
+                })
+                .catch(() => {
+                    adOptions = [];
+                    adOptionsLoaded = true;
+                    renderAdOptions();
+                    return adOptions;
+                });
+        }
+
+        function loadSalesOptions(forceReload = false) {
+            if (!forceReload) {
+                if (salesOptionsLoaded && salesOptions.length) {
+                    renderSalesOptions();
+                    return Promise.resolve(salesOptions);
+                }
+                const cached = readCache(SALES_OPTIONS_CACHE_KEY);
+                if (cached && cached.length) {
+                    salesOptions = cached;
+                    salesOptionsLoaded = true;
+                    renderSalesOptions();
+                    return Promise.resolve(salesOptions);
+                }
+            }
             return fetch('/api/sales-product')
                 .then(r => r.json())
                 .then(data => {
                     salesOptions = data.status === 'success' ? (data.items || []) : [];
+                    salesOptionsLoaded = true;
+                    writeCache(SALES_OPTIONS_CACHE_KEY, salesOptions);
                     renderSalesOptions();
+                    return salesOptions;
                 })
                 .catch(() => {
                     salesOptions = [];
+                    salesOptionsLoaded = true;
                     renderSalesOptions();
+                    return salesOptions;
                 });
         }
 
@@ -341,7 +397,11 @@
             recalcNextObserveTime();
             syncStatusButtons();
             resetStatus();
-            document.getElementById('product-modal').classList.add('active');
+            Promise.all([loadAdOptions(), loadSalesOptions()]).finally(() => {
+                renderAdOptions(lastSelectedAdItemId || '');
+                renderSalesOptions('');
+                document.getElementById('product-modal').classList.add('active');
+            });
         }
 
         function openEditModal(id) {
@@ -360,7 +420,11 @@
             renderSalesOptions(item.sales_product_id || '');
             syncStatusButtons();
             resetStatus();
-            document.getElementById('product-modal').classList.add('active');
+            Promise.all([loadAdOptions(), loadSalesOptions()]).finally(() => {
+                renderAdOptions(item.ad_item_id || '');
+                renderSalesOptions(item.sales_product_id || '');
+                document.getElementById('product-modal').classList.add('active');
+            });
         }
 
         function closeModal() {
@@ -415,7 +479,8 @@
         }
 
         function init() {
-            Promise.all([loadAdOptions(), loadSalesOptions(), loadList()]).then(() => syncStatusButtons());
+            loadList();
+            syncStatusButtons();
         }
 
         document.getElementById('searchInput').addEventListener('keydown', function(e) {

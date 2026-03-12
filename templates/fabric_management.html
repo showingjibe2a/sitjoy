@@ -436,6 +436,19 @@
         </div>
     </div>
 
+    <div class="pm-modal" id="imageDeleteConfirmModal">
+        <div class="pm-modal-content" style="max-width:520px;">
+            <h3 style="margin-top:0;">确认永久删除</h3>
+            <div class="pm-modal-body">
+                <p id="imageDeleteConfirmText" style="margin:0; color:#4a4e57; line-height:1.5;"></p>
+            </div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" type="button" id="imageDeleteCancelBtn">取消</button>
+                <button class="btn-primary" type="button" id="imageDeleteOkBtn" style="background:#b94b4b;">确定永久删除</button>
+            </div>
+        </div>
+    </div>
+
     <footer>
         <p>&copy; 2026 SITJOY | 内部使用</p>
     </footer>
@@ -1115,6 +1128,7 @@
                         // 添加选择（使用解码后的显示名保存）
                         selectedImageObjects.push({
                             image_name: displayText,
+                            image_name_raw_b64: item.rawB64 || '',
                             remark: '原图',
                             sort_order: selectedImageObjects.length
                         });
@@ -1205,16 +1219,89 @@
 
         function removeImageCard(index) {
             const removed = selectedImageObjects[index];
-            if (removed && removed._localPreviewUrl) {
-                try {
-                    URL.revokeObjectURL(removed._localPreviewUrl);
-                } catch (e) {}
+            if (!removed) return;
+
+            const doLocalRemove = () => {
+                if (removed && removed._localPreviewUrl) {
+                    try {
+                        URL.revokeObjectURL(removed._localPreviewUrl);
+                    } catch (e) {}
+                }
+                selectedImageObjects.splice(index, 1);
+                selectedImageObjects.forEach((img, idx) => img.sort_order = idx);
+                renderSelectedImagesGrid();
+                renderExistingImagesList();
+            };
+
+            if (removed._isNewUpload) {
+                doLocalRemove();
+                return;
             }
-            selectedImageObjects.splice(index, 1);
-            // reindex
-            selectedImageObjects.forEach((img, idx) => img.sort_order = idx);
-            renderSelectedImagesGrid();
-            renderExistingImagesList();
+
+            const displayName = removed.image_name || '该图片';
+            const modalText = `是否永久删除图片：${displayName} ？点击“确定永久删除”会从服务器永久删除文件。`;
+            showImageDeleteConfirm(modalText).then(ok => {
+                if (!ok) return;
+
+                fetch('/api/fabric-image-delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        image_name: removed.image_name || '',
+                        image_name_raw_b64: removed.image_name_raw_b64 || '',
+                        fabric_id: editId || null
+                    })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        showModalStatus(data.message || '删除图片失败', true);
+                        return;
+                    }
+                    doLocalRemove();
+                    showModalStatus('图片已永久删除', false);
+                    loadFabricImages();
+                })
+                .catch(err => showModalStatus('删除图片失败: ' + err, true));
+            })
+        }
+
+        function showImageDeleteConfirm(message) {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('imageDeleteConfirmModal');
+                const textEl = document.getElementById('imageDeleteConfirmText');
+                const btnOk = document.getElementById('imageDeleteOkBtn');
+                const btnCancel = document.getElementById('imageDeleteCancelBtn');
+                if (!modal || !textEl || !btnOk || !btnCancel) {
+                    resolve(window.confirm(message || '确认删除？'));
+                    return;
+                }
+
+                textEl.textContent = message || '确认删除？';
+                modal.classList.add('active');
+
+                let done = false;
+                const cleanup = (result) => {
+                    if (done) return;
+                    done = true;
+                    modal.classList.remove('active');
+                    btnOk.removeEventListener('click', onOk);
+                    btnCancel.removeEventListener('click', onCancel);
+                    modal.removeEventListener('click', onBackdrop);
+                    document.removeEventListener('keydown', onEsc);
+                    resolve(result);
+                };
+
+                const onOk = () => cleanup(true);
+                const onCancel = () => cleanup(false);
+                const onBackdrop = (e) => { if (e.target === modal) cleanup(false); };
+                const onEsc = (e) => { if (e.key === 'Escape') cleanup(false); };
+
+                btnOk.addEventListener('click', onOk);
+                btnCancel.addEventListener('click', onCancel);
+                modal.addEventListener('click', onBackdrop);
+                document.addEventListener('keydown', onEsc);
+            });
         }
 
         function handleDragStartImage(e) {
