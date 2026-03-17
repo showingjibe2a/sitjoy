@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>工厂在库库存管理</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div id="site-header"></div>
+<div class="container">
+  <section class="hero" style="margin-bottom:1.5rem;">
+    <h2>工厂在库库存管理</h2>
+    <p>按下单SKU + 工厂维护在库数量</p>
+  </section>
+
+  <section class="pm-layout">
+    <div class="card pm-card">
+      <div class="pm-toolbar">
+        <div class="pm-toolbar-actions">
+          <div class="form-group pm-search" style="margin:0;">
+            <span class="pm-search-title">搜索</span>
+            <input id="searchInput" type="text" placeholder="搜索SKU/工厂名称">
+            <button class="btn-primary" onclick="loadList()">搜索</button>
+            <button class="btn-secondary" onclick="resetSearch()">清空</button>
+          </div>
+          <span class="pm-divider"></span>
+          <button class="btn-accent" onclick="openCreateModal()">新增</button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <table class="pm-table" id="mainTable">
+        <thead>
+          <tr>
+            <th>SKU</th>
+            <th>工厂</th>
+            <th style="width:120px;">数量</th>
+            <th>备注</th>
+            <th style="width:180px;">更新时间</th>
+            <th style="width:160px;">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<div class="pm-modal" id="pm-modal">
+  <div class="pm-modal-content">
+    <h3 id="pm-modal-title" style="margin-top:0;">新增工厂在库库存</h3>
+    <div class="pm-form">
+      <div class="form-group">
+        <label for="modalOrderProduct">下单SKU<span class="required-asterisk">*</span></label>
+        <select id="modalOrderProduct"></select>
+      </div>
+      <div class="form-group">
+        <label for="modalFactory">工厂<span class="required-asterisk">*</span></label>
+        <select id="modalFactory"></select>
+      </div>
+      <div class="form-group">
+        <label for="modalQuantity">数量<span class="required-asterisk">*</span></label>
+        <input id="modalQuantity" type="number" min="0" step="1" value="0">
+      </div>
+      <div class="form-group pm-form-full">
+        <label for="modalNotes">备注</label>
+        <textarea id="modalNotes" rows="3" placeholder="可选"></textarea>
+      </div>
+    </div>
+    <div id="modalStatus" class="response" style="display:none;margin-top:.75rem;"></div>
+    <div class="pm-modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">取消</button>
+      <button class="btn-primary" onclick="saveFromModal()">保存</button>
+    </div>
+  </div>
+</div>
+
+<footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
+
+<script>
+let editId = null;
+let optionsLoaded = false;
+let optionFactories = [];
+let optionOrderProducts = [];
+let listCache = [];
+
+const $ = (s) => document.querySelector(s);
+
+function showModalStatus(message, isError){
+  const el = $('#modalStatus');
+  el.style.display = 'block';
+  el.style.background = isError ? '#ffecec' : '#f0fff0';
+  el.style.color = isError ? '#a33' : '#2f6f2f';
+  el.textContent = message;
+}
+
+function fillSelect(id, items, valueKey, textKey, placeholder){
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.innerHTML = `<option value="">${placeholder || '请选择'}</option>` + (items || []).map(item => `
+    <option value="${item[valueKey]}">${item[textKey] || ''}</option>
+  `).join('');
+  if(window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(el);
+}
+
+function formatDateTime(value){
+  if(!value) return '';
+  const text = String(value);
+  return text.includes('T') ? text.replace('T', ' ').slice(0, 19) : text.slice(0, 19);
+}
+
+function loadOptions(){
+  return fetch('/api/factory-stock?action=options')
+    .then(r => r.json())
+    .then(d => {
+      if(d.status !== 'success') throw new Error(d.message || '加载选项失败');
+      optionFactories = d.factories || [];
+      optionOrderProducts = d.order_products || [];
+      fillSelect('modalFactory', optionFactories, 'id', 'factory_name', '请选择工厂');
+      fillSelect('modalOrderProduct', optionOrderProducts, 'id', 'sku', '请选择下单SKU');
+      optionsLoaded = true;
+    });
+}
+
+function openCreateModal(){
+  const open = () => {
+    editId = null;
+    $('#pm-modal-title').textContent = '新增工厂在库库存';
+    $('#modalStatus').style.display = 'none';
+    $('#modalOrderProduct').value = '';
+    $('#modalFactory').value = '';
+    $('#modalQuantity').value = '0';
+    $('#modalNotes').value = '';
+    $('#modalOrderProduct').disabled = false;
+    $('#modalFactory').disabled = false;
+    $('#pm-modal').classList.add('active');
+    if(window.refreshUniversalSingleSelect){
+      window.refreshUniversalSingleSelect('modalOrderProduct');
+      window.refreshUniversalSingleSelect('modalFactory');
+    }
+  };
+
+  if(optionsLoaded) open();
+  else loadOptions().then(open).catch(err => alert(err.message || '加载选项失败'));
+}
+
+function openEditModal(id){
+  const row = listCache.find(item => Number(item.id) === Number(id));
+  if(!row) return;
+
+  const open = () => {
+    editId = Number(row.id);
+    $('#pm-modal-title').textContent = '编辑工厂在库库存';
+    $('#modalStatus').style.display = 'none';
+    $('#modalOrderProduct').value = String(row.order_product_id || '');
+    $('#modalFactory').value = String(row.factory_id || '');
+    $('#modalQuantity').value = String(Number(row.quantity || 0));
+    $('#modalNotes').value = row.notes || '';
+    $('#modalOrderProduct').disabled = true;
+    $('#modalFactory').disabled = true;
+    $('#pm-modal').classList.add('active');
+    if(window.refreshUniversalSingleSelect){
+      window.refreshUniversalSingleSelect('modalOrderProduct');
+      window.refreshUniversalSingleSelect('modalFactory');
+    }
+  };
+
+  if(optionsLoaded) open();
+  else loadOptions().then(open).catch(err => alert(err.message || '加载选项失败'));
+}
+
+function closeModal(){
+  $('#pm-modal').classList.remove('active');
+  editId = null;
+}
+
+function saveFromModal(){
+  const order_product_id = Number($('#modalOrderProduct').value || 0);
+  const factory_id = Number($('#modalFactory').value || 0);
+  const quantity = Math.max(0, parseInt($('#modalQuantity').value || '0', 10) || 0);
+  const notes = ($('#modalNotes').value || '').trim();
+
+  if(!editId && (!order_product_id || !factory_id)){
+    showModalStatus('下单SKU和工厂为必填', true);
+    return;
+  }
+
+  const payload = editId
+    ? { id: editId, quantity, notes }
+    : { order_product_id, factory_id, quantity, notes };
+
+  fetch('/api/factory-stock', {
+    method: editId ? 'PUT' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+    .then(r => r.json())
+    .then(d => {
+      if(d.status !== 'success'){
+        showModalStatus(d.message || '保存失败', true);
+        return;
+      }
+      showModalStatus('保存成功', false);
+      setTimeout(() => {
+        closeModal();
+        loadList();
+      }, 260);
+    })
+    .catch(err => showModalStatus(err.message || '保存失败', true));
+}
+
+function removeItem(id){
+  if(!confirm('确认删除该记录？')) return;
+  fetch('/api/factory-stock', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id })
+  })
+    .then(r => r.json())
+    .then(d => {
+      if(d.status !== 'success'){
+        alert(d.message || '删除失败');
+        return;
+      }
+      loadList();
+    })
+    .catch(err => alert(err.message || '删除失败'));
+}
+
+function loadList(){
+  const q = ($('#searchInput').value || '').trim();
+  const url = q ? `/api/factory-stock?q=${encodeURIComponent(q)}` : '/api/factory-stock';
+  fetch(url)
+    .then(r => r.json())
+    .then(d => {
+      const tbody = document.querySelector('#mainTable tbody');
+      if(d.status !== 'success'){
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">${d.message || '加载失败'}</td></tr>`;
+        return;
+      }
+      listCache = d.items || [];
+      if(!listCache.length){
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无数据</td></tr>';
+        return;
+      }
+      tbody.innerHTML = listCache.map(item => `
+        <tr>
+          <td>${item.sku || ''}</td>
+          <td>${item.factory_name || ''}</td>
+          <td>${Number(item.quantity || 0)}</td>
+          <td>${item.notes || ''}</td>
+          <td>${formatDateTime(item.updated_at)}</td>
+          <td>
+            <div class="pm-actions">
+              <button class="btn-secondary" onclick="openEditModal(${item.id})">编辑</button>
+              <button class="btn-danger" onclick="removeItem(${item.id})">删除</button>
+            </div>
+          </td>
+        </tr>
+      `).join('');
+    })
+    .catch(err => {
+      const tbody = document.querySelector('#mainTable tbody');
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">${err.message || '加载失败'}</td></tr>`;
+    });
+}
+
+function resetSearch(){
+  $('#searchInput').value = '';
+  loadList();
+}
+
+$('#searchInput').addEventListener('keydown', (e) => {
+  if(e.key === 'Enter') loadList();
+});
+$('#pm-modal').addEventListener('click', (e) => {
+  if(e.target === e.currentTarget) closeModal();
+});
+
+window.addEventListener('load', () => {
+  loadOptions().finally(loadList);
+});
+</script>
+</body>
+<script src="/static/js/header.js"></script>
+</html>

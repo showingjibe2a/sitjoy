@@ -32,12 +32,6 @@
       color: #fff;
       cursor: help;
     }
-    .wip-input {
-      width: 88px;
-      border: 1px solid rgba(207,199,189,.95);
-      border-radius: 6px;
-      padding: .22rem .38rem;
-    }
     .group-row td {
       cursor: pointer;
       font-weight: 700;
@@ -55,6 +49,38 @@
     .group-row.group-bg-1 td,
     .sku-row.group-bg-1 td { background: rgba(244, 241, 236, .92); }
     .sku-row.hidden-row { display: none; }
+    .sku-submeta {
+      margin-top: .28rem;
+      display: grid;
+      gap: .12rem;
+      font-size: .72rem;
+      line-height: 1.3;
+      color: rgba(92, 86, 79, .78);
+    }
+    .sku-submeta-line {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .inv-submeta {
+      margin-top: .28rem;
+      display: grid;
+      gap: .12rem;
+      font-size: .72rem;
+      line-height: 1.3;
+      color: rgba(92, 86, 79, .72);
+    }
+    .inv-submeta-line {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .inv-main-slot {
+      min-height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
 
     /* 区域分组看板筛选 */
     .col-toggle-region-group { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; padding: .35rem .55rem; border: 1px dashed rgba(207,199,189,.7); border-radius: 8px; }
@@ -80,7 +106,7 @@
       color: var(--morandi-ink) !important;
       transform: none !important;
     }
-    .col-toggle-divider { width: 1px; height: 18px; background: rgba(207,199,189,.7); align-self: center; }
+    .col-toggle-divider { width: 1px; height: 18px; background: rgba(207,199,199,.7); align-self: center; }
     .wh-group-toggle {
       display: flex;
       align-items: center;
@@ -134,25 +160,33 @@
       padding-bottom: .36rem !important;
     }
     .wh-th-region .wh-group-label {
-      font-size: .78rem;
-      font-weight: 700;
-      color: var(--morandi-slate);
+      font-size: .94rem;
+      font-weight: 600;
+      color: var(--morandi-ink);
     }
     .wh-th-supplier .wh-group-label {
-      font-size: .8rem;
+      font-size: .84rem;
+      color: var(--morandi-ink);
     }
-    /* 仓库列三行表头 */
     .wh-th-region,
     .wh-th-supplier,
     .wh-th-short { text-align: center; }
-    .wh-th-region { font-size: .78rem; font-weight: 700; color: var(--morandi-slate); }
-    .wh-th-supplier { font-size: .8rem; }
+    .wh-th-region { font-size: .94rem; font-weight: 600; color: var(--morandi-ink); }
+    .wh-th-supplier { font-size: .84rem; }
     .wh-th-short {
-      font-size: .74rem;
-      color: var(--morandi-slate);
-      white-space: normal;
-      word-break: break-all;
+      font-size: .72rem;
+      color: rgba(92, 86, 79, .74);
+      white-space: nowrap;
       line-height: 1.2;
+      overflow: hidden;
+    }
+    .wh-short-text {
+      display: inline-block;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      vertical-align: bottom;
     }
     .wh-th-region { background: rgba(236, 231, 223, 0.78) !important; }
     .wh-head-band-a { background: rgba(255, 255, 255, .72) !important; }
@@ -161,20 +195,31 @@
     #boardTable td.wh-cell {
       min-width: 68px;
       width: 68px;
+      max-width: 68px;
       text-align: center;
       padding-left: .45rem;
       padding-right: .45rem;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+    .wh-th-supplier .wh-group-toggle {
+      justify-content: center;
+    }
+    .wh-supplier-summary {
+      text-align: center;
+      font-size: .84rem;
+      font-weight: 600;
+      color: var(--morandi-ink);
     }
     #boardTable th.inv-col,
     #boardTable td.inv-col {
-      min-width: 110px;
-      width: 110px;
+      min-width: 80px;
+      width: 80px;
       text-align: center;
+      vertical-align: top;
     }
-    #boardTable td.inv-col .wip-input {
-      width: 90px;
-      margin: 0 auto;
-      display: block;
+    #boardTable td.wh-cell {
+      vertical-align: top;
     }
     .wh-region-sep {
       border-right: 2px solid rgba(143,134,126,.38) !important;
@@ -182,37 +227,46 @@
     .region-total-cell {
       font-weight: 700;
     }
-    .floating-save {
-      position: fixed;
-      right: 20px;
-      bottom: 20px;
-      z-index: 70;
-      display: none;
-      width: min(360px, calc(100vw - 24px));
-      padding: .88rem .92rem;
-      border-radius: 16px;
-      border: 1px solid rgba(143,134,126,.58);
-      background: rgba(255,255,255,.97);
-      color: var(--morandi-ink);
-      box-shadow: 0 18px 42px rgba(15, 23, 42, .18);
-      backdrop-filter: blur(6px);
-    }
-    .floating-save.active { display: block; }
-    .floating-save-title {
-      font-size: .94rem;
+    .section-th {
+      text-align: center !important;
+      font-size: .92rem;
       font-weight: 700;
-      margin-bottom: .22rem;
+      cursor: pointer;
+      user-select: none;
+      background: rgba(236, 231, 223, 0.78) !important;
+      border-left: 2px solid rgba(143,134,126,.38);
+      white-space: nowrap;
     }
-    .floating-save-desc {
-      font-size: .84rem;
-      color: var(--morandi-slate);
-      line-height: 1.45;
-      margin-bottom: .72rem;
+    .section-th:hover { background: rgba(225, 219, 210, 0.9) !important; }
+    .section-th .section-toggle-arrow { margin-left: .3rem; font-size: .78rem; }
+    .section-td {
+      text-align: center;
+      vertical-align: top;
+      border-left: 2px solid rgba(143,134,126,.38);
     }
-    .floating-save-actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: .55rem;
+    #boardTable th.factory-col,
+    #boardTable td.factory-col {
+      min-width: 72px;
+      width: 72px;
+      text-align: center;
+      vertical-align: top;
+      font-size: .82rem;
+    }
+    .factory-name-th {
+      font-size: .78rem;
+      color: rgba(92, 86, 79, .85);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 88px;
+    }
+    .transit-region-th {
+      font-size: .82rem;
+      font-weight: 600;
+      min-width: 60px;
+      width: 60px;
+      text-align: center;
+      vertical-align: top;
     }
   </style>
 </head>
@@ -221,7 +275,7 @@
 <div class="container">
   <section class="hero" style="margin-bottom:1.2rem;">
     <h2>仓储看板</h2>
-    <p>SKU 维度库存概览、在途角标与工厂在制库存批量更新</p>
+    <p>SKU 维度库存概览，在途/工厂在库/工厂在制可收起展开</p>
   </section>
 
   <section class="pm-layout">
@@ -245,23 +299,19 @@
     </div>
   </section>
 </div>
-<div id="floatingBoardSave" class="floating-save" aria-live="polite">
-  <div class="floating-save-title">检测到未保存的批量修改</div>
-  <div class="floating-save-desc" id="floatingBoardSaveDesc">你修改了仓储看板中的在制库存，确认后会批量保存到下单产品。</div>
-  <div class="floating-save-actions">
-    <button type="button" class="btn-secondary" onclick="discardWipBatch()">撤销修改</button>
-    <button type="button" class="btn-primary" onclick="saveWipBatch()">确认修改</button>
-  </div>
-</div>
 
 <script>
 let boardWarehouses = [];
+let boardFactories = [];
 let boardRows = [];
 let visibleWarehouseIds = new Set();
-let dirtyWipMap = new Map();
 let collapsedFamilies = new Set();
 let activeSearchText = '';
 let collapsedRegionKeys = new Set();
+let transitExpanded = true;
+let factoryStockExpanded = false;
+let factoryWipExpanded = false;
+
 const REGION_ORDER = ['美西', '美中', '美东南', '美东'];
 
 function $(s){ return document.querySelector(s); }
@@ -350,25 +400,9 @@ function sumForWarehouses(row, warehouses, field){
   return warehouses.reduce((total, wh) => total + (Number((row[field] || {})[String(wh.id)] || 0) || 0), 0);
 }
 
-function syncFloatingSaveButton(){
-  const btn = $('#floatingBoardSave');
-  if(!btn) return;
-  const desc = $('#floatingBoardSaveDesc');
-  if(desc){
-    desc.textContent = dirtyWipMap.size > 0
-      ? `你已修改 ${dirtyWipMap.size} 条在制库存，确认后会批量保存到下单产品。`
-      : '你修改了仓储看板中的在制库存，确认后会批量保存到下单产品。';
-  }
-  btn.classList.toggle('active', dirtyWipMap.size > 0);
-}
-
-function discardWipBatch(){
-  if(!dirtyWipMap.size) return;
-  dirtyWipMap.clear();
-  renderBoard();
-  syncFloatingSaveButton();
-  showStatus('已撤销未保存的批量修改', false);
-}
+function toggleTransit(){ transitExpanded = !transitExpanded; renderBoard(); }
+function toggleFactoryStock(){ factoryStockExpanded = !factoryStockExpanded; renderBoard(); }
+function toggleFactoryWip(){ factoryWipExpanded = !factoryWipExpanded; renderBoard(); }
 
 function toggleRegionColumnGroup(regionName){
   if(collapsedRegionKeys.has(regionName)) collapsedRegionKeys.delete(regionName);
@@ -440,6 +474,101 @@ function renderBoard(){
   const regionGroups = buildColumnGroups(visibleWh);
   const leafColumns = buildLeafColumns(regionGroups);
 
+  // Section column counts
+  const transitActiveRegions = REGION_ORDER.filter(r =>
+    boardRows.some(row => ((row.in_transit_by_region || {})[r] || 0) > 0)
+  );
+  const effectiveTransitRegions = transitActiveRegions.length > 0 ? transitActiveRegions : REGION_ORDER.slice(0, 4);
+  const transitColspan = transitExpanded ? effectiveTransitRegions.length : 1;
+  const stockColspan = factoryStockExpanded ? Math.max(1, boardFactories.length) : 1;
+  const wipColspan = factoryWipExpanded ? Math.max(1, boardFactories.length) : 1;
+  const fixedCols = 3;
+  const totalCols = fixedCols + transitColspan + stockColspan + wipColspan + leafColumns.length;
+
+  // Build 3-row thead
+  let row1 = '';
+  let row2 = '';
+  let row3 = '';
+
+  row1 += `<th rowspan="3">货号</th>`;
+  row1 += `<th rowspan="3">SKU</th>`;
+  row1 += `<th rowspan="3" class="inv-col">现货库存</th>`;
+
+  row1 += `<th colspan="${transitColspan}" class="section-th" data-toggle="transit">在途<span class="section-toggle-arrow">${transitExpanded ? '▾' : '▸'}</span></th>`;
+  if (transitExpanded) {
+    effectiveTransitRegions.forEach(r => {
+      row2 += `<th rowspan="2" class="transit-region-th">${r}</th>`;
+    });
+  } else {
+    row2 += `<th rowspan="2" class="transit-region-th">合计</th>`;
+  }
+
+  row1 += `<th colspan="${stockColspan}" class="section-th" data-toggle="factory-stock">工厂在库<span class="section-toggle-arrow">${factoryStockExpanded ? '▾' : '▸'}</span></th>`;
+  if (factoryStockExpanded && boardFactories.length > 0) {
+    boardFactories.forEach(f => {
+      row2 += `<th rowspan="2" class="factory-col factory-name-th" title="${String(f.factory_name || '').replace(/"/g,'&quot;')}">${f.factory_name || ''}</th>`;
+    });
+  } else {
+    row2 += `<th rowspan="2" class="factory-col">合计</th>`;
+  }
+
+  row1 += `<th colspan="${wipColspan}" class="section-th" data-toggle="factory-wip">工厂在制<span class="section-toggle-arrow">${factoryWipExpanded ? '▾' : '▸'}</span></th>`;
+  if (factoryWipExpanded && boardFactories.length > 0) {
+    boardFactories.forEach(f => {
+      row2 += `<th rowspan="2" class="factory-col factory-name-th" title="${String(f.factory_name || '').replace(/"/g,'&quot;')}">${f.factory_name || ''}</th>`;
+    });
+  } else {
+    row2 += `<th rowspan="2" class="factory-col">合计</th>`;
+  }
+
+  regionGroups.forEach((region, regionIndex) => {
+    const leafCount = leafColumns.filter(col => col.regionName === region.name).length;
+    const canFold = region.warehouses.length > 1;
+    const folded = canFold && collapsedRegionKeys.has(region.name);
+    const sepClass = regionIndex < regionGroups.length - 1 ? 'wh-region-sep' : '';
+    row1 += `<th colspan="${leafCount}" class="wh-th-region ${region.suppliers[0] ? region.suppliers[0].band : 'wh-head-band-a'} ${sepClass}" ${canFold ? `data-toggle-kind="region" data-region-name="${String(region.name).replace(/"/g,'&quot;')}"` : ''}><div class="wh-group-toggle ${canFold ? '' : 'is-static'}"><span class="wh-group-label">${region.name}</span><span class="wh-group-line"></span><span class="wh-group-circle">${canFold ? (folded ? '+' : '-') : ''}</span></div></th>`;
+  });
+  regionGroups.forEach((region, regionIndex) => {
+    const regionFolded = region.warehouses.length > 1 && collapsedRegionKeys.has(region.name);
+    const sepClass = regionIndex < regionGroups.length - 1 ? 'wh-region-sep' : '';
+    if(regionFolded){
+      row2 += `<th colspan="1" class="wh-th-supplier ${region.suppliers[0] ? region.suppliers[0].band : 'wh-head-band-a'} ${sepClass}"><div class="wh-supplier-summary">合计</div></th>`;
+    } else {
+      row2 += region.suppliers.map((supplier, supplierIndex) => {
+        const supplierSepClass = supplierIndex === region.suppliers.length - 1 ? sepClass : '';
+        return `<th colspan="${supplier.warehouses.length}" class="wh-th-supplier ${supplier.band} ${supplierSepClass}"><div class="wh-group-toggle is-static"><span class="wh-group-label">${supplier.name}</span></div></th>`;
+      }).join('');
+    }
+  });
+  leafColumns.forEach(col => {
+    const sepClass = col.regionBoundary ? 'wh-region-sep' : '';
+    if(col.type === 'region'){
+      row3 += `<th class="wh-th-short wh-col ${col.band} ${sepClass}">合计</th>`;
+    } else {
+      const shortName = String(col.warehouse.warehouse_short_name || col.warehouse.warehouse_name || '');
+      const fullName = String(col.warehouse.warehouse_name || shortName);
+      row3 += `<th data-wh="${col.warehouse.id}" class="wh-th-short wh-col ${col.band} ${sepClass}"><span class="wh-short-text" title="${fullName.replace(/"/g,'&quot;')}">${shortName}</span></th>`;
+    }
+  });
+
+  thead.innerHTML = `<tr>${row1}</tr><tr>${row2}</tr><tr>${row3}</tr>`;
+
+  thead.querySelectorAll('th[data-toggle]').forEach(cell => {
+    cell.addEventListener('click', function(){
+      const t = this.getAttribute('data-toggle');
+      if(t === 'transit') toggleTransit();
+      else if(t === 'factory-stock') toggleFactoryStock();
+      else if(t === 'factory-wip') toggleFactoryWip();
+    });
+  });
+  thead.querySelectorAll('th[data-toggle-kind]').forEach(cell => {
+    cell.addEventListener('click', function(){
+      const kind = String(this.getAttribute('data-toggle-kind') || '');
+      if(kind === 'region') toggleRegionColumnGroup(String(this.getAttribute('data-region-name') || ''));
+    });
+  });
+
+  // Build filtered group rows
   const grouped = [];
   const groupMap = new Map();
   boardRows.forEach(row => {
@@ -458,10 +587,10 @@ function renderBoard(){
         ? group.rows.filter(row => {
             const skuText = String(row.sku || '').toLowerCase();
             const famText = String(group.family || '').toLowerCase();
-            return skuText.includes(keyword) || famText.includes(keyword);
+            const childSkuText = (row.iteration_children || []).map(item => String(item.sku || '')).join(' ').toLowerCase();
+            return skuText.includes(keyword) || famText.includes(keyword) || childSkuText.includes(keyword);
           })
         : group.rows;
-      // When not all warehouses are visible, additionally filter by inventory in visible WH
       const whFilteredRows = allVisible
         ? rows
         : rows.filter(row => visibleWh.some(wh => ((row.warehouse_qty || {})[String(wh.id)] || 0) > 0));
@@ -469,45 +598,8 @@ function renderBoard(){
     })
     .filter(group => group.rows.length > 0);
 
-  thead.innerHTML = `
-    <tr>
-      <th rowspan="3">货号</th>
-      <th rowspan="3">SKU</th>
-      <th rowspan="3" class="inv-col">现货库存</th>
-      <th rowspan="3" class="inv-col">在途数量</th>
-      <th rowspan="3" class="inv-col">工厂在制库存</th>
-      ${regionGroups.map((region, regionIndex) => {
-        const leafCount = leafColumns.filter(col => col.regionName === region.name).length;
-        const canFold = region.warehouses.length > 1;
-        const folded = canFold && collapsedRegionKeys.has(region.name);
-        const sepClass = regionIndex < regionGroups.length - 1 ? 'wh-region-sep' : '';
-        return `<th colspan="${leafCount}" class="wh-th-region ${region.suppliers[0] ? region.suppliers[0].band : 'wh-head-band-a'} ${sepClass}" ${canFold ? `data-toggle-kind="region" data-region-name="${String(region.name).replace(/"/g, '&quot;')}"` : ''}><div class="wh-group-toggle ${canFold ? '' : 'is-static'}"><span class="wh-group-label">${region.name}</span><span class="wh-group-line"></span><span class="wh-group-circle">${canFold ? (folded ? '+' : '-') : ''}</span></div></th>`;
-      }).join('')}
-    </tr>
-    <tr>
-      ${regionGroups.map((region, regionIndex) => {
-        const regionFolded = region.warehouses.length > 1 && collapsedRegionKeys.has(region.name);
-        const sepClass = regionIndex < regionGroups.length - 1 ? 'wh-region-sep' : '';
-        if(regionFolded){
-          return `<th colspan="1" class="wh-th-supplier ${region.suppliers[0] ? region.suppliers[0].band : 'wh-head-band-a'} ${sepClass}"><div class="wh-group-toggle is-static"><span class="wh-group-label">区域汇总</span><span class="wh-group-line"></span><span class="wh-group-circle"></span></div></th>`;
-        }
-        return region.suppliers.map((supplier, supplierIndex) => {
-          const supplierSepClass = supplierIndex === region.suppliers.length - 1 ? sepClass : '';
-          return `<th colspan="${supplier.warehouses.length}" class="wh-th-supplier ${supplier.band} ${supplierSepClass}"><div class="wh-group-toggle is-static"><span class="wh-group-label">${supplier.name}</span></div></th>`;
-        }).join('');
-      }).join('')}
-    </tr>
-    <tr>
-      ${leafColumns.map(col => {
-        const sepClass = col.regionBoundary ? 'wh-region-sep' : '';
-        if(col.type === 'region') return `<th class="wh-th-short wh-col ${col.band} ${sepClass}">合计</th>`;
-        return `<th data-wh="${col.warehouse.id}" class="wh-th-short wh-col ${col.band} ${sepClass}">${col.warehouse.warehouse_short_name || col.warehouse.warehouse_name}</th>`;
-      }).join('')}
-    </tr>
-  `;
-
   if (!filteredGroups.length){
-    tbody.innerHTML = `<tr><td colspan="${5 + leafColumns.length}" style="text-align:center;">暂无数据</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${totalCols}" style="text-align:center;">暂无数据</td></tr>`;
     return;
   }
 
@@ -516,14 +608,82 @@ function renderBoard(){
     const familyKey = String(group.family || '-');
     const isCollapsed = keyword ? false : collapsedFamilies.has(familyKey);
     const groupClass = `group-bg-${groupIndex % 2}`;
-    html += `<tr class="group-row ${groupClass}" data-family="${familyKey.replace(/"/g,'&quot;')}">`
-      + `<td colspan="${5 + leafColumns.length}"><span class="group-toggle">${isCollapsed ? '▸' : '▾'}</span>${group.family || '-'}（${group.rows.length}）</td>`
-      + `</tr>`;
+    html += `<tr class="group-row ${groupClass}" data-family="${familyKey.replace(/"/g,'&quot;')}">`;
+    html += `<td colspan="${totalCols}"><span class="group-toggle">${isCollapsed ? '▸' : '▾'}</span>${group.family || '-'}（${group.rows.length}）</td>`;
+    html += `</tr>`;
 
     group.rows.forEach(row => {
+      const esc = (v) => String(v == null ? '' : v).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const childRows = (row.iteration_children || []);
       const badge = Number(row.in_transit_total || 0) > 0
         ? `<span class="badge-tip" title="${(row.in_transit_tip || '').replace(/"/g,'&quot;')}">${row.in_transit_total}</span>`
         : '';
+      const childMeta = childRows.length
+        ? `<div class="sku-submeta">${childRows.map(child => `<div class="sku-submeta-line">${esc(child.sku || '')}</div>`).join('')}</div>`
+        : '';
+      const childAvailableMeta = childRows.length
+        ? `<div class="inv-submeta">${childRows.map(child => `<div class="inv-submeta-line">${Number(child.available_total || 0) || 0}</div>`).join('')}</div>`
+        : '';
+
+      // In-transit cells
+      let transitCells = '';
+      if (transitExpanded) {
+        effectiveTransitRegions.forEach(r => {
+          const qty = Number((row.in_transit_by_region || {})[r] || 0);
+          const childTransitRegionMeta = childRows.length
+            ? `<div class="inv-submeta">${childRows.map(child => `<div class="inv-submeta-line">${Number(((child.in_transit_by_region || {})[r]) || 0)}</div>`).join('')}</div>`
+            : '';
+          transitCells += `<td class="inv-col section-td"><div class="inv-main-slot">${qty}</div>${childTransitRegionMeta}</td>`;
+        });
+      } else {
+        const qty = Number(row.in_transit_total || 0);
+        const childTransitMeta = childRows.length
+          ? `<div class="inv-submeta">${childRows.map(child => `<div class="inv-submeta-line">${Number(child.in_transit_total || 0)}</div>`).join('')}</div>`
+          : '';
+        transitCells = `<td class="inv-col section-td"><div class="inv-main-slot">${qty}${badge}</div>${childTransitMeta}</td>`;
+      }
+
+      // Factory stock cells
+      let stockCells = '';
+      if (factoryStockExpanded && boardFactories.length > 0) {
+        const fstockMap = row.factory_stock_by_factory || {};
+        boardFactories.forEach(f => {
+          const qty = Number(fstockMap[String(f.id)] || 0);
+          const childMeta2 = childRows.length
+            ? `<div class="inv-submeta">${childRows.map(child => `<div class="inv-submeta-line">${Number(((child.factory_stock_by_factory || {})[String(f.id)]) || 0)}</div>`).join('')}</div>`
+            : '';
+          stockCells += `<td class="factory-col section-td"><div class="inv-main-slot">${qty}</div>${childMeta2}</td>`;
+        });
+      } else {
+        const qty = Number(row.factory_stock_total || 0);
+        const childStockMeta = childRows.length
+          ? `<div class="inv-submeta">${childRows.map(child => `<div class="inv-submeta-line">${Number(child.factory_stock_total || 0)}</div>`).join('')}</div>`
+          : '';
+        stockCells = `<td class="factory-col section-td"><div class="inv-main-slot">${qty}</div>${childStockMeta}</td>`;
+      }
+
+      // Factory wip cells
+      let wipCells = '';
+      if (factoryWipExpanded && boardFactories.length > 0) {
+        const fwipMap = row.factory_wip_by_factory || {};
+        boardFactories.forEach(f => {
+          const wipVal = fwipMap[String(f.id)] || {};
+          const qty = Number(wipVal.quantity || 0);
+          const dateStr = wipVal.earliest_date ? `<div style="font-size:.7rem;color:#7a7269;margin-top:.15rem;">${wipVal.earliest_date}</div>` : '';
+          const childMeta2 = childRows.length
+            ? `<div class="inv-submeta">${childRows.map(child => `<div class="inv-submeta-line">${Number(((child.factory_wip_by_factory || {})[String(f.id)] || {}).quantity || 0)}</div>`).join('')}</div>`
+            : '';
+          wipCells += `<td class="factory-col section-td"><div class="inv-main-slot">${qty}</div>${dateStr}${childMeta2}</td>`;
+        });
+      } else {
+        const qty = Number(row.factory_wip_total || 0);
+        const childWipMeta = childRows.length
+          ? `<div class="inv-submeta">${childRows.map(child => `<div class="inv-submeta-line">${Number(child.factory_wip_total || 0)}</div>`).join('')}</div>`
+          : '';
+        wipCells = `<td class="factory-col section-td"><div class="inv-main-slot">${qty}</div>${childWipMeta}</td>`;
+      }
+
+      // Warehouse columns
       const whCols = leafColumns.map(col => {
         const totalQty = col.type === 'warehouse'
           ? ((row.warehouse_qty || {})[String(col.warehouse.id)] || 0)
@@ -532,18 +692,26 @@ function renderBoard(){
           ? ((row.in_transit_by_warehouse || {})[String(col.warehouse.id)] || 0)
           : sumForWarehouses(row, col.warehouses, 'in_transit_by_warehouse');
         const whBadge = totalTransit > 0 ? `<span class="badge-tip" title="在途中：${totalTransit}">${totalTransit}</span>` : '';
+        const childWhMeta = childRows.length
+          ? `<div class="inv-submeta">${childRows.map(child => {
+              const qty = col.type === 'warehouse'
+                ? Number(((child.warehouse_qty || {})[String(col.warehouse.id)] || 0) || 0)
+                : Number((col.warehouses || []).reduce((sum, wh) => sum + (Number(((child.warehouse_qty || {})[String(wh.id)] || 0) || 0)), 0) || 0);
+              return `<div class="inv-submeta-line">${esc(qty)}</div>`;
+            }).join('')}</div>`
+          : '';
         const sepClass = col.regionBoundary ? 'wh-region-sep' : '';
         const regionTotalClass = col.type === 'region' ? 'region-total-cell' : '';
-        return `<td class="wh-cell wh-col ${col.band} ${sepClass} ${regionTotalClass}">${totalQty}${whBadge}</td>`;
+        return `<td class="wh-cell wh-col ${col.band} ${sepClass} ${regionTotalClass}"><div class="inv-main-slot">${totalQty}${whBadge}</div>${childWhMeta}</td>`;
       }).join('');
 
-      const wipValue = dirtyWipMap.has(String(row.order_product_id)) ? dirtyWipMap.get(String(row.order_product_id)) : (row.factory_wip_stock || 0);
       html += `<tr class="sku-row ${groupClass} ${isCollapsed ? 'hidden-row' : ''}" data-family="${familyKey.replace(/"/g,'&quot;')}">`;
       html += `<td>${group.family || '-'}</td>`;
-      html += `<td class="sku-cell">${row.sku || ''}${badge}</td>`;
-      html += `<td class="inv-col">${row.available_total || 0}</td>`;
-      html += `<td class="inv-col">${row.in_transit_total || 0}</td>`;
-      html += `<td class="inv-col"><input class="wip-input" type="number" min="0" step="1" data-op="${row.order_product_id}" value="${wipValue}"></td>`;
+      html += `<td class="sku-cell">${row.sku || ''}${childMeta}</td>`;
+      html += `<td class="inv-col"><div class="inv-main-slot">${row.available_total || 0}</div>${childAvailableMeta}</td>`;
+      html += transitCells;
+      html += stockCells;
+      html += wipCells;
       html += whCols;
       html += `</tr>`;
     });
@@ -559,23 +727,6 @@ function renderBoard(){
       renderBoard();
     });
   });
-  thead.querySelectorAll('th[data-toggle-kind]').forEach(cell => {
-    cell.addEventListener('click', function(){
-      const kind = String(this.getAttribute('data-toggle-kind') || '');
-      if(kind === 'region'){
-        toggleRegionColumnGroup(String(this.getAttribute('data-region-name') || ''));
-      }
-    });
-  });
-  document.querySelectorAll('.wip-input').forEach(el => {
-    el.addEventListener('change', function(){
-      const op = String(this.getAttribute('data-op') || '');
-      const val = Math.max(0, parseInt(this.value || '0', 10) || 0);
-      dirtyWipMap.set(op, val);
-      this.value = String(val);
-      syncFloatingSaveButton();
-    });
-  });
 }
 
 function loadBoard(){
@@ -587,47 +738,18 @@ function loadBoard(){
         return;
       }
       boardWarehouses = d.warehouses || [];
+      boardFactories = d.factories || [];
       boardRows = d.items || [];
       if (!visibleWarehouseIds.size){
         boardWarehouses.forEach(wh => visibleWarehouseIds.add(String(wh.id)));
       }
       collapsedFamilies.clear();
       collapsedRegionKeys.clear();
-      dirtyWipMap.clear();
       buildTogglePanel();
       renderBoard();
-      syncFloatingSaveButton();
       showStatus('看板已刷新', false);
     })
     .catch(err => showStatus('加载失败: ' + err, true));
-}
-
-function saveWipBatch(){
-  if (!dirtyWipMap.size){
-    showStatus('没有需要更新的在制库存', true);
-    return;
-  }
-  const items = Array.from(dirtyWipMap.entries()).map(([order_product_id, factory_wip_stock]) => ({
-    order_product_id: Number(order_product_id),
-    factory_wip_stock: Number(factory_wip_stock)
-  }));
-  fetch('/api/logistics-warehouse-dashboard?action=update_wip', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({items})
-  })
-    .then(r => r.json())
-    .then(d => {
-      if (d.status !== 'success'){
-        showStatus(d.message || '更新失败', true);
-        return;
-      }
-      dirtyWipMap.clear();
-      syncFloatingSaveButton();
-      showStatus(`已更新 ${d.updated || 0} 条在制库存`, false);
-      loadBoard();
-    })
-    .catch(err => showStatus('更新失败: ' + err, true));
 }
 
 function downloadBoard(){

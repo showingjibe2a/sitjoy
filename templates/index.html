@@ -391,9 +391,6 @@
 
         /* 登出按钮 */
         .logout-btn {
-            position: absolute;
-            top: 20px;
-            right: 20px;
             padding: 8px 16px;
             background: #f0f0f0;
             color: #666;
@@ -409,13 +406,21 @@
             background: #e0e0e0;
             color: #333;
         }
+
+        .home-topbar {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 12px;
+        }
     </style>
 </head>
 <body>
     <div id="site-header"></div>
-    <button class="logout-btn" onclick="handleLogout()">登出</button>
 
     <div class="container home-container">
+        <div class="home-topbar">
+            <button class="logout-btn" onclick="handleLogout()">登出</button>
+        </div>
         <section class="home-layout">
             <aside class="todo-rail">
                 <div class="rail-card">
@@ -436,8 +441,20 @@
                     </div>
                     <div class="calendar-controls">
                         <button class="btn-ghost" id="prevMonthBtn" type="button">&#8249;</button>
-                        <select id="calendarYear"></select>
-                        <select id="calendarMonth"></select>
+                        <input type="hidden" id="calendarYear">
+                        <input type="hidden" id="calendarMonth">
+                        <div class="cal-picker-wrap">
+                            <button type="button" class="cal-picker-btn" id="calPickerBtn">加载中</button>
+                            <div class="cal-picker-panel" id="calPickerPanel">
+                                <div class="cal-picker-year-row">
+                                    <button type="button" class="cal-picker-yr-btn" id="calPickerPrevYear">&#9664;</button>
+                                    <span id="calPickerYearLabel">2026</span>
+                                    <button type="button" class="cal-picker-yr-btn" id="calPickerNextYear">&#9654;</button>
+                                </div>
+                                <div class="cal-picker-months" id="calPickerMonths"></div>
+                            </div>
+                        </div>
+                        <button class="btn-secondary calendar-today-btn" id="calendarTodayBtn" type="button">本月</button>
                         <button class="btn-ghost" id="nextMonthBtn" type="button">&#8250;</button>
                     </div>
                 </div>
@@ -445,6 +462,39 @@
                 <div class="calendar-grid" id="calendarGrid"></div>
 
                 <!-- 日历详情已改为悬浮 tooltip，底部详情区移除 -->
+            </div>
+        </section>
+
+        <!-- 待审核注册申请（仅管理员可见，有数据时自动显示） -->
+        <section class="card pm-card" id="pendingUsersSection" style="display:none;">
+            <div class="pm-toolbar" style="align-items:flex-start;">
+                <div>
+                    <h3 style="margin:0;color:#2f2f33;">注册审核</h3>
+                    <p style="margin:6px 0 0;color:#6b5e4d;font-size:12px;">以下用户已提交注册申请，等待管理员批准后方可登录。</p>
+                </div>
+                <div class="pm-toolbar-actions">
+                    <span class="hero-stat" style="display:flex; align-items:center; gap:8px;">
+                        <span class="stat-label">权限</span>
+                        <span class="stat-value">管理员专属</span>
+                    </span>
+                </div>
+            </div>
+            <div>
+                <table class="pm-table" id="pendingUsersTable">
+                    <thead>
+                        <tr>
+                            <th>账号</th>
+                            <th>姓名</th>
+                            <th>电话</th>
+                            <th>注册时间</th>
+                            <th style="width:120px;">管理员</th>
+                            <th style="width:120px;">管理员授权</th>
+                            <th style="min-width:460px;">页面访问权限</th>
+                            <th style="width:160px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
             </div>
         </section>
 
@@ -470,12 +520,14 @@
                             <th>姓名</th>
                             <th>电话</th>
                             <th>生日</th>
-                            <th>权限</th>
+                            <th style="width:120px;">管理员</th>
+                            <th style="width:120px;">管理员授权</th>
+                            <th style="min-width:460px;">页面访问权限</th>
                             <th style="width:180px;">操作</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="8" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -555,7 +607,7 @@
 
     <!-- 新增员工弹窗 -->
     <div id="employeeCreateModal" class="pm-modal">
-        <div class="pm-modal-content">
+        <div class="pm-modal-content pm-modal-content--wide">
             <div class="modal-header">
                 <h2>新增账号</h2>
                 <button class="modal-close" onclick="closeEmployeeCreateModal()">×</button>
@@ -581,6 +633,13 @@
                     <label>生日（可选）</label>
                     <input type="date" id="employeeBirthday">
                 </div>
+                <div class="form-group pm-form-full">
+                    <div class="permission-panel">
+                        <h4 class="permission-panel-title">权限设置</h4>
+                        <p class="permission-section-subtitle">可设置管理员身份、管理员授权权限，以及各子页面访问开关。</p>
+                        <div id="employeeCreatePermissionEditor"></div>
+                    </div>
+                </div>
             </form>
             <div id="employeeCreateHint" class="response" style="display:none; margin-top:0.75rem;"></div>
             <div class="pm-modal-actions">
@@ -592,7 +651,7 @@
 
     <!-- 编辑员工弹窗 -->
     <div id="employeeEditModal" class="pm-modal">
-        <div class="pm-modal-content">
+        <div class="pm-modal-content pm-modal-content--wide">
             <div class="modal-header">
                 <h2>编辑账号资料</h2>
                 <button class="modal-close" onclick="closeEmployeeEditModal()">×</button>
@@ -611,6 +670,13 @@
                     <label>电话（可选）</label>
                     <input type="text" id="employeeEditPhone" placeholder="可选">
                 </div>
+                <div class="form-group pm-form-full">
+                    <div class="permission-panel">
+                        <h4 class="permission-panel-title">权限设置</h4>
+                        <p class="permission-section-subtitle">预览表与编辑弹窗使用同一套权限字段。</p>
+                        <div id="employeeEditPermissionEditor"></div>
+                    </div>
+                </div>
             </form>
             <div id="employeeEditHint" class="response" style="display:none; margin-top:0.75rem;"></div>
             <div class="pm-modal-actions">
@@ -623,6 +689,162 @@
     <script>
         let currentUser = null;
         let isAdmin = false;
+        const pagePermissionOrder = [
+            'home',
+            'shop_brand_management',
+            'amazon_account_health_management',
+            'product_management',
+            'fabric_management',
+            'feature_management',
+            'material_management',
+            'certification_management',
+            'order_product_management',
+            'logistics_factory_management',
+            'logistics_forwarder_management',
+            'logistics_warehouse_management',
+            'logistics_warehouse_inventory_management',
+            'logistics_in_transit_management',
+            'logistics_warehouse_dashboard',
+            'gallery',
+            'sales_product_management',
+            'parent_management',
+            'amazon_ad_adjustment_management',
+            'amazon_ad_keyword_management',
+            'amazon_ad_management',
+            'amazon_ad_subtype_management',
+            'amazon_ad_delivery_management',
+            'amazon_ad_product_management',
+            'about'
+        ];
+
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function getPagePermissionLabels() {
+            return (currentUser && currentUser.page_permission_labels) || {};
+        }
+
+        function buildDefaultPagePermissions() {
+            const labels = getPagePermissionLabels();
+            const result = {};
+            pagePermissionOrder.forEach(key => {
+                if (labels[key]) result[key] = 1;
+            });
+            Object.keys(labels).forEach(key => {
+                if (!(key in result)) result[key] = 1;
+            });
+            return result;
+        }
+
+        function normalizePagePermissions(value) {
+            const labels = getPagePermissionLabels();
+            const normalized = buildDefaultPagePermissions();
+            if (!value || typeof value !== 'object') return normalized;
+            Object.keys(labels).forEach(key => {
+                if (key in value) normalized[key] = value[key] ? 1 : 0;
+            });
+            return normalized;
+        }
+
+        function canEditAdminGrant() {
+            return !!(currentUser && Number(currentUser.id || 0) === 1);
+        }
+
+        function buildSwitchMarkup(checked, attrs, disabled) {
+            return `
+                <label class="switch-wrap">
+                    <input type="checkbox" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''} ${attrs || ''}>
+                    <span class="switch-slider"></span>
+                </label>
+            `;
+        }
+
+        function buildPermissionEditorHtml(scopeId, payload, options = {}) {
+            const labels = getPagePermissionLabels();
+            const permissions = normalizePagePermissions((payload && payload.page_permissions) || payload || {});
+            const orderedKeys = pagePermissionOrder.filter(key => labels[key]).concat(
+                Object.keys(labels).filter(key => !pagePermissionOrder.includes(key))
+            );
+            const compactClass = options.compact ? ' is-compact' : '';
+            const gridClass = options.gridClass ? ` ${options.gridClass}` : '';
+            const adminDisabled = !!options.disableAdmin;
+            const grantDisabled = !!options.disableGrant || !canEditAdminGrant();
+            return `
+                <div class="permission-block permission-inline-meta" data-permission-editor="${escapeHtml(scopeId)}">
+                    ${options.hideFlags ? '' : `
+                    <div class="permission-inline-top">
+                        <span class="permission-inline-flag">
+                            <span>管理员</span>
+                            ${buildSwitchMarkup(!!(payload && payload.is_admin), 'data-role="is_admin"', adminDisabled)}
+                        </span>
+                        <span class="permission-inline-flag">
+                            <span>管理员授权</span>
+                            ${buildSwitchMarkup(!!(payload && payload.can_grant_admin), 'data-role="can_grant_admin"', grantDisabled)}
+                        </span>
+                    </div>`}
+                    <div class="permission-grid${compactClass}${gridClass}">
+                        ${orderedKeys.map(key => `
+                            <div class="permission-item">
+                                <span class="permission-name">${escapeHtml(labels[key] || key)}</span>
+                                ${buildSwitchMarkup(!!permissions[key], `data-role="page_permission" data-page-key="${escapeHtml(key)}"`, !!options.disablePages)}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderPermissionEditor(target, payload, options = {}) {
+            const el = typeof target === 'string' ? document.getElementById(target) : target;
+            if (!el) return;
+            el.innerHTML = buildPermissionEditorHtml(el.id || 'perm-editor', payload || {}, options);
+            syncPermissionEditor(el);
+        }
+
+        function collectPermissionEditorState(target) {
+            const host = typeof target === 'string' ? document.getElementById(target) : target;
+            const editor = host && host.matches && host.matches('[data-permission-editor]') ? host : (host ? host.querySelector('[data-permission-editor]') : null);
+            const permissionRoot = editor || host;
+            const controlRoot = host || editor;
+            const pagePermissions = {};
+            if (!permissionRoot) {
+                return { is_admin: 0, can_grant_admin: 0, page_permissions: buildDefaultPagePermissions() };
+            }
+            permissionRoot.querySelectorAll('[data-role="page_permission"]').forEach(input => {
+                pagePermissions[input.dataset.pageKey] = input.checked ? 1 : 0;
+            });
+            const adminInput = controlRoot ? controlRoot.querySelector('[data-role="is_admin"]') : null;
+            const grantInput = controlRoot ? controlRoot.querySelector('[data-role="can_grant_admin"]') : null;
+            return {
+                is_admin: adminInput && adminInput.checked ? 1 : 0,
+                can_grant_admin: grantInput && grantInput.checked ? 1 : 0,
+                page_permissions: normalizePagePermissions(pagePermissions)
+            };
+        }
+
+        function syncPermissionEditor(target) {
+            const host = typeof target === 'string' ? document.getElementById(target) : target;
+            const editor = host && host.matches && host.matches('[data-permission-editor]') ? host : (host ? host.querySelector('[data-permission-editor]') : null);
+            const controlRoot = host || editor;
+            if (!controlRoot) return;
+            const adminInput = controlRoot.querySelector('[data-role="is_admin"]');
+            const grantInput = controlRoot.querySelector('[data-role="can_grant_admin"]');
+            if (grantInput && grantInput.checked && adminInput && !adminInput.checked) {
+                adminInput.checked = true;
+            }
+            if (adminInput && !adminInput.checked && grantInput) {
+                grantInput.checked = false;
+            }
+            if (grantInput) {
+                grantInput.disabled = !canEditAdminGrant();
+            }
+        }
 
         function formatDateKey(year, month, day) {
             return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -652,13 +874,19 @@
             el.textContent = '';
         }
 
-        async function checkAuth() {
-            try {
-                const resp = await fetch('/api/auth?action=current', { 
+        function fetchCurrentAuthState(forceRefresh = false) {
+            if (forceRefresh || !window.__sitjoyAuthStatePromise) {
+                window.__sitjoyAuthStatePromise = fetch('/api/auth?action=current', {
                     method: 'GET',
                     credentials: 'include'
-                });
-                const data = await resp.json();
+                }).then(resp => resp.json());
+            }
+            return window.__sitjoyAuthStatePromise;
+        }
+
+        async function checkAuth() {
+            try {
+                const data = await fetchCurrentAuthState();
                 if (data.status === 'success') {
                     currentUser = data;
                     isAdmin = !!data.is_admin;
@@ -670,6 +898,8 @@
                     if (adminModule) {
                         adminModule.classList.toggle('show', isAdmin);
                     }
+                    const pendingSection = document.getElementById('pendingUsersSection');
+                    if (pendingSection && !isAdmin) pendingSection.style.display = 'none';
                 } else {
                     window.location.href = '/login';
                 }
@@ -679,6 +909,7 @@
         }
 
         async function handleLogout() {
+            window.__sitjoyAuthStatePromise = null;
             const resp = await fetch('/api/auth?action=logout', { 
                 method: 'POST',
                 credentials: 'include'
@@ -829,6 +1060,11 @@
             const modal = document.getElementById('employeeCreateModal');
             const form = document.getElementById('employeeCreateForm');
             if (form) form.reset();
+            renderPermissionEditor('employeeCreatePermissionEditor', {
+                is_admin: 0,
+                can_grant_admin: 0,
+                page_permissions: buildDefaultPagePermissions()
+            });
             resetModalHint('employeeCreateHint');
             if (modal) modal.classList.add('active');
         }
@@ -843,6 +1079,11 @@
             document.getElementById('employeeEditName').value = data.name || '';
             document.getElementById('employeeEditBirthday').value = data.birthday || '';
             document.getElementById('employeeEditPhone').value = data.phone || '';
+            renderPermissionEditor('employeeEditPermissionEditor', {
+                is_admin: data.is_admin,
+                can_grant_admin: data.can_grant_admin,
+                page_permissions: data.page_permissions
+            });
             resetModalHint('employeeEditHint');
             const modal = document.getElementById('employeeEditModal');
             if (modal) modal.classList.add('active');
@@ -891,6 +1132,49 @@
                 });
         }
 
+        function loadPendingUsers() {
+            if (!isAdmin) {
+                const section = document.getElementById('pendingUsersSection');
+                if (section) section.style.display = 'none';
+                return Promise.resolve([]);
+            }
+            return fetch('/api/auth?action=pending_users', { credentials: 'include' })
+                .then(r => r.json())
+                .then(data => {
+                    const section = document.getElementById('pendingUsersSection');
+                    const tbody = document.querySelector('#pendingUsersTable tbody');
+                    if (!tbody || !section) return;
+                    const items = (data.status === 'success') ? (data.items || []) : [];
+                    window.pendingUserMap = Object.fromEntries(items.map(item => [String(item.id), item]));
+                    if (items.length === 0) {
+                        section.style.display = 'none';
+                        return items;
+                    }
+                    section.style.display = '';
+                    tbody.innerHTML = items.map(u => `
+                        <tr data-pending-id="${u.id}">
+                            <td>${u.username || '-'}</td>
+                            <td>${u.name || '-'}</td>
+                            <td>${u.phone || '-'}</td>
+                            <td>${u.created_at ? new Date(u.created_at).toLocaleDateString('zh-CN') : '-'}</td>
+                            <td>${buildSwitchMarkup(!!u.is_admin, 'data-role="is_admin"', false)}</td>
+                            <td>${buildSwitchMarkup(!!u.can_grant_admin, 'data-role="can_grant_admin"', !canEditAdminGrant())}</td>
+                            <td>
+                                ${buildPermissionEditorHtml('pending-' + u.id, u, { compact: true, hideFlags: true, gridClass: ' permission-inline-grid' })}
+                            </td>
+                            <td>
+                                <div class="pm-actions">
+                                    <button class="btn-primary" data-pending-action="approve" data-id="${u.id}">批准</button>
+                                    <button class="btn-danger" data-pending-action="reject" data-id="${u.id}">拒绝</button>
+                                </div>
+                            </td>
+                        </tr>
+                    `).join('');
+                    return items;
+                })
+                .catch(() => {});
+        }
+
         function loadEmployees() {
             return fetch('/api/employee', { credentials: 'include' })
                 .then(r => r.json())
@@ -898,31 +1182,34 @@
                     const tbody = document.querySelector('#employeeTable tbody');
                     if (!tbody) return;
                     if (data.status !== 'success') {
-                        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#a33;">${data.message || '加载失败'}</td></tr>`;
                         window.calendarEmployeesCache = [];
                         return [];
                     }
                     const items = data.items || [];
+                    window.employeeMap = Object.fromEntries(items.map(item => [String(item.id), item]));
                     window.calendarEmployeesCache = items;
                     if (items.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无账号</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">暂无账号</td></tr>';
                         return items;
                     }
                     tbody.innerHTML = items.map(emp => {
                         const displayName = emp.name || '-';
                         const formattedBday = emp.birthday ? new Date(emp.birthday + 'T00:00:00').toLocaleDateString('zh-CN', { month:'numeric', day:'numeric' }) : '-';
-                        const role = emp.is_admin ? '管理员' : '员工';
-                        const todoRole = emp.can_manage_todos ? '可管理待办' : '普通';
                         return `
-                            <tr>
+                            <tr data-employee-id="${emp.id}">
                                 <td>${emp.username || '-'}</td>
                                 <td>${displayName}</td>
                                 <td>${emp.phone || '-'}</td>
                                 <td>${formattedBday}</td>
-                                <td>${role} / ${todoRole}</td>
+                                <td>${buildSwitchMarkup(!!emp.is_admin, 'data-role="is_admin"', false)}</td>
+                                <td>${buildSwitchMarkup(!!emp.can_grant_admin, 'data-role="can_grant_admin"', !canEditAdminGrant())}</td>
+                                <td>
+                                    ${buildPermissionEditorHtml('employee-' + emp.id, emp, { compact: true, hideFlags: true, gridClass: ' permission-inline-grid' })}
+                                </td>
                                 <td>
                                     <div class="pm-actions">
-                                        <button class="btn-secondary" data-action="edit" data-id="${emp.id}" data-name="${emp.name || ''}" data-birthday="${emp.birthday || ''}" data-phone="${emp.phone || ''}">编辑</button>
+                                        <button class="btn-secondary" data-action="edit" data-id="${emp.id}">编辑</button>
                                         <button class="btn-danger" data-action="delete" data-id="${emp.id}">删除</button>
                                     </div>
                                 </td>
@@ -1069,28 +1356,33 @@
             if (tip) tip.style.display = 'none';
         }
 
+        const _calMonthNames = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
+        let _calPickerTempYear = new Date().getFullYear();
+
+        function _updateCalPickerUI(year, month) {
+            document.getElementById('calendarYear').value = year;
+            document.getElementById('calendarMonth').value = month;
+            const btn = document.getElementById('calPickerBtn');
+            if (btn) btn.textContent = year + '年 ' + _calMonthNames[month - 1] + ' ▾';
+            const lbl = document.getElementById('calPickerYearLabel');
+            if (lbl) lbl.textContent = _calPickerTempYear;
+            document.querySelectorAll('#calPickerMonths .cal-picker-m').forEach(el => {
+                const m = parseInt(el.dataset.month, 10);
+                const thisYear = parseInt(el.dataset.year, 10);
+                el.classList.toggle('is-active', thisYear === year && m === month);
+            });
+        }
+
         function buildCalendarControls() {
             const today = new Date();
-            const yearSelect = document.getElementById('calendarYear');
-            const monthSelect = document.getElementById('calendarMonth');
-            
-            for (let y = today.getFullYear() - 2; y <= today.getFullYear() + 2; y++) {
-                const opt = document.createElement('option');
-                opt.value = y;
-                opt.textContent = y + '年';
-                yearSelect.appendChild(opt);
+            _calPickerTempYear = today.getFullYear();
+            const monthsEl = document.getElementById('calPickerMonths');
+            if (monthsEl) {
+                monthsEl.innerHTML = _calMonthNames.map((name, idx) =>
+                    `<button type="button" class="cal-picker-m" data-month="${idx + 1}" data-year="${_calPickerTempYear}">${name}</button>`
+                ).join('');
             }
-            yearSelect.value = today.getFullYear();
-            
-            const monthNames = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
-            monthNames.forEach((name, idx) => {
-                const opt = document.createElement('option');
-                opt.value = idx + 1;
-                opt.textContent = name;
-                monthSelect.appendChild(opt);
-            });
-            monthSelect.value = today.getMonth() + 1;
-            
+            _updateCalPickerUI(today.getFullYear(), today.getMonth() + 1);
             const todayLabel = document.getElementById('todayLabel');
             if (todayLabel) {
                 todayLabel.textContent = `${today.getMonth() + 1}月${today.getDate()}日`;
@@ -1106,9 +1398,11 @@
                 month--;
                 if (month < 1) {
                     month = 12;
-                    document.getElementById('calendarYear').value = year - 1;
+                    _calPickerTempYear = year - 1;
+                    _updateCalPickerUI(year - 1, month);
+                } else {
+                    _updateCalPickerUI(year, month);
                 }
-                document.getElementById('calendarMonth').value = month;
                 loadCalendar();
                 });
             }
@@ -1121,21 +1415,116 @@
                 month++;
                 if (month > 12) {
                     month = 1;
-                    document.getElementById('calendarYear').value = year + 1;
+                    _calPickerTempYear = year + 1;
+                    _updateCalPickerUI(year + 1, month);
+                } else {
+                    _updateCalPickerUI(year, month);
                 }
-                document.getElementById('calendarMonth').value = month;
                 loadCalendar();
                 });
             }
 
-            const calendarYear = document.getElementById('calendarYear');
-            if (calendarYear) {
-                calendarYear.addEventListener('change', loadCalendar);
+            const calendarTodayBtn = document.getElementById('calendarTodayBtn');
+            if (calendarTodayBtn) {
+                calendarTodayBtn.addEventListener('click', () => {
+                    const today = new Date();
+                    _calPickerTempYear = today.getFullYear();
+                    _updateCalPickerUI(today.getFullYear(), today.getMonth() + 1);
+                    loadCalendar();
+                });
             }
-            const calendarMonth = document.getElementById('calendarMonth');
-            if (calendarMonth) {
-                calendarMonth.addEventListener('change', loadCalendar);
+
+            // 日历年月弹出选择器
+            const calPickerBtn = document.getElementById('calPickerBtn');
+            const calPickerPanel = document.getElementById('calPickerPanel');
+            if (calPickerBtn && calPickerPanel) {
+                calPickerBtn.addEventListener('click', e => {
+                    e.stopPropagation();
+                    const open = calPickerPanel.classList.toggle('is-open');
+                    if (open) {
+                        const curYear = parseInt(document.getElementById('calendarYear').value, 10);
+                        _calPickerTempYear = curYear;
+                        // 重新生成月份按钮并更新年分 label
+                        const monthsEl = document.getElementById('calPickerMonths');
+                        if (monthsEl) {
+                            monthsEl.innerHTML = _calMonthNames.map((name, idx) =>
+                                `<button type="button" class="cal-picker-m" data-month="${idx + 1}" data-year="${_calPickerTempYear}">${name}</button>`
+                            ).join('');
+                        }
+                        const curMonth = parseInt(document.getElementById('calendarMonth').value, 10);
+                        _updateCalPickerUI(curYear, curMonth);
+                    }
+                });
             }
+
+            const calPickerPrevYear = document.getElementById('calPickerPrevYear');
+            if (calPickerPrevYear) {
+                calPickerPrevYear.addEventListener('click', e => {
+                    e.stopPropagation();
+                    _calPickerTempYear--;
+                    const monthsEl = document.getElementById('calPickerMonths');
+                    if (monthsEl) {
+                        monthsEl.innerHTML = _calMonthNames.map((name, idx) =>
+                            `<button type="button" class="cal-picker-m" data-month="${idx + 1}" data-year="${_calPickerTempYear}">${name}</button>`
+                        ).join('');
+                    }
+                    const lbl = document.getElementById('calPickerYearLabel');
+                    if (lbl) lbl.textContent = _calPickerTempYear;
+                    const curYear = parseInt(document.getElementById('calendarYear').value, 10);
+                    const curMonth = parseInt(document.getElementById('calendarMonth').value, 10);
+                    // 重新标记活跃月分
+                    document.querySelectorAll('#calPickerMonths .cal-picker-m').forEach(el => {
+                        el.classList.toggle('is-active',
+                            parseInt(el.dataset.year, 10) === curYear &&
+                            parseInt(el.dataset.month, 10) === curMonth);
+                    });
+                });
+            }
+
+            const calPickerNextYear = document.getElementById('calPickerNextYear');
+            if (calPickerNextYear) {
+                calPickerNextYear.addEventListener('click', e => {
+                    e.stopPropagation();
+                    _calPickerTempYear++;
+                    const monthsEl = document.getElementById('calPickerMonths');
+                    if (monthsEl) {
+                        monthsEl.innerHTML = _calMonthNames.map((name, idx) =>
+                            `<button type="button" class="cal-picker-m" data-month="${idx + 1}" data-year="${_calPickerTempYear}">${name}</button>`
+                        ).join('');
+                    }
+                    const lbl = document.getElementById('calPickerYearLabel');
+                    if (lbl) lbl.textContent = _calPickerTempYear;
+                    const curYear = parseInt(document.getElementById('calendarYear').value, 10);
+                    const curMonth = parseInt(document.getElementById('calendarMonth').value, 10);
+                    document.querySelectorAll('#calPickerMonths .cal-picker-m').forEach(el => {
+                        el.classList.toggle('is-active',
+                            parseInt(el.dataset.year, 10) === curYear &&
+                            parseInt(el.dataset.month, 10) === curMonth);
+                    });
+                });
+            }
+
+            const calPickerMonths = document.getElementById('calPickerMonths');
+            if (calPickerMonths) {
+                calPickerMonths.addEventListener('click', e => {
+                    e.stopPropagation();
+                    const btn = e.target.closest('.cal-picker-m');
+                    if (!btn) return;
+                    const m = parseInt(btn.dataset.month, 10);
+                    const y = parseInt(btn.dataset.year, 10);
+                    _updateCalPickerUI(y, m);
+                    if (calPickerPanel) calPickerPanel.classList.remove('is-open');
+                    loadCalendar();
+                });
+            }
+
+            document.addEventListener('click', e => {
+                const panel = document.getElementById('calPickerPanel');
+                const wrapEl = panel && panel.closest('.cal-picker-wrap');
+                if (panel && wrapEl && !wrapEl.contains(e.target)) {
+                    panel.classList.remove('is-open');
+                }
+            }, true);
 
             const assigneeToggle = document.getElementById('assigneeToggle');
             if (assigneeToggle) {
@@ -1197,6 +1586,42 @@
                 });
             }
 
+            const pendingUsersTable = document.getElementById('pendingUsersTable');
+            if (pendingUsersTable) {
+                pendingUsersTable.addEventListener('change', e => {
+                    const row = e.target.closest('tr[data-pending-id]');
+                    if (!row) return;
+                    syncPermissionEditor(row);
+                });
+                pendingUsersTable.addEventListener('click', e => {
+                    const action = e.target.dataset.pendingAction;
+                    const id = e.target.dataset.id;
+                    if (!action || !id) return;
+                    const row = e.target.closest('tr[data-pending-id]');
+                    const permissionState = row ? collectPermissionEditorState(row) : { page_permissions: buildDefaultPagePermissions(), is_admin: 0, can_grant_admin: 0 };
+                    fetch('/api/auth?action=approve_user', {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            id: parseInt(id, 10),
+                            approve: action === 'approve',
+                            is_admin: permissionState.is_admin,
+                            can_grant_admin: permissionState.can_grant_admin,
+                            page_permissions: permissionState.page_permissions
+                        })
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            loadPendingUsers();
+                            if (action === 'approve') loadEmployees();
+                        }
+                    })
+                    .catch(() => {});
+                });
+            }
+
             const employeeCreateBtn = document.getElementById('employeeCreateBtn');
             if (employeeCreateBtn) {
                 employeeCreateBtn.addEventListener('click', openEmployeeCreateModal);
@@ -1206,12 +1631,16 @@
             if (employeeCreateForm) {
                 employeeCreateForm.addEventListener('submit', e => {
                 e.preventDefault();
+                const permissionState = collectPermissionEditorState('employeeCreatePermissionEditor');
                 const payload = {
                     username: document.getElementById('employeeUsername').value.trim(),
                     password: document.getElementById('employeePassword').value,
                     name: document.getElementById('employeeName').value.trim(),
                     phone: document.getElementById('employeePhone').value.trim(),
-                    birthday: document.getElementById('employeeBirthday').value
+                    birthday: document.getElementById('employeeBirthday').value,
+                    is_admin: permissionState.is_admin,
+                    can_grant_admin: permissionState.can_grant_admin,
+                    page_permissions: permissionState.page_permissions
                 };
                 if (!payload.username || !payload.password) {
                     showModalHint('employeeCreateHint', '请填写用户名与密码', true);
@@ -1254,11 +1683,15 @@
                     showModalHint('employeeEditHint', '请选择一个账号进行编辑', true);
                     return;
                 }
+                const permissionState = collectPermissionEditorState('employeeEditPermissionEditor');
                 const payload = {
                     id: parseInt(id, 10),
                     name: document.getElementById('employeeEditName').value.trim(),
                     birthday: document.getElementById('employeeEditBirthday').value,
-                    phone: document.getElementById('employeeEditPhone').value.trim()
+                    phone: document.getElementById('employeeEditPhone').value.trim(),
+                    is_admin: permissionState.is_admin,
+                    can_grant_admin: permissionState.can_grant_admin,
+                    page_permissions: permissionState.page_permissions
                 };
                 fetch('/api/employee', {
                     method: 'PUT',
@@ -1285,17 +1718,47 @@
 
             const employeeTable = document.getElementById('employeeTable');
             if (employeeTable) {
+                employeeTable.addEventListener('change', e => {
+                if (!e.target.matches('[data-role="is_admin"], [data-role="can_grant_admin"], [data-role="page_permission"]')) return;
+                const row = e.target.closest('tr[data-employee-id]');
+                if (!row) return;
+                syncPermissionEditor(row);
+                const payload = collectPermissionEditorState(row);
+                fetch('/api/employee', {
+                    method: 'PUT',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        id: parseInt(row.dataset.employeeId, 10),
+                        is_admin: payload.is_admin,
+                        can_grant_admin: payload.can_grant_admin,
+                        page_permissions: payload.page_permissions
+                    })
+                })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            if (currentUser && Number(currentUser.id || 0) === Number(row.dataset.employeeId || 0)) {
+                                checkAuth().then(() => {
+                                    loadEmployees();
+                                    loadPendingUsers();
+                                });
+                                return;
+                            }
+                            loadEmployees();
+                        } else {
+                            loadEmployees();
+                        }
+                    })
+                    .catch(() => loadEmployees());
+                });
                 employeeTable.addEventListener('click', e => {
                 const action = e.target.dataset.action;
                 const id = e.target.dataset.id;
                 if (!action || !id) return;
                 if (action === 'edit') {
-                    openEmployeeEditModal({
-                        id: id,
-                        name: e.target.dataset.name || '',
-                        birthday: e.target.dataset.birthday || '',
-                        phone: e.target.dataset.phone || ''
-                    });
+                    const item = (window.employeeMap || {})[String(id)] || {};
+                    openEmployeeEditModal(item);
                     return;
                 }
                 if (action === 'delete') {
@@ -1338,12 +1801,19 @@
                     closeAssigneeDropdown();
                 }
             });
+
+            document.addEventListener('change', e => {
+                if (!e.target.matches('[data-role="is_admin"], [data-role="can_grant_admin"]')) return;
+                const scope = e.target.closest('[data-permission-editor]') || e.target.closest('tr');
+                if (scope) syncPermissionEditor(scope);
+            });
         }
 
         window.addEventListener('load', () => {
             checkAuth().then(() => {
                 buildCalendarControls();
                 bindEvents();
+                if (isAdmin) loadPendingUsers();
                 Promise.all([loadTodos(), loadEmployees()])
                     .then(() => loadCalendar())
                     .catch(() => loadCalendar());

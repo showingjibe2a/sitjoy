@@ -218,7 +218,11 @@
                     }
                     tbody.innerHTML = items.map(item => {
                         const dateText = item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : '';
-                        const categoryText = (item.category_names || '').replace(/\s*\/\s*/g, ' / ');
+                        const categoryCn = String(item.category_cn || '').trim();
+                        const categoryEn = String(item.category_en || '').trim();
+                        const categoryText = categoryCn && categoryEn
+                            ? `${categoryCn} / ${categoryEn}`
+                            : (categoryCn || categoryEn || '');
                         return `
                             <tr>
                                 <td>${item.name}</td>

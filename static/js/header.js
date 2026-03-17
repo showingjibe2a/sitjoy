@@ -608,6 +608,49 @@
         repositionColumnsPanel(state);
     }
 
+    function clearColumnDragIndicator(state){
+        if(!state || !state.columnPanel) return;
+        state.columnPanel.querySelectorAll('.pm-table-columns-item').forEach(node => {
+            node.classList.remove('is-drop-target', 'is-drop-before', 'is-drop-after');
+        });
+        state.dragPlacementNode = null;
+    }
+
+    function setColumnDragIndicator(state, item, before){
+        if(!state || !item) return;
+        const sameNode = state.dragPlacementNode === item;
+        const sameBefore = !!(state.dragPlacement && state.dragPlacement.before) === !!before;
+        if(sameNode && sameBefore) return;
+        clearColumnDragIndicator(state);
+        item.classList.add('is-drop-target');
+        item.classList.add(before ? 'is-drop-before' : 'is-drop-after');
+        state.dragPlacementNode = item;
+    }
+
+    function commitColumnPanelDrag(state, targetOrigin, before){
+        const fromOrigin = Number(state.dragOrigin);
+        const origin = Number(targetOrigin);
+        if(!Number.isFinite(fromOrigin) || !Number.isFinite(origin) || fromOrigin === origin) return;
+        const fromIdx = state.columnOrder.indexOf(fromOrigin);
+        let toIdx = state.columnOrder.indexOf(origin);
+        if(fromIdx < 0 || toIdx < 0) return;
+        toIdx += before ? 0 : 1;
+        if(fromIdx < toIdx) toIdx -= 1;
+        if(fromIdx === toIdx) return;
+
+        state.columnOrder.splice(fromIdx, 1);
+        state.columnOrder.splice(toIdx, 0, fromOrigin);
+        persistColumnOrder(state);
+
+        window.requestAnimationFrame(() => {
+            applyColumnOrder(state);
+            applyColumnVisibility(state);
+            applyColumnWidths(state);
+            ensureResizeHandles(state);
+            renderColumnPanel(state);
+        });
+    }
+
     function renderColumnPanel(state){
         const panel = state.columnPanel;
         panel.innerHTML = '';
@@ -660,41 +703,27 @@
             item.addEventListener('dragstart', () => {
                 state.dragOrigin = origin;
                 state.dragPlacement = null;
+                state.dragPlacementNode = null;
                 item.classList.add('is-dragging');
             });
             item.addEventListener('dragend', () => {
                 state.dragOrigin = null;
                 state.dragPlacement = null;
-                panel.querySelectorAll('.pm-table-columns-item').forEach(node => node.classList.remove('is-dragging', 'is-drop-target', 'is-drop-before', 'is-drop-after'));
+                clearColumnDragIndicator(state);
+                panel.querySelectorAll('.pm-table-columns-item').forEach(node => node.classList.remove('is-dragging'));
             });
             item.addEventListener('dragover', (event) => {
                 event.preventDefault();
+                if(event.dataTransfer) event.dataTransfer.dropEffect = 'move';
                 const rect = item.getBoundingClientRect();
                 const before = event.clientY < (rect.top + rect.height / 2);
                 state.dragPlacement = { origin, before };
-                panel.querySelectorAll('.pm-table-columns-item').forEach(node => node.classList.remove('is-drop-target', 'is-drop-before', 'is-drop-after'));
-                item.classList.add('is-drop-target');
-                item.classList.add(before ? 'is-drop-before' : 'is-drop-after');
+                setColumnDragIndicator(state, item, before);
             });
             item.addEventListener('drop', (event) => {
                 event.preventDefault();
-                const fromOrigin = Number(state.dragOrigin);
-                if(!Number.isFinite(fromOrigin) || fromOrigin === origin) return;
-                const fromIdx = state.columnOrder.indexOf(fromOrigin);
                 const placement = state.dragPlacement && state.dragPlacement.origin === origin ? state.dragPlacement : { origin, before: false };
-                let toIdx = state.columnOrder.indexOf(origin);
-                if(fromIdx < 0 || toIdx < 0) return;
-                toIdx += placement.before ? 0 : 1;
-                if(fromIdx < toIdx) toIdx -= 1;
-                if(fromIdx === toIdx) return;
-                state.columnOrder.splice(fromIdx, 1);
-                state.columnOrder.splice(toIdx, 0, fromOrigin);
-                persistColumnOrder(state);
-                applyColumnOrder(state);
-                applyColumnVisibility(state);
-                applyColumnWidths(state);
-                ensureResizeHandles(state);
-                renderColumnPanel(state);
+                commitColumnPanelDrag(state, origin, placement.before);
             });
 
             panel.appendChild(item);
@@ -937,15 +966,15 @@
                 <span class="pm-table-info"></span>
             </div>
             <div class="pm-table-toolbar-right">
-                <button type="button" class="pm-table-columns-reset" title="恢复默认列宽">重置列宽</button>
+                <button type="button" class="pm-table-columns-reset btn-secondary" title="恢复默认列宽">重置列宽</button>
                 <div class="pm-table-columns">
-                    <button type="button" class="pm-table-columns-trigger" aria-expanded="false">字段显示</button>
+                    <button type="button" class="pm-table-columns-trigger btn-secondary" aria-expanded="false">字段显示</button>
                     <div class="pm-table-columns-panel"></div>
                 </div>
                 <div class="pm-table-pager">
-                    <button type="button" class="pm-table-prev">上一页</button>
+                    <button type="button" class="pm-table-prev btn-secondary">上一页</button>
                     <span class="pm-table-pager-current">1 / 1</span>
-                    <button type="button" class="pm-table-next">下一页</button>
+                    <button type="button" class="pm-table-next btn-secondary">下一页</button>
                 </div>
             </div>
         `;
@@ -1084,13 +1113,61 @@
         });
     };
 
+    function applyHeaderPermissions(authData){
+        const permissions = authData && authData.page_permissions ? authData.page_permissions : null;
+        if(!permissions) return;
+
+        document.querySelectorAll('[data-page-key]').forEach(link => {
+            const key = String(link.dataset.pageKey || '');
+            if(!key) return;
+            const allowed = !!permissions[key];
+            const item = link.closest('li');
+            if(item && !item.classList.contains('dropdown')){
+                item.style.display = allowed ? '' : 'none';
+            }
+            if(link.closest('.dropdown-menu')){
+                const childItem = link.closest('li');
+                if(childItem) childItem.style.display = allowed ? '' : 'none';
+            }
+        });
+
+        document.querySelectorAll('.nav-item.dropdown').forEach(item => {
+            const topLink = item.querySelector(':scope > a');
+            const visibleChildren = Array.from(item.querySelectorAll(':scope .dropdown-menu li')).filter(li => li.style.display !== 'none');
+            if(!visibleChildren.length){
+                item.style.display = 'none';
+                return;
+            }
+            item.style.display = '';
+            if(topLink){
+                const ownKey = String(topLink.dataset.pageKey || '');
+                if(ownKey && !permissions[ownKey]){
+                    const firstVisible = visibleChildren[0] && visibleChildren[0].querySelector('a[href]');
+                    if(firstVisible) topLink.setAttribute('href', firstVisible.getAttribute('href'));
+                }
+            }
+        });
+    }
+
+    function getCurrentAuthState(forceRefresh){
+        if(forceRefresh || !window.__sitjoyAuthStatePromise){
+            window.__sitjoyAuthStatePromise = fetch('/api/auth?action=current', { credentials: 'include' })
+                .then(r => r.json())
+                .catch(() => null);
+        }
+        return window.__sitjoyAuthStatePromise;
+    }
+
     function loadHeader(){
-        fetch('/static/partials/header.html')
-            .then(r => r.text())
-            .then(html => {
+        Promise.all([
+            fetch('/static/partials/header.html').then(r => r.text()),
+            getCurrentAuthState()
+        ])
+            .then(([html, authData]) => {
                 const el = document.getElementById('site-header');
                 if(!el) return;
                 el.innerHTML = html;
+                applyHeaderPermissions(authData);
 
                 // 设置当前激活的菜单样式
                 const path = location.pathname || '/';
@@ -1103,7 +1180,7 @@
                     const elG = document.querySelector('.nav-gallery'); if(elG) elG.classList.add('active');
                 } else if(path.startsWith('/amazon-ad-management') || path.startsWith('/amazon-ad-subtype-management') || path.startsWith('/amazon-ad-delivery-management') || path.startsWith('/amazon-ad-product-management') || path.startsWith('/amazon-ad-adjustment-management') || path.startsWith('/amazon-ad-keyword-management')){
                     const elAd = document.querySelector('.nav-amazon-ad'); if(elAd) elAd.classList.add('active');
-                } else if(path.startsWith('/logistics-factory-management') || path.startsWith('/logistics-forwarder-management') || path.startsWith('/logistics-warehouse-management') || path.startsWith('/logistics-warehouse-inventory-management') || path.startsWith('/logistics-in-transit-management') || path.startsWith('/logistics-warehouse-dashboard')){
+                } else if(path.startsWith('/logistics-factory-management') || path.startsWith('/logistics-forwarder-management') || path.startsWith('/logistics-warehouse-management') || path.startsWith('/logistics-warehouse-inventory-management') || path.startsWith('/logistics-in-transit-management') || path.startsWith('/factory-stock-management') || path.startsWith('/factory-wip-management') || path.startsWith('/logistics-warehouse-dashboard')){
                     const elL = document.querySelector('.nav-logistics'); if(elL) elL.classList.add('active');
                 } else if(path.startsWith('/product-management') || path.startsWith('/fabric-management') || path.startsWith('/feature-management') || path.startsWith('/material-management') || path.startsWith('/certification-management') || path.startsWith('/order-product-management')){
                     const elP = document.querySelector('.nav-product'); if(elP) elP.classList.add('active');

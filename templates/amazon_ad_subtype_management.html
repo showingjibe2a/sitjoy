@@ -839,19 +839,16 @@
                 setInlineSaveBarVisible(false);
                 return;
             }
-            Promise.all(
-                updates.map(([id, draft]) =>
-                    fetch('/api/amazon-ad-operation-type', {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ id: Number(id), ...draft })
-                    }).then(r => r.json())
-                )
-            )
-            .then(results => {
-                const failed = results.find(x => x.status !== 'success');
-                if (failed) {
-                    alert(failed.message || '保存失败');
+            const items = updates.map(([id, draft]) => ({ id: Number(id), ...draft }));
+            fetch('/api/amazon-ad-operation-type', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    alert(data.message || '保存失败');
                     return;
                 }
                 opTypeInlineDraft = {};

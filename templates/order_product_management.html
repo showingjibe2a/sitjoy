@@ -7,21 +7,11 @@
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
         .required-field {
-            padding: 0.65rem 0.8rem !important;
-            border-radius: 6px !important;
-            border: 2px solid var(--morandi-sand) !important;
             background: #fff !important;
-            color: var(--morandi-ink) !important;
-            font-size: 0.95rem !important;
         }
         
         .optional-field {
-            padding: 0.65rem 0.8rem !important;
-            border-radius: 6px !important;
-            border: 2px solid var(--morandi-sand) !important;
             background: transparent !important;
-            color: var(--morandi-ink) !important;
-            font-size: 0.95rem !important;
             transition: background-color 0.2s ease !important;
         }
         
@@ -32,8 +22,8 @@
         .required-field:focus,
         .optional-field:focus {
             outline: none !important;
-            border-color: var(--morandi-ink) !important;
-            box-shadow: 0 0 0 3px rgba(42, 36, 32, 0.1) !important;
+            border-color: var(--ui-control-focus-border) !important;
+            box-shadow: var(--ui-control-focus-shadow) !important;
         }
         
         .pm-select {
@@ -43,12 +33,6 @@
         .pm-select-trigger {
             width: 100%;
             text-align: left;
-            padding: 0.65rem 0.8rem;
-            border-radius: 6px;
-            border: 2px solid var(--morandi-sand);
-            background: #fff;
-            color: var(--morandi-ink);
-            font-size: 0.95rem;
             cursor: pointer;
         }
         .pm-select-panel {
@@ -69,8 +53,8 @@
         }
         .pm-select-search {
             width: 100%;
-            padding: 0.55rem 0.7rem;
-            border-radius: 6px;
+            padding: 0.45rem 0.6rem;
+            border-radius: 8px;
             border: 1px solid var(--morandi-sand);
             font-size: 0.9rem;
             margin-bottom: 0.5rem;
@@ -99,43 +83,6 @@
             text-align: center;
             color: var(--morandi-slate);
             font-size: 0.9rem;
-        }
-        .switch-wrap {
-            position: relative;
-            display: inline-block;
-            width: 46px;
-            height: 26px;
-        }
-        .switch-wrap input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-        .switch-slider {
-            position: absolute;
-            cursor: pointer;
-            inset: 0;
-            background-color: #cfc7bd;
-            transition: .2s;
-            border-radius: 999px;
-        }
-        .switch-slider:before {
-            position: absolute;
-            content: "";
-            height: 20px;
-            width: 20px;
-            left: 3px;
-            top: 3px;
-            background-color: white;
-            transition: .2s;
-            border-radius: 50%;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.25);
-        }
-        .switch-wrap input:checked + .switch-slider {
-            background-color: #9b4a4a;
-        }
-        .switch-wrap input:checked + .switch-slider:before {
-            transform: translateX(20px);
         }
         .upload-progress {
             position: fixed;
@@ -217,6 +164,62 @@
             z-index: 70;
             display: none;
         }
+        .iteration-inline-row {
+            display: grid;
+            grid-template-columns: 240px minmax(260px, 1fr) 200px;
+            gap: 0.75rem;
+            align-items: end;
+        }
+        .yes-no-field {
+            display: inline-flex;
+            align-items: center;
+            padding: 0;
+            margin: 0;
+        }
+        .yesno-col {
+            min-width: 118px;
+            width: 118px;
+            text-align: center;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+        .yes-no-input {
+            display: none;
+        }
+        .preview-edit-input {
+            min-width: 108px;
+            height: 28px !important;
+            min-height: 28px !important;
+            padding: 0.18rem 0.4rem !important;
+            font-size: 0.8rem !important;
+        }
+        .preview-edit-cell {
+            min-width: 118px;
+            width: 118px;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+        #orderProductTable .pm-actions {
+            gap: 0.35rem;
+        }
+        .preview-savebar {
+            position: fixed;
+            left: 50%;
+            bottom: 20px;
+            transform: translateX(-50%);
+            z-index: 55;
+            display: none;
+            align-items: center;
+            gap: 0.7rem;
+            padding: 0.65rem 0.95rem;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 12px;
+            background: #fff;
+            box-shadow: 0 10px 26px rgba(15, 23, 42, 0.14);
+        }
+        .preview-savebar.active {
+            display: inline-flex;
+        }
         
     </style>
 </head>
@@ -255,6 +258,9 @@
                     <thead>
                         <tr>
                             <th style="width:54px; text-align:center;"><input type="checkbox" id="orderSelectAll"></th>
+                            <th class="yesno-col">是否在市</th>
+                            <th class="yesno-col">是否迭代款</th>
+                            <th class="yesno-col">是否大健云仓</th>
                             <th>SKU</th>
                             <th>货号</th>
                             <th>版本号</th>
@@ -263,13 +269,14 @@
                             <th>内含物英文描述</th>
                             <th>成本价($)</th>
                             <th>包裹归类</th>
-                            <th>工厂在制库存</th>
+                            <th>装箱量</th>
+                            <th>尾程平均运费($)</th>
                             <th style="width:160px;">创建时间</th>
                             <th style="width:160px;">操作</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="12" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="16" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -281,23 +288,20 @@
             <h3 id="pm-modal-title" style="margin-top:0;">新增下单产品</h3>
             <div class="pm-form">
                 <div class="pm-section">
-                    <h4 style="display:inline-flex; align-items:center;">迭代款&nbsp;
-                        <label class="switch-wrap" style="margin-left:0.75rem;">
-                            <input type="checkbox" id="modalIsIteration">
-                            <span class="switch-slider"></span>
-                        </label>
-                    </h4>
-                    <h4 style="display:inline-flex; align-items:center; margin-left:1rem;">是否为大健云仓产品&nbsp;
-                        <label class="switch-wrap" style="margin-left:0.75rem;">
-                            <input type="checkbox" id="modalIsDacheneProduct">
-                            <span class="switch-slider"></span>
-                        </label>
-                    </h4>
+                    <h4>迭代款</h4>
                     <div class="pm-section-body">
-                        <div class="form-group pm-form-span-2" style="margin-bottom:0;">
-                            <div style="font-size:0.84rem;color:#6b7280;">提示：若开启，请在“下单SKU”中填写对应大健云仓 Item Code。</div>
-                        </div>
-                        <div class="form-group pm-form-span-2" id="iterationFields" style="display:none;">
+                        <div class="iteration-inline-row">
+                            <div class="form-group" style="margin:0;">
+                                <label>是否迭代款</label>
+                                <div class="yes-no-field">
+                                    <input type="hidden" id="modalIsIteration" class="yes-no-input" value="0">
+                                    <div class="status-segment status-segment--inline">
+                                        <button type="button" class="status-pill status-pill--enabled" data-target="modalIsIteration" data-value="1">是</button>
+                                        <button type="button" class="status-pill status-pill--paused" data-target="modalIsIteration" data-value="0">否</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group" id="iterationFields" style="display:none; margin:0;">
                             <label for="modalSourceSku">来源SKU</label>
                             <div class="pm-select" id="modalSourceSkuSelect">
                                 <button type="button" class="pm-select-trigger" id="modalSourceSkuTrigger">请选择来源SKU</button>
@@ -307,10 +311,11 @@
                                 </div>
                             </div>
                             <select id="modalSourceSku" class="optional-field" style="display:none;"></select>
-                        </div>
-                        <div class="form-group" id="iterationVersionWrap" style="display:none;">
-                            <label for="modalVersion">版本号</label>
-                            <input type="text" id="modalVersion" class="optional-field" placeholder="选填，一般是：1，2，3...">
+                            </div>
+                            <div class="form-group" id="iterationVersionWrap" style="display:none; margin:0;">
+                                <label for="modalVersion">版本号</label>
+                                <input type="text" id="modalVersion" class="optional-field" placeholder="选填，一般是：1，2，3...">
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -318,6 +323,26 @@
                 <div class="pm-section">
                     <h4>基础信息</h4>
                     <div class="pm-section-body">
+                        <div class="form-group pm-form-full">
+                            <label style="display:inline-flex; align-items:center; gap:0.35rem;">是否在市<span class="help-dot" data-tip="如果不在市，则无法继续提交下单请求。">?</span></label>
+                            <div class="yes-no-field">
+                                <input type="hidden" id="modalIsOnMarket" class="yes-no-input" value="1">
+                                <div class="status-segment status-segment--inline">
+                                    <button type="button" class="status-pill status-pill--enabled" data-target="modalIsOnMarket" data-value="1">是</button>
+                                    <button type="button" class="status-pill status-pill--paused" data-target="modalIsOnMarket" data-value="0">否</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group pm-form-full">
+                            <label style="display:inline-flex; align-items:center; gap:0.35rem;">是否为大健云仓产品<span class="help-dot" data-tip="若开启，请在“下单SKU”中填写对应大健云仓 Item Code。">?</span></label>
+                            <div class="yes-no-field">
+                                <input type="hidden" id="modalIsDacheneProduct" class="yes-no-input" value="0">
+                                <div class="status-segment status-segment--inline">
+                                    <button type="button" class="status-pill status-pill--enabled" data-target="modalIsDacheneProduct" data-value="1">是</button>
+                                    <button type="button" class="status-pill status-pill--paused" data-target="modalIsDacheneProduct" data-value="0">否</button>
+                                </div>
+                            </div>
+                        </div>
                         <div class="form-group pm-form-span-2">
                             <label for="modalSku">下单SKU（注意核验）<span class="required-asterisk">*</span></label>
                             <input type="text" id="modalSku" class="required-field" placeholder="例如：MS01A-Brown" required>
@@ -418,10 +443,7 @@
                             <label for="modalLastMile">尾程平均运费（美元）</label>
                             <input type="number" step="0.01" id="modalLastMile" class="optional-field">
                         </div>
-                        <div class="form-group">
-                            <label for="modalFactoryWip">工厂在制库存</label>
-                            <input type="number" step="1" min="0" id="modalFactoryWip" class="optional-field">
-                        </div>
+
                     </div>
                 </div>
 
@@ -507,6 +529,12 @@
         <p>&copy; 2026 SITJOY | 内部使用</p>
     </footer>
 
+    <div id="orderPreviewSaveBar" class="preview-savebar" aria-live="polite">
+        <span id="orderPreviewSaveText">已修改 0 条预览数据</span>
+        <button type="button" class="btn-secondary" onclick="cancelPreviewEdits()">取消修改</button>
+        <button type="button" class="btn-primary" onclick="savePreviewEdits()">统一保存</button>
+    </div>
+
     <div id="uploadProgress" class="upload-progress" aria-live="polite">
         <div id="uploadProgressText" class="upload-progress-title">准备上传...</div>
         <div class="upload-progress-bar"><span id="uploadProgressFill"></span></div>
@@ -556,6 +584,7 @@
         let toastTimer = null;
         let selectedOrderProductIds = new Set();
         let orderProductItemsCache = [];
+        let previewEditDraft = {};
 
         function renderUploadErrorDetails(errors) {
             const wrap = document.getElementById('uploadDialogDetails');
@@ -643,8 +672,8 @@
             setInputValue('modalSpecQtyShort', '');
             setInputValue('modalContentsDescEn', '');
             setIterationMode(false);
-            const dacheneEl = document.getElementById('modalIsDacheneProduct');
-            if (dacheneEl) dacheneEl.checked = false;
+            setYesNoValue('modalIsOnMarket', '1');
+            setYesNoValue('modalIsDacheneProduct', '0');
             setSelectValue('modalSourceSku', '');
             document.getElementById('modalSourceSkuTrigger').textContent = '请选择来源SKU';
             setInputValue('modalFinishedLength', '');
@@ -687,8 +716,8 @@
             setInputValue('modalContentsDescEn', item.contents_desc_en || '');
             const isIteration = String(item.is_iteration || '0') === '1';
             setIterationMode(isIteration);
-            const dacheneEl = document.getElementById('modalIsDacheneProduct');
-            if (dacheneEl) dacheneEl.checked = String(item.is_dachene_product || '0') === '1';
+            setYesNoValue('modalIsOnMarket', String(item.is_on_market || '0') === '1' ? '1' : '0');
+            setYesNoValue('modalIsDacheneProduct', String(item.is_dachene_product || '0') === '1' ? '1' : '0');
             setSelectValue('modalSourceSku', item.source_order_product_id || '');
             updateSourceSkuTrigger();
             setInputValue('modalFinishedLength', item.finished_length_in ?? '');
@@ -703,7 +732,6 @@
             setInputValue('modalCartonQty', item.carton_qty ?? '');
             setInputValue('modalPackageClass', item.package_size_class || '');
             setInputValue('modalLastMile', item.last_mile_avg_freight_usd ?? '');
-            setInputValue('modalFactoryWip', item.factory_wip_stock ?? '');
             setPickerSelected('filling', item.filling_material_ids || []);
             setPickerSelected('frame', item.frame_material_ids || []);
             setPickerSelected('feature', item.feature_ids || []);
@@ -764,6 +792,156 @@
             if (!text) return null;
             const num = Number(text);
             return Number.isFinite(num) ? num : null;
+        }
+
+        function renderReadonlyYesNoSwitch(value) {
+            const isYes = Number(value) === 1;
+            return `
+                <div class="status-segment status-segment--inline readonly">
+                    <span class="status-pill status-pill--enabled ${isYes ? 'is-active' : ''}">是</span>
+                    <span class="status-pill status-pill--paused ${!isYes ? 'is-active' : ''}">否</span>
+                </div>
+            `;
+        }
+
+        function syncYesNoButtons(targetId) {
+            const input = document.getElementById(targetId);
+            if (!input) return;
+            const value = String(input.value || '0');
+            document.querySelectorAll(`[data-target="${targetId}"]`).forEach(btn => {
+                btn.classList.toggle('is-active', String(btn.getAttribute('data-value') || '') === value);
+            });
+        }
+
+        function setYesNoValue(targetId, value) {
+            const input = document.getElementById(targetId);
+            if (!input) return;
+            input.value = String(value) === '1' ? '1' : '0';
+            syncYesNoButtons(targetId);
+        }
+
+        function normalizePreviewFieldValue(field, rawValue) {
+            if (field === 'package_size_class') {
+                return String(rawValue || '').trim();
+            }
+            if (field === 'carton_qty') {
+                const num = parseInt(String(rawValue || '').trim(), 10);
+                return Number.isFinite(num) ? Math.max(0, num) : 0;
+            }
+            const num = parseNumber(rawValue);
+            return num === null ? null : num;
+        }
+
+        function getPreviewEffectiveValue(item, field) {
+            const id = String(item.id);
+            if (previewEditDraft[id] && Object.prototype.hasOwnProperty.call(previewEditDraft[id], field)) {
+                return previewEditDraft[id][field];
+            }
+            return item[field];
+        }
+
+        function countPreviewEditedRows() {
+            return Object.keys(previewEditDraft).length;
+        }
+
+        function syncPreviewSaveBar() {
+            const bar = document.getElementById('orderPreviewSaveBar');
+            const text = document.getElementById('orderPreviewSaveText');
+            if (!bar || !text) return;
+            const count = countPreviewEditedRows();
+            text.textContent = `已修改 ${count} 条预览数据`;
+            bar.classList.toggle('active', count > 0);
+        }
+
+        function updatePreviewDraft(itemId, field, rawValue) {
+            const item = orderProductItemsCache.find(x => String(x.id) === String(itemId));
+            if (!item) return;
+            const id = String(itemId);
+            const normalized = normalizePreviewFieldValue(field, rawValue);
+            if (!previewEditDraft[id]) {
+                previewEditDraft[id] = {
+                    cost_usd: item.cost_usd,
+                    package_size_class: item.package_size_class || '',
+                    carton_qty: item.carton_qty,
+                    last_mile_avg_freight_usd: item.last_mile_avg_freight_usd
+                };
+            }
+            previewEditDraft[id][field] = normalized;
+
+            const draft = previewEditDraft[id];
+            const unchanged =
+                normalizePreviewFieldValue('cost_usd', draft.cost_usd) === normalizePreviewFieldValue('cost_usd', item.cost_usd)
+                && normalizePreviewFieldValue('package_size_class', draft.package_size_class) === normalizePreviewFieldValue('package_size_class', item.package_size_class)
+                && normalizePreviewFieldValue('carton_qty', draft.carton_qty) === normalizePreviewFieldValue('carton_qty', item.carton_qty)
+                && normalizePreviewFieldValue('last_mile_avg_freight_usd', draft.last_mile_avg_freight_usd) === normalizePreviewFieldValue('last_mile_avg_freight_usd', item.last_mile_avg_freight_usd);
+            if (unchanged) {
+                delete previewEditDraft[id];
+            }
+            syncPreviewSaveBar();
+        }
+
+        function bindPreviewEditEvents() {
+            document.querySelectorAll('.preview-edit-field').forEach(el => {
+                el.addEventListener('change', function() {
+                    const itemId = this.getAttribute('data-id');
+                    const field = this.getAttribute('data-field');
+                    updatePreviewDraft(itemId, field, this.value);
+                });
+            });
+        }
+
+        function cancelPreviewEdits() {
+            previewEditDraft = {};
+            renderOrderProductTable(orderProductItemsCache);
+            syncPreviewSaveBar();
+        }
+
+        function savePreviewEdits() {
+            const ids = Object.keys(previewEditDraft);
+            if (!ids.length) {
+                syncPreviewSaveBar();
+                return;
+            }
+            const items = ids.map(id => ({
+                id: Number(id),
+                cost_usd: normalizePreviewFieldValue('cost_usd', previewEditDraft[id].cost_usd),
+                package_size_class: normalizePreviewFieldValue('package_size_class', previewEditDraft[id].package_size_class),
+                carton_qty: normalizePreviewFieldValue('carton_qty', previewEditDraft[id].carton_qty),
+                last_mile_avg_freight_usd: normalizePreviewFieldValue('last_mile_avg_freight_usd', previewEditDraft[id].last_mile_avg_freight_usd)
+            }));
+
+            showUploadDialog({
+                title: '确认保存',
+                message: `你修改了 ${items.length} 条预览数据，确认统一保存吗？`,
+                confirmText: '确认保存',
+                cancelText: '取消',
+                onConfirm: function() {
+                    fetch('/api/order-product', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ items })
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.status !== 'success') {
+                            showUploadDialog({ title: '保存失败', message: data.message || '批量保存失败' });
+                            return;
+                        }
+                        items.forEach(update => {
+                            const item = orderProductItemsCache.find(row => String(row.id) === String(update.id));
+                            if (!item) return;
+                            item.cost_usd = update.cost_usd;
+                            item.package_size_class = update.package_size_class;
+                            item.carton_qty = update.carton_qty;
+                            item.last_mile_avg_freight_usd = update.last_mile_avg_freight_usd;
+                        });
+                        previewEditDraft = {};
+                        renderOrderProductTable(orderProductItemsCache);
+                        syncPreviewSaveBar();
+                    })
+                    .catch(err => showUploadDialog({ title: '请求失败', message: '请求失败: ' + err }));
+                }
+            });
         }
 
         function calcCartonQtyBy40HQ(lengthIn, widthIn, heightIn) {
@@ -831,8 +1009,7 @@
         function setIterationMode(isOn) {
             const wrap = document.getElementById('iterationFields');
             const versionWrap = document.getElementById('iterationVersionWrap');
-            const checkbox = document.getElementById('modalIsIteration');
-            if (checkbox) checkbox.checked = !!isOn;
+            setYesNoValue('modalIsIteration', isOn ? '1' : '0');
             if (wrap) wrap.style.display = isOn ? '' : 'none';
             if (versionWrap) versionWrap.style.display = isOn ? '' : 'none';
             if (!isOn) {
@@ -862,8 +1039,8 @@
             setSelectValue('modalFabric', source.fabric_id || '');
             setInputValue('modalSpecQtyShort', source.spec_qty_short || '');
             setInputValue('modalContentsDescEn', source.contents_desc_en || '');
-            const dacheneEl = document.getElementById('modalIsDacheneProduct');
-            if (dacheneEl) dacheneEl.checked = String(source.is_dachene_product || '0') === '1';
+            setYesNoValue('modalIsOnMarket', String(source.is_on_market || '0') === '1' ? '1' : '0');
+            setYesNoValue('modalIsDacheneProduct', String(source.is_dachene_product || '0') === '1' ? '1' : '0');
             setInputValue('modalVersion', source.version_no || '');
             if (!skuManuallyEdited) {
                 setInputValue('modalSku', source.sku || '');
@@ -1086,8 +1263,9 @@
                 fabric_id: document.getElementById('modalFabric').value,
                 spec_qty_short: document.getElementById('modalSpecQtyShort').value.trim(),
                 contents_desc_en: document.getElementById('modalContentsDescEn').value.trim(),
-                is_iteration: document.getElementById('modalIsIteration').checked ? 1 : 0,
-                is_dachene_product: document.getElementById('modalIsDacheneProduct').checked ? 1 : 0,
+                is_iteration: Number(document.getElementById('modalIsIteration').value || '0'),
+                is_on_market: Number(document.getElementById('modalIsOnMarket').value || '1'),
+                is_dachene_product: Number(document.getElementById('modalIsDacheneProduct').value || '0'),
                 source_order_product_id: document.getElementById('modalSourceSku').value,
                 finished_length_in: parseNumber(document.getElementById('modalFinishedLength').value),
                 finished_width_in: parseNumber(document.getElementById('modalFinishedWidth').value),
@@ -1101,7 +1279,6 @@
                 carton_qty: parseNumber(document.getElementById('modalCartonQty').value),
                 package_size_class: document.getElementById('modalPackageClass').value.trim(),
                 last_mile_avg_freight_usd: parseNumber(document.getElementById('modalLastMile').value),
-                factory_wip_stock: Math.max(0, parseInt(document.getElementById('modalFactoryWip').value || '0', 10) || 0),
                 filling_material_ids: selectedFillingMaterialIds,
                 frame_material_ids: selectedFrameMaterialIds,
                 feature_ids: selectedFeatureIds,
@@ -1172,44 +1349,46 @@
             });
         }
 
-        function loadOrderProductList() {
-            const q = document.getElementById('searchInput').value.trim();
-            const url = q ? `/api/order-product?q=${encodeURIComponent(q)}` : '/api/order-product';
-            fetch(url)
-                .then(r => r.json())
-                .then(data => {
-                    const tbody = document.querySelector('#orderProductTable tbody');
-                    if (data.status !== 'success') {
-                        tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
-                        return;
-                    }
-                    const items = data.items || [];
-                    orderProductItemsCache = items;
-                    const availableIdSet = new Set(items.map(x => String(x.id)));
-                    selectedOrderProductIds = new Set(Array.from(selectedOrderProductIds).filter(id => availableIdSet.has(String(id))));
-                    if (items.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;">暂无数据</td></tr>';
-                        syncSelectAllCheckbox();
-                        return;
-                    }
-                    tbody.innerHTML = items.map(item => {
+        function renderOrderProductTable(items) {
+            const tbody = document.querySelector('#orderProductTable tbody');
+            const safeItems = Array.isArray(items) ? items : [];
+            const availableIdSet = new Set(safeItems.map(x => String(x.id)));
+            Object.keys(previewEditDraft).forEach(id => {
+                if (!availableIdSet.has(String(id))) {
+                    delete previewEditDraft[id];
+                }
+            });
+            selectedOrderProductIds = new Set(Array.from(selectedOrderProductIds).filter(id => availableIdSet.has(String(id))));
+            if (safeItems.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="16" style="text-align:center;">暂无数据</td></tr>';
+                syncSelectAllCheckbox();
+                syncPreviewSaveBar();
+                return;
+            }
+            tbody.innerHTML = safeItems.map(item => {
                         const dateText = item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : '';
-                        const costText = item.cost_usd !== null && item.cost_usd !== undefined ? item.cost_usd : '';
-                        const wipText = item.factory_wip_stock !== null && item.factory_wip_stock !== undefined ? item.factory_wip_stock : 0;
                         const fabricText = item.fabric_code ? `${item.fabric_code}` : '';
+                        const costText = getPreviewEffectiveValue(item, 'cost_usd');
+                        const packageClassText = getPreviewEffectiveValue(item, 'package_size_class') || '';
+                        const cartonQtyText = getPreviewEffectiveValue(item, 'carton_qty');
+                        const lastMileText = getPreviewEffectiveValue(item, 'last_mile_avg_freight_usd');
                         const checked = selectedOrderProductIds.has(String(item.id)) ? 'checked' : '';
                         return `
                             <tr>
                                 <td style="text-align:center;"><input type="checkbox" class="order-row-checkbox" data-id="${item.id}" ${checked}></td>
+                                <td class="yesno-col">${renderReadonlyYesNoSwitch(item.is_on_market)}</td>
+                                <td class="yesno-col">${renderReadonlyYesNoSwitch(item.is_iteration)}</td>
+                                <td class="yesno-col">${renderReadonlyYesNoSwitch(item.is_dachene_product)}</td>
                                 <td>${item.sku}</td>
                                 <td>${item.sku_family || ''}</td>
                                 <td>${item.version_no || ''}</td>
                                 <td>${fabricText}</td>
                                 <td>${item.spec_qty_short || ''}</td>
                                 <td>${item.contents_desc_en || ''}</td>
-                                <td>${costText}</td>
-                                <td>${item.package_size_class || ''}</td>
-                                <td>${wipText}</td>
+                                <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="cost_usd" type="number" step="0.01" value="${costText ?? ''}"></td>
+                                <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="package_size_class" type="text" value="${String(packageClassText || '').replace(/"/g, '&quot;')}"></td>
+                                <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="carton_qty" type="number" step="1" min="0" value="${cartonQtyText ?? ''}"></td>
+                                <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="last_mile_avg_freight_usd" type="number" step="0.01" value="${lastMileText ?? ''}"></td>
                                 <td>${dateText}</td>
                                 <td>
                                     <div class="pm-actions">
@@ -1220,12 +1399,29 @@
                             </tr>
                         `;
                     }).join('');
-                    bindRowSelectionEvents();
-                    syncSelectAllCheckbox();
+            bindRowSelectionEvents();
+            bindPreviewEditEvents();
+            syncSelectAllCheckbox();
+            syncPreviewSaveBar();
+        }
+
+        function loadOrderProductList() {
+            const q = document.getElementById('searchInput').value.trim();
+            const url = q ? `/api/order-product?q=${encodeURIComponent(q)}` : '/api/order-product';
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    const tbody = document.querySelector('#orderProductTable tbody');
+                    if (data.status !== 'success') {
+                        tbody.innerHTML = `<tr><td colspan="16" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        return;
+                    }
+                    orderProductItemsCache = data.items || [];
+                    renderOrderProductTable(orderProductItemsCache);
                 })
                 .catch(err => {
                     const tbody = document.querySelector('#orderProductTable tbody');
-                    tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="16" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
                 });
         }
 
@@ -1865,8 +2061,22 @@
         document.getElementById('modalSourceSkuSearch').addEventListener('input', function() {
             renderSourceSkuList();
         });
-        document.getElementById('modalIsIteration').addEventListener('change', function() {
-            setIterationMode(this.checked);
+        document.querySelectorAll('[data-target="modalIsIteration"]').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const nextValue = this.getAttribute('data-value') || '0';
+                setYesNoValue('modalIsIteration', nextValue);
+                setIterationMode(nextValue === '1');
+            });
+        });
+        document.querySelectorAll('[data-target="modalIsDacheneProduct"]').forEach(btn => {
+            btn.addEventListener('click', function() {
+                setYesNoValue('modalIsDacheneProduct', this.getAttribute('data-value') || '0');
+            });
+        });
+        document.querySelectorAll('[data-target="modalIsOnMarket"]').forEach(btn => {
+            btn.addEventListener('click', function() {
+                setYesNoValue('modalIsOnMarket', this.getAttribute('data-value') || '1');
+            });
         });
         document.getElementById('orderProductUploadInput').addEventListener('change', function() {
             const file = this.files && this.files[0];

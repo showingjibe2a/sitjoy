@@ -65,6 +65,135 @@ _RESOURCES_CHILD_BYTES = base64.b64decode(_RESOURCES_CHILD_B64)
 RESOURCES_PATH_BYTES = os.path.join(_RESOURCES_PARENT_BYTES, _RESOURCES_CHILD_BYTES)
 RESOURCES_PATH = os.fsdecode(RESOURCES_PATH_BYTES)
 
+PAGE_PERMISSION_DEFINITIONS = [
+    ('home', '首页', '/', 'templates/index.html'),
+    ('about', '关于', '/about', 'templates/about.html'),
+    ('gallery', '图片管理', '/gallery', 'templates/gallery.html'),
+    ('shop_brand_management', '店铺/品牌管理', '/shop-brand-management', 'templates/shop_brand_management.html'),
+    ('amazon_account_health_management', 'Amazon账户健康', '/amazon-account-health-management', 'templates/amazon_account_health_management.html'),
+    ('product_management', '品类/货号管理', '/product-management', 'templates/product_management.html'),
+    ('fabric_management', '面料管理', '/fabric-management', 'templates/fabric_management.html'),
+    ('feature_management', '卖点管理', '/feature-management', 'templates/feature_management.html'),
+    ('material_management', '材料管理', '/material-management', 'templates/material_management.html'),
+    ('certification_management', '认证管理', '/certification-management', 'templates/certification_management.html'),
+    ('order_product_management', '下单产品管理', '/order-product-management', 'templates/order_product_management.html'),
+    ('logistics_factory_management', '工厂管理', '/logistics-factory-management', 'templates/logistics_factory_management.html'),
+    ('logistics_forwarder_management', '货代管理', '/logistics-forwarder-management', 'templates/logistics_forwarder_management.html'),
+    ('logistics_warehouse_management', '海外仓仓库管理', '/logistics-warehouse-management', 'templates/logistics_warehouse_management.html'),
+    ('logistics_warehouse_inventory_management', '海外仓库存管理', '/logistics-warehouse-inventory-management', 'templates/logistics_warehouse_inventory_management.html'),
+    ('logistics_in_transit_management', '在途物流管理', '/logistics-in-transit-management', 'templates/logistics_in_transit_management.html'),
+    ('logistics_warehouse_dashboard', '仓储看板', '/logistics-warehouse-dashboard', 'templates/logistics_warehouse_dashboard.html'),
+    ('sales_product_management', '销售产品管理', '/sales-product-management', 'templates/sales_product_management.html'),
+    ('parent_management', '父体管理', '/parent-management', 'templates/parent_management.html'),
+    ('amazon_ad_adjustment_management', '广告调整', '/amazon-ad-adjustment-management', 'templates/amazon_ad_adjustment_management.html'),
+    ('amazon_ad_keyword_management', 'Amazon关键词管理', '/amazon-ad-keyword-management', 'templates/amazon_ad_keyword_management.html'),
+    ('amazon_ad_management', '广告信息管理', '/amazon-ad-management', 'templates/amazon_ad_management.html'),
+    ('amazon_ad_subtype_management', '广告信息分类管理', '/amazon-ad-subtype-management', 'templates/amazon_ad_subtype_management.html'),
+    ('amazon_ad_delivery_management', '广告投放管理', '/amazon-ad-delivery-management', 'templates/amazon_ad_delivery_management.html'),
+    ('amazon_ad_product_management', '广告商品管理', '/amazon-ad-product-management', 'templates/amazon_ad_product_management.html'),
+    ('factory_stock_management', '工厂在库库存管理', '/factory-stock-management', 'templates/factory_stock_management.html'),
+    ('factory_wip_management', '工厂在制库存管理', '/factory-wip-management', 'templates/factory_wip_management.html'),
+]
+
+PAGE_PERMISSION_KEYS = [item[0] for item in PAGE_PERMISSION_DEFINITIONS]
+PAGE_PERMISSION_LABELS = {item[0]: item[1] for item in PAGE_PERMISSION_DEFINITIONS}
+PAGE_TEMPLATE_MAP = {
+    '/about': ('templates/about.html', 'about'),
+    '/about.html': ('templates/about.html', 'about'),
+    '/gallery': ('templates/gallery.html', 'gallery'),
+    '/product-management': ('templates/product_management.html', 'product_management'),
+    '/fabric-management': ('templates/fabric_management.html', 'fabric_management'),
+    '/feature-management': ('templates/feature_management.html', 'feature_management'),
+    '/material-management': ('templates/material_management.html', 'material_management'),
+    '/certification-management': ('templates/certification_management.html', 'certification_management'),
+    '/order-product-management': ('templates/order_product_management.html', 'order_product_management'),
+    '/logistics-factory-management': ('templates/logistics_factory_management.html', 'logistics_factory_management'),
+    '/logistics-forwarder-management': ('templates/logistics_forwarder_management.html', 'logistics_forwarder_management'),
+    '/logistics-warehouse-management': ('templates/logistics_warehouse_management.html', 'logistics_warehouse_management'),
+    '/logistics-warehouse-inventory-management': ('templates/logistics_warehouse_inventory_management.html', 'logistics_warehouse_inventory_management'),
+    '/logistics-warehouse-dashboard': ('templates/logistics_warehouse_dashboard.html', 'logistics_warehouse_dashboard'),
+    '/logistics-in-transit-management': ('templates/logistics_in_transit_management.html', 'logistics_in_transit_management'),
+    '/logistics-in-transit-doc-files': ('templates/logistics_in_transit_doc_files.html', 'logistics_in_transit_management'),
+    '/shop-brand-management': ('templates/shop_brand_management.html', 'shop_brand_management'),
+    '/amazon-account-health-management': ('templates/amazon_account_health_management.html', 'amazon_account_health_management'),
+    '/sales-product-management': ('templates/sales_product_management.html', 'sales_product_management'),
+    '/parent-management': ('templates/parent_management.html', 'parent_management'),
+    '/amazon-ad-management': ('templates/amazon_ad_management.html', 'amazon_ad_management'),
+    '/amazon-ad-delivery-management': ('templates/amazon_ad_delivery_management.html', 'amazon_ad_delivery_management'),
+    '/amazon-ad-product-management': ('templates/amazon_ad_product_management.html', 'amazon_ad_product_management'),
+    '/amazon-ad-adjustment-management': ('templates/amazon_ad_adjustment_management.html', 'amazon_ad_adjustment_management'),
+    '/amazon-ad-subtype-management': ('templates/amazon_ad_subtype_management.html', 'amazon_ad_subtype_management'),
+    '/amazon-ad-keyword-management': ('templates/amazon_ad_keyword_management.html', 'amazon_ad_keyword_management'),
+    '/factory-stock-management': ('templates/factory_stock_management.html', 'factory_stock_management'),
+    '/factory-wip-management': ('templates/factory_wip_management.html', 'factory_wip_management'),
+}
+API_PERMISSION_MAP = {
+    '/api/employee': 'home',
+    '/api/todo': 'home',
+    '/api/calendar': 'home',
+    '/api/images': 'gallery',
+    '/api/browse': 'gallery',
+    '/api/image-preview': 'gallery',
+    '/api/rename': 'gallery',
+    '/api/move': 'gallery',
+    '/api/upload': 'gallery',
+    '/api/download-zip': 'gallery',
+    '/api/sku': 'product_management',
+    '/api/category': 'product_management',
+    '/api/fabric': 'fabric_management',
+    '/api/fabric-images': 'fabric_management',
+    '/api/fabric-attach': 'fabric_management',
+    '/api/fabric-upload': 'fabric_management',
+    '/api/fabric-image-delete': 'fabric_management',
+    '/api/feature': 'feature_management',
+    '/api/material': 'material_management',
+    '/api/material-type': 'material_management',
+    '/api/platform-type': 'shop_brand_management',
+    '/api/brand': 'shop_brand_management',
+    '/api/shop': 'shop_brand_management',
+    '/api/amazon-account-health': 'amazon_account_health_management',
+    '/api/amazon-account-health-template': 'amazon_account_health_management',
+    '/api/amazon-account-health-import': 'amazon_account_health_management',
+    '/api/amazon-ad-subtype': 'amazon_ad_subtype_management',
+    '/api/amazon-ad-operation-type': 'amazon_ad_subtype_management',
+    '/api/amazon-ad': 'amazon_ad_management',
+    '/api/amazon-ad-template': 'amazon_ad_management',
+    '/api/amazon-ad-import': 'amazon_ad_management',
+    '/api/amazon-ad-delivery': 'amazon_ad_delivery_management',
+    '/api/amazon-ad-product': 'amazon_ad_product_management',
+    '/api/amazon-ad-adjustment': 'amazon_ad_adjustment_management',
+    '/api/amazon-ad-keyword': 'amazon_ad_keyword_management',
+    '/api/amazon-ad-keyword-template': 'amazon_ad_keyword_management',
+    '/api/amazon-ad-keyword-import': 'amazon_ad_keyword_management',
+    '/api/certification': 'certification_management',
+    '/api/certification-images': 'certification_management',
+    '/api/order-product': 'order_product_management',
+    '/api/order-product-template': 'order_product_management',
+    '/api/order-product-import': 'order_product_management',
+    '/api/order-product-carton-calc': 'order_product_management',
+    '/api/logistics-factory': 'logistics_factory_management',
+    '/api/logistics-forwarder': 'logistics_forwarder_management',
+    '/api/logistics-supplier': 'logistics_warehouse_management',
+    '/api/logistics-warehouse': 'logistics_warehouse_management',
+    '/api/logistics-warehouse-template': 'logistics_warehouse_management',
+    '/api/logistics-warehouse-import': 'logistics_warehouse_management',
+    '/api/logistics-warehouse-inventory': 'logistics_warehouse_inventory_management',
+    '/api/logistics-warehouse-inventory-template': 'logistics_warehouse_inventory_management',
+    '/api/logistics-warehouse-inventory-import': 'logistics_warehouse_inventory_management',
+    '/api/logistics-warehouse-dashboard': 'logistics_warehouse_dashboard',
+    '/api/factory-stock': 'factory_stock_management',
+    '/api/factory-wip': 'factory_wip_management',
+    '/api/logistics-in-transit': 'logistics_in_transit_management',
+    '/api/logistics-in-transit-template': 'logistics_in_transit_management',
+    '/api/logistics-in-transit-import': 'logistics_in_transit_management',
+    '/api/logistics-in-transit-doc-upload': 'logistics_in_transit_management',
+    '/api/logistics-in-transit-doc-files': 'logistics_in_transit_management',
+    '/api/sales-product': 'sales_product_management',
+    '/api/sales-product-template': 'sales_product_management',
+    '/api/sales-product-import': 'sales_product_management',
+    '/api/parent': 'parent_management',
+}
+
 class WSGIApp:
     """WSGI 应用处理器"""
     
@@ -88,6 +217,7 @@ class WSGIApp:
         self._sales_parent_ready = False
         self._sales_product_ready = False
         self._logistics_ready = False
+        self._factory_inventory_ready = False
         self._todo_ready = False
         self._todo_schema_migrated = False
         self._todo_ensure_lock = threading.Lock()
@@ -105,6 +235,85 @@ class WSGIApp:
             return data
         except Exception:
             return loader()
+
+    def _default_page_permissions(self):
+        return {key: 1 for key in PAGE_PERMISSION_KEYS}
+
+    def _normalize_page_permissions(self, raw_permissions, default_all=True):
+        normalized = {key: (1 if default_all else 0) for key in PAGE_PERMISSION_KEYS}
+        if raw_permissions is None or raw_permissions == '':
+            return normalized
+
+        payload = raw_permissions
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                return normalized
+
+        if isinstance(payload, dict):
+            for key in PAGE_PERMISSION_KEYS:
+                if key in payload:
+                    normalized[key] = 1 if payload.get(key) else 0
+            return normalized
+
+        if isinstance(payload, (list, tuple, set)):
+            allowed = {str(item) for item in payload}
+            return {key: (1 if key in allowed else 0) for key in PAGE_PERMISSION_KEYS}
+
+        return normalized
+
+    def _serialize_page_permissions(self, raw_permissions, default_all=True):
+        return json.dumps(self._normalize_page_permissions(raw_permissions, default_all=default_all), ensure_ascii=False)
+
+    def _get_user_permission_record(self, user_id):
+        if not user_id:
+            return None
+        self._ensure_todo_tables(lightweight=True)
+        with self._get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, username, name, is_admin,
+                           COALESCE(can_grant_admin, 0) AS can_grant_admin,
+                           page_permissions
+                    FROM users
+                    WHERE id=%s
+                    """,
+                    (user_id,)
+                )
+                row = cur.fetchone()
+        if not row:
+            return None
+        row['page_permissions'] = self._normalize_page_permissions(row.get('page_permissions'))
+        return row
+
+    def _can_manage_admin_permission(self, actor_record):
+        if not actor_record:
+            return False
+        if int(actor_record.get('id') or 0) == 1:
+            return True
+        return bool(actor_record.get('is_admin')) and bool(actor_record.get('can_grant_admin'))
+
+    def _user_has_page_access(self, user_id, permission_key):
+        if not user_id:
+            return False
+        if not permission_key:
+            return True
+        record = self._get_user_permission_record(user_id)
+        if not record:
+            return False
+        return bool(record.get('page_permissions', {}).get(permission_key, 1))
+
+    def _serve_protected_page(self, environ, start_response, template_path, permission_key=None):
+        user_id = self._get_session_user(environ)
+        if not user_id:
+            start_response('302 Found', [('Location', '/login')])
+            return [b'']
+        if permission_key and not self._user_has_page_access(user_id, permission_key):
+            start_response('302 Found', [('Location', '/')])
+            return [b'']
+        return self.serve_file(template_path, 'text/html', start_response)
 
     def _get_session_id(self, environ):
         """从 cookie 获取 session_id"""
@@ -503,6 +712,14 @@ class WSGIApp:
             path = environ['PATH_INFO']
             method = environ['REQUEST_METHOD']
 
+            if path.startswith('/api/') and not path.startswith('/api/auth'):
+                user_id = self._get_session_user(environ)
+                if not user_id:
+                    return self.send_json({'status': 'error', 'message': '未登录'}, start_response)
+                permission_key = API_PERMISSION_MAP.get(path)
+                if permission_key and not self._user_has_page_access(user_id, permission_key):
+                    return self.send_json({'status': 'error', 'message': '无权限访问该模块'}, start_response)
+
             # 路由处理
             if path == '/' or path == '/index.html':
                 # 检查是否登录，未登录则重定向到登录页
@@ -510,11 +727,16 @@ class WSGIApp:
                 if not user_id:
                     start_response('302 Found', [('Location', '/login')])
                     return [b'']
+                if not self._user_has_page_access(user_id, 'home'):
+                    return self.send_error(403, '无权限访问首页', start_response)
                 return self.serve_file('templates/index.html', 'text/html', start_response)
             elif path == '/login' or path == '/login.html':
                 return self.serve_file('templates/login.html', 'text/html', start_response)
             elif path.startswith('/api/auth'):
                 return self.handle_auth_api(environ, method, start_response)
+            elif path in PAGE_TEMPLATE_MAP:
+                template_path, permission_key = PAGE_TEMPLATE_MAP[path]
+                return self._serve_protected_page(environ, start_response, template_path, permission_key)
             elif path == '/about' or path == '/about.html':
                 return self.serve_file('templates/about.html', 'text/html', start_response)
             elif path == '/gallery':
@@ -663,6 +885,10 @@ class WSGIApp:
                 return self.handle_logistics_warehouse_inventory_import_api(environ, method, start_response)
             elif path == '/api/logistics-warehouse-dashboard':
                 return self.handle_logistics_warehouse_dashboard_api(environ, method, start_response)
+            elif path == '/api/factory-stock':
+                return self.handle_factory_stock_api(environ, method, start_response)
+            elif path == '/api/factory-wip':
+                return self.handle_factory_wip_api(environ, method, start_response)
             elif path == '/api/logistics-in-transit':
                 return self.handle_logistics_in_transit_api(environ, method, start_response)
             elif path == '/api/logistics-in-transit-template':
@@ -745,7 +971,8 @@ class WSGIApp:
                     with conn.cursor() as cur:
                         cur.execute(
                             """
-                            SELECT u.id, u.password_hash, u.name, u.username
+                            SELECT u.id, u.password_hash, u.name, u.username,
+                                   COALESCE(u.is_approved, 1) AS is_approved
                             FROM users u
                             WHERE u.username=%s
                             """,
@@ -759,6 +986,9 @@ class WSGIApp:
                         pwd_hash = hashlib.sha256(password.encode('utf-8', errors='surrogatepass')).hexdigest()
                         if row['password_hash'] != pwd_hash:
                             return self.send_json({'status': 'error', 'message': '密码错误'}, start_response)
+
+                        if not int(row.get('is_approved') or 0):
+                            return self.send_json({'status': 'error', 'message': '账号待审核，请等待管理员批准后再登录'}, start_response)
 
                         session_id = self._set_session_user(row['id'])
                         token = self._make_stateless_token(row['id'])
@@ -809,13 +1039,16 @@ class WSGIApp:
                     with conn.cursor() as cur:
                         cur.execute(
                             """
-                            SELECT id, username, name, phone, birthday, is_admin, can_manage_todos
+                            SELECT id, username, name, phone, birthday, is_admin,
+                                   COALESCE(can_grant_admin, 0) AS can_grant_admin,
+                                   page_permissions
                             FROM users WHERE id=%s
                             """,
                             (user_id,)
                         )
                         row = cur.fetchone()
                         if row:
+                            page_permissions = self._normalize_page_permissions(row.get('page_permissions'))
                             return self.send_json({
                                 'status': 'success',
                                 'id': row['id'],
@@ -823,7 +1056,9 @@ class WSGIApp:
                                 'phone': row['phone'],
                                 'birthday': row['birthday'],
                                 'is_admin': row['is_admin'],
-                                'can_manage_todos': row['can_manage_todos']
+                                'can_grant_admin': row.get('can_grant_admin', 0),
+                                'page_permissions': page_permissions,
+                                'page_permission_labels': PAGE_PERMISSION_LABELS
                             }, start_response)
                         return self.send_json({'status': 'error', 'message': '用户信息未找到'}, start_response)
 
@@ -872,31 +1107,103 @@ class WSGIApp:
                             pwd_hash = hashlib.sha256(password.encode('utf-8', errors='surrogatepass')).hexdigest()
                             cur.execute(
                                 """
-                                INSERT INTO users (username, password_hash, name, phone, birthday)
-                                VALUES (%s, %s, %s, %s, %s)
+                                INSERT INTO users (username, password_hash, name, phone, birthday, is_approved)
+                                VALUES (%s, %s, %s, %s, %s, 0)
                                 """,
                                 (username, pwd_hash, name or None, phone or None, birthday)
                             )
-                            emp_id = cur.lastrowid
-                            # 创建 session 并通过 Set-Cookie 返回
-                            session_id = self._set_session_user(emp_id)
-                            token = self._make_stateless_token(emp_id)
-                            headers = [
-                                ('Content-Type', 'application/json; charset=utf-8'),
-                                ('Set-Cookie', f'session_id={session_id}; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax'),
-                                ('Set-Cookie', f'session_token={token}; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax')
-                            ]
-                            response_body = json.dumps({
-                                'status': 'success',
-                                'session_id': session_id,
-                                'employee_id': emp_id
-                            }).encode('utf-8', errors='surrogatepass')
-                            start_response('200 OK', headers)
-                            return [response_body]
+                            return self.send_json({
+                                'status': 'pending',
+                                'message': '注册申请已提交，请等待管理员审核后方可登录'
+                            }, start_response)
                         except Exception as e:
                             if 'Duplicate' in str(e):
                                 return self.send_json({'status': 'error', 'message': '用户名已存在'}, start_response)
                             raise
+
+            elif method == 'GET' and action == 'pending_users':
+                self._ensure_todo_tables(lightweight=True)
+                user_id = self._get_session_user(environ)
+                if not user_id:
+                    return self.send_json({'status': 'error', 'message': '未登录'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT id, is_admin, COALESCE(can_grant_admin, 0) AS can_grant_admin FROM users WHERE id=%s",
+                            (user_id,)
+                        )
+                        actor_row = cur.fetchone()
+                        if not actor_row or not actor_row.get('is_admin'):
+                            return self.send_json({'status': 'error', 'message': '无权限'}, start_response)
+                        cur.execute(
+                            """
+                            SELECT id, username, name, phone, created_at,
+                                   is_admin, COALESCE(can_grant_admin, 0) AS can_grant_admin,
+                                   page_permissions
+                            FROM users
+                            WHERE COALESCE(is_approved, 1) = 0
+                            ORDER BY created_at DESC
+                            """
+                        )
+                        rows = cur.fetchall() or []
+                        items = []
+                        for r in rows:
+                            items.append({
+                                'id': r['id'],
+                                'username': r['username'],
+                                'name': r.get('name') or '',
+                                'phone': r.get('phone') or '',
+                                'created_at': str(r['created_at']) if r.get('created_at') else '',
+                                'is_admin': int(r.get('is_admin') or 0),
+                                'can_grant_admin': int(r.get('can_grant_admin') or 0),
+                                'page_permissions': self._normalize_page_permissions(r.get('page_permissions'))
+                            })
+                return self.send_json({'status': 'success', 'items': items}, start_response)
+
+            elif method == 'POST' and action == 'approve_user':
+                self._ensure_todo_tables(lightweight=True)
+                user_id = self._get_session_user(environ)
+                if not user_id:
+                    return self.send_json({'status': 'error', 'message': '未登录'}, start_response)
+                data = self._read_json_body(environ)
+                target_id = self._parse_int(data.get('id'))
+                approved = 1 if data.get('approve', True) else 0
+                if not target_id:
+                    return self.send_json({'status': 'error', 'message': '缺少用户ID'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT id, is_admin, COALESCE(can_grant_admin, 0) AS can_grant_admin FROM users WHERE id=%s",
+                            (user_id,)
+                        )
+                        actor_row = cur.fetchone()
+                        if not actor_row or not actor_row.get('is_admin'):
+                            return self.send_json({'status': 'error', 'message': '无权限'}, start_response)
+                        if approved:
+                            desired_is_admin = 1 if data.get('is_admin') else 0
+                            desired_can_grant_admin = 1 if data.get('can_grant_admin') else 0
+                            if desired_is_admin and not self._can_manage_admin_permission(actor_row):
+                                return self.send_json({'status': 'error', 'message': '无权限授予管理员'}, start_response)
+                            if desired_can_grant_admin and int(user_id or 0) != 1:
+                                return self.send_json({'status': 'error', 'message': '仅ID=1可设置管理员授权权限'}, start_response)
+                            page_permissions = self._serialize_page_permissions(data.get('page_permissions'))
+                            cur.execute(
+                                """
+                                UPDATE users
+                                SET is_approved=1,
+                                    is_admin=%s,
+                                    can_grant_admin=%s,
+                                    page_permissions=%s
+                                WHERE id=%s
+                                """,
+                                (desired_is_admin, desired_can_grant_admin, page_permissions, target_id)
+                            )
+                        else:
+                            cur.execute(
+                                "DELETE FROM users WHERE id=%s AND COALESCE(is_approved,1)=0",
+                                (target_id,)
+                            )
+                return self.send_json({'status': 'success'}, start_response)
 
             return self.send_json({'status': 'error', 'message': '不支持的操作'}, start_response)
         except Exception as e:
@@ -2449,6 +2756,7 @@ class WSGIApp:
             contents_desc_en VARCHAR(255) NULL,
             is_iteration TINYINT(1) NOT NULL DEFAULT 0,
             is_dachene_product TINYINT(1) NOT NULL DEFAULT 0,
+            is_on_market TINYINT(1) NOT NULL DEFAULT 1,
             source_order_product_id INT UNSIGNED NULL,
             finished_length_in DECIMAL(10,2) NULL,
             finished_width_in DECIMAL(10,2) NULL,
@@ -2631,6 +2939,22 @@ class WSGIApp:
                 if row and row.get('cnt', 0) == 0:
                     try:
                         cur.execute("ALTER TABLE order_products ADD COLUMN is_dachene_product TINYINT(1) NOT NULL DEFAULT 0 AFTER is_iteration")
+                    except Exception:
+                        pass
+
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS cnt
+                    FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'order_products'
+                      AND COLUMN_NAME = 'is_on_market'
+                    """
+                )
+                row = cur.fetchone()
+                if row and row.get('cnt', 0) == 0:
+                    try:
+                        cur.execute("ALTER TABLE order_products ADD COLUMN is_on_market TINYINT(1) NOT NULL DEFAULT 1 AFTER is_dachene_product")
                     except Exception:
                         pass
 
@@ -3073,7 +3397,9 @@ class WSGIApp:
                 phone VARCHAR(64) NULL,
                 birthday DATE NULL,
                 is_admin TINYINT UNSIGNED NOT NULL DEFAULT 0,
-                can_manage_todos TINYINT UNSIGNED NOT NULL DEFAULT 0,
+                can_grant_admin TINYINT UNSIGNED NOT NULL DEFAULT 0,
+                page_permissions LONGTEXT NULL,
+                is_approved TINYINT(1) NOT NULL DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_username (username),
                 INDEX idx_birthday (birthday),
@@ -3146,7 +3472,9 @@ class WSGIApp:
                         ('phone', "ALTER TABLE users ADD COLUMN phone VARCHAR(64) NULL"),
                         ('birthday', "ALTER TABLE users ADD COLUMN birthday DATE NULL"),
                         ('is_admin', "ALTER TABLE users ADD COLUMN is_admin TINYINT UNSIGNED NOT NULL DEFAULT 0"),
-                        ('can_manage_todos', "ALTER TABLE users ADD COLUMN can_manage_todos TINYINT UNSIGNED NOT NULL DEFAULT 0"),
+                        ('can_grant_admin', "ALTER TABLE users ADD COLUMN can_grant_admin TINYINT UNSIGNED NOT NULL DEFAULT 0"),
+                        ('page_permissions', "ALTER TABLE users ADD COLUMN page_permissions LONGTEXT NULL"),
+                        ('is_approved', "ALTER TABLE users ADD COLUMN is_approved TINYINT(1) NOT NULL DEFAULT 1"),
                     ):
                         cur.execute(
                             """
@@ -3161,6 +3489,22 @@ class WSGIApp:
                         row = cur.fetchone()
                         if row and row.get('cnt', 0) == 0:
                             cur.execute(ddl)
+
+                    cur.execute(
+                        """
+                        SELECT COUNT(*) AS cnt
+                        FROM information_schema.COLUMNS
+                        WHERE TABLE_SCHEMA = DATABASE()
+                          AND TABLE_NAME = 'users'
+                          AND COLUMN_NAME = 'can_manage_todos'
+                        """
+                    )
+                    can_manage_col = cur.fetchone()
+                    if can_manage_col and can_manage_col.get('cnt', 0) > 0:
+                        try:
+                            cur.execute("ALTER TABLE users DROP COLUMN can_manage_todos")
+                        except Exception:
+                            pass
 
                     cur.execute(
                         """
@@ -3226,8 +3570,8 @@ class WSGIApp:
                         first_user = cur.fetchone()
                         if first_user and first_user.get('id'):
                             cur.execute(
-                                "UPDATE users SET is_admin=1, can_manage_todos=1 WHERE id=%s",
-                                (first_user['id'],)
+                                "UPDATE users SET is_admin=1, can_grant_admin=1, is_approved=1, page_permissions=%s WHERE id=%s",
+                                (self._serialize_page_permissions(self._default_page_permissions()), first_user['id'])
                             )
 
                     try:
@@ -3833,10 +4177,18 @@ class WSGIApp:
         if not operation_type_ids:
             return
         with conn.cursor() as cur:
+            rows = []
+            seen = set()
             for operation_type_id in operation_type_ids:
-                cur.execute(
+                op_id = self._parse_int(operation_type_id)
+                if not op_id or op_id in seen:
+                    continue
+                seen.add(op_id)
+                rows.append((subtype_id, op_id))
+            if rows:
+                cur.executemany(
                     "INSERT IGNORE INTO amazon_ad_subtype_operation_types (subtype_id, operation_type_id) VALUES (%s, %s)",
-                    (subtype_id, operation_type_id)
+                    rows
                 )
 
     def _normalize_ad_operation_reasons(self, reasons):
@@ -3866,13 +4218,21 @@ class WSGIApp:
         if not reasons:
             return
         with conn.cursor() as cur:
+            rows = []
+            seen = set()
             for reason in reasons:
                 reason_name = (reason.get('reason_name') or '').strip()
                 if not reason_name:
                     continue
-                cur.execute(
+                key = reason_name.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                rows.append((operation_type_id, reason_name))
+            if rows:
+                cur.executemany(
                     "INSERT IGNORE INTO amazon_ad_operation_reasons (operation_type_id, reason_name) VALUES (%s, %s)",
-                    (operation_type_id, reason_name)
+                    rows
                 )
 
     def _normalize_sales_order_links(self, links):
@@ -4155,7 +4515,7 @@ class WSGIApp:
         if not os.path.exists(target):
             os.makedirs(target, exist_ok=True)
         # Create standard subfolders for the SKU
-        for sub in ('源文件', '主图', 'A+', '说明书', '视频', '上传模板'):
+        for sub in ('源文件', '主图', 'A+', '关联文件', '视频', '上传模板'):
             try:
                 sub_bytes = os.fsencode(sub)
             except Exception:
@@ -5556,17 +5916,19 @@ class WSGIApp:
             user_id = self._get_session_user(environ)
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
-            user_is_admin = False
+            actor_record = self._get_user_permission_record(user_id) if user_id else None
+            user_is_admin = bool(actor_record and actor_record.get('is_admin'))
 
             if method == 'GET':
-                # 任何人都能获取员工列表（用于待办分配）
                 keyword = query_params.get('q', [''])[0].strip()
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         if keyword:
                             cur.execute(
                                 """
-                                SELECT id, username, name, phone, birthday, is_admin, can_manage_todos, created_at
+                                SELECT id, username, name, phone, birthday, is_admin,
+                                       COALESCE(can_grant_admin, 0) AS can_grant_admin,
+                                       page_permissions, COALESCE(is_approved, 1) AS is_approved, created_at
                                 FROM users
                                 WHERE name LIKE %s OR username LIKE %s OR phone LIKE %s
                                 ORDER BY id ASC
@@ -5576,24 +5938,31 @@ class WSGIApp:
                         else:
                             cur.execute(
                                 """
-                                SELECT id, username, name, phone, birthday, is_admin, can_manage_todos, created_at
+                                SELECT id, username, name, phone, birthday, is_admin,
+                                       COALESCE(can_grant_admin, 0) AS can_grant_admin,
+                                       page_permissions, COALESCE(is_approved, 1) AS is_approved, created_at
                                 FROM users
                                 ORDER BY id ASC
                                 """
                             )
-                        rows = cur.fetchall()
-                return self.send_json({'status': 'success', 'items': rows}, start_response)
-
-            # 仅非 GET 场景才需要管理员权限判断，避免首页加载冗余查询
-            if user_id:
-                with self._get_db_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("SELECT is_admin FROM users WHERE id=%s", (user_id,))
-                        row = cur.fetchone()
-                        user_is_admin = row and row.get('is_admin', 0) == 1
+                        rows = cur.fetchall() or []
+                items = []
+                for row in rows:
+                    items.append({
+                        'id': row['id'],
+                        'username': row['username'],
+                        'name': row.get('name') or '',
+                        'phone': row.get('phone') or '',
+                        'birthday': row.get('birthday'),
+                        'is_admin': int(row.get('is_admin') or 0),
+                        'can_grant_admin': int(row.get('can_grant_admin') or 0),
+                        'is_approved': int(row.get('is_approved') or 0),
+                        'page_permissions': self._normalize_page_permissions(row.get('page_permissions')),
+                        'created_at': row.get('created_at')
+                    })
+                return self.send_json({'status': 'success', 'items': items}, start_response)
 
             if method == 'POST':
-                # 仅管理员可新增账号
                 if not user_is_admin:
                     return self.send_json({'status': 'error', 'message': '仅管理员可新增账号'}, start_response)
 
@@ -5604,8 +5973,12 @@ class WSGIApp:
                 phone = (data.get('phone') or '').strip()
                 birthday_raw = (data.get('birthday') or '').strip()
                 birthday = self._parse_date_str(birthday_raw) if birthday_raw else None
-                can_manage = self._parse_int(data.get('can_manage_todos')) or 0
-                is_admin = self._parse_int(data.get('is_admin')) or 0
+                target_is_admin = 1 if data.get('is_admin') else 0
+                target_can_grant_admin = 1 if data.get('can_grant_admin') else 0
+                if target_is_admin and not self._can_manage_admin_permission(actor_record):
+                    return self.send_json({'status': 'error', 'message': '无权限授予管理员'}, start_response)
+                if target_can_grant_admin and int(user_id or 0) != 1:
+                    return self.send_json({'status': 'error', 'message': '仅ID=1可设置管理员授权权限'}, start_response)
                 if not username or not password:
                     return self.send_json({'status': 'error', 'message': '缺少必要字段'}, start_response)
 
@@ -5614,16 +5987,27 @@ class WSGIApp:
                         pwd_hash = hashlib.sha256(password.encode('utf-8', errors='surrogatepass')).hexdigest()
                         cur.execute(
                             """
-                            INSERT INTO users (username, password_hash, name, phone, birthday, is_admin, can_manage_todos)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            INSERT INTO users (
+                                username, password_hash, name, phone, birthday,
+                                is_admin, can_grant_admin, page_permissions, is_approved
+                            )
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 1)
                             """,
-                            (username, pwd_hash, name or None, phone or None, birthday, is_admin, can_manage)
+                            (
+                                username,
+                                pwd_hash,
+                                name or None,
+                                phone or None,
+                                birthday,
+                                target_is_admin,
+                                target_can_grant_admin,
+                                self._serialize_page_permissions(data.get('page_permissions'))
+                            )
                         )
                         new_id = cur.lastrowid
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
             if method == 'PUT':
-                # 管理员可修改任何人；其他人仅可修改自己
                 data = self._read_json_body(environ)
                 item_id = self._parse_int(data.get('id'))
                 if not item_id:
@@ -5632,7 +6016,6 @@ class WSGIApp:
                 if not user_is_admin and item_id != user_id:
                     return self.send_json({'status': 'error', 'message': '无权修改其他员工信息'}, start_response)
 
-                # 只有管理员可编辑姓名与生日
                 if not user_is_admin and ('name' in data or 'birthday' in data):
                     return self.send_json({'status': 'error', 'message': '仅管理员可修改姓名或生日'}, start_response)
 
@@ -5640,8 +6023,8 @@ class WSGIApp:
                 phone = (data.get('phone') or '').strip()
                 birthday_raw = (data.get('birthday') or '').strip()
                 birthday = self._parse_date_str(birthday_raw) if birthday_raw else None
-                can_manage = self._parse_int(data.get('can_manage_todos'))
-                is_admin = self._parse_int(data.get('is_admin'))
+                target_is_admin = self._parse_int(data.get('is_admin'))
+                target_can_grant_admin = self._parse_int(data.get('can_grant_admin'))
 
                 updates = []
                 params = []
@@ -5655,14 +6038,26 @@ class WSGIApp:
                 if 'birthday' in data:
                     updates.append('birthday=%s')
                     params.append(birthday)
-                
-                # 仅管理员可修改权限字段
-                if user_is_admin and can_manage is not None:
-                    updates.append('can_manage_todos=%s')
-                    params.append(can_manage)
-                if user_is_admin and is_admin is not None:
+
+                if 'page_permissions' in data:
+                    if not user_is_admin:
+                        return self.send_json({'status': 'error', 'message': '仅管理员可修改页面访问权限'}, start_response)
+                    updates.append('page_permissions=%s')
+                    params.append(self._serialize_page_permissions(data.get('page_permissions')))
+
+                if user_is_admin and target_is_admin is not None:
+                    if int(item_id) == 1 and int(target_is_admin) == 0:
+                        return self.send_json({'status': 'error', 'message': 'ID=1管理员不可取消管理员身份'}, start_response)
+                    if int(target_is_admin) == 1 and not self._can_manage_admin_permission(actor_record):
+                        return self.send_json({'status': 'error', 'message': '无权限授予管理员'}, start_response)
                     updates.append('is_admin=%s')
-                    params.append(is_admin)
+                    params.append(1 if target_is_admin else 0)
+
+                if user_is_admin and target_can_grant_admin is not None:
+                    if int(user_id or 0) != 1:
+                        return self.send_json({'status': 'error', 'message': '仅ID=1可设置管理员授权权限'}, start_response)
+                    updates.append('can_grant_admin=%s')
+                    params.append(1 if target_can_grant_admin else 0)
 
                 if not updates:
                     return self.send_json({'status': 'error', 'message': '无可更新字段'}, start_response)
@@ -5677,7 +6072,6 @@ class WSGIApp:
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':
-                # 仅管理员可删除员工
                 if not user_is_admin:
                     return self.send_json({'status': 'error', 'message': '仅管理员可删除员工'}, start_response)
 
@@ -5685,15 +6079,14 @@ class WSGIApp:
                 item_id = self._parse_int(data.get('id'))
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': '缺少员工ID'}, start_response)
+                if int(item_id) == 1:
+                    return self.send_json({'status': 'error', 'message': 'ID=1管理员不可删除'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute("DELETE FROM users WHERE id=%s", (item_id,))
                 return self.send_json({'status': 'success'}, start_response)
 
             return self.send_error(405, 'Method not allowed', start_response)
-        except Exception as e:
-            print('Employee API error: ' + str(e))
-            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
         except Exception as e:
             print('Employee API error: ' + str(e))
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
@@ -7276,6 +7669,51 @@ class WSGIApp:
 
             if method == 'PUT':
                 data = self._read_json_body(environ)
+
+                batch_items = data.get('items') if isinstance(data, dict) else None
+                if isinstance(batch_items, list):
+                    normalized_items = []
+                    seen_ids = set()
+                    for entry in batch_items:
+                        if not isinstance(entry, dict):
+                            continue
+                        item_id = self._parse_int(entry.get('id'))
+                        if not item_id or item_id in seen_ids:
+                            continue
+                        seen_ids.add(item_id)
+                        normalized_items.append({
+                            'id': item_id,
+                            'apply_portfolio': 1 if self._parse_int(entry.get('apply_portfolio')) else 0,
+                            'apply_campaign': 1 if self._parse_int(entry.get('apply_campaign')) else 0,
+                            'apply_group': 1 if self._parse_int(entry.get('apply_group')) else 0,
+                        })
+
+                    if not normalized_items:
+                        return self.send_json({'status': 'error', 'message': 'Missing valid items'}, start_response)
+
+                    with self._get_db_connection() as conn:
+                        ids = [item['id'] for item in normalized_items]
+                        placeholders = ','.join(['%s'] * len(ids))
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                f"SELECT id FROM amazon_ad_operation_types WHERE id IN ({placeholders})",
+                                ids
+                            )
+                            existing_rows = cur.fetchall() or []
+                            existing_ids = {int(row.get('id')) for row in existing_rows if row.get('id')}
+                            payload_rows = [
+                                (item['apply_portfolio'], item['apply_campaign'], item['apply_group'], item['id'])
+                                for item in normalized_items
+                                if item['id'] in existing_ids
+                            ]
+                            if payload_rows:
+                                cur.executemany(
+                                    "UPDATE amazon_ad_operation_types SET apply_portfolio=%s, apply_campaign=%s, apply_group=%s WHERE id=%s",
+                                    payload_rows
+                                )
+
+                    return self.send_json({'status': 'success'}, start_response)
+
                 item_id = self._parse_int(data.get('id'))
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
@@ -8883,6 +9321,252 @@ class WSGIApp:
             os.makedirs(folder, exist_ok=True)
         return folder
 
+    def _ensure_factory_inventory_tables(self):
+        if self._factory_inventory_ready:
+            return
+        self._ensure_logistics_tables()
+        create_factory_stock = """
+        CREATE TABLE IF NOT EXISTS factory_stock_inventory (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            order_product_id INT UNSIGNED NOT NULL,
+            factory_id INT UNSIGNED NOT NULL,
+            quantity INT NOT NULL DEFAULT 0,
+            notes TEXT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_fsi_op_factory (order_product_id, factory_id),
+            CONSTRAINT fk_fsi_op FOREIGN KEY (order_product_id) REFERENCES order_products(id) ON DELETE CASCADE,
+            CONSTRAINT fk_fsi_factory FOREIGN KEY (factory_id) REFERENCES logistics_factories(id) ON DELETE RESTRICT
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+        create_factory_wip = """
+        CREATE TABLE IF NOT EXISTS factory_wip_inventory (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            order_product_id INT UNSIGNED NOT NULL,
+            factory_id INT UNSIGNED NOT NULL,
+            quantity INT NOT NULL DEFAULT 0,
+            expected_completion_date DATE NULL,
+            notes TEXT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY idx_fwi_op (order_product_id),
+            KEY idx_fwi_factory (factory_id),
+            CONSTRAINT fk_fwi_op FOREIGN KEY (order_product_id) REFERENCES order_products(id) ON DELETE CASCADE,
+            CONSTRAINT fk_fwi_factory FOREIGN KEY (factory_id) REFERENCES logistics_factories(id) ON DELETE RESTRICT
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+        with self._get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(create_factory_stock)
+                cur.execute(create_factory_wip)
+        self._factory_inventory_ready = True
+
+    def handle_factory_stock_api(self, environ, method, start_response):
+        """工厂在库库存 CRUD"""
+        try:
+            self._ensure_factory_inventory_tables()
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+
+            if method == 'GET':
+                keyword = (query_params.get('q', [''])[0] or '').strip()
+                action = (query_params.get('action', [''])[0] or '').strip().lower()
+                if action == 'options':
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute("SELECT id, factory_name FROM logistics_factories ORDER BY factory_name ASC")
+                            factories = cur.fetchall() or []
+                            cur.execute("SELECT id, sku FROM order_products ORDER BY sku ASC")
+                            order_products = cur.fetchall() or []
+                    return self.send_json({'status': 'success', 'factories': factories, 'order_products': order_products}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        if keyword:
+                            cur.execute(
+                                """
+                                SELECT fs.id, fs.order_product_id, fs.factory_id, fs.quantity, fs.notes, fs.updated_at,
+                                       op.sku, f.factory_name
+                                FROM factory_stock_inventory fs
+                                JOIN order_products op ON op.id = fs.order_product_id
+                                JOIN logistics_factories f ON f.id = fs.factory_id
+                                WHERE op.sku LIKE %s OR f.factory_name LIKE %s
+                                ORDER BY op.sku ASC, f.factory_name ASC
+                                """,
+                                (f"%{keyword}%", f"%{keyword}%")
+                            )
+                        else:
+                            cur.execute(
+                                """
+                                SELECT fs.id, fs.order_product_id, fs.factory_id, fs.quantity, fs.notes, fs.updated_at,
+                                       op.sku, f.factory_name
+                                FROM factory_stock_inventory fs
+                                JOIN order_products op ON op.id = fs.order_product_id
+                                JOIN logistics_factories f ON f.id = fs.factory_id
+                                ORDER BY op.sku ASC, f.factory_name ASC
+                                """
+                            )
+                        rows = cur.fetchall() or []
+                return self.send_json({'status': 'success', 'items': rows}, start_response)
+
+            data = self._read_json_body(environ)
+            if method == 'POST':
+                op_id = self._parse_int(data.get('order_product_id'))
+                factory_id = self._parse_int(data.get('factory_id'))
+                quantity = max(0, self._parse_int(data.get('quantity')) or 0)
+                notes = (data.get('notes') or '').strip() or None
+                if not op_id or not factory_id:
+                    return self.send_json({'status': 'error', 'message': '缺少 order_product_id 或 factory_id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            INSERT INTO factory_stock_inventory (order_product_id, factory_id, quantity, notes)
+                            VALUES (%s, %s, %s, %s)
+                            ON DUPLICATE KEY UPDATE quantity=%s, notes=%s
+                            """,
+                            (op_id, factory_id, quantity, notes, quantity, notes)
+                        )
+                        new_id = cur.lastrowid
+                return self.send_json({'status': 'success', 'id': new_id}, start_response)
+
+            if method == 'PUT':
+                item_id = self._parse_int(data.get('id'))
+                quantity = max(0, self._parse_int(data.get('quantity')) or 0)
+                notes = (data.get('notes') or '').strip() or None
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': '缺少 id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE factory_stock_inventory SET quantity=%s, notes=%s WHERE id=%s",
+                            (quantity, notes, item_id)
+                        )
+                return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'DELETE':
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': '缺少 id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM factory_stock_inventory WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_factory_wip_api(self, environ, method, start_response):
+        """工厂在制库存 CRUD"""
+        try:
+            self._ensure_factory_inventory_tables()
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+
+            if method == 'GET':
+                keyword = (query_params.get('q', [''])[0] or '').strip()
+                action = (query_params.get('action', [''])[0] or '').strip().lower()
+                if action == 'options':
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute("SELECT id, factory_name FROM logistics_factories ORDER BY factory_name ASC")
+                            factories = cur.fetchall() or []
+                            cur.execute("SELECT id, sku FROM order_products ORDER BY sku ASC")
+                            order_products = cur.fetchall() or []
+                    return self.send_json({'status': 'success', 'factories': factories, 'order_products': order_products}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        if keyword:
+                            cur.execute(
+                                """
+                                SELECT fw.id, fw.order_product_id, fw.factory_id, fw.quantity,
+                                       fw.expected_completion_date, fw.notes, fw.created_at, fw.updated_at,
+                                       op.sku, f.factory_name
+                                FROM factory_wip_inventory fw
+                                JOIN order_products op ON op.id = fw.order_product_id
+                                JOIN logistics_factories f ON f.id = fw.factory_id
+                                WHERE op.sku LIKE %s OR f.factory_name LIKE %s
+                                ORDER BY op.sku ASC, f.factory_name ASC, fw.expected_completion_date ASC
+                                """,
+                                (f"%{keyword}%", f"%{keyword}%")
+                            )
+                        else:
+                            cur.execute(
+                                """
+                                SELECT fw.id, fw.order_product_id, fw.factory_id, fw.quantity,
+                                       fw.expected_completion_date, fw.notes, fw.created_at, fw.updated_at,
+                                       op.sku, f.factory_name
+                                FROM factory_wip_inventory fw
+                                JOIN order_products op ON op.id = fw.order_product_id
+                                JOIN logistics_factories f ON f.id = fw.factory_id
+                                ORDER BY op.sku ASC, f.factory_name ASC, fw.expected_completion_date ASC
+                                """
+                            )
+                        rows = cur.fetchall() or []
+                return self.send_json({'status': 'success', 'items': rows}, start_response)
+
+            data = self._read_json_body(environ)
+            if method == 'POST':
+                op_id = self._parse_int(data.get('order_product_id'))
+                factory_id = self._parse_int(data.get('factory_id'))
+                quantity = max(0, self._parse_int(data.get('quantity')) or 0)
+                notes = (data.get('notes') or '').strip() or None
+                date_raw = (data.get('expected_completion_date') or '').strip() or None
+                expected_date = None
+                if date_raw:
+                    for fmt in ('%Y-%m-%d', '%Y/%m/%d'):
+                        try:
+                            expected_date = datetime.strptime(date_raw, fmt).strftime('%Y-%m-%d')
+                            break
+                        except Exception:
+                            continue
+                if not op_id or not factory_id:
+                    return self.send_json({'status': 'error', 'message': '缺少 order_product_id 或 factory_id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            INSERT INTO factory_wip_inventory (order_product_id, factory_id, quantity, expected_completion_date, notes)
+                            VALUES (%s, %s, %s, %s, %s)
+                            """,
+                            (op_id, factory_id, quantity, expected_date, notes)
+                        )
+                        new_id = cur.lastrowid
+                return self.send_json({'status': 'success', 'id': new_id}, start_response)
+
+            if method == 'PUT':
+                item_id = self._parse_int(data.get('id'))
+                quantity = max(0, self._parse_int(data.get('quantity')) or 0)
+                notes = (data.get('notes') or '').strip() or None
+                date_raw = (data.get('expected_completion_date') or '').strip() or None
+                expected_date = None
+                if date_raw:
+                    for fmt in ('%Y-%m-%d', '%Y/%m/%d'):
+                        try:
+                            expected_date = datetime.strptime(date_raw, fmt).strftime('%Y-%m-%d')
+                            break
+                        except Exception:
+                            continue
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': '缺少 id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE factory_wip_inventory SET quantity=%s, expected_completion_date=%s, notes=%s WHERE id=%s",
+                            (quantity, expected_date, notes, item_id)
+                        )
+                return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'DELETE':
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': '缺少 id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM factory_wip_inventory WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
     def handle_logistics_factory_api(self, environ, method, start_response):
         try:
             self._ensure_logistics_tables()
@@ -9575,19 +10259,18 @@ class WSGIApp:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_logistics_warehouse_dashboard_api(self, environ, method, start_response):
-        """仓储看板：SKU库存聚合 + 仓库分列 + 在途角标 + 工厂在制库存批量更新"""
+        """仓储看板：SKU库存聚合 + 仓库分列 + 在途角标（只读，工厂库存从独立表读取）"""
         try:
             self._ensure_logistics_tables()
+            self._ensure_factory_inventory_tables()
             self._ensure_order_product_tables()
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
             action = (query_params.get('action', [''])[0] or '').strip().lower()
 
-            region_order = {
-                '美西': 1,
-                '美中': 2,
-                '美东南': 3,
-                '美东': 4,
-            }
+            if method != 'GET':
+                return self.send_error(405, 'Method not allowed', start_response)
+
+            region_order = {'美西': 1, '美中': 2, '美东南': 3, '美东': 4}
 
             def _region_rank(region_name):
                 text = str(region_name or '').strip()
@@ -9595,32 +10278,6 @@ class WSGIApp:
                     if key in text:
                         return rank
                 return 99
-
-            if method == 'POST' and action == 'update_wip':
-                data = self._read_json_body(environ)
-                items = data.get('items') if isinstance(data.get('items'), list) else []
-                normalized = []
-                for it in items:
-                    if not isinstance(it, dict):
-                        continue
-                    op_id = self._parse_int(it.get('order_product_id'))
-                    wip = self._parse_int(it.get('factory_wip_stock'))
-                    if not op_id:
-                        continue
-                    normalized.append((op_id, max(0, wip or 0)))
-                if not normalized:
-                    return self.send_json({'status': 'error', 'message': '没有可更新的数据'}, start_response)
-
-                with self._get_db_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.executemany(
-                            "UPDATE order_products SET factory_wip_stock=%s WHERE id=%s",
-                            [(wip, op_id) for op_id, wip in normalized]
-                        )
-                return self.send_json({'status': 'success', 'updated': len(normalized)}, start_response)
-
-            if method != 'GET':
-                return self.send_error(405, 'Method not allowed', start_response)
 
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
@@ -9635,11 +10292,7 @@ class WSGIApp:
 
                     cur.execute(
                         """
-                        SELECT
-                            op.id,
-                            op.sku,
-                            COALESCE(op.factory_wip_stock, 0) AS factory_wip_stock,
-                            pf.sku_family
+                        SELECT op.id, op.sku, pf.sku_family, op.is_iteration, op.source_order_product_id
                         FROM order_products op
                         LEFT JOIN product_families pf ON pf.id = op.sku_family_id
                         ORDER BY op.sku DESC
@@ -9661,15 +10314,44 @@ class WSGIApp:
                         SELECT
                             li.order_product_id,
                             t.destination_warehouse_id AS warehouse_id,
+                            w.region,
                             t.logistics_box_no,
                             SUM(li.shipped_qty) AS qty
                         FROM logistics_in_transit_items li
                         JOIN logistics_in_transit t ON t.id = li.transit_id
+                        LEFT JOIN logistics_overseas_warehouses w ON w.id = t.destination_warehouse_id
                         WHERE t.listed_date IS NULL
-                        GROUP BY li.order_product_id, t.destination_warehouse_id, t.logistics_box_no
+                        GROUP BY li.order_product_id, t.destination_warehouse_id, w.region, t.logistics_box_no
                         """
                     )
                     transit_rows = cur.fetchall() or []
+
+                    cur.execute("SELECT id, factory_name FROM logistics_factories ORDER BY factory_name ASC")
+                    factory_rows = cur.fetchall() or []
+
+                    cur.execute(
+                        """
+                        SELECT order_product_id, factory_id, quantity
+                        FROM factory_stock_inventory
+                        """
+                    )
+                    fstock_rows = cur.fetchall() or []
+
+                    cur.execute(
+                        """
+                        SELECT order_product_id, factory_id, SUM(quantity) AS quantity,
+                               MIN(expected_completion_date) AS earliest_date
+                        FROM factory_wip_inventory
+                        GROUP BY order_product_id, factory_id
+                        """
+                    )
+                    fwip_rows = cur.fetchall() or []
+
+            factories = [
+                {'id': int(r['id']), 'factory_name': r['factory_name'] or ''}
+                for r in factory_rows if r.get('id')
+            ]
+            factory_ids = [f['id'] for f in factories]
 
             warehouses = sorted(
                 [
@@ -9696,10 +10378,12 @@ class WSGIApp:
 
             transit_total_map = {}
             transit_wh_map = {}
+            transit_region_map = {}
             transit_tip_map = {}
             for row in transit_rows:
                 op_id = self._parse_int(row.get('order_product_id'))
                 wh_id = self._parse_int(row.get('warehouse_id'))
+                region = (row.get('region') or '').strip()
                 box_no = (row.get('logistics_box_no') or '').strip()
                 qty = self._parse_int(row.get('qty')) or 0
                 if not op_id or qty <= 0:
@@ -9709,8 +10393,37 @@ class WSGIApp:
                 transit_tip_map.setdefault(op_id, []).append(tip_text)
                 if wh_id:
                     transit_wh_map[(op_id, wh_id)] = transit_wh_map.get((op_id, wh_id), 0) + qty
+                if region:
+                    region_key = None
+                    for r in ('美西', '美中', '美东南', '美东'):
+                        if r in region:
+                            region_key = r
+                            break
+                    if region_key:
+                        transit_region_map.setdefault(op_id, {})
+                        transit_region_map[op_id][region_key] = transit_region_map[op_id].get(region_key, 0) + qty
 
-            rows = []
+            fstock_map = {}
+            for row in fstock_rows:
+                op_id = self._parse_int(row.get('order_product_id'))
+                f_id = self._parse_int(row.get('factory_id'))
+                qty = self._parse_int(row.get('quantity')) or 0
+                if op_id and f_id:
+                    fstock_map.setdefault(op_id, {})[f_id] = qty
+
+            fwip_map = {}
+            for row in fwip_rows:
+                op_id = self._parse_int(row.get('order_product_id'))
+                f_id = self._parse_int(row.get('factory_id'))
+                qty = self._parse_int(row.get('quantity')) or 0
+                date_val = row.get('earliest_date')
+                if op_id and f_id:
+                    fwip_map.setdefault(op_id, {})[f_id] = {
+                        'quantity': qty,
+                        'earliest_date': str(date_val) if date_val else None
+                    }
+
+            raw_row_map = {}
             for row in sku_rows:
                 op_id = self._parse_int(row.get('id'))
                 if not op_id:
@@ -9722,20 +10435,100 @@ class WSGIApp:
                     qty = inv_map.get((op_id, wh_id), 0)
                     warehouse_qty[str(wh_id)] = qty
                     available_total += qty
-                transit_total = transit_total_map.get(op_id, 0)
-                rows.append({
+                op_fstock = fstock_map.get(op_id, {})
+                op_fwip = fwip_map.get(op_id, {})
+                raw_row_map[op_id] = {
                     'order_product_id': op_id,
                     'sku_family': row.get('sku_family') or '',
                     'sku': row.get('sku') or '',
                     'available_total': available_total,
-                    'in_transit_total': transit_total,
-                    'factory_wip_stock': self._parse_int(row.get('factory_wip_stock')) or 0,
+                    'in_transit_total': transit_total_map.get(op_id, 0),
+                    'factory_stock_total': sum(op_fstock.values()),
+                    'factory_stock_by_factory': {str(fid): qty for fid, qty in op_fstock.items()},
+                    'factory_wip_total': sum(v['quantity'] for v in op_fwip.values()),
+                    'factory_wip_by_factory': {
+                        str(fid): {'quantity': v['quantity'], 'earliest_date': v['earliest_date']}
+                        for fid, v in op_fwip.items()
+                    },
+                    'in_transit_by_region': transit_region_map.get(op_id, {}),
+                    'is_iteration': 1 if self._parse_int(row.get('is_iteration')) else 0,
+                    'source_order_product_id': self._parse_int(row.get('source_order_product_id')),
                     'warehouse_qty': warehouse_qty,
                     'in_transit_by_warehouse': {
                         str(wh['id']): transit_wh_map.get((op_id, wh['id']), 0) for wh in warehouses
                     },
-                    'in_transit_tip': '\n'.join(transit_tip_map.get(op_id, []))
+                    'in_transit_tip': '\n'.join(transit_tip_map.get(op_id, [])),
+                    'iteration_children': []
+                }
+
+            def _resolve_source_root(op_id):
+                visited = set()
+                current_id = op_id
+                while current_id and current_id not in visited:
+                    visited.add(current_id)
+                    current = raw_row_map.get(current_id)
+                    if not current:
+                        return op_id
+                    source_id = self._parse_int(current.get('source_order_product_id'))
+                    if not current.get('is_iteration') or not source_id or source_id == current_id or source_id not in raw_row_map:
+                        return current_id
+                    current_id = source_id
+                return op_id
+
+            top_level_ids = []
+            seen_top_level = set()
+            for row in sku_rows:
+                op_id = self._parse_int(row.get('id'))
+                if not op_id or op_id not in raw_row_map:
+                    continue
+                root_id = _resolve_source_root(op_id)
+                if root_id == op_id:
+                    if op_id not in seen_top_level:
+                        seen_top_level.add(op_id)
+                        top_level_ids.append(op_id)
+                    continue
+                parent = raw_row_map.get(root_id)
+                child = raw_row_map.get(op_id)
+                if not parent or not child:
+                    if op_id not in seen_top_level:
+                        seen_top_level.add(op_id)
+                        top_level_ids.append(op_id)
+                    continue
+                parent['available_total'] += child.get('available_total', 0)
+                parent['in_transit_total'] += child.get('in_transit_total', 0)
+                parent['factory_stock_total'] += child.get('factory_stock_total', 0)
+                parent['factory_wip_total'] += child.get('factory_wip_total', 0)
+                for region_key, rqty in (child.get('in_transit_by_region') or {}).items():
+                    parent['in_transit_by_region'][region_key] = parent['in_transit_by_region'].get(region_key, 0) + rqty
+                for fid_str, qty in (child.get('factory_stock_by_factory') or {}).items():
+                    parent['factory_stock_by_factory'][fid_str] = parent['factory_stock_by_factory'].get(fid_str, 0) + qty
+                for fid_str, wip_val in (child.get('factory_wip_by_factory') or {}).items():
+                    if fid_str in parent['factory_wip_by_factory']:
+                        parent['factory_wip_by_factory'][fid_str]['quantity'] += wip_val.get('quantity', 0)
+                    else:
+                        parent['factory_wip_by_factory'][fid_str] = dict(wip_val)
+                if child.get('in_transit_tip'):
+                    parent['in_transit_tip'] = '\n'.join(filter(None, [parent.get('in_transit_tip') or '', child.get('in_transit_tip') or '']))
+                for wh in warehouses:
+                    wh_key = str(wh['id'])
+                    parent['warehouse_qty'][wh_key] = (parent['warehouse_qty'].get(wh_key) or 0) + (child.get('warehouse_qty', {}).get(wh_key) or 0)
+                    parent['in_transit_by_warehouse'][wh_key] = (parent['in_transit_by_warehouse'].get(wh_key) or 0) + (child.get('in_transit_by_warehouse', {}).get(wh_key) or 0)
+                parent['iteration_children'].append({
+                    'order_product_id': child.get('order_product_id'),
+                    'sku': child.get('sku') or '',
+                    'available_total': child.get('available_total', 0) or 0,
+                    'in_transit_total': child.get('in_transit_total', 0) or 0,
+                    'factory_stock_total': child.get('factory_stock_total', 0) or 0,
+                    'factory_wip_total': child.get('factory_wip_total', 0) or 0,
                 })
+
+            rows = []
+            for op_id in top_level_ids:
+                item = raw_row_map.get(op_id)
+                if not item:
+                    continue
+                item['iteration_children'] = sorted(item.get('iteration_children') or [], key=lambda x: str(x.get('sku') or ''))
+                rows.append(item)
 
             if action == 'export':
                 if Workbook is None:
@@ -9743,7 +10536,13 @@ class WSGIApp:
                 wb = Workbook()
                 ws = wb.active
                 ws.title = 'warehouse_dashboard'
-                headers = ['SKU', '现货库存', '在途数量', '工厂在制库存'] + [w['warehouse_name'] for w in warehouses]
+                factory_headers = [f['factory_name'] for f in factories]
+                headers = (
+                    ['SKU', '现货库存', '在途数量']
+                    + [w['warehouse_short_name'] or w['warehouse_name'] for w in warehouses]
+                    + [f'工厂在库-{fn}' for fn in factory_headers]
+                    + [f'工厂在制-{fn}' for fn in factory_headers]
+                )
                 for idx, title in enumerate(headers, start=1):
                     ws.cell(row=1, column=idx, value=title)
                 line = 2
@@ -9752,16 +10551,22 @@ class WSGIApp:
                         item.get('sku') or '',
                         item.get('available_total') or 0,
                         item.get('in_transit_total') or 0,
-                        item.get('factory_wip_stock') or 0,
                     ]
                     for wh in warehouses:
                         data_line.append((item.get('warehouse_qty') or {}).get(str(wh['id']), 0))
+                    fstock_bf = item.get('factory_stock_by_factory') or {}
+                    for f in factories:
+                        data_line.append(fstock_bf.get(str(f['id']), 0))
+                    fwip_bf = item.get('factory_wip_by_factory') or {}
+                    for f in factories:
+                        wip_val = fwip_bf.get(str(f['id'])) or {}
+                        data_line.append(wip_val.get('quantity', 0))
                     for col, value in enumerate(data_line, start=1):
                         ws.cell(row=line, column=col, value=value)
                     line += 1
                 return self._send_excel_workbook(wb, 'logistics_warehouse_dashboard.xlsx', start_response)
 
-            return self.send_json({'status': 'success', 'warehouses': warehouses, 'items': rows}, start_response)
+            return self.send_json({'status': 'success', 'warehouses': warehouses, 'factories': factories, 'items': rows}, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
@@ -11273,11 +12078,11 @@ class WSGIApp:
                                 """
                                 SELECT
                                     op.id, op.sku, op.sku_family_id, op.version_no, op.fabric_id,
-                                    op.spec_qty_short, op.contents_desc_en, op.is_iteration, op.is_dachene_product, op.source_order_product_id,
+                                    op.spec_qty_short, op.contents_desc_en, op.is_iteration, op.is_dachene_product, op.is_on_market, op.source_order_product_id,
                                     op.finished_length_in, op.finished_width_in, op.finished_height_in,
                                     op.net_weight_lbs, op.package_length_in, op.package_width_in,
                                     op.package_height_in, op.gross_weight_lbs, op.cost_usd,
-                                    op.carton_qty, op.package_size_class, op.last_mile_avg_freight_usd, op.factory_wip_stock,
+                                    op.carton_qty, op.package_size_class, op.last_mile_avg_freight_usd,
                                     op.created_at,
                                     pf.sku_family, pf.category,
                                     fm.fabric_code, fm.fabric_name_en,
@@ -11315,11 +12120,11 @@ class WSGIApp:
                                 """
                                 SELECT
                                     op.id, op.sku, op.sku_family_id, op.version_no, op.fabric_id,
-                                    op.spec_qty_short, op.contents_desc_en, op.is_iteration, op.is_dachene_product, op.source_order_product_id,
+                                    op.spec_qty_short, op.contents_desc_en, op.is_iteration, op.is_dachene_product, op.is_on_market, op.source_order_product_id,
                                     op.finished_length_in, op.finished_width_in, op.finished_height_in,
                                     op.net_weight_lbs, op.package_length_in, op.package_width_in,
                                     op.package_height_in, op.gross_weight_lbs, op.cost_usd,
-                                    op.carton_qty, op.package_size_class, op.last_mile_avg_freight_usd, op.factory_wip_stock,
+                                    op.carton_qty, op.package_size_class, op.last_mile_avg_freight_usd,
                                     op.created_at,
                                     pf.sku_family, pf.category,
                                     fm.fabric_code, fm.fabric_name_en,
@@ -11360,6 +12165,7 @@ class WSGIApp:
                 contents_desc_en = (data.get('contents_desc_en') or '').strip()
                 is_iteration = 1 if str(data.get('is_iteration') or '').lower() in ('1', 'true', 'yes', 'on') else 0
                 is_dachene_product = 1 if str(data.get('is_dachene_product') or '').lower() in ('1', 'true', 'yes', 'on') else 0
+                is_on_market = 0 if str(data.get('is_on_market') or '1').lower() in ('0', 'false', 'no', 'off') else 1
                 source_order_product_id = self._parse_int(data.get('source_order_product_id'))
 
                 if not sku or not sku_family_id or not fabric_id:
@@ -11378,6 +12184,7 @@ class WSGIApp:
                     'contents_desc_en': contents_desc_en or None,
                     'is_iteration': is_iteration,
                     'is_dachene_product': is_dachene_product,
+                    'is_on_market': is_on_market,
                     'source_order_product_id': source_order_product_id,
                     'finished_length_in': self._parse_float(data.get('finished_length_in')),
                     'finished_width_in': self._parse_float(data.get('finished_width_in')),
@@ -11391,7 +12198,6 @@ class WSGIApp:
                     'carton_qty': self._parse_int(data.get('carton_qty')),
                     'package_size_class': (data.get('package_size_class') or '').strip() or None,
                     'last_mile_avg_freight_usd': self._parse_float(data.get('last_mile_avg_freight_usd')),
-                    'factory_wip_stock': max(0, self._parse_int(data.get('factory_wip_stock')) or 0)
                 }
 
                 filling_material_ids = [self._parse_int(v) for v in (data.get('filling_material_ids') or [])]
@@ -11404,35 +12210,99 @@ class WSGIApp:
                 certification_ids = [v for v in certification_ids if v]
 
                 with self._get_db_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            """
-                            INSERT INTO order_products (
-                                sku, sku_family_id, version_no, fabric_id, spec_qty_short, contents_desc_en,
-                                is_iteration, is_dachene_product, source_order_product_id,
-                                finished_length_in, finished_width_in, finished_height_in,
-                                net_weight_lbs, package_length_in, package_width_in, package_height_in,
-                                gross_weight_lbs, cost_usd, carton_qty, package_size_class, last_mile_avg_freight_usd, factory_wip_stock
-                            ) VALUES (
-                                %(sku)s, %(sku_family_id)s, %(version_no)s, %(fabric_id)s, %(spec_qty_short)s, %(contents_desc_en)s,
-                                %(is_iteration)s, %(is_dachene_product)s, %(source_order_product_id)s,
-                                %(finished_length_in)s, %(finished_width_in)s, %(finished_height_in)s,
-                                %(net_weight_lbs)s, %(package_length_in)s, %(package_width_in)s, %(package_height_in)s,
-                                %(gross_weight_lbs)s, %(cost_usd)s, %(carton_qty)s, %(package_size_class)s, %(last_mile_avg_freight_usd)s, %(factory_wip_stock)s
+                    try:
+                        conn.autocommit(False)
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                """
+                                INSERT INTO order_products (
+                                    sku, sku_family_id, version_no, fabric_id, spec_qty_short, contents_desc_en,
+                                    is_iteration, is_dachene_product, is_on_market, source_order_product_id,
+                                    finished_length_in, finished_width_in, finished_height_in,
+                                    net_weight_lbs, package_length_in, package_width_in, package_height_in,
+                                    gross_weight_lbs, cost_usd, carton_qty, package_size_class, last_mile_avg_freight_usd
+                                ) VALUES (
+                                    %(sku)s, %(sku_family_id)s, %(version_no)s, %(fabric_id)s, %(spec_qty_short)s, %(contents_desc_en)s,
+                                    %(is_iteration)s, %(is_dachene_product)s, %(is_on_market)s, %(source_order_product_id)s,
+                                    %(finished_length_in)s, %(finished_width_in)s, %(finished_height_in)s,
+                                    %(net_weight_lbs)s, %(package_length_in)s, %(package_width_in)s, %(package_height_in)s,
+                                    %(gross_weight_lbs)s, %(cost_usd)s, %(carton_qty)s, %(package_size_class)s, %(last_mile_avg_freight_usd)s
+                                )
+                                """,
+                                payload
                             )
-                            """,
-                            payload
-                        )
-                        new_id = cur.lastrowid
+                            new_id = cur.lastrowid
 
-                    self._replace_order_product_material_ids(conn, new_id, filling_material_ids, frame_material_ids)
-                    self._replace_order_product_feature_ids(conn, new_id, feature_ids)
-                    self._replace_order_product_certification_ids(conn, new_id, certification_ids)
+                        self._replace_order_product_material_ids(conn, new_id, filling_material_ids, frame_material_ids)
+                        self._replace_order_product_feature_ids(conn, new_id, feature_ids)
+                        self._replace_order_product_certification_ids(conn, new_id, certification_ids)
+                        conn.commit()
+                    except Exception:
+                        conn.rollback()
+                        raise
 
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
             if method == 'PUT':
                 data = self._read_json_body(environ)
+
+                batch_items = data.get('items') if isinstance(data, dict) else None
+                if isinstance(batch_items, list):
+                    normalized_rows = []
+                    seen_ids = set()
+                    for entry in batch_items:
+                        if not isinstance(entry, dict):
+                            continue
+                        item_id = self._parse_int(entry.get('id'))
+                        if not item_id or item_id in seen_ids:
+                            continue
+                        seen_ids.add(item_id)
+                        normalized_rows.append({
+                            'id': item_id,
+                            'cost_usd': self._parse_float(entry.get('cost_usd')),
+                            'package_size_class': (entry.get('package_size_class') or '').strip() or None,
+                            'carton_qty': self._parse_int(entry.get('carton_qty')),
+                            'last_mile_avg_freight_usd': self._parse_float(entry.get('last_mile_avg_freight_usd')),
+                        })
+
+                    if not normalized_rows:
+                        return self.send_json({'status': 'error', 'message': 'Missing valid items'}, start_response)
+
+                    ids = [row['id'] for row in normalized_rows]
+                    placeholders = ','.join(['%s'] * len(ids))
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                f"SELECT id FROM order_products WHERE id IN ({placeholders})",
+                                ids
+                            )
+                            existing_rows = cur.fetchall() or []
+                            existing_ids = {int(row.get('id')) for row in existing_rows if row.get('id')}
+                            payload_rows = [
+                                (
+                                    row['cost_usd'],
+                                    row['package_size_class'],
+                                    row['carton_qty'],
+                                    row['last_mile_avg_freight_usd'],
+                                    row['id']
+                                )
+                                for row in normalized_rows
+                                if row['id'] in existing_ids
+                            ]
+                            if payload_rows:
+                                cur.executemany(
+                                    """
+                                    UPDATE order_products
+                                    SET cost_usd=%s,
+                                        package_size_class=%s,
+                                        carton_qty=%s,
+                                        last_mile_avg_freight_usd=%s
+                                    WHERE id=%s
+                                    """,
+                                    payload_rows
+                                )
+                    return self.send_json({'status': 'success', 'updated': len(normalized_rows)}, start_response)
+
                 item_id = data.get('id')
                 sku = (data.get('sku') or '').strip()
                 sku_family_id = data.get('sku_family_id')
@@ -11442,6 +12312,7 @@ class WSGIApp:
                 contents_desc_en = (data.get('contents_desc_en') or '').strip()
                 is_iteration = 1 if str(data.get('is_iteration') or '').lower() in ('1', 'true', 'yes', 'on') else 0
                 is_dachene_product = 1 if str(data.get('is_dachene_product') or '').lower() in ('1', 'true', 'yes', 'on') else 0
+                is_on_market = 0 if str(data.get('is_on_market') or '1').lower() in ('0', 'false', 'no', 'off') else 1
                 source_order_product_id = self._parse_int(data.get('source_order_product_id'))
 
                 if not item_id or not sku or not sku_family_id or not fabric_id:
@@ -11463,6 +12334,7 @@ class WSGIApp:
                     'contents_desc_en': contents_desc_en or None,
                     'is_iteration': is_iteration,
                     'is_dachene_product': is_dachene_product,
+                    'is_on_market': is_on_market,
                     'source_order_product_id': source_order_product_id,
                     'finished_length_in': self._parse_float(data.get('finished_length_in')),
                     'finished_width_in': self._parse_float(data.get('finished_width_in')),
@@ -11476,7 +12348,6 @@ class WSGIApp:
                     'carton_qty': self._parse_int(data.get('carton_qty')),
                     'package_size_class': (data.get('package_size_class') or '').strip() or None,
                     'last_mile_avg_freight_usd': self._parse_float(data.get('last_mile_avg_freight_usd')),
-                    'factory_wip_stock': max(0, self._parse_int(data.get('factory_wip_stock')) or 0)
                 }
 
                 filling_material_ids = [self._parse_int(v) for v in (data.get('filling_material_ids') or [])]
@@ -11489,40 +12360,46 @@ class WSGIApp:
                 certification_ids = [v for v in certification_ids if v]
 
                 with self._get_db_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            """
-                            UPDATE order_products
-                            SET sku=%(sku)s,
-                                sku_family_id=%(sku_family_id)s,
-                                version_no=%(version_no)s,
-                                fabric_id=%(fabric_id)s,
-                                spec_qty_short=%(spec_qty_short)s,
-                                contents_desc_en=%(contents_desc_en)s,
-                                is_iteration=%(is_iteration)s,
-                                is_dachene_product=%(is_dachene_product)s,
-                                source_order_product_id=%(source_order_product_id)s,
-                                finished_length_in=%(finished_length_in)s,
-                                finished_width_in=%(finished_width_in)s,
-                                finished_height_in=%(finished_height_in)s,
-                                net_weight_lbs=%(net_weight_lbs)s,
-                                package_length_in=%(package_length_in)s,
-                                package_width_in=%(package_width_in)s,
-                                package_height_in=%(package_height_in)s,
-                                gross_weight_lbs=%(gross_weight_lbs)s,
-                                cost_usd=%(cost_usd)s,
-                                carton_qty=%(carton_qty)s,
-                                package_size_class=%(package_size_class)s,
-                                last_mile_avg_freight_usd=%(last_mile_avg_freight_usd)s,
-                                factory_wip_stock=%(factory_wip_stock)s
-                            WHERE id=%(id)s
-                            """,
-                            payload
-                        )
+                    try:
+                        conn.autocommit(False)
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                """
+                                UPDATE order_products
+                                SET sku=%(sku)s,
+                                    sku_family_id=%(sku_family_id)s,
+                                    version_no=%(version_no)s,
+                                    fabric_id=%(fabric_id)s,
+                                    spec_qty_short=%(spec_qty_short)s,
+                                    contents_desc_en=%(contents_desc_en)s,
+                                    is_iteration=%(is_iteration)s,
+                                    is_dachene_product=%(is_dachene_product)s,
+                                    is_on_market=%(is_on_market)s,
+                                    source_order_product_id=%(source_order_product_id)s,
+                                    finished_length_in=%(finished_length_in)s,
+                                    finished_width_in=%(finished_width_in)s,
+                                    finished_height_in=%(finished_height_in)s,
+                                    net_weight_lbs=%(net_weight_lbs)s,
+                                    package_length_in=%(package_length_in)s,
+                                    package_width_in=%(package_width_in)s,
+                                    package_height_in=%(package_height_in)s,
+                                    gross_weight_lbs=%(gross_weight_lbs)s,
+                                    cost_usd=%(cost_usd)s,
+                                    carton_qty=%(carton_qty)s,
+                                    package_size_class=%(package_size_class)s,
+                                    last_mile_avg_freight_usd=%(last_mile_avg_freight_usd)s
+                                WHERE id=%(id)s
+                                """,
+                                payload
+                            )
 
-                    self._replace_order_product_material_ids(conn, item_id, filling_material_ids, frame_material_ids)
-                    self._replace_order_product_feature_ids(conn, item_id, feature_ids)
-                    self._replace_order_product_certification_ids(conn, item_id, certification_ids)
+                        self._replace_order_product_material_ids(conn, item_id, filling_material_ids, frame_material_ids)
+                        self._replace_order_product_feature_ids(conn, item_id, feature_ids)
+                        self._replace_order_product_certification_ids(conn, item_id, certification_ids)
+                        conn.commit()
+                    except Exception:
+                        conn.rollback()
+                        raise
 
                 return self.send_json({'status': 'success'}, start_response)
 

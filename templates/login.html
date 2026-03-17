@@ -437,8 +437,22 @@
                 
                 const result = await resp.json();
 
-                if (result.status === 'success') {
-                    // 注册并已登录（服务器返回 session_id 并尝试 Set-Cookie）
+                if (result.status === 'pending') {
+                    // 注册申请已提交，等待管理员审核
+                    successEl.textContent = result.message || '注册申请已提交，请等待管理员审核后方可登录';
+                    successEl.classList.add('show');
+                    // 清空表单并切换到登录标签
+                    setTimeout(() => {
+                        document.getElementById('registerName').value = '';
+                        document.getElementById('registerUsername').value = '';
+                        document.getElementById('registerPassword').value = '';
+                        document.getElementById('registerPassword2').value = '';
+                        document.getElementById('registerBirthday').value = '';
+                        document.getElementById('registerPhone').value = '';
+                        document.querySelector('[data-tab="login"]').click();
+                    }, 2500);
+                } else if (result.status === 'success') {
+                    // 直接登录（管理员后台创建的账号等情况）
                     successEl.textContent = '注册成功！正在登录...';
                     successEl.classList.add('show');
                     try {
@@ -450,18 +464,7 @@
                     } catch (e) {
                         console.warn('无法写入回退 cookie', e);
                     }
-                    // 跳转到首页
                     setTimeout(() => { window.location.href = '/'; }, 400);
-                    // 1秒后清空表单（若页面未跳转）
-                    setTimeout(() => {
-                        document.getElementById('registerName').value = '';
-                        document.getElementById('registerUsername').value = '';
-                        document.getElementById('registerPassword').value = '';
-                        document.getElementById('registerPassword2').value = '';
-                        document.getElementById('registerBirthday').value = '';
-                        document.getElementById('registerPhone').value = '';
-                        document.querySelector('[data-tab="login"]').click();
-                    }, 1500);
                 } else {
                     errorEl.textContent = result.message || '注册失败';
                     errorEl.classList.add('show');
