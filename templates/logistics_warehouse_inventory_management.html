@@ -38,7 +38,9 @@
                         </div>
                         <span class="pm-divider" aria-hidden="true"></span>
                         <button class="btn-secondary" onclick="downloadTemplate()">下载模板</button>
-                        <button class="btn-secondary" onclick="triggerUpload()">批量上传</button>
+                        <button class="btn-secondary" onclick="triggerUpload('replace_all')">批量上传-覆盖全部</button>
+                        <button class="btn-secondary" onclick="triggerUpload('partial')">批量上传-部分更新</button>
+                        <span class="help-dot" data-tip="覆盖全部：先将全部库存可用量清零，再按模板写入；部分更新：仅更新模板中出现的SKU+仓库组合。">?</span>
                         <input type="file" id="uploadInput" accept=".xlsx" style="display:none;">
                         <span id="importStatus" class="inv-import-status"></span>
                         <button class="btn-accent" onclick="openCreateModal()">新增</button>
@@ -94,6 +96,7 @@
         let editId = null;
         let warehouses = [];
         let orderProducts = [];
+        let currentUploadMode = 'partial';
         function showStatus(msg, err){ const el=document.getElementById('modalStatus'); el.style.display='block'; el.style.background=err?'#ffecec':'#f0fff0'; el.style.color=err?'#a33':'#2f6f2f'; el.innerText=msg; }
         function resetStatus(){ const el=document.getElementById('modalStatus'); el.style.display='none'; el.innerText=''; }
         function showImportStatus(msg, err){ const el=document.getElementById('importStatus'); el.textContent=msg||''; el.classList.add('show'); el.style.color=err?'#9b2226':'var(--morandi-ink)'; }
@@ -166,21 +169,54 @@
             }).catch(err=>{ document.querySelector('#mainTable tbody').innerHTML = `<tr><td colspan="5" style="text-align:center;color:#a33;">加载失败: ${err}</td></tr>`; });
         }
         function downloadTemplate(){ window.location.href = '/api/logistics-warehouse-inventory-template'; }
-        function triggerUpload(){ const input = document.getElementById('uploadInput'); input.value=''; input.click(); }
-        function uploadTemplate(file){
+        function triggerUpload(mode){
+            currentUploadMode = mode === 'replace_all' ? 'replace_all' : 'partial';
+            const input = document.getElementById('uploadInput');
+            input.value='';
+            input.click();
+        }
+        function uploadTemplate(file, mode){
+            const safeMode = mode === 'replace_all' ? 'replace_all' : 'partial';
             const fd = new FormData(); fd.append('file', file);
-            showImportStatus('导入处理中...', false);
-            fetch('/api/logistics-warehouse-inventory-import', { method:'POST', body: fd })
+            showImportStatus(safeMode === 'replace_all' ? '导入处理中（覆盖全部）...' : '导入处理中（部分更新）...', false);
+            fetch(`/api/logistics-warehouse-inventory-import?mode=${encodeURIComponent(safeMode)}`, { method:'POST', body: fd })
                 .then(r=>r.json()).then(data=>{
-                    if(data.status!=='success'){ showImportStatus(data.message || '导入失败', true); return; }
+                    if(data.status!=='success'){
+                        showImportStatus(data.message || '导入失败', true);
+                        if (window.showAppResultPanel) {
+                            window.showAppResultPanel({
+                                title: '海外仓库存导入失败',
+                                summary: data.message || '导入失败',
+                                details: [],
+                                isError: true
+                            });
+                        }
+                        return;
+                    }
                     const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
-                    showImportStatus(`导入完成：新增 ${data.created||0}，更新 ${data.updated||0}，未变更 ${data.unchanged||0}${errCount?`，失败 ${errCount}`:''}`, errCount>0);
+                    const modeText = (data.mode || safeMode) === 'replace_all' ? '覆盖全部' : '部分更新';
+                    showImportStatus(`导入完成（${modeText}）：新增 ${data.created||0}，更新 ${data.updated||0}，未变更 ${data.unchanged||0}${errCount?`，失败 ${errCount}`:''}`, errCount>0);
+                    if (window.showAppResultPanel) {
+                        const details = (data.errors || []).map(err => {
+                            const rowText = (err && err.row !== undefined && err.row !== null) ? `第 ${err.row} 行` : '未知行';
+                            return `${rowText}：${err && err.error ? err.error : '未知错误'}`;
+                        });
+                        window.showAppResultPanel({
+                            title: `海外仓库存导入完成（${modeText}）`,
+                            summary: `新增 ${data.created||0}，更新 ${data.updated||0}，未变更 ${data.unchanged||0}，失败 ${errCount}`,
+                            details,
+                            isError: errCount > 0
+                        });
+                    }
                     loadList();
                 }).catch(err=>showImportStatus('导入失败: '+err, true));
         }
         document.getElementById('searchInput').addEventListener('keydown', function(e){ if(e.key==='Enter') loadList(); });
         document.getElementById('pm-modal').addEventListener('click', function(e){ if(e.target===this) closeModal(); });
-        document.getElementById('uploadInput').addEventListener('change', function(e){ const file=e.target.files&&e.target.files[0]; if(file) uploadTemplate(file); });
+        document.getElementById('uploadInput').addEventListener('change', function(e){
+            const file=e.target.files&&e.target.files[0];
+            if(file) uploadTemplate(file, currentUploadMode);
+        });
         window.addEventListener('load', function(){ loadOptions().then(loadList); });
     </script>
 </body>

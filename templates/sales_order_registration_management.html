@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>订单登记管理</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .required-field, .optional-field {
+            padding: 0.65rem 0.8rem !important;
+            border-radius: 6px !important;
+            border: 2px solid var(--morandi-sand) !important;
+            font-size: 0.95rem !important;
+            width: 100%;
+            box-sizing: border-box;
+            background: #fff;
+        }
+        .optional-field { background: transparent !important; }
+        .optional-field.has-value { background: #fff !important; }
+        .required-field:focus, .optional-field:focus {
+            outline: none !important;
+            border-color: var(--morandi-ink) !important;
+            box-shadow: 0 0 0 3px rgba(42, 36, 32, 0.1) !important;
+        }
+        .line-box {
+            border: 2px solid var(--morandi-sand);
+            border-radius: 8px;
+            padding: 0.65rem;
+            background: #fff;
+            display: grid;
+            gap: 0.45rem;
+            min-width: 0;
+        }
+        .line-head {
+            display: grid;
+            gap: 0.45rem;
+            font-size: 0.82rem;
+            color: var(--morandi-slate);
+            padding: 0 0.2rem;
+        }
+        .platform-line-head { grid-template-columns: minmax(0, 1fr) 100px minmax(0, 1fr) 64px; }
+        .ship-line-head { grid-template-columns: minmax(0, 1fr) 100px 64px; }
+        .logistics-line-head { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 64px; }
+        .line-list { display: grid; gap: 0.4rem; }
+        .line-row {
+            display: grid;
+            gap: 0.45rem;
+            align-items: center;
+        }
+        .platform-line-row { grid-template-columns: minmax(0, 1fr) 100px minmax(0, 1fr) 64px; }
+        .ship-line-row { grid-template-columns: minmax(0, 1fr) 100px 64px; }
+        .logistics-line-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 64px; }
+        .line-row .btn-danger { padding: 0.35rem 0.45rem; font-size: 0.82rem; line-height: 1.15; }
+        .pm-table td { vertical-align: top; }
+        .sku-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+            min-width: 0;
+        }
+        @media (max-width: 1160px) {
+            .sku-grid { grid-template-columns: 1fr; }
+        }
+        .status-tag {
+            display: inline-block;
+            padding: 0.2rem 0.45rem;
+            border-radius: 999px;
+            background: #f3efe9;
+            color: var(--morandi-ink);
+            font-size: 0.8rem;
+            margin: 0.1rem 0.2rem 0.1rem 0;
+        }
+        .dialog-message { white-space: pre-wrap; color: var(--morandi-ink); line-height: 1.55; font-size: 0.95rem; }
+        #modalOrderDate {
+            min-height: 42px;
+            background-image: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(246,241,235,0.96));
+            border: 2px solid var(--morandi-sand) !important;
+            padding-right: 2.2rem !important;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        #modalOrderDate::-webkit-calendar-picker-indicator {
+            cursor: pointer;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div id="site-header"></div>
+
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1.5rem;">
+            <h2>订单登记管理</h2>
+            <p>登记订单基础信息、销售SKU与实际发货SKU</p>
+        </section>
+
+        <section class="pm-layout">
+            <div class="card pm-card">
+                <div class="pm-toolbar">
+                    <div class="pm-toolbar-actions">
+                        <div class="form-group pm-search" style="margin: 0;">
+                            <span class="pm-search-title">搜索</span>
+                            <input type="text" id="searchInput" placeholder="搜索订单号/姓名/电话/物流信息">
+                            <button class="btn-primary" onclick="loadList()">搜索</button>
+                            <button class="btn-secondary" onclick="resetSearch()">清空</button>
+                        </div>
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-secondary" onclick="downloadTemplate()">下载模板</button>
+                        <button class="btn-secondary" onclick="triggerUpload()">批量上传</button>
+                        <input type="file" id="uploadInput" accept=".xlsx" style="display:none;">
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-accent" onclick="openCreateModal()">新增</button>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <table class="pm-table" id="listTable">
+                    <thead>
+                        <tr>
+                            <th>店铺</th>
+                            <th>订单号</th>
+                            <th>日期</th>
+                            <th>客户</th>
+                            <th>运输状态</th>
+                            <th>销售平台SKU</th>
+                            <th>实际发货SKU</th>
+                            <th>物流信息</th>
+                            <th style="width:160px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="9" style="text-align:center;">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div class="pm-modal" id="pm-modal">
+        <div class="pm-modal-content pm-modal-content--wide">
+            <h3 id="pm-modal-title" style="margin-top:0;">新增订单登记</h3>
+            <div class="pm-form">
+                <div class="pm-section">
+                    <h4>订单基础信息</h4>
+                    <div class="pm-section-body">
+                        <div class="form-group">
+                            <label for="modalShop">店铺</label>
+                            <select id="modalShop" class="required-field"></select>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalOrderNo">订单号<span class="required-asterisk">*</span></label>
+                            <input type="text" id="modalOrderNo" class="required-field" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalOrderDate">订单日期</label>
+                            <input type="date" id="modalOrderDate" class="optional-field optional-date-input" data-optional-date="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalCustomerName">姓名</label>
+                            <input type="text" id="modalCustomerName" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalPhone">电话(US)</label>
+                            <input type="text" id="modalPhone" class="optional-field" placeholder="例如 +1 415-888-9999">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalZip">邮编(US)</label>
+                            <input type="text" id="modalZip" class="optional-field" placeholder="例如 94016 或 94016-1234">
+                        </div>
+                        <div class="form-group pm-form-span-2">
+                            <label for="modalAddress">地址</label>
+                            <input type="text" id="modalAddress" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalCity">城市</label>
+                            <input type="text" id="modalCity" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalState">州</label>
+                            <input type="text" id="modalState" class="optional-field">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pm-section">
+                    <h4>状态与备注</h4>
+                    <div class="pm-section-body">
+                        <div class="form-group">
+                            <label>运输状态</label>
+                            <div class="status-segment status-segment--inline" id="modalShippingStatusSegment" data-value="pending">
+                                <button type="button" class="status-pill status-pill--pending is-active" data-value="pending">Pending</button>
+                                <button type="button" class="status-pill status-pill--unshipped" data-value="unshipped">Unshipped</button>
+                                <button type="button" class="status-pill status-pill--shipped" data-value="shipped">Shipped</button>
+                                <button type="button" class="status-pill status-pill--cancelled" data-value="cancelled">Cancelled</button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>是否邀评</label>
+                            <div class="status-segment status-segment--inline" id="modalIsReviewInvitedSegment" data-value="0">
+                                <button type="button" class="status-pill status-pill--yes" data-value="1">是</button>
+                                <button type="button" class="status-pill status-pill--no is-active" data-value="0">否</button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>是否已发物流邮件</label>
+                            <div class="status-segment status-segment--inline" id="modalIsLogisticsEmailedSegment" data-value="0">
+                                <button type="button" class="status-pill status-pill--yes" data-value="1">是</button>
+                                <button type="button" class="status-pill status-pill--no is-active" data-value="0">否</button>
+                            </div>
+                        </div>
+                        <div class="form-group pm-form-span-2">
+                            <label for="modalCompensation">补偿措施</label>
+                            <input type="text" id="modalCompensation" class="optional-field">
+                        </div>
+                        <div class="form-group pm-form-full">
+                            <label for="modalRemark">备注</label>
+                            <textarea id="modalRemark" class="optional-field" rows="3" style="resize:vertical;"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pm-section">
+                    <h4>SKU信息</h4>
+                    <div class="pm-section-body sku-grid">
+                        <div class="line-box">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <h5 style="margin:0;">销售平台SKU（可多条）</h5>
+                                <button type="button" class="btn-secondary" onclick="addPlatformLine()">新增平台SKU</button>
+                            </div>
+                            <div class="line-head platform-line-head"><span>销售平台SKU</span><span>数量</span><span>替代方案（可选）</span><span></span></div>
+                            <div id="platformLines" class="line-list"></div>
+                        </div>
+                        <div class="line-box">
+                            <div style="display:flex; justify-content:space-between; align-items:center; gap:0.45rem;">
+                                <h5 style="margin:0;">实际发货SKU（可多条）</h5>
+                                <div style="display:flex; gap:0.45rem;">
+                                    <button type="button" class="btn-secondary" onclick="clearShipmentLinesForAuto()">清空并自动计算</button>
+                                    <button type="button" class="btn-secondary" onclick="addShipmentLine()">新增发货SKU</button>
+                                </div>
+                            </div>
+                            <div class="line-head ship-line-head"><span>实际发货SKU</span><span>数量</span><span></span></div>
+                            <div id="shipmentLines" class="line-list"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pm-section">
+                    <h4>物流信息</h4>
+                    <div class="pm-section-body">
+                        <div class="line-box pm-form-full">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <h5 style="margin:0;">物流行（可多条）</h5>
+                                <button type="button" class="btn-secondary" onclick="addLogisticsLine()">新增物流行</button>
+                            </div>
+                            <div class="line-head logistics-line-head"><span>发货物流</span><span>物流单号</span><span></span></div>
+                            <div id="logisticsLines" class="line-list"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeModal()">取消</button>
+                <button class="btn-primary" onclick="saveFromModal()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="pm-modal" id="dialogModal">
+        <div class="pm-modal-content" style="max-width: 520px;">
+            <h3 id="dialogTitle" style="margin-top:0;">提示</h3>
+            <div id="dialogMessage" class="dialog-message"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" id="dialogCancelBtn" style="display:none;">取消</button>
+                <button class="btn-primary" id="dialogOkBtn">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let editId = null;
+        let listCache = [];
+        let shopOptions = [];
+        let salesSkuOptions = [];
+        let orderSkuOptions = [];
+        let shippingPlanOptions = [];
+        let registrationOptionsReady = false;
+        let registrationOptionsPromise = null;
+        let platformLines = [];
+        let shipmentLines = [];
+        let logisticsLines = [];
+        let shipmentAutoMode = true;
+        let listRequestToken = 0;
+
+        function showDialog({ title, message, confirmText = '确定', cancelText = '', onConfirm = null, onCancel = null }) {
+            const modal = document.getElementById('dialogModal');
+            const titleEl = document.getElementById('dialogTitle');
+            const msgEl = document.getElementById('dialogMessage');
+            const okBtn = document.getElementById('dialogOkBtn');
+            const cancelBtn = document.getElementById('dialogCancelBtn');
+            titleEl.textContent = title || '提示';
+            msgEl.textContent = message || '';
+            okBtn.textContent = confirmText || '确定';
+            cancelBtn.style.display = cancelText ? '' : 'none';
+            if (cancelText) cancelBtn.textContent = cancelText;
+            okBtn.onclick = function() {
+                modal.classList.remove('active');
+                if (typeof onConfirm === 'function') onConfirm();
+            };
+            cancelBtn.onclick = function() {
+                modal.classList.remove('active');
+                if (typeof onCancel === 'function') onCancel();
+            };
+            modal.classList.add('active');
+        }
+
+        function showModalStatus(message, isError) {
+            const el = document.getElementById('modalStatus');
+            el.style.display = 'block';
+            el.style.background = isError ? '#ffecec' : '#f0fff0';
+            el.style.color = isError ? '#a33' : '#2f6f2f';
+            el.textContent = message;
+        }
+
+        function resetModalStatus() {
+            const el = document.getElementById('modalStatus');
+            el.style.display = 'none';
+            el.textContent = '';
+        }
+
+        function resetSearch() {
+            document.getElementById('searchInput').value = '';
+            loadList();
+        }
+
+        function renderShopSelect(selectedValue) {
+            const select = document.getElementById('modalShop');
+            select.innerHTML = '<option value="">请选择店铺</option>';
+            shopOptions.forEach(item => {
+                const op = document.createElement('option');
+                op.value = item.id;
+                op.textContent = item.display_name || item.shop_name || '';
+                if (String(selectedValue || '') === String(item.id)) op.selected = true;
+                select.appendChild(op);
+            });
+            if (window.refreshUniversalSingleSelect) {
+                window.refreshUniversalSingleSelect(select);
+            }
+        }
+
+        function renderPlatformLines() {
+            const wrap = document.getElementById('platformLines');
+            if (!platformLines.length) {
+                wrap.innerHTML = '<div class="plan-empty">请至少添加1条销售平台SKU</div>';
+                return;
+            }
+            wrap.innerHTML = platformLines.map((line, idx) => {
+                const skuOps = salesSkuOptions.map(item => `<option value="${item.platform_sku || ''}" ${String(item.platform_sku || '') === String(line.platform_sku || '') ? 'selected' : ''}>${item.platform_sku || ''}</option>`).join('');
+                const planOps = shippingPlanOptions.map(item => `<option value="${item.id}" ${String(item.id) === String(line.shipping_plan_id || '') ? 'selected' : ''}>${item.order_sku || ''} / ${item.plan_name || ''}</option>`).join('');
+                return `
+                    <div class="line-row platform-line-row">
+                        <select class="required-field" data-platform-field="sku" data-platform-index="${idx}" data-search-placeholder="搜索销售平台SKU">
+                            <option value="">请选择销售平台SKU</option>
+                            ${skuOps}
+                        </select>
+                        <input type="number" min="1" step="1" class="required-field" data-platform-field="qty" data-platform-index="${idx}" value="${line.quantity || 1}">
+                        <select class="optional-field" data-platform-field="plan" data-platform-index="${idx}" data-search-placeholder="搜索替代方案">
+                            <option value="">不使用替代方案</option>
+                            ${planOps}
+                        </select>
+                        <button class="btn-danger" type="button" onclick="removePlatformLine(${idx})">删除</button>
+                    </div>
+                `;
+            }).join('');
+            wrap.querySelectorAll('[data-platform-field="sku"]').forEach(el => {
+                el.addEventListener('change', function() {
+                    const idx = Number(this.getAttribute('data-platform-index'));
+                    if (!Number.isFinite(idx) || !platformLines[idx]) return;
+                    platformLines[idx].platform_sku = this.value || '';
+                });
+            });
+            wrap.querySelectorAll('[data-platform-field="qty"]').forEach(el => {
+                el.addEventListener('input', function() {
+                    const idx = Number(this.getAttribute('data-platform-index'));
+                    if (!Number.isFinite(idx) || !platformLines[idx]) return;
+                    const qty = Number(this.value);
+                    platformLines[idx].quantity = Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1;
+                });
+            });
+            wrap.querySelectorAll('[data-platform-field="plan"]').forEach(el => {
+                el.addEventListener('change', function() {
+                    const idx = Number(this.getAttribute('data-platform-index'));
+                    if (!Number.isFinite(idx) || !platformLines[idx]) return;
+                    platformLines[idx].shipping_plan_id = this.value ? Number(this.value) : null;
+                });
+            });
+            wrap.querySelectorAll('select').forEach(el => {
+                if (window.refreshUniversalSingleSelect) {
+                    window.refreshUniversalSingleSelect(el);
+                }
+            });
+        }
+
+        function renderShipmentLines() {
+            const wrap = document.getElementById('shipmentLines');
+            if (!shipmentLines.length) {
+                wrap.innerHTML = '<div class="plan-empty">当前为空：保存时将按销售SKU自动计算实际发货SKU</div>';
+                return;
+            }
+            wrap.innerHTML = shipmentLines.map((line, idx) => {
+                const skuOps = orderSkuOptions.map(item => `<option value="${item.sku || ''}" ${String(item.sku || '') === String(line.order_sku || '') ? 'selected' : ''}>${item.sku || ''}</option>`).join('');
+                return `
+                    <div class="line-row ship-line-row">
+                        <select class="required-field" data-ship-field="sku" data-ship-index="${idx}" data-search-placeholder="搜索下单SKU">
+                            <option value="">请选择下单SKU</option>
+                            ${skuOps}
+                        </select>
+                        <input type="number" min="1" step="1" class="required-field" data-ship-field="qty" data-ship-index="${idx}" value="${line.quantity || 1}">
+                        <button class="btn-danger" type="button" onclick="removeShipmentLine(${idx})">删除</button>
+                    </div>
+                `;
+            }).join('');
+            wrap.querySelectorAll('[data-ship-field="sku"]').forEach(el => {
+                el.addEventListener('change', function() {
+                    const idx = Number(this.getAttribute('data-ship-index'));
+                    if (!Number.isFinite(idx) || !shipmentLines[idx]) return;
+                    shipmentLines[idx].order_sku = this.value || '';
+                });
+            });
+            wrap.querySelectorAll('[data-ship-field="qty"]').forEach(el => {
+                el.addEventListener('input', function() {
+                    const idx = Number(this.getAttribute('data-ship-index'));
+                    if (!Number.isFinite(idx) || !shipmentLines[idx]) return;
+                    const qty = Number(this.value);
+                    shipmentLines[idx].quantity = Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1;
+                });
+            });
+            wrap.querySelectorAll('select').forEach(el => {
+                if (window.refreshUniversalSingleSelect) {
+                    window.refreshUniversalSingleSelect(el);
+                }
+            });
+        }
+
+        function addPlatformLine() {
+            platformLines.push({ platform_sku: '', quantity: 1, shipping_plan_id: null });
+            renderPlatformLines();
+        }
+
+        function removePlatformLine(idx) {
+            platformLines.splice(idx, 1);
+            renderPlatformLines();
+        }
+
+        function addShipmentLine() {
+            shipmentAutoMode = false;
+            shipmentLines.push({ order_sku: '', quantity: 1 });
+            renderShipmentLines();
+        }
+
+        function removeShipmentLine(idx) {
+            shipmentLines.splice(idx, 1);
+            renderShipmentLines();
+        }
+
+        function clearShipmentLinesForAuto() {
+            shipmentAutoMode = true;
+            shipmentLines = [];
+            renderShipmentLines();
+        }
+
+        function renderLogisticsLines() {
+            const wrap = document.getElementById('logisticsLines');
+            if (!logisticsLines.length) {
+                wrap.innerHTML = '<div class="plan-empty">当前未填写物流行（可为空）</div>';
+                return;
+            }
+            wrap.innerHTML = logisticsLines.map((line, idx) => `
+                <div class="line-row logistics-line-row">
+                    <input type="text" class="optional-field" data-logi-field="carrier" data-logi-index="${idx}" value="${String(line.shipping_carrier || '').replace(/"/g, '&quot;')}">
+                    <input type="text" class="optional-field" data-logi-field="tracking" data-logi-index="${idx}" value="${String(line.tracking_no || '').replace(/"/g, '&quot;')}">
+                    <button class="btn-danger" type="button" onclick="removeLogisticsLine(${idx})">删除</button>
+                </div>
+            `).join('');
+            wrap.querySelectorAll('[data-logi-field="carrier"]').forEach(el => {
+                el.addEventListener('input', function() {
+                    const idx = Number(this.getAttribute('data-logi-index'));
+                    if (!Number.isFinite(idx) || !logisticsLines[idx]) return;
+                    logisticsLines[idx].shipping_carrier = this.value || '';
+                });
+            });
+            wrap.querySelectorAll('[data-logi-field="tracking"]').forEach(el => {
+                el.addEventListener('input', function() {
+                    const idx = Number(this.getAttribute('data-logi-index'));
+                    if (!Number.isFinite(idx) || !logisticsLines[idx]) return;
+                    logisticsLines[idx].tracking_no = this.value || '';
+                });
+            });
+        }
+
+        function addLogisticsLine() {
+            logisticsLines.push({ shipping_carrier: '', tracking_no: '' });
+            renderLogisticsLines();
+        }
+
+        function removeLogisticsLine(idx) {
+            logisticsLines.splice(idx, 1);
+            renderLogisticsLines();
+        }
+
+        function setSegmentValue(segmentEl, value) {
+            if (!segmentEl) return;
+            segmentEl.dataset.value = String(value == null ? '' : value);
+            segmentEl.querySelectorAll('.status-pill').forEach(btn => {
+                btn.classList.toggle('is-active', String(btn.dataset.value || '') === String(segmentEl.dataset.value || ''));
+            });
+        }
+
+        function bindSegment(segmentId) {
+            const segmentEl = document.getElementById(segmentId);
+            if (!segmentEl) return;
+            segmentEl.querySelectorAll('.status-pill').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    setSegmentValue(segmentEl, this.dataset.value || '');
+                });
+            });
+        }
+
+        function loadShopOptions() {
+            return fetch('/api/sales-order-registration?action=options&scope=shops&limit=300')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') return;
+                    shopOptions = data.shops || [];
+                    renderShopSelect('');
+                })
+                .catch(() => {});
+        }
+
+        function ensureRegistrationOptionsLoaded() {
+            if (registrationOptionsReady) return Promise.resolve();
+            if (registrationOptionsPromise) return registrationOptionsPromise;
+            registrationOptionsPromise = fetch('/api/sales-order-registration?action=options&scope=all&limit=300')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        throw new Error(data.message || '选项加载失败');
+                    }
+                    shopOptions = data.shops || [];
+                    salesSkuOptions = data.sales_products || [];
+                    orderSkuOptions = data.order_products || [];
+                    shippingPlanOptions = data.shipping_plans || [];
+                    registrationOptionsReady = true;
+                })
+                .finally(() => {
+                    registrationOptionsPromise = null;
+                });
+            return registrationOptionsPromise;
+        }
+
+        async function openCreateModal() {
+            try {
+                await ensureRegistrationOptionsLoaded();
+            } catch (err) {
+                showDialog({ title: '加载失败', message: String(err && err.message ? err.message : err || '选项加载失败') });
+                return;
+            }
+            editId = null;
+            document.getElementById('pm-modal-title').innerText = '新增订单登记';
+            renderShopSelect('');
+            document.getElementById('modalOrderNo').value = '';
+            document.getElementById('modalOrderDate').value = '';
+            document.getElementById('modalCustomerName').value = '';
+            document.getElementById('modalPhone').value = '';
+            document.getElementById('modalZip').value = '';
+            document.getElementById('modalAddress').value = '';
+            document.getElementById('modalCity').value = '';
+            document.getElementById('modalState').value = '';
+            setSegmentValue(document.getElementById('modalShippingStatusSegment'), 'pending');
+            setSegmentValue(document.getElementById('modalIsReviewInvitedSegment'), '0');
+            setSegmentValue(document.getElementById('modalIsLogisticsEmailedSegment'), '0');
+            document.getElementById('modalCompensation').value = '';
+            document.getElementById('modalRemark').value = '';
+            platformLines = [{ platform_sku: '', quantity: 1, shipping_plan_id: null }];
+            shipmentLines = [];
+            logisticsLines = [];
+            shipmentAutoMode = true;
+            renderPlatformLines();
+            renderShipmentLines();
+            renderLogisticsLines();
+            resetModalStatus();
+            document.getElementById('pm-modal').classList.add('active');
+        }
+
+        async function openEditModal(item) {
+            if (!item || !item.id) return;
+            try {
+                await ensureRegistrationOptionsLoaded();
+            } catch (err) {
+                showDialog({ title: '加载失败', message: String(err && err.message ? err.message : err || '选项加载失败') });
+                return;
+            }
+            fetch(`/api/sales-order-registration?id=${item.id}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success' || !data.item) {
+                        showDialog({ title: '加载失败', message: data.message || '无法获取详情' });
+                        return;
+                    }
+                    const row = data.item;
+                    editId = row.id;
+                    document.getElementById('pm-modal-title').innerText = '编辑订单登记';
+                    renderShopSelect(row.shop_id || '');
+                    document.getElementById('modalOrderNo').value = row.order_no || '';
+                    document.getElementById('modalOrderDate').value = row.order_date ? String(row.order_date).slice(0, 10) : '';
+                    document.getElementById('modalCustomerName').value = row.customer_name || '';
+                    document.getElementById('modalPhone').value = row.phone || '';
+                    document.getElementById('modalZip').value = row.zip_code || '';
+                    document.getElementById('modalAddress').value = row.address || '';
+                    document.getElementById('modalCity').value = row.city || '';
+                    document.getElementById('modalState').value = row.state || '';
+                    setSegmentValue(document.getElementById('modalShippingStatusSegment'), row.shipping_status || 'pending');
+                    setSegmentValue(document.getElementById('modalIsReviewInvitedSegment'), String(row.is_review_invited || 0));
+                    setSegmentValue(document.getElementById('modalIsLogisticsEmailedSegment'), String(row.is_logistics_emailed || 0));
+                    document.getElementById('modalCompensation').value = row.compensation_action || '';
+                    document.getElementById('modalRemark').value = row.remark || '';
+                    platformLines = (row.platform_items || []).map(x => ({
+                        sales_product_id: x.sales_product_id || null,
+                        platform_sku: x.platform_sku || '',
+                        quantity: Number(x.quantity || 1),
+                        shipping_plan_id: x.shipping_plan_id || null
+                    }));
+                    shipmentLines = (row.shipment_items || []).map(x => ({
+                        order_product_id: x.order_product_id || null,
+                        order_sku: x.order_sku || '',
+                        quantity: Number(x.quantity || 1)
+                    }));
+                    logisticsLines = (row.logistics_items || []).map(x => ({
+                        shipping_carrier: x.shipping_carrier || '',
+                        tracking_no: x.tracking_no || ''
+                    }));
+                    shipmentAutoMode = shipmentLines.length === 0;
+                    if (!platformLines.length) platformLines = [{ platform_sku: '', quantity: 1, shipping_plan_id: null }];
+                    renderPlatformLines();
+                    renderShipmentLines();
+                    renderLogisticsLines();
+                    resetModalStatus();
+                    document.getElementById('pm-modal').classList.add('active');
+                })
+                .catch(err => showDialog({ title: '请求失败', message: '加载失败: ' + err }));
+        }
+
+        function closeModal() {
+            document.getElementById('pm-modal').classList.remove('active');
+            editId = null;
+        }
+
+        function collectPayload() {
+            const cleanPlatform = platformLines
+                .map(x => ({
+                    platform_sku: String(x.platform_sku || '').trim(),
+                    quantity: Math.max(1, Number(x.quantity || 1)),
+                    shipping_plan_id: x.shipping_plan_id ? Number(x.shipping_plan_id) : null
+                }))
+                .filter(x => x.platform_sku);
+            const cleanShipment = shipmentLines
+                .map(x => ({
+                    order_sku: String(x.order_sku || '').trim(),
+                    quantity: Math.max(1, Number(x.quantity || 1))
+                }))
+                .filter(x => x.order_sku);
+            const cleanLogistics = logisticsLines
+                .map((x, idx) => ({
+                    shipping_carrier: String(x.shipping_carrier || '').trim(),
+                    tracking_no: String(x.tracking_no || '').trim(),
+                    sort_order: idx + 1
+                }))
+                .filter(x => x.shipping_carrier || x.tracking_no);
+            return {
+                id: editId,
+                shop_id: document.getElementById('modalShop').value || null,
+                order_no: document.getElementById('modalOrderNo').value.trim(),
+                order_date: document.getElementById('modalOrderDate').value || null,
+                customer_name: document.getElementById('modalCustomerName').value.trim(),
+                phone: document.getElementById('modalPhone').value.trim(),
+                zip_code: document.getElementById('modalZip').value.trim(),
+                address: document.getElementById('modalAddress').value.trim(),
+                city: document.getElementById('modalCity').value.trim(),
+                state: document.getElementById('modalState').value.trim(),
+                shipping_status: document.getElementById('modalShippingStatusSegment').dataset.value || 'pending',
+                is_review_invited: Number(document.getElementById('modalIsReviewInvitedSegment').dataset.value || '0'),
+                is_logistics_emailed: Number(document.getElementById('modalIsLogisticsEmailedSegment').dataset.value || '0'),
+                compensation_action: document.getElementById('modalCompensation').value.trim(),
+                remark: document.getElementById('modalRemark').value.trim(),
+                logistics_items: cleanLogistics,
+                platform_items: cleanPlatform,
+                shipment_items: shipmentAutoMode ? [] : cleanShipment
+            };
+        }
+
+        function saveFromModal() {
+            const payload = collectPayload();
+            if (!payload.order_no) {
+                showModalStatus('订单号必填', true);
+                return;
+            }
+            if (!payload.platform_items.length) {
+                showModalStatus('请至少填写1条销售平台SKU', true);
+                return;
+            }
+            const method = editId ? 'PUT' : 'POST';
+            fetch('/api/sales-order-registration', {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        showModalStatus(data.message || '保存失败', true);
+                        return;
+                    }
+                    showModalStatus('保存成功', false);
+                    closeModal();
+                    loadList();
+                })
+                .catch(err => showModalStatus('请求失败: ' + err, true));
+        }
+
+        function deleteItem(id) {
+            showDialog({
+                title: '删除确认',
+                message: '确认删除该订单登记？',
+                confirmText: '确认删除',
+                cancelText: '取消',
+                onConfirm: function() {
+                    fetch('/api/sales-order-registration', {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id })
+                    })
+                        .then(r => r.json())
+                        .then(data => {
+                            if (data.status !== 'success') {
+                                showDialog({ title: '删除失败', message: data.message || '删除失败' });
+                                return;
+                            }
+                            loadList();
+                        })
+                        .catch(err => showDialog({ title: '请求失败', message: '请求失败: ' + err }));
+                }
+            });
+        }
+
+        function renderList(items) {
+            const tbody = document.querySelector('#listTable tbody');
+            if (!Array.isArray(items) || !items.length) {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">暂无数据</td></tr>';
+                return;
+            }
+            tbody.innerHTML = items.map(item => {
+                const platformText = item.summary_loading
+                    ? '<span class="status-tag">加载中...</span>'
+                    : (item.platform_summary || []).map(x => `<span class="status-tag">${x}</span>`).join('');
+                const shipmentText = item.summary_loading
+                    ? '<span class="status-tag">加载中...</span>'
+                    : (item.shipment_summary || []).map(x => `<span class="status-tag">${x}</span>`).join('');
+                const logisticsText = item.summary_loading
+                    ? '<span class="status-tag">加载中...</span>'
+                    : (item.logistics_summary || []).map(x => `<span class="status-tag">${x}</span>`).join('');
+                return `
+                    <tr>
+                        <td>${item.shop_display_name || item.shop_name || ''}</td>
+                        <td>${item.order_no || ''}</td>
+                        <td>${item.order_date ? String(item.order_date).slice(0, 10) : ''}</td>
+                        <td>${item.customer_name || ''}</td>
+                        <td>${item.shipping_status || 'pending'}</td>
+                        <td>${platformText || ''}</td>
+                        <td>${shipmentText || '<span class="status-tag">自动计算</span>'}</td>
+                        <td>${logisticsText || ''}</td>
+                        <td>
+                            <div class="pm-actions">
+                                <button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button>
+                                <button class="btn-danger" onclick='deleteItem(${item.id})'>删除</button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function loadSummariesAsync(items, token) {
+            const ids = (items || []).map(item => Number(item.id || 0)).filter(v => v > 0);
+            if (!ids.length) return;
+            const url = `/api/sales-order-registration?action=summaries&ids=${encodeURIComponent(ids.join(','))}`;
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    if (token !== listRequestToken) return;
+                    if (data.status !== 'success') return;
+                    const summaryMap = {};
+                    (data.items || []).forEach(item => {
+                        if (!item || !item.id) return;
+                        summaryMap[String(item.id)] = item;
+                    });
+                    listCache = listCache.map(item => {
+                        const found = summaryMap[String(item.id)] || null;
+                        if (!found) {
+                            return { ...item, summary_loading: false, platform_summary: [], shipment_summary: [], logistics_summary: [] };
+                        }
+                        return {
+                            ...item,
+                            summary_loading: false,
+                            platform_summary: Array.isArray(found.platform_summary) ? found.platform_summary : [],
+                            shipment_summary: Array.isArray(found.shipment_summary) ? found.shipment_summary : [],
+                            logistics_summary: Array.isArray(found.logistics_summary) ? found.logistics_summary : []
+                        };
+                    });
+                    renderList(listCache);
+                })
+                .catch(() => {});
+        }
+
+        function loadList() {
+            const currentToken = ++listRequestToken;
+            const q = document.getElementById('searchInput').value.trim();
+            const url = q ? `/api/sales-order-registration?q=${encodeURIComponent(q)}` : '/api/sales-order-registration';
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    if (currentToken !== listRequestToken) return;
+                    if (data.status !== 'success') {
+                        document.querySelector('#listTable tbody').innerHTML = `<tr><td colspan="9" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        return;
+                    }
+                    listCache = (data.items || []).map(item => ({
+                        ...item,
+                        summary_loading: true,
+                        platform_summary: [],
+                        shipment_summary: [],
+                        logistics_summary: []
+                    }));
+                    renderList(listCache);
+                    loadSummariesAsync(listCache, currentToken);
+                })
+                .catch(err => {
+                    if (currentToken !== listRequestToken) return;
+                    document.querySelector('#listTable tbody').innerHTML = `<tr><td colspan="9" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                });
+        }
+
+        function downloadTemplate() {
+            window.location.href = '/api/sales-order-registration-template';
+        }
+
+        function triggerUpload() {
+            document.getElementById('uploadInput').click();
+        }
+
+        function uploadTemplate(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+            fetch('/api/sales-order-registration-import', {
+                method: 'POST',
+                body: formData
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        showDialog({ title: '导入失败', message: data.message || '导入失败' });
+                        return;
+                    }
+                    const errorCount = (data.errors || []).length;
+                    showDialog({
+                        title: '导入完成',
+                        message: `导入完成：新增 ${data.created || 0} 条，更新 ${data.updated || 0} 条，失败 ${errorCount} 条`
+                    });
+                    loadList();
+                })
+                .catch(err => showDialog({ title: '请求失败', message: '请求失败: ' + err }));
+        }
+
+        function updateOptionalFieldStyle(el) {
+            if (!el || !el.classList) return;
+            if (String(el.value || '').trim()) el.classList.add('has-value');
+            else el.classList.remove('has-value');
+        }
+
+        function initOptionalFieldListeners() {
+            document.querySelectorAll('.optional-field').forEach(field => {
+                updateOptionalFieldStyle(field);
+                field.addEventListener('input', function() { updateOptionalFieldStyle(this); });
+                field.addEventListener('change', function() { updateOptionalFieldStyle(this); });
+            });
+        }
+
+        window.addEventListener('load', loadList);
+        window.addEventListener('load', initOptionalFieldListeners);
+        window.addEventListener('load', function() {
+            bindSegment('modalShippingStatusSegment');
+            bindSegment('modalIsReviewInvitedSegment');
+            bindSegment('modalIsLogisticsEmailedSegment');
+        });
+
+        document.getElementById('searchInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') loadList();
+        });
+        document.getElementById('pm-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeModal();
+        });
+        document.getElementById('dialogModal').addEventListener('click', function(e) {
+            if (e.target === this) this.classList.remove('active');
+        });
+        document.getElementById('uploadInput').addEventListener('change', function() {
+            const file = this.files && this.files[0];
+            if (file) uploadTemplate(file);
+            this.value = '';
+        });
+    </script>
+</body>
+<script src="/static/js/header.js"></script>
+</html>

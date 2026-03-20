@@ -123,6 +123,7 @@
                 <table class="pm-table" id="mainTable">
                     <thead>
                         <tr>
+                            <th style="width:110px;">启用</th>
                             <th>仓库名称</th>
                             <th>供应商</th>
                             <th>仓库简称</th>
@@ -131,7 +132,7 @@
                             <th style="width:160px;">操作</th>
                         </tr>
                     </thead>
-                    <tbody><tr><td colspan="6" style="text-align:center;">加载中...</td></tr></tbody>
+                    <tbody><tr><td colspan="7" style="text-align:center;">加载中...</td></tr></tbody>
                 </table>
             </div>
         </section>
@@ -162,6 +163,13 @@
                         <option value="美东南">美东南</option>
                         <option value="美东">美东</option>
                     </select>
+                </div>
+                <div class="form-group pm-form-full">
+                    <label>启用状态</label>
+                    <div class="status-segment status-segment--inline" id="warehouseEnabledSegment" data-value="1">
+                        <button type="button" class="status-pill status-pill--yes is-active" data-value="1">是</button>
+                        <button type="button" class="status-pill status-pill--no" data-value="0">否</button>
+                    </div>
                 </div>
             </div>
             <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
@@ -196,6 +204,21 @@
         let supplierEditId = null;
         let activeSupplierFilterId = null;
         let supplierOptions = [];
+        function setSegmentValue(seg, value){
+            if(!seg) return;
+            const v = String(value === undefined || value === null ? '' : value);
+            seg.dataset.value = v;
+            seg.querySelectorAll('.status-pill').forEach(btn => {
+                btn.classList.toggle('is-active', String(btn.dataset.value || '') === v);
+            });
+        }
+        function bindSegment(id){
+            const seg = document.getElementById(id);
+            if(!seg) return;
+            seg.querySelectorAll('.status-pill').forEach(btn => {
+                btn.addEventListener('click', function(){ setSegmentValue(seg, this.dataset.value || '0'); });
+            });
+        }
         function showStatus(msg, err){ const el=document.getElementById('modalStatus'); el.style.display='block'; el.style.background=err?'#ffecec':'#f0fff0'; el.style.color=err?'#a33':'#2f6f2f'; el.innerText=msg; }
         function resetStatus(){ const el=document.getElementById('modalStatus'); el.style.display='none'; el.innerText=''; }
         function showSupplierStatus(msg, err){ const el=document.getElementById('supplierStatus'); el.style.display='block'; el.style.background=err?'#ffecec':'#f0fff0'; el.style.color=err?'#a33':'#2f6f2f'; el.innerText=msg; }
@@ -273,6 +296,7 @@
             document.getElementById('warehouseShortName').value='';
             document.getElementById('supplierSelect').value='';
             document.getElementById('region').value='';
+            setSegmentValue(document.getElementById('warehouseEnabledSegment'), '1');
             if(window.refreshUniversalSingleSelect){ window.refreshUniversalSingleSelect('supplierSelect'); window.refreshUniversalSingleSelect('region'); }
             resetStatus();
             document.getElementById('pm-modal').classList.add('active');
@@ -284,6 +308,7 @@
             document.getElementById('warehouseShortName').value=item.warehouse_short_name||'';
             fillSupplierSelect(item.supplier_id || '');
             document.getElementById('region').value=item.region||'';
+            setSegmentValue(document.getElementById('warehouseEnabledSegment'), String(Number(item.is_enabled || 0) ? 1 : 0));
             if(window.refreshUniversalSingleSelect){ window.refreshUniversalSingleSelect('region'); }
             resetStatus();
             document.getElementById('pm-modal').classList.add('active');
@@ -324,6 +349,7 @@
                 warehouse_name: document.getElementById('warehouseName').value.trim(),
                 supplier_id: document.getElementById('supplierSelect').value,
                 warehouse_short_name: document.getElementById('warehouseShortName').value.trim(),
+                is_enabled: Number((document.getElementById('warehouseEnabledSegment').dataset.value || '1') === '1' ? 1 : 0),
                 region: document.getElementById('region').value
             };
             if(!payload.supplier_id || !payload.region){ showStatus('请填写供应商和区域', true); return; }
@@ -356,11 +382,29 @@
             const url = params.length ? `/api/logistics-warehouse?${params.join('&')}` : '/api/logistics-warehouse';
             fetch(url).then(r=>r.json()).then(data=>{
                 const tbody = document.querySelector('#mainTable tbody');
-                if(data.status!=='success'){ tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">${data.message||'加载失败'}</td></tr>`; return; }
+                if(data.status!=='success'){ tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#a33;">${data.message||'加载失败'}</td></tr>`; return; }
                 const items = data.items || [];
-                if(!items.length){ tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无数据</td></tr>'; return; }
-                tbody.innerHTML = items.map(item => `<tr><td>${item.warehouse_name||''}</td><td>${item.supplier_name||''}</td><td>${item.warehouse_short_name||''}</td><td>${item.region||''}</td><td>${item.created_at?new Date(item.created_at).toLocaleString('zh-CN'):''}</td><td><div class="pm-actions"><button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button><button class="btn-danger" onclick='removeItem(${item.id})'>删除</button></div></td></tr>`).join('');
-            }).catch(err=>{ document.querySelector('#mainTable tbody').innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">加载失败: ${err}</td></tr>`; });
+                if(!items.length){ tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">暂无数据</td></tr>'; return; }
+                tbody.innerHTML = items.map(item => `<tr><td><div class="status-segment status-segment--inline warehouse-enabled-segment" data-id="${item.id}" data-value="${Number(item.is_enabled||0)?1:0}"><button type="button" class="status-pill status-pill--yes ${Number(item.is_enabled||0)?'is-active':''}" data-value="1">是</button><button type="button" class="status-pill status-pill--no ${Number(item.is_enabled||0)?'':'is-active'}" data-value="0">否</button></div></td><td>${item.warehouse_name||''}</td><td>${item.supplier_name||''}</td><td>${item.warehouse_short_name||''}</td><td>${item.region||''}</td><td>${item.created_at?new Date(item.created_at).toLocaleString('zh-CN'):''}</td><td><div class="pm-actions"><button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button><button class="btn-danger" onclick='removeItem(${item.id})'>删除</button></div></td></tr>`).join('');
+            }).catch(err=>{ document.querySelector('#mainTable tbody').innerHTML = `<tr><td colspan="7" style="text-align:center;color:#a33;">加载失败: ${err}</td></tr>`; });
+        }
+        function toggleWarehouseEnabled(id, isEnabled){
+            fetch('/api/logistics-warehouse?action=toggle_enabled', {
+                method:'PUT',
+                headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({ id, is_enabled: isEnabled ? 1 : 0 })
+            }).then(r=>r.json()).then(data=>{
+                if(data.status==='success'){
+                    window.showAppToast && window.showAppToast(`已${isEnabled ? '启用' : '停用'}仓库`, false);
+                    loadList();
+                } else {
+                    window.showAppToast && window.showAppToast(data.message || '更新失败', true);
+                    loadList();
+                }
+            }).catch(err=>{
+                window.showAppToast && window.showAppToast('更新失败: '+err, true);
+                loadList();
+            });
         }
         function downloadWarehouseTemplate(){ window.location.href = '/api/logistics-warehouse-template'; }
         function triggerWarehouseUpload(){ const input=document.getElementById('warehouseUploadInput'); input.value=''; input.click(); }
@@ -380,9 +424,21 @@
         document.getElementById('supplierSelect').addEventListener('change', function(){ syncPartsByName(); syncNameByParts(); });
         document.getElementById('warehouseUploadInput').addEventListener('change', function(e){ const file=e.target.files&&e.target.files[0]; if(file) uploadWarehouseTemplate(file); });
         document.getElementById('searchInput').addEventListener('keydown', function(e){ if(e.key==='Enter') loadList(); });
+        document.querySelector('#mainTable tbody').addEventListener('click', function(e){
+            const btn = e.target && e.target.closest ? e.target.closest('.warehouse-enabled-segment .status-pill') : null;
+            if(!btn) return;
+            const seg = btn.closest('.warehouse-enabled-segment');
+            if(!seg) return;
+            const id = Number(seg.dataset.id || 0);
+            const newVal = String(btn.dataset.value || '0');
+            const oldVal = String(seg.dataset.value || '0');
+            if(!id || newVal === oldVal) return;
+            setSegmentValue(seg, newVal);
+            toggleWarehouseEnabled(id, newVal === '1');
+        });
         document.getElementById('pm-modal').addEventListener('click', function(e){ if(e.target===this) closeModal(); });
         document.getElementById('supplier-modal').addEventListener('click', function(e){ if(e.target===this) closeSupplierModal(); });
-        window.addEventListener('load', function(){ loadSuppliers().then(loadList); });
+        window.addEventListener('load', function(){ bindSegment('warehouseEnabledSegment'); loadSuppliers().then(loadList); });
     </script>
 </body>
 <script src="/static/js/header.js"></script>

@@ -46,7 +46,7 @@
             box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
             padding: 0.6rem;
             display: none;
-            z-index: 10;
+            z-index: 3400;
         }
         .pm-select-panel.open {
             display: block;
@@ -219,6 +219,133 @@
         }
         .preview-savebar.active {
             display: inline-flex;
+        }
+        .plan-grid {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 0.8rem;
+            min-height: 360px;
+            align-items: stretch;
+        }
+        .plan-list-wrap {
+            display: flex;
+            flex-direction: column;
+            min-height: 100%;
+        }
+        .plan-list {
+            border: 1px solid var(--morandi-sand);
+            border-radius: 8px;
+            background: #fff;
+            overflow: auto;
+            max-height: 420px;
+            flex: 1;
+            position: relative;
+            z-index: 1;
+        }
+        .plan-item {
+            padding: 0.55rem 0.65rem;
+            border-bottom: 1px solid var(--morandi-mist);
+            cursor: pointer;
+            font-size: 0.92rem;
+        }
+        .plan-item:last-child { border-bottom: none; }
+        .plan-item.active { background: #f3efe9; }
+        .plan-item-title {
+            font-weight: 600;
+            color: var(--morandi-ink);
+            display: flex;
+            justify-content: space-between;
+            gap: 0.4rem;
+        }
+        .plan-item-sub {
+            margin-top: 0.2rem;
+            color: var(--morandi-slate);
+            font-size: 0.82rem;
+        }
+        .plan-editor {
+            border: 1px solid var(--morandi-sand);
+            border-radius: 8px;
+            padding: 0.7rem;
+            background: #fff;
+            display: grid;
+            gap: 0.65rem;
+            align-content: start;
+            position: relative;
+            z-index: 2;
+        }
+        .plan-field-title {
+            color: #8d6f54;
+            font-size: 0.82rem;
+            margin: 0 0 0.22rem;
+            line-height: 1.2;
+            font-weight: 600;
+        }
+        .plan-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 110px 64px;
+            gap: 0.45rem;
+            align-items: center;
+        }
+        .plan-row .btn-danger {
+            padding: 0.35rem 0.45rem;
+            font-size: 0.82rem;
+        }
+        .plan-empty {
+            color: var(--morandi-slate);
+            font-size: 0.9rem;
+            text-align: center;
+            padding: 0.5rem 0 0;
+        }
+        .plan-empty-block {
+            border: 1px solid var(--morandi-sand);
+            border-radius: 8px;
+            min-height: 100px;
+            display: none;
+            align-items: flex-start;
+            justify-content: center;
+            padding-top: 0.5rem;
+            color: var(--morandi-slate);
+            font-size: 0.9rem;
+            background: #fff;
+            margin-top: auto;
+        }
+        .plan-save-wrap {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.45rem;
+            margin-top: 0.15rem;
+        }
+        #shippingPlanModal {
+            z-index: 3200;
+        }
+        #shippingPlanModal .pm-modal-content {
+            overflow: visible;
+        }
+        #uploadDialogModal {
+            z-index: 3300;
+        }
+        .order-link-box {
+            border: 2px solid var(--morandi-sand);
+            border-radius: 8px;
+            padding: 0.65rem;
+            background: #fff;
+            display: grid;
+            gap: 0.45rem;
+        }
+        .order-link-head {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 110px 64px;
+            gap: 0.45rem;
+            font-size: 0.82rem;
+            color: var(--morandi-slate);
+            padding: 0 0.2rem;
+        }
+        .order-link-selected { display: grid; gap: 0.4rem; }
+        .order-link-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 110px 64px;
+            gap: 0.45rem;
+            align-items: center;
         }
         
     </style>
@@ -561,6 +688,42 @@
         </div>
     </div>
 
+    <div class="pm-modal" id="shippingPlanModal">
+        <div class="pm-modal-content" style="max-width: 980px;">
+            <h3 id="shippingPlanTitle" style="margin-top:0;">替代发货方案</h3>
+            <div class="plan-grid">
+                <div class="plan-list-wrap">
+                    <div style="display:flex; gap:0.45rem; margin-bottom:0.5rem;">
+                        <button type="button" class="btn-secondary" onclick="createNewShippingPlan()">新增方案</button>
+                    </div>
+                    <div id="shippingPlanList" class="plan-list"></div>
+                    <div id="shippingPlanEmptyBlock" class="plan-empty-block" style="display:none;">暂无方案，请先新增</div>
+                </div>
+                <div class="plan-editor">
+                    <div class="form-group" style="margin:0;">
+                        <div class="plan-field-title">方案名称</div>
+                        <input type="text" id="shippingPlanName" class="required-field" placeholder="例如：缺货分拆-方案A">
+                    </div>
+                    <div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.45rem;">
+                            <h4 style="margin:0; color:#8d6f54; font-size:0.82rem; font-weight:600;">替代下单SKU及数量</h4>
+                            <button type="button" class="btn-secondary" onclick="addShippingPlanRow()">新增替代SKU</button>
+                        </div>
+                        <div class="order-link-box">
+                            <div class="order-link-head"><span>替代下单SKU</span><span>数量</span><span></span></div>
+                            <div id="shippingPlanRows" class="order-link-selected" style="display:none;"></div>
+                            <div id="shippingPlanEmptyText" class="plan-empty">暂无替代SKU，请先新增</div>
+                        </div>
+                    </div>
+                    <div class="plan-save-wrap">
+                        <button class="btn-danger" onclick="deleteShippingPlan()" id="shippingPlanDeleteBtn" style="display:none;">删除方案</button>
+                        <button class="btn-primary" onclick="saveShippingPlan()">保存方案</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="timeoutToast" class="toast-notice"></div>
 
     <script>
@@ -585,6 +748,9 @@
         let selectedOrderProductIds = new Set();
         let orderProductItemsCache = [];
         let previewEditDraft = {};
+        let shippingPlanCurrentOrder = null;
+        let shippingPlanItems = [];
+        let activeShippingPlan = null;
 
         function renderUploadErrorDetails(errors) {
             const wrap = document.getElementById('uploadDialogDetails');
@@ -620,14 +786,23 @@
 
             okBtn.onclick = function() {
                 modal.classList.remove('active');
+                if (window.syncModalScrollLock) {
+                    window.syncModalScrollLock();
+                }
                 if (typeof onConfirm === 'function') onConfirm();
             };
             cancelBtn.onclick = function() {
                 modal.classList.remove('active');
+                if (window.syncModalScrollLock) {
+                    window.syncModalScrollLock();
+                }
                 if (typeof onCancel === 'function') onCancel();
             };
 
             modal.classList.add('active');
+            if (window.syncModalScrollLock) {
+                window.syncModalScrollLock();
+            }
         }
 
         function showTimeoutToast(message) {
@@ -993,7 +1168,7 @@
             const version = document.getElementById('modalVersion').value.trim();
             const specShort = document.getElementById('modalSpecQtyShort').value.trim();
             const fabric = normalizeCodePrefix(getSelectedFabricCode());
-            const parts = [skuFamily, version, specShort, fabric].filter(part => part);
+            const parts = [skuFamily, specShort, fabric, version].filter(part => part);
             return parts.join('-');
         }
 
@@ -1015,6 +1190,12 @@
             if (!isOn) {
                 setSelectValue('modalSourceSku', '');
                 setInputValue('modalVersion', '');
+            } else {
+                const sourceId = document.getElementById('modalSourceSku').value;
+                if (sourceId) {
+                    setInputValue('modalVersion', getNextIterationVersion(sourceId));
+                    updateSkuFromInputs();
+                }
             }
         }
 
@@ -1041,10 +1222,7 @@
             setInputValue('modalContentsDescEn', source.contents_desc_en || '');
             setYesNoValue('modalIsOnMarket', String(source.is_on_market || '0') === '1' ? '1' : '0');
             setYesNoValue('modalIsDacheneProduct', String(source.is_dachene_product || '0') === '1' ? '1' : '0');
-            setInputValue('modalVersion', source.version_no || '');
-            if (!skuManuallyEdited) {
-                setInputValue('modalSku', source.sku || '');
-            }
+            setInputValue('modalVersion', getNextIterationVersion(source.id));
             setInputValue('modalFinishedLength', source.finished_length_in ?? '');
             setInputValue('modalFinishedWidth', source.finished_width_in ?? '');
             setInputValue('modalFinishedHeight', source.finished_height_in ?? '');
@@ -1063,6 +1241,35 @@
             setPickerSelected('cert', source.certification_ids || []);
             autoCalcCartonQtyFromPackage();
             updateSkuFromInputs();
+        }
+
+        function parseVersionNumber(text) {
+            const value = Number(String(text || '').trim());
+            if (!Number.isFinite(value)) return null;
+            const intValue = Math.floor(value);
+            return intValue > 0 ? intValue : null;
+        }
+
+        function getNextIterationVersion(sourceId) {
+            const sourceNum = Number(sourceId || 0);
+            if (!sourceNum) return '1';
+            let maxVersion = 0;
+            sourceSkuOptions.forEach(item => {
+                if (Number(item.source_order_product_id || 0) !== sourceNum) return;
+                if (editId && String(item.id) === String(editId)) return;
+                const parsed = parseVersionNumber(item.version_no);
+                if (parsed && parsed > maxVersion) {
+                    maxVersion = parsed;
+                }
+            });
+            return String(maxVersion + 1);
+        }
+
+        function getSourceSkuCandidates() {
+            return sourceSkuOptions.filter(item => {
+                if (editId && String(item.id) === String(editId)) return false;
+                return Number(item.is_iteration || 0) !== 1;
+            });
         }
 
         function updateFeatureCategoryFilter() {
@@ -1297,6 +1504,17 @@
                 showModalStatus('请填写版本号', true);
                 return;
             }
+            if (payload.is_iteration) {
+                const sourceItem = sourceSkuOptions.find(x => String(x.id) === String(payload.source_order_product_id));
+                if (!sourceItem) {
+                    showModalStatus('来源SKU不存在，请重新选择', true);
+                    return;
+                }
+                if (Number(sourceItem.is_iteration || 0) === 1) {
+                    showModalStatus('迭代款SKU不能作为来源SKU', true);
+                    return;
+                }
+            }
 
             let method = 'POST';
             if (editId) {
@@ -1349,6 +1567,259 @@
             });
         }
 
+        function openShippingPlanModal(item) {
+            if (!item || !item.id) return;
+            shippingPlanCurrentOrder = item;
+            shippingPlanItems = [];
+            activeShippingPlan = null;
+            document.getElementById('shippingPlanTitle').textContent = `替代发货方案 - ${item.sku || ''}`;
+            const modal = document.getElementById('shippingPlanModal');
+            modal.classList.add('active');
+            if (window.syncModalScrollLock) {
+                window.syncModalScrollLock();
+            }
+            loadShippingPlans();
+        }
+
+        function closeShippingPlanModal() {
+            const modal = document.getElementById('shippingPlanModal');
+            modal.classList.remove('active');
+            if (window.syncModalScrollLock) {
+                window.syncModalScrollLock();
+            }
+            shippingPlanCurrentOrder = null;
+            shippingPlanItems = [];
+            activeShippingPlan = null;
+        }
+
+        function loadShippingPlans() {
+            if (!shippingPlanCurrentOrder || !shippingPlanCurrentOrder.id) return;
+            fetch(`/api/order-product?action=shipping_plans&order_product_id=${shippingPlanCurrentOrder.id}`)
+                .then(r => r.json())
+                .then(data => {
+                    shippingPlanItems = data.status === 'success' ? (data.items || []) : [];
+                    if (!shippingPlanItems.length) {
+                        activeShippingPlan = null;
+                        createNewShippingPlan();
+                    } else {
+                        activeShippingPlan = shippingPlanItems[0];
+                    }
+                    renderShippingPlanList();
+                    renderShippingPlanEditor();
+                })
+                .catch(() => {
+                    shippingPlanItems = [];
+                    createNewShippingPlan();
+                    renderShippingPlanList();
+                    renderShippingPlanEditor();
+                });
+        }
+
+        function renderShippingPlanList() {
+            const list = document.getElementById('shippingPlanList');
+            const emptyBlock = document.getElementById('shippingPlanEmptyBlock');
+            if (!list) return;
+            if (!shippingPlanItems.length) {
+                list.innerHTML = '';
+                if (emptyBlock) emptyBlock.style.display = '';
+                return;
+            }
+            if (emptyBlock) emptyBlock.style.display = 'none';
+            list.innerHTML = shippingPlanItems.map(plan => {
+                const active = activeShippingPlan && String(activeShippingPlan.id || 'new') === String(plan.id || 'new') ? 'active' : '';
+                const itemCount = (plan.items || []).length;
+                return `
+                    <div class="plan-item ${active}" onclick="selectShippingPlan(${plan.id})">
+                        <div class="plan-item-title">
+                            <span>${plan.plan_name || ''}</span>
+                            <span></span>
+                        </div>
+                        <div class="plan-item-sub">替代SKU ${itemCount} 条</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function selectShippingPlan(planId) {
+            const target = shippingPlanItems.find(x => String(x.id) === String(planId));
+            if (!target) return;
+            activeShippingPlan = JSON.parse(JSON.stringify(target));
+            renderShippingPlanList();
+            renderShippingPlanEditor();
+        }
+
+        function createNewShippingPlan() {
+            const v = String((shippingPlanCurrentOrder && shippingPlanCurrentOrder.version_no) || '').trim();
+            const defaultPlanName = v ? `迭代款-${v}` : '';
+            activeShippingPlan = {
+                id: null,
+                order_product_id: shippingPlanCurrentOrder ? shippingPlanCurrentOrder.id : null,
+                plan_name: defaultPlanName,
+                items: []
+            };
+            renderShippingPlanList();
+            renderShippingPlanEditor();
+        }
+
+        function renderShippingPlanEditor() {
+            const nameEl = document.getElementById('shippingPlanName');
+            const rowsEl = document.getElementById('shippingPlanRows');
+            const emptyTextEl = document.getElementById('shippingPlanEmptyText');
+            const delBtn = document.getElementById('shippingPlanDeleteBtn');
+            if (!nameEl || !rowsEl || !delBtn) return;
+            if (!activeShippingPlan) {
+                nameEl.value = '';
+                rowsEl.style.display = 'none';
+                if (emptyTextEl) emptyTextEl.style.display = '';
+                delBtn.style.display = 'none';
+                return;
+            }
+            nameEl.value = activeShippingPlan.plan_name || '';
+            delBtn.style.display = activeShippingPlan.id ? '' : 'none';
+            const rows = Array.isArray(activeShippingPlan.items) ? activeShippingPlan.items : [];
+            if (!rows.length) {
+                rowsEl.innerHTML = '';
+                rowsEl.style.display = 'none';
+                if (emptyTextEl) emptyTextEl.style.display = '';
+                return;
+            }
+            if (emptyTextEl) emptyTextEl.style.display = 'none';
+            rowsEl.innerHTML = rows.map((row, idx) => {
+                const selectedInOtherRows = new Set(
+                    rows
+                        .map((item, itemIdx) => itemIdx === idx ? null : Number(item.substitute_order_product_id || 0))
+                        .filter(val => Number.isFinite(val) && val > 0)
+                );
+                const options = sourceSkuOptions
+                    .filter(s => String(s.id) !== String(shippingPlanCurrentOrder.id))
+                    .filter(s => !selectedInOtherRows.has(Number(s.id || 0)) || String(s.id) === String(row.substitute_order_product_id || ''))
+                    .map(s => `<option value="${s.id}" ${String(s.id) === String(row.substitute_order_product_id || '') ? 'selected' : ''}>${s.sku || ''}</option>`)
+                    .join('');
+                return `
+                    <div class="order-link-row plan-row">
+                        <select class="required-field" data-plan-field="sku" data-plan-index="${idx}" data-search-placeholder="搜索下单SKU">
+                            <option value="">请选择下单SKU</option>
+                            ${options}
+                        </select>
+                        <input class="required-field" type="number" min="1" step="1" data-plan-field="qty" data-plan-index="${idx}" value="${row.quantity || 1}">
+                        <button class="btn-danger" type="button" onclick="removeShippingPlanRow(${idx})">删除</button>
+                    </div>
+                `;
+            }).join('');
+            rowsEl.style.display = '';
+            rowsEl.querySelectorAll('[data-plan-field="sku"]').forEach(el => {
+                el.addEventListener('change', function() {
+                    const idx = Number(this.getAttribute('data-plan-index'));
+                    if (!Number.isFinite(idx) || !activeShippingPlan || !activeShippingPlan.items[idx]) return;
+                    activeShippingPlan.items[idx].substitute_order_product_id = this.value ? Number(this.value) : null;
+                });
+            });
+            rowsEl.querySelectorAll('[data-plan-field="qty"]').forEach(el => {
+                el.addEventListener('input', function() {
+                    const idx = Number(this.getAttribute('data-plan-index'));
+                    if (!Number.isFinite(idx) || !activeShippingPlan || !activeShippingPlan.items[idx]) return;
+                    const qty = Number(this.value);
+                    activeShippingPlan.items[idx].quantity = Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1;
+                });
+            });
+            rowsEl.querySelectorAll('select').forEach(el => {
+                if (window.refreshUniversalSingleSelect) {
+                    window.refreshUniversalSingleSelect(el);
+                }
+            });
+        }
+
+        function addShippingPlanRow() {
+            if (!activeShippingPlan) return;
+            if (!Array.isArray(activeShippingPlan.items)) activeShippingPlan.items = [];
+            activeShippingPlan.items.push({ substitute_order_product_id: null, quantity: 1 });
+            renderShippingPlanEditor();
+        }
+
+        function removeShippingPlanRow(idx) {
+            if (!activeShippingPlan || !Array.isArray(activeShippingPlan.items)) return;
+            activeShippingPlan.items.splice(idx, 1);
+            renderShippingPlanEditor();
+        }
+
+        function saveShippingPlan() {
+            if (!shippingPlanCurrentOrder || !shippingPlanCurrentOrder.id || !activeShippingPlan) return;
+            const planName = (document.getElementById('shippingPlanName').value || '').trim();
+            const items = (activeShippingPlan.items || [])
+                .map((x, idx) => ({
+                    substitute_order_product_id: Number(x.substitute_order_product_id || 0),
+                    quantity: Math.max(1, Number(x.quantity || 1)),
+                    sort_order: idx + 1
+                }))
+                .filter(x => x.substitute_order_product_id);
+
+            const substituteIdSet = new Set();
+            for (const item of items) {
+                if (substituteIdSet.has(item.substitute_order_product_id)) {
+                    showUploadDialog({ title: '提示', message: '替代下单SKU不允许重复，请检查后再保存' });
+                    return;
+                }
+                substituteIdSet.add(item.substitute_order_product_id);
+            }
+
+            if (!planName) {
+                showUploadDialog({ title: '提示', message: '方案名称不能为空' });
+                return;
+            }
+            if (!items.length) {
+                showUploadDialog({ title: '提示', message: '请至少添加1条替代下单SKU' });
+                return;
+            }
+
+            const payload = {
+                id: activeShippingPlan.id,
+                order_product_id: shippingPlanCurrentOrder.id,
+                plan_name: planName,
+                items
+            };
+            const method = activeShippingPlan.id ? 'PUT' : 'POST';
+            fetch('/api/order-product?action=shipping_plans', {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        showUploadDialog({ title: '保存失败', message: data.message || '保存失败' });
+                        return;
+                    }
+                    loadShippingPlans();
+                })
+                .catch(err => showUploadDialog({ title: '请求失败', message: '请求失败: ' + err }));
+        }
+
+        function deleteShippingPlan() {
+            if (!activeShippingPlan || !activeShippingPlan.id) return;
+            showUploadDialog({
+                title: '删除确认',
+                message: '确认删除该替代发货方案？',
+                confirmText: '确认删除',
+                cancelText: '取消',
+                onConfirm: function() {
+                    fetch('/api/order-product?action=shipping_plans', {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: activeShippingPlan.id })
+                    })
+                        .then(r => r.json())
+                        .then(data => {
+                            if (data.status !== 'success') {
+                                showUploadDialog({ title: '删除失败', message: data.message || '删除失败' });
+                                return;
+                            }
+                            loadShippingPlans();
+                        })
+                        .catch(err => showUploadDialog({ title: '请求失败', message: '请求失败: ' + err }));
+                }
+            });
+        }
+
         function renderOrderProductTable(items) {
             const tbody = document.querySelector('#orderProductTable tbody');
             const safeItems = Array.isArray(items) ? items : [];
@@ -1392,6 +1863,7 @@
                                 <td>${dateText}</td>
                                 <td>
                                     <div class="pm-actions">
+                                        <button class="btn-secondary" onclick='openShippingPlanModal(${JSON.stringify(item)})'>替代方案</button>
                                         <button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button>
                                         <button class="btn-danger" onclick='deleteOrderProduct(${item.id})'>删除</button>
                                     </div>
@@ -1844,10 +2316,11 @@
             const select = document.getElementById('modalSourceSku');
             const placeholder = document.createElement('option');
             placeholder.value = '';
-            placeholder.textContent = sourceSkuOptions.length ? '请选择来源SKU' : '暂无下单SKU';
+            const candidates = getSourceSkuCandidates();
+            placeholder.textContent = candidates.length ? '请选择来源SKU' : '暂无可选来源SKU';
             select.innerHTML = '';
             select.appendChild(placeholder);
-            sourceSkuOptions.forEach(item => {
+            candidates.forEach(item => {
                 const option = document.createElement('option');
                 option.value = item.id;
                 option.textContent = item.sku;
@@ -1952,8 +2425,7 @@
             const keyword = (document.getElementById('modalSourceSkuSearch').value || '').trim().toLowerCase();
             if (!list) return;
             list.innerHTML = '';
-            const available = sourceSkuOptions.filter(item => {
-                if (editId && String(item.id) === String(editId)) return false;
+            const available = getSourceSkuCandidates().filter(item => {
                 if (!keyword) return true;
                 return String(item.sku || '').toLowerCase().includes(keyword);
             });
@@ -2088,6 +2560,19 @@
         document.getElementById('uploadDialogModal').addEventListener('click', function(e) {
             if (e.target === this) {
                 this.classList.remove('active');
+                if (window.syncModalScrollLock) {
+                    window.syncModalScrollLock();
+                }
+            }
+        });
+        document.getElementById('shippingPlanModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeShippingPlanModal();
+            }
+        });
+        document.getElementById('shippingPlanName').addEventListener('input', function() {
+            if (activeShippingPlan) {
+                activeShippingPlan.plan_name = this.value || '';
             }
         });
         document.getElementById('uploadDialogCopyBtn').addEventListener('click', function() {

@@ -301,6 +301,41 @@
             line-height: 1;
             padding: 0.2rem 0;
         }
+        .fabric-color-cell {
+            text-align: center !important;
+            vertical-align: middle;
+        }
+        .fabric-color-dot {
+            display: block;
+            width: 14px;
+            height: 14px;
+            border-radius: 999px;
+            border: 1px solid rgba(42, 36, 32, 0.25);
+            margin: 0 auto;
+        }
+        .fabric-color-picker-row {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        #modalRepresentativeColor {
+            width: 56px;
+            height: 38px;
+            padding: 2px;
+            border: 2px solid var(--morandi-sand);
+            border-radius: 8px;
+            background: #fff;
+            -webkit-appearance: auto;
+            appearance: auto;
+            cursor: pointer;
+        }
+        .fabric-color-preview {
+            width: 18px;
+            height: 18px;
+            border-radius: 999px;
+            border: 1px solid rgba(42, 36, 32, 0.25);
+            display: inline-block;
+        }
     </style>
 </head>
 <body>
@@ -335,13 +370,14 @@
                             <th style="width:80px;" class="cell-center">图片</th>
                             <th>面料编号</th>
                             <th>面料英文名称</th>
+                            <th style="width:90px;" class="cell-center">代表色</th>
                             <th>面料类型</th>
                             <th style="width:180px;">创建时间</th>
                             <th style="width:160px;">操作</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="7" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -364,6 +400,13 @@
                     <div class="form-group">
                         <label for="modalFabricMaterial">面料类型<span class="required-asterisk">*</span></label>
                         <select id="modalFabricMaterial" class="required-field"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="modalRepresentativeColor">代表色（RGB）</label>
+                        <div class="fabric-color-picker-row">
+                            <input type="color" id="modalRepresentativeColor" value="#CFC7BD">
+                            <span id="modalRepresentativeColorPreview" class="fabric-color-preview" title="#CFC7BD"></span>
+                        </div>
                     </div>
                     <div class="form-group pm-form-full">
                         <label>关联货号（可多选）</label>
@@ -562,6 +605,8 @@
             document.getElementById('modalFabricCode').value = '';
             document.getElementById('modalFabricNameEn').value = '';
             setFabricMaterialSelect('');
+            document.getElementById('modalRepresentativeColor').value = '#CFC7BD';
+            updateColorPreview();
             selectedSkuFamilyIds = [];
             renderSkuFamilyPicker();
             document.getElementById('modalImageUpload').value = '';
@@ -587,6 +632,8 @@
             document.getElementById('modalFabricCode').value = item.fabric_code;
             document.getElementById('modalFabricNameEn').value = item.fabric_name_en;
             setFabricMaterialSelect(item.material_id || '');
+            document.getElementById('modalRepresentativeColor').value = item.representative_color || '#CFC7BD';
+            updateColorPreview();
             selectedSkuFamilyIds = (item.sku_family_ids || []).map(v => String(v));
             renderSkuFamilyPicker();
             document.getElementById('modalImageUpload').value = '';
@@ -766,6 +813,27 @@
             editId = null;
         }
 
+        function updateColorPreview() {
+            const colorInput = document.getElementById('modalRepresentativeColor');
+            const preview = document.getElementById('modalRepresentativeColorPreview');
+            if (!colorInput) return;
+            const colorValue = (colorInput.value || '#CFC7BD').trim();
+            colorInput.title = colorValue;
+            if (preview) {
+                preview.style.backgroundColor = colorValue;
+                preview.title = colorValue;
+            }
+        }
+
+        window.addEventListener('load', function() {
+            const colorInput = document.getElementById('modalRepresentativeColor');
+            if (colorInput) {
+                colorInput.addEventListener('input', updateColorPreview);
+                colorInput.addEventListener('change', updateColorPreview);
+                updateColorPreview();
+            }
+        });
+
         function loadFabricImages() {
             const params = new URLSearchParams();
             params.set('unbound', '1');
@@ -873,6 +941,7 @@
             const fabricCode = document.getElementById('modalFabricCode').value.trim();
             const fabricNameEn = document.getElementById('modalFabricNameEn').value.trim();
             const fabricMaterialId = document.getElementById('modalFabricMaterial').value;
+            const representativeColor = (document.getElementById('modalRepresentativeColor').value || '').trim();
 
             if (!fabricCode || !fabricNameEn || !fabricMaterialId) {
                 showModalStatus('请填写面料编号、英文名称并选择面料类型', true);
@@ -918,7 +987,7 @@
                             }
                         });
                         // 继续保存
-                        doFinalSave(fabricCode, fabricNameEn, fabricMaterialId);
+                        doFinalSave(fabricCode, fabricNameEn, fabricMaterialId, representativeColor);
                     } else {
                         showModalStatus(data.message || '上传失败', true);
                     }
@@ -926,16 +995,17 @@
                 .catch(err => showModalStatus('上传失败: ' + err, true));
             } else {
                 // 没有新上传，直接保存
-                doFinalSave(fabricCode, fabricNameEn, fabricMaterialId);
+                doFinalSave(fabricCode, fabricNameEn, fabricMaterialId, representativeColor);
             }
         }
         
-        function doFinalSave(fabricCode, fabricNameEn, fabricMaterialId) {
+        function doFinalSave(fabricCode, fabricNameEn, fabricMaterialId, representativeColor) {
             // 使用新格式：images 数组包含 remark
             const payload = {
                 fabric_code: fabricCode,
                 fabric_name_en: fabricNameEn,
                 material_id: fabricMaterialId,
+                representative_color: representativeColor,
                 images: selectedImageObjects.map((img, idx) => ({
                     image_name: img.image_name,
                     remark: img.remark || '',
@@ -973,11 +1043,9 @@
                             }, '*');
                         } catch (e) {}
                     }
-                    setTimeout(() => {
-                        closeModal();
-                        loadFabricList();
-                        loadFabricImages();
-                    }, 400);
+                    closeModal();
+                    loadFabricList();
+                    loadFabricImages();
                 } else {
                     showModalStatus(data.message || '操作失败', true);
                 }
@@ -1011,7 +1079,7 @@
                 .then(data => {
                     const tbody = document.querySelector('#fabricTable tbody');
                     if (data.status !== 'success') {
-                        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                         return;
                     }
                     if (data.warning) {
@@ -1023,7 +1091,7 @@
                             .flatMap(item => Array.isArray(item.image_names) ? item.image_names : [])
                     );
                     if (items.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无数据</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">暂无数据</td></tr>';
                         return;
                     }
                     window._fabric_items = items;
@@ -1041,11 +1109,16 @@
                             ? `<div class="fabric-thumb-wrap">${imageThumb}${imageCount}</div>`
                             : '<span class="fabric-thumb-empty"></span>';
                         const materialText = item.material_name ? `${item.material_name} / ${item.material_name_en || ''}` : '';
+                        const colorText = String(item.representative_color || '').trim();
+                        const colorDot = colorText
+                            ? `<span class="fabric-color-dot" style="background:${colorText};" title="${(item.fabric_name_en || '').replace(/"/g, '&quot;')}"></span>`
+                            : '';
                         return `
                             <tr>
                                 <td class="fabric-image-cell cell-center">${thumbWrap}</td>
                                 <td>${item.fabric_code}</td>
                                 <td>${item.fabric_name_en}</td>
+                                <td class="fabric-color-cell">${colorDot}</td>
                                 <td>${materialText}</td>
                                 <td>${dateText}</td>
                                 <td>
@@ -1069,7 +1142,7 @@
                 })
                 .catch(err => {
                     const tbody = document.querySelector('#fabricTable tbody');
-                    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
                 });
         }
 

@@ -56,7 +56,7 @@
         }
         .order-link-head {
             display: grid;
-            grid-template-columns: minmax(220px, 1fr) 110px 64px;
+            grid-template-columns: minmax(320px, 1fr) 110px 64px;
             gap: 0.45rem;
             font-size: 0.82rem;
             color: var(--morandi-slate);
@@ -65,7 +65,7 @@
         .order-link-selected { display: grid; gap: 0.4rem; }
         .order-link-row {
             display: grid;
-            grid-template-columns: minmax(220px, 1fr) 110px 64px;
+            grid-template-columns: minmax(320px, 1fr) 110px 64px;
             gap: 0.45rem;
             align-items: center;
         }
@@ -337,8 +337,8 @@
                             <input type="text" id="modalChildCode" class="optional-field">
                         </div>
                         <div class="form-group">
-                            <label for="modalDacheneNo">大健云仓编号（选填，需先在下单产品管理页面维护子Item Code后再选择关联下单SKU及数量）</label>
-                            <input type="text" id="modalDacheneNo" class="optional-field" placeholder="选填：需先维护子Item Code后再选择关联下单SKU及数量">
+                            <label for="modalDacheneNo" class="label-help">大健云仓编号<span class="help-dot" data-tip="选填，需先在下单产品管理页面维护子Item Code后再选择关联下单SKU及数量">?</span></label>
+                            <input type="text" id="modalDacheneNo" class="optional-field" placeholder="选填">
                         </div>
                         <div class="form-group">
                             <label for="modalSkuFamily" class="label-help">货号<span class="help-dot" data-tip="用于关联图片文件夹，可搜索并从下拉建议选择；选中第一个下单SKU时会自动带出">?</span></label>
@@ -374,31 +374,6 @@
                 </div>
 
                 <div class="pm-section pm-form-full">
-                    <div class="pm-section-header">
-                        <h4>销售信息</h4>
-                        <div class="pm-section-tools">
-                            <button type="button" class="btn-helper-pill" onclick="applyParentSalesInfo()">一键应用父体销售信息</button>
-                            <button type="button" class="btn-helper-pill" onclick="openCopySalesInfoModal()">复制已有SKU销售信息</button>
-                        </div>
-                    </div>
-                    <div class="pm-section-body pm-form">
-                        <div class="form-group pm-form-full">
-                            <label for="modalSalesTitle">标题（<=200英文字符）</label>
-                            <input type="text" id="modalSalesTitle" class="optional-field" maxlength="200">
-                        </div>
-                        <div class="form-group pm-form-full">
-                            <label for="modalSalesIntro">简介（<=500英文字符）</label>
-                            <textarea id="modalSalesIntro" class="optional-field" maxlength="500" rows="3"></textarea>
-                        </div>
-                        <div class="form-group pm-form-full"><label for="modalSalesBullet1">五点描述1（<=500英文字符）</label><textarea id="modalSalesBullet1" class="optional-field" maxlength="500" rows="2"></textarea></div>
-                        <div class="form-group pm-form-full"><label for="modalSalesBullet2">五点描述2（<=500英文字符）</label><textarea id="modalSalesBullet2" class="optional-field" maxlength="500" rows="2"></textarea></div>
-                        <div class="form-group pm-form-full"><label for="modalSalesBullet3">五点描述3（<=500英文字符）</label><textarea id="modalSalesBullet3" class="optional-field" maxlength="500" rows="2"></textarea></div>
-                        <div class="form-group pm-form-full"><label for="modalSalesBullet4">五点描述4（<=500英文字符）</label><textarea id="modalSalesBullet4" class="optional-field" maxlength="500" rows="2"></textarea></div>
-                        <div class="form-group pm-form-full"><label for="modalSalesBullet5">五点描述5（<=500英文字符）</label><textarea id="modalSalesBullet5" class="optional-field" maxlength="500" rows="2"></textarea></div>
-                    </div>
-                </div>
-
-                <div class="pm-section pm-form-full">
                     <h4>成本 <span id="modalCostWarning" class="danger-note" style="display:none;">售价低于成本+尾程，请重点核对</span></h4>
                     <div class="pm-section-body pm-form">
                         <div class="form-group">
@@ -406,7 +381,7 @@
                             <input type="number" step="0.01" id="modalSalePrice" class="optional-field">
                         </div>
                         <div class="form-group">
-                            <label for="modalWarehouseCost">产品成本及发货至海外仓成本估算(USD，不含仓储费)(自动)</label>
+                            <label for="modalWarehouseCost" class="label-help">产品成本及发货至海外仓成本估算(自动)<span class="help-dot" data-tip="USD，不含仓储费">?</span></label>
                             <input type="number" step="0.01" id="modalWarehouseCost" class="optional-field" readonly>
                         </div>
                         <div class="form-group">
@@ -417,45 +392,27 @@
                 </div>
 
                 <div class="pm-section pm-form-full">
-                    <h4>成品尺寸 / 重量 <span class="auto-note">自动叠加，注意修改</span></h4>
-                    <div class="pm-section-body pm-form">
-                        <div class="form-group">
-                            <label for="modalFinishedLength">成品长(in,自动)</label>
-                            <input type="number" step="0.01" id="modalFinishedLength" class="optional-field">
-                        </div>
-                        <div class="form-group">
-                            <label for="modalFinishedWidth">成品宽(in,自动)</label>
-                            <input type="number" step="0.01" id="modalFinishedWidth" class="optional-field">
-                        </div>
-                        <div class="form-group">
-                            <label for="modalFinishedHeight">成品高(in,自动)</label>
-                            <input type="number" step="0.01" id="modalFinishedHeight" class="optional-field">
-                        </div>
-                        <div class="form-group">
-                            <label for="modalNetWeight">净重(lbs,自动)</label>
-                            <input type="number" step="0.01" id="modalNetWeight" class="optional-field">
-                        </div>
-                    </div>
-                </div>
-
-                <div class="pm-section pm-form-full">
                     <h4>包裹尺寸 / 重量 <span class="auto-note">自动叠加，注意修改</span></h4>
                     <div class="pm-section-body pm-form">
                         <div class="form-group">
                             <label for="modalPackageLength">包裹长(in,自动)</label>
-                            <input type="number" step="0.01" id="modalPackageLength" class="optional-field">
+                            <input type="number" step="0.01" id="modalPackageLength" class="optional-field" readonly>
                         </div>
                         <div class="form-group">
                             <label for="modalPackageWidth">包裹宽(in,自动)</label>
-                            <input type="number" step="0.01" id="modalPackageWidth" class="optional-field">
+                            <input type="number" step="0.01" id="modalPackageWidth" class="optional-field" readonly>
                         </div>
                         <div class="form-group">
                             <label for="modalPackageHeight">包裹高(in,自动)</label>
-                            <input type="number" step="0.01" id="modalPackageHeight" class="optional-field">
+                            <input type="number" step="0.01" id="modalPackageHeight" class="optional-field" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalNetWeight">净重(lbs,自动)</label>
+                            <input type="number" step="0.01" id="modalNetWeight" class="optional-field" readonly>
                         </div>
                         <div class="form-group">
                             <label for="modalGrossWeight">毛重(lbs,自动)</label>
-                            <input type="number" step="0.01" id="modalGrossWeight" class="optional-field">
+                            <input type="number" step="0.01" id="modalGrossWeight" class="optional-field" readonly>
                         </div>
                     </div>
                 </div>
@@ -464,19 +421,6 @@
             <div class="pm-modal-actions">
                 <button class="btn-secondary" onclick="closeModal()">取消</button>
                 <button class="btn-primary" onclick="saveSalesProductFromModal()">保存</button>
-            </div>
-        </div>
-    </div>
-
-    <div class="pm-modal" id="copy-sales-info-modal">
-        <div class="pm-modal-content">
-            <h3 style="margin-top:0;">复制已有SKU销售信息</h3>
-            <div class="form-group">
-                <input type="text" id="copySalesInfoSearchInput" class="required-field" placeholder="搜索销售平台SKU/父体/子体">
-            </div>
-            <div id="copySalesInfoList" class="pm-select-list" style="max-height: 380px;"></div>
-            <div class="pm-modal-actions">
-                <button class="btn-secondary" onclick="closeCopySalesInfoModal()">关闭</button>
             </div>
         </div>
     </div>
@@ -542,6 +486,8 @@
         let toastTimer = null;
         let orderSkuLoaded = false;
         let orderSkuLoadingPromise = null;
+        let originalSpecName = '';
+        let originalFabric = '';
         const salesProductDetailCache = {};
         let selectedSalesProductIds = new Set();
         let currentProductStatus = 'enabled';
@@ -929,45 +875,6 @@
             });
         }
 
-        function setSalesInfoFields(source) {
-            document.getElementById('modalSalesTitle').value = source?.sales_title || '';
-            document.getElementById('modalSalesIntro').value = source?.sales_intro || '';
-            document.getElementById('modalSalesBullet1').value = source?.sales_bullet_1 || '';
-            document.getElementById('modalSalesBullet2').value = source?.sales_bullet_2 || '';
-            document.getElementById('modalSalesBullet3').value = source?.sales_bullet_3 || '';
-            document.getElementById('modalSalesBullet4').value = source?.sales_bullet_4 || '';
-            document.getElementById('modalSalesBullet5').value = source?.sales_bullet_5 || '';
-        }
-
-        async function applyParentSalesInfo() {
-            const parentCode = document.getElementById('modalParentCode').value.trim();
-            if (!parentCode) {
-                showModalStatus('请先输入或选择父体编号', true);
-                return;
-            }
-            const parent = (parentItems || []).find(x => String(x.parent_code || '').trim() === parentCode);
-            if (!parent) {
-                showModalStatus('未找到该父体编号的销售信息', true);
-                return;
-            }
-            try {
-                let source = parent;
-                const hasSalesFields = Object.prototype.hasOwnProperty.call(parent, 'sales_title')
-                    || Object.prototype.hasOwnProperty.call(parent, 'sales_intro');
-                if (!hasSalesFields && parent.id) {
-                    const res = await fetch(`/api/parent?id=${encodeURIComponent(parent.id)}`);
-                    const data = await res.json();
-                    if (data.status === 'success' && data.item) {
-                        source = data.item;
-                    }
-                }
-                setSalesInfoFields(source);
-                showModalStatus('已应用父体销售信息', false);
-            } catch (error) {
-                showModalStatus(error.message || '应用父体销售信息失败', true);
-            }
-        }
-
         function updateCostWarning() {
             const sale = Number(document.getElementById('modalSalePrice').value || 0);
             const warehouse = Number(document.getElementById('modalWarehouseCost').value || 0);
@@ -991,7 +898,7 @@
                     (orderSkuOptions || []).map(item => `<option value="${item.id}">${item.sku || ''}${item.fabric_name_en ? `（${item.fabric_name_en}）` : ''}</option>`)
                 );
                 row.innerHTML = `
-                    <select class="required-field order-link-sku no-searchable-select">${options.join('')}</select>
+                    <select class="required-field order-link-sku" data-search-placeholder="搜索下单SKU">${options.join('')}</select>
                     <input type="number" min="1" step="1" class="required-field order-link-qty" value="${link.quantity || 1}">
                     <button type="button" class="btn-danger">移除</button>
                 `;
@@ -1018,6 +925,9 @@
                     autoComputeFabricSpec();
                 });
                 container.appendChild(row);
+                if (window.refreshUniversalSingleSelect) {
+                    window.refreshUniversalSingleSelect(skuEl);
+                }
             });
         }
 
@@ -1060,9 +970,6 @@
             let packageLength = 0;
             let packageWidth = 0;
             let packageHeight = 0;
-            let finishedLength = 0;
-            let finishedWidth = 0;
-            let finishedHeight = 0;
             let netWeight = 0;
             let grossWeight = 0;
             selected.forEach(item => {
@@ -1076,12 +983,9 @@
                 const qty = Number(item.link.quantity) || 1;
                 warehouseCost += (Number(item.source.cost_usd) || 0) * qty;
                 lastMileCost += (Number(item.source.last_mile_avg_freight_usd) || 0) * qty;
-                finishedLength += (Number(item.source.finished_length_in) || 0) * qty;
-                finishedWidth += (Number(item.source.finished_width_in) || 0) * qty;
-                finishedHeight += (Number(item.source.finished_height_in) || 0) * qty;
-                packageLength += (Number(item.source.package_length_in) || 0) * qty;
-                packageWidth += (Number(item.source.package_width_in) || 0) * qty;
-                packageHeight += (Number(item.source.package_height_in) || 0) * qty;
+                packageLength = Math.max(packageLength, (Number(item.source.package_length_in) || 0));
+                packageWidth = Math.max(packageWidth, (Number(item.source.package_width_in) || 0));
+                packageHeight = Math.max(packageHeight, (Number(item.source.package_height_in) || 0));
                 netWeight += (Number(item.source.net_weight_lbs) || 0) * qty;
                 grossWeight += (Number(item.source.gross_weight_lbs) || 0) * qty;
             });
@@ -1107,9 +1011,6 @@
 
             document.getElementById('modalWarehouseCost').value = warehouseCost.toFixed(2);
             document.getElementById('modalLastMileCost').value = lastMileCost.toFixed(2);
-            document.getElementById('modalFinishedLength').value = finishedLength.toFixed(2);
-            document.getElementById('modalFinishedWidth').value = finishedWidth.toFixed(2);
-            document.getElementById('modalFinishedHeight').value = finishedHeight.toFixed(2);
             document.getElementById('modalPackageLength').value = packageLength.toFixed(2);
             document.getElementById('modalPackageWidth').value = packageWidth.toFixed(2);
             document.getElementById('modalPackageHeight').value = packageHeight.toFixed(2);
@@ -1123,6 +1024,8 @@
             manualFabric = false;
             manualSpecName = false;
             manualPlatformSku = false;
+            originalSpecName = '';
+            originalFabric = '';
             document.getElementById('pm-modal-title').innerText = '新增销售产品';
 
             await ensureOrderSkuOptionsLoaded();
@@ -1141,16 +1044,12 @@
             document.getElementById('modalDacheneNo').value = '';
             document.getElementById('modalFabric').value = '';
             document.getElementById('modalSpecName').value = '';
-            setSalesInfoFields(null);
             document.getElementById('modalSalePrice').value = '';
             document.getElementById('modalWarehouseCost').value = '';
             document.getElementById('modalLastMileCost').value = '';
             document.getElementById('modalPackageLength').value = '';
             document.getElementById('modalPackageWidth').value = '';
             document.getElementById('modalPackageHeight').value = '';
-            document.getElementById('modalFinishedLength').value = '';
-            document.getElementById('modalFinishedWidth').value = '';
-            document.getElementById('modalFinishedHeight').value = '';
             document.getElementById('modalNetWeight').value = '';
             document.getElementById('modalGrossWeight').value = '';
             selectedOrderSkus = [];
@@ -1186,13 +1085,11 @@
             document.getElementById('modalDacheneNo').value = item.dachene_yuncang_no || '';
             document.getElementById('modalFabric').value = item.fabric || '';
             document.getElementById('modalSpecName').value = item.spec_name || '';
-            setSalesInfoFields(item);
+            originalFabric = item.fabric || '';
+            originalSpecName = item.spec_name || '';
             document.getElementById('modalSalePrice').value = item.sale_price_usd || '';
             document.getElementById('modalWarehouseCost').value = item.warehouse_cost_usd || '';
             document.getElementById('modalLastMileCost').value = item.last_mile_cost_usd || '';
-            document.getElementById('modalFinishedLength').value = item.finished_length_in || '';
-            document.getElementById('modalFinishedWidth').value = item.finished_width_in || '';
-            document.getElementById('modalFinishedHeight').value = item.finished_height_in || '';
             document.getElementById('modalPackageLength').value = item.package_length_in || '';
             document.getElementById('modalPackageWidth').value = item.package_width_in || '';
             document.getElementById('modalPackageHeight').value = item.package_height_in || '';
@@ -1228,23 +1125,8 @@
                 dachene_yuncang_no: document.getElementById('modalDacheneNo').value.trim(),
                 fabric: document.getElementById('modalFabric').value.trim(),
                 spec_name: document.getElementById('modalSpecName').value.trim(),
-                sales_title: document.getElementById('modalSalesTitle').value.trim(),
-                sales_intro: document.getElementById('modalSalesIntro').value.trim(),
-                sales_bullet_1: document.getElementById('modalSalesBullet1').value.trim(),
-                sales_bullet_2: document.getElementById('modalSalesBullet2').value.trim(),
-                sales_bullet_3: document.getElementById('modalSalesBullet3').value.trim(),
-                sales_bullet_4: document.getElementById('modalSalesBullet4').value.trim(),
-                sales_bullet_5: document.getElementById('modalSalesBullet5').value.trim(),
                 sale_price_usd: document.getElementById('modalSalePrice').value,
                 product_status: currentProductStatus,
-                finished_length_in: document.getElementById('modalFinishedLength').value,
-                finished_width_in: document.getElementById('modalFinishedWidth').value,
-                finished_height_in: document.getElementById('modalFinishedHeight').value,
-                package_length_in: document.getElementById('modalPackageLength').value,
-                package_width_in: document.getElementById('modalPackageWidth').value,
-                package_height_in: document.getElementById('modalPackageHeight').value,
-                net_weight_lbs: document.getElementById('modalNetWeight').value,
-                gross_weight_lbs: document.getElementById('modalGrossWeight').value,
                 order_sku_links: normalizedLinks,
                 manual_platform_sku: manualPlatformSku
             };
@@ -1261,7 +1143,11 @@
                 payload.id = editId;
                 method = 'PUT';
             }
-            fetch('/api/sales-product', {
+            const submitPayload = (confirmNewFolder) => {
+                if (confirmNewFolder) {
+                    payload.confirm_new_variant_folder = true;
+                }
+                fetch('/api/sales-product', {
                 method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -1273,6 +1159,27 @@
                     showModalStatus(data.message || '操作失败', true);
                 }
             }).catch(err => showModalStatus('请求失败: ' + err, true));
+            };
+
+            if (editId) {
+                const oldSpec = String(originalSpecName || '').trim();
+                const oldFabric = String(originalFabric || '').trim();
+                const newSpec = String(payload.spec_name || '').trim();
+                const newFabric = String(payload.fabric || '').trim();
+                const specOrFabricChanged = oldSpec !== newSpec || oldFabric !== newFabric;
+                if (specOrFabricChanged) {
+                    showUploadDialog({
+                        title: '请二次确认',
+                        message: '修改规格名称或面料后会新建主图文件夹，原文件夹将保留不变。确认继续吗？',
+                        confirmText: '确认继续',
+                        cancelText: '取消',
+                        onConfirm: function() { submitPayload(true); }
+                    });
+                    return;
+                }
+            }
+
+            submitPayload(false);
         }
 
         function deleteSalesProduct(id) {
@@ -1505,44 +1412,6 @@
             document.getElementById('copy-modal').classList.remove('active');
         }
 
-        function openCopySalesInfoModal() {
-            renderCopySalesInfoList();
-            document.getElementById('copy-sales-info-modal').classList.add('active');
-        }
-
-        function closeCopySalesInfoModal() {
-            document.getElementById('copy-sales-info-modal').classList.remove('active');
-        }
-
-        function renderCopySalesInfoList() {
-            const keyword = (document.getElementById('copySalesInfoSearchInput').value || '').trim().toLowerCase();
-            const list = document.getElementById('copySalesInfoList');
-            const items = (salesProductItems || []).filter(item => {
-                const text = `${item.platform_sku || ''} ${item.parent_code || ''} ${item.child_code || ''}`.toLowerCase();
-                return !keyword || text.includes(keyword);
-            });
-            if (!items.length) {
-                list.innerHTML = '<div class="pm-select-empty">暂无可复制记录</div>';
-                return;
-            }
-            list.innerHTML = items.map(item => `
-                <button type="button" class="pm-select-option" onclick='copySalesInfoFromItem(${item.id})'>
-                    ${item.platform_sku || ''} ｜ ${item.parent_code || '-'} ｜ ${item.child_code || '-'}
-                </button>
-            `).join('');
-        }
-
-        async function copySalesInfoFromItem(id) {
-            try {
-                const item = await fetchSalesProductDetail(id);
-                setSalesInfoFields(item || {});
-                closeCopySalesInfoModal();
-                showModalStatus('已复制销售信息', false);
-            } catch (error) {
-                showModalStatus(error.message || '复制销售信息失败', true);
-            }
-        }
-
         function renderCopyList() {
             const keyword = (document.getElementById('copySearchInput').value || '').trim().toLowerCase();
             const list = document.getElementById('copyList');
@@ -1574,11 +1443,7 @@
             renderSkuFamilySelect(item.sku_family_id || '');
             document.getElementById('modalParentCode').value = item.parent_code || '';
             updateParentSkuMarkerVisibility();
-            setSalesInfoFields(item);
             document.getElementById('modalSalePrice').value = item.sale_price_usd || '';
-            document.getElementById('modalFinishedLength').value = item.finished_length_in || '';
-            document.getElementById('modalFinishedWidth').value = item.finished_width_in || '';
-            document.getElementById('modalFinishedHeight').value = item.finished_height_in || '';
 
             selectedOrderSkus = (item.order_sku_links || []).map(link => ({
                 order_product_id: link.order_product_id,
@@ -1657,7 +1522,6 @@
             });
         });
         document.getElementById('copySearchInput').addEventListener('input', renderCopyList);
-        document.getElementById('copySalesInfoSearchInput').addEventListener('input', renderCopySalesInfoList);
         document.getElementById('modalSkuFamilyTrigger').addEventListener('click', () => toggleSelectPanel('sku'));
         document.getElementById('modalSkuFamilySearch').addEventListener('input', renderSkuFamilyList);
         document.getElementById('modalParentShop').addEventListener('change', function() {
@@ -1704,9 +1568,6 @@
         });
         document.getElementById('copy-modal').addEventListener('click', function(e) {
             if (e.target === this) closeCopyModal();
-        });
-        document.getElementById('copy-sales-info-modal').addEventListener('click', function(e) {
-            if (e.target === this) closeCopySalesInfoModal();
         });
         window.addEventListener('load', initPage);
     </script>

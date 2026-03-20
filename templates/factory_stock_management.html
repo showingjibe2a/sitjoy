@@ -26,6 +26,9 @@
           </div>
           <span class="pm-divider"></span>
           <button class="btn-accent" onclick="openCreateModal()">新增</button>
+          <button class="btn-secondary" onclick="downloadTemplate()">下载模板</button>
+          <button class="btn-secondary" onclick="triggerImport()">上传模板</button>
+          <input id="importFileInput" type="file" accept=".xlsx,.xlsm" style="display:none;">
         </div>
       </div>
     </div>
@@ -124,6 +127,40 @@ function loadOptions(){
       fillSelect('modalOrderProduct', optionOrderProducts, 'id', 'sku', '请选择下单SKU');
       optionsLoaded = true;
     });
+}
+
+function downloadTemplate(){
+  window.location.href = '/api/factory-stock-template';
+}
+
+function triggerImport(){
+  const input = document.getElementById('importFileInput');
+  if(!input) return;
+  input.value = '';
+  input.click();
+}
+
+function importTemplate(file){
+  const form = new FormData();
+  form.append('file', file);
+  fetch('/api/factory-stock-import', {
+    method: 'POST',
+    body: form
+  })
+    .then(r => r.json())
+    .then(d => {
+      if(d.status !== 'success'){
+        alert(d.message || '导入失败');
+        return;
+      }
+      const errorCount = Array.isArray(d.errors) ? d.errors.length : 0;
+      alert(`导入完成：新增 ${Number(d.created || 0)}，更新 ${Number(d.updated || 0)}，未变化 ${Number(d.unchanged || 0)}，错误 ${errorCount}`);
+      if(errorCount){
+        console.error('导入错误明细:', d.errors);
+      }
+      loadList();
+    })
+    .catch(err => alert(err.message || '导入失败'));
 }
 
 function openCreateModal(){
@@ -282,6 +319,14 @@ $('#pm-modal').addEventListener('click', (e) => {
 });
 
 window.addEventListener('load', () => {
+  const importInput = document.getElementById('importFileInput');
+  if(importInput){
+    importInput.addEventListener('change', function(){
+      const file = this.files && this.files[0];
+      if(!file) return;
+      importTemplate(file);
+    });
+  }
   loadOptions().finally(loadList);
 });
 </script>

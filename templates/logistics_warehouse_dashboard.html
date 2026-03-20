@@ -6,31 +6,81 @@
   <title>仓储看板</title>
   <link rel="stylesheet" href="/static/css/style.css">
   <style>
-    .board-tools { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+    .board-tools { display: flex; gap: .45rem; flex-wrap: wrap; align-items: center; }
     .board-tools .board-search { min-width: 260px; }
+    .board-tools .btn-secondary,
+    .board-tools .btn-primary {
+      font-size: .82rem;
+      padding: .32rem .58rem;
+      min-height: 28px;
+    }
+    .board-switch {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      font-size: .82rem;
+      color: var(--morandi-ink);
+      padding: .24rem .5rem;
+      border: 1px solid rgba(207,199,189,.85);
+      border-radius: 8px;
+      background: rgba(255,255,255,.68);
+    }
     .col-toggle-panel { display: flex; gap: .6rem; flex-wrap: wrap; padding: .55rem .65rem; border: 1px dashed rgba(207,199,189,.85); border-radius: 10px; margin-top: .55rem; }
+    .col-toggle-panel.is-collapsed { display: none; }
     .col-toggle-panel label { display: inline-flex; gap: .25rem; align-items: center; font-size: .86rem; color: var(--morandi-slate); }
     .col-toggle-panel input[type="checkbox"] { width: 16px; min-width: 16px; height: 16px; flex: 0 0 16px; }
-    .board-wrap { overflow: auto; text-align: left; }
+    .board-header-wrap {
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: none;
+      box-sizing: border-box;
+    }
+    .board-header-wrap::-webkit-scrollbar { display: none; height: 0; }
+    .board-top-scroll {
+      display: none;
+      height: 14px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      background: rgba(255,255,255,.88);
+      border-top: 1px solid rgba(207,199,189,.55);
+      border-bottom: 1px solid rgba(207,199,189,.7);
+      box-sizing: border-box;
+    }
+    .board-top-scroll-inner { height: 1px; }
+    .board-body-wrap {
+      overflow-x: auto;
+      overflow-y: auto;
+      text-align: left;
+      height: calc(100vh - 250px);
+      max-height: calc(100vh - 250px);
+    }
     .board-table {
       width: max-content;
       min-width: 0;
-      table-layout: auto;
-      margin-right: auto;
+      table-layout: fixed;
+      margin-right: 0;
+    }
+    #boardHeadTable,
+    #boardBodyTable {
+      border-collapse: collapse;
+      border-spacing: 0;
     }
     .sku-cell { position: relative; }
     .wh-cell { position: relative; }
     .badge-tip {
       position: absolute;
-      top: 2px;
+      top: -7px;
       right: 6px;
-      font-size: .74rem;
+      font-size: .7rem;
       line-height: 1;
-      padding: .2rem .36rem;
+      padding: .14rem .34rem;
       border-radius: 999px;
       background: rgba(173,111,111,.92);
       color: #fff;
       cursor: help;
+      pointer-events: auto;
+      white-space: nowrap;
+      z-index: 1;
     }
     .group-row td {
       cursor: pointer;
@@ -80,7 +130,38 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      position: relative;
+      overflow: visible;
     }
+    .inv-main-slot.has-badge { padding-top: 7px; }
+    .inv-main-text {
+      position: relative;
+      z-index: 2;
+    }
+    .inv-main-slot.has-badge .inv-main-text {
+      text-shadow: 0 0 1px rgba(255,255,255,.95), 0 0 2px rgba(255,255,255,.95), 0 0 3px rgba(255,255,255,.95);
+    }
+    .fabric-dot-cell {
+      text-align: center;
+      vertical-align: middle !important;
+      padding-top: 0 !important;
+      padding-bottom: 0 !important;
+    }
+    .fabric-dot-wrap {
+      width: 100%;
+      min-height: 20px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .fabric-dot {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(42, 36, 32, 0.25);
+    }
+    .sortable-th { cursor: pointer; user-select: none; }
 
     /* 区域分组看板筛选 */
     .col-toggle-region-group { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; padding: .35rem .55rem; border: 1px dashed rgba(207,199,189,.7); border-radius: 8px; }
@@ -174,10 +255,18 @@
     .wh-th-region { font-size: .94rem; font-weight: 600; color: var(--morandi-ink); }
     .wh-th-supplier { font-size: .84rem; }
     .wh-th-short {
-      font-size: .72rem;
+      font-size: .68rem;
       color: rgba(92, 86, 79, .74);
       white-space: nowrap;
       line-height: 1.2;
+      overflow: hidden;
+    }
+    .wh-th-short.wrap-enabled .wh-short-text {
+      white-space: normal;
+      word-break: break-all;
+      line-height: 1.05;
+      text-align: center;
+      max-height: 2.2em;
       overflow: hidden;
     }
     .wh-short-text {
@@ -191,14 +280,14 @@
     .wh-th-region { background: rgba(236, 231, 223, 0.78) !important; }
     .wh-head-band-a { background: rgba(255, 255, 255, .72) !important; }
     .wh-head-band-b { background: rgba(244, 241, 236, .92) !important; }
-    #boardTable th.wh-col,
-    #boardTable td.wh-cell {
-      min-width: 68px;
-      width: 68px;
-      max-width: 68px;
+    #boardHeadTable th.wh-col,
+    #boardBodyTable td.wh-cell {
+      min-width: 60px;
+      width: 60px;
+      max-width: 60px;
       text-align: center;
-      padding-left: .45rem;
-      padding-right: .45rem;
+      padding-left: .28rem;
+      padding-right: .28rem;
       box-sizing: border-box;
       overflow: hidden;
     }
@@ -211,14 +300,15 @@
       font-weight: 600;
       color: var(--morandi-ink);
     }
-    #boardTable th.inv-col,
-    #boardTable td.inv-col {
-      min-width: 80px;
-      width: 80px;
+    #boardHeadTable th.inv-col,
+    #boardBodyTable td.inv-col {
+      min-width: 60px;
+      width: 60px;
       text-align: center;
       vertical-align: top;
+      position: relative;
     }
-    #boardTable td.wh-cell {
+    #boardBodyTable td.wh-cell {
       vertical-align: top;
     }
     .wh-region-sep {
@@ -244,14 +334,9 @@
       vertical-align: top;
       border-left: 2px solid rgba(143,134,126,.38);
     }
-    #boardTable th.factory-col,
-    #boardTable td.factory-col {
-      min-width: 72px;
-      width: 72px;
-      text-align: center;
-      vertical-align: top;
-      font-size: .82rem;
-    }
+    #boardHeadTable th.factory-col,
+    #boardBodyTable td.factory-col { font-size: .82rem; }
+    .factory-col .badge-tip { background: rgba(106, 132, 176, .9); }
     .factory-name-th {
       font-size: .78rem;
       color: rgba(92, 86, 79, .85);
@@ -268,6 +353,66 @@
       text-align: center;
       vertical-align: top;
     }
+    .header-title-with-badge {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      padding-right: 34px;
+      min-height: 22px;
+    }
+    #boardHeadTable th.inv-col { padding-right: .45rem !important; }
+    .family-row-arrow {
+      display: inline-block;
+      width: 14px;
+      text-align: center;
+      color: #7a7269;
+      font-size: .82rem;
+      margin-right: .24rem;
+    }
+    #boardBodyTable .group-row > td { font-size: .84rem; font-weight: 700; }
+    #boardBodyTable .sku-row > td { font-size: .84rem; font-weight: 400; }
+    .source-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: .2rem;
+      cursor: pointer;
+      user-select: none;
+      color: rgba(92, 86, 79, .78);
+      font-size: .8rem;
+      margin-left: .35rem;
+    }
+    .source-toggle:hover {
+      color: rgba(92, 86, 79, .96);
+    }
+    .derived-sku {
+      display: inline-block;
+      padding-left: 1.2rem;
+      color: rgba(92, 86, 79, .72);
+    }
+    .col-resize-handle {
+      position: absolute;
+      top: 0;
+      right: -3px;
+      width: 8px;
+      height: 100%;
+      cursor: col-resize;
+      z-index: 6;
+      user-select: none;
+    }
+    .col-resize-handle::after {
+      content: '';
+      position: absolute;
+      top: 16%;
+      bottom: 16%;
+      right: 3px;
+      width: 2px;
+      background: rgba(123,128,136,.55);
+      opacity: .28;
+    }
+    td:hover .col-resize-handle::after,
+    th:hover .col-resize-handle::after { opacity: .95; }
+    .child-row.hidden-row { display: none; }
+    .section-th .wh-group-toggle { justify-content: center; gap: .6rem; }
   </style>
 </head>
 <body>
@@ -275,7 +420,7 @@
 <div class="container">
   <section class="hero" style="margin-bottom:1.2rem;">
     <h2>仓储看板</h2>
-    <p>SKU 维度库存概览，在途/工厂在库/工厂在制可收起展开</p>
+    <p>SKU 维度库存概览，在途以角标显示，工厂在制并入工厂在库角标显示</p>
   </section>
 
   <section class="pm-layout">
@@ -285,15 +430,29 @@
         <button class="btn-primary" onclick="loadBoard()">刷新</button>
         <button class="btn-secondary" onclick="expandAllGroups()">展开列表</button>
         <button class="btn-secondary" onclick="collapseAllGroups()">收起列表</button>
+        <button class="btn-secondary" id="toggleFilterBtn" onclick="toggleFilterPanel()">展开筛选</button>
+        <span class="board-switch">仓库编号换行展示
+          <div class="status-segment status-segment--inline" id="whWrapSegment" data-value="0">
+            <button type="button" class="status-pill status-pill--yes" data-value="1">启用</button>
+            <button type="button" class="status-pill status-pill--no is-active" data-value="0">关闭</button>
+          </div>
+        </span>
         <button class="btn-secondary" onclick="downloadBoard()">下载库存数据</button>
       </div>
-      <div class="col-toggle-panel" id="warehouseTogglePanel"></div>
+      <div class="col-toggle-panel is-collapsed" id="warehouseTogglePanel"></div>
       <div id="status" class="response" style="display:none; margin-top:.65rem;"></div>
     </div>
 
-    <div class="board-wrap">
-      <table class="pm-table board-table" id="boardTable" data-disable-table-manage="1">
+    <div class="board-header-wrap" id="boardHeaderWrap">
+      <table class="pm-table board-table" id="boardHeadTable" data-disable-table-manage="1">
+        <colgroup id="boardHeadColgroup"></colgroup>
         <thead></thead>
+      </table>
+    </div>
+    <div class="board-top-scroll" id="boardTopScroll"><div class="board-top-scroll-inner" id="boardTopScrollInner"></div></div>
+    <div class="board-body-wrap" id="boardBodyWrap">
+      <table class="pm-table board-table" id="boardBodyTable" data-disable-table-manage="1">
+        <colgroup id="boardBodyColgroup"></colgroup>
         <tbody><tr><td colspan="5" style="text-align:center;">加载中...</td></tr></tbody>
       </table>
     </div>
@@ -306,16 +465,145 @@ let boardFactories = [];
 let boardRows = [];
 let visibleWarehouseIds = new Set();
 let collapsedFamilies = new Set();
+let collapsedSourceSku = new Set();
 let activeSearchText = '';
 let collapsedRegionKeys = new Set();
-let transitExpanded = true;
+let overseasExpanded = false;
+let overseasRegionInitCollapsed = false;
 let factoryStockExpanded = false;
-let factoryWipExpanded = false;
+let syncingScroll = false;
+let fabricSortOrder = '';
+let filterPanelCollapsed = true;
+let wrapWarehouseShortName = false;
+const WRAP_SHORT_NAME_KEY = 'sitjoy:warehouse-short-wrap-enabled';
+let boardColWidths = [];
 
 const REGION_ORDER = ['美西', '美中', '美东南', '美东'];
 
 function $(s){ return document.querySelector(s); }
-function showStatus(msg, isErr){ const el = $('#status'); el.style.display='block'; el.style.background=isErr?'#ffecec':'#f0fff0'; el.style.color=isErr?'#a33':'#2f6f2f'; el.textContent=msg; }
+
+function setSegmentValue(seg, value){
+  if(!seg) return;
+  const v = String(value == null ? '' : value);
+  seg.dataset.value = v;
+  seg.querySelectorAll('.status-pill').forEach(btn => {
+    btn.classList.toggle('is-active', String(btn.dataset.value || '') === v);
+  });
+}
+
+function toggleFilterPanel(){
+  filterPanelCollapsed = !filterPanelCollapsed;
+  const panel = $('#warehouseTogglePanel');
+  const btn = $('#toggleFilterBtn');
+  if(panel) panel.classList.toggle('is-collapsed', filterPanelCollapsed);
+  if(btn) btn.textContent = filterPanelCollapsed ? '展开筛选' : '收起筛选';
+}
+
+function initColumnWidths(totalCols){
+  if(Array.isArray(boardColWidths) && boardColWidths.length === totalCols) return;
+  boardColWidths = [];
+  for(let idx = 0; idx < totalCols; idx += 1){
+    if(idx === 0) boardColWidths.push(92);
+    else if(idx === 1) boardColWidths.push(132);
+    else if(idx === 2) boardColWidths.push(56);
+    else boardColWidths.push(60);
+  }
+}
+
+function applyColWidths(){
+  const normalized = boardColWidths.map(w => Math.max(46, Number(w || 60)));
+  const html = normalized.map(w => `<col style="width:${w}px;">`).join('');
+  const totalWidth = normalized.reduce((sum, width) => sum + width, 0);
+  const headColgroup = document.getElementById('boardHeadColgroup');
+  const bodyColgroup = document.getElementById('boardBodyColgroup');
+  const headTable = document.getElementById('boardHeadTable');
+  const bodyTable = document.getElementById('boardBodyTable');
+  if(headColgroup) headColgroup.innerHTML = html;
+  if(bodyColgroup) bodyColgroup.innerHTML = html;
+  if(headTable){
+    headTable.style.width = `${totalWidth}px`;
+    headTable.style.minWidth = `${totalWidth}px`;
+  }
+  if(bodyTable){
+    bodyTable.style.width = `${totalWidth}px`;
+    bodyTable.style.minWidth = `${totalWidth}px`;
+  }
+}
+
+function annotateHeaderColumns(){
+  const rows = Array.from(document.querySelectorAll('#boardHeadTable thead tr'));
+  const occupied = [];
+  rows.forEach((row, rowIndex) => {
+    occupied[rowIndex] = occupied[rowIndex] || [];
+    let colIndex = 0;
+    Array.from(row.children).forEach(cell => {
+      while(occupied[rowIndex][colIndex]) colIndex += 1;
+      const colspan = Number(cell.getAttribute('colspan') || 1) || 1;
+      const rowspan = Number(cell.getAttribute('rowspan') || 1) || 1;
+      const start = colIndex;
+      const end = colIndex + colspan - 1;
+      cell.dataset.colStart = String(start);
+      cell.dataset.colEnd = String(end);
+      for(let r = rowIndex; r < rowIndex + rowspan; r += 1){
+        occupied[r] = occupied[r] || [];
+        for(let c = start; c <= end; c += 1){
+          occupied[r][c] = true;
+        }
+      }
+      colIndex = end + 1;
+    });
+  });
+}
+
+function attachColumnResizeHandles(totalCols){
+  const thead = document.querySelector('#boardHeadTable thead');
+  if(!thead) return;
+  thead.querySelectorAll('.col-resize-handle').forEach(el => el.remove());
+  thead.querySelectorAll('th').forEach((cell) => {
+    const colStart = Number(cell.dataset.colStart);
+    const colEnd = Number(cell.dataset.colEnd);
+    if(!Number.isFinite(colStart) || !Number.isFinite(colEnd) || colStart < 0 || colEnd < colStart || colEnd >= totalCols) return;
+    const spanCount = (colEnd - colStart + 1);
+    cell.style.position = 'relative';
+    const handle = document.createElement('span');
+    handle.className = 'col-resize-handle';
+    handle.addEventListener('mousedown', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const startX = event.clientX;
+      const startWidths = boardColWidths.slice();
+      const minTotal = 46 * spanCount;
+      const startTotal = startWidths.slice(colStart, colEnd + 1).reduce((sum, width) => sum + Math.max(46, Number(width || 60)), 0);
+      const onMove = (moveEvent) => {
+        const delta = moveEvent.clientX - startX;
+        if(spanCount <= 1){
+          boardColWidths[colEnd] = Math.max(46, Number(startWidths[colEnd] || 60) + delta);
+        } else {
+          const targetTotal = Math.max(minTotal, startTotal + delta);
+          const factor = targetTotal / Math.max(1, startTotal);
+          let allocated = 0;
+          for(let idx = colStart; idx <= colEnd; idx += 1){
+            const base = Math.max(46, Number(startWidths[idx] || 60));
+            const scaled = Math.max(46, Math.round(base * factor));
+            boardColWidths[idx] = scaled;
+            allocated += scaled;
+          }
+          const remainder = Math.round(targetTotal - allocated);
+          boardColWidths[colEnd] = Math.max(46, Number(boardColWidths[colEnd] || 60) + remainder);
+        }
+        applyColWidths();
+        syncTopScrollbar();
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+    cell.appendChild(handle);
+  });
+}
 
 function regionRank(regionText){
   const text = String(regionText || '');
@@ -400,9 +688,35 @@ function sumForWarehouses(row, warehouses, field){
   return warehouses.reduce((total, wh) => total + (Number((row[field] || {})[String(wh.id)] || 0) || 0), 0);
 }
 
-function toggleTransit(){ transitExpanded = !transitExpanded; renderBoard(); }
+function toBadgeTitle(text, fallback){
+  const raw = String(text || '').trim();
+  const finalText = raw || String(fallback || '').trim();
+  return finalText.replace(/"/g, '&quot;');
+}
+
+function renderMainSlot(value, badgeNumber, badgeTitle){
+  const badgeVal = Number(badgeNumber || 0);
+  const hasBadge = badgeVal > 0;
+  return `<div class="inv-main-slot ${hasBadge ? 'has-badge' : ''}"><span class="inv-main-text">${Number(value || 0)}</span>${hasBadge ? `<span class="badge-tip" title="${toBadgeTitle(badgeTitle, `+${badgeVal}`)}">+${badgeVal}</span>` : ''}</div>`;
+}
+
+function normalizeColorHex(value){
+  const text = String(value || '').trim().toUpperCase();
+  if(/^#[0-9A-F]{6}$/.test(text)) return text;
+  return '';
+}
+
+function toggleOverseas(){
+  overseasExpanded = !overseasExpanded;
+  if (!overseasExpanded) {
+    overseasRegionInitCollapsed = false;
+  } else if (!overseasRegionInitCollapsed) {
+    buildColumnGroups(getOrderedVisibleWarehouses()).forEach(region => collapsedRegionKeys.add(region.name));
+    overseasRegionInitCollapsed = true;
+  }
+  renderBoard();
+}
 function toggleFactoryStock(){ factoryStockExpanded = !factoryStockExpanded; renderBoard(); }
-function toggleFactoryWip(){ factoryWipExpanded = !factoryWipExpanded; renderBoard(); }
 
 function toggleRegionColumnGroup(regionName){
   if(collapsedRegionKeys.has(regionName)) collapsedRegionKeys.delete(regionName);
@@ -466,99 +780,101 @@ function buildTogglePanel(){
 }
 
 function renderBoard(){
-  const thead = $('#boardTable thead');
-  const tbody = $('#boardTable tbody');
+  const thead = $('#boardHeadTable thead');
+  const tbody = $('#boardBodyTable tbody');
   const visibleWh = getOrderedVisibleWarehouses();
   const keyword = activeSearchText.trim().toLowerCase();
   const allVisible = visibleWh.length === boardWarehouses.length;
   const regionGroups = buildColumnGroups(visibleWh);
   const leafColumns = buildLeafColumns(regionGroups);
 
-  // Section column counts
-  const transitActiveRegions = REGION_ORDER.filter(r =>
-    boardRows.some(row => ((row.in_transit_by_region || {})[r] || 0) > 0)
-  );
-  const effectiveTransitRegions = transitActiveRegions.length > 0 ? transitActiveRegions : REGION_ORDER.slice(0, 4);
-  const transitColspan = transitExpanded ? effectiveTransitRegions.length : 1;
+  const overseasColspan = overseasExpanded ? Math.max(1, leafColumns.length) : 1;
   const stockColspan = factoryStockExpanded ? Math.max(1, boardFactories.length) : 1;
-  const wipColspan = factoryWipExpanded ? Math.max(1, boardFactories.length) : 1;
   const fixedCols = 3;
-  const totalCols = fixedCols + transitColspan + stockColspan + wipColspan + leafColumns.length;
+  const totalCols = fixedCols + overseasColspan + stockColspan;
+  initColumnWidths(totalCols);
+  applyColWidths();
 
-  // Build 3-row thead
+  const overseasSubRows = overseasExpanded ? 3 : 0;
+  const factorySubRows = factoryStockExpanded ? 1 : 0;
+  const headerSubRows = Math.max(overseasSubRows, factorySubRows, 0);
+  const headerRowsCount = 1 + headerSubRows;
+
   let row1 = '';
   let row2 = '';
   let row3 = '';
+  let row4 = '';
 
-  row1 += `<th rowspan="3">货号</th>`;
-  row1 += `<th rowspan="3">SKU</th>`;
-  row1 += `<th rowspan="3" class="inv-col">现货库存</th>`;
+  row1 += `<th rowspan="${headerRowsCount}">货号</th>`;
+  row1 += `<th rowspan="${headerRowsCount}">SKU</th>`;
+  row1 += `<th rowspan="${headerRowsCount}" class="sortable-th" data-sort-key="fabric">面料${fabricSortOrder === 'asc' ? ' ↑' : (fabricSortOrder === 'desc' ? ' ↓' : '')}</th>`;
+  row1 += `<th colspan="${overseasColspan}" class="section-th" data-toggle="overseas"><div class="wh-group-toggle"><span class="wh-group-label">海外仓在库在途</span><span class="wh-group-line"></span><span class="wh-group-circle">${overseasExpanded ? '\u2212' : '+'}</span></div></th>`;
+  row1 += `<th colspan="${stockColspan}" class="section-th" data-toggle="factory-stock"><div class="wh-group-toggle"><span class="wh-group-label">工厂在库</span><span class="wh-group-line"></span><span class="wh-group-circle">${factoryStockExpanded ? '\u2212' : '+'}</span></div></th>`;
 
-  row1 += `<th colspan="${transitColspan}" class="section-th" data-toggle="transit">在途<span class="section-toggle-arrow">${transitExpanded ? '▾' : '▸'}</span></th>`;
-  if (transitExpanded) {
-    effectiveTransitRegions.forEach(r => {
-      row2 += `<th rowspan="2" class="transit-region-th">${r}</th>`;
+  if (overseasExpanded) {
+    regionGroups.forEach((region, regionIndex) => {
+      const leafCount = leafColumns.filter(col => col.regionName === region.name).length;
+      const canFold = region.warehouses.length > 1;
+      const folded = canFold && collapsedRegionKeys.has(region.name);
+      const sepClass = regionIndex < regionGroups.length - 1 ? 'wh-region-sep' : '';
+      row2 += `<th colspan="${leafCount}" class="wh-th-region ${region.suppliers[0] ? region.suppliers[0].band : 'wh-head-band-a'} ${sepClass}" ${canFold ? `data-toggle-kind="region" data-region-name="${String(region.name).replace(/"/g,'&quot;')}"` : ''}><div class="wh-group-toggle ${canFold ? '' : 'is-static'}"><span class="wh-group-label">${region.name}</span><span class="wh-group-line"></span><span class="wh-group-circle">${canFold ? (folded ? '+' : '-') : ''}</span></div></th>`;
+    });
+    regionGroups.forEach((region, regionIndex) => {
+      const regionFolded = region.warehouses.length > 1 && collapsedRegionKeys.has(region.name);
+      const sepClass = regionIndex < regionGroups.length - 1 ? 'wh-region-sep' : '';
+      if(regionFolded){
+        row3 += `<th colspan="1" class="wh-th-supplier ${region.suppliers[0] ? region.suppliers[0].band : 'wh-head-band-a'} ${sepClass}"><div class="wh-supplier-summary"></div></th>`;
+      } else {
+        row3 += region.suppliers.map((supplier, supplierIndex) => {
+          const supplierSepClass = supplierIndex === region.suppliers.length - 1 ? sepClass : '';
+          return `<th colspan="${supplier.warehouses.length}" class="wh-th-supplier ${supplier.band} ${supplierSepClass}"><div class="wh-group-toggle is-static"><span class="wh-group-label">${supplier.name}</span></div></th>`;
+        }).join('');
+      }
+    });
+    leafColumns.forEach(col => {
+      const sepClass = col.regionBoundary ? 'wh-region-sep' : '';
+      if(col.type === 'region'){
+        row4 += `<th class="wh-th-short wh-col ${col.band} ${sepClass} ${wrapWarehouseShortName ? 'wrap-enabled' : ''}"></th>`;
+      } else {
+        const shortName = String(col.warehouse.warehouse_short_name || col.warehouse.warehouse_name || '');
+        const fullName = String(col.warehouse.warehouse_name || shortName);
+        row4 += `<th data-wh="${col.warehouse.id}" class="wh-th-short wh-col ${col.band} ${sepClass} ${wrapWarehouseShortName ? 'wrap-enabled' : ''}"><span class="wh-short-text" title="${fullName.replace(/"/g,'&quot;')}">${shortName}</span></th>`;
+      }
     });
   } else {
-    row2 += `<th rowspan="2" class="transit-region-th">合计</th>`;
+    if(headerSubRows > 0) row2 += `<th rowspan="${headerSubRows}" class="inv-col"></th>`;
   }
 
-  row1 += `<th colspan="${stockColspan}" class="section-th" data-toggle="factory-stock">工厂在库<span class="section-toggle-arrow">${factoryStockExpanded ? '▾' : '▸'}</span></th>`;
   if (factoryStockExpanded && boardFactories.length > 0) {
+    const factoryRowspan = Math.max(1, headerSubRows);
     boardFactories.forEach(f => {
-      row2 += `<th rowspan="2" class="factory-col factory-name-th" title="${String(f.factory_name || '').replace(/"/g,'&quot;')}">${f.factory_name || ''}</th>`;
+      row2 += `<th class="inv-col factory-col factory-name-th" rowspan="${factoryRowspan}" title="${String(f.factory_name || '').replace(/"/g,'&quot;')}">${f.factory_name || ''}</th>`;
     });
   } else {
-    row2 += `<th rowspan="2" class="factory-col">合计</th>`;
+    if(headerSubRows > 0) row2 += `<th rowspan="${headerSubRows}" class="inv-col factory-col"></th>`;
   }
 
-  row1 += `<th colspan="${wipColspan}" class="section-th" data-toggle="factory-wip">工厂在制<span class="section-toggle-arrow">${factoryWipExpanded ? '▾' : '▸'}</span></th>`;
-  if (factoryWipExpanded && boardFactories.length > 0) {
-    boardFactories.forEach(f => {
-      row2 += `<th rowspan="2" class="factory-col factory-name-th" title="${String(f.factory_name || '').replace(/"/g,'&quot;')}">${f.factory_name || ''}</th>`;
-    });
-  } else {
-    row2 += `<th rowspan="2" class="factory-col">合计</th>`;
-  }
+  row1 = row1.replace(
+    '海外仓在库在途',
+    '海外仓在库<span class="header-title-with-badge">&nbsp;<span class="badge-tip" title="在途批次（悬浮查看预计到货日期）">在途</span></span>'
+  );
+  row1 = row1.replace(
+    '工厂在库',
+    '工厂在库<span class="header-title-with-badge">&nbsp;<span class="badge-tip" title="在制批次（悬浮查看预计完工日期）">在制</span></span>'
+  );
 
-  regionGroups.forEach((region, regionIndex) => {
-    const leafCount = leafColumns.filter(col => col.regionName === region.name).length;
-    const canFold = region.warehouses.length > 1;
-    const folded = canFold && collapsedRegionKeys.has(region.name);
-    const sepClass = regionIndex < regionGroups.length - 1 ? 'wh-region-sep' : '';
-    row1 += `<th colspan="${leafCount}" class="wh-th-region ${region.suppliers[0] ? region.suppliers[0].band : 'wh-head-band-a'} ${sepClass}" ${canFold ? `data-toggle-kind="region" data-region-name="${String(region.name).replace(/"/g,'&quot;')}"` : ''}><div class="wh-group-toggle ${canFold ? '' : 'is-static'}"><span class="wh-group-label">${region.name}</span><span class="wh-group-line"></span><span class="wh-group-circle">${canFold ? (folded ? '+' : '-') : ''}</span></div></th>`;
-  });
-  regionGroups.forEach((region, regionIndex) => {
-    const regionFolded = region.warehouses.length > 1 && collapsedRegionKeys.has(region.name);
-    const sepClass = regionIndex < regionGroups.length - 1 ? 'wh-region-sep' : '';
-    if(regionFolded){
-      row2 += `<th colspan="1" class="wh-th-supplier ${region.suppliers[0] ? region.suppliers[0].band : 'wh-head-band-a'} ${sepClass}"><div class="wh-supplier-summary">合计</div></th>`;
-    } else {
-      row2 += region.suppliers.map((supplier, supplierIndex) => {
-        const supplierSepClass = supplierIndex === region.suppliers.length - 1 ? sepClass : '';
-        return `<th colspan="${supplier.warehouses.length}" class="wh-th-supplier ${supplier.band} ${supplierSepClass}"><div class="wh-group-toggle is-static"><span class="wh-group-label">${supplier.name}</span></div></th>`;
-      }).join('');
-    }
-  });
-  leafColumns.forEach(col => {
-    const sepClass = col.regionBoundary ? 'wh-region-sep' : '';
-    if(col.type === 'region'){
-      row3 += `<th class="wh-th-short wh-col ${col.band} ${sepClass}">合计</th>`;
-    } else {
-      const shortName = String(col.warehouse.warehouse_short_name || col.warehouse.warehouse_name || '');
-      const fullName = String(col.warehouse.warehouse_name || shortName);
-      row3 += `<th data-wh="${col.warehouse.id}" class="wh-th-short wh-col ${col.band} ${sepClass}"><span class="wh-short-text" title="${fullName.replace(/"/g,'&quot;')}">${shortName}</span></th>`;
-    }
-  });
-
-  thead.innerHTML = `<tr>${row1}</tr><tr>${row2}</tr><tr>${row3}</tr>`;
+  const headRows = [`<tr>${row1}</tr>`];
+  if(headerSubRows >= 1) headRows.push(`<tr>${row2}</tr>`);
+  if(headerSubRows >= 2) headRows.push(`<tr>${row3}</tr>`);
+  if(headerSubRows >= 3) headRows.push(`<tr>${row4}</tr>`);
+  thead.innerHTML = headRows.join('');
+  annotateHeaderColumns();
 
   thead.querySelectorAll('th[data-toggle]').forEach(cell => {
     cell.addEventListener('click', function(){
       const t = this.getAttribute('data-toggle');
-      if(t === 'transit') toggleTransit();
+      if(t === 'overseas') toggleOverseas();
       else if(t === 'factory-stock') toggleFactoryStock();
-      else if(t === 'factory-wip') toggleFactoryWip();
     });
   });
   thead.querySelectorAll('th[data-toggle-kind]').forEach(cell => {
@@ -567,166 +883,199 @@ function renderBoard(){
       if(kind === 'region') toggleRegionColumnGroup(String(this.getAttribute('data-region-name') || ''));
     });
   });
-
-  // Build filtered group rows
-  const grouped = [];
-  const groupMap = new Map();
-  boardRows.forEach(row => {
-    const famName = String(row.sku_family || '-').trim() || '-';
-    if (!groupMap.has(famName)) {
-      const node = { family: famName, rows: [] };
-      groupMap.set(famName, node);
-      grouped.push(node);
-    }
-    groupMap.get(famName).rows.push(row);
+  thead.querySelectorAll('th[data-sort-key="fabric"]').forEach(cell => {
+    cell.addEventListener('click', function(){
+      if(fabricSortOrder === '') fabricSortOrder = 'asc';
+      else if(fabricSortOrder === 'asc') fabricSortOrder = 'desc';
+      else fabricSortOrder = '';
+      renderBoard();
+    });
   });
 
-  const filteredGroups = grouped
-    .map(group => {
-      const rows = keyword
-        ? group.rows.filter(row => {
-            const skuText = String(row.sku || '').toLowerCase();
-            const famText = String(group.family || '').toLowerCase();
-            const childSkuText = (row.iteration_children || []).map(item => String(item.sku || '')).join(' ').toLowerCase();
-            return skuText.includes(keyword) || famText.includes(keyword) || childSkuText.includes(keyword);
-          })
-        : group.rows;
-      const whFilteredRows = allVisible
-        ? rows
-        : rows.filter(row => visibleWh.some(wh => ((row.warehouse_qty || {})[String(wh.id)] || 0) > 0));
-      return { family: group.family, rows: whFilteredRows };
-    })
-    .filter(group => group.rows.length > 0);
+  const shouldHideZeroOffMarket = (item) => {
+    const offMarket = Number(item && item.is_on_market != null ? item.is_on_market : 1) === 0;
+    if(!offMarket) return false;
+    const total = Number(item.available_total || 0)
+      + Number(item.in_transit_total || 0)
+      + Number(item.factory_stock_total || 0)
+      + Number(item.factory_wip_total || 0);
+    return total <= 0;
+  };
 
-  if (!filteredGroups.length){
+  let filteredRows = (boardRows || []).map(row => {
+    const children = (row.iteration_children || []).filter(child => !shouldHideZeroOffMarket(child));
+    return { ...row, iteration_children: children };
+  }).filter(row => !shouldHideZeroOffMarket(row));
+
+  if (keyword) {
+    filteredRows = filteredRows.filter(row => {
+      const skuText = String(row.sku || '').toLowerCase();
+      const famText = String(row.sku_family || '').toLowerCase();
+      const childSkuText = (row.iteration_children || []).map(item => String(item.sku || '')).join(' ').toLowerCase();
+      return skuText.includes(keyword) || famText.includes(keyword) || childSkuText.includes(keyword);
+    });
+  }
+
+  if (fabricSortOrder) {
+    filteredRows.sort((a, b) => {
+      const af = String(a.fabric_name_en || '').toLowerCase();
+      const bf = String(b.fabric_name_en || '').toLowerCase();
+      if (af === bf) return String(a.sku || '').localeCompare(String(b.sku || ''), 'zh');
+      const base = af.localeCompare(bf, 'zh');
+      return fabricSortOrder === 'asc' ? base : -base;
+    });
+  }
+
+  if (!allVisible) {
+    filteredRows = filteredRows.filter(row => {
+      const hasParentVisibleQty = visibleWh.some(wh => ((row.warehouse_qty || {})[String(wh.id)] || 0) > 0);
+      if (hasParentVisibleQty) return true;
+      return (row.iteration_children || []).some(child => visibleWh.some(wh => ((child.warehouse_qty || {})[String(wh.id)] || 0) > 0));
+    });
+  }
+
+  if (!filteredRows.length){
     tbody.innerHTML = `<tr><td colspan="${totalCols}" style="text-align:center;">暂无数据</td></tr>`;
     return;
   }
 
-  let html = '';
-  filteredGroups.forEach((group, groupIndex) => {
-    const familyKey = String(group.family || '-');
-    const isCollapsed = keyword ? false : collapsedFamilies.has(familyKey);
-    const groupClass = `group-bg-${groupIndex % 2}`;
-    html += `<tr class="group-row ${groupClass}" data-family="${familyKey.replace(/"/g,'&quot;')}">`;
-    html += `<td colspan="${totalCols}"><span class="group-toggle">${isCollapsed ? '▸' : '▾'}</span>${group.family || '-'}（${group.rows.length}）</td>`;
-    html += `</tr>`;
-
-    group.rows.forEach(row => {
-      const esc = (v) => String(v == null ? '' : v).replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      const childRows = (row.iteration_children || []);
-      const badge = Number(row.in_transit_total || 0) > 0
-        ? `<span class="badge-tip" title="${(row.in_transit_tip || '').replace(/"/g,'&quot;')}">${row.in_transit_total}</span>`
-        : '';
-      const childMeta = childRows.length
-        ? `<div class="sku-submeta">${childRows.map(child => `<div class="sku-submeta-line">${esc(child.sku || '')}</div>`).join('')}</div>`
-        : '';
-      const childAvailableMeta = childRows.length
-        ? `<div class="inv-submeta">${childRows.map(child => `<div class="inv-submeta-line">${Number(child.available_total || 0) || 0}</div>`).join('')}</div>`
-        : '';
-
-      // In-transit cells
-      let transitCells = '';
-      if (transitExpanded) {
-        effectiveTransitRegions.forEach(r => {
-          const qty = Number((row.in_transit_by_region || {})[r] || 0);
-          const childTransitRegionMeta = childRows.length
-            ? `<div class="inv-submeta">${childRows.map(child => `<div class="inv-submeta-line">${Number(((child.in_transit_by_region || {})[r]) || 0)}</div>`).join('')}</div>`
-            : '';
-          transitCells += `<td class="inv-col section-td"><div class="inv-main-slot">${qty}</div>${childTransitRegionMeta}</td>`;
-        });
-      } else {
-        const qty = Number(row.in_transit_total || 0);
-        const childTransitMeta = childRows.length
-          ? `<div class="inv-submeta">${childRows.map(child => `<div class="inv-submeta-line">${Number(child.in_transit_total || 0)}</div>`).join('')}</div>`
-          : '';
-        transitCells = `<td class="inv-col section-td"><div class="inv-main-slot">${qty}${badge}</div>${childTransitMeta}</td>`;
-      }
-
-      // Factory stock cells
-      let stockCells = '';
-      if (factoryStockExpanded && boardFactories.length > 0) {
-        const fstockMap = row.factory_stock_by_factory || {};
-        boardFactories.forEach(f => {
-          const qty = Number(fstockMap[String(f.id)] || 0);
-          const childMeta2 = childRows.length
-            ? `<div class="inv-submeta">${childRows.map(child => `<div class="inv-submeta-line">${Number(((child.factory_stock_by_factory || {})[String(f.id)]) || 0)}</div>`).join('')}</div>`
-            : '';
-          stockCells += `<td class="factory-col section-td"><div class="inv-main-slot">${qty}</div>${childMeta2}</td>`;
-        });
-      } else {
-        const qty = Number(row.factory_stock_total || 0);
-        const childStockMeta = childRows.length
-          ? `<div class="inv-submeta">${childRows.map(child => `<div class="inv-submeta-line">${Number(child.factory_stock_total || 0)}</div>`).join('')}</div>`
-          : '';
-        stockCells = `<td class="factory-col section-td"><div class="inv-main-slot">${qty}</div>${childStockMeta}</td>`;
-      }
-
-      // Factory wip cells
-      let wipCells = '';
-      if (factoryWipExpanded && boardFactories.length > 0) {
-        const fwipMap = row.factory_wip_by_factory || {};
-        boardFactories.forEach(f => {
-          const wipVal = fwipMap[String(f.id)] || {};
-          const qty = Number(wipVal.quantity || 0);
-          const dateStr = wipVal.earliest_date ? `<div style="font-size:.7rem;color:#7a7269;margin-top:.15rem;">${wipVal.earliest_date}</div>` : '';
-          const childMeta2 = childRows.length
-            ? `<div class="inv-submeta">${childRows.map(child => `<div class="inv-submeta-line">${Number(((child.factory_wip_by_factory || {})[String(f.id)] || {}).quantity || 0)}</div>`).join('')}</div>`
-            : '';
-          wipCells += `<td class="factory-col section-td"><div class="inv-main-slot">${qty}</div>${dateStr}${childMeta2}</td>`;
-        });
-      } else {
-        const qty = Number(row.factory_wip_total || 0);
-        const childWipMeta = childRows.length
-          ? `<div class="inv-submeta">${childRows.map(child => `<div class="inv-submeta-line">${Number(child.factory_wip_total || 0)}</div>`).join('')}</div>`
-          : '';
-        wipCells = `<td class="factory-col section-td"><div class="inv-main-slot">${qty}</div>${childWipMeta}</td>`;
-      }
-
-      // Warehouse columns
-      const whCols = leafColumns.map(col => {
+  const buildCellsForRow = (row, isChildRow) => {
+    let overseasCell = '';
+    if (overseasExpanded) {
+      overseasCell = leafColumns.map(col => {
         const totalQty = col.type === 'warehouse'
           ? ((row.warehouse_qty || {})[String(col.warehouse.id)] || 0)
           : sumForWarehouses(row, col.warehouses, 'warehouse_qty');
         const totalTransit = col.type === 'warehouse'
           ? ((row.in_transit_by_warehouse || {})[String(col.warehouse.id)] || 0)
           : sumForWarehouses(row, col.warehouses, 'in_transit_by_warehouse');
-        const whBadge = totalTransit > 0 ? `<span class="badge-tip" title="在途中：${totalTransit}">${totalTransit}</span>` : '';
-        const childWhMeta = childRows.length
-          ? `<div class="inv-submeta">${childRows.map(child => {
-              const qty = col.type === 'warehouse'
-                ? Number(((child.warehouse_qty || {})[String(col.warehouse.id)] || 0) || 0)
-                : Number((col.warehouses || []).reduce((sum, wh) => sum + (Number(((child.warehouse_qty || {})[String(wh.id)] || 0) || 0)), 0) || 0);
-              return `<div class="inv-submeta-line">${esc(qty)}</div>`;
-            }).join('')}</div>`
-          : '';
+        const whTransitTipMap = row.in_transit_tip_by_warehouse || {};
+        const whTransitTip = col.type === 'warehouse'
+          ? (whTransitTipMap[String(col.warehouse.id)] || '')
+          : (col.warehouses || []).map(wh => whTransitTipMap[String(wh.id)] || '').filter(Boolean).join('\n');
+        const transitTitle = whTransitTip || `在途中：${totalTransit}`;
         const sepClass = col.regionBoundary ? 'wh-region-sep' : '';
         const regionTotalClass = col.type === 'region' ? 'region-total-cell' : '';
-        return `<td class="wh-cell wh-col ${col.band} ${sepClass} ${regionTotalClass}"><div class="inv-main-slot">${totalQty}${whBadge}</div>${childWhMeta}</td>`;
+        return `<td class="inv-col wh-cell wh-col ${col.band} ${sepClass} ${regionTotalClass}">${renderMainSlot(totalQty, totalTransit, transitTitle)}</td>`;
       }).join('');
+    } else {
+      overseasCell = `<td class="inv-col wh-cell wh-col wh-head-band-a wh-region-sep region-total-cell">${renderMainSlot(row.available_total || 0, row.in_transit_total || 0, row.in_transit_tip || '')}</td>`;
+    }
 
-      html += `<tr class="sku-row ${groupClass} ${isCollapsed ? 'hidden-row' : ''}" data-family="${familyKey.replace(/"/g,'&quot;')}">`;
-      html += `<td>${group.family || '-'}</td>`;
-      html += `<td class="sku-cell">${row.sku || ''}${childMeta}</td>`;
-      html += `<td class="inv-col"><div class="inv-main-slot">${row.available_total || 0}</div>${childAvailableMeta}</td>`;
-      html += transitCells;
-      html += stockCells;
-      html += wipCells;
-      html += whCols;
+    let stockCells = '';
+    if (factoryStockExpanded && boardFactories.length > 0) {
+      const fstockMap = row.factory_stock_by_factory || {};
+      const fwipMap = row.factory_wip_by_factory || {};
+      const fwipTipMap = row.factory_wip_tip_by_factory || {};
+      boardFactories.forEach(f => {
+        const stockQty = Number(fstockMap[String(f.id)] || 0);
+        const wipQty = Number((fwipMap[String(f.id)] || {}).quantity || 0);
+        const wipTip = String(fwipTipMap[String(f.id)] || '').trim();
+        stockCells += `<td class="inv-col wh-cell wh-col wh-head-band-a region-total-cell factory-col section-td">${renderMainSlot(stockQty, wipQty, wipTip || `在制：${wipQty}`)}</td>`;
+      });
+    } else {
+      const stockQty = Number(row.factory_stock_total || 0);
+      const wipQty = Number(row.factory_wip_total || 0);
+      const summaryWipTip = boardFactories.map(f => {
+        const txt = String(((row.factory_wip_tip_by_factory || {})[String(f.id)] || '')).trim();
+        return txt ? `${f.factory_name}：${txt}` : '';
+      }).filter(Boolean).join('\n');
+      stockCells = `<td class="inv-col wh-cell wh-col wh-head-band-a wh-region-sep region-total-cell factory-col section-td">${renderMainSlot(stockQty, wipQty, summaryWipTip || `在制：${wipQty}`)}</td>`;
+    }
+    return overseasCell + stockCells;
+  };
+
+  const familyMap = new Map();
+  filteredRows.forEach(row => {
+    const familyKey = String(row.sku_family || '-').trim() || '-';
+    if(!familyMap.has(familyKey)) familyMap.set(familyKey, []);
+    familyMap.get(familyKey).push(row);
+  });
+
+  let html = '';
+  let groupIndex = 0;
+  familyMap.forEach((rows, familyKey) => {
+      const familyCollapsed = keyword ? false : collapsedFamilies.has(familyKey);
+      html += `<tr class="group-row group-bg-${groupIndex % 2}" data-family="${familyKey.replace(/"/g,'&quot;')}">`;
+      html += `<td colspan="${totalCols}"><span class="group-toggle">${familyCollapsed ? '▶' : '▼'}</span>${familyKey}</td>`;
       html += `</tr>`;
-    });
+      rows.forEach((row) => {
+      const esc = (v) => String(v == null ? '' : v).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const childRows = row.iteration_children || [];
+      const sourceKey = String(row.sku || '');
+      const isCollapsed = keyword ? false : collapsedSourceSku.has(sourceKey);
+      const groupClass = `group-bg-${groupIndex % 2}`;
+      const toggleText = childRows.length ? `<span class="source-toggle" data-source="${sourceKey.replace(/"/g,'&quot;')}">(+迭代${childRows.length}款)</span>` : '';
+
+      html += `<tr class="sku-row parent-row ${groupClass} ${familyCollapsed ? 'hidden-row' : ''}" data-family="${familyKey.replace(/"/g,'&quot;')}" data-source="${sourceKey.replace(/"/g,'&quot;')}">`;
+      html += `<td>${familyKey}</td>`;
+      html += `<td class="sku-cell">${row.sku || ''}${toggleText}</td>`;
+      const mainColor = normalizeColorHex(row.representative_color);
+      const mainDot = mainColor ? `<span class="fabric-dot" style="background:${mainColor};" title="${esc(row.fabric_name_en || '')}"></span>` : '';
+      html += `<td class="fabric-dot-cell"><span class="fabric-dot-wrap">${mainDot}</span></td>`;
+      html += buildCellsForRow(row, false);
+      html += `</tr>`;
+
+      childRows.forEach(child => {
+        const childColor = normalizeColorHex(child.representative_color);
+        const childDot = childColor ? `<span class="fabric-dot" style="background:${childColor};" title="${esc(child.fabric_name_en || '')}"></span>` : '';
+        html += `<tr class="sku-row child-row ${groupClass} ${(isCollapsed || familyCollapsed) ? 'hidden-row' : ''}" data-family="${familyKey.replace(/"/g,'&quot;')}" data-parent-source="${sourceKey.replace(/"/g,'&quot;')}">`;
+        html += `<td>${familyKey}</td>`;
+        html += `<td class="sku-cell"><span class="derived-sku">${child.sku || ''}</span></td>`;
+        html += `<td class="fabric-dot-cell"><span class="fabric-dot-wrap">${childDot}</span></td>`;
+        html += buildCellsForRow(child, true);
+        html += `</tr>`;
+      });
+      });
+      groupIndex += 1;
   });
 
   tbody.innerHTML = html;
-  document.querySelectorAll('.group-row').forEach(row => {
-    row.addEventListener('click', function(){
+  document.querySelectorAll('.group-row').forEach(el => {
+    el.addEventListener('click', function(){
       const family = String(this.getAttribute('data-family') || '');
-      if (!family) return;
-      if (collapsedFamilies.has(family)) collapsedFamilies.delete(family);
+      if(!family) return;
+      if(collapsedFamilies.has(family)) collapsedFamilies.delete(family);
       else collapsedFamilies.add(family);
       renderBoard();
     });
   });
+  document.querySelectorAll('.source-toggle').forEach(el => {
+    el.addEventListener('click', function(e){
+      e.stopPropagation();
+      const source = String(this.getAttribute('data-source') || '');
+      if(!source) return;
+      if(collapsedSourceSku.has(source)) collapsedSourceSku.delete(source);
+      else collapsedSourceSku.add(source);
+      renderBoard();
+    });
+  });
+  attachColumnResizeHandles(totalCols);
+  syncTopScrollbar();
+}
+
+function syncTopScrollbar(){
+  const wrap = document.getElementById('boardBodyWrap');
+  const head = document.getElementById('boardHeaderWrap');
+  const top = document.getElementById('boardTopScroll');
+  const inner = document.getElementById('boardTopScrollInner');
+  if(!wrap || !head || !top || !inner) return;
+  const table = document.getElementById('boardBodyTable');
+  const tableWidth = table ? Math.max(table.scrollWidth, wrap.scrollWidth) : wrap.scrollWidth;
+  const needHorizontal = tableWidth > (wrap.clientWidth + 1);
+  const scrollbarWidth = Math.max(0, wrap.offsetWidth - wrap.clientWidth);
+  head.style.paddingRight = `${scrollbarWidth}px`;
+  top.style.paddingRight = `${scrollbarWidth}px`;
+  head.style.width = `${wrap.clientWidth + scrollbarWidth}px`;
+  top.style.width = `${wrap.clientWidth + scrollbarWidth}px`;
+  top.style.display = needHorizontal ? 'block' : 'none';
+  inner.style.width = `${tableWidth}px`;
+  if(Math.abs(head.scrollLeft - wrap.scrollLeft) > 1){
+    head.scrollLeft = wrap.scrollLeft;
+  }
+  if(Math.abs(top.scrollLeft - wrap.scrollLeft) > 1){
+    top.scrollLeft = wrap.scrollLeft;
+  }
 }
 
 function loadBoard(){
@@ -734,7 +1083,7 @@ function loadBoard(){
     .then(r => r.json())
     .then(d => {
       if (d.status !== 'success'){
-        showStatus(d.message || '加载失败', true);
+        window.showAppToast && window.showAppToast(d.message || '加载失败', true);
         return;
       }
       boardWarehouses = d.warehouses || [];
@@ -743,13 +1092,18 @@ function loadBoard(){
       if (!visibleWarehouseIds.size){
         boardWarehouses.forEach(wh => visibleWarehouseIds.add(String(wh.id)));
       }
-      collapsedFamilies.clear();
+      collapsedFamilies = new Set((boardRows || []).map(row => String(row.sku_family || '-').trim() || '-'));
       collapsedRegionKeys.clear();
+      collapsedSourceSku = new Set((boardRows || []).filter(row => (row.iteration_children || []).length > 0).map(row => String(row.sku || '')));
       buildTogglePanel();
+      const panel = $('#warehouseTogglePanel');
+      const btn = $('#toggleFilterBtn');
+      if(panel) panel.classList.toggle('is-collapsed', filterPanelCollapsed);
+      if(btn) btn.textContent = filterPanelCollapsed ? '展开筛选' : '收起筛选';
       renderBoard();
-      showStatus('看板已刷新', false);
+      window.showAppToast && window.showAppToast('看板已刷新', false);
     })
-    .catch(err => showStatus('加载失败: ' + err, true));
+    .catch(err => { window.showAppToast && window.showAppToast('加载失败: ' + err, true); });
 }
 
 function downloadBoard(){
@@ -758,17 +1112,70 @@ function downloadBoard(){
 
 function expandAllGroups(){
   collapsedFamilies.clear();
+  collapsedSourceSku.clear();
   renderBoard();
 }
 
 function collapseAllGroups(){
+  collapsedFamilies = new Set((boardRows || []).map(row => String(row.sku_family || '-').trim() || '-'));
   const grouped = new Set();
-  boardRows.forEach(row => grouped.add(String(row.sku_family || '-').trim() || '-'));
-  collapsedFamilies = grouped;
+  boardRows.forEach(row => {
+    const children = row.iteration_children || [];
+    if(children.length > 0) grouped.add(String(row.sku || ''));
+  });
+  collapsedSourceSku = grouped;
   renderBoard();
 }
 
 window.addEventListener('load', function(){
+  const wrap = document.getElementById('boardBodyWrap');
+  const head = document.getElementById('boardHeaderWrap');
+  const top = document.getElementById('boardTopScroll');
+  if(wrap && head && top){
+    wrap.addEventListener('scroll', function(){
+      if(syncingScroll) return;
+      syncingScroll = true;
+      head.scrollLeft = wrap.scrollLeft;
+      top.scrollLeft = wrap.scrollLeft;
+      syncingScroll = false;
+    });
+    head.addEventListener('scroll', function(){
+      if(syncingScroll) return;
+      syncingScroll = true;
+      wrap.scrollLeft = head.scrollLeft;
+      top.scrollLeft = head.scrollLeft;
+      syncingScroll = false;
+    });
+    top.addEventListener('scroll', function(){
+      if(syncingScroll) return;
+      syncingScroll = true;
+      wrap.scrollLeft = top.scrollLeft;
+      head.scrollLeft = top.scrollLeft;
+      syncingScroll = false;
+    });
+    window.addEventListener('resize', syncTopScrollbar);
+  }
+  try {
+    const savedWrap = localStorage.getItem(WRAP_SHORT_NAME_KEY);
+    wrapWarehouseShortName = savedWrap === '1';
+  } catch(_) {}
+  const wrapSeg = document.getElementById('whWrapSegment');
+  setSegmentValue(wrapSeg, wrapWarehouseShortName ? '1' : '0');
+  if(wrapSeg){
+    wrapSeg.querySelectorAll('.status-pill').forEach(btn => {
+      btn.addEventListener('click', function(){
+        const val = String(this.dataset.value || '0');
+        setSegmentValue(wrapSeg, val);
+        wrapWarehouseShortName = val === '1';
+        try { localStorage.setItem(WRAP_SHORT_NAME_KEY, wrapWarehouseShortName ? '1' : '0'); } catch(_) {}
+        renderBoard();
+      });
+    });
+  }
+  const panel = $('#warehouseTogglePanel');
+  const btn = $('#toggleFilterBtn');
+  if(panel) panel.classList.toggle('is-collapsed', filterPanelCollapsed);
+  if(btn) btn.textContent = filterPanelCollapsed ? '展开筛选' : '收起筛选';
   const searchInput = $('#boardSearchInput');
   searchInput.addEventListener('input', function(){
     activeSearchText = String(this.value || '');

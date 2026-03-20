@@ -26,6 +26,9 @@
           </div>
           <span class="pm-divider"></span>
           <button class="btn-accent" onclick="openCreateModal()">新增</button>
+          <button class="btn-secondary" onclick="downloadTemplate()">下载模板</button>
+          <button class="btn-secondary" onclick="triggerImport()">上传模板</button>
+          <input id="importFileInput" type="file" accept=".xlsx,.xlsm" style="display:none;">
         </div>
       </div>
     </div>
@@ -38,6 +41,8 @@
             <th>工厂</th>
             <th style="width:120px;">数量</th>
             <th style="width:140px;">预计完工日期</th>
+            <th style="width:160px;">是否完工</th>
+            <th style="width:140px;">实际完工时间</th>
             <th>备注</th>
             <th style="width:180px;">创建时间</th>
             <th style="width:160px;">操作</th>
@@ -71,6 +76,17 @@
         <label for="modalExpectedDate">预计完工日期</label>
         <input id="modalExpectedDate" type="date">
       </div>
+      <div class="form-group">
+        <label>是否完工</label>
+        <div class="status-segment status-segment--inline" id="modalCompletedSegment" data-value="0">
+          <button type="button" class="status-pill status-pill--yes" data-value="1">是</button>
+          <button type="button" class="status-pill status-pill--no is-active" data-value="0">否</button>
+        </div>
+      </div>
+      <div class="form-group" id="modalActualDateGroup" style="display:none;">
+        <label for="modalActualCompletionDate">实际完工时间</label>
+        <input id="modalActualCompletionDate" type="date">
+      </div>
       <div class="form-group pm-form-full">
         <label for="modalNotes">备注</label>
         <textarea id="modalNotes" rows="3" placeholder="可选"></textarea>
@@ -84,6 +100,21 @@
   </div>
 </div>
 
+<div class="pm-modal" id="completionConfirmModal">
+  <div class="pm-modal-content" style="max-width:420px;">
+    <h3 style="margin-top:0;">确认完工时间</h3>
+    <div class="form-group" style="margin-bottom:.85rem;">
+      <label for="completionConfirmDate">实际完工时间</label>
+      <input id="completionConfirmDate" type="date">
+    </div>
+    <div id="completionConfirmStatus" class="response" style="display:none;margin-top:.55rem;"></div>
+    <div class="pm-modal-actions">
+      <button type="button" class="btn-secondary" onclick="closeCompletionConfirmModal()">取消</button>
+      <button type="button" class="btn-primary" onclick="confirmCompletionUpdate()">确认</button>
+    </div>
+  </div>
+</div>
+
 <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
 
 <script>
@@ -92,6 +123,7 @@ let optionsLoaded = false;
 let optionFactories = [];
 let optionOrderProducts = [];
 let listCache = [];
+let pendingCompletionUpdateId = null;
 
 const $ = (s) => document.querySelector(s);
 
@@ -123,6 +155,37 @@ function formatDate(value){
   return String(value).slice(0, 10);
 }
 
+function todayStr(){
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+function getRowById(id){
+  return listCache.find(item => Number(item.id) === Number(id));
+}
+
+function setSegmentValue(segmentEl, value){
+  if(!segmentEl) return;
+  const finalVal = String(value) === '1' ? '1' : '0';
+  segmentEl.setAttribute('data-value', finalVal);
+  segmentEl.querySelectorAll('[data-value]').forEach(btn => {
+    const active = String(btn.getAttribute('data-value') || '') === finalVal;
+    btn.classList.toggle('is-active', active);
+  });
+}
+
+function toggleActualDateGroup(){
+  const isCompleted = String(document.getElementById('modalCompletedSegment')?.getAttribute('data-value') || '0') === '1';
+  const group = document.getElementById('modalActualDateGroup');
+  const input = document.getElementById('modalActualCompletionDate');
+  if(!group || !input) return;
+  group.style.display = isCompleted ? '' : 'none';
+  if(isCompleted && !input.value) input.value = todayStr();
+  if(!isCompleted) input.value = '';
+}
+
 function loadOptions(){
   return fetch('/api/factory-wip?action=options')
     .then(r => r.json())
@@ -136,6 +199,40 @@ function loadOptions(){
     });
 }
 
+function downloadTemplate(){
+  window.location.href = '/api/factory-wip-template';
+}
+
+function triggerImport(){
+  const input = document.getElementById('importFileInput');
+  if(!input) return;
+  input.value = '';
+  input.click();
+}
+
+function importTemplate(file){
+  const form = new FormData();
+  form.append('file', file);
+  fetch('/api/factory-wip-import', {
+    method: 'POST',
+    body: form
+  })
+    .then(r => r.json())
+    .then(d => {
+      if(d.status !== 'success'){
+        alert(d.message || '导入失败');
+        return;
+      }
+      const errorCount = Array.isArray(d.errors) ? d.errors.length : 0;
+      alert(`导入完成：新增 ${Number(d.created || 0)}，更新 ${Number(d.updated || 0)}，未变化 ${Number(d.unchanged || 0)}，错误 ${errorCount}`);
+      if(errorCount){
+        console.error('导入错误明细:', d.errors);
+      }
+      loadList();
+    })
+    .catch(err => alert(err.message || '导入失败'));
+}
+
 function openCreateModal(){
   const open = () => {
     editId = null;
@@ -145,6 +242,9 @@ function openCreateModal(){
     $('#modalFactory').value = '';
     $('#modalQuantity').value = '0';
     $('#modalExpectedDate').value = '';
+    setSegmentValue(document.getElementById('modalCompletedSegment'), '0');
+    $('#modalActualCompletionDate').value = todayStr();
+    toggleActualDateGroup();
     $('#modalNotes').value = '';
     $('#modalOrderProduct').disabled = false;
     $('#modalFactory').disabled = false;
@@ -171,6 +271,9 @@ function openEditModal(id){
     $('#modalFactory').value = String(row.factory_id || '');
     $('#modalQuantity').value = String(Number(row.quantity || 0));
     $('#modalExpectedDate').value = formatDate(row.expected_completion_date);
+    setSegmentValue(document.getElementById('modalCompletedSegment'), String(Number(row.is_completed || 0) ? 1 : 0));
+    $('#modalActualCompletionDate').value = formatDate(row.actual_completion_date) || todayStr();
+    toggleActualDateGroup();
     $('#modalNotes').value = row.notes || '';
     $('#modalOrderProduct').disabled = true;
     $('#modalFactory').disabled = true;
@@ -190,12 +293,72 @@ function closeModal(){
   editId = null;
 }
 
+function openCompletionConfirmModal(itemId, defaultDate){
+  pendingCompletionUpdateId = Number(itemId || 0);
+  document.getElementById('completionConfirmStatus').style.display = 'none';
+  document.getElementById('completionConfirmDate').value = defaultDate || todayStr();
+  document.getElementById('completionConfirmModal').classList.add('active');
+}
+
+function closeCompletionConfirmModal(){
+  document.getElementById('completionConfirmModal').classList.remove('active');
+  pendingCompletionUpdateId = null;
+}
+
+function quickUpdateCompletion(itemId, isCompleted, actualCompletionDate){
+  const row = getRowById(itemId);
+  if(!row) return;
+  const payload = {
+    id: Number(row.id),
+    quantity: Math.max(0, Number(row.quantity || 0)),
+    expected_completion_date: formatDate(row.expected_completion_date),
+    notes: row.notes || '',
+    is_completed: isCompleted ? 1 : 0,
+    actual_completion_date: isCompleted ? (actualCompletionDate || todayStr()) : ''
+  };
+  fetch('/api/factory-wip', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+    .then(r => r.json())
+    .then(d => {
+      if(d.status !== 'success'){
+        window.showAppToast && window.showAppToast(d.message || '更新失败', true);
+        loadList();
+        return;
+      }
+      window.showAppToast && window.showAppToast('更新成功', false);
+      loadList();
+    })
+    .catch(err => {
+      window.showAppToast && window.showAppToast(err.message || '更新失败', true);
+      loadList();
+    });
+}
+
+function confirmCompletionUpdate(){
+  if(!pendingCompletionUpdateId) return;
+  const dateVal = (document.getElementById('completionConfirmDate').value || '').trim() || todayStr();
+  quickUpdateCompletion(pendingCompletionUpdateId, 1, dateVal);
+  closeCompletionConfirmModal();
+}
+
 function saveFromModal(){
   const order_product_id = Number($('#modalOrderProduct').value || 0);
   const factory_id = Number($('#modalFactory').value || 0);
   const quantity = Math.max(0, parseInt($('#modalQuantity').value || '0', 10) || 0);
   const expected_completion_date = ($('#modalExpectedDate').value || '').trim();
+  const is_completed = String(document.getElementById('modalCompletedSegment')?.getAttribute('data-value') || '0') === '1' ? 1 : 0;
+  let actual_completion_date = ($('#modalActualCompletionDate').value || '').trim();
   const notes = ($('#modalNotes').value || '').trim();
+
+  if(is_completed && !actual_completion_date){
+    actual_completion_date = todayStr();
+  }
+  if(!is_completed){
+    actual_completion_date = '';
+  }
 
   if(!editId && (!order_product_id || !factory_id)){
     showModalStatus('下单SKU和工厂为必填', true);
@@ -203,8 +366,8 @@ function saveFromModal(){
   }
 
   const payload = editId
-    ? { id: editId, quantity, expected_completion_date, notes }
-    : { order_product_id, factory_id, quantity, expected_completion_date, notes };
+    ? { id: editId, quantity, expected_completion_date, is_completed, actual_completion_date, notes }
+    : { order_product_id, factory_id, quantity, expected_completion_date, is_completed, actual_completion_date, notes };
 
   fetch('/api/factory-wip', {
     method: editId ? 'PUT' : 'POST',
@@ -252,12 +415,12 @@ function loadList(){
     .then(d => {
       const tbody = document.querySelector('#mainTable tbody');
       if(d.status !== 'success'){
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#a33;">${d.message || '加载失败'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:#a33;">${d.message || '加载失败'}</td></tr>`;
         return;
       }
       listCache = d.items || [];
       if(!listCache.length){
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">暂无数据</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">暂无数据</td></tr>';
         return;
       }
       tbody.innerHTML = listCache.map(item => `
@@ -266,6 +429,13 @@ function loadList(){
           <td>${item.factory_name || ''}</td>
           <td>${Number(item.quantity || 0)}</td>
           <td>${formatDate(item.expected_completion_date)}</td>
+          <td>
+            <div class="status-segment status-segment--inline preview-completed-status" data-id="${item.id}" data-value="${Number(item.is_completed || 0) ? '1' : '0'}">
+              <button type="button" class="status-pill status-pill--yes ${Number(item.is_completed || 0) ? 'is-active' : ''}" data-value="1">是</button>
+              <button type="button" class="status-pill status-pill--no ${Number(item.is_completed || 0) ? '' : 'is-active'}" data-value="0">否</button>
+            </div>
+          </td>
+          <td>${formatDate(item.actual_completion_date)}</td>
           <td>${item.notes || ''}</td>
           <td>${formatDateTime(item.created_at)}</td>
           <td>
@@ -276,10 +446,27 @@ function loadList(){
           </td>
         </tr>
       `).join('');
+
+      document.querySelectorAll('.preview-completed-status').forEach(seg => {
+        seg.querySelectorAll('button[data-value]').forEach(btn => {
+          btn.addEventListener('click', function(e){
+            e.stopPropagation();
+            const targetValue = String(this.getAttribute('data-value') || '0');
+            const itemId = Number(seg.getAttribute('data-id') || 0);
+            const row = getRowById(itemId);
+            if(!row) return;
+            if(targetValue === '1'){
+              openCompletionConfirmModal(itemId, formatDate(row.actual_completion_date) || todayStr());
+            } else {
+              quickUpdateCompletion(itemId, 0, '');
+            }
+          });
+        });
+      });
     })
     .catch(err => {
       const tbody = document.querySelector('#mainTable tbody');
-      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#a33;">${err.message || '加载失败'}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:#a33;">${err.message || '加载失败'}</td></tr>`;
     });
 }
 
@@ -291,11 +478,31 @@ function resetSearch(){
 $('#searchInput').addEventListener('keydown', (e) => {
   if(e.key === 'Enter') loadList();
 });
+
+document.getElementById('modalCompletedSegment').querySelectorAll('button[data-value]').forEach(btn => {
+  btn.addEventListener('click', function(){
+    setSegmentValue(document.getElementById('modalCompletedSegment'), this.getAttribute('data-value') || '0');
+    toggleActualDateGroup();
+  });
+});
+
 $('#pm-modal').addEventListener('click', (e) => {
   if(e.target === e.currentTarget) closeModal();
 });
 
+document.getElementById('completionConfirmModal').addEventListener('click', (e) => {
+  if(e.target === e.currentTarget) closeCompletionConfirmModal();
+});
+
 window.addEventListener('load', () => {
+  const importInput = document.getElementById('importFileInput');
+  if(importInput){
+    importInput.addEventListener('change', function(){
+      const file = this.files && this.files[0];
+      if(!file) return;
+      importTemplate(file);
+    });
+  }
   loadOptions().finally(loadList);
 });
 </script>

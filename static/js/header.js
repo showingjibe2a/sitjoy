@@ -270,6 +270,63 @@
         }, Math.max(800, timeout));
     }
 
+    function showAppResultPanel(options){
+        const opt = options && typeof options === 'object' ? options : { title: '处理结果', summary: String(options || '') };
+        const title = String(opt.title || '处理结果').trim() || '处理结果';
+        const summary = String(opt.summary || '').trim();
+        const details = Array.isArray(opt.details) ? opt.details : [];
+        const isError = !!opt.isError;
+
+        let panel = document.getElementById('app-result-panel');
+        if(!panel){
+            panel = document.createElement('div');
+            panel.id = 'app-result-panel';
+            panel.className = 'app-result-panel';
+            panel.innerHTML = [
+                '<div class="app-result-panel-head">',
+                '  <div class="app-result-panel-title"></div>',
+                '  <button type="button" class="app-result-panel-close" aria-label="关闭">×</button>',
+                '</div>',
+                '<div class="app-result-panel-summary"></div>',
+                '<ul class="app-result-panel-list"></ul>'
+            ].join('');
+            document.body.appendChild(panel);
+            const closeBtn = panel.querySelector('.app-result-panel-close');
+            if(closeBtn){
+                closeBtn.addEventListener('click', () => panel.classList.remove('show'));
+            }
+        }
+
+        panel.classList.toggle('error', isError);
+        panel.classList.toggle('success', !isError);
+        const titleEl = panel.querySelector('.app-result-panel-title');
+        const summaryEl = panel.querySelector('.app-result-panel-summary');
+        const listEl = panel.querySelector('.app-result-panel-list');
+
+        if(titleEl) titleEl.textContent = title;
+        if(summaryEl) {
+            summaryEl.textContent = summary || '';
+            summaryEl.style.display = summary ? '' : 'none';
+        }
+        if(listEl){
+            if(details.length){
+                listEl.innerHTML = details.map(item => `<li>${String(item || '')}</li>`).join('');
+                listEl.style.display = '';
+            } else {
+                listEl.innerHTML = '';
+                listEl.style.display = 'none';
+            }
+        }
+
+        panel.classList.add('show');
+    }
+
+    function syncModalScrollLock(){
+        const hasActiveModal = !!document.querySelector('.pm-modal.active');
+        document.documentElement.classList.toggle('has-active-modal', hasActiveModal);
+        document.body.classList.toggle('has-active-modal', hasActiveModal);
+    }
+
     function inferErrorFromResponseEl(el){
         const cls = String(el.className || '').toLowerCase();
         const style = String(el.getAttribute('style') || '').toLowerCase();
@@ -1103,6 +1160,30 @@
         scope.querySelectorAll('table').forEach((table, index) => createManagedTable(table, index));
     }
 
+    function initOptionalDateInputs(root){
+        const scope = root && root.querySelectorAll ? root : document;
+        scope.querySelectorAll('input.optional-field[type="date"], input.optional-field[type="datetime-local"], input[data-optional-date="1"]').forEach(input => {
+            if(input.dataset.optionalDateEnhanced === '1') return;
+            input.dataset.optionalDateEnhanced = '1';
+            input.classList.add('optional-date-input');
+
+            const syncValueClass = () => {
+                const hasValue = String(input.value || '').trim().length > 0;
+                input.classList.toggle('has-value', hasValue);
+            };
+            syncValueClass();
+
+            input.addEventListener('change', syncValueClass);
+            input.addEventListener('input', syncValueClass);
+            input.addEventListener('blur', syncValueClass);
+            input.addEventListener('click', () => {
+                if(typeof input.showPicker === 'function'){
+                    try { input.showPicker(); } catch(_) {}
+                }
+            });
+        });
+    }
+
     window.initUniversalSingleSelects = initUniversalSingleSelects;
     window.refreshUniversalSingleSelect = refreshUniversalSingleSelect;
     window.refreshAllUniversalSingleSelects = function(){
@@ -1111,7 +1192,9 @@
             renderDropdownOptions(select, state);
             syncTriggerFromSelect(select, state);
         });
+        initOptionalDateInputs(document);
     };
+    window.showAppResultPanel = showAppResultPanel;
 
     function applyHeaderPermissions(authData){
         const permissions = authData && authData.page_permissions ? authData.page_permissions : null;
@@ -1184,7 +1267,7 @@
                     const elL = document.querySelector('.nav-logistics'); if(elL) elL.classList.add('active');
                 } else if(path.startsWith('/product-management') || path.startsWith('/fabric-management') || path.startsWith('/feature-management') || path.startsWith('/material-management') || path.startsWith('/certification-management') || path.startsWith('/order-product-management')){
                     const elP = document.querySelector('.nav-product'); if(elP) elP.classList.add('active');
-                } else if(path.startsWith('/sales-product-management') || path.startsWith('/parent-management')){
+                } else if(path.startsWith('/sales-product-management') || path.startsWith('/sales-order-registration-management') || path.startsWith('/parent-management')){
                     const elS = document.querySelector('.nav-sales'); if(elS) elS.classList.add('active');
                 } else if(path.startsWith('/about')){
                     const elA = document.querySelector('.nav-about'); if(elA) elA.classList.add('active');
@@ -1244,6 +1327,7 @@
     const boot = () => {
         loadHeader();
         initUniversalSingleSelects(document);
+        initOptionalDateInputs(document);
         enhanceHeroSections(document);
         enhanceManagedTables(document);
         bridgeLegacyResponseToToast(document);
@@ -1253,6 +1337,8 @@
             showAppToast(message, !!isError, duration);
         };
 
+        syncModalScrollLock();
+
         let bodyEnhanceScheduled = false;
         const bodyObserver = new MutationObserver(() => {
             if(bodyEnhanceScheduled) return;
@@ -1261,10 +1347,17 @@
                 bodyEnhanceScheduled = false;
                 enhanceHeroSections(document);
                 enhanceManagedTables(document);
+                initOptionalDateInputs(document);
                 bridgeLegacyResponseToToast(document);
+                syncModalScrollLock();
             });
         });
-        bodyObserver.observe(document.body, { childList: true, subtree: true });
+        bodyObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['class']
+        });
     };
 
     if(document.readyState === 'loading'){
