@@ -1388,3 +1388,18 @@ class LogisticsInTransitMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def _ensure_logistics_bl_folder(self, bill_of_lading_no):
+        name = (bill_of_lading_no or '').strip()
+        if not name:
+            return
+        root = self._get_logistics_link_root_bytes()
+        if not os.path.exists(root):
+            os.makedirs(root, exist_ok=True)
+        folder = os.path.join(root, self._safe_fsencode(name))
+        if not os.path.exists(folder):
+            os.makedirs(folder, exist_ok=True)
+        for sub in ('报关资料', '清关资料'):
+            sub_folder = os.path.join(folder, self._safe_fsencode(sub))
+            if not os.path.exists(sub_folder):
+                os.makedirs(sub_folder, exist_ok=True)
+

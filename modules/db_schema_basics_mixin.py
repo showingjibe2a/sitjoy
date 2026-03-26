@@ -393,3 +393,596 @@ class DbSchemaBasicsMixin:
             with conn.cursor() as cur:
                 cur.execute(create_sql)
         self._shops_ready = True
+
+    def _ensure_order_product_tables(self):
+        if self._order_product_ready:
+            return
+        self._ensure_product_table()
+        self._ensure_fabric_table()
+        self._ensure_category_table()
+        self._ensure_certification_table()
+        self._ensure_materials_table()
+
+        create_order_products = """
+        CREATE TABLE IF NOT EXISTS order_products (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            sku VARCHAR(64) NOT NULL UNIQUE,
+            sku_family_id INT UNSIGNED NULL,
+            version_no VARCHAR(64) NOT NULL,
+            fabric_id INT UNSIGNED NULL,
+            spec_qty_short VARCHAR(128) NOT NULL,
+            contents_desc_en VARCHAR(255) NULL,
+            is_iteration TINYINT(1) NOT NULL DEFAULT 0,
+            is_dachene_product TINYINT(1) NOT NULL DEFAULT 0,
+            is_on_market TINYINT(1) NOT NULL DEFAULT 1,
+            source_order_product_id INT UNSIGNED NULL,
+            finished_length_in DECIMAL(10,2) NULL,
+            finished_width_in DECIMAL(10,2) NULL,
+            finished_height_in DECIMAL(10,2) NULL,
+            net_weight_lbs DECIMAL(10,2) NULL,
+            package_length_in DECIMAL(10,2) NULL,
+            package_width_in DECIMAL(10,2) NULL,
+            package_height_in DECIMAL(10,2) NULL,
+            gross_weight_lbs DECIMAL(10,2) NULL,
+            cost_usd DECIMAL(10,2) NULL,
+            carton_qty INT UNSIGNED NULL,
+            package_size_class VARCHAR(64) NULL,
+            last_mile_avg_freight_usd DECIMAL(10,2) NULL,
+            factory_wip_stock INT NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_sku_family (sku_family_id),
+            INDEX idx_fabric (fabric_id),
+            INDEX idx_source_order_product (source_order_product_id),
+            CONSTRAINT fk_order_products_sku_family FOREIGN KEY (sku_family_id)
+                REFERENCES product_families(id) ON DELETE SET NULL,
+            CONSTRAINT fk_order_products_fabric FOREIGN KEY (fabric_id)
+                REFERENCES fabric_materials(id) ON DELETE SET NULL,
+            CONSTRAINT fk_order_products_source FOREIGN KEY (source_order_product_id)
+                REFERENCES order_products(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+
+        create_order_product_materials = """
+        CREATE TABLE IF NOT EXISTS order_product_materials (
+            order_product_id INT UNSIGNED NOT NULL,
+            material_id INT UNSIGNED NOT NULL,
+            PRIMARY KEY (order_product_id, material_id),
+            CONSTRAINT fk_opm_order_product FOREIGN KEY (order_product_id)
+                REFERENCES order_products(id) ON DELETE CASCADE,
+            CONSTRAINT fk_opm_material FOREIGN KEY (material_id)
+                REFERENCES materials(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+
+        create_features = """
+        CREATE TABLE IF NOT EXISTS features (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(128) NOT NULL UNIQUE,
+            name_en VARCHAR(128) NOT NULL DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_feature_name (name)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+
+        create_feature_categories = """
+        CREATE TABLE IF NOT EXISTS feature_categories (
+            feature_id INT UNSIGNED NOT NULL,
+            category_id INT UNSIGNED NOT NULL,
+            PRIMARY KEY (feature_id, category_id),
+            CONSTRAINT fk_feature_category_feature FOREIGN KEY (feature_id)
+                REFERENCES features(id) ON DELETE CASCADE,
+            CONSTRAINT fk_feature_category_category FOREIGN KEY (category_id)
+                REFERENCES product_categories(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+
+        create_order_product_features = """
+        CREATE TABLE IF NOT EXISTS order_product_features (
+            order_product_id INT UNSIGNED NOT NULL,
+            feature_id INT UNSIGNED NOT NULL,
+            PRIMARY KEY (order_product_id, feature_id),
+            CONSTRAINT fk_opf_order_product FOREIGN KEY (order_product_id)
+                REFERENCES order_products(id) ON DELETE CASCADE,
+            CONSTRAINT fk_opf_feature FOREIGN KEY (feature_id)
+                REFERENCES features(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+
+        create_order_product_certifications = """
+        CREATE TABLE IF NOT EXISTS order_product_certifications (
+            order_product_id INT UNSIGNED NOT NULL,
+            certification_id INT UNSIGNED NOT NULL,
+            PRIMARY KEY (order_product_id, certification_id),
+            CONSTRAINT fk_opc_order_product FOREIGN KEY (order_product_id)
+                REFERENCES order_products(id) ON DELETE CASCADE,
+            CONSTRAINT fk_opc_certification FOREIGN KEY (certification_id)
+                REFERENCES certifications(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+
+        create_order_product_shipping_plans = """
+        CREATE TABLE IF NOT EXISTS order_product_shipping_plans (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            order_product_id INT UNSIGNED NOT NULL,
+            plan_name VARCHAR(128) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uk_order_plan_name (order_product_id, plan_name),
+            INDEX idx_ops_order (order_product_id),
+            CONSTRAINT fk_ops_order FOREIGN KEY (order_product_id)
+                REFERENCES order_products(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+
+        create_order_product_shipping_plan_items = """
+        CREATE TABLE IF NOT EXISTS order_product_shipping_plan_items (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            shipping_plan_id INT UNSIGNED NOT NULL,
+            substitute_order_product_id INT UNSIGNED NOT NULL,
+            quantity INT UNSIGNED NOT NULL DEFAULT 1,
+            sort_order INT UNSIGNED NOT NULL DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uk_opsi_unique (shipping_plan_id, substitute_order_product_id, sort_order),
+            INDEX idx_opsi_plan (shipping_plan_id),
+            CONSTRAINT fk_opsi_plan FOREIGN KEY (shipping_plan_id)
+                REFERENCES order_product_shipping_plans(id) ON DELETE CASCADE,
+            CONSTRAINT fk_opsi_sub_order FOREIGN KEY (substitute_order_product_id)
+                REFERENCES order_products(id) ON DELETE RESTRICT
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+
+        with self._get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(create_order_products)
+                cur.execute(create_order_product_materials)
+                cur.execute(create_features)
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS cnt
+                    FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'features'
+                      AND COLUMN_NAME = 'name_en'
+                    """
+                )
+                row = cur.fetchone()
+                if row and row.get('cnt', 0) == 0:
+                    cur.execute("ALTER TABLE features ADD COLUMN name_en VARCHAR(128) NOT NULL DEFAULT ''")
+                cur.execute(create_feature_categories)
+                cur.execute(create_order_product_features)
+                cur.execute(create_order_product_certifications)
+                cur.execute(create_order_product_shipping_plans)
+                cur.execute(create_order_product_shipping_plan_items)
+                try:
+                    cur.execute(
+                        """
+                        SELECT COUNT(*) AS cnt
+                        FROM information_schema.COLUMNS
+                        WHERE TABLE_SCHEMA = DATABASE()
+                          AND TABLE_NAME = 'order_product_shipping_plans'
+                          AND COLUMN_NAME = 'is_default'
+                        """
+                    )
+                    row = cur.fetchone() or {}
+                    if int(row.get('cnt') or 0) > 0:
+                        cur.execute("ALTER TABLE order_product_shipping_plans DROP COLUMN is_default")
+                except Exception:
+                    pass
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS cnt
+                    FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'order_products'
+                      AND COLUMN_NAME = 'dachene_yuncang_no'
+                    """
+                )
+                row = cur.fetchone()
+                if row and row.get('cnt', 0) > 0:
+                    try:
+                        cur.execute("ALTER TABLE order_products DROP COLUMN dachene_yuncang_no")
+                    except Exception:
+                        pass
+
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS cnt
+                    FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'order_products'
+                      AND COLUMN_NAME = 'spec_qty'
+                    """
+                )
+                row = cur.fetchone()
+                if row and row.get('cnt', 0) > 0:
+                    try:
+                        cur.execute("ALTER TABLE order_products DROP COLUMN spec_qty")
+                    except Exception:
+                        pass
+
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS cnt
+                    FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'order_products'
+                      AND COLUMN_NAME = 'listing_image_b64'
+                    """
+                )
+                row = cur.fetchone()
+                if row and row.get('cnt', 0) > 0:
+                    try:
+                        cur.execute("ALTER TABLE order_products DROP COLUMN listing_image_b64")
+                    except Exception:
+                        pass
+
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS cnt
+                    FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'order_products'
+                      AND COLUMN_NAME = 'is_iteration'
+                    """
+                )
+                row = cur.fetchone()
+                if row and row.get('cnt', 0) == 0:
+                    try:
+                        cur.execute("ALTER TABLE order_products ADD COLUMN is_iteration TINYINT(1) NOT NULL DEFAULT 0")
+                    except Exception:
+                        pass
+
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS cnt
+                    FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'order_products'
+                      AND COLUMN_NAME = 'is_dachene_product'
+                    """
+                )
+                row = cur.fetchone()
+                if row and row.get('cnt', 0) == 0:
+                    try:
+                        cur.execute("ALTER TABLE order_products ADD COLUMN is_dachene_product TINYINT(1) NOT NULL DEFAULT 0 AFTER is_iteration")
+                    except Exception:
+                        pass
+
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS cnt
+                    FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'order_products'
+                      AND COLUMN_NAME = 'is_on_market'
+                    """
+                )
+                row = cur.fetchone()
+                if row and row.get('cnt', 0) == 0:
+                    try:
+                        cur.execute("ALTER TABLE order_products ADD COLUMN is_on_market TINYINT(1) NOT NULL DEFAULT 1 AFTER is_dachene_product")
+                    except Exception:
+                        pass
+
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS cnt
+                    FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'order_products'
+                      AND COLUMN_NAME = 'contents_desc_en'
+                    """
+                )
+                row = cur.fetchone()
+                if row and row.get('cnt', 0) == 0:
+                    try:
+                        cur.execute("ALTER TABLE order_products ADD COLUMN contents_desc_en VARCHAR(255) NULL AFTER spec_qty_short")
+                    except Exception:
+                        pass
+
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS cnt
+                    FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'order_products'
+                      AND COLUMN_NAME = 'factory_wip_stock'
+                    """
+                )
+                row = cur.fetchone()
+                if row and row.get('cnt', 0) == 0:
+                    try:
+                        cur.execute("ALTER TABLE order_products ADD COLUMN factory_wip_stock INT NOT NULL DEFAULT 0 AFTER last_mile_avg_freight_usd")
+                    except Exception:
+                        pass
+
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS cnt
+                    FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'order_products'
+                      AND COLUMN_NAME = 'source_order_product_id'
+                    """
+                )
+                row = cur.fetchone()
+                if row and row.get('cnt', 0) == 0:
+                    try:
+                        cur.execute("ALTER TABLE order_products ADD COLUMN source_order_product_id INT UNSIGNED NULL")
+                    except Exception:
+                        pass
+                    try:
+                        cur.execute("ALTER TABLE order_products ADD INDEX idx_source_order_product (source_order_product_id)")
+                    except Exception:
+                        pass
+                    try:
+                        cur.execute(
+                            """
+                            ALTER TABLE order_products
+                            ADD CONSTRAINT fk_order_products_source
+                            FOREIGN KEY (source_order_product_id) REFERENCES order_products(id)
+                            ON DELETE SET NULL
+                            """
+                        )
+                    except Exception:
+                        pass
+
+        self._order_product_ready = True
+
+    def _ensure_todo_tables(self, lightweight=False):
+        if self._todo_ready and (lightweight or self._todo_schema_migrated):
+            return
+
+        with self._todo_ensure_lock:
+            if self._todo_ready and (lightweight or self._todo_schema_migrated):
+                return
+
+            create_users = """
+            CREATE TABLE IF NOT EXISTS users (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(64) NOT NULL UNIQUE,
+                password_hash VARCHAR(255) NOT NULL,
+                name VARCHAR(128) NULL,
+                phone VARCHAR(64) NULL,
+                birthday DATE NULL,
+                is_admin TINYINT UNSIGNED NOT NULL DEFAULT 0,
+                can_grant_admin TINYINT UNSIGNED NOT NULL DEFAULT 0,
+                page_permissions LONGTEXT NULL,
+                is_approved TINYINT(1) NOT NULL DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_username (username),
+                INDEX idx_birthday (birthday),
+                INDEX idx_name (name)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """
+
+            create_todos = """
+            CREATE TABLE IF NOT EXISTS todos (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                title VARCHAR(255) NOT NULL,
+                detail TEXT NULL,
+                start_date DATE NOT NULL,
+                due_date DATE NOT NULL,
+                reminder_interval_days INT UNSIGNED NOT NULL DEFAULT 1,
+                last_check_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                next_check_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                is_recurring TINYINT UNSIGNED NOT NULL DEFAULT 0,
+                status VARCHAR(16) NOT NULL DEFAULT 'open',
+                priority TINYINT UNSIGNED NOT NULL DEFAULT 2,
+                created_by INT UNSIGNED NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_due_date (due_date),
+                INDEX idx_status (status),
+                INDEX idx_created_by (created_by),
+                CONSTRAINT fk_todos_created_by FOREIGN KEY (created_by)
+                    REFERENCES users(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """
+
+            create_todo_assignments = """
+            CREATE TABLE IF NOT EXISTS todo_assignments (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                todo_id INT UNSIGNED NOT NULL,
+                assignee_id INT UNSIGNED NOT NULL,
+                assignment_status VARCHAR(16) NOT NULL DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uk_todo_assignee (todo_id, assignee_id),
+                CONSTRAINT fk_ta_todo FOREIGN KEY (todo_id)
+                    REFERENCES todos(id) ON DELETE CASCADE,
+                CONSTRAINT fk_ta_assignee FOREIGN KEY (assignee_id)
+                    REFERENCES users(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """
+
+            create_sessions = """
+            CREATE TABLE IF NOT EXISTS sessions (
+                session_id VARCHAR(128) PRIMARY KEY,
+                employee_id INT UNSIGNED NOT NULL,
+                expires_at DATETIME NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_emp (employee_id),
+                CONSTRAINT fk_sessions_user FOREIGN KEY (employee_id) REFERENCES users(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """
+
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(create_users)
+                    cur.execute(create_todos)
+                    cur.execute(create_todo_assignments)
+                    cur.execute(create_sessions)
+                    self._todo_ready = True
+
+                    if lightweight:
+                        return
+
+                    for col, ddl in (
+                        ('name', "ALTER TABLE users ADD COLUMN name VARCHAR(128) NULL"),
+                        ('phone', "ALTER TABLE users ADD COLUMN phone VARCHAR(64) NULL"),
+                        ('birthday', "ALTER TABLE users ADD COLUMN birthday DATE NULL"),
+                        ('is_admin', "ALTER TABLE users ADD COLUMN is_admin TINYINT UNSIGNED NOT NULL DEFAULT 0"),
+                        ('can_grant_admin', "ALTER TABLE users ADD COLUMN can_grant_admin TINYINT UNSIGNED NOT NULL DEFAULT 0"),
+                        ('page_permissions', "ALTER TABLE users ADD COLUMN page_permissions LONGTEXT NULL"),
+                        ('is_approved', "ALTER TABLE users ADD COLUMN is_approved TINYINT(1) NOT NULL DEFAULT 1"),
+                    ):
+                        cur.execute(
+                            """
+                            SELECT COUNT(*) AS cnt
+                            FROM information_schema.COLUMNS
+                            WHERE TABLE_SCHEMA = DATABASE()
+                              AND TABLE_NAME = 'users'
+                              AND COLUMN_NAME = %s
+                            """,
+                            (col,)
+                        )
+                        row = cur.fetchone()
+                        if row and row.get('cnt', 0) == 0:
+                            cur.execute(ddl)
+
+                    cur.execute(
+                        """
+                        SELECT COUNT(*) AS cnt
+                        FROM information_schema.COLUMNS
+                        WHERE TABLE_SCHEMA = DATABASE()
+                          AND TABLE_NAME = 'users'
+                          AND COLUMN_NAME = 'can_manage_todos'
+                        """
+                    )
+                    can_manage_col = cur.fetchone()
+                    if can_manage_col and can_manage_col.get('cnt', 0) > 0:
+                        try:
+                            cur.execute("ALTER TABLE users DROP COLUMN can_manage_todos")
+                        except Exception:
+                            pass
+
+                    cur.execute(
+                        """
+                        SELECT COUNT(*) AS cnt
+                        FROM information_schema.COLUMNS
+                        WHERE TABLE_SCHEMA = DATABASE()
+                          AND TABLE_NAME = 'users'
+                          AND COLUMN_NAME = 'employee_id'
+                        """
+                    )
+                    emp_col = cur.fetchone()
+                    if emp_col and emp_col.get('cnt', 0) > 0:
+                        cur.execute(
+                            """
+                            SELECT CONSTRAINT_NAME
+                            FROM information_schema.KEY_COLUMN_USAGE
+                            WHERE TABLE_SCHEMA = DATABASE()
+                              AND TABLE_NAME = 'users'
+                              AND COLUMN_NAME = 'employee_id'
+                              AND REFERENCED_TABLE_NAME IS NOT NULL
+                            """
+                        )
+                        for fk in cur.fetchall() or []:
+                            try:
+                                cur.execute(f"ALTER TABLE users DROP FOREIGN KEY {fk['CONSTRAINT_NAME']}")
+                            except Exception:
+                                pass
+                        try:
+                            cur.execute("ALTER TABLE users MODIFY COLUMN employee_id INT UNSIGNED NULL")
+                        except Exception:
+                            pass
+                        try:
+                            cur.execute("ALTER TABLE users DROP COLUMN employee_id")
+                        except Exception:
+                            pass
+
+                    for table_name in ('users', 'todos', 'todo_assignments', 'sessions'):
+                        cur.execute(
+                            """
+                            SELECT CONSTRAINT_NAME
+                            FROM information_schema.KEY_COLUMN_USAGE
+                            WHERE TABLE_SCHEMA = DATABASE()
+                              AND TABLE_NAME = %s
+                              AND REFERENCED_TABLE_NAME = 'employees'
+                            """,
+                            (table_name,)
+                        )
+                        for fk in cur.fetchall() or []:
+                            try:
+                                cur.execute(f"ALTER TABLE {table_name} DROP FOREIGN KEY {fk['CONSTRAINT_NAME']}")
+                            except Exception:
+                                pass
+
+                    try:
+                        cur.execute("DROP TABLE IF EXISTS employees")
+                    except Exception:
+                        pass
+
+                    cur.execute("SELECT COUNT(*) AS cnt FROM users WHERE is_admin=1")
+                    admin_row = cur.fetchone()
+                    if admin_row and admin_row.get('cnt', 0) == 0:
+                        cur.execute("SELECT id FROM users ORDER BY id ASC LIMIT 1")
+                        first_user = cur.fetchone()
+                        if first_user and first_user.get('id'):
+                            cur.execute(
+                                "UPDATE users SET is_admin=1, can_grant_admin=1, is_approved=1, page_permissions=%s WHERE id=%s",
+                                (self._serialize_page_permissions(self._default_page_permissions()), first_user['id'])
+                            )
+
+                    try:
+                        cur.execute(
+                            "ALTER TABLE todos ADD CONSTRAINT fk_todos_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE"
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        cur.execute(
+                            "ALTER TABLE todo_assignments ADD CONSTRAINT fk_ta_assignee FOREIGN KEY (assignee_id) REFERENCES users(id) ON DELETE CASCADE"
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        cur.execute(
+                            "ALTER TABLE sessions ADD CONSTRAINT fk_sessions_user FOREIGN KEY (employee_id) REFERENCES users(id) ON DELETE CASCADE"
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        cur.execute("ALTER TABLE todo_assignments ADD INDEX idx_ta_assignee_todo (assignee_id, todo_id)")
+                    except Exception:
+                        pass
+                    try:
+                        cur.execute("ALTER TABLE todos ADD INDEX idx_todos_creator_due_priority (created_by, due_date, priority, id)")
+                    except Exception:
+                        pass
+
+            self._todo_schema_migrated = True
+
+    def _ensure_certification_table(self):
+        if getattr(self, '_certification_ready', False):
+            return
+        with self._schema_ensure_lock:
+            if getattr(self, '_certification_ready', False):
+                return
+            create_sql = """
+            CREATE TABLE IF NOT EXISTS certifications (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(128) NOT NULL UNIQUE,
+                icon_name VARCHAR(255) NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(create_sql)
+                    cur.execute(
+                        """
+                        SELECT COUNT(*) AS cnt
+                        FROM information_schema.COLUMNS
+                        WHERE TABLE_SCHEMA = DATABASE()
+                          AND TABLE_NAME = 'certifications'
+                          AND COLUMN_NAME = 'icon_name'
+                        """
+                    )
+                    row = cur.fetchone() or {}
+                    if int(row.get('cnt') or 0) == 0:
+                        cur.execute("ALTER TABLE certifications ADD COLUMN icon_name VARCHAR(255) NULL AFTER name")
+            self._certification_ready = True
+            self.__class__._schema_ready_cache['certification'] = True
+
+    def _ensure_certifications_table(self):
+        return self._ensure_certification_table()

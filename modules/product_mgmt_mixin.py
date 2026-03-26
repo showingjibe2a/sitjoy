@@ -692,3 +692,10 @@ class ProductManagementMixin:
             cur.execute("DESC materials")
             columns = cur.fetchall() or []
         return any(col.get('Field') == 'parent_id' for col in columns)
+
+    def _ensure_listing_folder(self):
+        folder = self._get_listing_folder_bytes()
+        if not os.path.exists(folder):
+            os.makedirs(folder, exist_ok=True)
+        return folder
+

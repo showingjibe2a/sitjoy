@@ -162,3 +162,43 @@ class UtilityMixin:
         except Exception as e:
             print(f'Feature API error: {str(e)}')
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def _ensure_features_table(self):
+        self._ensure_category_table()
+        create_features = """
+        CREATE TABLE IF NOT EXISTS features (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(128) NOT NULL UNIQUE,
+            name_en VARCHAR(128) NOT NULL DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_feature_name (name)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+        create_feature_categories = """
+        CREATE TABLE IF NOT EXISTS feature_categories (
+            feature_id INT UNSIGNED NOT NULL,
+            category_id INT UNSIGNED NOT NULL,
+            PRIMARY KEY (feature_id, category_id),
+            CONSTRAINT fk_feature_category_feature FOREIGN KEY (feature_id)
+                REFERENCES features(id) ON DELETE CASCADE,
+            CONSTRAINT fk_feature_category_category FOREIGN KEY (category_id)
+                REFERENCES product_categories(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
+        with self._get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(create_features)
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS cnt
+                    FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'features'
+                      AND COLUMN_NAME = 'name_en'
+                    """
+                )
+                row = cur.fetchone()
+                if row and row.get('cnt', 0) == 0:
+                    cur.execute("ALTER TABLE features ADD COLUMN name_en VARCHAR(128) NOT NULL DEFAULT ''")
+                cur.execute(create_feature_categories)
+

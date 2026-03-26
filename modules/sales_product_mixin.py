@@ -1315,5 +1315,23 @@ class SalesProductMixin:
             print("Sales product API error: " + str(e))
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def _ensure_listing_sales_variant_folder(self, sku_family, spec_name, fabric_code):
+        sku_name = (sku_family or '').strip()
+        if not sku_name:
+            return
+        self._ensure_listing_sku_folder(sku_name)
+        base_folder = self._ensure_listing_folder()
+        sku_folder = os.path.join(base_folder, self._safe_fsencode(sku_name))
+        main_folder = os.path.join(sku_folder, self._safe_fsencode('主图'))
+        if not os.path.exists(main_folder):
+            os.makedirs(main_folder, exist_ok=True)
 
+        spec_part = (spec_name or '').strip().replace('/', '-').replace('\\', '-')
+        fabric_part = self._code_before_dash(fabric_code).replace('/', '-').replace('\\', '-')
+        if not (spec_part and fabric_part):
+            return
+        variant_folder_name = f"{spec_part}-{fabric_part}"
+        variant_folder = os.path.join(main_folder, self._safe_fsencode(variant_folder_name))
+        if not os.path.exists(variant_folder):
+            os.makedirs(variant_folder, exist_ok=True)
 
