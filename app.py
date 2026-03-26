@@ -272,7 +272,9 @@ class WSGIApp(AppEntryMixin, PagePermissionMixin, AuthEmployeeMixin, DbSchemaBas
         self._todo_ready = False
         self._todo_schema_migrated = False
         self._todo_ensure_lock = threading.Lock()
-        self._schema_ensure_lock = threading.Lock()
+        self._schema_ensure_lock = threading.RLock()
+        self._category_ready = False
+        self._fabric_ready = False
         self._user_session = {}
         self._template_options_cache = {}
 
@@ -1386,6 +1388,11 @@ class WSGIApp(AppEntryMixin, PagePermissionMixin, AuthEmployeeMixin, DbSchemaBas
             raise e
 
     def _ensure_category_table(self):
+        if self._category_ready:
+            return
+        with self._schema_ensure_lock:
+            if self._category_ready:
+                return
         create_sql = """
         CREATE TABLE IF NOT EXISTS product_categories (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -1412,8 +1419,14 @@ class WSGIApp(AppEntryMixin, PagePermissionMixin, AuthEmployeeMixin, DbSchemaBas
                 row = cur.fetchone()
                 if row and row.get('cnt', 0) == 0:
                     cur.execute("ALTER TABLE product_categories ADD COLUMN category_en_name VARCHAR(128) NOT NULL DEFAULT ''")
+        self._category_ready = True
 
     def _ensure_fabric_table(self):
+        if self._fabric_ready:
+            return
+        with self._schema_ensure_lock:
+            if self._fabric_ready:
+                return
         self._ensure_materials_table()
         self._ensure_product_table()
         create_sql = """
@@ -1573,6 +1586,7 @@ class WSGIApp(AppEntryMixin, PagePermissionMixin, AuthEmployeeMixin, DbSchemaBas
                     cur.execute("ALTER TABLE fabric_images ADD INDEX idx_fabric_images_primary (fabric_id, is_primary)")
                 except Exception:
                     pass
+        self._fabric_ready = True
 
     def _ensure_material_types_table(self):
         if self._material_types_ready:
@@ -4663,6 +4677,40 @@ class WSGIApp(AppEntryMixin, PagePermissionMixin, AuthEmployeeMixin, DbSchemaBas
 
             if method == 'GET':
                 keyword = query_params.get('q', [''])[0].strip()
+                brief = str(query_params.get('brief', [''])[0]).strip().lower() in ('1', 'true', 'yes')
+                limit = max(50, min(self._parse_int(query_params.get('limit', ['800'])[0]) or 800, 3000))
+                if brief:
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            if keyword:
+                                cur.execute(
+                                    """
+                                    SELECT id, sku_family, category, created_at
+                                    FROM product_families
+                                    WHERE sku_family LIKE %s OR category LIKE %s
+                                    ORDER BY id DESC
+                                    LIMIT %s
+                                    """,
+                                    (f"%{keyword}%", f"%{keyword}%", limit)
+                                )
+                            else:
+                                cur.execute(
+                                    """
+                                    SELECT id, sku_family, category, created_at
+                                    FROM product_families
+                                    ORDER BY id DESC
+                                    LIMIT %s
+                                    """,
+                                    (limit,)
+                                )
+                            rows = cur.fetchall() or []
+                    return self.send_json({'status': 'success', 'items': rows}, start_response)
+
+                if not keyword:
+                    cached = self._template_options_cache.get('sku_list_all')
+                    if isinstance(cached, dict) and isinstance(cached.get('items'), list):
+                        return self.send_json({'status': 'success', 'items': cached.get('items')}, start_response)
+
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         if keyword:
@@ -4693,13 +4741,15 @@ class WSGIApp(AppEntryMixin, PagePermissionMixin, AuthEmployeeMixin, DbSchemaBas
                                 ORDER BY pf.id DESC
                                 """
                             )
-                        rows = cur.fetchall()
+                        rows = cur.fetchall() or []
                 for row in rows:
                     fabric_ids = row.get('fabric_ids')
                     if fabric_ids:
                         row['fabric_ids'] = [v for v in fabric_ids.split(',') if v]
                     else:
                         row['fabric_ids'] = []
+                if not keyword:
+                    self._template_options_cache['sku_list_all'] = {'items': rows}
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             if method == 'POST':
@@ -4718,6 +4768,8 @@ class WSGIApp(AppEntryMixin, PagePermissionMixin, AuthEmployeeMixin, DbSchemaBas
                         )
                         new_id = cur.lastrowid
                     self._replace_sku_family_fabric_ids(conn, new_id, fabric_ids)
+                self._template_options_cache.pop('sku_list_all', None)
+                self._template_options_cache.pop('fabric_list_all', None)
                 self._ensure_listing_sku_folder(sku_family)
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
@@ -4764,6 +4816,8 @@ class WSGIApp(AppEntryMixin, PagePermissionMixin, AuthEmployeeMixin, DbSchemaBas
                         raise
                 if db_updated:
                     self._ensure_listing_sku_folder(sku_family)
+                self._template_options_cache.pop('sku_list_all', None)
+                self._template_options_cache.pop('fabric_list_all', None)
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':
@@ -4774,6 +4828,8 @@ class WSGIApp(AppEntryMixin, PagePermissionMixin, AuthEmployeeMixin, DbSchemaBas
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute("DELETE FROM product_families WHERE id=%s", (item_id,))
+                self._template_options_cache.pop('sku_list_all', None)
+                self._template_options_cache.pop('fabric_list_all', None)
                 return self.send_json({'status': 'success'}, start_response)
 
             return self.send_error(405, 'Method not allowed', start_response)
@@ -4794,6 +4850,12 @@ class WSGIApp(AppEntryMixin, PagePermissionMixin, AuthEmployeeMixin, DbSchemaBas
 
             if method == 'GET':
                 keyword = query_params.get('q', [''])[0].strip()
+
+                if not keyword:
+                    cached = self._template_options_cache.get('category_list_all')
+                    if isinstance(cached, dict) and isinstance(cached.get('items'), list):
+                        return self.send_json({'status': 'success', 'items': cached.get('items')}, start_response)
+
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         if keyword:
@@ -4814,7 +4876,9 @@ class WSGIApp(AppEntryMixin, PagePermissionMixin, AuthEmployeeMixin, DbSchemaBas
                                 ORDER BY id DESC
                                 """
                             )
-                        rows = cur.fetchall()
+                        rows = cur.fetchall() or []
+                if not keyword:
+                    self._template_options_cache['category_list_all'] = {'items': rows}
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             if method == 'POST':
@@ -4831,6 +4895,7 @@ class WSGIApp(AppEntryMixin, PagePermissionMixin, AuthEmployeeMixin, DbSchemaBas
                             (category_cn, category_en, category_en_name)
                         )
                         new_id = cur.lastrowid
+                    self._template_options_cache.pop('category_list_all', None)
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
             if method == 'PUT':
@@ -4851,6 +4916,7 @@ class WSGIApp(AppEntryMixin, PagePermissionMixin, AuthEmployeeMixin, DbSchemaBas
                             """,
                             (category_cn, category_en, category_en_name, item_id)
                         )
+                self._template_options_cache.pop('category_list_all', None)
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':
@@ -5781,6 +5847,8 @@ class WSGIApp(AppEntryMixin, PagePermissionMixin, AuthEmployeeMixin, DbSchemaBas
                     raise
 
                 image_names = [img['image_name'] for img in plan['planned_images']]
+                self._template_options_cache.pop('fabric_list_all', None)
+                self._template_options_cache.pop('sku_list_all', None)
                 return self.send_json({'status': 'success', 'id': new_id, 'image_names': image_names}, start_response)
 
             if method == 'PUT':
@@ -5852,6 +5920,8 @@ class WSGIApp(AppEntryMixin, PagePermissionMixin, AuthEmployeeMixin, DbSchemaBas
                     raise
 
                 image_names = [img['image_name'] for img in plan['planned_images']]
+                self._template_options_cache.pop('fabric_list_all', None)
+                self._template_options_cache.pop('sku_list_all', None)
                 return self.send_json({'status': 'success', 'image_names': image_names}, start_response)
 
             if method == 'DELETE':
@@ -5862,6 +5932,8 @@ class WSGIApp(AppEntryMixin, PagePermissionMixin, AuthEmployeeMixin, DbSchemaBas
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute("DELETE FROM fabric_materials WHERE id=%s", (item_id,))
+                self._template_options_cache.pop('fabric_list_all', None)
+                self._template_options_cache.pop('sku_list_all', None)
                 return self.send_json({'status': 'success'}, start_response)
 
             return self.send_error(405, 'Method not allowed', start_response)

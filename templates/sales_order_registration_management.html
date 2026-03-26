@@ -891,14 +891,13 @@
                     listTotal = Number(data.total || 0);
                     listCache = (data.items || []).map(item => ({
                         ...item,
-                        summary_loading: true,
-                        platform_summary: [],
-                        shipment_summary: [],
-                        logistics_summary: []
+                        summary_loading: false,
+                        platform_summary: Array.isArray(item.platform_summary) ? item.platform_summary : [],
+                        shipment_summary: Array.isArray(item.shipment_summary) ? item.shipment_summary : [],
+                        logistics_summary: Array.isArray(item.logistics_summary) ? item.logistics_summary : []
                     }));
                     renderList(listCache);
                     renderPager();
-                    loadSummariesAsync(listCache, currentToken);
                 })
                 .catch(err => {
                     if (currentToken !== listRequestToken) return;

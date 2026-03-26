@@ -683,7 +683,7 @@
         }
 
         function loadSkuFamilies() {
-            fetch('/api/sku')
+            fetch('/api/sku?brief=1&limit=1200')
                 .then(r => r.json())
                 .then(data => {
                     if (data.status !== 'success') {

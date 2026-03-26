@@ -109,7 +109,7 @@
             if(window.refreshUniversalSingleSelect){ window.refreshUniversalSingleSelect(wh); window.refreshUniversalSingleSelect(op); }
         }
         function loadOptions(){
-            return fetch('/api/logistics-warehouse-inventory?action=options').then(r=>r.json()).then(data=>{
+                return fetch('/api/logistics-warehouse-inventory?action=options&include_order_products=1&order_product_limit=800').then(r=>r.json()).then(data=>{
                 if(data.status==='success'){
                     warehouses = data.warehouses || [];
                     orderProducts = data.order_products || [];

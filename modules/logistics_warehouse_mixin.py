@@ -1164,13 +1164,23 @@ class LogisticsWarehouseMixin:
             if method == 'GET':
                 action = (query_params.get('action', [''])[0] or '').strip().lower()
                 if action == 'options':
-                    with self._get_db_connection() as conn:
-                        with conn.cursor() as cur:
-                            cur.execute("SELECT id, warehouse_name FROM logistics_overseas_warehouses WHERE COALESCE(is_enabled,1)=1 ORDER BY warehouse_name ASC")
-                            warehouses = cur.fetchall() or []
-                            cur.execute("SELECT id, sku FROM order_products ORDER BY sku ASC")
-                            order_products = cur.fetchall() or []
-                    return self.send_json({'status': 'success', 'warehouses': warehouses, 'order_products': order_products}, start_response)
+                    option_limit = max(100, min(self._parse_int(query_params.get('order_product_limit', ['800'])[0]) or 800, 2000))
+                    include_order_products = str(query_params.get('include_order_products', ['1'])[0]).strip().lower() in ('1', 'true', 'yes')
+
+                    def _load_options_payload():
+                        with self._get_db_connection() as conn:
+                            with conn.cursor() as cur:
+                                cur.execute("SELECT id, warehouse_name FROM logistics_overseas_warehouses WHERE COALESCE(is_enabled,1)=1 ORDER BY warehouse_name ASC")
+                                warehouses = cur.fetchall() or []
+                                order_products = []
+                                if include_order_products:
+                                    cur.execute("SELECT id, sku FROM order_products ORDER BY sku ASC LIMIT %s", (option_limit,))
+                                    order_products = cur.fetchall() or []
+                        return {'status': 'success', 'warehouses': warehouses, 'order_products': order_products}
+
+                    cache_key = f'logistics_wh_inventory_options_{1 if include_order_products else 0}_{option_limit}'
+                    payload = self._get_cached_template_options(cache_key, _load_options_payload, ttl_seconds=1800)
+                    return self.send_json(payload, start_response)
 
                 keyword = (query_params.get('q', [''])[0] or '').strip()
                 warehouse_id = self._parse_int(query_params.get('warehouse_id', [''])[0])
