@@ -372,7 +372,8 @@ class SalesManagementMixin:
 
     def handle_sales_order_registration_api(self, environ, method, start_response):
         try:
-            self._ensure_sales_order_registration_tables()
+            if not self.__class__._schema_ready_cache.get('sales_order_registration'):
+                self._ensure_sales_order_registration_tables()
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
             action = (query_params.get('action', [''])[0] or '').strip().lower()
 
@@ -477,6 +478,7 @@ class SalesManagementMixin:
             if method == 'GET':
                 item_id = self._parse_int(query_params.get('id', [''])[0])
                 keyword = (query_params.get('q', [''])[0] or '').strip()
+                include_summaries = str(query_params.get('include_summaries', ['1'])[0] or '1').strip().lower() not in ('0', 'false', 'no', 'off')
                 page = max(1, self._parse_int(query_params.get('page', ['1'])[0]) or 1)
                 page_size = max(20, min(self._parse_int(query_params.get('page_size', ['50'])[0]) or 50, 200))
                 offset = (page - 1) * page_size
@@ -501,49 +503,65 @@ class SalesManagementMixin:
                         )
                         total = int((cur.fetchone() or {}).get('total') or 0)
 
-                        cur.execute(
-                            """
-                            SELECT r.id, r.shop_id, r.order_no, r.order_date, r.customer_name, r.shipping_status,
-                                   r.created_at, r.updated_at, s.shop_name, s.shop_name AS shop_display_name,
-                                   (
-                                       SELECT GROUP_CONCAT(CONCAT(COALESCE(p.platform_sku, ''), '*', COALESCE(p.quantity, 1)) ORDER BY p.id ASC SEPARATOR '\n')
-                                       FROM sales_order_registration_platform_items p
-                                       WHERE p.registration_id = r.id
-                                   ) AS platform_summary_text,
-                                   (
-                                       SELECT GROUP_CONCAT(CONCAT(COALESCE(si.order_sku, ''), '*', COALESCE(si.quantity, 1)) ORDER BY si.id ASC SEPARATOR '\n')
-                                       FROM sales_order_registration_shipment_items si
-                                       WHERE si.registration_id = r.id
-                                   ) AS shipment_summary_text,
-                                   (
-                                       SELECT GROUP_CONCAT(
-                                           CASE
-                                               WHEN COALESCE(li.shipping_carrier, '') <> ''
-                                               THEN CONCAT(li.shipping_carrier, ':', COALESCE(li.tracking_no, ''))
-                                               ELSE COALESCE(li.tracking_no, '')
-                                           END
-                                           ORDER BY li.sort_order ASC, li.id ASC SEPARATOR '\n'
-                                       )
-                                       FROM sales_order_registration_logistics_items li
-                                       WHERE li.registration_id = r.id
-                                   ) AS logistics_summary_text
-                            FROM sales_order_registrations r
-                            LEFT JOIN shops s ON s.id = r.shop_id
-                            """ + where_sql + " ORDER BY r.id DESC LIMIT %s OFFSET %s",
-                            tuple(params + [page_size, offset])
-                        )
+                        if include_summaries:
+                            cur.execute(
+                                """
+                                SELECT r.id, r.shop_id, r.order_no, r.order_date, r.customer_name, r.shipping_status,
+                                       r.created_at, r.updated_at, s.shop_name, s.shop_name AS shop_display_name,
+                                       (
+                                           SELECT GROUP_CONCAT(CONCAT(COALESCE(p.platform_sku, ''), '*', COALESCE(p.quantity, 1)) ORDER BY p.id ASC SEPARATOR '\n')
+                                           FROM sales_order_registration_platform_items p
+                                           WHERE p.registration_id = r.id
+                                       ) AS platform_summary_text,
+                                       (
+                                           SELECT GROUP_CONCAT(CONCAT(COALESCE(si.order_sku, ''), '*', COALESCE(si.quantity, 1)) ORDER BY si.id ASC SEPARATOR '\n')
+                                           FROM sales_order_registration_shipment_items si
+                                           WHERE si.registration_id = r.id
+                                       ) AS shipment_summary_text,
+                                       (
+                                           SELECT GROUP_CONCAT(
+                                               CASE
+                                                   WHEN COALESCE(li.shipping_carrier, '') <> ''
+                                                   THEN CONCAT(li.shipping_carrier, ':', COALESCE(li.tracking_no, ''))
+                                                   ELSE COALESCE(li.tracking_no, '')
+                                               END
+                                               ORDER BY li.sort_order ASC, li.id ASC SEPARATOR '\n'
+                                           )
+                                           FROM sales_order_registration_logistics_items li
+                                           WHERE li.registration_id = r.id
+                                       ) AS logistics_summary_text
+                                FROM sales_order_registrations r
+                                LEFT JOIN shops s ON s.id = r.shop_id
+                                """ + where_sql + " ORDER BY r.id DESC LIMIT %s OFFSET %s",
+                                tuple(params + [page_size, offset])
+                            )
+                        else:
+                            cur.execute(
+                                """
+                                SELECT r.id, r.shop_id, r.order_no, r.order_date, r.customer_name, r.shipping_status,
+                                       r.created_at, r.updated_at, s.shop_name, s.shop_name AS shop_display_name
+                                FROM sales_order_registrations r
+                                LEFT JOIN shops s ON s.id = r.shop_id
+                                """ + where_sql + " ORDER BY r.id DESC LIMIT %s OFFSET %s",
+                                tuple(params + [page_size, offset])
+                            )
                         rows = cur.fetchall() or []
 
                 for row in rows:
-                    platform_text = (row.get('platform_summary_text') or '').strip()
-                    shipment_text = (row.get('shipment_summary_text') or '').strip()
-                    logistics_text = (row.get('logistics_summary_text') or '').strip()
-                    row['platform_summary'] = [x for x in platform_text.split('\n') if x] if platform_text else []
-                    row['shipment_summary'] = [x for x in shipment_text.split('\n') if x] if shipment_text else []
-                    row['logistics_summary'] = [x for x in logistics_text.split('\n') if x] if logistics_text else []
-                    row.pop('platform_summary_text', None)
-                    row.pop('shipment_summary_text', None)
-                    row.pop('logistics_summary_text', None)
+                    if include_summaries:
+                        platform_text = (row.get('platform_summary_text') or '').strip()
+                        shipment_text = (row.get('shipment_summary_text') or '').strip()
+                        logistics_text = (row.get('logistics_summary_text') or '').strip()
+                        row['platform_summary'] = [x for x in platform_text.split('\n') if x] if platform_text else []
+                        row['shipment_summary'] = [x for x in shipment_text.split('\n') if x] if shipment_text else []
+                        row['logistics_summary'] = [x for x in logistics_text.split('\n') if x] if logistics_text else []
+                        row.pop('platform_summary_text', None)
+                        row.pop('shipment_summary_text', None)
+                        row.pop('logistics_summary_text', None)
+                    else:
+                        row['platform_summary'] = []
+                        row['shipment_summary'] = []
+                        row['logistics_summary'] = []
 
                 return self.send_json(
                     {'status': 'success', 'items': rows, 'page': page, 'page_size': page_size, 'total': total},

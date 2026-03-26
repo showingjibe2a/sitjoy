@@ -873,6 +873,7 @@
             if (q) query.set('q', q);
             query.set('page', String(listPage));
             query.set('page_size', String(listPageSize));
+            query.set('include_summaries', '0');
             const url = `/api/sales-order-registration?${query.toString()}`;
             fetch(url)
                 .then(r => r.json())
@@ -891,13 +892,14 @@
                     listTotal = Number(data.total || 0);
                     listCache = (data.items || []).map(item => ({
                         ...item,
-                        summary_loading: false,
+                        summary_loading: true,
                         platform_summary: Array.isArray(item.platform_summary) ? item.platform_summary : [],
                         shipment_summary: Array.isArray(item.shipment_summary) ? item.shipment_summary : [],
                         logistics_summary: Array.isArray(item.logistics_summary) ? item.logistics_summary : []
                     }));
                     renderList(listCache);
                     renderPager();
+                    loadSummariesAsync(listCache, currentToken);
                 })
                 .catch(err => {
                     if (currentToken !== listRequestToken) return;

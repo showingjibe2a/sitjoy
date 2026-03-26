@@ -114,7 +114,8 @@ class LogisticsInTransitMixin:
             action = (query_params.get('action', [''])[0] or '').strip().lower()
 
             if not (method == 'GET' and action == 'options'):
-                self._ensure_logistics_tables()
+                if not self.__class__._schema_ready_cache.get('logistics'):
+                    self._ensure_logistics_tables()
 
             def _to_bool_flag(value):
                 return 1 if str(value or '').strip().lower() in ('1', 'true', 'yes', 'on') else 0
@@ -159,7 +160,8 @@ class LogisticsInTransitMixin:
                         cached = self._get_cached_template_options(cache_key, _fetch_options_payload, ttl_seconds=1800)
                         return self.send_json(cached, start_response)
                     except Exception:
-                        self._ensure_logistics_tables()
+                        if not self.__class__._schema_ready_cache.get('logistics'):
+                            self._ensure_logistics_tables()
                         cache_key = f'logistics_in_transit_options_{scope}_{option_limit}'
                         cached = self._get_cached_template_options(cache_key, _fetch_options_payload, ttl_seconds=1800)
                         return self.send_json(cached, start_response)
