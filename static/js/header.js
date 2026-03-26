@@ -454,7 +454,9 @@
             maxLen = Math.max(maxLen, Math.min(len, 40));
         }
 
-        return Math.max(44, Math.min(200, Math.ceil(maxLen * 13 + 26)));
+        const headerLen = String(meta.label || '').trim().length;
+        const headerWidth = Math.ceil(headerLen * 16 + 34);
+        return Math.max(64, Math.min(520, Math.max(headerWidth, Math.ceil(maxLen * 13 + 26))));
     }
 
     function readPersistedColumns(table, validOrigins){
@@ -549,6 +551,36 @@
         return map;
     }
 
+    function getPrimaryHeaderRow(state){
+        if(state && state.headerTable && state.headerTable.tHead && state.headerTable.tHead.rows && state.headerTable.tHead.rows[0]){
+            return state.headerTable.tHead.rows[0];
+        }
+        if(state && state.table && state.table.tHead && state.table.tHead.rows && state.table.tHead.rows[0]){
+            return state.table.tHead.rows[0];
+        }
+        return null;
+    }
+
+    function syncDetachedHeader(state){
+        if(!state || !state.headerTable || !state.table || !state.table.tHead || !state.table.tHead.rows.length) return;
+        const srcHead = state.table.tHead;
+        const srcRow = srcHead.rows[0];
+        if(!srcRow) return;
+
+        let dstHead = state.headerTable.tHead;
+        if(!dstHead){
+            dstHead = document.createElement('thead');
+            state.headerTable.appendChild(dstHead);
+        }
+        dstHead.innerHTML = '';
+
+        const cloned = srcRow.cloneNode(true);
+        cloned.querySelectorAll('.pm-col-resizer').forEach(node => node.remove());
+        dstHead.appendChild(cloned);
+
+        srcHead.classList.add('pm-managed-hidden-head');
+    }
+
     function applyColumnOrder(state){
         const expected = state.headerCount;
         Array.from(state.table.rows || []).forEach(row => {
@@ -589,6 +621,16 @@
                 cell.style.maxWidth = `${width}px`;
             });
         });
+
+        if(state.headerTable && state.headerTable.tHead && state.headerTable.tHead.rows.length){
+            const headerRow = state.headerTable.tHead.rows[0];
+            Array.from(headerRow.cells || []).forEach(cell => {
+                if(Number(cell.dataset.manageColOrigin || '-1') !== Number(origin)) return;
+                cell.style.width = `${width}px`;
+                cell.style.minWidth = `${width}px`;
+                cell.style.maxWidth = `${width}px`;
+            });
+        }
     }
 
     function applyColumnWidths(state){
@@ -597,8 +639,7 @@
     }
 
     function ensureResizeHandles(state){
-        if(!state.table.tHead || !state.table.tHead.rows.length) return;
-        const headerRow = state.table.tHead.rows[0];
+        const headerRow = getPrimaryHeaderRow(state);
         if(!headerRow || headerRow.cells.length !== state.headerCount) return;
 
         Array.from(headerRow.cells).forEach(cell => {
@@ -702,8 +743,11 @@
         window.requestAnimationFrame(() => {
             applyColumnOrder(state);
             applyColumnVisibility(state);
+            syncDetachedHeader(state);
             applyColumnWidths(state);
             ensureResizeHandles(state);
+            refreshSortHeaderUi(state);
+            syncTopScroll(state);
             renderColumnPanel(state);
         });
     }
@@ -742,6 +786,11 @@
                 else state.visibleColumns.delete(origin);
                 persistColumns(state);
                 applyColumnVisibility(state);
+                syncDetachedHeader(state);
+                applyColumnWidths(state);
+                ensureResizeHandles(state);
+                refreshSortHeaderUi(state);
+                syncTopScroll(state);
             });
 
             const text = document.createElement('span');
@@ -875,8 +924,9 @@
     }
 
     function refreshSortHeaderUi(state){
-        if(!state.table.tHead || !state.table.tHead.rows.length) return;
-        Array.from(state.table.tHead.rows[0].cells || []).forEach(cell => {
+        const headerRow = getPrimaryHeaderRow(state);
+        if(!headerRow) return;
+        Array.from(headerRow.cells || []).forEach(cell => {
             const origin = Number(cell.dataset.manageColOrigin || '-1');
             cell.classList.remove('pm-sortable', 'pm-sort-asc', 'pm-sort-desc');
             if(state.lockedColumns.has(origin)) return;
@@ -888,8 +938,8 @@
     }
 
     function ensureSortableHeaders(state){
-        if(!state.table.tHead || !state.table.tHead.rows.length) return;
-        const headerRow = state.table.tHead.rows[0];
+        const headerRow = getPrimaryHeaderRow(state);
+        if(!headerRow) return;
         Array.from(headerRow.cells).forEach(cell => {
             if(cell.dataset.sortBound === '1') return;
             cell.dataset.sortBound = '1';
@@ -918,8 +968,9 @@
     function syncTopScroll(state){
         if(!state.topScroll || !state.topScrollInner || !state.wrap) return;
         let headerWidth = 0;
-        if(state.table.tHead && state.table.tHead.rows && state.table.tHead.rows[0]){
-            Array.from(state.table.tHead.rows[0].cells || []).forEach(cell => {
+        const headerRow = getPrimaryHeaderRow(state);
+        if(headerRow){
+            Array.from(headerRow.cells || []).forEach(cell => {
                 if(cell.classList.contains('pm-table-hide-col')) return;
                 const styled = parseFloat(cell.style.width || '0') || 0;
                 const measured = Math.ceil(cell.getBoundingClientRect().width || 0);
@@ -927,10 +978,14 @@
             });
         }
         const width = Math.max(state.table.scrollWidth, state.wrap.scrollWidth, headerWidth, state.wrap.clientWidth);
+        const scrollbarWidth = Math.max(0, state.wrap.offsetWidth - state.wrap.clientWidth);
+        if(state.headWrap) state.headWrap.style.paddingRight = `${scrollbarWidth}px`;
+        state.topScroll.style.paddingRight = `${scrollbarWidth}px`;
         state.topScrollInner.style.width = `${width}px`;
         const shouldShow = width > (state.wrap.clientWidth + 1) || state.wrap.scrollWidth > (state.wrap.clientWidth + 1);
         state.topScroll.style.display = shouldShow ? '' : 'none';
         state.topScroll.scrollLeft = state.wrap.scrollLeft;
+        if(state.headWrap) state.headWrap.scrollLeft = state.wrap.scrollLeft;
     }
 
     function refreshManagedTable(state){
@@ -982,6 +1037,7 @@
         ensureRowSortOrigin(state);
         applyColumnOrder(state);
         applyColumnVisibility(state);
+        syncDetachedHeader(state);
         applyColumnWidths(state);
         ensureSortableHeaders(state);
         refreshSortHeaderUi(state);
@@ -1012,7 +1068,14 @@
             table.parentNode.insertBefore(wrap, table);
             wrap.appendChild(table);
         }
-        wrap.classList.add('is-managed-wrap');
+        wrap.classList.add('is-managed-wrap', 'pm-managed-body-wrap');
+
+        const headWrap = document.createElement('div');
+        headWrap.className = 'pm-table-wrap pm-managed-head-wrap is-managed-wrap';
+        const headTable = document.createElement('table');
+        headTable.className = `${table.className} pm-managed-head-table`;
+        headTable.setAttribute('data-disable-table-manage', '1');
+        headWrap.appendChild(headTable);
 
         const toolbar = document.createElement('div');
         toolbar.className = 'pm-table-toolbar';
@@ -1042,12 +1105,15 @@
         const topScrollInner = document.createElement('div');
         topScrollInner.className = 'pm-table-top-scroll-inner';
         topScroll.appendChild(topScrollInner);
+        wrap.parentNode.insertBefore(headWrap, wrap);
         wrap.parentNode.insertBefore(topScroll, wrap);
 
         const state = {
             table,
             tbody: table.tBodies[0],
             wrap,
+            headWrap,
+            headerTable: headTable,
             toolbar,
             topScroll,
             topScrollInner,
@@ -1128,14 +1194,29 @@
         });
 
         state.wrap.addEventListener('scroll', () => {
+            if(Math.abs(state.headWrap.scrollLeft - state.wrap.scrollLeft) > 1){
+                state.headWrap.scrollLeft = state.wrap.scrollLeft;
+            }
             if(Math.abs(state.topScroll.scrollLeft - state.wrap.scrollLeft) > 1){
                 state.topScroll.scrollLeft = state.wrap.scrollLeft;
+            }
+        });
+
+        state.headWrap.addEventListener('scroll', () => {
+            if(Math.abs(state.wrap.scrollLeft - state.headWrap.scrollLeft) > 1){
+                state.wrap.scrollLeft = state.headWrap.scrollLeft;
+            }
+            if(Math.abs(state.topScroll.scrollLeft - state.headWrap.scrollLeft) > 1){
+                state.topScroll.scrollLeft = state.headWrap.scrollLeft;
             }
         });
 
         state.topScroll.addEventListener('scroll', () => {
             if(Math.abs(state.wrap.scrollLeft - state.topScroll.scrollLeft) > 1){
                 state.wrap.scrollLeft = state.topScroll.scrollLeft;
+            }
+            if(Math.abs(state.headWrap.scrollLeft - state.topScroll.scrollLeft) > 1){
+                state.headWrap.scrollLeft = state.topScroll.scrollLeft;
             }
         });
 

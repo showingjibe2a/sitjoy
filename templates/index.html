@@ -659,6 +659,10 @@
             <form id="employeeEditForm" class="pm-form">
                 <input type="hidden" id="employeeEditId">
                 <div class="form-group">
+                    <label>账号（仅管理员）</label>
+                    <input type="text" id="employeeEditUsername" placeholder="例如：lisa" required>
+                </div>
+                <div class="form-group">
                     <label>姓名（仅管理员）</label>
                     <input type="text" id="employeeEditName" placeholder="例如：李华">
                 </div>
@@ -1076,6 +1080,7 @@
 
         function openEmployeeEditModal(data) {
             document.getElementById('employeeEditId').value = data.id || '';
+            document.getElementById('employeeEditUsername').value = data.username || '';
             document.getElementById('employeeEditName').value = data.name || '';
             document.getElementById('employeeEditBirthday').value = data.birthday || '';
             document.getElementById('employeeEditPhone').value = data.phone || '';
@@ -1686,6 +1691,7 @@
                 const permissionState = collectPermissionEditorState('employeeEditPermissionEditor');
                 const payload = {
                     id: parseInt(id, 10),
+                    username: document.getElementById('employeeEditUsername').value.trim(),
                     name: document.getElementById('employeeEditName').value.trim(),
                     birthday: document.getElementById('employeeEditBirthday').value,
                     phone: document.getElementById('employeeEditPhone').value.trim(),
@@ -1693,6 +1699,10 @@
                     can_grant_admin: permissionState.can_grant_admin,
                     page_permissions: permissionState.page_permissions
                 };
+                if (!payload.username) {
+                    showModalHint('employeeEditHint', '账号不能为空', true);
+                    return;
+                }
                 fetch('/api/employee', {
                     method: 'PUT',
                     credentials: 'include',

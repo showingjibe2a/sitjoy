@@ -201,24 +201,6 @@
                     </div>
                 </div>
             </div>
-            <div class="pm-section pm-form-full">
-                <h4>销售信息</h4>
-                <div class="pm-section-body pm-form">
-                    <div class="form-group pm-form-full">
-                        <label for="newSalesTitle">标题（<=200英文字符）</label>
-                        <input type="text" id="newSalesTitle" class="optional-field" maxlength="200">
-                    </div>
-                    <div class="form-group pm-form-full">
-                        <label for="newSalesIntro">简介（<=500英文字符）</label>
-                        <textarea id="newSalesIntro" class="optional-field" maxlength="500" rows="3"></textarea>
-                    </div>
-                    <div class="form-group pm-form-full"><label for="newBullet1">五点描述1（<=500英文字符）</label><textarea id="newBullet1" class="optional-field" maxlength="500" rows="2"></textarea></div>
-                    <div class="form-group pm-form-full"><label for="newBullet2">五点描述2（<=500英文字符）</label><textarea id="newBullet2" class="optional-field" maxlength="500" rows="2"></textarea></div>
-                    <div class="form-group pm-form-full"><label for="newBullet3">五点描述3（<=500英文字符）</label><textarea id="newBullet3" class="optional-field" maxlength="500" rows="2"></textarea></div>
-                    <div class="form-group pm-form-full"><label for="newBullet4">五点描述4（<=500英文字符）</label><textarea id="newBullet4" class="optional-field" maxlength="500" rows="2"></textarea></div>
-                    <div class="form-group pm-form-full"><label for="newBullet5">五点描述5（<=500英文字符）</label><textarea id="newBullet5" class="optional-field" maxlength="500" rows="2"></textarea></div>
-                </div>
-            </div>
         </div>
         <div class="pm-modal-actions">
             <button class="btn-secondary" onclick="closeCreate()">取消</button>
@@ -284,24 +266,6 @@
                     </div>
                 </div>
             </div>
-            <div class="pm-section pm-form-full">
-                <h4>销售信息</h4>
-                <div class="pm-section-body pm-form">
-                    <div class="form-group pm-form-full">
-                        <label for="editSalesTitle">标题（<=200英文字符）</label>
-                        <input type="text" id="editSalesTitle" class="optional-field" maxlength="200">
-                    </div>
-                    <div class="form-group pm-form-full">
-                        <label for="editSalesIntro">简介（<=500英文字符）</label>
-                        <textarea id="editSalesIntro" class="optional-field" maxlength="500" rows="3"></textarea>
-                    </div>
-                    <div class="form-group pm-form-full"><label for="editBullet1">五点描述1（<=500英文字符）</label><textarea id="editBullet1" class="optional-field" maxlength="500" rows="2"></textarea></div>
-                    <div class="form-group pm-form-full"><label for="editBullet2">五点描述2（<=500英文字符）</label><textarea id="editBullet2" class="optional-field" maxlength="500" rows="2"></textarea></div>
-                    <div class="form-group pm-form-full"><label for="editBullet3">五点描述3（<=500英文字符）</label><textarea id="editBullet3" class="optional-field" maxlength="500" rows="2"></textarea></div>
-                    <div class="form-group pm-form-full"><label for="editBullet4">五点描述4（<=500英文字符）</label><textarea id="editBullet4" class="optional-field" maxlength="500" rows="2"></textarea></div>
-                    <div class="form-group pm-form-full"><label for="editBullet5">五点描述5（<=500英文字符）</label><textarea id="editBullet5" class="optional-field" maxlength="500" rows="2"></textarea></div>
-                </div>
-            </div>
         </div>
         <div class="pm-modal-actions">
             <button class="btn-secondary" onclick="closeEdit()">取消</button>
@@ -353,13 +317,6 @@
         document.getElementById('newEstimatedDiscountRate').value = '';
         document.getElementById('newCommissionRate').value = '';
         document.getElementById('newEstimatedAcoas').value = '';
-        document.getElementById('newSalesTitle').value = '';
-        document.getElementById('newSalesIntro').value = '';
-        document.getElementById('newBullet1').value = '';
-        document.getElementById('newBullet2').value = '';
-        document.getElementById('newBullet3').value = '';
-        document.getElementById('newBullet4').value = '';
-        document.getElementById('newBullet5').value = '';
         document.getElementById('createModal').classList.add('active');
     }
 
@@ -434,13 +391,6 @@
             document.getElementById('editEstimatedDiscountRate').value = item.estimated_discount_rate ?? '';
             document.getElementById('editCommissionRate').value = item.commission_rate ?? '';
             document.getElementById('editEstimatedAcoas').value = item.estimated_acoas ?? '';
-            document.getElementById('editSalesTitle').value = item.sales_title || '';
-            document.getElementById('editSalesIntro').value = item.sales_intro || '';
-            document.getElementById('editBullet1').value = item.sales_bullet_1 || '';
-            document.getElementById('editBullet2').value = item.sales_bullet_2 || '';
-            document.getElementById('editBullet3').value = item.sales_bullet_3 || '';
-            document.getElementById('editBullet4').value = item.sales_bullet_4 || '';
-            document.getElementById('editBullet5').value = item.sales_bullet_5 || '';
             document.getElementById('editModal').classList.add('active');
         } catch (error) {
             alert(error.message || '加载详情失败');
@@ -471,14 +421,7 @@
                 estimated_refund_rate: document.getElementById('editEstimatedRefundRate').value,
                 estimated_discount_rate: document.getElementById('editEstimatedDiscountRate').value,
                 commission_rate: document.getElementById('editCommissionRate').value,
-                estimated_acoas: document.getElementById('editEstimatedAcoas').value,
-                sales_title: document.getElementById('editSalesTitle').value.trim(),
-                sales_intro: document.getElementById('editSalesIntro').value.trim(),
-                sales_bullet_1: document.getElementById('editBullet1').value.trim(),
-                sales_bullet_2: document.getElementById('editBullet2').value.trim(),
-                sales_bullet_3: document.getElementById('editBullet3').value.trim(),
-                sales_bullet_4: document.getElementById('editBullet4').value.trim(),
-                sales_bullet_5: document.getElementById('editBullet5').value.trim()
+                estimated_acoas: document.getElementById('editEstimatedAcoas').value
             })
         });
         const data = await res.json();
@@ -524,14 +467,7 @@
                 estimated_refund_rate: document.getElementById('newEstimatedRefundRate').value,
                 estimated_discount_rate: document.getElementById('newEstimatedDiscountRate').value,
                 commission_rate: document.getElementById('newCommissionRate').value,
-                estimated_acoas: document.getElementById('newEstimatedAcoas').value,
-                sales_title: document.getElementById('newSalesTitle').value.trim(),
-                sales_intro: document.getElementById('newSalesIntro').value.trim(),
-                sales_bullet_1: document.getElementById('newBullet1').value.trim(),
-                sales_bullet_2: document.getElementById('newBullet2').value.trim(),
-                sales_bullet_3: document.getElementById('newBullet3').value.trim(),
-                sales_bullet_4: document.getElementById('newBullet4').value.trim(),
-                sales_bullet_5: document.getElementById('newBullet5').value.trim()
+                estimated_acoas: document.getElementById('newEstimatedAcoas').value
             })
         });
         const data = await res.json();
@@ -559,14 +495,7 @@
                 estimated_refund_rate: edits[id].estimated_refund_rate ?? rowBase.estimated_refund_rate ?? base.estimated_refund_rate,
                 estimated_discount_rate: edits[id].estimated_discount_rate ?? rowBase.estimated_discount_rate ?? base.estimated_discount_rate,
                 commission_rate: edits[id].commission_rate ?? rowBase.commission_rate ?? base.commission_rate,
-                estimated_acoas: edits[id].estimated_acoas ?? rowBase.estimated_acoas ?? base.estimated_acoas,
-                sales_title: base.sales_title ?? '',
-                sales_intro: base.sales_intro ?? '',
-                sales_bullet_1: base.sales_bullet_1 ?? '',
-                sales_bullet_2: base.sales_bullet_2 ?? '',
-                sales_bullet_3: base.sales_bullet_3 ?? '',
-                sales_bullet_4: base.sales_bullet_4 ?? '',
-                sales_bullet_5: base.sales_bullet_5 ?? ''
+                estimated_acoas: edits[id].estimated_acoas ?? rowBase.estimated_acoas ?? base.estimated_acoas
             };
             const res = await fetch('/api/parent', {
                 method: 'PUT',

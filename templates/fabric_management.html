@@ -1009,8 +1009,7 @@
                 images: selectedImageObjects.map((img, idx) => ({
                     image_name: img.image_name,
                     remark: img.remark || '',
-                    sort_order: idx,
-                    is_primary: idx === 0
+                    sort_order: idx
                 })),
                 sku_family_ids: selectedSkuFamilyIds
             };

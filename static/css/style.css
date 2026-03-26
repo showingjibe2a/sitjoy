@@ -725,9 +725,43 @@ input.optional-field[type="datetime-local"]::-webkit-calendar-picker-indicator {
     overflow-y: visible;
 }
 
+.pm-managed-head-wrap {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    border-radius: 12px 12px 0 0;
+}
+
+.pm-managed-head-wrap::-webkit-scrollbar {
+    display: none;
+    height: 0;
+}
+
+.pm-managed-body-wrap {
+    overflow-x: auto;
+    overflow-y: auto;
+    max-height: calc(100vh - 280px);
+    border-radius: 0 0 12px 12px;
+}
+
+.pm-managed-head-table {
+    margin: 0;
+}
+
+.pm-managed-body-wrap .pm-table.is-managed-table thead.pm-managed-hidden-head {
+    display: none;
+}
+
 .pm-table-wrap.is-managed-wrap {
     background: var(--morandi-cream);
     border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+}
+
+.pm-managed-head-wrap.is-managed-wrap,
+.pm-managed-body-wrap.is-managed-wrap {
+    background: var(--morandi-cream);
     box-shadow: 0 10px 30px rgba(0,0,0,0.12);
 }
 

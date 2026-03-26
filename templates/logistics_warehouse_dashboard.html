@@ -34,6 +34,8 @@
       overflow-y: hidden;
       scrollbar-width: none;
       box-sizing: border-box;
+      background: var(--morandi-cream);
+      border-radius: 12px 12px 0 0;
     }
     .board-header-wrap::-webkit-scrollbar { display: none; height: 0; }
     .board-top-scroll {
@@ -53,6 +55,8 @@
       text-align: left;
       height: calc(100vh - 250px);
       max-height: calc(100vh - 250px);
+      background: var(--morandi-cream);
+      border-radius: 0 0 12px 12px;
     }
     .board-table {
       width: max-content;
@@ -216,6 +220,7 @@
       justify-content: center;
       width: 22px;
       min-width: 22px;
+      flex: 0 0 22px;
       height: 22px;
       border-radius: 999px;
       border: 1px solid rgba(143,134,126,.75);
@@ -229,16 +234,17 @@
       background: rgba(255,255,255,.96);
     }
     .wh-group-toggle.is-static .wh-group-circle {
-      opacity: .45;
-      box-shadow: none;
+      display: none;
     }
     .wh-group-toggle.is-static .wh-group-line {
-      opacity: .55;
+      display: none;
     }
     .wh-th-region,
     .wh-th-supplier {
       padding-top: .36rem !important;
       padding-bottom: .36rem !important;
+      overflow: visible !important;
+      text-overflow: clip !important;
     }
     .wh-th-region .wh-group-label {
       font-size: .94rem;
@@ -326,6 +332,8 @@
       background: rgba(236, 231, 223, 0.78) !important;
       border-left: 2px solid rgba(143,134,126,.38);
       white-space: nowrap;
+      overflow: visible !important;
+      text-overflow: clip !important;
     }
     .section-th:hover { background: rgba(225, 219, 210, 0.9) !important; }
     .section-th .section-toggle-arrow { margin-left: .3rem; font-size: .78rem; }
@@ -413,6 +421,13 @@
     th:hover .col-resize-handle::after { opacity: .95; }
     .child-row.hidden-row { display: none; }
     .section-th .wh-group-toggle { justify-content: center; gap: .6rem; }
+    .section-th .wh-group-label,
+    .wh-th-region .wh-group-label,
+    .wh-th-supplier .wh-group-label {
+      overflow: visible;
+      text-overflow: clip;
+      white-space: nowrap;
+    }
   </style>
 </head>
 <body>
@@ -477,6 +492,7 @@ let filterPanelCollapsed = true;
 let wrapWarehouseShortName = false;
 const WRAP_SHORT_NAME_KEY = 'sitjoy:warehouse-short-wrap-enabled';
 let boardColWidths = [];
+let suppressHeaderToggleUntil = 0;
 
 const REGION_ORDER = ['美西', '美中', '美东南', '美东'];
 
@@ -507,6 +523,39 @@ function initColumnWidths(totalCols){
     else if(idx === 1) boardColWidths.push(132);
     else if(idx === 2) boardColWidths.push(56);
     else boardColWidths.push(60);
+  }
+}
+
+function ensureCollapsedSectionTitleWidth(fixedCols, overseasColspan, stockColspan, overseasExpanded, factoryStockExpanded, totalCols){
+  const overseasIndex = fixedCols;
+  const factoryIndex = fixedCols + overseasColspan;
+
+  const applyRangeMinTotal = (startIdx, span, minTotal) => {
+    if(span <= 0 || startIdx >= totalCols) return;
+    const endIdx = Math.min(totalCols - 1, startIdx + span - 1);
+    let currentTotal = 0;
+    for(let idx = startIdx; idx <= endIdx; idx += 1){
+      currentTotal += Math.max(46, Number(boardColWidths[idx] || 60));
+    }
+    if(currentTotal >= minTotal) return;
+    const delta = minTotal - currentTotal;
+    const count = (endIdx - startIdx + 1);
+    const per = Math.floor(delta / count);
+    const rem = delta % count;
+    for(let idx = startIdx; idx <= endIdx; idx += 1){
+      const add = per + ((idx - startIdx) < rem ? 1 : 0);
+      boardColWidths[idx] = Math.max(46, Number(boardColWidths[idx] || 60) + add);
+    }
+  };
+
+  applyRangeMinTotal(overseasIndex, overseasColspan, overseasExpanded ? 260 : 240);
+  applyRangeMinTotal(factoryIndex, stockColspan, factoryStockExpanded ? 200 : 180);
+
+  if(!overseasExpanded && overseasColspan === 1 && overseasIndex < totalCols){
+    boardColWidths[overseasIndex] = Math.max(Number(boardColWidths[overseasIndex] || 0), 240);
+  }
+  if(!factoryStockExpanded && stockColspan === 1 && factoryIndex < totalCols){
+    boardColWidths[factoryIndex] = Math.max(Number(boardColWidths[factoryIndex] || 0), 180);
   }
 }
 
@@ -567,15 +616,22 @@ function attachColumnResizeHandles(totalCols){
     cell.style.position = 'relative';
     const handle = document.createElement('span');
     handle.className = 'col-resize-handle';
+    handle.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
     handle.addEventListener('mousedown', (event) => {
       event.preventDefault();
       event.stopPropagation();
+      suppressHeaderToggleUntil = Date.now() + 1200;
       const startX = event.clientX;
       const startWidths = boardColWidths.slice();
       const minTotal = 46 * spanCount;
       const startTotal = startWidths.slice(colStart, colEnd + 1).reduce((sum, width) => sum + Math.max(46, Number(width || 60)), 0);
+      let moved = false;
       const onMove = (moveEvent) => {
         const delta = moveEvent.clientX - startX;
+        if(Math.abs(delta) > 2) moved = true;
         if(spanCount <= 1){
           boardColWidths[colEnd] = Math.max(46, Number(startWidths[colEnd] || 60) + delta);
         } else {
@@ -597,6 +653,7 @@ function attachColumnResizeHandles(totalCols){
       const onUp = () => {
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
+        suppressHeaderToggleUntil = Date.now() + (moved ? 320 : 160);
       };
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
@@ -793,6 +850,7 @@ function renderBoard(){
   const fixedCols = 3;
   const totalCols = fixedCols + overseasColspan + stockColspan;
   initColumnWidths(totalCols);
+  ensureCollapsedSectionTitleWidth(fixedCols, overseasColspan, stockColspan, overseasExpanded, factoryStockExpanded, totalCols);
   applyColWidths();
 
   const overseasSubRows = overseasExpanded ? 3 : 0;
@@ -872,6 +930,7 @@ function renderBoard(){
 
   thead.querySelectorAll('th[data-toggle]').forEach(cell => {
     cell.addEventListener('click', function(){
+      if(Date.now() < suppressHeaderToggleUntil) return;
       const t = this.getAttribute('data-toggle');
       if(t === 'overseas') toggleOverseas();
       else if(t === 'factory-stock') toggleFactoryStock();
@@ -879,12 +938,14 @@ function renderBoard(){
   });
   thead.querySelectorAll('th[data-toggle-kind]').forEach(cell => {
     cell.addEventListener('click', function(){
+      if(Date.now() < suppressHeaderToggleUntil) return;
       const kind = String(this.getAttribute('data-toggle-kind') || '');
       if(kind === 'region') toggleRegionColumnGroup(String(this.getAttribute('data-region-name') || ''));
     });
   });
   thead.querySelectorAll('th[data-sort-key="fabric"]').forEach(cell => {
     cell.addEventListener('click', function(){
+      if(Date.now() < suppressHeaderToggleUntil) return;
       if(fabricSortOrder === '') fabricSortOrder = 'asc';
       else if(fabricSortOrder === 'asc') fabricSortOrder = 'desc';
       else fabricSortOrder = '';

@@ -71,6 +71,22 @@
             margin: 0.1rem 0.2rem 0.1rem 0;
         }
         .dialog-message { white-space: pre-wrap; color: var(--morandi-ink); line-height: 1.55; font-size: 0.95rem; }
+        .pager-bar {
+            margin-top: 0.75rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+            font-size: 0.9rem;
+            color: var(--morandi-slate);
+        }
+        .pager-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+        }
+        .pager-actions .btn-secondary { min-width: 72px; }
         #modalOrderDate {
             min-height: 42px;
             background-image: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(246,241,235,0.96));
@@ -133,6 +149,13 @@
                         <tr><td colspan="9" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
+                <div class="pager-bar" id="pagerBar" style="display:none;">
+                    <div id="pagerInfo">第 1 页</div>
+                    <div class="pager-actions">
+                        <button class="btn-secondary" id="prevPageBtn" type="button">上一页</button>
+                        <button class="btn-secondary" id="nextPageBtn" type="button">下一页</button>
+                    </div>
+                </div>
             </div>
         </section>
     </div>
@@ -292,6 +315,9 @@
         let logisticsLines = [];
         let shipmentAutoMode = true;
         let listRequestToken = 0;
+        let listPage = 1;
+        const listPageSize = 50;
+        let listTotal = 0;
 
         function showDialog({ title, message, confirmText = '确定', cancelText = '', onConfirm = null, onCancel = null }) {
             const modal = document.getElementById('dialogModal');
@@ -331,7 +357,25 @@
 
         function resetSearch() {
             document.getElementById('searchInput').value = '';
+            listPage = 1;
             loadList();
+        }
+
+        function renderPager() {
+            const bar = document.getElementById('pagerBar');
+            const info = document.getElementById('pagerInfo');
+            const prevBtn = document.getElementById('prevPageBtn');
+            const nextBtn = document.getElementById('nextPageBtn');
+            if (!bar || !info || !prevBtn || !nextBtn) return;
+            const totalPages = Math.max(1, Math.ceil((Number(listTotal) || 0) / listPageSize));
+            if ((Number(listTotal) || 0) <= 0) {
+                bar.style.display = 'none';
+                return;
+            }
+            bar.style.display = '';
+            info.textContent = `第 ${listPage} / ${totalPages} 页，共 ${listTotal} 条`;
+            prevBtn.disabled = listPage <= 1;
+            nextBtn.disabled = listPage >= totalPages;
         }
 
         function renderShopSelect(selectedValue) {
@@ -825,15 +869,26 @@
         function loadList() {
             const currentToken = ++listRequestToken;
             const q = document.getElementById('searchInput').value.trim();
-            const url = q ? `/api/sales-order-registration?q=${encodeURIComponent(q)}` : '/api/sales-order-registration';
+            const query = new URLSearchParams();
+            if (q) query.set('q', q);
+            query.set('page', String(listPage));
+            query.set('page_size', String(listPageSize));
+            const url = `/api/sales-order-registration?${query.toString()}`;
             fetch(url)
                 .then(r => r.json())
                 .then(data => {
                     if (currentToken !== listRequestToken) return;
                     if (data.status !== 'success') {
                         document.querySelector('#listTable tbody').innerHTML = `<tr><td colspan="9" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        listTotal = 0;
+                        renderPager();
                         return;
                     }
+                    const pageFromApi = Number(data.page || listPage || 1);
+                    if (Number.isFinite(pageFromApi) && pageFromApi > 0) {
+                        listPage = pageFromApi;
+                    }
+                    listTotal = Number(data.total || 0);
                     listCache = (data.items || []).map(item => ({
                         ...item,
                         summary_loading: true,
@@ -842,11 +897,14 @@
                         logistics_summary: []
                     }));
                     renderList(listCache);
+                    renderPager();
                     loadSummariesAsync(listCache, currentToken);
                 })
                 .catch(err => {
                     if (currentToken !== listRequestToken) return;
                     document.querySelector('#listTable tbody').innerHTML = `<tr><td colspan="9" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                    listTotal = 0;
+                    renderPager();
                 });
         }
 
@@ -904,7 +962,21 @@
         });
 
         document.getElementById('searchInput').addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') loadList();
+            if (e.key === 'Enter') {
+                listPage = 1;
+                loadList();
+            }
+        });
+        document.getElementById('prevPageBtn').addEventListener('click', function() {
+            if (listPage <= 1) return;
+            listPage -= 1;
+            loadList();
+        });
+        document.getElementById('nextPageBtn').addEventListener('click', function() {
+            const totalPages = Math.max(1, Math.ceil((Number(listTotal) || 0) / listPageSize));
+            if (listPage >= totalPages) return;
+            listPage += 1;
+            loadList();
         });
         document.getElementById('pm-modal').addEventListener('click', function(e) {
             if (e.target === this) closeModal();
