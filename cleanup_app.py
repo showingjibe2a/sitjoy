@@ -10,10 +10,10 @@ with open('app.py', 'r', encoding='utf-8') as f:
 
 # 要删除的方法名称（按照字节顺序从后往前删除，避免行号变化问题）
 methods_to_remove = [
-    'handle_material_api',      # 9278-9509
-    'handle_material_type_api',  # 6364-6454
-    'handle_category_api',       # 4846-4935
-    'handle_sku_api',            # 4673-4845
+    'handle_certification_api',          # 认证管理
+    'handle_shop_api',                   # 店铺管理
+    'handle_brand_api',                  # 品牌管理
+    'handle_platform_type_api',          # 平台类型管理
 ]
 
 def find_method_boundaries(content, method_name):
