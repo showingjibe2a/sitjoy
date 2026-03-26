@@ -89,6 +89,8 @@ class LogisticsInTransitMixin:
 
             if method == 'GET':
                 if action == 'options':
+                    scope = (query_params.get('scope', ['all'])[0] or 'all').strip().lower()
+                    option_limit = max(100, min(self._parse_int(query_params.get('order_product_limit', ['600'])[0]) or 600, 1200))
                     def _fetch_options_payload():
                         with self._get_db_connection() as conn:
                             with conn.cursor() as cur:
@@ -98,8 +100,10 @@ class LogisticsInTransitMixin:
                                 forwarders = cur.fetchall() or []
                                 cur.execute("SELECT id, warehouse_name FROM logistics_overseas_warehouses WHERE COALESCE(is_enabled,1)=1 ORDER BY warehouse_name ASC")
                                 warehouses = cur.fetchall() or []
-                                cur.execute("SELECT id, sku FROM order_products ORDER BY sku ASC")
-                                order_products = cur.fetchall() or []
+                                order_products = []
+                                if scope in ('all', 'with_order_products'):
+                                    cur.execute("SELECT id, sku FROM order_products ORDER BY sku ASC LIMIT %s", (option_limit,))
+                                    order_products = cur.fetchall() or []
                         return {
                             'status': 'success',
                             'factories': factories,
@@ -108,11 +112,13 @@ class LogisticsInTransitMixin:
                             'order_products': order_products
                         }
                     try:
-                        cached = self._get_cached_template_options('logistics_in_transit_options', _fetch_options_payload, ttl_seconds=600)
+                        cache_key = f'logistics_in_transit_options_{scope}_{option_limit}'
+                        cached = self._get_cached_template_options(cache_key, _fetch_options_payload, ttl_seconds=1800)
                         return self.send_json(cached, start_response)
                     except Exception:
                         self._ensure_logistics_tables()
-                        cached = self._get_cached_template_options('logistics_in_transit_options', _fetch_options_payload, ttl_seconds=600)
+                        cache_key = f'logistics_in_transit_options_{scope}_{option_limit}'
+                        cached = self._get_cached_template_options(cache_key, _fetch_options_payload, ttl_seconds=1800)
                         return self.send_json(cached, start_response)
 
                 item_id = self._parse_int(query_params.get('id', [''])[0])

@@ -70,6 +70,9 @@ try:
     from sales_product_mixin import SalesProductMixin
     from sales_management_mixin import SalesManagementMixin
     from app_entry_mixin import AppEntryMixin
+    from page_permission_mixin import PagePermissionMixin
+    from logistics_schema_mixin import LogisticsSchemaMixin
+    from sales_schema_mixin import SalesSchemaMixin
     _mixin_import_error = None
 except Exception as e:
     _mixin_import_error = str(e)
@@ -85,6 +88,9 @@ except Exception as e:
     class SalesProductMixin: pass
     class SalesManagementMixin: pass
     class AppEntryMixin: pass
+    class PagePermissionMixin: pass
+    class LogisticsSchemaMixin: pass
+    class SalesSchemaMixin: pass
 
 # 外部文件夹路径
 # 使用 Base64 的子目录名，避免手动输入特殊字符出错
@@ -229,8 +235,16 @@ API_PERMISSION_MAP = {
     '/api/parent': 'parent_management',
 }
 
-class WSGIApp(AppEntryMixin, AuthEmployeeMixin, DbSchemaBasicsMixin, CoreAppMixin, ExcelToolsMixin, FileManagementMixin, RequestRoutingMixin, LogisticsWarehouseMixin, LogisticsInTransitMixin, SalesProductMixin, SalesManagementMixin):
+class WSGIApp(AppEntryMixin, PagePermissionMixin, AuthEmployeeMixin, DbSchemaBasicsMixin, CoreAppMixin, ExcelToolsMixin, FileManagementMixin, RequestRoutingMixin, LogisticsWarehouseMixin, LogisticsInTransitMixin, SalesProductMixin, SalesManagementMixin):
     """WSGI 应用处理器 - 通过继承各类 mixin 提供综合功能"""
+    PAGE_PERMISSION_KEYS = tuple(PAGE_PERMISSION_KEYS)
+    _schema_ready_cache = {
+        'certification': False,
+        'sales_parent': False,
+        'sales_order_registration': False,
+        'logistics': False,
+        'factory_inventory': False,
+    }
     
     def __init__(self):
         self.base_path = os.path.dirname(os.path.abspath(__file__))
@@ -249,95 +263,18 @@ class WSGIApp(AppEntryMixin, AuthEmployeeMixin, DbSchemaBasicsMixin, CoreAppMixi
         self._amazon_ad_subtypes_ready = False
         self._amazon_ad_operation_types_ready = False
         self._amazon_keyword_ready = False
-        self._sales_parent_ready = False
+        self._sales_parent_ready = bool(self.__class__._schema_ready_cache.get('sales_parent'))
         self._sales_product_ready = False
-        self._sales_order_registration_ready = False
-        self._logistics_ready = False
-        self._factory_inventory_ready = False
+        self._sales_order_registration_ready = bool(self.__class__._schema_ready_cache.get('sales_order_registration'))
+        self._logistics_ready = bool(self.__class__._schema_ready_cache.get('logistics'))
+        self._factory_inventory_ready = bool(self.__class__._schema_ready_cache.get('factory_inventory'))
+        self._certification_ready = bool(self.__class__._schema_ready_cache.get('certification'))
         self._todo_ready = False
         self._todo_schema_migrated = False
         self._todo_ensure_lock = threading.Lock()
+        self._schema_ensure_lock = threading.Lock()
         self._user_session = {}
         self._template_options_cache = {}
-
-    def _default_page_permissions(self):
-        return {key: 1 for key in PAGE_PERMISSION_KEYS}
-
-    def _normalize_page_permissions(self, raw_permissions, default_all=True):
-        normalized = {key: (1 if default_all else 0) for key in PAGE_PERMISSION_KEYS}
-        if raw_permissions is None or raw_permissions == '':
-            return normalized
-
-        payload = raw_permissions
-        if isinstance(payload, str):
-            try:
-                payload = json.loads(payload)
-            except Exception:
-                return normalized
-
-        if isinstance(payload, dict):
-            for key in PAGE_PERMISSION_KEYS:
-                if key in payload:
-                    normalized[key] = 1 if payload.get(key) else 0
-            return normalized
-
-        if isinstance(payload, (list, tuple, set)):
-            allowed = {str(item) for item in payload}
-            return {key: (1 if key in allowed else 0) for key in PAGE_PERMISSION_KEYS}
-
-        return normalized
-
-    def _serialize_page_permissions(self, raw_permissions, default_all=True):
-        return json.dumps(self._normalize_page_permissions(raw_permissions, default_all=default_all), ensure_ascii=False)
-
-    def _get_user_permission_record(self, user_id):
-        if not user_id:
-            return None
-        self._ensure_todo_tables(lightweight=True)
-        with self._get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id, username, name, is_admin,
-                           COALESCE(can_grant_admin, 0) AS can_grant_admin,
-                           page_permissions
-                    FROM users
-                    WHERE id=%s
-                    """,
-                    (user_id,)
-                )
-                row = cur.fetchone()
-        if not row:
-            return None
-        row['page_permissions'] = self._normalize_page_permissions(row.get('page_permissions'))
-        return row
-
-    def _can_manage_admin_permission(self, actor_record):
-        if not actor_record:
-            return False
-        if int(actor_record.get('id') or 0) == 1:
-            return True
-        return bool(actor_record.get('is_admin')) and bool(actor_record.get('can_grant_admin'))
-
-    def _user_has_page_access(self, user_id, permission_key):
-        if not user_id:
-            return False
-        if not permission_key:
-            return True
-        record = self._get_user_permission_record(user_id)
-        if not record:
-            return False
-        return bool(record.get('page_permissions', {}).get(permission_key, 1))
-
-    def _serve_protected_page(self, environ, start_response, template_path, permission_key=None):
-        user_id = self._get_session_user(environ)
-        if not user_id:
-            start_response('302 Found', [('Location', '/login')])
-            return [b'']
-        if permission_key and not self._user_has_page_access(user_id, permission_key):
-            start_response('302 Found', [('Location', '/')])
-            return [b'']
-        return self.serve_file(template_path, 'text/html', start_response)
 
     def _get_session_id(self, environ):
         """从 cookie 获取 session_id"""
@@ -1608,6 +1545,34 @@ class WSGIApp(AppEntryMixin, AuthEmployeeMixin, DbSchemaBasicsMixin, CoreAppMixi
                         AFTER is_primary
                         """
                     )
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS cnt
+                    FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'fabric_images'
+                      AND COLUMN_NAME = 'sort_order'
+                    """
+                )
+                row = cur.fetchone() or {}
+                if int(row.get('cnt') or 0) == 0:
+                    cur.execute("ALTER TABLE fabric_images ADD COLUMN sort_order INT UNSIGNED NOT NULL DEFAULT 0 AFTER image_name")
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS cnt
+                    FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'fabric_images'
+                      AND COLUMN_NAME = 'is_primary'
+                    """
+                )
+                row = cur.fetchone() or {}
+                if int(row.get('cnt') or 0) == 0:
+                    cur.execute("ALTER TABLE fabric_images ADD COLUMN is_primary TINYINT(1) NOT NULL DEFAULT 0 AFTER sort_order")
+                try:
+                    cur.execute("ALTER TABLE fabric_images ADD INDEX idx_fabric_images_primary (fabric_id, is_primary)")
+                except Exception:
+                    pass
 
     def _ensure_material_types_table(self):
         if self._material_types_ready:
@@ -2209,17 +2174,36 @@ class WSGIApp(AppEntryMixin, AuthEmployeeMixin, DbSchemaBasicsMixin, CoreAppMixi
         self._amazon_keyword_ready = True
 
     def _ensure_certification_table(self):
-        create_sql = """
-        CREATE TABLE IF NOT EXISTS certifications (
-            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            name VARCHAR(128) NOT NULL UNIQUE,
-            icon_name VARCHAR(255) NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        """
-        with self._get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(create_sql)
+        if getattr(self, '_certification_ready', False):
+            return
+        with self._schema_ensure_lock:
+            if getattr(self, '_certification_ready', False):
+                return
+            create_sql = """
+            CREATE TABLE IF NOT EXISTS certifications (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(128) NOT NULL UNIQUE,
+                icon_name VARCHAR(255) NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(create_sql)
+                    cur.execute(
+                        """
+                        SELECT COUNT(*) AS cnt
+                        FROM information_schema.COLUMNS
+                        WHERE TABLE_SCHEMA = DATABASE()
+                          AND TABLE_NAME = 'certifications'
+                          AND COLUMN_NAME = 'icon_name'
+                        """
+                    )
+                    row = cur.fetchone() or {}
+                    if int(row.get('cnt') or 0) == 0:
+                        cur.execute("ALTER TABLE certifications ADD COLUMN icon_name VARCHAR(255) NULL AFTER name")
+            self._certification_ready = True
+            self.__class__._schema_ready_cache['certification'] = True
 
     def _ensure_features_table(self):
         self._ensure_category_table()
@@ -2598,6 +2582,9 @@ class WSGIApp(AppEntryMixin, AuthEmployeeMixin, DbSchemaBasicsMixin, CoreAppMixi
     def _ensure_sales_parent_tables(self):
         if self._sales_parent_ready:
             return
+        with self._schema_ensure_lock:
+            if self._sales_parent_ready:
+                return
         self._ensure_shops_table()
         create_sales_parents = """
         CREATE TABLE IF NOT EXISTS sales_parents (
@@ -2672,7 +2659,8 @@ class WSGIApp(AppEntryMixin, AuthEmployeeMixin, DbSchemaBasicsMixin, CoreAppMixi
                     )
                 except Exception:
                     pass
-        self._sales_parent_ready = True
+            self._sales_parent_ready = True
+            self.__class__._schema_ready_cache['sales_parent'] = True
 
     def _ensure_sales_product_tables(self):
         if self._sales_product_ready:
@@ -2938,6 +2926,9 @@ class WSGIApp(AppEntryMixin, AuthEmployeeMixin, DbSchemaBasicsMixin, CoreAppMixi
     def _ensure_sales_order_registration_tables(self):
         if self._sales_order_registration_ready:
             return
+        with self._schema_ensure_lock:
+            if self._sales_order_registration_ready:
+                return
         self._ensure_sales_product_tables()
         self._ensure_order_product_tables()
         self._ensure_shops_table()
@@ -3078,7 +3069,8 @@ class WSGIApp(AppEntryMixin, AuthEmployeeMixin, DbSchemaBasicsMixin, CoreAppMixi
                             cur.execute(f"ALTER TABLE sales_order_registrations DROP COLUMN {old_col}")
                     except Exception:
                         pass
-        self._sales_order_registration_ready = True
+            self._sales_order_registration_ready = True
+            self.__class__._schema_ready_cache['sales_order_registration'] = True
 
     def _ensure_todo_tables(self, lightweight=False):
         if self._todo_ready and (lightweight or self._todo_schema_migrated):
@@ -5012,15 +5004,36 @@ class WSGIApp(AppEntryMixin, AuthEmployeeMixin, DbSchemaBasicsMixin, CoreAppMixi
             with os.scandir(folder) as it:
                 for entry in it:
                     if entry.is_file(follow_symlinks=False) and self._is_image_name(entry.name):
-                        name = entry.name
-                        if isinstance(name, (bytes, bytearray)):
+                        raw = entry.name
+                        if isinstance(raw, str):
                             try:
-                                name = os.fsdecode(name)
+                                raw_bytes = os.fsencode(raw)
                             except Exception:
-                                name = name.decode('utf-8', errors='ignore')
-                        items.append(name)
+                                raw_bytes = raw.encode('utf-8', errors='surrogatepass')
+                        else:
+                            raw_bytes = bytes(raw)
 
-            items.sort()
+                        try:
+                            name = os.fsdecode(raw_bytes)
+                            name = name.encode('utf-8', errors='surrogatepass').decode('utf-8', errors='replace')
+                        except Exception:
+                            name = raw_bytes.decode('utf-8', errors='replace')
+
+                        try:
+                            folder_bytes = os.fsencode('『认证』')
+                        except Exception:
+                            folder_bytes = '『认证』'.encode('utf-8', errors='surrogatepass')
+                        rel_bytes = os.path.join(folder_bytes, raw_bytes)
+                        items.append({
+                            'name': name,
+                            'name_raw_b64': base64.b64encode(raw_bytes).decode('ascii'),
+                            'b64': base64.b64encode(rel_bytes).decode('ascii')
+                        })
+
+            try:
+                items.sort(key=lambda x: (x.get('name') or '').lower())
+            except Exception:
+                pass
             return self.send_json({'status': 'success', 'items': items}, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
@@ -8893,6 +8906,9 @@ class WSGIApp(AppEntryMixin, AuthEmployeeMixin, DbSchemaBasicsMixin, CoreAppMixi
     def _ensure_logistics_tables(self):
         if self._logistics_ready:
             return
+        with self._schema_ensure_lock:
+            if self._logistics_ready:
+                return
         self._ensure_order_product_tables()
         create_factory_sql = """
         CREATE TABLE IF NOT EXISTS logistics_factories (
@@ -9054,7 +9070,8 @@ class WSGIApp(AppEntryMixin, AuthEmployeeMixin, DbSchemaBasicsMixin, CoreAppMixi
                 transit_item_cols = {str((x or {}).get('Field') or '') for x in (cur.fetchall() or [])}
                 if 'listed_qty' not in transit_item_cols:
                     cur.execute("ALTER TABLE logistics_in_transit_items ADD COLUMN listed_qty INT NOT NULL DEFAULT 0 AFTER shipped_qty")
-        self._logistics_ready = True
+            self._logistics_ready = True
+            self.__class__._schema_ready_cache['logistics'] = True
 
     def _get_logistics_link_root_bytes(self):
         return os.path.join(_RESOURCES_PARENT_BYTES, self._safe_fsencode('『物流仓储关联文件』'))
@@ -9115,6 +9132,9 @@ class WSGIApp(AppEntryMixin, AuthEmployeeMixin, DbSchemaBasicsMixin, CoreAppMixi
     def _ensure_factory_inventory_tables(self):
         if self._factory_inventory_ready:
             return
+        with self._schema_ensure_lock:
+            if self._factory_inventory_ready:
+                return
         self._ensure_logistics_tables()
         create_factory_stock = """
         CREATE TABLE IF NOT EXISTS factory_stock_inventory (
@@ -9158,6 +9178,7 @@ class WSGIApp(AppEntryMixin, AuthEmployeeMixin, DbSchemaBasicsMixin, CoreAppMixi
                 if 'actual_completion_date' not in cols:
                     cur.execute("ALTER TABLE factory_wip_inventory ADD COLUMN actual_completion_date DATE NULL AFTER is_completed")
         self._factory_inventory_ready = True
+        self.__class__._schema_ready_cache['factory_inventory'] = True
 
 
 
@@ -9421,27 +9442,34 @@ class WSGIApp(AppEntryMixin, AuthEmployeeMixin, DbSchemaBasicsMixin, CoreAppMixi
 
             if method == 'GET':
                 keyword = query_params.get('q', [''])[0].strip()
+                if not keyword:
+                    def _load_certifications_cached():
+                        with self._get_db_connection() as conn:
+                            with conn.cursor() as cur:
+                                cur.execute(
+                                    """
+                                    SELECT id, name, icon_name, created_at
+                                    FROM certifications
+                                    ORDER BY id DESC
+                                    """
+                                )
+                                rows = cur.fetchall() or []
+                        return {'status': 'success', 'items': rows}
+                    payload = self._get_cached_template_options('certification_list', _load_certifications_cached, ttl_seconds=180)
+                    return self.send_json(payload, start_response)
+
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        if keyword:
-                            cur.execute(
-                                """
-                                SELECT id, name, icon_name, created_at
-                                FROM certifications
-                                WHERE name LIKE %s
-                                ORDER BY id DESC
-                                """,
-                                (f"%{keyword}%",)
-                            )
-                        else:
-                            cur.execute(
-                                """
-                                SELECT id, name, icon_name, created_at
-                                FROM certifications
-                                ORDER BY id DESC
-                                """
-                            )
-                        rows = cur.fetchall()
+                        cur.execute(
+                            """
+                            SELECT id, name, icon_name, created_at
+                            FROM certifications
+                            WHERE name LIKE %s
+                            ORDER BY id DESC
+                            """,
+                            (f"%{keyword}%",)
+                        )
+                        rows = cur.fetchall() or []
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             if method == 'POST':
@@ -9461,6 +9489,7 @@ class WSGIApp(AppEntryMixin, AuthEmployeeMixin, DbSchemaBasicsMixin, CoreAppMixi
                             (name, icon_name or None)
                         )
                         new_id = cur.lastrowid
+                self._template_options_cache.pop('certification_list', None)
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
             if method == 'PUT':
@@ -9481,6 +9510,7 @@ class WSGIApp(AppEntryMixin, AuthEmployeeMixin, DbSchemaBasicsMixin, CoreAppMixi
                             """,
                             (name, icon_name or None, item_id)
                         )
+                self._template_options_cache.pop('certification_list', None)
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':
@@ -9491,6 +9521,7 @@ class WSGIApp(AppEntryMixin, AuthEmployeeMixin, DbSchemaBasicsMixin, CoreAppMixi
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute("DELETE FROM certifications WHERE id=%s", (item_id,))
+                self._template_options_cache.pop('certification_list', None)
                 return self.send_json({'status': 'success'}, start_response)
 
             return self.send_error(405, 'Method not allowed', start_response)
@@ -11769,6 +11800,12 @@ WSGIApp.handle_sales_product_import_api = SalesProductMixin.handle_sales_product
 WSGIApp.handle_sales_order_registration_api = SalesManagementMixin.handle_sales_order_registration_api
 WSGIApp.handle_sales_order_registration_template_api = SalesManagementMixin.handle_sales_order_registration_template_api
 WSGIApp.handle_sales_order_registration_import_api = SalesManagementMixin.handle_sales_order_registration_import_api
+
+WSGIApp._ensure_logistics_tables = LogisticsSchemaMixin._ensure_logistics_tables
+WSGIApp._ensure_factory_inventory_tables = LogisticsSchemaMixin._ensure_factory_inventory_tables
+WSGIApp._ensure_sales_parent_tables = SalesSchemaMixin._ensure_sales_parent_tables
+WSGIApp._ensure_sales_product_tables = SalesSchemaMixin._ensure_sales_product_tables
+WSGIApp._ensure_sales_order_registration_tables = SalesSchemaMixin._ensure_sales_order_registration_tables
 
 # WSGI 应用实例 - Web Station 会调用这个
 application = WSGIApp()

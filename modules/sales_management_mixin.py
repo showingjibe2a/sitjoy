@@ -224,31 +224,34 @@ class SalesManagementMixin:
             if method == 'GET' and action == 'options':
                 scope = (query_params.get('scope', ['all'])[0] or 'all').strip().lower()
                 limit = max(50, min(self._parse_int(query_params.get('limit', ['300'])[0]) or 300, 1000))
-                payload = {'status': 'success'}
-                with self._get_db_connection() as conn:
-                    with conn.cursor() as cur:
-                        if scope in ('all', 'shops'):
-                            cur.execute("SELECT id, shop_name FROM shops ORDER BY shop_name ASC LIMIT %s", (limit,))
-                            payload['shops'] = cur.fetchall() or []
-                        if scope == 'all':
-                            cur.execute("SELECT id, platform_sku FROM sales_products ORDER BY platform_sku ASC LIMIT %s", (limit,))
-                            payload['sales_products'] = cur.fetchall() or []
-                            cur.execute("SELECT id, sku FROM order_products ORDER BY sku ASC LIMIT %s", (limit,))
-                            payload['order_products'] = cur.fetchall() or []
-                            try:
-                                cur.execute(
-                                    """
-                                    SELECT ops.id, op.sku AS order_sku, ops.plan_name
-                                    FROM order_product_shipping_plans ops
-                                    JOIN order_products op ON op.id = ops.order_product_id
-                                    ORDER BY op.sku ASC, ops.plan_name ASC
-                                    LIMIT %s
-                                    """,
-                                    (limit,)
-                                )
-                                payload['shipping_plans'] = cur.fetchall() or []
-                            except Exception:
-                                payload['shipping_plans'] = []
+                def _load_options_payload():
+                    payload = {'status': 'success'}
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            if scope in ('all', 'shops'):
+                                cur.execute("SELECT id, shop_name FROM shops ORDER BY shop_name ASC LIMIT %s", (limit,))
+                                payload['shops'] = cur.fetchall() or []
+                            if scope == 'all':
+                                cur.execute("SELECT id, platform_sku FROM sales_products ORDER BY platform_sku ASC LIMIT %s", (limit,))
+                                payload['sales_products'] = cur.fetchall() or []
+                                cur.execute("SELECT id, sku FROM order_products ORDER BY sku ASC LIMIT %s", (limit,))
+                                payload['order_products'] = cur.fetchall() or []
+                                try:
+                                    cur.execute(
+                                        """
+                                        SELECT ops.id, op.sku AS order_sku, ops.plan_name
+                                        FROM order_product_shipping_plans ops
+                                        JOIN order_products op ON op.id = ops.order_product_id
+                                        ORDER BY op.sku ASC, ops.plan_name ASC
+                                        LIMIT %s
+                                        """,
+                                        (limit,)
+                                    )
+                                    payload['shipping_plans'] = cur.fetchall() or []
+                                except Exception:
+                                    payload['shipping_plans'] = []
+                    return payload
+                payload = self._get_cached_template_options(f'sales_order_registration_options_{scope}_{limit}', _load_options_payload, ttl_seconds=1800)
                 return self.send_json(payload, start_response)
 
             if method == 'GET' and action == 'summaries':
