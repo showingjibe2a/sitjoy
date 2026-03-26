@@ -815,11 +815,83 @@ class LogisticsWarehouseMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def handle_logistics_destination_region_api(self, environ, method, start_response):
+        try:
+            self._ensure_logistics_tables()
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            if method == 'GET':
+                keyword = (query_params.get('q', [''])[0] or '').strip()
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        if keyword:
+                            cur.execute(
+                                "SELECT id, region_name, created_at, updated_at FROM logistics_destination_regions WHERE region_name LIKE %s ORDER BY id DESC",
+                                (f"%{keyword}%",)
+                            )
+                        else:
+                            cur.execute("SELECT id, region_name, created_at, updated_at FROM logistics_destination_regions ORDER BY id DESC")
+                        rows = cur.fetchall() or []
+                return self.send_json({'status': 'success', 'items': rows}, start_response)
+
+            data = self._read_json_body(environ)
+            if method == 'POST':
+                name = (data.get('region_name') or '').strip()
+                if not name:
+                    return self.send_json({'status': 'error', 'message': 'Missing region_name'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("INSERT INTO logistics_destination_regions (region_name) VALUES (%s)", (name,))
+                        new_id = cur.lastrowid
+                return self.send_json({'status': 'success', 'id': new_id}, start_response)
+
+            if method == 'PUT':
+                item_id = self._parse_int(data.get('id'))
+                name = (data.get('region_name') or '').strip()
+                if not item_id or not name:
+                    return self.send_json({'status': 'error', 'message': 'Missing id or region_name'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("UPDATE logistics_destination_regions SET region_name=%s WHERE id=%s", (name, item_id))
+                        cur.execute("UPDATE logistics_overseas_warehouses SET region=%s WHERE destination_region_id=%s", (name, item_id))
+                return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'DELETE':
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT COUNT(*) AS cnt FROM logistics_overseas_warehouses WHERE destination_region_id=%s", (item_id,))
+                        used_cnt = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
+                        if used_cnt > 0:
+                            return self.send_json({'status': 'error', 'message': '该目的区域已被仓库使用，无法删除'}, start_response)
+                        cur.execute("DELETE FROM logistics_destination_regions WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
     def handle_logistics_warehouse_api(self, environ, method, start_response):
         try:
             self._ensure_logistics_tables()
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
-            allowed_regions = {'美西', '美中', '美东南', '美东'}
+
+            def _resolve_region(conn, destination_region_id, region_name):
+                region_id = self._parse_int(destination_region_id)
+                text = (region_name or '').strip()
+                with conn.cursor() as cur:
+                    if region_id:
+                        cur.execute("SELECT id, region_name FROM logistics_destination_regions WHERE id=%s LIMIT 1", (region_id,))
+                        row = cur.fetchone()
+                        if row:
+                            return int(row.get('id')), str(row.get('region_name') or '').strip(), None
+                    if text:
+                        cur.execute("SELECT id, region_name FROM logistics_destination_regions WHERE region_name=%s LIMIT 1", (text,))
+                        row = cur.fetchone()
+                        if row:
+                            return int(row.get('id')), str(row.get('region_name') or '').strip(), None
+                    return None, None, '目的区域不存在或未填写'
 
             def _resolve_name_short(conn, supplier_id, warehouse_name, warehouse_short_name):
                 with conn.cursor() as cur:
@@ -852,26 +924,36 @@ class LogisticsWarehouseMixin:
                         with conn.cursor() as cur:
                             cur.execute("SELECT id, supplier_name FROM logistics_suppliers ORDER BY id DESC")
                             suppliers = cur.fetchall() or []
-                    return self.send_json({'status': 'success', 'suppliers': suppliers, 'regions': sorted(list(allowed_regions))}, start_response)
+                            cur.execute("SELECT id, region_name FROM logistics_destination_regions ORDER BY id DESC")
+                            regions = cur.fetchall() or []
+                    return self.send_json({'status': 'success', 'suppliers': suppliers, 'destination_regions': regions}, start_response)
 
                 keyword = (query_params.get('q', [''])[0] or '').strip()
                 supplier_id = self._parse_int(query_params.get('supplier_id', [''])[0])
+                destination_region_id = self._parse_int(query_params.get('destination_region_id', [''])[0])
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         sql = """
-                            SELECT w.id, w.warehouse_name, w.supplier_id, w.warehouse_short_name, w.is_enabled, w.region,
+                            SELECT w.id, w.warehouse_name, w.supplier_id, w.warehouse_short_name, w.is_enabled,
+                                COALESCE(dr.region_name, w.region) AS region,
+                                w.destination_region_id,
+                                dr.region_name AS destination_region_name,
                                    w.created_at, w.updated_at, s.supplier_name
                             FROM logistics_overseas_warehouses w
                             JOIN logistics_suppliers s ON s.id = w.supplier_id
+                            LEFT JOIN logistics_destination_regions dr ON dr.id = w.destination_region_id
                         """
                         filters = []
                         params = []
                         if supplier_id:
                             filters.append("w.supplier_id=%s")
                             params.append(supplier_id)
+                        if destination_region_id:
+                            filters.append("w.destination_region_id=%s")
+                            params.append(destination_region_id)
                         if keyword:
                             like = f"%{keyword}%"
-                            filters.append("(w.warehouse_name LIKE %s OR s.supplier_name LIKE %s OR w.warehouse_short_name LIKE %s OR w.region LIKE %s)")
+                            filters.append("(w.warehouse_name LIKE %s OR s.supplier_name LIKE %s OR w.warehouse_short_name LIKE %s OR COALESCE(dr.region_name, w.region) LIKE %s)")
                             params.extend([like, like, like, like])
                         where_sql = (' WHERE ' + ' AND '.join(filters)) if filters else ''
                         cur.execute(sql + where_sql + " ORDER BY w.id DESC", params)
@@ -893,11 +975,15 @@ class LogisticsWarehouseMixin:
 
             if method in ('POST', 'PUT'):
                 supplier_id = self._parse_int(data.get('supplier_id'))
+                destination_region_id = self._parse_int(data.get('destination_region_id'))
                 region = (data.get('region') or '').strip()
                 is_enabled = 1 if self._parse_int(data.get('is_enabled', 1)) else 0
-                if not supplier_id or region not in allowed_regions:
-                    return self.send_json({'status': 'error', 'message': '供应商和区域必填且区域需为指定选项'}, start_response)
+                if not supplier_id:
+                    return self.send_json({'status': 'error', 'message': '供应商和目的区域必填'}, start_response)
                 with self._get_db_connection() as conn:
+                    destination_region_id, resolved_region_name, region_err = _resolve_region(conn, destination_region_id, region)
+                    if region_err:
+                        return self.send_json({'status': 'error', 'message': region_err}, start_response)
                     name, short_name, err = _resolve_name_short(conn, supplier_id, data.get('warehouse_name'), data.get('warehouse_short_name'))
                     if err:
                         return self.send_json({'status': 'error', 'message': err}, start_response)
@@ -906,10 +992,10 @@ class LogisticsWarehouseMixin:
                             cur.execute(
                                 """
                                 INSERT INTO logistics_overseas_warehouses
-                                (warehouse_name, supplier_id, warehouse_short_name, is_enabled, region)
-                                VALUES (%s, %s, %s, %s, %s)
+                                (warehouse_name, supplier_id, warehouse_short_name, is_enabled, region, destination_region_id)
+                                VALUES (%s, %s, %s, %s, %s, %s)
                                 """,
-                                (name, supplier_id, short_name, is_enabled, region)
+                                (name, supplier_id, short_name, is_enabled, resolved_region_name, destination_region_id)
                             )
                             return self.send_json({'status': 'success', 'id': cur.lastrowid}, start_response)
                         item_id = self._parse_int(data.get('id'))
@@ -918,10 +1004,10 @@ class LogisticsWarehouseMixin:
                         cur.execute(
                             """
                             UPDATE logistics_overseas_warehouses
-                            SET warehouse_name=%s, supplier_id=%s, warehouse_short_name=%s, is_enabled=%s, region=%s
+                            SET warehouse_name=%s, supplier_id=%s, warehouse_short_name=%s, is_enabled=%s, region=%s, destination_region_id=%s
                             WHERE id=%s
                             """,
-                            (name, supplier_id, short_name, is_enabled, region, item_id)
+                            (name, supplier_id, short_name, is_enabled, resolved_region_name, destination_region_id, item_id)
                         )
                         return self.send_json({'status': 'success'}, start_response)
 
@@ -950,12 +1036,14 @@ class LogisticsWarehouseMixin:
             from openpyxl.utils import get_column_letter
             from openpyxl.worksheet.datavalidation import DataValidation
 
-            allowed_regions = ['美西', '美中', '美东南', '美东']
             supplier_names = []
+            destination_region_names = []
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute("SELECT supplier_name FROM logistics_suppliers ORDER BY supplier_name ASC")
                     supplier_names = [str(r.get('supplier_name') or '').strip() for r in (cur.fetchall() or []) if str(r.get('supplier_name') or '').strip()]
+                    cur.execute("SELECT region_name FROM logistics_destination_regions ORDER BY region_name ASC")
+                    destination_region_names = [str(r.get('region_name') or '').strip() for r in (cur.fetchall() or []) if str(r.get('region_name') or '').strip()]
 
             wb = Workbook()
             ws = wb.active
@@ -975,11 +1063,11 @@ class LogisticsWarehouseMixin:
 
             option_ws = wb.create_sheet('_options')
             option_ws.append(['supplier_options', 'region_options'])
-            max_len = max(len(supplier_names), len(allowed_regions))
+            max_len = max(len(supplier_names), len(destination_region_names), 1)
             for i in range(max_len):
                 option_ws.append([
                     supplier_names[i] if i < len(supplier_names) else None,
-                    allowed_regions[i] if i < len(allowed_regions) else None
+                    destination_region_names[i] if i < len(destination_region_names) else None
                 ])
             option_ws.sheet_state = 'hidden'
 
@@ -989,10 +1077,11 @@ class LogisticsWarehouseMixin:
                 ws.add_data_validation(dv_supplier)
                 dv_supplier.add('B2:B1000')
 
-            region_end_row = 1 + len(allowed_regions)
-            dv_region = DataValidation(type='list', formula1=f"='_options'!$B$2:$B${region_end_row}", allow_blank=False)
-            ws.add_data_validation(dv_region)
-            dv_region.add('D2:D1000')
+            if destination_region_names:
+                region_end_row = 1 + len(destination_region_names)
+                dv_region = DataValidation(type='list', formula1=f"='_options'!$B$2:$B${region_end_row}", allow_blank=False)
+                ws.add_data_validation(dv_region)
+                dv_region.add('D2:D1000')
 
             return self._send_excel_workbook(wb, 'logistics_warehouse_template.xlsx', start_response)
         except Exception as e:
@@ -1032,7 +1121,6 @@ class LogisticsWarehouseMixin:
                 if col_name not in header_map:
                     return self.send_json({'status': 'error', 'message': f'模板缺少列: {col_name}'}, start_response)
 
-            allowed_regions = {'美西', '美中', '美东南', '美东'}
             created = 0
             updated = 0
             unchanged = 0
@@ -1049,6 +1137,9 @@ class LogisticsWarehouseMixin:
                     cur.execute("SELECT id, supplier_name FROM logistics_suppliers")
                     supplier_rows = cur.fetchall() or []
                     supplier_map = {str(r.get('supplier_name') or '').strip(): int(r.get('id')) for r in supplier_rows if r.get('id') and str(r.get('supplier_name') or '').strip()}
+                    cur.execute("SELECT id, region_name FROM logistics_destination_regions")
+                    region_rows = cur.fetchall() or []
+                    region_map = {str(r.get('region_name') or '').strip(): int(r.get('id')) for r in region_rows if r.get('id') and str(r.get('region_name') or '').strip()}
 
                 for row_idx in range(2, ws.max_row + 1):
                     row = ws[row_idx]
@@ -1062,10 +1153,11 @@ class LogisticsWarehouseMixin:
 
                         if supplier_name not in supplier_map:
                             raise ValueError(f'供应商必须为系统可选项: {supplier_name or "[空]"}')
-                        if region not in allowed_regions:
-                            raise ValueError(f'区域必须为系统可选项: {region or "[空]"}')
+                        if region not in region_map:
+                            raise ValueError(f'目的区域必须为系统可选项: {region or "[空]"}')
 
                         supplier_id = supplier_map.get(supplier_name)
+                        destination_region_id = region_map.get(region)
                         if not warehouse_name and warehouse_short_name:
                             warehouse_name = f"{supplier_name} {warehouse_short_name}".strip()
                         if warehouse_name and not warehouse_short_name:
@@ -1076,23 +1168,23 @@ class LogisticsWarehouseMixin:
 
                         with conn.cursor() as cur:
                             cur.execute(
-                                "SELECT id, supplier_id, warehouse_short_name, region FROM logistics_overseas_warehouses WHERE warehouse_name=%s LIMIT 1",
+                                "SELECT id, supplier_id, warehouse_short_name, region, destination_region_id FROM logistics_overseas_warehouses WHERE warehouse_name=%s LIMIT 1",
                                 (warehouse_name,)
                             )
                             existing = cur.fetchone()
                             if existing:
-                                if int(existing.get('supplier_id') or 0) == int(supplier_id or 0) and str(existing.get('warehouse_short_name') or '').strip() == warehouse_short_name and str(existing.get('region') or '').strip() == region:
+                                if int(existing.get('supplier_id') or 0) == int(supplier_id or 0) and str(existing.get('warehouse_short_name') or '').strip() == warehouse_short_name and int(existing.get('destination_region_id') or 0) == int(destination_region_id or 0):
                                     unchanged += 1
                                 else:
                                     cur.execute(
-                                        "UPDATE logistics_overseas_warehouses SET supplier_id=%s, warehouse_short_name=%s, region=%s WHERE id=%s",
-                                        (supplier_id, warehouse_short_name, region, existing.get('id'))
+                                        "UPDATE logistics_overseas_warehouses SET supplier_id=%s, warehouse_short_name=%s, region=%s, destination_region_id=%s WHERE id=%s",
+                                        (supplier_id, warehouse_short_name, region, destination_region_id, existing.get('id'))
                                     )
                                     updated += 1
                             else:
                                 cur.execute(
-                                    "INSERT INTO logistics_overseas_warehouses (warehouse_name, supplier_id, warehouse_short_name, region) VALUES (%s, %s, %s, %s)",
-                                    (warehouse_name, supplier_id, warehouse_short_name, region)
+                                    "INSERT INTO logistics_overseas_warehouses (warehouse_name, supplier_id, warehouse_short_name, region, destination_region_id) VALUES (%s, %s, %s, %s, %s)",
+                                    (warehouse_name, supplier_id, warehouse_short_name, region, destination_region_id)
                                 )
                                 created += 1
                     except Exception as row_error:
@@ -1429,9 +1521,12 @@ class LogisticsWarehouseMixin:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        SELECT w.id, w.warehouse_name, w.warehouse_short_name, w.region, s.supplier_name
+                        SELECT w.id, w.warehouse_name, w.warehouse_short_name,
+                               COALESCE(dr.region_name, w.region) AS region,
+                               s.supplier_name
                         FROM logistics_overseas_warehouses w
                         JOIN logistics_suppliers s ON s.id = w.supplier_id
+                        LEFT JOIN logistics_destination_regions dr ON dr.id = w.destination_region_id
                         WHERE COALESCE(w.is_enabled,1)=1
                         """
                     )
@@ -1463,16 +1558,17 @@ class LogisticsWarehouseMixin:
                         SELECT
                             li.order_product_id,
                             t.destination_warehouse_id AS warehouse_id,
-                            w.region,
+                            COALESCE(dr.region_name, w.region) AS region,
                             t.logistics_box_no,
                             COALESCE(t.expected_warehouse_date, t.eta_latest, t.expected_listed_date_latest) AS expected_arrival_date,
                             SUM(li.shipped_qty) AS qty
                         FROM logistics_in_transit_items li
                         JOIN logistics_in_transit t ON t.id = li.transit_id
                         LEFT JOIN logistics_overseas_warehouses w ON w.id = t.destination_warehouse_id
+                        LEFT JOIN logistics_destination_regions dr ON dr.id = w.destination_region_id
                         WHERE t.listed_date IS NULL
                                                     AND COALESCE(w.is_enabled,1)=1
-                        GROUP BY li.order_product_id, t.destination_warehouse_id, w.region, t.logistics_box_no, COALESCE(t.expected_warehouse_date, t.eta_latest, t.expected_listed_date_latest)
+                        GROUP BY li.order_product_id, t.destination_warehouse_id, COALESCE(dr.region_name, w.region), t.logistics_box_no, COALESCE(t.expected_warehouse_date, t.eta_latest, t.expected_listed_date_latest)
                         """
                     )
                     transit_rows = cur.fetchall() or []

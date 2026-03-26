@@ -30,6 +30,14 @@ class LogisticsSchemaMixin:
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """
+        create_destination_region_sql = """
+        CREATE TABLE IF NOT EXISTS logistics_destination_regions (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            region_name VARCHAR(64) NOT NULL UNIQUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """
         create_warehouse_sql = """
         CREATE TABLE IF NOT EXISTS logistics_overseas_warehouses (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -37,15 +45,19 @@ class LogisticsSchemaMixin:
             supplier_id INT UNSIGNED NOT NULL,
             warehouse_short_name VARCHAR(128) NOT NULL,
             is_enabled TINYINT(1) NOT NULL DEFAULT 1,
-            region VARCHAR(32) NOT NULL,
+            region VARCHAR(64) NULL,
+            destination_region_id INT UNSIGNED NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             UNIQUE KEY uniq_wh_name (warehouse_name),
             UNIQUE KEY uniq_wh_supplier_short (supplier_id, warehouse_short_name),
             INDEX idx_wh_region (region),
+            INDEX idx_wh_destination_region (destination_region_id),
             INDEX idx_wh_enabled (is_enabled),
             CONSTRAINT fk_wh_supplier FOREIGN KEY (supplier_id)
-                REFERENCES logistics_suppliers(id) ON DELETE RESTRICT
+                REFERENCES logistics_suppliers(id) ON DELETE RESTRICT,
+            CONSTRAINT fk_wh_destination_region FOREIGN KEY (destination_region_id)
+                REFERENCES logistics_destination_regions(id) ON DELETE SET NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """
         create_inventory_sql = """
@@ -138,6 +150,7 @@ class LogisticsSchemaMixin:
                 cur.execute(create_factory_sql)
                 cur.execute(create_forwarder_sql)
                 cur.execute(create_supplier_sql)
+                cur.execute(create_destination_region_sql)
                 cur.execute(create_warehouse_sql)
                 cur.execute(create_inventory_sql)
                 cur.execute(create_transit_sql)
@@ -146,8 +159,54 @@ class LogisticsSchemaMixin:
                 warehouse_cols = {str((x or {}).get('Field') or '') for x in (cur.fetchall() or [])}
                 if 'is_enabled' not in warehouse_cols:
                     cur.execute("ALTER TABLE logistics_overseas_warehouses ADD COLUMN is_enabled TINYINT(1) NOT NULL DEFAULT 1 AFTER warehouse_short_name")
+                if 'destination_region_id' not in warehouse_cols:
+                    cur.execute("ALTER TABLE logistics_overseas_warehouses ADD COLUMN destination_region_id INT UNSIGNED NULL AFTER region")
                 try:
                     cur.execute("ALTER TABLE logistics_overseas_warehouses ADD INDEX idx_wh_enabled (is_enabled)")
+                except Exception:
+                    pass
+                try:
+                    cur.execute("ALTER TABLE logistics_overseas_warehouses ADD INDEX idx_wh_destination_region (destination_region_id)")
+                except Exception:
+                    pass
+
+                cur.execute("SELECT DISTINCT TRIM(region) AS region_name FROM logistics_overseas_warehouses WHERE region IS NOT NULL AND TRIM(region)<>''")
+                existing_regions = [str((row or {}).get('region_name') or '').strip() for row in (cur.fetchall() or [])]
+                for region_name in existing_regions:
+                    if not region_name:
+                        continue
+                    cur.execute(
+                        "INSERT IGNORE INTO logistics_destination_regions (region_name) VALUES (%s)",
+                        (region_name,)
+                    )
+
+                cur.execute("SELECT id, region_name FROM logistics_destination_regions")
+                region_id_map = {
+                    str((row or {}).get('region_name') or '').strip(): int((row or {}).get('id'))
+                    for row in (cur.fetchall() or [])
+                    if (row or {}).get('id') and str((row or {}).get('region_name') or '').strip()
+                }
+                for region_name, region_id in region_id_map.items():
+                    cur.execute(
+                        """
+                        UPDATE logistics_overseas_warehouses
+                        SET destination_region_id=%s
+                        WHERE (destination_region_id IS NULL OR destination_region_id=0)
+                          AND region=%s
+                        """,
+                        (region_id, region_name)
+                    )
+
+                try:
+                    cur.execute(
+                        """
+                        ALTER TABLE logistics_overseas_warehouses
+                        ADD CONSTRAINT fk_wh_destination_region
+                        FOREIGN KEY (destination_region_id)
+                        REFERENCES logistics_destination_regions(id)
+                        ON DELETE SET NULL
+                        """
+                    )
                 except Exception:
                     pass
                 cur.execute("SHOW COLUMNS FROM logistics_in_transit")

@@ -301,7 +301,8 @@ class OrderManagementMixin:
 
                 cur.execute(
                     f"""
-                    SELECT opm.order_product_id, opm.material_id, m.name, m.name_en, mt.name AS material_type_name
+                    SELECT opm.order_product_id, opm.material_id, m.name, m.name_en,
+                           mt.name AS material_type_name, m.material_type
                     FROM order_product_materials opm
                     JOIN materials m ON m.id = opm.material_id
                     LEFT JOIN material_types mt ON mt.id = m.material_type_id
@@ -364,11 +365,14 @@ class OrderManagementMixin:
                         continue
                     material_name = f"{material.get('name') or ''} / {material.get('name_en') or ''}".strip(' /')
                     type_name = str(material.get('material_type_name') or '').strip()
-                    if type_name == '填充':
+                    legacy_type = str(material.get('material_type') or '').strip().lower()
+                    is_filling = (type_name == '填充') or (legacy_type in ('filling', '填充'))
+                    is_frame = (type_name == '框架') or (legacy_type in ('frame', '框架'))
+                    if is_filling:
                         filling_ids.append(material_id)
                         if material_name:
                             filling_names.append(material_name)
-                    elif type_name == '框架':
+                    elif is_frame:
                         frame_ids.append(material_id)
                         if material_name:
                             frame_names.append(material_name)

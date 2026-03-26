@@ -349,7 +349,6 @@ class LogisticsInTransitMixin:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
 
                 allowed_fields = {
-                    'listed_date',
                     'declaration_docs_provided',
                     'clearance_docs_provided',
                     'inventory_registered',
@@ -364,20 +363,6 @@ class LogisticsInTransitMixin:
                         existing = cur.fetchone()
                         if not existing:
                             return self.send_json({'status': 'error', 'message': '在途物流记录不存在'}, start_response)
-
-                        if field == 'listed_date':
-                            listed_raw = data.get('listed_date')
-                            bool_value = _to_bool_flag(data.get('value'))
-                            normalized_listed = _normalize_date(listed_raw)
-                            if bool_value == 1 and not normalized_listed:
-                                normalized_listed = datetime.now().strftime('%Y-%m-%d')
-                            if bool_value == 0:
-                                normalized_listed = None
-                            cur.execute(
-                                "UPDATE logistics_in_transit SET listed_date=%s WHERE id=%s",
-                                (normalized_listed, item_id)
-                            )
-                            return self.send_json({'status': 'success', 'id': item_id, 'field': 'listed_date', 'value': normalized_listed}, start_response)
 
                         bool_value = _to_bool_flag(data.get('value'))
                         cur.execute(
@@ -610,7 +595,7 @@ class LogisticsInTransitMixin:
                 '箱号*', '工厂*', '目的仓库*', '工厂发货最新日期',
                 '货代*', '最新预计上架时间', 'ETD最新日期', 'ETA最新日期', '到港日期',
                 '预计送仓日期', '船公司', '船名航次', '提单号', '起运港', '目的港', '入库单号',
-                '是否已登记上架', '是否已核对上架数量', '是否已送达', '是否提供清关资料', '是否提供报关资料'
+                '已登记上架', '已核对上架数量', '提供清关资料', '提供报关资料'
             ]
             item_headers = ['箱号*', '下单SKU*', '发货数量*', '实际上架数量*']
 
@@ -633,7 +618,7 @@ class LogisticsInTransitMixin:
             groups = [
                 ('工厂及发货SKU与数量', 1, 4),
                 ('货代及物流情况', 5, 16),
-                ('状态', 17, 21),
+                ('状态', 17, 20),
             ]
             header_fill_by_col = ['D3D3D3'] * len(info_headers)
             for idx, (title, start_col, end_col) in enumerate(groups):
@@ -749,7 +734,7 @@ class LogisticsInTransitMixin:
             max_validation_row = 400
             bool_validation = DataValidation(type='list', formula1='"否,是"', allow_blank=True)
             ws_info.add_data_validation(bool_validation)
-            for col in (17, 18, 19, 20, 21):
+            for col in (17, 18, 19, 20):
                 letter = _col_letter(col)
                 for row in range(3, max_validation_row + 1):
                     bool_validation.add(f'{letter}{row}')
@@ -806,7 +791,6 @@ class LogisticsInTransitMixin:
                     row.get('inbound_order_no') or '',
                     '是' if str(row.get('inventory_registered') or '0') in ('1', 'True', 'true') else '否',
                     '是' if str(row.get('qty_verified') or '0') in ('1', 'True', 'true') else '否',
-                    '是' if row.get('listed_date') else '否',
                     '是' if str(row.get('clearance_docs_provided') or '0') in ('1', 'True', 'true') else '否',
                     '是' if str(row.get('declaration_docs_provided') or '0') in ('1', 'True', 'true') else '否',
                 ]
@@ -987,12 +971,23 @@ class LogisticsInTransitMixin:
                             'port_of_loading': _cell_text(_get('起运港')) or None,
                             'port_of_destination': _cell_text(_get('目的港')) or None,
                             'inbound_order_no': _cell_text(_get('入库单号')) or None,
-                            'declaration_docs_provided': _norm_bool(_get('是否提供报关资料') if '是否提供报关资料' in idx_info else _get('是否上传报关资料')),
-                            'clearance_docs_provided': _norm_bool(_get('是否提供清关资料') if '是否提供清关资料' in idx_info else _get('是否上传清关资料')),
-                            'qty_verified': _norm_bool(_get('是否已核对上架数量') if '是否已核对上架数量' in idx_info else _get('是否已核对数量')),
+                            'declaration_docs_provided': _norm_bool(
+                                _get('提供报关资料') if '提供报关资料' in idx_info
+                                else (_get('是否提供报关资料') if '是否提供报关资料' in idx_info else _get('是否上传报关资料'))
+                            ),
+                            'clearance_docs_provided': _norm_bool(
+                                _get('提供清关资料') if '提供清关资料' in idx_info
+                                else (_get('是否提供清关资料') if '是否提供清关资料' in idx_info else _get('是否上传清关资料'))
+                            ),
+                            'qty_verified': _norm_bool(
+                                _get('已核对上架数量') if '已核对上架数量' in idx_info
+                                else (_get('是否已核对上架数量') if '是否已核对上架数量' in idx_info else _get('是否已核对数量'))
+                            ),
                             'qty_consistent': 0,
-                            'inventory_registered': _norm_bool(_get('是否已登记上架') if '是否已登记上架' in idx_info else _get('库存表已登记')),
-                            'delivered_flag': _norm_bool(_get('是否已送达')) if '是否已送达' in idx_info else None,
+                            'inventory_registered': _norm_bool(
+                                _get('已登记上架') if '已登记上架' in idx_info
+                                else (_get('是否已登记上架') if '是否已登记上架' in idx_info else _get('库存表已登记'))
+                            ),
                         })
 
                     item_rows = {}
@@ -1076,9 +1071,6 @@ class LogisticsInTransitMixin:
                             'destination_warehouse_id': row['destination_warehouse_id'],
                             'inbound_order_no': row['inbound_order_no']
                         }
-
-                        if row.get('delivered_flag') is not None:
-                            payload['listed_date'] = datetime.now().strftime('%Y-%m-%d') if int(row.get('delivered_flag') or 0) == 1 else None
 
                         factory_ship_latest = row['factory_ship_date_latest']
                         etd_latest = row['etd_latest']
