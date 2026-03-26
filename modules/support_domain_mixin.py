@@ -141,41 +141,57 @@ class SupportDomainMixin:
                     with conn.cursor() as cur:
                         if keyword:
                             cur.execute(
-                                "SELECT id, name, created_at FROM shops WHERE name LIKE %s ORDER BY id DESC",
+                                """SELECT s.id, s.shop_name, pt.name AS platform_type, b.name AS brand, s.created_at
+                                   FROM shops s
+                                   LEFT JOIN platform_types pt ON s.platform_type_id = pt.id
+                                   LEFT JOIN brands b ON s.brand_id = b.id
+                                   WHERE s.shop_name LIKE %s ORDER BY s.id DESC""",
                                 (f"%{keyword}%",)
                             )
                         else:
-                            cur.execute("SELECT id, name, created_at FROM shops ORDER BY id ASC")
+                            cur.execute("""SELECT s.id, s.shop_name, pt.name AS platform_type, b.name AS brand, s.created_at
+                                         FROM shops s
+                                         LEFT JOIN platform_types pt ON s.platform_type_id = pt.id
+                                         LEFT JOIN brands b ON s.brand_id = b.id
+                                         ORDER BY s.id ASC""")
                         rows = cur.fetchall() or []
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             if method == 'POST':
                 data = self._read_json_body(environ)
-                name = (data.get('name') or '').strip()
-                if not name:
-                    return self.send_json({'status': 'error', 'message': 'Missing name'}, start_response)
+                shop_name = (data.get('shop_name') or '').strip()
+                platform_type_id = self._parse_int(data.get('platform_type_id'))
+                brand_id = self._parse_int(data.get('brand_id'))
+                
+                if not shop_name or not platform_type_id or not brand_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing required fields'}, start_response)
 
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("INSERT INTO shops (name) VALUES (%s)", (name,))
+                        cur.execute("INSERT INTO shops (shop_name, platform_type_id, brand_id) VALUES (%s, %s, %s)", 
+                                   (shop_name, platform_type_id, brand_id))
                         new_id = cur.lastrowid
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
             if method == 'PUT':
                 data = self._read_json_body(environ)
-                item_id = data.get('id')
-                name = (data.get('name') or '').strip()
-                if not item_id or not name:
-                    return self.send_json({'status': 'error', 'message': 'Missing id or name'}, start_response)
+                item_id = self._parse_int(data.get('id'))
+                shop_name = (data.get('shop_name') or '').strip()
+                platform_type_id = self._parse_int(data.get('platform_type_id'))
+                brand_id = self._parse_int(data.get('brand_id'))
+                
+                if not item_id or not shop_name or not platform_type_id or not brand_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing required fields'}, start_response)
 
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("UPDATE shops SET name=%s WHERE id=%s", (name, item_id))
+                        cur.execute("UPDATE shops SET shop_name=%s, platform_type_id=%s, brand_id=%s WHERE id=%s", 
+                                   (shop_name, platform_type_id, brand_id, item_id))
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':
                 data = self._read_json_body(environ)
-                item_id = data.get('id')
+                item_id = self._parse_int(data.get('id'))
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
 

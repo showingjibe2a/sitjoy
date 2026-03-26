@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """WSGI 应用入口：负责组装 mixin 与基础初始化。"""
 
@@ -69,6 +69,15 @@ class WSGIApp(
     SalesProductMixin,
     SalesManagementMixin,
 ):
+    _schema_ready_cache = {
+        'certification': False,
+        'sales_parent': False,
+        'sales_product': False,
+        'sales_order_registration': False,
+        'logistics': False,
+        'factory_inventory': False,
+    }
+
     def __init__(self):
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         self._user_session = {}
