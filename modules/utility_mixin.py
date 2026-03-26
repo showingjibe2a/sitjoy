@@ -105,7 +105,7 @@ class UtilityMixin:
     def handle_feature_api(self, environ, method, start_response):
         """卖点管理 API（CRUD）"""
         try:
-            self._ensure_features_table()
+            self._ensure_order_product_tables()
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
 
@@ -113,38 +113,67 @@ class UtilityMixin:
                 keyword = query_params.get('q', [''])[0].strip()
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
+                        where_parts = []
+                        params = []
                         if keyword:
-                            cur.execute(
-                                "SELECT id, name, created_at FROM features WHERE name LIKE %s ORDER BY id DESC",
-                                (f"%{keyword}%",)
-                            )
-                        else:
-                            cur.execute("SELECT id, name, created_at FROM features ORDER BY id ASC")
+                            where_parts.append("(f.name LIKE %s OR f.name_en LIKE %s OR pc.category_cn LIKE %s OR pc.category_en LIKE %s)")
+                            like_val = f"%{keyword}%"
+                            params.extend([like_val, like_val, like_val, like_val])
+                        where_sql = (" WHERE " + " AND ".join(where_parts)) if where_parts else ""
+                        sql = f"""
+                            SELECT
+                                f.id,
+                                f.name,
+                                f.name_en,
+                                f.created_at,
+                                GROUP_CONCAT(DISTINCT fc.category_id ORDER BY fc.category_id SEPARATOR ',') AS category_ids_csv,
+                                GROUP_CONCAT(DISTINCT pc.category_cn ORDER BY pc.category_cn SEPARATOR ' / ') AS category_cn,
+                                GROUP_CONCAT(DISTINCT pc.category_en ORDER BY pc.category_en SEPARATOR ' / ') AS category_en
+                            FROM features f
+                            LEFT JOIN feature_categories fc ON fc.feature_id = f.id
+                            LEFT JOIN product_categories pc ON pc.id = fc.category_id
+                            {where_sql}
+                            GROUP BY f.id, f.name, f.name_en, f.created_at
+                            ORDER BY f.id DESC
+                        """
+                        cur.execute(sql, tuple(params))
                         rows = cur.fetchall() or []
+                        for row in rows:
+                            csv = str(row.get('category_ids_csv') or '').strip()
+                            row['category_ids'] = [int(v) for v in csv.split(',') if str(v).strip().isdigit()] if csv else []
+                            row.pop('category_ids_csv', None)
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             if method == 'POST':
                 data = self._read_json_body(environ)
                 name = (data.get('name') or '').strip()
-                if not name:
-                    return self.send_json({'status': 'error', 'message': 'Missing name'}, start_response)
+                name_en = (data.get('name_en') or '').strip()
+                category_ids = [self._parse_int(v) for v in (data.get('category_ids') or [])]
+                category_ids = [v for v in category_ids if v]
+                if not name or not name_en:
+                    return self.send_json({'status': 'error', 'message': 'Missing name or name_en'}, start_response)
 
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("INSERT INTO features (name) VALUES (%s)", (name,))
+                        cur.execute("INSERT INTO features (name, name_en) VALUES (%s, %s)", (name, name_en))
                         new_id = cur.lastrowid
+                    self._replace_feature_categories(conn, new_id, category_ids)
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
             if method == 'PUT':
                 data = self._read_json_body(environ)
-                item_id = data.get('id')
+                item_id = self._parse_int(data.get('id'))
                 name = (data.get('name') or '').strip()
-                if not item_id or not name:
-                    return self.send_json({'status': 'error', 'message': 'Missing id or name'}, start_response)
+                name_en = (data.get('name_en') or '').strip()
+                category_ids = [self._parse_int(v) for v in (data.get('category_ids') or [])]
+                category_ids = [v for v in category_ids if v]
+                if not item_id or not name or not name_en:
+                    return self.send_json({'status': 'error', 'message': 'Missing id or fields'}, start_response)
 
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("UPDATE features SET name=%s WHERE id=%s", (name, item_id))
+                        cur.execute("UPDATE features SET name=%s, name_en=%s WHERE id=%s", (name, name_en, item_id))
+                    self._replace_feature_categories(conn, item_id, category_ids)
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':
@@ -163,42 +192,12 @@ class UtilityMixin:
             print(f'Feature API error: {str(e)}')
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
-    def _ensure_features_table(self):
-        self._ensure_category_table()
-        create_features = """
-        CREATE TABLE IF NOT EXISTS features (
-            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            name VARCHAR(128) NOT NULL UNIQUE,
-            name_en VARCHAR(128) NOT NULL DEFAULT '',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            INDEX idx_feature_name (name)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        """
-        create_feature_categories = """
-        CREATE TABLE IF NOT EXISTS feature_categories (
-            feature_id INT UNSIGNED NOT NULL,
-            category_id INT UNSIGNED NOT NULL,
-            PRIMARY KEY (feature_id, category_id),
-            CONSTRAINT fk_feature_category_feature FOREIGN KEY (feature_id)
-                REFERENCES features(id) ON DELETE CASCADE,
-            CONSTRAINT fk_feature_category_category FOREIGN KEY (category_id)
-                REFERENCES product_categories(id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        """
-        with self._get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(create_features)
+    def _replace_feature_categories(self, conn, feature_id, category_ids):
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM feature_categories WHERE feature_id=%s", (feature_id,))
+            for category_id in category_ids:
                 cur.execute(
-                    """
-                    SELECT COUNT(*) AS cnt
-                    FROM information_schema.COLUMNS
-                    WHERE TABLE_SCHEMA = DATABASE()
-                      AND TABLE_NAME = 'features'
-                      AND COLUMN_NAME = 'name_en'
-                    """
+                    "INSERT IGNORE INTO feature_categories (feature_id, category_id) VALUES (%s, %s)",
+                    (feature_id, category_id)
                 )
-                row = cur.fetchone()
-                if row and row.get('cnt', 0) == 0:
-                    cur.execute("ALTER TABLE features ADD COLUMN name_en VARCHAR(128) NOT NULL DEFAULT ''")
-                cur.execute(create_feature_categories)
 

@@ -401,18 +401,24 @@ class FabricManagementMixin:
                 keyword = query_params.get('q', [''])[0].strip()
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
+                        where_sql = ""
+                        params = []
+                        if keyword:
+                            where_sql = "WHERE fm.fabric_code LIKE %s OR fm.fabric_name_en LIKE %s"
+                            params = [f"%{keyword}%", f"%{keyword}%"]
+
                         if keyword:
                             cur.execute(
-                                """
+                                f"""
                                 SELECT fm.id, fm.fabric_code, fm.fabric_name_en, fm.representative_color, fm.material_id,
                                         m.name AS material_name, m.name_en AS material_name_en,
                                         fm.created_at
                                 FROM fabric_materials fm
                                 LEFT JOIN materials m ON fm.material_id = m.id
-                                WHERE fm.fabric_code LIKE %s OR fm.fabric_name_en LIKE %s
+                                {where_sql}
                                 ORDER BY fm.id DESC
                                 """,
-                                (f"%{keyword}%", f"%{keyword}%")
+                                tuple(params)
                             )
                         else:
                             cur.execute(
@@ -426,8 +432,59 @@ class FabricManagementMixin:
                                 """
                             )
                         rows = cur.fetchall() or []
+
+                        fabric_ids = [self._parse_int(row.get('id')) for row in rows if self._parse_int(row.get('id'))]
+                        image_map = {}
+                        sku_map = {}
+
+                        if fabric_ids:
+                            placeholders = ','.join(['%s'] * len(fabric_ids))
+                            cur.execute(
+                                f"""
+                                SELECT fabric_id, image_name, remark, sort_order
+                                FROM fabric_images
+                                WHERE fabric_id IN ({placeholders})
+                                ORDER BY fabric_id ASC, sort_order ASC, id ASC
+                                """,
+                                tuple(fabric_ids)
+                            )
+                            for img in (cur.fetchall() or []):
+                                fid = self._parse_int(img.get('fabric_id'))
+                                if not fid:
+                                    continue
+                                image_map.setdefault(fid, []).append({
+                                    'image_name': img.get('image_name') or '',
+                                    'remark': img.get('remark') or '',
+                                    'sort_order': self._parse_int(img.get('sort_order')) or 0,
+                                })
+
+                            cur.execute(
+                                f"""
+                                SELECT fpf.fabric_id, fpf.sku_family_id, pf.sku_family
+                                FROM fabric_product_families fpf
+                                LEFT JOIN product_families pf ON pf.id = fpf.sku_family_id
+                                WHERE fpf.fabric_id IN ({placeholders})
+                                ORDER BY fpf.fabric_id ASC, fpf.sku_family_id ASC
+                                """,
+                                tuple(fabric_ids)
+                            )
+                            for rel in (cur.fetchall() or []):
+                                fid = self._parse_int(rel.get('fabric_id'))
+                                sku_id = self._parse_int(rel.get('sku_family_id'))
+                                if not fid or not sku_id:
+                                    continue
+                                sku_map.setdefault(fid, []).append({
+                                    'id': sku_id,
+                                    'sku_family': rel.get('sku_family') or ''
+                                })
+
                         for row in rows:
-                            row['images'] = []
+                            fid = self._parse_int(row.get('id'))
+                            images = image_map.get(fid, []) if fid else []
+                            skus = sku_map.get(fid, []) if fid else []
+                            row['images'] = images
+                            row['image_names'] = [x.get('image_name') for x in images if x.get('image_name')]
+                            row['sku_family_ids'] = [x.get('id') for x in skus if x.get('id')]
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             if method == 'POST':
@@ -436,6 +493,9 @@ class FabricManagementMixin:
                 fabric_name_en = (data.get('fabric_name_en') or '').strip()
                 representative_color = _normalize_color(data.get('representative_color'))
                 material_id = self._parse_int(data.get('material_id'))
+                images = data.get('images') or []
+                sku_family_ids = [self._parse_int(v) for v in (data.get('sku_family_ids') or [])]
+                sku_family_ids = [v for v in sku_family_ids if v]
                 
                 if not fabric_code or not fabric_name_en or not material_id:
                     return self.send_json({'status': 'error', 'message': 'Missing fields'}, start_response)
@@ -450,6 +510,8 @@ class FabricManagementMixin:
                             (fabric_code, fabric_name_en, representative_color, material_id)
                         )
                         new_id = cur.lastrowid
+                    self._replace_fabric_images(conn, new_id, images)
+                    self._replace_fabric_sku_families(conn, new_id, sku_family_ids)
 
                 self._template_options_cache.pop('fabric_list_all', None)
                 self._template_options_cache.pop('sku_list_all', None)
@@ -457,11 +519,14 @@ class FabricManagementMixin:
 
             if method == 'PUT':
                 data = self._read_json_body(environ)
-                item_id = data.get('id')
+                item_id = self._parse_int(data.get('id'))
                 fabric_code = (data.get('fabric_code') or '').strip()
                 fabric_name_en = (data.get('fabric_name_en') or '').strip()
                 representative_color = _normalize_color(data.get('representative_color'))
                 material_id = self._parse_int(data.get('material_id'))
+                images = data.get('images') or []
+                sku_family_ids = [self._parse_int(v) for v in (data.get('sku_family_ids') or [])]
+                sku_family_ids = [v for v in sku_family_ids if v]
                 
                 if not item_id or not fabric_code or not fabric_name_en or not material_id:
                     return self.send_json({'status': 'error', 'message': 'Missing fields'}, start_response)
@@ -476,6 +541,8 @@ class FabricManagementMixin:
                             """,
                             (fabric_code, fabric_name_en, representative_color, material_id, item_id)
                         )
+                    self._replace_fabric_images(conn, item_id, images)
+                    self._replace_fabric_sku_families(conn, item_id, sku_family_ids)
 
                 self._template_options_cache.pop('fabric_list_all', None)
                 self._template_options_cache.pop('sku_list_all', None)
@@ -497,8 +564,43 @@ class FabricManagementMixin:
 
             return self.send_error(405, 'Method not allowed', start_response)
         except Exception as e:
-            import pymysql
-            if pymysql and isinstance(e, pymysql.err.IntegrityError):
+            err_text = str(e).lower()
+            if 'duplicate entry' in err_text or '1062' in err_text:
                 return self.send_json({'status': 'error', 'message': '面料编号已存在'}, start_response)
             print("Fabric API error: " + str(e))
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def _replace_fabric_images(self, conn, fabric_id, images):
+        valid_images = []
+        for idx, item in enumerate(images or []):
+            if isinstance(item, dict):
+                image_name = str(item.get('image_name') or '').strip()
+                remark = str(item.get('remark') or '').strip()
+                sort_order = self._parse_int(item.get('sort_order'))
+            else:
+                image_name = str(item or '').strip()
+                remark = ''
+                sort_order = None
+            if not image_name:
+                continue
+            valid_images.append((image_name, remark, sort_order if sort_order is not None else idx))
+
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM fabric_images WHERE fabric_id=%s", (fabric_id,))
+            for image_name, remark, sort_order in valid_images:
+                cur.execute(
+                    """
+                    INSERT INTO fabric_images (fabric_id, image_name, remark, sort_order)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (fabric_id, image_name, remark or None, sort_order)
+                )
+
+    def _replace_fabric_sku_families(self, conn, fabric_id, sku_family_ids):
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM fabric_product_families WHERE fabric_id=%s", (fabric_id,))
+            for sku_family_id in sku_family_ids:
+                cur.execute(
+                    "INSERT IGNORE INTO fabric_product_families (fabric_id, sku_family_id) VALUES (%s, %s)",
+                    (fabric_id, sku_family_id)
+                )

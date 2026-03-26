@@ -137,23 +137,41 @@ class SupportDomainMixin:
 
             if method == 'GET':
                 keyword = query_params.get('q', [''])[0].strip()
+                platform_type_id = self._parse_int(query_params.get('platform_type_id', [''])[0])
+                brand_id = self._parse_int(query_params.get('brand_id', [''])[0])
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
+                        where_parts = []
+                        params = []
                         if keyword:
-                            cur.execute(
-                                """SELECT s.id, s.shop_name, pt.name AS platform_type, b.name AS brand, s.created_at
-                                   FROM shops s
-                                   LEFT JOIN platform_types pt ON s.platform_type_id = pt.id
-                                   LEFT JOIN brands b ON s.brand_id = b.id
-                                   WHERE s.shop_name LIKE %s ORDER BY s.id DESC""",
-                                (f"%{keyword}%",)
-                            )
-                        else:
-                            cur.execute("""SELECT s.id, s.shop_name, pt.name AS platform_type, b.name AS brand, s.created_at
-                                         FROM shops s
-                                         LEFT JOIN platform_types pt ON s.platform_type_id = pt.id
-                                         LEFT JOIN brands b ON s.brand_id = b.id
-                                         ORDER BY s.id ASC""")
+                            where_parts.append("(s.shop_name LIKE %s OR pt.name LIKE %s OR b.name LIKE %s)")
+                            params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
+                        if platform_type_id:
+                            where_parts.append("s.platform_type_id = %s")
+                            params.append(platform_type_id)
+                        if brand_id:
+                            where_parts.append("s.brand_id = %s")
+                            params.append(brand_id)
+
+                        where_sql = (" WHERE " + " AND ".join(where_parts)) if where_parts else ""
+                        sql = f"""
+                            SELECT
+                                s.id,
+                                s.shop_name,
+                                s.platform_type_id,
+                                s.brand_id,
+                                pt.name AS platform_type_name,
+                                b.name AS brand_name,
+                                pt.name AS platform_type,
+                                b.name AS brand,
+                                s.created_at
+                            FROM shops s
+                            LEFT JOIN platform_types pt ON s.platform_type_id = pt.id
+                            LEFT JOIN brands b ON s.brand_id = b.id
+                            {where_sql}
+                            ORDER BY s.id ASC
+                        """
+                        cur.execute(sql, tuple(params))
                         rows = cur.fetchall() or []
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
