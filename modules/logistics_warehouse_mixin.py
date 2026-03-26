@@ -21,54 +21,6 @@ except Exception as _e:
 
 
 class LogisticsWarehouseMixin:
-    pass
-
-    def _ensure_factory_inventory_tables(self):
-        if self._factory_inventory_ready:
-            return
-        self._ensure_logistics_tables()
-        create_factory_stock = """
-        CREATE TABLE IF NOT EXISTS factory_stock_inventory (
-            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            order_product_id INT UNSIGNED NOT NULL,
-            factory_id INT UNSIGNED NOT NULL,
-            quantity INT NOT NULL DEFAULT 0,
-            notes TEXT NULL,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            UNIQUE KEY uniq_fsi_op_factory (order_product_id, factory_id),
-            CONSTRAINT fk_fsi_op FOREIGN KEY (order_product_id) REFERENCES order_products(id) ON DELETE CASCADE,
-            CONSTRAINT fk_fsi_factory FOREIGN KEY (factory_id) REFERENCES logistics_factories(id) ON DELETE RESTRICT
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        """
-        create_factory_wip = """
-        CREATE TABLE IF NOT EXISTS factory_wip_inventory (
-            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            order_product_id INT UNSIGNED NOT NULL,
-            factory_id INT UNSIGNED NOT NULL,
-            quantity INT NOT NULL DEFAULT 0,
-            expected_completion_date DATE NULL,
-            is_completed TINYINT(1) NOT NULL DEFAULT 0,
-            actual_completion_date DATE NULL,
-            notes TEXT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            KEY idx_fwi_op (order_product_id),
-            KEY idx_fwi_factory (factory_id),
-            CONSTRAINT fk_fwi_op FOREIGN KEY (order_product_id) REFERENCES order_products(id) ON DELETE CASCADE,
-            CONSTRAINT fk_fwi_factory FOREIGN KEY (factory_id) REFERENCES logistics_factories(id) ON DELETE RESTRICT
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        """
-        with self._get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(create_factory_stock)
-                cur.execute(create_factory_wip)
-                cur.execute("SHOW COLUMNS FROM factory_wip_inventory")
-                cols = {str((row.get('Field') or '')).strip().lower() for row in (cur.fetchall() or [])}
-                if 'is_completed' not in cols:
-                    cur.execute("ALTER TABLE factory_wip_inventory ADD COLUMN is_completed TINYINT(1) NOT NULL DEFAULT 0 AFTER expected_completion_date")
-                if 'actual_completion_date' not in cols:
-                    cur.execute("ALTER TABLE factory_wip_inventory ADD COLUMN actual_completion_date DATE NULL AFTER is_completed")
-        self._factory_inventory_ready = True
 
     def handle_factory_stock_api(self, environ, method, start_response):
         """工厂在库库存 CRUD"""

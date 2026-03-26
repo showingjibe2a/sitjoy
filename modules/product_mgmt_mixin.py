@@ -699,3 +699,6 @@ class ProductManagementMixin:
             os.makedirs(folder, exist_ok=True)
         return folder
 
+    def _get_listing_folder_bytes(self):
+        return self._join_resources('')
+

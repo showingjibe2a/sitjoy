@@ -14,6 +14,161 @@ except Exception as e:
 
 
 class SalesManagementMixin:
+    def _bool_from_any(self, value, default=0):
+        if value is None:
+            return 1 if default else 0
+        text = str(value).strip().lower()
+        if text in ('1', 'true', 'yes', 'y', '是', 'on'):
+            return 1
+        if text in ('0', 'false', 'no', 'n', '否', 'off'):
+            return 0
+        return 1 if default else 0
+
+    def _validate_us_phone_zip(self, phone, zip_code):
+        phone_text = (phone or '').strip()
+        zip_text = (zip_code or '').strip()
+        if phone_text:
+            digits = re.sub(r'\D+', '', phone_text)
+            if len(digits) == 11 and digits.startswith('1'):
+                digits = digits[1:]
+            if len(digits) != 10:
+                raise ValueError('电话格式无效，请填写美国电话（10位数字，可含+1）')
+        if zip_text and not re.match(r'^\d{5}(-\d{4})?$', zip_text):
+            raise ValueError('邮编格式无效，请填写美国邮编（5位或5+4）')
+
+    def _normalize_registration_platform_items(self, items):
+        normalized = []
+        if not isinstance(items, list):
+            return normalized
+        for entry in items:
+            if not isinstance(entry, dict):
+                continue
+            platform_sku = (entry.get('platform_sku') or '').strip()
+            sales_product_id = self._parse_int(entry.get('sales_product_id'))
+            quantity = self._parse_int(entry.get('quantity')) or 1
+            shipping_plan_id = self._parse_int(entry.get('shipping_plan_id'))
+            if not platform_sku and not sales_product_id:
+                continue
+            normalized.append({
+                'sales_product_id': sales_product_id,
+                'platform_sku': platform_sku,
+                'quantity': max(1, quantity),
+                'shipping_plan_id': shipping_plan_id
+            })
+        return normalized
+
+    def _normalize_registration_shipment_items(self, items):
+        normalized = []
+        if not isinstance(items, list):
+            return normalized
+        for entry in items:
+            if not isinstance(entry, dict):
+                continue
+            order_product_id = self._parse_int(entry.get('order_product_id'))
+            order_sku = (entry.get('order_sku') or '').strip()
+            quantity = self._parse_int(entry.get('quantity')) or 1
+            shipping_plan_id = self._parse_int(entry.get('shipping_plan_id'))
+            source_type = (entry.get('source_type') or 'manual').strip().lower()
+            if source_type not in ('manual', 'auto', 'plan'):
+                source_type = 'manual'
+            if not order_product_id and not order_sku:
+                continue
+            normalized.append({
+                'order_product_id': order_product_id,
+                'order_sku': order_sku,
+                'quantity': max(1, quantity),
+                'source_type': source_type,
+                'shipping_plan_id': shipping_plan_id
+            })
+        return normalized
+
+    def _normalize_registration_logistics_items(self, items):
+        normalized = []
+        if not isinstance(items, list):
+            return normalized
+        for index, entry in enumerate(items, start=1):
+            if not isinstance(entry, dict):
+                continue
+            shipping_carrier = (entry.get('shipping_carrier') or '').strip()
+            tracking_no = (entry.get('tracking_no') or '').strip()
+            sort_order = self._parse_int(entry.get('sort_order')) or index
+            if not shipping_carrier and not tracking_no:
+                continue
+            normalized.append({
+                'shipping_carrier': shipping_carrier or None,
+                'tracking_no': tracking_no or None,
+                'sort_order': max(1, sort_order)
+            })
+        return normalized
+
+    def _resolve_registration_auto_shipments(self, conn, platform_items):
+        aggregate = {}
+        if not platform_items:
+            return []
+
+        with conn.cursor() as cur:
+            for item in platform_items:
+                qty = max(1, self._parse_int(item.get('quantity')) or 1)
+                shipping_plan_id = self._parse_int(item.get('shipping_plan_id'))
+
+                if shipping_plan_id:
+                    cur.execute(
+                        """
+                        SELECT op.id AS order_product_id, op.sku, opsi.quantity
+                        FROM order_product_shipping_plan_items opsi
+                        JOIN order_products op ON op.id = opsi.substitute_order_product_id
+                        WHERE opsi.shipping_plan_id=%s
+                        ORDER BY opsi.sort_order ASC, opsi.id ASC
+                        """,
+                        (shipping_plan_id,)
+                    )
+                    rels = cur.fetchall() or []
+                    for rel in rels:
+                        key = int(rel.get('order_product_id'))
+                        aggregate.setdefault(key, {
+                            'order_product_id': key,
+                            'order_sku': rel.get('sku') or '',
+                            'quantity': 0,
+                            'source_type': 'plan',
+                            'shipping_plan_id': shipping_plan_id
+                        })
+                        aggregate[key]['quantity'] += qty * (self._parse_int(rel.get('quantity')) or 1)
+                    continue
+
+                sales_product_id = self._parse_int(item.get('sales_product_id'))
+                platform_sku = (item.get('platform_sku') or '').strip()
+                if not sales_product_id and platform_sku:
+                    cur.execute("SELECT id FROM sales_products WHERE platform_sku=%s LIMIT 1", (platform_sku,))
+                    row = cur.fetchone() or {}
+                    sales_product_id = self._parse_int(row.get('id'))
+                if not sales_product_id:
+                    continue
+
+                cur.execute(
+                    """
+                    SELECT op.id AS order_product_id, op.sku, spol.quantity
+                    FROM sales_product_order_links spol
+                    JOIN order_products op ON op.id = spol.order_product_id
+                    WHERE spol.sales_product_id=%s
+                    """,
+                    (sales_product_id,)
+                )
+                rels = cur.fetchall() or []
+                for rel in rels:
+                    key = int(rel.get('order_product_id'))
+                    aggregate.setdefault(key, {
+                        'order_product_id': key,
+                        'order_sku': rel.get('sku') or '',
+                        'quantity': 0,
+                        'source_type': 'auto',
+                        'shipping_plan_id': None
+                    })
+                    aggregate[key]['quantity'] += qty * (self._parse_int(rel.get('quantity')) or 1)
+
+        items = list(aggregate.values())
+        items.sort(key=lambda x: (x.get('order_sku') or '', x.get('order_product_id') or 0))
+        return items
+
     def _registration_parse_date(self, value):
         if value is None:
             return None

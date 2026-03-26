@@ -10,6 +10,16 @@ import cgi
 class FileUtilsMixin:
     """文件系统和文件操作工具"""
 
+    def _rename_fabric_image_with_remark(self, old_name, fabric_code, remark, index):
+        if not old_name:
+            return None
+        ext = os.path.splitext(old_name)[1] or '.jpg'
+        remark_str = remark or '未分类'
+        new_name = f"{fabric_code}-{remark_str}-{index:02d}{ext}"
+        if old_name == new_name:
+            return old_name
+        return new_name
+
     def _join_resources(self, rel_path):
         """拼接资源目录（返回 bytes 路径）"""
         from app import RESOURCES_PATH_BYTES  # 导入全局常量

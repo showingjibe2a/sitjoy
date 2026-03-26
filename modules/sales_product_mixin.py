@@ -1335,3 +1335,163 @@ class SalesProductMixin:
         if not os.path.exists(variant_folder):
             os.makedirs(variant_folder, exist_ok=True)
 
+    def _normalize_sales_order_links(self, links):
+        items = []
+        if not isinstance(links, list):
+            return items
+        for entry in links:
+            if not isinstance(entry, dict):
+                continue
+            order_product_id = self._parse_int(entry.get('order_product_id'))
+            quantity = self._parse_int(entry.get('quantity')) or 1
+            if not order_product_id:
+                continue
+            items.append({'order_product_id': order_product_id, 'quantity': max(1, quantity)})
+        return items
+
+    def _replace_sales_order_links(self, conn, sales_product_id, links):
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM sales_product_order_links WHERE sales_product_id=%s", (sales_product_id,))
+        if not links:
+            return
+        with conn.cursor() as cur:
+            cur.executemany(
+                """
+                INSERT INTO sales_product_order_links (sales_product_id, order_product_id, quantity)
+                VALUES (%s, %s, %s)
+                """,
+                [(sales_product_id, entry['order_product_id'], entry['quantity']) for entry in links]
+            )
+
+    def _derive_sales_fields(self, conn, sku_family_id, links):
+        if not links:
+            return '', '', ''
+
+        sku_family_code = ''
+        if sku_family_id:
+            with conn.cursor() as cur:
+                cur.execute("SELECT sku_family FROM product_families WHERE id=%s", (sku_family_id,))
+                row = cur.fetchone()
+                if row:
+                    sku_family_code = (row.get('sku_family') or '').strip()
+
+        id_list = [entry['order_product_id'] for entry in links]
+        placeholders = ','.join(['%s'] * len(id_list))
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT op.id, op.sku, op.spec_qty_short, fm.fabric_code, fm.fabric_name_en
+                FROM order_products op
+                LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
+                WHERE op.id IN ({placeholders})
+                """,
+                id_list
+            )
+            rows = cur.fetchall() or []
+
+        row_map = {row['id']: row for row in rows}
+        fabrics = []
+        spec_parts = []
+        for entry in links:
+            row = row_map.get(entry['order_product_id'])
+            if not row:
+                continue
+            fabric_code = self._code_before_dash(row.get('fabric_code'))
+            if not fabric_code:
+                fabric_code = self._code_before_dash(row.get('fabric_name_en'))
+            if fabric_code and fabric_code not in fabrics:
+                fabrics.append(fabric_code)
+            spec_short = (row.get('spec_qty_short') or '').strip()
+            if spec_short:
+                spec_parts.append(f"{entry['quantity']}{spec_short}")
+
+        fabric = ' / '.join(fabrics)
+        spec_name = ''.join(spec_parts)
+
+        platform_sku = ''
+        if sku_family_code and fabric and spec_name:
+            first_fabric = fabrics[0] if fabrics else ''
+            platform_sku = self._build_sales_platform_sku(sku_family_code, spec_name, first_fabric)
+
+        return fabric, spec_name, platform_sku
+
+    def _derive_sales_cost_size(self, conn, links):
+        if not links:
+            return {
+                'warehouse_cost_usd': 0.0,
+                'last_mile_cost_usd': 0.0,
+                'package_length_in': 0.0,
+                'package_width_in': 0.0,
+                'package_height_in': 0.0,
+                'net_weight_lbs': 0.0,
+                'gross_weight_lbs': 0.0,
+                'sku_family_id': None
+            }
+
+        id_list = [entry['order_product_id'] for entry in links]
+        placeholders = ','.join(['%s'] * len(id_list))
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT id, sku_family_id,
+                       cost_usd, last_mile_avg_freight_usd,
+                       package_length_in, package_width_in, package_height_in,
+                       net_weight_lbs, gross_weight_lbs
+                FROM order_products
+                WHERE id IN ({placeholders})
+                """,
+                id_list
+            )
+            rows = cur.fetchall() or []
+
+        row_map = {row['id']: row for row in rows}
+        warehouse_cost_usd = 0.0
+        last_mile_cost_usd = 0.0
+        package_length_in = 0.0
+        package_width_in = 0.0
+        package_height_in = 0.0
+        net_weight_lbs = 0.0
+        gross_weight_lbs = 0.0
+        sku_family_id = None
+
+        for entry in links:
+            row = row_map.get(entry['order_product_id'])
+            if not row:
+                continue
+            qty = max(1, int(entry.get('quantity') or 1))
+            if sku_family_id is None:
+                sku_family_id = row.get('sku_family_id')
+
+            warehouse_cost_usd += float(row.get('cost_usd') or 0) * qty
+            last_mile_cost_usd += float(row.get('last_mile_avg_freight_usd') or 0) * qty
+            package_length_in = max(package_length_in, float(row.get('package_length_in') or 0))
+            package_width_in = max(package_width_in, float(row.get('package_width_in') or 0))
+            package_height_in = max(package_height_in, float(row.get('package_height_in') or 0))
+            net_weight_lbs += float(row.get('net_weight_lbs') or 0) * qty
+            gross_weight_lbs += float(row.get('gross_weight_lbs') or 0) * qty
+
+        return {
+            'warehouse_cost_usd': round(warehouse_cost_usd, 2),
+            'last_mile_cost_usd': round(last_mile_cost_usd, 2),
+            'package_length_in': round(package_length_in, 2),
+            'package_width_in': round(package_width_in, 2),
+            'package_height_in': round(package_height_in, 2),
+            'net_weight_lbs': round(net_weight_lbs, 2),
+            'gross_weight_lbs': round(gross_weight_lbs, 2),
+            'sku_family_id': sku_family_id
+        }
+
+    def _code_before_dash(self, value):
+        text = (value or '').strip()
+        if not text:
+            return ''
+        return text.split('-', 1)[0].strip() or text
+
+    def _build_sales_platform_sku(self, sku_family_code, spec_name, fabric_code):
+        sku_part = (sku_family_code or '').strip()
+        spec_part = (spec_name or '').strip()
+        fabric_part = self._code_before_dash(fabric_code)
+        if not (sku_part and spec_part and fabric_part):
+            return ''
+        return f"{sku_part}-{spec_part}-{fabric_part}"
+

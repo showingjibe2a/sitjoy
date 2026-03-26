@@ -28,6 +28,49 @@ except Exception as _e:
 class LogisticsInTransitMixin:
     pass
 
+    def _get_logistics_link_root_bytes(self):
+        resources_root = self._join_resources('')
+        resources_parent = os.path.dirname(resources_root)
+        return os.path.join(resources_parent, self._safe_fsencode('『物流仓储关联文件』'))
+
+    def _rename_logistics_bl_folder(self, old_no, new_no):
+        old_name = (old_no or '').strip()
+        new_name = (new_no or '').strip()
+        if not old_name or not new_name or old_name == new_name:
+            if new_name:
+                self._ensure_logistics_bl_folder(new_name)
+            return
+        root = self._get_logistics_link_root_bytes()
+        if not os.path.exists(root):
+            os.makedirs(root, exist_ok=True)
+        old_path = os.path.join(root, self._safe_fsencode(old_name))
+        new_path = os.path.join(root, self._safe_fsencode(new_name))
+        if os.path.exists(old_path):
+            if os.path.exists(new_path):
+                raise RuntimeError(f'目标提单目录已存在: {new_name}')
+            os.rename(old_path, new_path)
+        else:
+            self._ensure_logistics_bl_folder(new_name)
+
+    def _resolve_logistics_doc_folder(self, transit_id, doc_type):
+        doc_kind = (doc_type or '').strip().lower()
+        if doc_kind not in ('declaration', 'clearance'):
+            raise RuntimeError('Invalid doc_type')
+        with self._get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT bill_of_lading_no FROM logistics_in_transit WHERE id=%s LIMIT 1", (transit_id,))
+                row = cur.fetchone() or {}
+        bill_no = (row.get('bill_of_lading_no') or '').strip()
+        if not bill_no:
+            raise RuntimeError('请先填写提单号后再操作资料文件')
+        self._ensure_logistics_bl_folder(bill_no)
+        sub_name = '报关资料' if doc_kind == 'declaration' else '清关资料'
+        parent = os.path.join(self._get_logistics_link_root_bytes(), self._safe_fsencode(bill_no))
+        folder = os.path.join(parent, self._safe_fsencode(sub_name))
+        if not os.path.exists(folder):
+            os.makedirs(folder, exist_ok=True)
+        return folder
+
     def _calc_qty_consistent_from_items(self, items):
         if not isinstance(items, list) or not items:
             return 0

@@ -16,6 +16,24 @@ except Exception as e:
 
 
 class AmazonAccountHealthMixin:
+    def _normalize_datetime_text(self, value):
+        text = ('' if value is None else str(value)).strip()
+        if not text:
+            return None
+        formats = (
+            '%Y-%m-%d %H:%M:%S',
+            '%Y-%m-%d %H:%M',
+            '%Y-%m-%dT%H:%M:%S',
+            '%Y-%m-%dT%H:%M'
+        )
+        for fmt in formats:
+            try:
+                dt = datetime.strptime(text, fmt)
+                return dt.strftime('%Y-%m-%d %H:%M:%S')
+            except Exception:
+                continue
+        return None
+
     def _ensure_amazon_account_health_table(self):
         if self._amazon_account_health_ready:
             return

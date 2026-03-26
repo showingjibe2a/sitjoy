@@ -7,11 +7,32 @@ import json
 import time
 import cgi
 import io
+import re
 import unicodedata
 from urllib.parse import parse_qs
 
 class FabricManagementMixin:
     """面料管理 API 处理器"""
+
+    def _get_fabric_folder_bytes(self):
+        return self._join_resources('『面料』')
+
+    def _next_fabric_image_index(self, existing_names, fabric_code):
+        max_idx = 0
+        prefix = f"{fabric_code}_"
+        for name in existing_names:
+            if not name:
+                continue
+            if name.startswith(prefix):
+                match = re.match(rf"^{re.escape(prefix)}(\\d+)", name)
+                if match:
+                    try:
+                        max_idx = max(max_idx, int(match.group(1)))
+                    except Exception:
+                        continue
+            elif name.startswith(f"{fabric_code}."):
+                max_idx = max(max_idx, 1)
+        return max_idx + 1
 
     def handle_fabric_images_api(self, environ, start_response):
         """列出面料文件夹内图片"""
