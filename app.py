@@ -69,6 +69,7 @@ try:
     from logistics_in_transit_mixin import LogisticsInTransitMixin
     from sales_product_mixin import SalesProductMixin
     from sales_management_mixin import SalesManagementMixin
+    from app_entry_mixin import AppEntryMixin
     _mixin_import_error = None
 except Exception as e:
     _mixin_import_error = str(e)
@@ -83,6 +84,7 @@ except Exception as e:
     class LogisticsInTransitMixin: pass
     class SalesProductMixin: pass
     class SalesManagementMixin: pass
+    class AppEntryMixin: pass
 
 # 外部文件夹路径
 # 使用 Base64 的子目录名，避免手动输入特殊字符出错
@@ -227,7 +229,7 @@ API_PERMISSION_MAP = {
     '/api/parent': 'parent_management',
 }
 
-class WSGIApp(AuthEmployeeMixin, DbSchemaBasicsMixin, CoreAppMixin, ExcelToolsMixin, FileManagementMixin, RequestRoutingMixin, LogisticsWarehouseMixin, LogisticsInTransitMixin, SalesProductMixin, SalesManagementMixin):
+class WSGIApp(AppEntryMixin, AuthEmployeeMixin, DbSchemaBasicsMixin, CoreAppMixin, ExcelToolsMixin, FileManagementMixin, RequestRoutingMixin, LogisticsWarehouseMixin, LogisticsInTransitMixin, SalesProductMixin, SalesManagementMixin):
     """WSGI 应用处理器 - 通过继承各类 mixin 提供综合功能"""
     
     def __init__(self):
@@ -257,18 +259,6 @@ class WSGIApp(AuthEmployeeMixin, DbSchemaBasicsMixin, CoreAppMixin, ExcelToolsMi
         self._todo_ensure_lock = threading.Lock()
         self._user_session = {}
         self._template_options_cache = {}
-
-    def _get_cached_template_options(self, cache_key, loader, ttl_seconds=120):
-        try:
-            now = time.time()
-            cached = self._template_options_cache.get(cache_key)
-            if cached and (now - cached.get('ts', 0) <= ttl_seconds):
-                return cached.get('data')
-            data = loader()
-            self._template_options_cache[cache_key] = {'ts': now, 'data': data}
-            return data
-        except Exception:
-            return loader()
 
     def _default_page_permissions(self):
         return {key: 1 for key in PAGE_PERMISSION_KEYS}
@@ -740,276 +730,6 @@ class WSGIApp(AuthEmployeeMixin, DbSchemaBasicsMixin, CoreAppMixin, ExcelToolsMi
 
             return {'status': 'error', 'message': f'文件重命名失败: {str(e)}'}
     
-    def __call__(self, environ, start_response):
-        """WSGI 应用入口"""
-        try:
-            path = environ['PATH_INFO']
-            method = environ['REQUEST_METHOD']
-
-            if path.startswith('/api/') and not path.startswith('/api/auth'):
-                user_id = self._get_session_user(environ)
-                if not user_id:
-                    return self.send_json({'status': 'error', 'message': '未登录'}, start_response)
-                permission_key = API_PERMISSION_MAP.get(path)
-                if permission_key and not self._user_has_page_access(user_id, permission_key):
-                    return self.send_json({'status': 'error', 'message': '无权限访问该模块'}, start_response)
-
-            # 路由处理
-            if path == '/' or path == '/index.html':
-                # 检查是否登录，未登录则重定向到登录页
-                user_id = self._get_session_user(environ)
-                if not user_id:
-                    start_response('302 Found', [('Location', '/login')])
-                    return [b'']
-                if not self._user_has_page_access(user_id, 'home'):
-                    return self.send_error(403, '无权限访问首页', start_response)
-                return self.serve_file('templates/index.html', 'text/html', start_response)
-            elif path == '/login' or path == '/login.html':
-                return self.serve_file('templates/login.html', 'text/html', start_response)
-            elif path.startswith('/api/auth'):
-                return self.handle_auth_api(environ, method, start_response)
-            elif path in PAGE_TEMPLATE_MAP:
-                template_path, permission_key = PAGE_TEMPLATE_MAP[path]
-                return self._serve_protected_page(environ, start_response, template_path, permission_key)
-            elif path == '/about' or path == '/about.html':
-                return self.serve_file('templates/about.html', 'text/html', start_response)
-            elif path == '/gallery':
-                return self.serve_file('templates/gallery.html', 'text/html', start_response)
-            elif path == '/product-management':
-                return self.serve_file('templates/product_management.html', 'text/html', start_response)
-            elif path == '/fabric-management':
-                return self.serve_file('templates/fabric_management.html', 'text/html', start_response)
-            elif path == '/feature-management':
-                return self.serve_file('templates/feature_management.html', 'text/html', start_response)
-            elif path == '/material-management':
-                return self.serve_file('templates/material_management.html', 'text/html', start_response)
-            elif path == '/certification-management':
-                return self.serve_file('templates/certification_management.html', 'text/html', start_response)
-            elif path == '/order-product-management':
-                return self.serve_file('templates/order_product_management.html', 'text/html', start_response)
-            elif path == '/logistics-factory-management':
-                return self.serve_file('templates/logistics_factory_management.html', 'text/html', start_response)
-            elif path == '/logistics-forwarder-management':
-                return self.serve_file('templates/logistics_forwarder_management.html', 'text/html', start_response)
-            elif path == '/logistics-warehouse-management':
-                return self.serve_file('templates/logistics_warehouse_management.html', 'text/html', start_response)
-            elif path == '/logistics-warehouse-inventory-management':
-                return self.serve_file('templates/logistics_warehouse_inventory_management.html', 'text/html', start_response)
-            elif path == '/logistics-warehouse-dashboard':
-                return self.serve_file('templates/logistics_warehouse_dashboard.html', 'text/html', start_response)
-            elif path == '/logistics-in-transit-management':
-                return self.serve_file('templates/logistics_in_transit_management.html', 'text/html', start_response)
-            elif path == '/logistics-in-transit-doc-files':
-                return self.serve_file('templates/logistics_in_transit_doc_files.html', 'text/html', start_response)
-            elif path == '/shop-brand-management':
-                return self.serve_file('templates/shop_brand_management.html', 'text/html', start_response)
-            elif path == '/amazon-account-health-management':
-                return self.serve_file('templates/amazon_account_health_management.html', 'text/html', start_response)
-            elif path == '/sales-product-management':
-                return self.serve_file('templates/sales_product_management.html', 'text/html', start_response)
-            elif path == '/parent-management':
-                return self.serve_file('templates/parent_management.html', 'text/html', start_response)
-            elif path == '/amazon-ad-management':
-                return self.serve_file('templates/amazon_ad_management.html', 'text/html', start_response)
-            elif path == '/amazon-ad-delivery-management':
-                return self.serve_file('templates/amazon_ad_delivery_management.html', 'text/html', start_response)
-            elif path == '/amazon-ad-product-management':
-                return self.serve_file('templates/amazon_ad_product_management.html', 'text/html', start_response)
-            elif path == '/amazon-ad-adjustment-management':
-                return self.serve_file('templates/amazon_ad_adjustment_management.html', 'text/html', start_response)
-            elif path == '/amazon-ad-subtype-management':
-                return self.serve_file('templates/amazon_ad_subtype_management.html', 'text/html', start_response)
-            elif path == '/amazon-ad-keyword-management':
-                return self.serve_file('templates/amazon_ad_keyword_management.html', 'text/html', start_response)
-            elif path.startswith('/api/hello'):
-                return self.handle_hello_api(environ, path, method, start_response)
-            elif path == '/api/employee':
-                return self.handle_employee_api(environ, method, start_response)
-            elif path == '/api/todo':
-                return self.handle_todo_api(environ, method, start_response)
-            elif path == '/api/calendar':
-                return self.handle_calendar_api(environ, method, start_response)
-            elif path == '/status':
-                return self.handle_status(start_response)
-            elif path == '/api/images':
-                return self.handle_images_api(environ, start_response)
-            elif path == '/api/browse':
-                return self.handle_browse_api(environ, start_response)
-            elif path == '/api/image-preview':
-                return self.handle_image_preview(environ, start_response)
-            elif path == '/api/rename':
-                return self.handle_rename_api(environ, start_response)
-            elif path == '/api/move':
-                return self.handle_move_api(environ, start_response)
-            elif path == '/api/sku':
-                return self.handle_sku_api(environ, method, start_response)
-            elif path == '/api/category':
-                return self.handle_category_api(environ, method, start_response)
-            elif path == '/api/fabric':
-                return self.handle_fabric_api(environ, method, start_response)
-            elif path == '/api/feature':
-                return self.handle_feature_api(environ, method, start_response)
-            elif path == '/api/material':
-                return self.handle_material_api(environ, method, start_response)
-            elif path == '/api/material-type':
-                return self.handle_material_type_api(environ, method, start_response)
-            elif path == '/api/platform-type':
-                return self.handle_platform_type_api(environ, method, start_response)
-            elif path == '/api/brand':
-                return self.handle_brand_api(environ, method, start_response)
-            elif path == '/api/shop':
-                return self.handle_shop_api(environ, method, start_response)
-            elif path == '/api/amazon-account-health':
-                return self.handle_amazon_account_health_api(environ, method, start_response)
-            elif path == '/api/amazon-account-health-template':
-                return self.handle_amazon_account_health_template_api(environ, method, start_response)
-            elif path == '/api/amazon-account-health-import':
-                return self.handle_amazon_account_health_import_api(environ, method, start_response)
-            elif path == '/api/amazon-ad-subtype':
-                return self.handle_amazon_ad_subtype_api(environ, method, start_response)
-            elif path == '/api/amazon-ad-operation-type':
-                return self.handle_amazon_ad_operation_type_api(environ, method, start_response)
-            elif path == '/api/amazon-ad':
-                return self.handle_amazon_ad_api(environ, method, start_response)
-            elif path == '/api/amazon-ad-template':
-                return self.handle_amazon_ad_template_api(environ, method, start_response)
-            elif path == '/api/amazon-ad-import':
-                return self.handle_amazon_ad_import_api(environ, method, start_response)
-            elif path == '/api/amazon-ad-delivery':
-                return self.handle_amazon_ad_delivery_api(environ, method, start_response)
-            elif path == '/api/amazon-ad-product':
-                return self.handle_amazon_ad_product_api(environ, method, start_response)
-            elif path == '/api/amazon-ad-adjustment':
-                return self.handle_amazon_ad_adjustment_api(environ, method, start_response)
-            elif path == '/api/amazon-ad-keyword':
-                return self.handle_amazon_ad_keyword_api(environ, method, start_response)
-            elif path == '/api/amazon-ad-keyword-template':
-                return self.handle_amazon_ad_keyword_template_api(environ, method, start_response)
-            elif path == '/api/amazon-ad-keyword-import':
-                return self.handle_amazon_ad_keyword_import_api(environ, method, start_response)
-            elif path == '/api/certification':
-                return self.handle_certification_api(environ, method, start_response)
-            elif path == '/api/certification-images':
-                return self.handle_certification_images_api(environ, start_response)
-            elif path == '/api/order-product':
-                return self.handle_order_product_api(environ, method, start_response)
-            elif path == '/api/order-product-template':
-                return self.handle_order_product_template_api(environ, method, start_response)
-            elif path == '/api/order-product-import':
-                return self.handle_order_product_import_api(environ, method, start_response)
-            elif path == '/api/order-product-carton-calc':
-                return self.handle_order_product_carton_calc_api(environ, method, start_response)
-            elif path == '/api/logistics-factory':
-                return self.handle_logistics_factory_api(environ, method, start_response)
-            elif path == '/api/logistics-forwarder':
-                return self.handle_logistics_forwarder_api(environ, method, start_response)
-            elif path == '/api/logistics-supplier':
-                return self.handle_logistics_supplier_api(environ, method, start_response)
-            elif path == '/api/logistics-warehouse':
-                return self.handle_logistics_warehouse_api(environ, method, start_response)
-            elif path == '/api/logistics-warehouse-template':
-                return self.handle_logistics_warehouse_template_api(environ, method, start_response)
-            elif path == '/api/logistics-warehouse-import':
-                return self.handle_logistics_warehouse_import_api(environ, method, start_response)
-            elif path == '/api/logistics-warehouse-inventory':
-                return self.handle_logistics_warehouse_inventory_api(environ, method, start_response)
-            elif path == '/api/logistics-warehouse-inventory-template':
-                return self.handle_logistics_warehouse_inventory_template_api(environ, method, start_response)
-            elif path == '/api/logistics-warehouse-inventory-import':
-                return self.handle_logistics_warehouse_inventory_import_api(environ, method, start_response)
-            elif path == '/api/logistics-warehouse-dashboard':
-                return self.handle_logistics_warehouse_dashboard_api(environ, method, start_response)
-            elif path == '/api/factory-stock':
-                return self.handle_factory_stock_api(environ, method, start_response)
-            elif path == '/api/factory-stock-template':
-                return self.handle_factory_stock_template_api(environ, method, start_response)
-            elif path == '/api/factory-stock-import':
-                return self.handle_factory_stock_import_api(environ, method, start_response)
-            elif path == '/api/factory-wip':
-                return self.handle_factory_wip_api(environ, method, start_response)
-            elif path == '/api/factory-wip-template':
-                return self.handle_factory_wip_template_api(environ, method, start_response)
-            elif path == '/api/factory-wip-import':
-                return self.handle_factory_wip_import_api(environ, method, start_response)
-            elif path == '/api/logistics-in-transit':
-                return self.handle_logistics_in_transit_api(environ, method, start_response)
-            elif path == '/api/logistics-in-transit-template':
-                return self.handle_logistics_in_transit_template_api(environ, method, start_response)
-            elif path == '/api/logistics-in-transit-import':
-                return self.handle_logistics_in_transit_import_api(environ, method, start_response)
-            elif path == '/api/logistics-in-transit-doc-upload':
-                return self.handle_logistics_in_transit_doc_upload_api(environ, start_response)
-            elif path == '/api/logistics-in-transit-doc-files':
-                return self.handle_logistics_in_transit_doc_files_api(environ, method, start_response)
-            elif path == '/api/sales-product':
-                return self.handle_sales_product_api(environ, method, start_response)
-            elif path == '/api/parent':
-                return self.handle_parent_api(environ, method, start_response)
-            elif path == '/api/sales-product-template':
-                return self.handle_sales_product_template_api(environ, method, start_response)
-            elif path == '/api/sales-product-import':
-                return self.handle_sales_product_import_api(environ, method, start_response)
-            elif path == '/api/sales-order-registration':
-                return self.handle_sales_order_registration_api(environ, method, start_response)
-            elif path == '/api/sales-order-registration-template':
-                return self.handle_sales_order_registration_template_api(environ, method, start_response)
-            elif path == '/api/sales-order-registration-import':
-                return self.handle_sales_order_registration_import_api(environ, method, start_response)
-            elif path == '/api/fabric-images':
-                return self.handle_fabric_images_api(environ, start_response)
-            elif path == '/api/fabric-attach':
-                return self.handle_fabric_attach_api(environ, start_response)
-            elif path == '/api/fabric-upload':
-                return self.handle_fabric_upload_api(environ, start_response)
-            elif path == '/api/fabric-image-delete':
-                return self.handle_fabric_image_delete_api(environ, method, start_response)
-            elif path == '/api/upload':
-                return self.handle_upload_api(environ, start_response)
-            elif path == '/api/download-zip':
-                return self.handle_download_zip(environ, method, start_response)
-            elif path.startswith('/static/'):
-                return self.serve_static(path, start_response)
-            else:
-                return self.send_error(404, 'Not Found', start_response)
-
-        except Exception as e:
-            print(f"WSGI 错误: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            return self.send_error(500, f'服务器错误: {str(e)}', start_response)
-
-    def handle_hello_api(self, environ, path, method, start_response):
-        """处理问候 API"""
-        try:
-            if method == 'POST':
-                content_length = int(environ.get('CONTENT_LENGTH', 0))
-                body = environ['wsgi.input'].read(content_length)
-                data = json.loads(body.decode('utf-8'))
-                name = data.get('name', '访客')
-            else:
-                query_string = environ.get('QUERY_STRING', '')
-                query_params = parse_qs(query_string)
-                name = query_params.get('name', ['访客'])[0]
-
-            response = {
-                'message': f'你好，{name}！',
-                'timestamp': datetime.now().isoformat(),
-                'status': 'success'
-            }
-            return self.send_json(response, start_response)
-        except Exception as e:
-            return self.send_error(500, str(e), start_response)
-
-
-    def handle_status(self, start_response):
-        """处理系统状态"""
-        response = {
-            'status': 'running',
-            'version': '1.0.0',
-            'timestamp': datetime.now().isoformat()
-        }
-        return self.send_json(response, start_response)
-
     def handle_images_api(self, environ, start_response):
         """获取图片列表（用Base64编码路径避免编码问题）"""
         images = []
