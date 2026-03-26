@@ -77,7 +77,7 @@ try:
     from fabric_mgmt_mixin import FabricManagementMixin
     from order_mgmt_mixin import OrderManagementMixin
     from utility_mixin import UtilityMixin
-    from amazon_ad_mixin_new import AmazonAdMixin
+    from amazon_ad_mixin import AmazonAdMixin
     from support_domain_mixin import SupportDomainMixin
     _mixin_import_error = None
 except Exception as e:
