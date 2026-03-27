@@ -46,6 +46,130 @@ input[type="month"] {
     font-weight: 400;
 }
 
+.app-date-input {
+    letter-spacing: 0.02em;
+}
+
+.app-date-input::placeholder {
+    color: rgba(123, 128, 136, 0.9);
+}
+
+.app-date-input.app-date-invalid {
+    border-color: #b07b7b !important;
+    box-shadow: inset 0 0 0 1px rgba(176, 123, 123, 0.15);
+}
+
+.app-date-picker {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 280px;
+    padding: 0.62rem;
+    border-radius: 12px;
+    border: 1px solid rgba(207, 199, 189, 0.9);
+    background: rgba(243, 240, 236, 0.98);
+    box-shadow: 0 16px 34px rgba(15, 23, 42, 0.2);
+    z-index: 5800;
+    display: grid;
+    gap: 0.48rem;
+    opacity: 0;
+    transform: translateY(6px);
+    pointer-events: none;
+    transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.app-date-picker.open {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.app-date-picker-head {
+    display: grid;
+    grid-template-columns: 32px 1fr 32px;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.app-date-title {
+    text-align: center;
+    color: var(--morandi-ink);
+    font-size: 0.9rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+}
+
+.app-date-nav {
+    height: 30px;
+    border: 1px solid rgba(207, 199, 189, 0.9);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--morandi-ink);
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.app-date-nav:hover {
+    background: rgba(236, 231, 223, 0.96);
+}
+
+.app-date-week {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.18rem;
+}
+
+.app-date-week span {
+    text-align: center;
+    color: var(--morandi-slate);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.app-date-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.2rem;
+}
+
+.app-date-blank {
+    height: 30px;
+}
+
+.app-date-day {
+    height: 30px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: #fff;
+    color: var(--morandi-ink);
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+.app-date-day:hover {
+    border-color: rgba(154, 163, 168, 0.7);
+    background: rgba(236, 231, 223, 0.95);
+}
+
+.app-date-day.is-today {
+    border-color: rgba(154, 163, 168, 0.8);
+    font-weight: 700;
+}
+
+.app-date-day.is-selected {
+    background: #7b8088;
+    color: #fff;
+    border-color: #7b8088;
+}
+
+.app-date-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.36rem;
+}
+
 .navbar {
     background: rgba(236, 231, 223, 0.92);
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);

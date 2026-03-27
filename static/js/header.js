@@ -8,6 +8,7 @@
     let activeColumnsPanelState = null;
     let activeResizeState = null;
     let activeHelpDotTooltip = null;
+    let activeDatePickerState = null;
     let suppressSortUntil = 0;
 
     function isElementVisibleForEnhance(el){
@@ -1385,6 +1386,262 @@
         });
     }
 
+    function parseDateText(value){
+        const raw = String(value || '').trim();
+        if(!raw) return null;
+        const normalized = raw.replace(/[./\\]/g, '-');
+        const match = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+        if(!match) return null;
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        const day = Number(match[3]);
+        if(!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+        if(month < 1 || month > 12 || day < 1 || day > 31) return null;
+        const date = new Date(year, month - 1, day);
+        if(date.getFullYear() !== year || (date.getMonth() + 1) !== month || date.getDate() !== day) return null;
+        return { year, month, day };
+    }
+
+    function formatDateParts(parts){
+        if(!parts) return '';
+        const year = String(parts.year || '').padStart(4, '0');
+        const month = String(parts.month || '').padStart(2, '0');
+        const day = String(parts.day || '').padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    function todayDateParts(){
+        const d = new Date();
+        return { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() };
+    }
+
+    function normalizeDateInputValue(input){
+        if(!input) return '';
+        const text = String(input.value || '').trim();
+        if(!text){
+            input.value = '';
+            input.classList.remove('app-date-invalid');
+            input.classList.remove('has-value');
+            return '';
+        }
+        const parsed = parseDateText(text);
+        if(!parsed){
+            input.classList.add('app-date-invalid');
+            input.classList.toggle('has-value', !!text);
+            return '';
+        }
+        const normalized = formatDateParts(parsed);
+        const changed = normalized !== input.value;
+        input.value = normalized;
+        input.classList.remove('app-date-invalid');
+        input.classList.add('has-value');
+        if(changed){
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        return normalized;
+    }
+
+    function ensureDatePicker(){
+        if(activeDatePickerState && activeDatePickerState.panel && document.body.contains(activeDatePickerState.panel)) return activeDatePickerState;
+
+        const panel = document.createElement('div');
+        panel.className = 'app-date-picker';
+        panel.style.display = 'none';
+        panel.innerHTML = [
+            '<div class="app-date-picker-head">',
+            '  <button type="button" class="app-date-nav" data-nav="prev" aria-label="上个月">‹</button>',
+            '  <div class="app-date-title"></div>',
+            '  <button type="button" class="app-date-nav" data-nav="next" aria-label="下个月">›</button>',
+            '</div>',
+            '<div class="app-date-week">',
+            '  <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>',
+            '</div>',
+            '<div class="app-date-grid"></div>',
+            '<div class="app-date-actions">',
+            '  <button type="button" class="btn-secondary" data-action="today">今天</button>',
+            '  <button type="button" class="btn-secondary" data-action="clear">清空</button>',
+            '</div>'
+        ].join('');
+        document.body.appendChild(panel);
+
+        const state = {
+            panel,
+            title: panel.querySelector('.app-date-title'),
+            grid: panel.querySelector('.app-date-grid'),
+            input: null,
+            viewYear: 0,
+            viewMonth: 0
+        };
+
+        const setDateToInput = (parts) => {
+            if(!state.input) return;
+            const value = parts ? formatDateParts(parts) : '';
+            state.input.value = value;
+            state.input.classList.toggle('has-value', !!value);
+            state.input.classList.remove('app-date-invalid');
+            state.input.dispatchEvent(new Event('input', { bubbles: true }));
+            state.input.dispatchEvent(new Event('change', { bubbles: true }));
+            closeDatePicker();
+            state.input.focus();
+        };
+
+        panel.querySelectorAll('.app-date-nav').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const nav = btn.getAttribute('data-nav');
+                if(nav === 'prev'){
+                    state.viewMonth -= 1;
+                    if(state.viewMonth < 1){
+                        state.viewMonth = 12;
+                        state.viewYear -= 1;
+                    }
+                } else {
+                    state.viewMonth += 1;
+                    if(state.viewMonth > 12){
+                        state.viewMonth = 1;
+                        state.viewYear += 1;
+                    }
+                }
+                renderDatePicker();
+            });
+        });
+
+        panel.querySelectorAll('[data-action]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const action = btn.getAttribute('data-action');
+                if(action === 'today') setDateToInput(todayDateParts());
+                if(action === 'clear') setDateToInput(null);
+            });
+        });
+
+        state.grid.addEventListener('click', (e) => {
+            const dayBtn = e.target.closest('.app-date-day');
+            if(!dayBtn || dayBtn.disabled) return;
+            const y = Number(dayBtn.getAttribute('data-year') || '0');
+            const m = Number(dayBtn.getAttribute('data-month') || '0');
+            const d = Number(dayBtn.getAttribute('data-day') || '0');
+            if(!y || !m || !d) return;
+            setDateToInput({ year: y, month: m, day: d });
+        });
+
+        activeDatePickerState = state;
+        return state;
+    }
+
+    function closeDatePicker(){
+        if(!activeDatePickerState || !activeDatePickerState.panel) return;
+        activeDatePickerState.panel.classList.remove('open');
+        activeDatePickerState.panel.style.display = 'none';
+        activeDatePickerState.input = null;
+    }
+
+    function positionDatePicker(input, state){
+        if(!input || !state || !state.panel) return;
+        const rect = input.getBoundingClientRect();
+        const panel = state.panel;
+        const viewportW = window.innerWidth || document.documentElement.clientWidth || 0;
+        const viewportH = window.innerHeight || document.documentElement.clientHeight || 0;
+
+        panel.style.visibility = 'hidden';
+        panel.style.display = 'block';
+        const panelRect = panel.getBoundingClientRect();
+
+        let left = rect.left;
+        if(left + panelRect.width > viewportW - 8){
+            left = viewportW - panelRect.width - 8;
+        }
+        left = Math.max(8, left);
+
+        let top = rect.bottom + 8;
+        if(top + panelRect.height > viewportH - 8){
+            top = rect.top - panelRect.height - 8;
+        }
+        top = Math.max(8, top);
+
+        panel.style.left = `${left}px`;
+        panel.style.top = `${top}px`;
+        panel.style.visibility = 'visible';
+    }
+
+    function renderDatePicker(){
+        const state = activeDatePickerState;
+        if(!state || !state.input || !state.grid) return;
+
+        const year = state.viewYear;
+        const month = state.viewMonth;
+        state.title.textContent = `${year}年${String(month).padStart(2, '0')}月`;
+
+        const selected = parseDateText(state.input.value || '');
+        const today = todayDateParts();
+        const firstDay = new Date(year, month - 1, 1);
+        const totalDays = new Date(year, month, 0).getDate();
+        const lead = (firstDay.getDay() + 6) % 7;
+
+        const html = [];
+        for(let i = 0; i < lead; i += 1){
+            html.push('<span class="app-date-blank"></span>');
+        }
+        for(let day = 1; day <= totalDays; day += 1){
+            const isToday = today.year === year && today.month === month && today.day === day;
+            const isSelected = selected && selected.year === year && selected.month === month && selected.day === day;
+            html.push(`<button type="button" class="app-date-day ${isToday ? 'is-today' : ''} ${isSelected ? 'is-selected' : ''}" data-year="${year}" data-month="${month}" data-day="${day}">${day}</button>`);
+        }
+        state.grid.innerHTML = html.join('');
+        positionDatePicker(state.input, state);
+    }
+
+    function openDatePicker(input){
+        if(!input || input.disabled || input.readOnly) return;
+        const state = ensureDatePicker();
+        state.input = input;
+
+        const parsed = parseDateText(input.value || '');
+        const base = parsed || todayDateParts();
+        state.viewYear = base.year;
+        state.viewMonth = base.month;
+
+        renderDatePicker();
+        state.panel.style.display = 'block';
+        state.panel.classList.add('open');
+    }
+
+    function enhanceCustomDateInputs(root){
+        const scope = root && root.querySelectorAll ? root : document;
+        scope.querySelectorAll('input[type="date"]').forEach(input => {
+            if(input.dataset.customDateEnhanced === '1') return;
+            input.dataset.customDateEnhanced = '1';
+            input.dataset.nativeDateType = 'date';
+            input.type = 'text';
+            input.classList.add('app-date-input');
+            input.autocomplete = 'off';
+            input.placeholder = input.getAttribute('placeholder') || 'YYYY-MM-DD';
+            input.inputMode = 'numeric';
+
+            input.addEventListener('focus', () => openDatePicker(input));
+            input.addEventListener('click', () => openDatePicker(input));
+            input.addEventListener('keydown', (event) => {
+                if(event.key === 'ArrowDown' || event.key === 'Enter'){
+                    event.preventDefault();
+                    openDatePicker(input);
+                }
+                if(event.key === 'Escape'){
+                    closeDatePicker();
+                }
+            });
+            input.addEventListener('blur', () => {
+                window.setTimeout(() => {
+                    if(activeDatePickerState && activeDatePickerState.panel && activeDatePickerState.panel.contains(document.activeElement)) return;
+                    normalizeDateInputValue(input);
+                }, 40);
+            });
+            input.addEventListener('input', () => {
+                input.classList.toggle('has-value', !!String(input.value || '').trim());
+            });
+
+            normalizeDateInputValue(input);
+        });
+    }
+
     window.initUniversalSingleSelects = initUniversalSingleSelects;
     window.refreshUniversalSingleSelect = refreshUniversalSingleSelect;
     window.refreshAllUniversalSingleSelects = function(){
@@ -1393,6 +1650,7 @@
             renderDropdownOptions(select, state);
             syncTriggerFromSelect(select, state);
         });
+        enhanceCustomDateInputs(document);
         initOptionalDateInputs(document);
     };
     window.showAppResultPanel = showAppResultPanel;
@@ -1481,6 +1739,9 @@
         if(!e.target.closest('.universal-select-dropdown') && !e.target.closest('.universal-select-floating-menu')) {
             closeAllDropdowns();
         }
+        if(activeDatePickerState && activeDatePickerState.panel && !e.target.closest('.app-date-picker') && !e.target.closest('.app-date-input')) {
+            closeDatePicker();
+        }
         if(!e.target.closest('.help-dot') && !e.target.closest('.app-help-floating-tip')) {
             hideHelpDotTooltip();
         }
@@ -1499,6 +1760,7 @@
         if(e.key === 'Escape'){
             closeColumnsPanel(activeColumnsPanelState);
             closeAllDropdowns();
+            closeDatePicker();
         }
     });
 
@@ -1522,11 +1784,13 @@
 
     window.addEventListener('resize', () => {
         repositionOpenDropdowns();
+        if(activeDatePickerState && activeDatePickerState.input) positionDatePicker(activeDatePickerState.input, activeDatePickerState);
         if(activeColumnsPanelState) repositionColumnsPanel(activeColumnsPanelState);
     });
 
     window.addEventListener('scroll', () => {
         repositionOpenDropdowns();
+        if(activeDatePickerState && activeDatePickerState.input) positionDatePicker(activeDatePickerState.input, activeDatePickerState);
         hideHelpDotTooltip();
         if(activeColumnsPanelState) repositionColumnsPanel(activeColumnsPanelState);
     }, true);
@@ -1534,6 +1798,7 @@
     const boot = () => {
         loadHeader();
         initUniversalSingleSelects(document);
+        enhanceCustomDateInputs(document);
         initOptionalDateInputs(document);
         enhanceHeroSections(document);
         enhanceManagedTables(document);
@@ -1556,6 +1821,7 @@
                 enhanceHeroSections(document);
                 enhanceManagedTables(document);
                 bindFloatingHelpDots(document);
+                enhanceCustomDateInputs(document);
                 initOptionalDateInputs(document);
                 bridgeLegacyResponseToToast(document);
                 syncModalScrollLock();
