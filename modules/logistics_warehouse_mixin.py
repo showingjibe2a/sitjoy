@@ -1,4 +1,6 @@
-﻿import os
+﻿import cgi
+import io
+import os
 import re
 from datetime import datetime
 from urllib.parse import parse_qs
