@@ -494,7 +494,7 @@ const WRAP_SHORT_NAME_KEY = 'sitjoy:warehouse-short-wrap-enabled';
 let boardColWidths = [];
 let suppressHeaderToggleUntil = 0;
 
-const REGION_ORDER = ['美西', '美中', '美东南', '美东'];
+let REGION_ORDER = ['美西', '美中', '美东南', '美东'];
 
 function $(s){ return document.querySelector(s); }
 
@@ -663,7 +663,10 @@ function attachColumnResizeHandles(totalCols){
 }
 
 function regionRank(regionText){
-  const text = String(regionText || '');
+  const text = String(regionText || '').trim();
+  if(!text) return 99;
+  const exactIdx = REGION_ORDER.findIndex(x => String(x || '').trim() === text);
+  if(exactIdx >= 0) return exactIdx;
   for(let idx = 0; idx < REGION_ORDER.length; idx += 1){
     if(text.includes(REGION_ORDER[idx])) return idx;
   }
@@ -1009,11 +1012,12 @@ function renderBoard(){
           : sumForWarehouses(row, col.warehouses, 'warehouse_qty');
         const totalTransit = col.type === 'warehouse'
           ? ((row.in_transit_by_warehouse || {})[String(col.warehouse.id)] || 0)
-          : sumForWarehouses(row, col.warehouses, 'in_transit_by_warehouse');
+          : Number((row.in_transit_by_region || {})[String(col.regionName)] || 0);
         const whTransitTipMap = row.in_transit_tip_by_warehouse || {};
+        const regionTransitTipMap = row.in_transit_tip_by_region || {};
         const whTransitTip = col.type === 'warehouse'
           ? (whTransitTipMap[String(col.warehouse.id)] || '')
-          : (col.warehouses || []).map(wh => whTransitTipMap[String(wh.id)] || '').filter(Boolean).join('\n');
+          : (regionTransitTipMap[String(col.regionName)] || '');
         const transitTitle = whTransitTip || `在途中：${totalTransit}`;
         const sepClass = col.regionBoundary ? 'wh-region-sep' : '';
         const regionTotalClass = col.type === 'region' ? 'region-total-cell' : '';
@@ -1150,6 +1154,10 @@ function loadBoard(){
       boardWarehouses = d.warehouses || [];
       boardFactories = d.factories || [];
       boardRows = d.items || [];
+      const dynamicRegionOrder = Array.isArray(d.region_order) ? d.region_order.map(x => String(x || '').trim()).filter(Boolean) : [];
+      if(dynamicRegionOrder.length){
+        REGION_ORDER = dynamicRegionOrder;
+      }
       if (!visibleWarehouseIds.size){
         boardWarehouses.forEach(wh => visibleWarehouseIds.add(String(wh.id)));
       }

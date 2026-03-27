@@ -68,6 +68,7 @@ class LogisticsSchemaMixin:
         CREATE TABLE IF NOT EXISTS logistics_destination_regions (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
             region_name VARCHAR(64) NOT NULL UNIQUE,
+            sort_order INT UNSIGNED NOT NULL DEFAULT 100,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -119,8 +120,8 @@ class LogisticsSchemaMixin:
             factory_ship_date_initial DATE NULL,
             factory_ship_date_previous DATE NULL,
             factory_ship_date_latest DATE NULL,
-            forwarder_id INT UNSIGNED NOT NULL,
-            logistics_box_no VARCHAR(128) NOT NULL,
+            forwarder_id INT UNSIGNED NULL,
+            logistics_box_no VARCHAR(128) NULL,
             customs_clearance_no VARCHAR(128) NOT NULL,
             etd_initial DATE NULL,
             etd_previous DATE NULL,
@@ -143,7 +144,9 @@ class LogisticsSchemaMixin:
             qty_consistent TINYINT(1) NOT NULL DEFAULT 0,
             port_of_loading VARCHAR(128) NULL,
             port_of_destination VARCHAR(128) NULL,
+            destination_region_id INT UNSIGNED NULL,
             destination_warehouse_id INT UNSIGNED NULL,
+            confirmed_boxed_qty TINYINT(1) NOT NULL DEFAULT 0,
             inbound_order_no VARCHAR(128) NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -152,11 +155,14 @@ class LogisticsSchemaMixin:
             UNIQUE KEY uniq_transit_bl_no (bill_of_lading_no),
             INDEX idx_transit_factory (factory_id),
             INDEX idx_transit_forwarder (forwarder_id),
+            INDEX idx_transit_destination_region (destination_region_id),
             INDEX idx_transit_wh (destination_warehouse_id),
             CONSTRAINT fk_transit_factory FOREIGN KEY (factory_id)
                 REFERENCES logistics_factories(id) ON DELETE RESTRICT,
             CONSTRAINT fk_transit_forwarder FOREIGN KEY (forwarder_id)
-                REFERENCES logistics_forwarders(id) ON DELETE RESTRICT,
+                REFERENCES logistics_forwarders(id) ON DELETE SET NULL,
+            CONSTRAINT fk_transit_destination_region FOREIGN KEY (destination_region_id)
+                REFERENCES logistics_destination_regions(id) ON DELETE SET NULL,
             CONSTRAINT fk_transit_wh FOREIGN KEY (destination_warehouse_id)
                 REFERENCES logistics_overseas_warehouses(id) ON DELETE SET NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -204,6 +210,14 @@ class LogisticsSchemaMixin:
                     cur.execute("ALTER TABLE logistics_overseas_warehouses ADD INDEX idx_wh_destination_region (destination_region_id)")
                 except Exception:
                     pass
+                cur.execute("SHOW COLUMNS FROM logistics_destination_regions")
+                region_cols = {str((x or {}).get('Field') or '') for x in (cur.fetchall() or [])}
+                if 'sort_order' not in region_cols:
+                    cur.execute("ALTER TABLE logistics_destination_regions ADD COLUMN sort_order INT UNSIGNED NOT NULL DEFAULT 100 AFTER region_name")
+                try:
+                    cur.execute("ALTER TABLE logistics_destination_regions ADD INDEX idx_region_sort_order (sort_order, id)")
+                except Exception:
+                    pass
 
                 cur.execute("SELECT DISTINCT TRIM(region) AS region_name FROM logistics_overseas_warehouses WHERE region IS NOT NULL AND TRIM(region)<>''")
                 existing_regions = [str((row or {}).get('region_name') or '').strip() for row in (cur.fetchall() or [])]
@@ -214,6 +228,19 @@ class LogisticsSchemaMixin:
                         "INSERT IGNORE INTO logistics_destination_regions (region_name) VALUES (%s)",
                         (region_name,)
                     )
+
+                cur.execute("SELECT id, region_name, sort_order FROM logistics_destination_regions ORDER BY id ASC")
+                region_rows = cur.fetchall() or []
+                next_sort = 10
+                for rr in region_rows:
+                    rid = self._parse_int((rr or {}).get('id'))
+                    if not rid:
+                        continue
+                    sort_val = self._parse_int((rr or {}).get('sort_order'))
+                    if not sort_val or sort_val <= 0:
+                        cur.execute("UPDATE logistics_destination_regions SET sort_order=%s WHERE id=%s", (next_sort, rid))
+                        sort_val = next_sort
+                    next_sort = max(next_sort + 10, int(sort_val) + 10)
 
                 cur.execute("SELECT id, region_name FROM logistics_destination_regions")
                 region_id_map = {
@@ -248,6 +275,14 @@ class LogisticsSchemaMixin:
                 transit_cols = {str((x or {}).get('Field') or '') for x in (cur.fetchall() or [])}
                 if 'customs_clearance_no' not in transit_cols:
                     cur.execute("ALTER TABLE logistics_in_transit ADD COLUMN customs_clearance_no VARCHAR(128) NULL AFTER logistics_box_no")
+                try:
+                    cur.execute("ALTER TABLE logistics_in_transit MODIFY COLUMN forwarder_id INT UNSIGNED NULL")
+                except Exception:
+                    pass
+                try:
+                    cur.execute("ALTER TABLE logistics_in_transit MODIFY COLUMN logistics_box_no VARCHAR(128) NULL")
+                except Exception:
+                    pass
                 if 'qty_verified' not in transit_cols:
                     cur.execute("ALTER TABLE logistics_in_transit ADD COLUMN qty_verified TINYINT(1) NOT NULL DEFAULT 0 AFTER clearance_docs_provided")
                 if 'qty_consistent' not in transit_cols:
@@ -256,6 +291,26 @@ class LogisticsSchemaMixin:
                     cur.execute("ALTER TABLE logistics_in_transit ADD COLUMN expected_listed_date_initial DATE NULL AFTER expected_warehouse_date")
                 if 'expected_listed_date_latest' not in transit_cols:
                     cur.execute("ALTER TABLE logistics_in_transit ADD COLUMN expected_listed_date_latest DATE NULL AFTER expected_listed_date_initial")
+                if 'destination_region_id' not in transit_cols:
+                    cur.execute("ALTER TABLE logistics_in_transit ADD COLUMN destination_region_id INT UNSIGNED NULL AFTER port_of_destination")
+                if 'confirmed_boxed_qty' not in transit_cols:
+                    cur.execute("ALTER TABLE logistics_in_transit ADD COLUMN confirmed_boxed_qty TINYINT(1) NOT NULL DEFAULT 0 AFTER destination_warehouse_id")
+                try:
+                    cur.execute("ALTER TABLE logistics_in_transit ADD INDEX idx_transit_destination_region (destination_region_id)")
+                except Exception:
+                    pass
+                try:
+                    cur.execute(
+                        """
+                        ALTER TABLE logistics_in_transit
+                        ADD CONSTRAINT fk_transit_destination_region
+                        FOREIGN KEY (destination_region_id)
+                        REFERENCES logistics_destination_regions(id)
+                        ON DELETE SET NULL
+                        """
+                    )
+                except Exception:
+                    pass
                 cur.execute("SHOW COLUMNS FROM logistics_in_transit_items")
                 transit_item_cols = {str((x or {}).get('Field') or '') for x in (cur.fetchall() or [])}
                 if 'listed_qty' not in transit_item_cols:

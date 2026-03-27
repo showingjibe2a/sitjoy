@@ -819,28 +819,53 @@ class LogisticsWarehouseMixin:
         try:
             self._ensure_logistics_tables()
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            action = (query_params.get('action', [''])[0] or '').strip().lower()
             if method == 'GET':
                 keyword = (query_params.get('q', [''])[0] or '').strip()
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         if keyword:
                             cur.execute(
-                                "SELECT id, region_name, created_at, updated_at FROM logistics_destination_regions WHERE region_name LIKE %s ORDER BY id DESC",
+                                "SELECT id, region_name, sort_order, created_at, updated_at FROM logistics_destination_regions WHERE region_name LIKE %s ORDER BY sort_order ASC, id ASC",
                                 (f"%{keyword}%",)
                             )
                         else:
-                            cur.execute("SELECT id, region_name, created_at, updated_at FROM logistics_destination_regions ORDER BY id DESC")
+                            cur.execute("SELECT id, region_name, sort_order, created_at, updated_at FROM logistics_destination_regions ORDER BY sort_order ASC, id ASC")
                         rows = cur.fetchall() or []
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             data = self._read_json_body(environ)
+            if method == 'PUT' and action == 'reorder':
+                ordered_ids = data.get('ordered_ids') if isinstance(data.get('ordered_ids'), list) else []
+                ids = [self._parse_int(x) for x in ordered_ids]
+                ids = [x for x in ids if x]
+                if not ids:
+                    return self.send_json({'status': 'error', 'message': 'ordered_ids 不能为空'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT id FROM logistics_destination_regions")
+                        existing = {self._parse_int((r or {}).get('id')) for r in (cur.fetchall() or [])}
+                        if any(x not in existing for x in ids):
+                            return self.send_json({'status': 'error', 'message': 'ordered_ids 包含不存在的区域ID'}, start_response)
+                        sort_value = 10
+                        for rid in ids:
+                            cur.execute("UPDATE logistics_destination_regions SET sort_order=%s WHERE id=%s", (sort_value, rid))
+                            sort_value += 10
+                        remain_ids = [x for x in sorted(existing) if x and x not in ids]
+                        for rid in remain_ids:
+                            cur.execute("UPDATE logistics_destination_regions SET sort_order=%s WHERE id=%s", (sort_value, rid))
+                            sort_value += 10
+                return self.send_json({'status': 'success'}, start_response)
+
             if method == 'POST':
                 name = (data.get('region_name') or '').strip()
                 if not name:
                     return self.send_json({'status': 'error', 'message': 'Missing region_name'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("INSERT INTO logistics_destination_regions (region_name) VALUES (%s)", (name,))
+                        cur.execute("SELECT COALESCE(MAX(sort_order),0) AS max_sort FROM logistics_destination_regions")
+                        max_sort = self._parse_int((cur.fetchone() or {}).get('max_sort')) or 0
+                        cur.execute("INSERT INTO logistics_destination_regions (region_name, sort_order) VALUES (%s, %s)", (name, max_sort + 10))
                         new_id = cur.lastrowid
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
@@ -849,9 +874,13 @@ class LogisticsWarehouseMixin:
                 name = (data.get('region_name') or '').strip()
                 if not item_id or not name:
                     return self.send_json({'status': 'error', 'message': 'Missing id or region_name'}, start_response)
+                sort_order = self._parse_int(data.get('sort_order'))
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("UPDATE logistics_destination_regions SET region_name=%s WHERE id=%s", (name, item_id))
+                        if sort_order and sort_order > 0:
+                            cur.execute("UPDATE logistics_destination_regions SET region_name=%s, sort_order=%s WHERE id=%s", (name, sort_order, item_id))
+                        else:
+                            cur.execute("UPDATE logistics_destination_regions SET region_name=%s WHERE id=%s", (name, item_id))
                         cur.execute("UPDATE logistics_overseas_warehouses SET region=%s WHERE destination_region_id=%s", (name, item_id))
                 return self.send_json({'status': 'success'}, start_response)
 
@@ -924,7 +953,7 @@ class LogisticsWarehouseMixin:
                         with conn.cursor() as cur:
                             cur.execute("SELECT id, supplier_name FROM logistics_suppliers ORDER BY id DESC")
                             suppliers = cur.fetchall() or []
-                            cur.execute("SELECT id, region_name FROM logistics_destination_regions ORDER BY id DESC")
+                            cur.execute("SELECT id, region_name, sort_order FROM logistics_destination_regions ORDER BY sort_order ASC, id ASC")
                             regions = cur.fetchall() or []
                     return self.send_json({'status': 'success', 'suppliers': suppliers, 'destination_regions': regions}, start_response)
 
@@ -1508,7 +1537,7 @@ class LogisticsWarehouseMixin:
             if method != 'GET':
                 return self.send_error(405, 'Method not allowed', start_response)
 
-            region_order = {'美西': 1, '美中': 2, '美东南': 3, '美东': 4}
+            region_order = {}
 
             def _region_rank(region_name):
                 text = str(region_name or '').strip()
@@ -1519,6 +1548,13 @@ class LogisticsWarehouseMixin:
 
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
+                    cur.execute("SELECT id, region_name, sort_order FROM logistics_destination_regions ORDER BY sort_order ASC, id ASC")
+                    destination_region_rows = cur.fetchall() or []
+                    for idx, rr in enumerate(destination_region_rows, start=1):
+                        rname = str((rr or {}).get('region_name') or '').strip()
+                        if rname and rname not in region_order:
+                            region_order[rname] = idx
+
                     cur.execute(
                         """
                         SELECT w.id, w.warehouse_name, w.warehouse_short_name,
@@ -1558,17 +1594,18 @@ class LogisticsWarehouseMixin:
                         SELECT
                             li.order_product_id,
                             t.destination_warehouse_id AS warehouse_id,
-                            COALESCE(dr.region_name, w.region) AS region,
+                            COALESCE(drt.region_name, dr.region_name, w.region) AS region,
                             t.logistics_box_no,
                             COALESCE(t.expected_warehouse_date, t.eta_latest, t.expected_listed_date_latest) AS expected_arrival_date,
                             SUM(li.shipped_qty) AS qty
                         FROM logistics_in_transit_items li
                         JOIN logistics_in_transit t ON t.id = li.transit_id
                         LEFT JOIN logistics_overseas_warehouses w ON w.id = t.destination_warehouse_id
+                        LEFT JOIN logistics_destination_regions drt ON drt.id = t.destination_region_id
                         LEFT JOIN logistics_destination_regions dr ON dr.id = w.destination_region_id
                         WHERE t.listed_date IS NULL
                                                     AND COALESCE(w.is_enabled,1)=1
-                        GROUP BY li.order_product_id, t.destination_warehouse_id, COALESCE(dr.region_name, w.region), t.logistics_box_no, COALESCE(t.expected_warehouse_date, t.eta_latest, t.expected_listed_date_latest)
+                        GROUP BY li.order_product_id, t.destination_warehouse_id, COALESCE(drt.region_name, dr.region_name, w.region), t.logistics_box_no, COALESCE(t.expected_warehouse_date, t.eta_latest, t.expected_listed_date_latest)
                         """
                     )
                     transit_rows = cur.fetchall() or []
@@ -1639,6 +1676,7 @@ class LogisticsWarehouseMixin:
             transit_region_map = {}
             transit_tip_map = {}
             transit_wh_tip_map = {}
+            transit_region_tip_map = {}
             for row in transit_rows:
                 op_id = self._parse_int(row.get('order_product_id'))
                 wh_id = self._parse_int(row.get('warehouse_id'))
@@ -1650,20 +1688,18 @@ class LogisticsWarehouseMixin:
                 if not op_id or qty <= 0:
                     continue
                 transit_total_map[op_id] = transit_total_map.get(op_id, 0) + qty
-                tip_text = f"{box_no or '批次'}: {qty}（预计到货 {arrival_text}）"
+                tip_label = box_no or '批次'
+                tip_text = f"{tip_label}: {qty}（预计到货 {arrival_text}）"
                 transit_tip_map.setdefault(op_id, []).append(tip_text)
                 if wh_id:
                     transit_wh_map[(op_id, wh_id)] = transit_wh_map.get((op_id, wh_id), 0) + qty
                     transit_wh_tip_map.setdefault((op_id, wh_id), []).append(tip_text)
                 if region:
-                    region_key = None
-                    for r in ('美西', '美中', '美东南', '美东'):
-                        if r in region:
-                            region_key = r
-                            break
-                    if region_key:
-                        transit_region_map.setdefault(op_id, {})
-                        transit_region_map[op_id][region_key] = transit_region_map[op_id].get(region_key, 0) + qty
+                    transit_region_map.setdefault(op_id, {})
+                    transit_region_map[op_id][region] = transit_region_map[op_id].get(region, 0) + qty
+                    transit_region_tip_map.setdefault(op_id, {})
+                    transit_region_tip_map[op_id].setdefault(region, [])
+                    transit_region_tip_map[op_id][region].append(tip_text)
 
             fstock_map = {}
             for row in fstock_rows:
@@ -1728,6 +1764,10 @@ class LogisticsWarehouseMixin:
                         for fid, v in op_fwip.items()
                     },
                     'in_transit_by_region': transit_region_map.get(op_id, {}),
+                    'in_transit_tip_by_region': {
+                        str(rname): '\n'.join(tips)
+                        for rname, tips in (transit_region_tip_map.get(op_id, {}) or {}).items()
+                    },
                     'is_iteration': 1 if self._parse_int(row.get('is_iteration')) else 0,
                     'is_on_market': 1 if self._parse_int(row.get('is_on_market', 1)) else 0,
                     'source_order_product_id': self._parse_int(row.get('source_order_product_id')),
@@ -1784,6 +1824,10 @@ class LogisticsWarehouseMixin:
                 parent['factory_wip_total'] += child.get('factory_wip_total', 0)
                 for region_key, rqty in (child.get('in_transit_by_region') or {}).items():
                     parent['in_transit_by_region'][region_key] = parent['in_transit_by_region'].get(region_key, 0) + rqty
+                for region_key, rtip in (child.get('in_transit_tip_by_region') or {}).items():
+                    parent_region_tip = (parent.get('in_transit_tip_by_region') or {}).get(region_key) or ''
+                    merged_region_tip = '\n'.join([text for text in [parent_region_tip, rtip] if text])
+                    parent.setdefault('in_transit_tip_by_region', {})[region_key] = merged_region_tip
                 for fid_str, qty in (child.get('factory_stock_by_factory') or {}).items():
                     parent['factory_stock_by_factory'][fid_str] = parent['factory_stock_by_factory'].get(fid_str, 0) + qty
                 for fid_str, wip_val in (child.get('factory_wip_by_factory') or {}).items():
@@ -1821,6 +1865,7 @@ class LogisticsWarehouseMixin:
                     'factory_stock_total': child.get('factory_stock_total', 0) or 0,
                     'factory_wip_total': child.get('factory_wip_total', 0) or 0,
                     'in_transit_tip_by_warehouse': dict(child.get('in_transit_tip_by_warehouse') or {}),
+                    'in_transit_tip_by_region': dict(child.get('in_transit_tip_by_region') or {}),
                     'factory_wip_tip_by_factory': dict(child.get('factory_wip_tip_by_factory') or {}),
                     'factory_stock_by_factory': dict(child.get('factory_stock_by_factory') or {}),
                     'factory_wip_by_factory': {
@@ -1839,6 +1884,12 @@ class LogisticsWarehouseMixin:
                     continue
                 item['iteration_children'] = sorted(item.get('iteration_children') or [], key=lambda x: str(x.get('sku') or ''))
                 rows.append(item)
+
+            ordered_region_names = [
+                str((rr or {}).get('region_name') or '').strip()
+                for rr in (destination_region_rows or [])
+                if str((rr or {}).get('region_name') or '').strip()
+            ]
 
             if action == 'export':
                 if Workbook is None:
@@ -1876,6 +1927,6 @@ class LogisticsWarehouseMixin:
                     line += 1
                 return self._send_excel_workbook(wb, 'logistics_warehouse_dashboard.xlsx', start_response)
 
-            return self.send_json({'status': 'success', 'warehouses': warehouses, 'factories': factories, 'items': rows}, start_response)
+            return self.send_json({'status': 'success', 'warehouses': warehouses, 'factories': factories, 'region_order': ordered_region_names, 'items': rows}, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)

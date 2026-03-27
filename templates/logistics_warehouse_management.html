@@ -226,6 +226,7 @@
         let activeRegionFilterId = null;
         let supplierOptions = [];
         let destinationRegionOptions = [];
+        let dragRegionId = null;
         function setSegmentValue(seg, value){
             if(!seg) return;
             const v = String(value === undefined || value === null ? '' : value);
@@ -315,11 +316,44 @@
             (destinationRegionOptions || []).forEach(item => {
                 const label = document.createElement('label');
                 label.className = 'material-type-option material-type-radio';
+                label.draggable = true;
+                label.dataset.regionId = String(item.id || '');
                 label.innerHTML = `<input type="radio" name="regionFilter" value="${item.id}"><span>${item.region_name || ''}</span>`;
                 const input = label.querySelector('input');
                 if(String(activeRegionFilterId || '') === String(item.id)){ input.checked = true; }
                 input.addEventListener('click', () => { activeRegionFilterId = item.id; loadList(); });
                 label.addEventListener('dblclick', () => openRegionManageModal(item));
+                label.addEventListener('dragstart', (e) => {
+                    dragRegionId = String(item.id || '');
+                    e.dataTransfer.effectAllowed = 'move';
+                });
+                label.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                });
+                label.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    const targetId = String(item.id || '');
+                    if(!dragRegionId || !targetId || dragRegionId === targetId) return;
+                    const ids = (destinationRegionOptions || []).map(x => String(x.id || '')).filter(Boolean);
+                    const fromIdx = ids.indexOf(dragRegionId);
+                    const toIdx = ids.indexOf(targetId);
+                    if(fromIdx < 0 || toIdx < 0) return;
+                    ids.splice(toIdx, 0, ids.splice(fromIdx, 1)[0]);
+                    fetch('/api/logistics-destination-region?action=reorder', {
+                        method: 'PUT',
+                        headers: {'Content-Type':'application/json'},
+                        body: JSON.stringify({ ordered_ids: ids.map(x => Number(x)) })
+                    }).then(r=>r.json()).then(data=>{
+                        if(data.status!=='success'){
+                            window.showAppToast && window.showAppToast(data.message || '区域排序失败', true);
+                            return;
+                        }
+                        loadDestinationRegions().then(loadList);
+                    }).catch(err => {
+                        window.showAppToast && window.showAppToast('区域排序失败: ' + err, true);
+                    });
+                });
                 wrap.appendChild(label);
             });
         }

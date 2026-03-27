@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, quote
 try:
     from openpyxl import Workbook, load_workbook
     from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+    from openpyxl.comments import Comment
     from openpyxl.worksheet.datavalidation import DataValidation
     _openpyxl_import_error = None
 except Exception as _e:
@@ -21,6 +22,7 @@ except Exception as _e:
     Alignment = None
     Border = None
     Side = None
+    Comment = None
     DataValidation = None
     _openpyxl_import_error = _e
 
@@ -138,39 +140,30 @@ class LogisticsInTransitMixin:
                 if action == 'options':
                     scope = (query_params.get('scope', ['all'])[0] or 'all').strip().lower()
                     option_limit = max(100, min(self._parse_int(query_params.get('order_product_limit', ['600'])[0]) or 600, 1200))
-                    def _fetch_options_payload():
-                        with self._get_db_connection() as conn:
-                            self._perf_mark(perf_ctx, 'db_connected_for_options')
-                            with conn.cursor() as cur:
-                                cur.execute("SELECT id, factory_name FROM logistics_factories ORDER BY factory_name ASC")
-                                factories = cur.fetchall() or []
-                                cur.execute("SELECT id, forwarder_name FROM logistics_forwarders ORDER BY forwarder_name ASC")
-                                forwarders = cur.fetchall() or []
-                                cur.execute("SELECT id, warehouse_name FROM logistics_overseas_warehouses WHERE COALESCE(is_enabled,1)=1 ORDER BY warehouse_name ASC")
-                                warehouses = cur.fetchall() or []
-                                order_products = []
-                                if scope in ('all', 'with_order_products'):
-                                    cur.execute("SELECT id, sku FROM order_products ORDER BY sku ASC LIMIT %s", (option_limit,))
-                                    order_products = cur.fetchall() or []
-                        return {
-                            'status': 'success',
-                            'factories': factories,
-                            'forwarders': forwarders,
-                            'warehouses': warehouses,
-                            'order_products': order_products
-                        }
-                    try:
-                        cache_key = f'logistics_in_transit_options_{scope}_{option_limit}'
-                        cached = self._get_cached_template_options(cache_key, _fetch_options_payload, ttl_seconds=1800)
-                        self._perf_mark(perf_ctx, 'get_options_payload')
-                        return self.send_json(cached, start_response)
-                    except Exception:
-                        if not self.__class__._schema_ready_cache.get('logistics'):
-                            self._ensure_logistics_tables()
-                        cache_key = f'logistics_in_transit_options_{scope}_{option_limit}'
-                        cached = self._get_cached_template_options(cache_key, _fetch_options_payload, ttl_seconds=1800)
-                        self._perf_mark(perf_ctx, 'get_options_payload_retry')
-                        return self.send_json(cached, start_response)
+                    with self._get_db_connection() as conn:
+                        self._perf_mark(perf_ctx, 'db_connected_for_options')
+                        with conn.cursor() as cur:
+                            cur.execute("SELECT id, factory_name FROM logistics_factories ORDER BY factory_name ASC")
+                            factories = cur.fetchall() or []
+                            cur.execute("SELECT id, forwarder_name FROM logistics_forwarders ORDER BY forwarder_name ASC")
+                            forwarders = cur.fetchall() or []
+                            cur.execute("SELECT id, region_name, sort_order FROM logistics_destination_regions ORDER BY sort_order ASC, id ASC")
+                            destination_regions = cur.fetchall() or []
+                            cur.execute("SELECT id, warehouse_name, destination_region_id FROM logistics_overseas_warehouses WHERE COALESCE(is_enabled,1)=1 ORDER BY warehouse_name ASC")
+                            warehouses = cur.fetchall() or []
+                            order_products = []
+                            if scope in ('all', 'with_order_products'):
+                                cur.execute("SELECT id, sku FROM order_products ORDER BY sku ASC LIMIT %s", (option_limit,))
+                                order_products = cur.fetchall() or []
+                    self._perf_mark(perf_ctx, 'get_options_payload')
+                    return self.send_json({
+                        'status': 'success',
+                        'factories': factories,
+                        'forwarders': forwarders,
+                        'destination_regions': destination_regions,
+                        'warehouses': warehouses,
+                        'order_products': order_products
+                    }, start_response)
 
                 item_id = self._parse_int(query_params.get('id', [''])[0])
                 keyword = (query_params.get('q', [''])[0] or '').strip()
@@ -188,18 +181,22 @@ class LogisticsInTransitMixin:
                             factories = cur.fetchall() or []
                             cur.execute("SELECT id, forwarder_name FROM logistics_forwarders")
                             forwarders = cur.fetchall() or []
+                            cur.execute("SELECT id, region_name FROM logistics_destination_regions")
+                            destination_regions = cur.fetchall() or []
                             cur.execute("SELECT id, warehouse_name FROM logistics_overseas_warehouses")
                             warehouses = cur.fetchall() or []
                             return {
                                 'status': 'success',
                                 'factory_name_map': {int(r.get('id')): str(r.get('factory_name') or '') for r in factories if r.get('id')},
                                 'forwarder_name_map': {int(r.get('id')): str(r.get('forwarder_name') or '') for r in forwarders if r.get('id')},
+                                'destination_region_name_map': {int(r.get('id')): str(r.get('region_name') or '') for r in destination_regions if r.get('id')},
                                 'warehouse_name_map': {int(r.get('id')): str(r.get('warehouse_name') or '') for r in warehouses if r.get('id')},
                             }
 
-                        name_maps = self._get_cached_template_options('logistics_in_transit_name_maps', _fetch_name_maps_payload, ttl_seconds=600)
+                        name_maps = _fetch_name_maps_payload()
                         factory_name_map = name_maps.get('factory_name_map') or {}
                         forwarder_name_map = name_maps.get('forwarder_name_map') or {}
+                        destination_region_name_map = name_maps.get('destination_region_name_map') or {}
                         warehouse_name_map = name_maps.get('warehouse_name_map') or {}
 
                         sql = """
@@ -210,7 +207,8 @@ class LogisticsInTransitMixin:
                                    t.arrival_port_date, t.expected_warehouse_date, t.expected_listed_date_initial, t.expected_listed_date_latest, t.listed_date,
                                    t.shipping_company, t.vessel_voyage, t.bill_of_lading_no,
                                 t.declaration_docs_provided, t.inventory_registered, t.clearance_docs_provided, t.qty_verified, t.qty_consistent,
-                                   t.port_of_loading, t.port_of_destination, t.destination_warehouse_id, t.inbound_order_no,
+                                              t.port_of_loading, t.port_of_destination, t.destination_region_id, t.destination_warehouse_id,
+                                              t.confirmed_boxed_qty, t.inbound_order_no,
                                    t.created_at, t.updated_at
                             FROM logistics_in_transit t
                         """
@@ -230,6 +228,7 @@ class LogisticsInTransitMixin:
                             keyword_lower = keyword.lower()
                             matched_factory_ids = [int(fid) for fid, name in factory_name_map.items() if keyword_lower in str(name or '').lower()]
                             matched_forwarder_ids = [int(fid) for fid, name in forwarder_name_map.items() if keyword_lower in str(name or '').lower()]
+                            matched_region_ids = [int(rid) for rid, name in destination_region_name_map.items() if keyword_lower in str(name or '').lower()]
 
                             if matched_factory_ids:
                                 placeholders = ','.join(['%s'] * len(matched_factory_ids))
@@ -239,6 +238,10 @@ class LogisticsInTransitMixin:
                                 placeholders = ','.join(['%s'] * len(matched_forwarder_ids))
                                 search_clauses.append(f"t.forwarder_id IN ({placeholders})")
                                 params.extend(matched_forwarder_ids)
+                            if matched_region_ids:
+                                placeholders = ','.join(['%s'] * len(matched_region_ids))
+                                search_clauses.append(f"t.destination_region_id IN ({placeholders})")
+                                params.extend(matched_region_ids)
 
                             filters.append('(' + ' OR '.join(search_clauses) + ')')
                         where_sql = (' WHERE ' + ' AND '.join(filters)) if filters else ''
@@ -299,6 +302,8 @@ class LogisticsInTransitMixin:
                             wid = self._parse_int(row.get('destination_warehouse_id'))
                             row['factory_name'] = factory_name_map.get(fid, '') if fid else ''
                             row['forwarder_name'] = forwarder_name_map.get(fwid, '') if fwid else ''
+                            region_id = self._parse_int(row.get('destination_region_id'))
+                            row['destination_region_name'] = destination_region_name_map.get(region_id, '') if region_id else ''
                             row['destination_warehouse_name'] = warehouse_name_map.get(wid, '') if wid else ''
                         self._perf_mark(perf_ctx, 'rows_transform')
 
@@ -327,10 +332,12 @@ class LogisticsInTransitMixin:
                 with self._get_db_connection() as conn:
                     self._perf_mark(perf_ctx, 'db_connected_for_verify_qty')
                     with conn.cursor() as cur:
-                        cur.execute("SELECT id FROM logistics_in_transit WHERE id=%s LIMIT 1", (item_id,))
+                        cur.execute("SELECT id, inventory_registered FROM logistics_in_transit WHERE id=%s LIMIT 1", (item_id,))
                         existing = cur.fetchone()
                         if not existing:
                             return self.send_json({'status': 'error', 'message': '在途物流记录不存在'}, start_response)
+                        if not self._parse_int(existing.get('inventory_registered')):
+                            return self.send_json({'status': 'error', 'message': '需要先登记上架才能确认已核对上架数量'}, start_response)
 
                         cur.execute(
                             "SELECT order_product_id, shipped_qty FROM logistics_in_transit_items WHERE transit_id=%s",
@@ -375,12 +382,16 @@ class LogisticsInTransitMixin:
                 with self._get_db_connection() as conn:
                     self._perf_mark(perf_ctx, 'db_connected_for_quick_status')
                     with conn.cursor() as cur:
-                        cur.execute("SELECT id FROM logistics_in_transit WHERE id=%s LIMIT 1", (item_id,))
+                        cur.execute("SELECT id, inventory_registered, qty_verified FROM logistics_in_transit WHERE id=%s LIMIT 1", (item_id,))
                         existing = cur.fetchone()
                         if not existing:
                             return self.send_json({'status': 'error', 'message': '在途物流记录不存在'}, start_response)
 
                         bool_value = _to_bool_flag(data.get('value'))
+                        if field == 'qty_verified' and bool_value == 1 and not self._parse_int(existing.get('inventory_registered')):
+                            return self.send_json({'status': 'error', 'message': '需要先登记上架才能确认已核对上架数量'}, start_response)
+                        if field == 'inventory_registered' and bool_value == 0 and self._parse_int(existing.get('qty_verified')):
+                            return self.send_json({'status': 'error', 'message': '已核对上架数量为是时，不能将已登记上架改为否'}, start_response)
                         cur.execute(
                             f"UPDATE logistics_in_transit SET {field}=%s WHERE id=%s",
                             (bool_value, item_id)
@@ -392,17 +403,21 @@ class LogisticsInTransitMixin:
                 item_id = self._parse_int(data.get('id'))
                 factory_id = self._parse_int(data.get('factory_id'))
                 forwarder_id = self._parse_int(data.get('forwarder_id'))
+                destination_region_id = self._parse_int(data.get('destination_region_id'))
                 logistics_box_no = (data.get('logistics_box_no') or '').strip()
-                if not factory_id or not forwarder_id or not logistics_box_no:
-                    return self.send_json({'status': 'error', 'message': '工厂、货代、物流箱号为必填'}, start_response)
+                if not factory_id or not destination_region_id:
+                    return self.send_json({'status': 'error', 'message': '工厂和目的区域为必填'}, start_response)
+                expected_listed_required = _normalize_date(data.get('expected_listed_date_latest'))
+                if not expected_listed_required:
+                    return self.send_json({'status': 'error', 'message': '预计上架时间为必填'}, start_response)
 
                 payload = {
                     'factory_id': factory_id,
-                    'forwarder_id': forwarder_id,
-                    'logistics_box_no': logistics_box_no,
+                    'forwarder_id': forwarder_id or None,
+                    'logistics_box_no': logistics_box_no or None,
                     'arrival_port_date': _normalize_date(data.get('arrival_port_date')),
                     'expected_warehouse_date': _normalize_date(data.get('expected_warehouse_date')),
-                    'expected_listed_date_latest': _normalize_date(data.get('expected_listed_date_latest')),
+                    'expected_listed_date_latest': expected_listed_required,
                     'listed_date': _normalize_date(data.get('listed_date')),
                     'shipping_company': (data.get('shipping_company') or '').strip() or None,
                     'vessel_voyage': (data.get('vessel_voyage') or '').strip() or None,
@@ -414,7 +429,9 @@ class LogisticsInTransitMixin:
                     'qty_consistent': 0,
                     'port_of_loading': (data.get('port_of_loading') or '').strip() or None,
                     'port_of_destination': (data.get('port_of_destination') or '').strip() or None,
+                    'destination_region_id': destination_region_id,
                     'destination_warehouse_id': self._parse_int(data.get('destination_warehouse_id')),
+                    'confirmed_boxed_qty': _to_bool_flag(data.get('confirmed_boxed_qty')),
                     'inbound_order_no': (data.get('inbound_order_no') or '').strip() or None
                 }
 
@@ -437,24 +454,32 @@ class LogisticsInTransitMixin:
                         'shipped_qty': shipped_qty,
                         'listed_qty': listed_qty
                     })
+                if not normalized_items:
+                    return self.send_json({'status': 'error', 'message': 'SKU及发货数量为必填'}, start_response)
+                if any((self._parse_int(x.get('shipped_qty')) or 0) <= 0 for x in normalized_items):
+                    return self.send_json({'status': 'error', 'message': 'SKU发货数量必须大于0'}, start_response)
+                if payload.get('qty_verified') and not payload.get('inventory_registered'):
+                    return self.send_json({'status': 'error', 'message': '需要先登记上架才能确认已核对上架数量'}, start_response)
 
                 payload['qty_consistent'] = self._calc_qty_consistent_from_items(normalized_items)
 
                 with self._get_db_connection() as conn:
                     self._perf_mark(perf_ctx, 'db_connected_for_write')
                     old_bl = None
+                    prev_confirmed_boxed_qty = 0
                     if method == 'PUT':
                         if not item_id:
                             return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
                         with conn.cursor() as cur:
                             cur.execute(
-                                "SELECT id, bill_of_lading_no, factory_ship_date_initial, factory_ship_date_latest, expected_listed_date_initial, expected_listed_date_latest, etd_initial, etd_latest, eta_initial, eta_latest FROM logistics_in_transit WHERE id=%s LIMIT 1",
+                                "SELECT id, bill_of_lading_no, factory_ship_date_initial, factory_ship_date_latest, expected_listed_date_initial, expected_listed_date_latest, etd_initial, etd_latest, eta_initial, eta_latest, confirmed_boxed_qty FROM logistics_in_transit WHERE id=%s LIMIT 1",
                                 (item_id,)
                             )
                             existing = cur.fetchone()
                         if not existing:
                             return self.send_json({'status': 'error', 'message': '在途物流记录不存在'}, start_response)
                         old_bl = (existing.get('bill_of_lading_no') or '').strip() or None
+                        prev_confirmed_boxed_qty = 1 if self._parse_int(existing.get('confirmed_boxed_qty')) else 0
                         payload['factory_ship_date_initial'] = existing.get('factory_ship_date_initial') or factory_ship_latest
                         payload['factory_ship_date_previous'] = existing.get('factory_ship_date_latest') if factory_ship_latest and str(existing.get('factory_ship_date_latest') or '') != str(factory_ship_latest) else existing.get('factory_ship_date_previous')
                         payload['factory_ship_date_latest'] = factory_ship_latest or existing.get('factory_ship_date_latest')
@@ -490,7 +515,8 @@ class LogisticsInTransitMixin:
                                     arrival_port_date, expected_warehouse_date, expected_listed_date_initial, expected_listed_date_latest, listed_date,
                                     shipping_company, vessel_voyage, bill_of_lading_no,
                                     declaration_docs_provided, inventory_registered, clearance_docs_provided, qty_verified, qty_consistent,
-                                    port_of_loading, port_of_destination, destination_warehouse_id, inbound_order_no
+                                    port_of_loading, port_of_destination, destination_region_id, destination_warehouse_id,
+                                    confirmed_boxed_qty, inbound_order_no
                                 ) VALUES (
                                     %(factory_id)s, %(factory_ship_date_initial)s, %(factory_ship_date_previous)s, %(factory_ship_date_latest)s,
                                     %(forwarder_id)s, %(logistics_box_no)s,
@@ -499,7 +525,8 @@ class LogisticsInTransitMixin:
                                     %(arrival_port_date)s, %(expected_warehouse_date)s, %(expected_listed_date_initial)s, %(expected_listed_date_latest)s, %(listed_date)s,
                                     %(shipping_company)s, %(vessel_voyage)s, %(bill_of_lading_no)s,
                                     %(declaration_docs_provided)s, %(inventory_registered)s, %(clearance_docs_provided)s, %(qty_verified)s, %(qty_consistent)s,
-                                    %(port_of_loading)s, %(port_of_destination)s, %(destination_warehouse_id)s, %(inbound_order_no)s
+                                    %(port_of_loading)s, %(port_of_destination)s, %(destination_region_id)s, %(destination_warehouse_id)s,
+                                    %(confirmed_boxed_qty)s, %(inbound_order_no)s
                                 )
                                 """,
                                 payload
@@ -537,7 +564,9 @@ class LogisticsInTransitMixin:
                                     qty_consistent=%(qty_consistent)s,
                                     port_of_loading=%(port_of_loading)s,
                                     port_of_destination=%(port_of_destination)s,
+                                    destination_region_id=%(destination_region_id)s,
                                     destination_warehouse_id=%(destination_warehouse_id)s,
+                                    confirmed_boxed_qty=%(confirmed_boxed_qty)s,
                                     inbound_order_no=%(inbound_order_no)s
                                 WHERE id=%(id)s
                                 """,
@@ -552,6 +581,24 @@ class LogisticsInTransitMixin:
                             )
 
                         cur.execute("UPDATE logistics_in_transit SET qty_consistent=%s WHERE id=%s", (payload.get('qty_consistent', 0), item_id))
+
+                        should_deduct = 1 if _to_bool_flag(data.get('apply_deduct_factory_stock')) else 0
+                        now_confirmed = 1 if self._parse_int(payload.get('confirmed_boxed_qty')) else 0
+                        need_deduct = (now_confirmed == 1 and (method == 'POST' or prev_confirmed_boxed_qty == 0) and should_deduct == 1)
+                        if need_deduct:
+                            for item in normalized_items:
+                                op_id = self._parse_int(item.get('order_product_id'))
+                                shipped_qty = self._parse_int(item.get('shipped_qty')) or 0
+                                if not op_id or shipped_qty <= 0:
+                                    continue
+                                cur.execute(
+                                    """
+                                    INSERT INTO factory_stock_inventory (order_product_id, factory_id, quantity)
+                                    VALUES (%s, %s, %s)
+                                    ON DUPLICATE KEY UPDATE quantity=quantity+VALUES(quantity)
+                                    """,
+                                    (op_id, factory_id, -shipped_qty)
+                                )
                     self._perf_mark(perf_ctx, 'create_or_update_write')
 
                 new_bl = (payload.get('bill_of_lading_no') or '').strip()
@@ -615,12 +662,12 @@ class LogisticsInTransitMixin:
             ws_opt = wb.create_sheet('下拉选项')
 
             info_headers = [
-                '箱号*', '工厂*', '目的仓库*', '工厂发货最新日期',
-                '货代*', '最新预计上架时间', 'ETD最新日期', 'ETA最新日期', '到港日期',
+                '箱号', '无箱号时临时索引*', '工厂*', '目的区域*', '目的仓库', '工厂发货日期（预估）',
+                '货代', '预计上架时间*', 'ETD', 'ETA', '到港日期',
                 '预计送仓日期', '船公司', '船名航次', '提单号', '起运港', '目的港', '入库单号',
-                '已登记上架', '已核对上架数量', '提供清关资料', '提供报关资料'
+                '已登记上架', '已核对上架数量', '已确认装箱量', '提供清关资料', '提供报关资料'
             ]
-            item_headers = ['箱号*', '下单SKU*', '发货数量*', '实际上架数量*']
+            item_headers = ['箱号或临时索引', '下单SKU*', '发货数量*', '实际上架数量']
 
             header_font = Font(bold=True, color='2A2420')
             thin_border = Border(
@@ -639,9 +686,9 @@ class LogisticsInTransitMixin:
                 return text
 
             groups = [
-                ('工厂及发货SKU与数量', 1, 4),
-                ('货代及物流情况', 5, 16),
-                ('状态', 17, 20),
+                ('装货需求', 1, 6),
+                ('货代发货', 7, 18),
+                ('到港/送仓/上架状态', 19, 23),
             ]
             header_fill_by_col = ['D3D3D3'] * len(info_headers)
             for idx, (title, start_col, end_col) in enumerate(groups):
@@ -693,6 +740,8 @@ class LogisticsInTransitMixin:
                     factories = cur.fetchall() or []
                     cur.execute("SELECT id, forwarder_name FROM logistics_forwarders ORDER BY forwarder_name")
                     forwarders = cur.fetchall() or []
+                    cur.execute("SELECT id, region_name, sort_order FROM logistics_destination_regions ORDER BY sort_order ASC, id ASC")
+                    destination_regions = cur.fetchall() or []
                     cur.execute("SELECT id, warehouse_name FROM logistics_overseas_warehouses WHERE COALESCE(is_enabled,1)=1 ORDER BY warehouse_name")
                     warehouses = cur.fetchall() or []
                     cur.execute("SELECT id, sku FROM order_products ORDER BY sku")
@@ -704,16 +753,17 @@ class LogisticsInTransitMixin:
                             f"""
                             SELECT
                                 t.id, t.logistics_box_no,
-                                f.factory_name, fw.forwarder_name, w.warehouse_name,
+                                f.factory_name, fw.forwarder_name, dr.region_name AS destination_region_name, w.warehouse_name,
                                 t.factory_ship_date_latest, t.etd_latest, t.eta_latest,
                                 t.arrival_port_date, t.expected_warehouse_date, t.expected_listed_date_latest,
                                 t.listed_date, t.shipping_company, t.vessel_voyage,
                                 t.bill_of_lading_no, t.port_of_loading, t.port_of_destination,
                                 t.inbound_order_no, t.declaration_docs_provided, t.clearance_docs_provided,
-                                t.qty_verified, t.qty_consistent, t.inventory_registered
+                                t.qty_verified, t.qty_consistent, t.inventory_registered, t.confirmed_boxed_qty
                             FROM logistics_in_transit t
                             LEFT JOIN logistics_factories f ON f.id = t.factory_id
                             LEFT JOIN logistics_forwarders fw ON fw.id = t.forwarder_id
+                            LEFT JOIN logistics_destination_regions dr ON dr.id = t.destination_region_id
                             LEFT JOIN logistics_overseas_warehouses w ON w.id = t.destination_warehouse_id
                             WHERE t.id IN ({placeholders})
                             """,
@@ -743,21 +793,23 @@ class LogisticsInTransitMixin:
 
             ws_opt.cell(row=1, column=1, value='工厂')
             ws_opt.cell(row=1, column=2, value='货代')
-            ws_opt.cell(row=1, column=3, value='仓库')
-            ws_opt.cell(row=1, column=4, value='SKU')
-            max_options = max(len(factories), len(forwarders), len(warehouses), len(products), 1)
+            ws_opt.cell(row=1, column=3, value='目的区域')
+            ws_opt.cell(row=1, column=4, value='仓库')
+            ws_opt.cell(row=1, column=5, value='SKU')
+            max_options = max(len(factories), len(forwarders), len(destination_regions), len(warehouses), len(products), 1)
             for i in range(max_options):
                 row_idx = i + 2
                 ws_opt.cell(row=row_idx, column=1, value=(factories[i]['factory_name'] if i < len(factories) else None))
                 ws_opt.cell(row=row_idx, column=2, value=(forwarders[i]['forwarder_name'] if i < len(forwarders) else None))
-                ws_opt.cell(row=row_idx, column=3, value=(warehouses[i]['warehouse_name'] if i < len(warehouses) else None))
-                ws_opt.cell(row=row_idx, column=4, value=(products[i]['sku'] if i < len(products) else None))
+                ws_opt.cell(row=row_idx, column=3, value=(destination_regions[i]['region_name'] if i < len(destination_regions) else None))
+                ws_opt.cell(row=row_idx, column=4, value=(warehouses[i]['warehouse_name'] if i < len(warehouses) else None))
+                ws_opt.cell(row=row_idx, column=5, value=(products[i]['sku'] if i < len(products) else None))
             ws_opt.sheet_state = 'hidden'
 
             max_validation_row = 400
             bool_validation = DataValidation(type='list', formula1='"否,是"', allow_blank=True)
             ws_info.add_data_validation(bool_validation)
-            for col in (17, 18, 19, 20):
+            for col in (19, 20, 21, 22, 23):
                 letter = _col_letter(col)
                 for row in range(3, max_validation_row + 1):
                     bool_validation.add(f'{letter}{row}')
@@ -773,10 +825,13 @@ class LogisticsInTransitMixin:
                 for row in range(3, max_validation_row + 1):
                     dv.add(f'{letter}{row}')
 
-            _add_list_validation(ws_info, 2, 1, len(factories))
-            _add_list_validation(ws_info, 5, 2, len(forwarders))
-            _add_list_validation(ws_info, 3, 3, len(warehouses))
-            _add_list_validation(ws_items, 2, 4, len(products))
+            _add_list_validation(ws_info, 3, 1, len(factories))
+            _add_list_validation(ws_info, 7, 2, len(forwarders))
+            _add_list_validation(ws_info, 4, 3, len(destination_regions))
+            _add_list_validation(ws_info, 5, 4, len(warehouses))
+            _add_list_validation(ws_items, 2, 5, len(products))
+
+            ws_info.cell(row=2, column=2).comment = Comment('当没有箱号时，用于与SKU明细表的“箱号或临时索引”关联，需保持一致', 'SITJOY')
 
             def _fmt_date(value):
                 if value is None:
@@ -797,7 +852,9 @@ class LogisticsInTransitMixin:
             for row in export_rows:
                 values = [
                     row.get('logistics_box_no') or '',
+                    '',
                     row.get('factory_name') or '',
+                    row.get('destination_region_name') or '',
                     row.get('warehouse_name') or '',
                     _fmt_date(row.get('factory_ship_date_latest')),
                     row.get('forwarder_name') or '',
@@ -814,6 +871,7 @@ class LogisticsInTransitMixin:
                     row.get('inbound_order_no') or '',
                     '是' if str(row.get('inventory_registered') or '0') in ('1', 'True', 'true') else '否',
                     '是' if str(row.get('qty_verified') or '0') in ('1', 'True', 'true') else '否',
+                    '是' if str(row.get('confirmed_boxed_qty') or '0') in ('1', 'True', 'true') else '否',
                     '是' if str(row.get('clearance_docs_provided') or '0') in ('1', 'True', 'true') else '否',
                     '是' if str(row.get('declaration_docs_provided') or '0') in ('1', 'True', 'true') else '否',
                 ]
@@ -909,22 +967,24 @@ class LogisticsInTransitMixin:
                         return col_name
                 return None
 
-            col_box_info = _pick_col(idx_info, '箱号*', '物流箱号*')
+            col_box_info = _pick_col(idx_info, '箱号', '箱号*', '物流箱号*')
+            col_temp_index_info = _pick_col(idx_info, '无箱号时临时索引*', '无箱号时临时索引')
             col_factory = _pick_col(idx_info, '工厂*')
-            col_forwarder = _pick_col(idx_info, '货代*')
-            col_warehouse = _pick_col(idx_info, '目的仓库*')
-            col_box_item = _pick_col(idx_item, '箱号*', '物流箱号*')
+            col_region = _pick_col(idx_info, '目的区域*', '目的区域')
+            col_forwarder = _pick_col(idx_info, '货代*', '货代')
+            col_warehouse = _pick_col(idx_info, '目的仓库*', '目的仓库')
+            col_box_item = _pick_col(idx_item, '箱号或临时索引', '箱号*', '物流箱号*')
             col_sku_item = _pick_col(idx_item, '下单SKU*')
             col_shipped_item = _pick_col(idx_item, '发货数量*')
-            col_listed_item = _pick_col(idx_item, '实际上架数量*')
+            col_listed_item = _pick_col(idx_item, '实际上架数量', '实际上架数量*')
 
-            if not col_box_info:
-                return self.send_json({'status': 'error', 'message': 'Sheet 在途信息 缺少列: 箱号*'}, start_response)
-            for h in (col_factory, col_forwarder, col_warehouse):
+            if not col_box_info and not col_temp_index_info:
+                return self.send_json({'status': 'error', 'message': 'Sheet 在途信息 缺少列: 箱号 或 无箱号时临时索引*'}, start_response)
+            for h in (col_factory, col_region):
                 if not h:
-                    return self.send_json({'status': 'error', 'message': 'Sheet 在途信息 缺少列: 工厂*/货代*/目的仓库*'}, start_response)
+                    return self.send_json({'status': 'error', 'message': 'Sheet 在途信息 缺少列: 工厂*/目的区域*'}, start_response)
             if not col_box_item or not col_sku_item or not col_shipped_item:
-                return self.send_json({'status': 'error', 'message': 'Sheet SKU明细 缺少列: 箱号*/下单SKU*/发货数量*'}, start_response)
+                return self.send_json({'status': 'error', 'message': 'Sheet SKU明细 缺少列: 箱号或临时索引/下单SKU*/发货数量*'}, start_response)
 
             errors = []
             info_rows = []
@@ -936,6 +996,8 @@ class LogisticsInTransitMixin:
                     factory_map = {str((r.get('factory_name') or '')).strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
                     cur.execute("SELECT id, forwarder_name FROM logistics_forwarders")
                     forwarder_map = {str((r.get('forwarder_name') or '')).strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
+                    cur.execute("SELECT id, region_name FROM logistics_destination_regions")
+                    destination_region_map = {str((r.get('region_name') or '')).strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
                     cur.execute("SELECT id, warehouse_name FROM logistics_overseas_warehouses WHERE COALESCE(is_enabled,1)=1")
                     warehouse_map = {str((r.get('warehouse_name') or '')).strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
                     cur.execute("SELECT id, sku FROM order_products")
@@ -946,47 +1008,61 @@ class LogisticsInTransitMixin:
                         if not any(_cell_text(v) for v in row_values):
                             continue
 
-                        box_no = _cell_text(row_values[idx_info[col_box_info]])
+                        box_no = _cell_text(row_values[idx_info[col_box_info]]) if col_box_info else ''
+                        temp_index = _cell_text(row_values[idx_info[col_temp_index_info]]) if col_temp_index_info else ''
+                        link_key = box_no or temp_index
                         factory_name = _cell_text(row_values[idx_info[col_factory]])
-                        forwarder_name = _cell_text(row_values[idx_info[col_forwarder]])
-                        warehouse_name = _cell_text(row_values[idx_info[col_warehouse]])
+                        region_name = _cell_text(row_values[idx_info[col_region]])
+                        forwarder_name = _cell_text(row_values[idx_info[col_forwarder]]) if col_forwarder else ''
+                        warehouse_name = _cell_text(row_values[idx_info[col_warehouse]]) if col_warehouse else ''
 
-                        if not box_no or not factory_name or not forwarder_name or not warehouse_name:
-                            errors.append({'row': f'在途信息!{row_idx}', 'error': '箱号/工厂/货代/目的仓库为必填'})
+                        if not link_key or not factory_name or not region_name:
+                            errors.append({'row': f'在途信息!{row_idx}', 'error': '箱号或临时索引/工厂/目的区域为必填'})
                             continue
-                        if box_no in seen_box:
-                            errors.append({'row': f'在途信息!{row_idx}', 'error': f'物流箱号重复: {box_no}'})
+                        if link_key in seen_box:
+                            errors.append({'row': f'在途信息!{row_idx}', 'error': f'箱号或临时索引重复: {link_key}'})
                             continue
-                        seen_box.add(box_no)
+                        seen_box.add(link_key)
 
                         factory_id = factory_map.get(factory_name)
-                        forwarder_id = forwarder_map.get(forwarder_name)
-                        warehouse_id = warehouse_map.get(warehouse_name)
+                        destination_region_id = destination_region_map.get(region_name)
+                        forwarder_id = forwarder_map.get(forwarder_name) if forwarder_name else None
+                        warehouse_id = warehouse_map.get(warehouse_name) if warehouse_name else None
                         if not factory_id:
                             errors.append({'row': f'在途信息!{row_idx}', 'error': f'工厂不存在: {factory_name}'})
                             continue
-                        if not forwarder_id:
+                        if forwarder_name and not forwarder_id:
                             errors.append({'row': f'在途信息!{row_idx}', 'error': f'货代不存在: {forwarder_name}'})
                             continue
-                        if not warehouse_id:
+                        if not destination_region_id:
+                            errors.append({'row': f'在途信息!{row_idx}', 'error': f'目的区域不存在: {region_name}'})
+                            continue
+                        if warehouse_name and not warehouse_id:
                             errors.append({'row': f'在途信息!{row_idx}', 'error': f'目的仓库不存在: {warehouse_name}'})
                             continue
 
                         def _get(name):
                             return row_values[idx_info[name]] if name in idx_info else None
 
+                        expected_listed_val = _norm_date(_get('预计上架时间*') if '预计上架时间*' in idx_info else (_get('预计上架时间') if '预计上架时间' in idx_info else (_get('最新预计上架时间') if '最新预计上架时间' in idx_info else _get('最新预计上架日期'))))
+                        if not expected_listed_val:
+                            errors.append({'row': f'在途信息!{row_idx}', 'error': '预计上架时间为必填'})
+                            continue
+
                         info_rows.append({
                             'row_idx': row_idx,
+                            'link_key': link_key,
                             'logistics_box_no': box_no,
                             'factory_id': factory_id,
                             'forwarder_id': forwarder_id,
+                            'destination_region_id': destination_region_id,
                             'destination_warehouse_id': warehouse_id,
                             'factory_ship_date_latest': _norm_date(_get('工厂发货最新日期')),
                             'etd_latest': _norm_date(_get('ETD最新日期')),
                             'eta_latest': _norm_date(_get('ETA最新日期')),
                             'arrival_port_date': _norm_date(_get('到港日期')),
                             'expected_warehouse_date': _norm_date(_get('预计送仓日期')),
-                            'expected_listed_date_latest': _norm_date(_get('最新预计上架时间') if '最新预计上架时间' in idx_info else _get('最新预计上架日期')),
+                            'expected_listed_date_latest': expected_listed_val,
                             'listed_date': _norm_date(_get('上架日期')),
                             'shipping_company': _cell_text(_get('船公司')) or None,
                             'vessel_voyage': _cell_text(_get('船名航次')) or None,
@@ -1006,6 +1082,7 @@ class LogisticsInTransitMixin:
                                 _get('已核对上架数量') if '已核对上架数量' in idx_info
                                 else (_get('是否已核对上架数量') if '是否已核对上架数量' in idx_info else _get('是否已核对数量'))
                             ),
+                            'confirmed_boxed_qty': _norm_bool(_get('已确认装箱量') if '已确认装箱量' in idx_info else None),
                             'qty_consistent': 0,
                             'inventory_registered': _norm_bool(
                                 _get('已登记上架') if '已登记上架' in idx_info
@@ -1026,7 +1103,7 @@ class LogisticsInTransitMixin:
                             listed_raw = row_values[idx_item[col_listed_item]]
                             listed_qty = shipped_qty if listed_raw in (None, '') else (self._parse_int(listed_raw) or 0)
                         if not box_no or not sku or shipped_qty is None:
-                            errors.append({'row': f'SKU明细!{row_idx}', 'error': '物流箱号/下单SKU/发货数量为必填'})
+                            errors.append({'row': f'SKU明细!{row_idx}', 'error': '箱号或临时索引/下单SKU/发货数量为必填'})
                             continue
                         if shipped_qty < 0 or listed_qty < 0:
                             errors.append({'row': f'SKU明细!{row_idx}', 'error': '发货数量/实际上架数量不能为负数'})
@@ -1041,6 +1118,18 @@ class LogisticsInTransitMixin:
                         exist_pair['listed_qty'] += listed_qty
                         item_rows[box_no][order_product_id] = exist_pair
 
+                    invalid_link_keys = set()
+                    for row in info_rows:
+                        if int(row.get('qty_verified') or 0) == 1 and int(row.get('inventory_registered') or 0) != 1:
+                            errors.append({'row': f"在途信息!{row.get('row_idx')}", 'error': '已核对上架数量=是时，已登记上架必须为是'})
+                            invalid_link_keys.add(str(row.get('link_key') or ''))
+
+                    if invalid_link_keys:
+                        info_rows = [r for r in info_rows if str(r.get('link_key') or '') not in invalid_link_keys]
+                        for key in list(item_rows.keys()):
+                            if str(key or '') in invalid_link_keys:
+                                item_rows.pop(key, None)
+
                     if not info_rows and not item_rows:
                         return self.send_json({'status': 'error', 'message': '未检测到可导入数据'}, start_response)
 
@@ -1049,9 +1138,9 @@ class LogisticsInTransitMixin:
                     item_updated = 0
                     transit_id_by_box = {}
 
-                    # 批查所有 info_rows 对应的 logistics_box_no，避免 N+1 问题
+                    # 批查所有 info_rows 对应的箱号，避免 N+1 问题（临时索引仅用于本次Excel内关联）
                     if info_rows:
-                        all_box_nos = [row['logistics_box_no'] for row in info_rows]
+                        all_box_nos = [row['logistics_box_no'] for row in info_rows if row.get('logistics_box_no')]
                         existing_map = {}
                         if all_box_nos:
                             placeholders = ','.join(['%s'] * len(all_box_nos))
@@ -1059,7 +1148,7 @@ class LogisticsInTransitMixin:
                                 cur.execute(
                                     f"""
                                      SELECT id, logistics_box_no, bill_of_lading_no, factory_ship_date_initial, factory_ship_date_previous, factory_ship_date_latest,
-                                           expected_listed_date_initial, expected_listed_date_latest,
+                                           expected_listed_date_initial, expected_listed_date_latest, confirmed_boxed_qty,
                                            etd_initial, etd_previous, etd_latest,
                                            eta_initial, eta_previous, eta_latest
                                     FROM logistics_in_transit
@@ -1068,10 +1157,12 @@ class LogisticsInTransitMixin:
                                     tuple(all_box_nos)
                                 )
                                 for rr in cur.fetchall() or []:
-                                    existing_map[str(rr.get('logistics_box_no') or '')] = rr
+                                    box_key = str(rr.get('logistics_box_no') or '').strip()
+                                    if box_key:
+                                        existing_map[box_key] = rr
 
                     for row in info_rows:
-                        existing = existing_map.get(row['logistics_box_no'])
+                        existing = existing_map.get(row['logistics_box_no']) if row.get('logistics_box_no') else None
 
                         payload = {
                             'factory_id': row['factory_id'],
@@ -1088,9 +1179,11 @@ class LogisticsInTransitMixin:
                             'inventory_registered': row['inventory_registered'],
                             'clearance_docs_provided': row['clearance_docs_provided'],
                             'qty_verified': row['qty_verified'],
+                            'confirmed_boxed_qty': row.get('confirmed_boxed_qty') or 0,
                             'qty_consistent': 0,
                             'port_of_loading': row['port_of_loading'],
                             'port_of_destination': row['port_of_destination'],
+                            'destination_region_id': row['destination_region_id'],
                             'destination_warehouse_id': row['destination_warehouse_id'],
                             'inbound_order_no': row['inbound_order_no']
                         }
@@ -1143,13 +1236,15 @@ class LogisticsInTransitMixin:
                                         qty_consistent=%(qty_consistent)s,
                                         port_of_loading=%(port_of_loading)s,
                                         port_of_destination=%(port_of_destination)s,
+                                        destination_region_id=%(destination_region_id)s,
                                         destination_warehouse_id=%(destination_warehouse_id)s,
+                                        confirmed_boxed_qty=%(confirmed_boxed_qty)s,
                                         inbound_order_no=%(inbound_order_no)s
                                     WHERE id=%(id)s
                                     """,
                                     payload
                                 )
-                            transit_id_by_box[row['logistics_box_no']] = existing['id']
+                            transit_id_by_box[row['link_key']] = existing['id']
                             updated += 1
                         else:
                             payload['factory_ship_date_initial'] = factory_ship_latest
@@ -1173,7 +1268,7 @@ class LogisticsInTransitMixin:
                                         arrival_port_date, expected_warehouse_date, expected_listed_date_initial, expected_listed_date_latest, listed_date,
                                         shipping_company, vessel_voyage, bill_of_lading_no,
                                         declaration_docs_provided, inventory_registered, clearance_docs_provided, qty_verified, qty_consistent,
-                                        port_of_loading, port_of_destination, destination_warehouse_id, inbound_order_no
+                                        port_of_loading, port_of_destination, destination_region_id, destination_warehouse_id, confirmed_boxed_qty, inbound_order_no
                                     ) VALUES (
                                         %(factory_id)s, %(factory_ship_date_initial)s, %(factory_ship_date_previous)s, %(factory_ship_date_latest)s,
                                         %(forwarder_id)s, %(logistics_box_no)s,
@@ -1182,12 +1277,12 @@ class LogisticsInTransitMixin:
                                         %(arrival_port_date)s, %(expected_warehouse_date)s, %(expected_listed_date_initial)s, %(expected_listed_date_latest)s, %(listed_date)s,
                                         %(shipping_company)s, %(vessel_voyage)s, %(bill_of_lading_no)s,
                                         %(declaration_docs_provided)s, %(inventory_registered)s, %(clearance_docs_provided)s, %(qty_verified)s, %(qty_consistent)s,
-                                        %(port_of_loading)s, %(port_of_destination)s, %(destination_warehouse_id)s, %(inbound_order_no)s
+                                        %(port_of_loading)s, %(port_of_destination)s, %(destination_region_id)s, %(destination_warehouse_id)s, %(confirmed_boxed_qty)s, %(inbound_order_no)s
                                     )
                                     """,
                                     payload
                                 )
-                                transit_id_by_box[row['logistics_box_no']] = cur.lastrowid
+                                transit_id_by_box[row['link_key']] = cur.lastrowid
                             created += 1
 
                     if item_rows:
@@ -1201,14 +1296,16 @@ class LogisticsInTransitMixin:
                                     tuple(unresolved_boxes)
                                 )
                                 for rr in cur.fetchall() or []:
-                                    transit_id_by_box[str(rr.get('logistics_box_no') or '')] = rr.get('id')
+                                    box_key = str(rr.get('logistics_box_no') or '').strip()
+                                    if box_key:
+                                        transit_id_by_box[box_key] = rr.get('id')
 
                         valid_transit_ids = []
                         bulk_item_rows = []
                         for box_no, sku_qty_map in item_rows.items():
                             transit_id = transit_id_by_box.get(box_no)
                             if not transit_id:
-                                errors.append({'row': f'SKU明细({box_no})', 'error': '找不到对应物流箱号，请先在在途信息Sheet维护该箱号'})
+                                errors.append({'row': f'SKU明细({box_no})', 'error': '找不到对应在途信息，请先在在途信息Sheet维护该箱号或临时索引'})
                                 continue
                             valid_transit_ids.append(int(transit_id))
                             for op_id, qty_pair in sku_qty_map.items():
