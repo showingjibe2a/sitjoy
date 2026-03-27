@@ -7,6 +7,7 @@
     let toastStack = null;
     let activeColumnsPanelState = null;
     let activeResizeState = null;
+    let activeHelpDotTooltip = null;
     let suppressSortUntil = 0;
 
     function isElementVisibleForEnhance(el){
@@ -106,26 +107,79 @@
         if(!state) return;
         state.wrapper.classList.remove('open');
         state.wrapper.classList.remove('expanded');
+        state.wrapper.classList.remove('open-upward');
+        if(state.menu){
+            state.menu.classList.remove('universal-select-floating-menu');
+            state.menu.style.display = '';
+            state.menu.style.position = '';
+            state.menu.style.left = '';
+            state.menu.style.top = '';
+            state.menu.style.right = '';
+            state.menu.style.bottom = '';
+            state.menu.style.width = '';
+            state.menu.style.minWidth = '';
+            state.menu.style.maxWidth = '';
+            state.menu.style.zIndex = '';
+            if(state.menu.parentElement !== state.wrapper){
+                state.wrapper.appendChild(state.menu);
+            }
+        }
+    }
+
+    function positionFloatingDropdown(select, state){
+        if(!state || !state.menu || !state.wrapper.classList.contains('open')) return;
+        const triggerRect = state.trigger.getBoundingClientRect();
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+        const spaceBelow = viewportHeight - triggerRect.bottom;
+        const spaceAbove = triggerRect.top;
+        const preferHeight = 280;
+        const openUpward = spaceBelow < 180 && spaceAbove > spaceBelow && spaceAbove >= 140;
+        state.wrapper.classList.toggle('open-upward', openUpward);
+        const availableSpace = (openUpward ? spaceAbove : spaceBelow) - 20;
+        const maxHeight = Math.max(120, Math.min(preferHeight, availableSpace));
+        state.list.style.maxHeight = `${maxHeight}px`;
+
+        const width = Math.min(Math.max(triggerRect.width, 180), Math.max(200, viewportWidth - 16));
+        const left = Math.max(8, Math.min(triggerRect.left, viewportWidth - width - 8));
+
+        state.menu.style.position = 'fixed';
+        state.menu.style.left = `${left}px`;
+        state.menu.style.right = 'auto';
+        state.menu.style.width = `${width}px`;
+        state.menu.style.minWidth = `${width}px`;
+        state.menu.style.maxWidth = `${width}px`;
+        state.menu.style.zIndex = '5600';
+        if(openUpward){
+            state.menu.style.top = 'auto';
+            state.menu.style.bottom = `${Math.max(8, viewportHeight - triggerRect.top + 6)}px`;
+        } else {
+            state.menu.style.top = `${Math.max(8, triggerRect.bottom + 6)}px`;
+            state.menu.style.bottom = 'auto';
+        }
+    }
+
+    function repositionOpenDropdowns(){
+        universalSelectState.forEach((state, select) => {
+            if(state.wrapper.classList.contains('open')){
+                positionFloatingDropdown(select, state);
+            }
+        });
     }
 
     function openDropdown(select, state){
         if(!state || state.trigger.disabled) return;
         closeAllDropdowns();
         renderDropdownOptions(select, state);
-        state.wrapper.classList.remove('open-upward');
-        const triggerRect = state.trigger.getBoundingClientRect();
-        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-        const spaceBelow = viewportHeight - triggerRect.bottom;
-        const spaceAbove = triggerRect.top;
-        const preferHeight = 280;
-        if(spaceBelow < 180 && spaceAbove > spaceBelow && spaceAbove >= 140){
-            state.wrapper.classList.add('open-upward');
+        if(state.menu.parentElement !== document.body){
+            document.body.appendChild(state.menu);
         }
-        const maxHeight = Math.max(120, Math.min(preferHeight, state.wrapper.classList.contains('open-upward') ? (spaceAbove - 20) : (spaceBelow - 20)));
-        state.list.style.maxHeight = `${maxHeight}px`;
+        state.menu.classList.add('universal-select-floating-menu');
+        state.menu.style.display = 'block';
         state.wrapper.classList.add('expanded');
         window.setTimeout(() => {
             state.wrapper.classList.add('open');
+            positionFloatingDropdown(select, state);
             if(state.searchInput){
                 state.searchInput.focus();
                 state.searchInput.select();
@@ -268,6 +322,75 @@
                 if(toast.parentNode) toast.parentNode.removeChild(toast);
             }, 180);
         }, Math.max(800, timeout));
+    }
+
+    function ensureHelpDotTooltip(){
+        if(activeHelpDotTooltip && document.body.contains(activeHelpDotTooltip)) return activeHelpDotTooltip;
+        const tooltip = document.createElement('div');
+        tooltip.className = 'app-help-floating-tip';
+        tooltip.style.display = 'none';
+        document.body.appendChild(tooltip);
+        activeHelpDotTooltip = tooltip;
+        return tooltip;
+    }
+
+    function hideHelpDotTooltip(){
+        if(!activeHelpDotTooltip) return;
+        activeHelpDotTooltip.style.display = 'none';
+        activeHelpDotTooltip.textContent = '';
+    }
+
+    function resolveHelpDotTipText(dot){
+        if(!dot) return '';
+        const dataTip = String(dot.getAttribute('data-tip') || '').trim();
+        if(dataTip) return dataTip;
+        const bubble = dot.querySelector('.help-dot-bubble');
+        return bubble ? String(bubble.textContent || '').trim() : '';
+    }
+
+    function positionHelpDotTooltip(dot, tooltip){
+        if(!dot || !tooltip) return;
+        const dotRect = dot.getBoundingClientRect();
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+        const tipRect = tooltip.getBoundingClientRect();
+
+        let left = dotRect.right + 8;
+        if(left + tipRect.width > viewportWidth - 8){
+            left = dotRect.left - tipRect.width - 8;
+        }
+        left = Math.max(8, Math.min(left, viewportWidth - tipRect.width - 8));
+
+        let top = dotRect.top - 4;
+        if(top + tipRect.height > viewportHeight - 8){
+            top = viewportHeight - tipRect.height - 8;
+        }
+        top = Math.max(8, top);
+
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = `${top}px`;
+    }
+
+    function showHelpDotTooltip(dot){
+        const text = resolveHelpDotTipText(dot);
+        if(!text) return;
+        const tooltip = ensureHelpDotTooltip();
+        tooltip.textContent = text;
+        tooltip.style.display = 'block';
+        positionHelpDotTooltip(dot, tooltip);
+    }
+
+    function bindFloatingHelpDots(root){
+        const scope = root && root.querySelectorAll ? root : document;
+        scope.querySelectorAll('.help-dot').forEach(dot => {
+            if(dot.dataset.helpFloatingBound === '1') return;
+            dot.dataset.helpFloatingBound = '1';
+            dot.classList.add('help-dot--floating');
+            dot.addEventListener('mouseenter', () => showHelpDotTooltip(dot));
+            dot.addEventListener('mouseleave', hideHelpDotTooltip);
+            dot.addEventListener('focus', () => showHelpDotTooltip(dot));
+            dot.addEventListener('blur', hideHelpDotTooltip);
+        });
     }
 
     function showAppResultPanel(options){
@@ -1358,8 +1481,11 @@
     }
 
     document.addEventListener('click', (e) => {
-        if(!e.target.closest('.universal-select-dropdown')) {
+        if(!e.target.closest('.universal-select-dropdown') && !e.target.closest('.universal-select-floating-menu')) {
             closeAllDropdowns();
+        }
+        if(!e.target.closest('.help-dot') && !e.target.closest('.app-help-floating-tip')) {
+            hideHelpDotTooltip();
         }
         if(!e.target.closest('.pm-table-columns') && !e.target.closest('.pm-table-columns-panel')) {
             closeColumnsPanel(activeColumnsPanelState);
@@ -1398,10 +1524,13 @@
     });
 
     window.addEventListener('resize', () => {
+        repositionOpenDropdowns();
         if(activeColumnsPanelState) repositionColumnsPanel(activeColumnsPanelState);
     });
 
     window.addEventListener('scroll', () => {
+        repositionOpenDropdowns();
+        hideHelpDotTooltip();
         if(activeColumnsPanelState) repositionColumnsPanel(activeColumnsPanelState);
     }, true);
 
@@ -1411,6 +1540,7 @@
         initOptionalDateInputs(document);
         enhanceHeroSections(document);
         enhanceManagedTables(document);
+        bindFloatingHelpDots(document);
         bridgeLegacyResponseToToast(document);
         startUniversalSelectValueSync();
 
@@ -1428,6 +1558,7 @@
                 bodyEnhanceScheduled = false;
                 enhanceHeroSections(document);
                 enhanceManagedTables(document);
+                bindFloatingHelpDots(document);
                 initOptionalDateInputs(document);
                 bridgeLegacyResponseToToast(document);
                 syncModalScrollLock();

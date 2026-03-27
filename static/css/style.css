@@ -316,6 +316,29 @@ input[type="month"] {
     visibility: visible;
 }
 
+.help-dot--floating::after,
+.help-dot--floating .help-dot-bubble {
+    display: none !important;
+}
+
+.app-help-floating-tip {
+    position: fixed;
+    left: 0;
+    top: 0;
+    max-width: min(360px, calc(100vw - 16px));
+    padding: 0.45rem 0.6rem;
+    border-radius: 8px;
+    border: 1px solid var(--morandi-sand);
+    background: rgba(39, 37, 34, 0.96);
+    color: #fff;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.2);
+    z-index: 5600;
+    pointer-events: none;
+    white-space: normal;
+}
+
 /* Status segment (shared) */
 .status-segment {
     display: inline-flex;
@@ -1741,6 +1764,11 @@ body {
     box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
     padding: 0.6rem;
     z-index: 3200;
+}
+
+.feature-category-menu.universal-select-floating-menu {
+    position: fixed;
+    z-index: 5600;
 }
 
 .feature-category-menu.menu-no-search {

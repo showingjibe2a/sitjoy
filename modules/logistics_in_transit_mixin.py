@@ -662,12 +662,13 @@ class LogisticsInTransitMixin:
             ws_opt = wb.create_sheet('下拉选项')
 
             info_headers = [
-                '箱号', '无箱号时临时索引*', '工厂*', '目的区域*', '目的仓库', '工厂发货日期（预估）',
-                '货代', '预计上架时间*', 'ETD', 'ETA', '到港日期',
-                '预计送仓日期', '船公司', '船名航次', '提单号', '起运港', '目的港', '入库单号',
-                '已登记上架', '已核对上架数量', '已确认装箱量', '提供清关资料', '提供报关资料'
+                '预计上架时间*',
+                '工厂*', '目的区域*', '目的仓库', '工厂发货日期（预估）',
+                '货代', '船公司', '船名航次', '提单号', '起运港', '目的港', 'ETD', 'ETA', '提供清关资料', '提供报关资料',
+                '已确认装箱量', '箱号',
+                '到港日期', '预计送仓日期', '入库单号', '已登记上架', '已核对上架数量'
             ]
-            item_headers = ['箱号或临时索引', '下单SKU*', '发货数量*', '实际上架数量']
+            item_headers = ['箱号', '下单SKU*', '发货数量*', '上架数量（仅核对页维护）']
 
             header_font = Font(bold=True, color='2A2420')
             thin_border = Border(
@@ -686,9 +687,11 @@ class LogisticsInTransitMixin:
                 return text
 
             groups = [
-                ('装货需求', 1, 6),
-                ('货代发货', 7, 18),
-                ('到港/送仓/上架状态', 19, 23),
+                ('预计上架时间', 1, 1),
+                ('装货需求', 2, 5),
+                ('货代发货', 6, 15),
+                ('确认装箱', 16, 17),
+                ('到港、送仓、上架', 18, 22),
             ]
             header_fill_by_col = ['D3D3D3'] * len(info_headers)
             for idx, (title, start_col, end_col) in enumerate(groups):
@@ -809,7 +812,7 @@ class LogisticsInTransitMixin:
             max_validation_row = 400
             bool_validation = DataValidation(type='list', formula1='"否,是"', allow_blank=True)
             ws_info.add_data_validation(bool_validation)
-            for col in (19, 20, 21, 22, 23):
+            for col in (14, 15, 16, 21, 22):
                 letter = _col_letter(col)
                 for row in range(3, max_validation_row + 1):
                     bool_validation.add(f'{letter}{row}')
@@ -825,13 +828,11 @@ class LogisticsInTransitMixin:
                 for row in range(3, max_validation_row + 1):
                     dv.add(f'{letter}{row}')
 
-            _add_list_validation(ws_info, 3, 1, len(factories))
-            _add_list_validation(ws_info, 7, 2, len(forwarders))
-            _add_list_validation(ws_info, 4, 3, len(destination_regions))
-            _add_list_validation(ws_info, 5, 4, len(warehouses))
+            _add_list_validation(ws_info, 2, 1, len(factories))
+            _add_list_validation(ws_info, 6, 2, len(forwarders))
+            _add_list_validation(ws_info, 3, 3, len(destination_regions))
+            _add_list_validation(ws_info, 4, 4, len(warehouses))
             _add_list_validation(ws_items, 2, 5, len(products))
-
-            ws_info.cell(row=2, column=2).comment = Comment('当没有箱号时，用于与SKU明细表的“箱号或临时索引”关联，需保持一致', 'SITJOY')
 
             def _fmt_date(value):
                 if value is None:
@@ -851,29 +852,28 @@ class LogisticsInTransitMixin:
             out_row = 3
             for row in export_rows:
                 values = [
-                    row.get('logistics_box_no') or '',
-                    '',
+                    _fmt_date(row.get('expected_listed_date_latest')),
                     row.get('factory_name') or '',
                     row.get('destination_region_name') or '',
                     row.get('warehouse_name') or '',
                     _fmt_date(row.get('factory_ship_date_latest')),
                     row.get('forwarder_name') or '',
-                    _fmt_date(row.get('expected_listed_date_latest')),
-                    _fmt_date(row.get('etd_latest')),
-                    _fmt_date(row.get('eta_latest')),
-                    _fmt_date(row.get('arrival_port_date')),
-                    _fmt_date(row.get('expected_warehouse_date')),
                     row.get('shipping_company') or '',
                     row.get('vessel_voyage') or '',
                     row.get('bill_of_lading_no') or '',
                     row.get('port_of_loading') or '',
                     row.get('port_of_destination') or '',
+                    _fmt_date(row.get('etd_latest')),
+                    _fmt_date(row.get('eta_latest')),
+                    '是' if str(row.get('clearance_docs_provided') or '0') in ('1', 'True', 'true') else '否',
+                    '是' if str(row.get('declaration_docs_provided') or '0') in ('1', 'True', 'true') else '否',
+                    '是' if str(row.get('confirmed_boxed_qty') or '0') in ('1', 'True', 'true') else '否',
+                    row.get('logistics_box_no') or '',
+                    _fmt_date(row.get('arrival_port_date')),
+                    _fmt_date(row.get('expected_warehouse_date')),
                     row.get('inbound_order_no') or '',
                     '是' if str(row.get('inventory_registered') or '0') in ('1', 'True', 'true') else '否',
                     '是' if str(row.get('qty_verified') or '0') in ('1', 'True', 'true') else '否',
-                    '是' if str(row.get('confirmed_boxed_qty') or '0') in ('1', 'True', 'true') else '否',
-                    '是' if str(row.get('clearance_docs_provided') or '0') in ('1', 'True', 'true') else '否',
-                    '是' if str(row.get('declaration_docs_provided') or '0') in ('1', 'True', 'true') else '否',
                 ]
                 for col, val in enumerate(values, start=1):
                     ws_info.cell(row=out_row, column=col, value=val)
@@ -973,7 +973,7 @@ class LogisticsInTransitMixin:
             col_region = _pick_col(idx_info, '目的区域*', '目的区域')
             col_forwarder = _pick_col(idx_info, '货代*', '货代')
             col_warehouse = _pick_col(idx_info, '目的仓库*', '目的仓库')
-            col_box_item = _pick_col(idx_item, '箱号或临时索引', '箱号*', '物流箱号*')
+            col_box_item = _pick_col(idx_item, '箱号', '箱号或临时索引', '箱号*', '物流箱号*')
             col_sku_item = _pick_col(idx_item, '下单SKU*')
             col_shipped_item = _pick_col(idx_item, '发货数量*')
             col_listed_item = _pick_col(idx_item, '实际上架数量', '实际上架数量*')
@@ -1057,9 +1057,15 @@ class LogisticsInTransitMixin:
                             'forwarder_id': forwarder_id,
                             'destination_region_id': destination_region_id,
                             'destination_warehouse_id': warehouse_id,
-                            'factory_ship_date_latest': _norm_date(_get('工厂发货最新日期')),
-                            'etd_latest': _norm_date(_get('ETD最新日期')),
-                            'eta_latest': _norm_date(_get('ETA最新日期')),
+                            'factory_ship_date_latest': _norm_date(
+                                _get('工厂发货日期（预估）') if '工厂发货日期（预估）' in idx_info else _get('工厂发货最新日期')
+                            ),
+                            'etd_latest': _norm_date(
+                                _get('ETD') if 'ETD' in idx_info else _get('ETD最新日期')
+                            ),
+                            'eta_latest': _norm_date(
+                                _get('ETA') if 'ETA' in idx_info else _get('ETA最新日期')
+                            ),
                             'arrival_port_date': _norm_date(_get('到港日期')),
                             'expected_warehouse_date': _norm_date(_get('预计送仓日期')),
                             'expected_listed_date_latest': expected_listed_val,
