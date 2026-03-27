@@ -689,6 +689,7 @@ class LogisticsInTransitMixin:
                 return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
 
             from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+            from openpyxl.comments import Comment
             from openpyxl.worksheet.datavalidation import DataValidation
 
             self._ensure_logistics_tables()
@@ -709,13 +710,14 @@ class LogisticsInTransitMixin:
             ws_opt = wb.create_sheet('下拉选项')
 
             info_headers = [
+                '无箱号时临时索引*',
                 '预计上架时间*',
                 '工厂*', '目的区域*', '目的仓库', '工厂发货日期（预估）',
                 '货代', '船公司', '船名航次', '提单号', '起运港', '目的港', 'ETD', 'ETA', '提供清关资料', '提供报关资料',
                 '已确认装箱量', '箱号',
-                '到港日期', '预计送仓日期', '入库单号', '已登记上架', '已核对上架数量'
+                '到港日期', '预计送仓日期', '实际上架日期', '入库单号', '已登记上架', '已核对上架数量'
             ]
-            item_headers = ['箱号', '下单SKU*', '发货数量*', '上架数量（仅核对页维护）']
+            item_headers = ['箱号或临时索引', '下单SKU*', '发货数量*', '上架数量（仅核对页维护）']
 
             header_font = Font(bold=True, color='2A2420')
             thin_border = Border(
@@ -734,11 +736,12 @@ class LogisticsInTransitMixin:
                 return text
 
             groups = [
-                ('预计上架时间', 1, 1),
-                ('装货需求', 2, 5),
-                ('货代发货', 6, 15),
-                ('确认装箱', 16, 17),
-                ('到港、送仓、上架', 18, 22),
+                ('临时匹配索引', 1, 1),
+                ('预计上架时间', 2, 2),
+                ('装货需求', 3, 6),
+                ('货代发货', 7, 16),
+                ('确认装箱', 17, 18),
+                ('到港、送仓、上架', 19, 24),
             ]
             header_fill_by_col = ['D3D3D3'] * len(info_headers)
             for idx, (title, start_col, end_col) in enumerate(groups):
@@ -763,6 +766,13 @@ class LogisticsInTransitMixin:
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
                 cell.border = thin_border
                 ws_info.column_dimensions[_col_letter(col)].width = 18 if '*' in title else 16
+
+            temp_index_col = info_headers.index('无箱号时临时索引*') + 1
+            temp_index_comment = Comment(
+                '用于在没有箱号信息时与SKU明细Sheet关联，请勿与箱号重复；该字段不写入数据库，仅用于本次上传临时匹配。',
+                'SITJOY'
+            )
+            ws_info.cell(row=2, column=temp_index_col).comment = temp_index_comment
 
             ws_items.merge_cells(start_row=1, start_column=1, end_row=1, end_column=4)
             ws_items.cell(row=1, column=1, value='SKU明细关联').alignment = Alignment(horizontal='center', vertical='center')
@@ -856,12 +866,35 @@ class LogisticsInTransitMixin:
                 ws_opt.cell(row=row_idx, column=5, value=(products[i]['sku'] if i < len(products) else None))
             ws_opt.sheet_state = 'hidden'
 
+            sample_info_row = [
+                '示例-TEMP-001', '2026-03-27',
+                '示例工厂', '示例目的区域', '示例目的仓库', '2026-03-20',
+                '示例货代', '示例船公司', '示例船名航次', '示例提单号', '示例起运港', '示例目的港', '2026-03-18', '2026-03-26',
+                '否', '否',
+                '否', '示例箱号（可留空）',
+                '2026-03-25', '2026-03-28', '2026-03-30', '示例入库单号', '否', '否'
+            ]
+            for col, val in enumerate(sample_info_row, start=1):
+                cell = ws_info.cell(row=3, column=col, value=val)
+                cell.border = thin_border
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                if col in (1, 10):
+                    cell.font = Font(color='7B8088', italic=True)
+
+            sample_item_row = ['示例箱号（或示例-TEMP-001）', '示例SKU', 10, 10]
+            for col, val in enumerate(sample_item_row, start=1):
+                cell = ws_items.cell(row=3, column=col, value=val)
+                cell.border = thin_border
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                if col in (1, 2):
+                    cell.font = Font(color='7B8088', italic=True)
+
             max_validation_row = 400
             bool_validation = DataValidation(type='list', formula1='"否,是"', allow_blank=True)
             ws_info.add_data_validation(bool_validation)
-            for col in (14, 15, 16, 21, 22):
+            for col in (15, 16, 17, 23, 24):
                 letter = _col_letter(col)
-                for row in range(3, max_validation_row + 1):
+                for row in range(4, max_validation_row + 1):
                     bool_validation.add(f'{letter}{row}')
 
             def _add_list_validation(ws, col, options_col, count):
@@ -872,13 +905,13 @@ class LogisticsInTransitMixin:
                 formula = f"'下拉选项'!${opt_letter}$2:${opt_letter}${count + 1}"
                 dv = DataValidation(type='list', formula1=formula, allow_blank=True)
                 ws.add_data_validation(dv)
-                for row in range(3, max_validation_row + 1):
+                for row in range(4, max_validation_row + 1):
                     dv.add(f'{letter}{row}')
 
-            _add_list_validation(ws_info, 2, 1, len(factories))
-            _add_list_validation(ws_info, 6, 2, len(forwarders))
-            _add_list_validation(ws_info, 3, 3, len(destination_regions))
-            _add_list_validation(ws_info, 4, 4, len(warehouses))
+            _add_list_validation(ws_info, 3, 1, len(factories))
+            _add_list_validation(ws_info, 7, 2, len(forwarders))
+            _add_list_validation(ws_info, 4, 3, len(destination_regions))
+            _add_list_validation(ws_info, 5, 4, len(warehouses))
             _add_list_validation(ws_items, 2, 5, len(products))
 
             def _fmt_date(value):
@@ -896,9 +929,10 @@ class LogisticsInTransitMixin:
                         continue
                 return text
 
-            out_row = 3
+            out_row = 4
             for row in export_rows:
                 values = [
+                    '',
                     _fmt_date(row.get('expected_listed_date_latest')),
                     row.get('factory_name') or '',
                     row.get('destination_region_name') or '',
@@ -918,6 +952,7 @@ class LogisticsInTransitMixin:
                     row.get('logistics_box_no') or '',
                     _fmt_date(row.get('arrival_port_date')),
                     _fmt_date(row.get('expected_warehouse_date')),
+                    _fmt_date(row.get('listed_date')),
                     row.get('inbound_order_no') or '',
                     '是' if str(row.get('inventory_registered') or '0') in ('1', 'True', 'true') else '否',
                     '是' if str(row.get('qty_verified') or '0') in ('1', 'True', 'true') else '否',
@@ -926,7 +961,7 @@ class LogisticsInTransitMixin:
                     ws_info.cell(row=out_row, column=col, value=val)
                 out_row += 1
 
-            item_row = 3
+            item_row = 4
             for row in export_items:
                 ws_items.cell(row=item_row, column=1, value=row.get('logistics_box_no') or '')
                 ws_items.cell(row=item_row, column=2, value=row.get('sku') or '')
@@ -1054,6 +1089,9 @@ class LogisticsInTransitMixin:
                         row_values = [ws_info.cell(row=row_idx, column=i + 1).value for i in range(len(headers_info))]
                         if not any(_cell_text(v) for v in row_values):
                             continue
+                        row_join_text = '|'.join([_cell_text(v) for v in row_values]).lower()
+                        if '示例' in row_join_text and ('勿导入' in row_join_text or '请勿导入' in row_join_text or '示例-' in row_join_text):
+                            continue
 
                         box_no = _cell_text(row_values[idx_info[col_box_info]]) if col_box_info else ''
                         temp_index = _cell_text(row_values[idx_info[col_temp_index_info]]) if col_temp_index_info else ''
@@ -1116,7 +1154,9 @@ class LogisticsInTransitMixin:
                             'arrival_port_date': _norm_date(_get('到港日期')),
                             'expected_warehouse_date': _norm_date(_get('预计送仓日期')),
                             'expected_listed_date_latest': expected_listed_val,
-                            'listed_date': _norm_date(_get('上架日期')),
+                            'listed_date': _norm_date(
+                                _get('实际上架日期') if '实际上架日期' in idx_info else _get('上架日期')
+                            ),
                             'shipping_company': _cell_text(_get('船公司')) or None,
                             'vessel_voyage': _cell_text(_get('船名航次')) or None,
                             'bill_of_lading_no': _cell_text(_get('提单号')) or None,
@@ -1147,6 +1187,9 @@ class LogisticsInTransitMixin:
                     for row_idx in range(header_row_item + 1, ws_items.max_row + 1):
                         row_values = [ws_items.cell(row=row_idx, column=i + 1).value for i in range(len(headers_item))]
                         if not any(_cell_text(v) for v in row_values):
+                            continue
+                        row_join_text = '|'.join([_cell_text(v) for v in row_values]).lower()
+                        if '示例' in row_join_text and ('勿导入' in row_join_text or '请勿导入' in row_join_text or '示例-' in row_join_text):
                             continue
                         box_no = _cell_text(row_values[idx_item[col_box_item]])
                         sku = _cell_text(row_values[idx_item[col_sku_item]])

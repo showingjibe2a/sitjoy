@@ -133,17 +133,32 @@ input[type="month"] {
     gap: 0.2rem;
 }
 
+.app-date-grid > * {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
 .app-date-blank {
-    height: 30px;
+    height: 32px;
 }
 
 .app-date-day {
-    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-width: 0;
+    height: 32px;
+    padding: 0 !important;
+    margin: 0;
+    line-height: 1;
     border-radius: 8px;
     border: 1px solid transparent;
     background: #fff;
     color: var(--morandi-ink);
     font-size: 0.82rem;
+    font-variant-numeric: tabular-nums;
     cursor: pointer;
     transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
 }
