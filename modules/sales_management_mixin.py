@@ -371,11 +371,14 @@ class SalesManagementMixin:
             return row
 
     def handle_sales_order_registration_api(self, environ, method, start_response):
+        perf_ctx = self._perf_begin('sales_order_registration_api', environ, {'entry_method': method})
         try:
             if not self.__class__._schema_ready_cache.get('sales_order_registration'):
                 self._ensure_sales_order_registration_tables()
+            self._perf_mark(perf_ctx, 'ensure_sales_order_registration_tables')
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
             action = (query_params.get('action', [''])[0] or '').strip().lower()
+            self._perf_mark(perf_ctx, f'parse_query_action:{action or "none"}')
 
             if method == 'GET' and action == 'options':
                 scope = (query_params.get('scope', ['all'])[0] or 'all').strip().lower()
@@ -408,6 +411,7 @@ class SalesManagementMixin:
                                     payload['shipping_plans'] = []
                     return payload
                 payload = self._get_cached_template_options(f'sales_order_registration_options_{scope}_{limit}', _load_options_payload, ttl_seconds=1800)
+                self._perf_mark(perf_ctx, 'get_options_payload')
                 return self.send_json(payload, start_response)
 
             if method == 'GET' and action == 'summaries':
@@ -422,6 +426,7 @@ class SalesManagementMixin:
                     return self.send_json({'status': 'success', 'items': []}, start_response)
 
                 with self._get_db_connection() as conn:
+                    self._perf_mark(perf_ctx, 'db_connected_for_summaries')
                     with conn.cursor() as cur:
                         placeholders = ','.join(['%s'] * len(ids))
                         cur.execute(
@@ -456,6 +461,7 @@ class SalesManagementMixin:
                             tuple(ids)
                         )
                         logistics_rows = cur.fetchall() or []
+                    self._perf_mark(perf_ctx, 'load_summaries_rows')
 
                 out = {int(i): {'id': int(i), 'platform_summary': [], 'shipment_summary': [], 'logistics_summary': []} for i in ids}
                 for row in platform_rows:
@@ -484,8 +490,10 @@ class SalesManagementMixin:
                 offset = (page - 1) * page_size
 
                 with self._get_db_connection() as conn:
+                    self._perf_mark(perf_ctx, 'db_connected_for_get')
                     if item_id:
                         item = self._registration_fetch_detail(conn, item_id)
+                        self._perf_mark(perf_ctx, 'fetch_detail')
                         return self.send_json({'status': 'success', 'item': item}, start_response)
 
                     with conn.cursor() as cur:
@@ -502,6 +510,7 @@ class SalesManagementMixin:
                             tuple(params)
                         )
                         total = int((cur.fetchone() or {}).get('total') or 0)
+                        self._perf_mark(perf_ctx, 'list_count_query')
 
                         if include_summaries:
                             cur.execute(
@@ -546,6 +555,7 @@ class SalesManagementMixin:
                                 tuple(params + [page_size, offset])
                             )
                         rows = cur.fetchall() or []
+                        self._perf_mark(perf_ctx, 'list_rows_query')
 
                 for row in rows:
                     if include_summaries:
@@ -562,6 +572,7 @@ class SalesManagementMixin:
                         row['platform_summary'] = []
                         row['shipment_summary'] = []
                         row['logistics_summary'] = []
+                self._perf_mark(perf_ctx, 'list_rows_transform')
 
                 return self.send_json(
                     {'status': 'success', 'items': rows, 'page': page, 'page_size': page_size, 'total': total},
@@ -603,9 +614,11 @@ class SalesManagementMixin:
                 logistics_items = self._normalize_registration_logistics_items(data.get('logistics_items'))
 
                 with self._get_db_connection() as conn:
+                    self._perf_mark(perf_ctx, 'db_connected_for_write')
                     self._registration_fill_item_ids(conn, platform_items, shipment_items)
                     if not shipment_items:
                         shipment_items = self._resolve_registration_auto_shipments(conn, platform_items)
+                    self._perf_mark(perf_ctx, 'prepare_write_payload')
 
                     with conn.cursor() as cur:
                         if method == 'POST':
@@ -674,6 +687,7 @@ class SalesManagementMixin:
                             )
 
                     self._registration_save_children(conn, item_id, platform_items, shipment_items, logistics_items)
+                    self._perf_mark(perf_ctx, 'write_registration_and_children')
 
                 return self.send_json({'status': 'success', 'id': item_id}, start_response)
 
@@ -684,6 +698,7 @@ class SalesManagementMixin:
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute("DELETE FROM sales_order_registrations WHERE id=%s", (item_id,))
+                self._perf_mark(perf_ctx, 'delete_registration')
                 return self.send_json({'status': 'success'}, start_response)
 
             return self.send_error(405, 'Method not allowed', start_response)
@@ -691,6 +706,8 @@ class SalesManagementMixin:
             return self.send_json({'status': 'error', 'message': str(ve)}, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        finally:
+            self._perf_end(perf_ctx)
 
     def handle_sales_order_registration_template_api(self, environ, method, start_response):
         try:

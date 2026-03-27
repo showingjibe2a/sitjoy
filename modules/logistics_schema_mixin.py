@@ -1,11 +1,45 @@
 class LogisticsSchemaMixin:
     def _ensure_logistics_tables(self):
+        perf_ctx = self._perf_begin('ensure_logistics_tables_internal')
+        marker_key = 'logistics_v1'
+        required_tables = [
+            'logistics_factories',
+            'logistics_forwarders',
+            'logistics_suppliers',
+            'logistics_destination_regions',
+            'logistics_overseas_warehouses',
+            'logistics_overseas_inventory',
+            'logistics_in_transit',
+            'logistics_in_transit_items',
+        ]
         if self._logistics_ready:
             return
+        if self.__class__._schema_ready_cache.get('logistics'):
+            self._logistics_ready = True
+            return
+        try:
+            if self._has_required_tables(required_tables):
+                self._logistics_ready = True
+                self.__class__._schema_ready_cache['logistics'] = True
+                self._set_schema_marker_ready(marker_key)
+                return
+        except Exception:
+            pass
+        if self._is_schema_marker_ready(marker_key):
+            try:
+                if self._has_required_tables(required_tables):
+                    self._logistics_ready = True
+                    self.__class__._schema_ready_cache['logistics'] = True
+                    self._set_schema_marker_ready(marker_key)
+                    return
+            except Exception:
+                pass
         with self._schema_ensure_lock:
             if self._logistics_ready:
                 return
+        self._perf_mark(perf_ctx, 'precheck_done')
         self._ensure_order_product_tables()
+        self._perf_mark(perf_ctx, 'dependent_ensures_done')
         create_factory_sql = """
         CREATE TABLE IF NOT EXISTS logistics_factories (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -155,6 +189,7 @@ class LogisticsSchemaMixin:
                 cur.execute(create_inventory_sql)
                 cur.execute(create_transit_sql)
                 cur.execute(create_transit_items_sql)
+                self._perf_mark(perf_ctx, 'create_tables_done')
                 cur.execute("SHOW COLUMNS FROM logistics_overseas_warehouses")
                 warehouse_cols = {str((x or {}).get('Field') or '') for x in (cur.fetchall() or [])}
                 if 'is_enabled' not in warehouse_cols:
@@ -227,6 +262,9 @@ class LogisticsSchemaMixin:
                     cur.execute("ALTER TABLE logistics_in_transit_items ADD COLUMN listed_qty INT NOT NULL DEFAULT 0 AFTER shipped_qty")
             self._logistics_ready = True
             self.__class__._schema_ready_cache['logistics'] = True
+            self._set_schema_marker_ready(marker_key)
+            self._perf_mark(perf_ctx, 'ensure_complete')
+            self._perf_end(perf_ctx, force=True)
 
     def _ensure_factory_inventory_tables(self):
         if self._factory_inventory_ready:

@@ -109,13 +109,16 @@ class LogisticsInTransitMixin:
                 cur.execute("UPDATE logistics_in_transit SET qty_consistent=%s WHERE id=%s", (qty_consistent, transit_id))
 
     def handle_logistics_in_transit_api(self, environ, method, start_response):
+        perf_ctx = self._perf_begin('logistics_in_transit_api', environ, {'entry_method': method})
         try:
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
             action = (query_params.get('action', [''])[0] or '').strip().lower()
+            self._perf_mark(perf_ctx, f'parse_query_action:{action or "none"}')
 
             if not (method == 'GET' and action == 'options'):
                 if not self.__class__._schema_ready_cache.get('logistics'):
                     self._ensure_logistics_tables()
+                self._perf_mark(perf_ctx, 'ensure_logistics_tables')
 
             def _to_bool_flag(value):
                 return 1 if str(value or '').strip().lower() in ('1', 'true', 'yes', 'on') else 0
@@ -137,6 +140,7 @@ class LogisticsInTransitMixin:
                     option_limit = max(100, min(self._parse_int(query_params.get('order_product_limit', ['600'])[0]) or 600, 1200))
                     def _fetch_options_payload():
                         with self._get_db_connection() as conn:
+                            self._perf_mark(perf_ctx, 'db_connected_for_options')
                             with conn.cursor() as cur:
                                 cur.execute("SELECT id, factory_name FROM logistics_factories ORDER BY factory_name ASC")
                                 factories = cur.fetchall() or []
@@ -158,12 +162,14 @@ class LogisticsInTransitMixin:
                     try:
                         cache_key = f'logistics_in_transit_options_{scope}_{option_limit}'
                         cached = self._get_cached_template_options(cache_key, _fetch_options_payload, ttl_seconds=1800)
+                        self._perf_mark(perf_ctx, 'get_options_payload')
                         return self.send_json(cached, start_response)
                     except Exception:
                         if not self.__class__._schema_ready_cache.get('logistics'):
                             self._ensure_logistics_tables()
                         cache_key = f'logistics_in_transit_options_{scope}_{option_limit}'
                         cached = self._get_cached_template_options(cache_key, _fetch_options_payload, ttl_seconds=1800)
+                        self._perf_mark(perf_ctx, 'get_options_payload_retry')
                         return self.send_json(cached, start_response)
 
                 item_id = self._parse_int(query_params.get('id', [''])[0])
@@ -175,6 +181,7 @@ class LogisticsInTransitMixin:
                 offset = (page - 1) * page_size
 
                 with self._get_db_connection() as conn:
+                    self._perf_mark(perf_ctx, 'db_connected_for_get')
                     with conn.cursor() as cur:
                         def _fetch_name_maps_payload():
                             cur.execute("SELECT id, factory_name FROM logistics_factories")
@@ -242,10 +249,12 @@ class LogisticsInTransitMixin:
                             cur.execute(count_sql, params)
                             total_row = cur.fetchone() or {}
                             total = int(total_row.get('total') or 0)
+                            self._perf_mark(perf_ctx, 'list_count_query')
                             cur.execute(sql + where_sql + ' ORDER BY t.id DESC LIMIT %s OFFSET %s', params + [page_size, offset])
                         else:
                             cur.execute(sql + where_sql + ' ORDER BY t.id DESC', params)
                         rows = cur.fetchall() or []
+                        self._perf_mark(perf_ctx, 'list_rows_query')
 
                         if not rows:
                             if item_id:
@@ -278,6 +287,7 @@ class LogisticsInTransitMixin:
                                         'shipped_qty': irow.get('shipped_qty'),
                                         'listed_qty': irow.get('listed_qty')
                                     })
+                                self._perf_mark(perf_ctx, 'load_item_detail_rows')
 
                             for row in rows:
                                 row['items'] = item_map.get(int(row.get('id') or 0), [])
@@ -290,6 +300,7 @@ class LogisticsInTransitMixin:
                             row['factory_name'] = factory_name_map.get(fid, '') if fid else ''
                             row['forwarder_name'] = forwarder_name_map.get(fwid, '') if fwid else ''
                             row['destination_warehouse_name'] = warehouse_name_map.get(wid, '') if wid else ''
+                        self._perf_mark(perf_ctx, 'rows_transform')
 
                 if item_id:
                     return self.send_json({'status': 'success', 'item': rows[0]}, start_response)
@@ -314,6 +325,7 @@ class LogisticsInTransitMixin:
                     listed_by_order[order_product_id] = max(0, listed_qty or 0)
 
                 with self._get_db_connection() as conn:
+                    self._perf_mark(perf_ctx, 'db_connected_for_verify_qty')
                     with conn.cursor() as cur:
                         cur.execute("SELECT id FROM logistics_in_transit WHERE id=%s LIMIT 1", (item_id,))
                         existing = cur.fetchone()
@@ -342,6 +354,7 @@ class LogisticsInTransitMixin:
                         cur.execute("UPDATE logistics_in_transit SET qty_verified=1 WHERE id=%s", (item_id,))
 
                 self._refresh_transit_qty_consistent(item_id)
+                self._perf_mark(perf_ctx, 'verify_qty_write')
                 return self.send_json({'status': 'success', 'id': item_id}, start_response)
 
             if method == 'POST' and action == 'quick_status':
@@ -360,6 +373,7 @@ class LogisticsInTransitMixin:
                     return self.send_json({'status': 'error', 'message': 'Invalid field'}, start_response)
 
                 with self._get_db_connection() as conn:
+                    self._perf_mark(perf_ctx, 'db_connected_for_quick_status')
                     with conn.cursor() as cur:
                         cur.execute("SELECT id FROM logistics_in_transit WHERE id=%s LIMIT 1", (item_id,))
                         existing = cur.fetchone()
@@ -371,6 +385,7 @@ class LogisticsInTransitMixin:
                             f"UPDATE logistics_in_transit SET {field}=%s WHERE id=%s",
                             (bool_value, item_id)
                         )
+                self._perf_mark(perf_ctx, 'quick_status_write')
                 return self.send_json({'status': 'success', 'id': item_id, 'field': field, 'value': bool_value}, start_response)
 
             if method in ('POST', 'PUT'):
@@ -426,6 +441,7 @@ class LogisticsInTransitMixin:
                 payload['qty_consistent'] = self._calc_qty_consistent_from_items(normalized_items)
 
                 with self._get_db_connection() as conn:
+                    self._perf_mark(perf_ctx, 'db_connected_for_write')
                     old_bl = None
                     if method == 'PUT':
                         if not item_id:
@@ -536,6 +552,7 @@ class LogisticsInTransitMixin:
                             )
 
                         cur.execute("UPDATE logistics_in_transit SET qty_consistent=%s WHERE id=%s", (payload.get('qty_consistent', 0), item_id))
+                    self._perf_mark(perf_ctx, 'create_or_update_write')
 
                 new_bl = (payload.get('bill_of_lading_no') or '').strip()
                 if method == 'POST' and new_bl:
@@ -555,8 +572,10 @@ class LogisticsInTransitMixin:
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
                 with self._get_db_connection() as conn:
+                    self._perf_mark(perf_ctx, 'db_connected_for_delete')
                     with conn.cursor() as cur:
                         cur.execute("DELETE FROM logistics_in_transit WHERE id=%s", (item_id,))
+                self._perf_mark(perf_ctx, 'delete_transit')
                 return self.send_json({'status': 'success'}, start_response)
 
             return self.send_error(405, 'Method not allowed', start_response)
@@ -564,6 +583,8 @@ class LogisticsInTransitMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        finally:
+            self._perf_end(perf_ctx)
 
     def handle_logistics_in_transit_template_api(self, environ, method, start_response):
         """在途物流模板下载（Sheet1在途信息 + Sheet2 SKU明细）"""

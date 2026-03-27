@@ -16,6 +16,84 @@ except Exception as e:
 class CoreAppMixin:
     """应用通用能力：缓存、响应、静态文件、DB连接、基础解析。"""
 
+    def _perf_enabled(self):
+        val = str(os.environ.get('SITJOY_PERF_DEBUG', '1') or '1').strip().lower()
+        return val not in ('0', 'false', 'no', 'off')
+
+    def _perf_slow_ms(self):
+        try:
+            return float(os.environ.get('SITJOY_PERF_SLOW_MS', '800') or 800)
+        except Exception:
+            return 800.0
+
+    def _perf_begin(self, name, environ=None, meta=None):
+        start = time.perf_counter()
+        ctx = {
+            'name': str(name or 'unknown'),
+            'start': start,
+            'last': start,
+            'marks': [],
+            'meta': dict(meta or {}),
+        }
+        if isinstance(environ, dict):
+            ctx['meta'].setdefault('method', str(environ.get('REQUEST_METHOD') or ''))
+            ctx['meta'].setdefault('path', str(environ.get('PATH_INFO') or ''))
+            ctx['meta'].setdefault('query', str(environ.get('QUERY_STRING') or ''))
+        return ctx
+
+    def _perf_mark(self, ctx, stage):
+        if not isinstance(ctx, dict):
+            return
+        now = time.perf_counter()
+        total_ms = (now - float(ctx.get('start') or now)) * 1000.0
+        delta_ms = (now - float(ctx.get('last') or now)) * 1000.0
+        ctx['last'] = now
+        marks = ctx.setdefault('marks', [])
+        marks.append({
+            'stage': str(stage or ''),
+            'total_ms': round(total_ms, 2),
+            'delta_ms': round(delta_ms, 2)
+        })
+
+    def _perf_end(self, ctx, force=False):
+        if not isinstance(ctx, dict):
+            return
+        now = time.perf_counter()
+        start = float(ctx.get('start') or now)
+        total_ms = round((now - start) * 1000.0, 2)
+        threshold = self._perf_slow_ms()
+        if (not force) and ((not self._perf_enabled()) or total_ms < threshold):
+            return
+
+        meta = ctx.get('meta') or {}
+        meta_parts = []
+        for key in ('method', 'path', 'query'):
+            value = str(meta.get(key) or '').strip()
+            if value:
+                meta_parts.append(f"{key}={value}")
+        meta_text = ' '.join(meta_parts)
+
+        marks = ctx.get('marks') or []
+        if marks:
+            mark_text = ' | '.join([
+                f"{m.get('stage')}:+{m.get('delta_ms')}ms(total {m.get('total_ms')}ms)"
+                for m in marks
+            ])
+        else:
+            mark_text = 'no-stage-marks'
+
+        log_line = f"[PERF] {ctx.get('name')} total={total_ms}ms {meta_text} stages={mark_text}"
+        print(log_line)
+
+        try:
+            cache_dir = os.path.join(self.base_path, '__pycache__')
+            os.makedirs(cache_dir, exist_ok=True)
+            perf_log_file = os.path.join(cache_dir, 'perf_trace.log')
+            with open(perf_log_file, 'a', encoding='utf-8') as f:
+                f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {log_line}\n")
+        except Exception:
+            pass
+
     def _get_cached_template_options(self, cache_key, loader, ttl_seconds=120):
         try:
             now = time.time()
@@ -47,6 +125,57 @@ class CoreAppMixin:
             return data
         except Exception:
             return loader()
+
+    def _read_schema_markers(self):
+        try:
+            cache_dir = os.path.join(self.base_path, '__pycache__')
+            os.makedirs(cache_dir, exist_ok=True)
+            marker_file = os.path.join(cache_dir, 'schema_ready_markers.json')
+            if not os.path.exists(marker_file):
+                return {}
+            with open(marker_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    def _write_schema_markers(self, data):
+        try:
+            cache_dir = os.path.join(self.base_path, '__pycache__')
+            os.makedirs(cache_dir, exist_ok=True)
+            marker_file = os.path.join(cache_dir, 'schema_ready_markers.json')
+            with open(marker_file, 'w', encoding='utf-8') as f:
+                json.dump(data if isinstance(data, dict) else {}, f, ensure_ascii=False)
+        except Exception:
+            pass
+
+    def _is_schema_marker_ready(self, key):
+        markers = self._read_schema_markers()
+        return bool(markers.get(str(key or '')))
+
+    def _set_schema_marker_ready(self, key):
+        k = str(key or '').strip()
+        if not k:
+            return
+        markers = self._read_schema_markers()
+        markers[k] = {'ready': True, 'ts': int(time.time())}
+        self._write_schema_markers(markers)
+
+    def _has_required_tables(self, table_names):
+        names = [str(x).strip() for x in (table_names or []) if str(x).strip()]
+        if not names:
+            return False
+        placeholders = ','.join(['%s'] * len(names))
+        sql = (
+            "SELECT COUNT(*) AS cnt FROM information_schema.TABLES "
+            "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN (" + placeholders + ")"
+        )
+        with self._get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, tuple(names))
+                row = cur.fetchone() or {}
+                cnt = int(row.get('cnt') or 0)
+        return cnt == len(names)
 
     def send_json(self, data, start_response, status='200 OK'):
         payload = json.dumps(data, ensure_ascii=False, default=str).encode('utf-8')

@@ -337,14 +337,44 @@ class SalesSchemaMixin:
         self._sales_product_ready = True
 
     def _ensure_sales_order_registration_tables(self):
+        perf_ctx = self._perf_begin('ensure_sales_order_registration_tables_internal')
+        marker_key = 'sales_order_registration_v1'
+        required_tables = [
+            'sales_order_registrations',
+            'sales_order_registration_platform_items',
+            'sales_order_registration_shipment_items',
+            'sales_order_registration_logistics_items',
+        ]
         if self._sales_order_registration_ready:
             return
+        if self.__class__._schema_ready_cache.get('sales_order_registration'):
+            self._sales_order_registration_ready = True
+            return
+        try:
+            if self._has_required_tables(required_tables):
+                self._sales_order_registration_ready = True
+                self.__class__._schema_ready_cache['sales_order_registration'] = True
+                self._set_schema_marker_ready(marker_key)
+                return
+        except Exception:
+            pass
+        if self._is_schema_marker_ready(marker_key):
+            try:
+                if self._has_required_tables(required_tables):
+                    self._sales_order_registration_ready = True
+                    self.__class__._schema_ready_cache['sales_order_registration'] = True
+                    self._set_schema_marker_ready(marker_key)
+                    return
+            except Exception:
+                pass
         with self._schema_ensure_lock:
             if self._sales_order_registration_ready:
                 return
+        self._perf_mark(perf_ctx, 'precheck_done')
         self._ensure_sales_product_tables()
         self._ensure_order_product_tables()
         self._ensure_shops_table()
+        self._perf_mark(perf_ctx, 'dependent_ensures_done')
 
         create_orders = """
         CREATE TABLE IF NOT EXISTS sales_order_registrations (
@@ -437,6 +467,7 @@ class SalesSchemaMixin:
                 cur.execute(create_platform_items)
                 cur.execute(create_shipment_items)
                 cur.execute(create_logistics_items)
+                self._perf_mark(perf_ctx, 'create_tables_done')
                 try:
                     cur.execute("ALTER TABLE sales_order_registrations ADD INDEX idx_sor_shop_order (shop_id, order_no)")
                 except Exception:
@@ -484,3 +515,6 @@ class SalesSchemaMixin:
                         pass
             self._sales_order_registration_ready = True
             self.__class__._schema_ready_cache['sales_order_registration'] = True
+            self._set_schema_marker_ready(marker_key)
+            self._perf_mark(perf_ctx, 'ensure_complete')
+            self._perf_end(perf_ctx, force=True)
