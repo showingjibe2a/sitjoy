@@ -374,7 +374,9 @@ class LogisticsInTransitMixin:
                     'declaration_docs_provided',
                     'clearance_docs_provided',
                     'inventory_registered',
-                    'qty_verified'
+                    'qty_verified',
+                    'qty_consistent',
+                    'confirmed_boxed_qty'
                 }
                 if field not in allowed_fields:
                     return self.send_json({'status': 'error', 'message': 'Invalid field'}, start_response)
@@ -382,7 +384,7 @@ class LogisticsInTransitMixin:
                 with self._get_db_connection() as conn:
                     self._perf_mark(perf_ctx, 'db_connected_for_quick_status')
                     with conn.cursor() as cur:
-                        cur.execute("SELECT id, inventory_registered, qty_verified FROM logistics_in_transit WHERE id=%s LIMIT 1", (item_id,))
+                        cur.execute("SELECT id, factory_id, inventory_registered, qty_verified, confirmed_boxed_qty FROM logistics_in_transit WHERE id=%s LIMIT 1", (item_id,))
                         existing = cur.fetchone()
                         if not existing:
                             return self.send_json({'status': 'error', 'message': '在途物流记录不存在'}, start_response)
@@ -392,10 +394,35 @@ class LogisticsInTransitMixin:
                             return self.send_json({'status': 'error', 'message': '需要先登记上架才能确认已核对上架数量'}, start_response)
                         if field == 'inventory_registered' and bool_value == 0 and self._parse_int(existing.get('qty_verified')):
                             return self.send_json({'status': 'error', 'message': '已核对上架数量为是时，不能将已登记上架改为否'}, start_response)
+                        prev_confirmed = 1 if self._parse_int(existing.get('confirmed_boxed_qty')) else 0
+
                         cur.execute(
                             f"UPDATE logistics_in_transit SET {field}=%s WHERE id=%s",
                             (bool_value, item_id)
                         )
+
+                        should_deduct = 1 if _to_bool_flag(data.get('apply_deduct_factory_stock')) else 0
+                        if field == 'confirmed_boxed_qty' and bool_value == 1 and prev_confirmed == 0 and should_deduct == 1:
+                            cur.execute(
+                                "SELECT order_product_id, shipped_qty FROM logistics_in_transit_items WHERE transit_id=%s",
+                                (item_id,)
+                            )
+                            item_rows = cur.fetchall() or []
+                            factory_id = self._parse_int(existing.get('factory_id'))
+                            if factory_id:
+                                for item_row in item_rows:
+                                    op_id = self._parse_int((item_row or {}).get('order_product_id'))
+                                    shipped_qty = self._parse_int((item_row or {}).get('shipped_qty')) or 0
+                                    if not op_id or shipped_qty <= 0:
+                                        continue
+                                    cur.execute(
+                                        """
+                                        INSERT INTO factory_stock_inventory (order_product_id, factory_id, quantity)
+                                        VALUES (%s, %s, %s)
+                                        ON DUPLICATE KEY UPDATE quantity=quantity+VALUES(quantity)
+                                        """,
+                                        (op_id, factory_id, -shipped_qty)
+                                    )
                 self._perf_mark(perf_ctx, 'quick_status_write')
                 return self.send_json({'status': 'success', 'id': item_id, 'field': field, 'value': bool_value}, start_response)
 

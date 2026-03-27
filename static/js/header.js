@@ -171,9 +171,6 @@
         if(!state || state.trigger.disabled) return;
         closeAllDropdowns();
         renderDropdownOptions(select, state);
-        if(state.menu.parentElement !== document.body){
-            document.body.appendChild(state.menu);
-        }
         state.menu.classList.add('universal-select-floating-menu');
         state.menu.style.display = 'block';
         state.wrapper.classList.add('expanded');
