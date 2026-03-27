@@ -2,7 +2,7 @@
 import io
 import os
 import re
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from urllib.parse import parse_qs
 
 try:
@@ -344,6 +344,9 @@ class LogisticsWarehouseMixin:
                 ])
 
             max_row = 400
+            for row in range(3, max_row + 1):
+                ws[f'D{row}'].number_format = 'yyyy-mm-dd'
+                ws[f'F{row}'].number_format = 'yyyy-mm-dd'
             if factories:
                 dv_factory = DataValidation(type='list', formula1=f"='_options'!$A$2:$A${len(factories) + 1}", allow_blank=False)
                 ws.add_data_validation(dv_factory)
@@ -606,10 +609,30 @@ class LogisticsWarehouseMixin:
                 return row[idx]
 
             def parse_date(value):
+                if value is None:
+                    return None
+                if isinstance(value, datetime):
+                    return value.strftime('%Y-%m-%d')
+                if isinstance(value, date):
+                    return value.strftime('%Y-%m-%d')
+                if isinstance(value, (int, float)):
+                    try:
+                        serial = float(value)
+                        if 1 <= serial <= 60000:
+                            return (datetime(1899, 12, 30) + timedelta(days=serial)).strftime('%Y-%m-%d')
+                    except Exception:
+                        pass
                 text = str(value or '').strip()
                 if not text:
                     return None
-                for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%Y.%m.%d'):
+                text = text.replace('年', '-').replace('月', '-').replace('日', '').replace('/', '-').replace('.', '-')
+                month_day_match = re.match(r'^(\d{1,2})-(\d{1,2})$', text)
+                if month_day_match:
+                    try:
+                        return datetime(datetime.now().year, int(month_day_match.group(1)), int(month_day_match.group(2))).strftime('%Y-%m-%d')
+                    except Exception:
+                        pass
+                for fmt in ('%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M'):
                     try:
                         return datetime.strptime(text, fmt).strftime('%Y-%m-%d')
                     except Exception:

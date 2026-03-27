@@ -5,7 +5,7 @@ import json
 import mimetypes
 import os
 import re
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from urllib.parse import parse_qs, quote
 
 try:
@@ -882,6 +882,10 @@ class LogisticsInTransitMixin:
                 if col in (1, 10):
                     cell.font = Font(color='7B8088', italic=True)
 
+            date_cols_info = {2, 6, 13, 14, 19, 20, 21}
+            for col in date_cols_info:
+                ws_info.cell(row=3, column=col).number_format = 'yyyy-mm-dd'
+
             sample_item_row = ['示例箱号（或示例-TEMP-001）', '示例SKU', 10, 10]
             for col, val in enumerate(sample_item_row, start=1):
                 cell = ws_items.cell(row=3, column=col, value=val)
@@ -894,6 +898,10 @@ class LogisticsInTransitMixin:
             max_validation_row = 400
             bool_validation = DataValidation(type='list', formula1='"否,是"', allow_blank=True)
             ws_info.add_data_validation(bool_validation)
+            for col in date_cols_info:
+                letter = _col_letter(col)
+                for row in range(3, max_validation_row + 1):
+                    ws_info[f'{letter}{row}'].number_format = 'yyyy-mm-dd'
             for col in (15, 16, 17, 23, 24):
                 letter = _col_letter(col)
                 for row in range(4, max_validation_row + 1):
@@ -960,7 +968,9 @@ class LogisticsInTransitMixin:
                     '是' if str(row.get('qty_verified') or '0') in ('1', 'True', 'true') else '否',
                 ]
                 for col, val in enumerate(values, start=1):
-                    ws_info.cell(row=out_row, column=col, value=val)
+                    cell = ws_info.cell(row=out_row, column=col, value=val)
+                    if col in date_cols_info:
+                        cell.number_format = 'yyyy-mm-dd'
                 out_row += 1
 
             item_row = 4
@@ -1024,10 +1034,27 @@ class LogisticsInTransitMixin:
                     return None
                 if isinstance(v, datetime):
                     return v.strftime('%Y-%m-%d')
+                if isinstance(v, date):
+                    return v.strftime('%Y-%m-%d')
+                if isinstance(v, (int, float)):
+                    try:
+                        serial = float(v)
+                        if 1 <= serial <= 60000:
+                            return (datetime(1899, 12, 30) + timedelta(days=serial)).strftime('%Y-%m-%d')
+                    except Exception:
+                        pass
                 text = str(v).strip()
                 if not text:
                     return None
-                for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%Y-%m-%d %H:%M:%S'):
+                text = text.replace('年', '-').replace('月', '-').replace('日', '').replace('/', '-').replace('.', '-')
+                text = re.sub(r'\s+', ' ', text)
+                month_day_match = re.match(r'^(\d{1,2})-(\d{1,2})$', text)
+                if month_day_match:
+                    try:
+                        return datetime(datetime.now().year, int(month_day_match.group(1)), int(month_day_match.group(2))).strftime('%Y-%m-%d')
+                    except Exception:
+                        pass
+                for fmt in ('%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M'):
                     try:
                         return datetime.strptime(text, fmt).strftime('%Y-%m-%d')
                     except Exception:
