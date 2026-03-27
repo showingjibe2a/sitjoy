@@ -218,6 +218,7 @@ class LogisticsWarehouseMixin:
                 notes = (data.get('notes') or '').strip() or None
                 expected_date = _parse_date_text(data.get('expected_completion_date'))
                 is_completed = _parse_yes_no(data.get('is_completed'))
+                add_to_factory_stock = _parse_yes_no(data.get('add_to_factory_stock'))
                 actual_completion_date = _parse_date_text(data.get('actual_completion_date'))
                 if is_completed and not actual_completion_date:
                     actual_completion_date = datetime.now().strftime('%Y-%m-%d')
@@ -228,9 +229,47 @@ class LogisticsWarehouseMixin:
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
+                            """
+                            SELECT order_product_id, factory_id, quantity, is_completed
+                            FROM factory_wip_inventory
+                            WHERE id=%s
+                            """,
+                            (item_id,)
+                        )
+                        existing = cur.fetchone() or {}
+                        if not existing:
+                            return self.send_json({'status': 'error', 'message': '记录不存在'}, start_response)
+
+                        previous_completed = int(existing.get('is_completed') or 0)
+                        if add_to_factory_stock:
+                            if not is_completed:
+                                return self.send_json({'status': 'error', 'message': '仅完工后可新增到工厂在库'}, start_response)
+                            if previous_completed == 1:
+                                return self.send_json({'status': 'error', 'message': '该记录已完工，已阻止重复新增到工厂在库'}, start_response)
+
+                        cur.execute(
                             "UPDATE factory_wip_inventory SET quantity=%s, expected_completion_date=%s, is_completed=%s, actual_completion_date=%s, notes=%s WHERE id=%s",
                             (quantity, expected_date, is_completed, actual_completion_date, notes, item_id)
                         )
+
+                        if add_to_factory_stock:
+                            transfer_qty = max(0, quantity)
+                            if transfer_qty <= 0:
+                                return self.send_json({'status': 'error', 'message': '数量为0，无法新增到工厂在库'}, start_response)
+                            order_product_id = self._parse_int(existing.get('order_product_id'))
+                            factory_id = self._parse_int(existing.get('factory_id'))
+                            if not order_product_id or not factory_id:
+                                return self.send_json({'status': 'error', 'message': '缺少下单SKU或工厂，无法新增到工厂在库'}, start_response)
+                            cur.execute(
+                                """
+                                INSERT INTO factory_stock_inventory (order_product_id, factory_id, quantity, notes)
+                                VALUES (%s, %s, %s, %s)
+                                ON DUPLICATE KEY UPDATE
+                                  quantity = quantity + VALUES(quantity),
+                                  notes = COALESCE(VALUES(notes), notes)
+                                """,
+                                (order_product_id, factory_id, transfer_qty, notes)
+                            )
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':

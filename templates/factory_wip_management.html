@@ -111,6 +111,7 @@
     <div class="pm-modal-actions">
       <button type="button" class="btn-secondary" onclick="closeCompletionConfirmModal()">取消</button>
       <button type="button" class="btn-primary" onclick="confirmCompletionUpdate()">确认</button>
+      <button type="button" class="btn-accent" onclick="confirmCompletionAndAddToFactoryStock()">确认并新增到工厂在库</button>
     </div>
   </div>
 </div>
@@ -305,7 +306,7 @@ function closeCompletionConfirmModal(){
   pendingCompletionUpdateId = null;
 }
 
-function quickUpdateCompletion(itemId, isCompleted, actualCompletionDate){
+function quickUpdateCompletion(itemId, isCompleted, actualCompletionDate, addToFactoryStock){
   const row = getRowById(itemId);
   if(!row) return;
   const payload = {
@@ -314,7 +315,8 @@ function quickUpdateCompletion(itemId, isCompleted, actualCompletionDate){
     expected_completion_date: formatDate(row.expected_completion_date),
     notes: row.notes || '',
     is_completed: isCompleted ? 1 : 0,
-    actual_completion_date: isCompleted ? (actualCompletionDate || todayStr()) : ''
+    actual_completion_date: isCompleted ? (actualCompletionDate || todayStr()) : '',
+    add_to_factory_stock: addToFactoryStock ? 1 : 0
   };
   fetch('/api/factory-wip', {
     method: 'PUT',
@@ -340,7 +342,14 @@ function quickUpdateCompletion(itemId, isCompleted, actualCompletionDate){
 function confirmCompletionUpdate(){
   if(!pendingCompletionUpdateId) return;
   const dateVal = (document.getElementById('completionConfirmDate').value || '').trim() || todayStr();
-  quickUpdateCompletion(pendingCompletionUpdateId, 1, dateVal);
+  quickUpdateCompletion(pendingCompletionUpdateId, 1, dateVal, false);
+  closeCompletionConfirmModal();
+}
+
+function confirmCompletionAndAddToFactoryStock(){
+  if(!pendingCompletionUpdateId) return;
+  const dateVal = (document.getElementById('completionConfirmDate').value || '').trim() || todayStr();
+  quickUpdateCompletion(pendingCompletionUpdateId, 1, dateVal, true);
   closeCompletionConfirmModal();
 }
 
@@ -458,7 +467,7 @@ function loadList(){
             if(targetValue === '1'){
               openCompletionConfirmModal(itemId, formatDate(row.actual_completion_date) || todayStr());
             } else {
-              quickUpdateCompletion(itemId, 0, '');
+              quickUpdateCompletion(itemId, 0, '', false);
             }
           });
         });

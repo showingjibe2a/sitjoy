@@ -148,6 +148,7 @@ class LogisticsSchemaMixin:
             destination_warehouse_id INT UNSIGNED NULL,
             confirmed_boxed_qty TINYINT(1) NOT NULL DEFAULT 0,
             inbound_order_no VARCHAR(128) NULL,
+            remark TEXT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             UNIQUE KEY uniq_transit_box_no (logistics_box_no),
@@ -295,6 +296,8 @@ class LogisticsSchemaMixin:
                     cur.execute("ALTER TABLE logistics_in_transit ADD COLUMN destination_region_id INT UNSIGNED NULL AFTER port_of_destination")
                 if 'confirmed_boxed_qty' not in transit_cols:
                     cur.execute("ALTER TABLE logistics_in_transit ADD COLUMN confirmed_boxed_qty TINYINT(1) NOT NULL DEFAULT 0 AFTER destination_warehouse_id")
+                if 'remark' not in transit_cols:
+                    cur.execute("ALTER TABLE logistics_in_transit ADD COLUMN remark TEXT NULL AFTER inbound_order_no")
                 try:
                     cur.execute("ALTER TABLE logistics_in_transit ADD INDEX idx_transit_destination_region (destination_region_id)")
                 except Exception:

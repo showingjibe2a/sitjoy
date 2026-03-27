@@ -206,6 +206,7 @@ class LogisticsInTransitMixin:
                                    t.eta_initial, t.eta_previous, t.eta_latest,
                                    t.arrival_port_date, t.expected_warehouse_date, t.expected_listed_date_initial, t.expected_listed_date_latest, t.listed_date,
                                    t.shipping_company, t.vessel_voyage, t.bill_of_lading_no,
+                                          t.remark,
                                 t.declaration_docs_provided, t.inventory_registered, t.clearance_docs_provided, t.qty_verified, t.qty_consistent,
                                               t.port_of_loading, t.port_of_destination, t.destination_region_id, t.destination_warehouse_id,
                                               t.confirmed_boxed_qty, t.inbound_order_no,
@@ -375,7 +376,6 @@ class LogisticsInTransitMixin:
                     'clearance_docs_provided',
                     'inventory_registered',
                     'qty_verified',
-                    'qty_consistent',
                     'confirmed_boxed_qty'
                 }
                 if field not in allowed_fields:
@@ -396,10 +396,22 @@ class LogisticsInTransitMixin:
                             return self.send_json({'status': 'error', 'message': '已核对上架数量为是时，不能将已登记上架改为否'}, start_response)
                         prev_confirmed = 1 if self._parse_int(existing.get('confirmed_boxed_qty')) else 0
 
-                        cur.execute(
-                            f"UPDATE logistics_in_transit SET {field}=%s WHERE id=%s",
-                            (bool_value, item_id)
-                        )
+                        if field == 'inventory_registered':
+                            if bool_value == 1:
+                                cur.execute(
+                                    "UPDATE logistics_in_transit SET inventory_registered=1, listed_date=COALESCE(listed_date, CURDATE()) WHERE id=%s",
+                                    (item_id,)
+                                )
+                            else:
+                                cur.execute(
+                                    "UPDATE logistics_in_transit SET inventory_registered=0, listed_date=NULL WHERE id=%s",
+                                    (item_id,)
+                                )
+                        else:
+                            cur.execute(
+                                f"UPDATE logistics_in_transit SET {field}=%s WHERE id=%s",
+                                (bool_value, item_id)
+                            )
 
                         should_deduct = 1 if _to_bool_flag(data.get('apply_deduct_factory_stock')) else 0
                         if field == 'confirmed_boxed_qty' and bool_value == 1 and prev_confirmed == 0 and should_deduct == 1:
@@ -424,6 +436,7 @@ class LogisticsInTransitMixin:
                                         (op_id, factory_id, -shipped_qty)
                                     )
                 self._perf_mark(perf_ctx, 'quick_status_write')
+                self._refresh_transit_qty_consistent(item_id)
                 return self.send_json({'status': 'success', 'id': item_id, 'field': field, 'value': bool_value}, start_response)
 
             if method in ('POST', 'PUT'):
@@ -449,6 +462,7 @@ class LogisticsInTransitMixin:
                     'shipping_company': (data.get('shipping_company') or '').strip() or None,
                     'vessel_voyage': (data.get('vessel_voyage') or '').strip() or None,
                     'bill_of_lading_no': (data.get('bill_of_lading_no') or '').strip() or None,
+                    'remark': (data.get('remark') or '').strip() or None,
                     'declaration_docs_provided': _to_bool_flag(data.get('declaration_docs_provided')),
                     'inventory_registered': _to_bool_flag(data.get('inventory_registered')),
                     'clearance_docs_provided': _to_bool_flag(data.get('clearance_docs_provided')),
@@ -461,6 +475,11 @@ class LogisticsInTransitMixin:
                     'confirmed_boxed_qty': _to_bool_flag(data.get('confirmed_boxed_qty')),
                     'inbound_order_no': (data.get('inbound_order_no') or '').strip() or None
                 }
+
+                if payload.get('inventory_registered'):
+                    payload['listed_date'] = payload.get('listed_date') or datetime.now().strftime('%Y-%m-%d')
+                else:
+                    payload['listed_date'] = None
 
                 factory_ship_latest = _normalize_date(data.get('factory_ship_date_latest'))
                 etd_latest = _normalize_date(data.get('etd_latest'))
@@ -543,7 +562,7 @@ class LogisticsInTransitMixin:
                                     shipping_company, vessel_voyage, bill_of_lading_no,
                                     declaration_docs_provided, inventory_registered, clearance_docs_provided, qty_verified, qty_consistent,
                                     port_of_loading, port_of_destination, destination_region_id, destination_warehouse_id,
-                                    confirmed_boxed_qty, inbound_order_no
+                                    confirmed_boxed_qty, inbound_order_no, remark
                                 ) VALUES (
                                     %(factory_id)s, %(factory_ship_date_initial)s, %(factory_ship_date_previous)s, %(factory_ship_date_latest)s,
                                     %(forwarder_id)s, %(logistics_box_no)s,
@@ -553,7 +572,7 @@ class LogisticsInTransitMixin:
                                     %(shipping_company)s, %(vessel_voyage)s, %(bill_of_lading_no)s,
                                     %(declaration_docs_provided)s, %(inventory_registered)s, %(clearance_docs_provided)s, %(qty_verified)s, %(qty_consistent)s,
                                     %(port_of_loading)s, %(port_of_destination)s, %(destination_region_id)s, %(destination_warehouse_id)s,
-                                    %(confirmed_boxed_qty)s, %(inbound_order_no)s
+                                    %(confirmed_boxed_qty)s, %(inbound_order_no)s, %(remark)s
                                 )
                                 """,
                                 payload
@@ -594,7 +613,8 @@ class LogisticsInTransitMixin:
                                     destination_region_id=%(destination_region_id)s,
                                     destination_warehouse_id=%(destination_warehouse_id)s,
                                     confirmed_boxed_qty=%(confirmed_boxed_qty)s,
-                                    inbound_order_no=%(inbound_order_no)s
+                                    inbound_order_no=%(inbound_order_no)s,
+                                    remark=%(remark)s
                                 WHERE id=%(id)s
                                 """,
                                 payload
