@@ -717,7 +717,7 @@ class LogisticsInTransitMixin:
                 '已确认装箱量', '箱号',
                 '到港日期', '预计送仓日期', '实际上架日期', '入库单号', '已登记上架', '已核对上架数量'
             ]
-            item_headers = ['箱号或临时索引', '下单SKU*', '发货数量*', '上架数量（仅核对页维护）']
+            item_headers = ['箱号或临时索引', '下单SKU*', '发货数量*', '上架数量（上架后才能维护）']
 
             header_font = Font(bold=True, color='2A2420')
             thin_border = Border(
@@ -871,13 +871,14 @@ class LogisticsInTransitMixin:
                 '示例工厂', '示例目的区域', '示例目的仓库', '2026-03-20',
                 '示例货代', '示例船公司', '示例船名航次', '示例提单号', '示例起运港', '示例目的港', '2026-03-18', '2026-03-26',
                 '否', '否',
-                '否', '示例箱号（可留空）',
+                '否', '示例箱号（可留空，但需填写无箱号时临时索引用于和 SKU明细sheet 关联）',
                 '2026-03-25', '2026-03-28', '2026-03-30', '示例入库单号', '否', '否'
             ]
             for col, val in enumerate(sample_info_row, start=1):
                 cell = ws_info.cell(row=3, column=col, value=val)
                 cell.border = thin_border
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                cell.fill = PatternFill(start_color='ECECEC', end_color='ECECEC', fill_type='solid')
                 if col in (1, 10):
                     cell.font = Font(color='7B8088', italic=True)
 
@@ -886,6 +887,7 @@ class LogisticsInTransitMixin:
                 cell = ws_items.cell(row=3, column=col, value=val)
                 cell.border = thin_border
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                cell.fill = PatternFill(start_color='ECECEC', end_color='ECECEC', fill_type='solid')
                 if col in (1, 2):
                     cell.font = Font(color='7B8088', italic=True)
 
@@ -972,8 +974,8 @@ class LogisticsInTransitMixin:
                 ws_items.cell(row=item_row, column=4, value=listed_qty)
                 item_row += 1
 
-            ws_info.freeze_panes = 'A3'
-            ws_items.freeze_panes = 'A3'
+            ws_info.freeze_panes = 'A4'
+            ws_items.freeze_panes = 'A4'
             return self._send_excel_workbook(wb, 'logistics_in_transit_template.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
@@ -1036,8 +1038,13 @@ class LogisticsInTransitMixin:
                 text = _cell_text(v).lower()
                 return 1 if text in ('1', 'true', 'yes', 'on', '是', 'y') else 0
 
-            header_row_info = 2 if _cell_text(ws_info.cell(row=1, column=1).value) in ('基础标识', '物流信息', '状态', '扩展信息', '工厂及发货SKU与数量', '货代及物流情况') else 1
-            header_row_item = 2 if _cell_text(ws_items.cell(row=1, column=1).value) in ('SKU明细关联', 'SKU明细') else 1
+            row1_info = [_cell_text(c.value) for c in ws_info[1]]
+            row2_info = [_cell_text(c.value) for c in ws_info[2]]
+            header_row_info = 2 if ('预计上架时间*' in row2_info or '工厂*' in row2_info) else 1
+
+            row1_item = [_cell_text(c.value) for c in ws_items[1]]
+            row2_item = [_cell_text(c.value) for c in ws_items[2]]
+            header_row_item = 2 if ('下单SKU*' in row2_item or '箱号或临时索引' in row2_item) else 1
             headers_info = [_cell_text(c.value) for c in ws_info[header_row_info]]
             headers_item = [_cell_text(c.value) for c in ws_items[header_row_item]]
             idx_info = {h: i for i, h in enumerate(headers_info)}
@@ -1069,6 +1076,7 @@ class LogisticsInTransitMixin:
                 return self.send_json({'status': 'error', 'message': 'Sheet SKU明细 缺少列: 箱号或临时索引/下单SKU*/发货数量*'}, start_response)
 
             errors = []
+            warnings = []
             info_rows = []
             seen_box = set()
 
@@ -1233,6 +1241,10 @@ class LogisticsInTransitMixin:
                     updated = 0
                     item_updated = 0
                     transit_id_by_box = {}
+                    inventory_registered_by_link = {
+                        str(r.get('link_key') or ''): int(r.get('inventory_registered') or 0)
+                        for r in info_rows
+                    }
 
                     # 批查所有 info_rows 对应的箱号，避免 N+1 问题（临时索引仅用于本次Excel内关联）
                     if info_rows:
@@ -1404,12 +1416,23 @@ class LogisticsInTransitMixin:
                                 errors.append({'row': f'SKU明细({box_no})', 'error': '找不到对应在途信息，请先在在途信息Sheet维护该箱号或临时索引'})
                                 continue
                             valid_transit_ids.append(int(transit_id))
+                            is_registered = int(inventory_registered_by_link.get(str(box_no), 0)) == 1
                             for op_id, qty_pair in sku_qty_map.items():
+                                shipped_qty = int((qty_pair or {}).get('shipped_qty') or 0)
+                                listed_qty_input = int((qty_pair or {}).get('listed_qty') or 0)
+                                final_listed_qty = listed_qty_input
+                                if not is_registered:
+                                    final_listed_qty = shipped_qty
+                                    if listed_qty_input != shipped_qty:
+                                        warnings.append({
+                                            'row': f'SKU明细({box_no})',
+                                            'warning': f'未登记上架，已忽略上架数量输入（SKU:{op_id}）并按发货数量 {shipped_qty} 处理'
+                                        })
                                 bulk_item_rows.append((
                                     int(transit_id),
                                     int(op_id),
-                                    int((qty_pair or {}).get('shipped_qty') or 0),
-                                    int((qty_pair or {}).get('listed_qty') or 0)
+                                    shipped_qty,
+                                    final_listed_qty
                                 ))
                             item_updated += 1
 
@@ -1435,7 +1458,8 @@ class LogisticsInTransitMixin:
                 'created': created,
                 'updated': updated,
                 'item_updated': item_updated,
-                'errors': errors
+                'errors': errors,
+                'warnings': warnings
             }, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)

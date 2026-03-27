@@ -302,10 +302,23 @@ class LogisticsWarehouseMixin:
             ws.title = 'factory_stock'
 
             headers = ['SKU', '工厂', '数量', '备注']
+            ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
+            title_cell = ws.cell(row=1, column=1, value='工厂在库库存导入模板')
+            title_cell.fill = PatternFill(start_color='A8B9A5', end_color='A8B9A5', fill_type='solid')
+            title_cell.font = Font(bold=True, color='2A2420')
+            title_cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
             ws.append(headers)
-            for cell in ws[1]:
-                cell.fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
+            for cell in ws[2]:
+                cell.fill = PatternFill(start_color='DDE7DB', end_color='DDE7DB', fill_type='solid')
                 cell.font = Font(bold=True, color='2A2420')
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+            sample_row = ['示例SKU（请勿导入）', '示例工厂（请勿导入）', 100, '示例行（请勿导入，此行仅演示格式）']
+            ws.append(sample_row)
+            for cell in ws[3]:
+                cell.fill = PatternFill(start_color='ECECEC', end_color='ECECEC', fill_type='solid')
+                cell.font = Font(italic=True, color='7B8088')
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
             widths = [24, 24, 10, 28]
@@ -334,15 +347,15 @@ class LogisticsWarehouseMixin:
             if factories:
                 dv_factory = DataValidation(type='list', formula1=f"='_options'!$A$2:$A${len(factories) + 1}", allow_blank=False)
                 ws.add_data_validation(dv_factory)
-                for row in range(2, max_row + 1):
+                for row in range(4, max_row + 1):
                     dv_factory.add(f'B{row}')
             if skus:
                 dv_sku = DataValidation(type='list', formula1=f"='_options'!$B$2:$B${len(skus) + 1}", allow_blank=False)
                 ws.add_data_validation(dv_sku)
-                for row in range(2, max_row + 1):
+                for row in range(4, max_row + 1):
                     dv_sku.add(f'A{row}')
 
-            ws.freeze_panes = 'A2'
+            ws.freeze_panes = 'A4'
             return self._send_excel_workbook(wb, 'factory_stock_template.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
@@ -372,7 +385,8 @@ class LogisticsWarehouseMixin:
 
             wb = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
             ws = wb.active
-            header_values = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), tuple())
+            header_row = 2 if str(ws.cell(row=1, column=1).value or '').strip().startswith('工厂在库库存导入模板') else 1
+            header_values = next(ws.iter_rows(min_row=header_row, max_row=header_row, values_only=True), tuple())
             headers = [str(value or '').strip() for value in header_values]
             header_map = {name: idx for idx, name in enumerate(headers)}
 
@@ -401,8 +415,11 @@ class LogisticsWarehouseMixin:
 
                     normalized_rows = []
                     pair_keys = set()
-                    for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+                    for row_idx, row in enumerate(ws.iter_rows(min_row=header_row + 1, values_only=True), start=header_row + 1):
                         if not any(value is not None and str(value).strip() for value in row):
+                            continue
+                        row_join = '|'.join([str(v or '').strip() for v in row])
+                        if '示例' in row_join and '勿导入' in row_join:
                             continue
                         try:
                             sku = str(get_cell(row, 'SKU') or '').strip()
@@ -486,10 +503,23 @@ class LogisticsWarehouseMixin:
             ws.title = 'factory_wip'
 
             headers = ['SKU', '工厂', '数量', '预计完工日期', '是否完工(是/否)', '实际完工时间', '备注']
+            ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
+            title_cell = ws.cell(row=1, column=1, value='工厂在制库存导入模板')
+            title_cell.fill = PatternFill(start_color='A8B9A5', end_color='A8B9A5', fill_type='solid')
+            title_cell.font = Font(bold=True, color='2A2420')
+            title_cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
             ws.append(headers)
-            for cell in ws[1]:
-                cell.fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
+            for cell in ws[2]:
+                cell.fill = PatternFill(start_color='DDE7DB', end_color='DDE7DB', fill_type='solid')
                 cell.font = Font(bold=True, color='2A2420')
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+            sample_row = ['示例SKU（请勿导入）', '示例工厂（请勿导入）', 50, '2026-03-31', '否', '', '示例行（请勿导入，此行仅演示格式）']
+            ws.append(sample_row)
+            for cell in ws[3]:
+                cell.fill = PatternFill(start_color='ECECEC', end_color='ECECEC', fill_type='solid')
+                cell.font = Font(italic=True, color='7B8088')
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
             widths = [24, 24, 10, 16, 14, 16, 28]
@@ -518,19 +548,19 @@ class LogisticsWarehouseMixin:
             if factories:
                 dv_factory = DataValidation(type='list', formula1=f"='_options'!$A$2:$A${len(factories) + 1}", allow_blank=False)
                 ws.add_data_validation(dv_factory)
-                for row in range(2, max_row + 1):
+                for row in range(4, max_row + 1):
                     dv_factory.add(f'B{row}')
             if skus:
                 dv_sku = DataValidation(type='list', formula1=f"='_options'!$B$2:$B${len(skus) + 1}", allow_blank=False)
                 ws.add_data_validation(dv_sku)
-                for row in range(2, max_row + 1):
+                for row in range(4, max_row + 1):
                     dv_sku.add(f'A{row}')
             dv_completed = DataValidation(type='list', formula1='"否,是"', allow_blank=True)
             ws.add_data_validation(dv_completed)
-            for row in range(2, max_row + 1):
+            for row in range(4, max_row + 1):
                 dv_completed.add(f'E{row}')
 
-            ws.freeze_panes = 'A2'
+            ws.freeze_panes = 'A4'
             return self._send_excel_workbook(wb, 'factory_wip_template.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
@@ -560,7 +590,8 @@ class LogisticsWarehouseMixin:
 
             wb = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
             ws = wb.active
-            header_values = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), tuple())
+            header_row = 2 if str(ws.cell(row=1, column=1).value or '').strip().startswith('工厂在制库存导入模板') else 1
+            header_values = next(ws.iter_rows(min_row=header_row, max_row=header_row, values_only=True), tuple())
             headers = [str(value or '').strip() for value in header_values]
             header_map = {name: idx for idx, name in enumerate(headers)}
 
@@ -604,8 +635,11 @@ class LogisticsWarehouseMixin:
 
                     normalized_rows = []
                     pair_keys = set()
-                    for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+                    for row_idx, row in enumerate(ws.iter_rows(min_row=header_row + 1, values_only=True), start=header_row + 1):
                         if not any(value is not None and str(value).strip() for value in row):
+                            continue
+                        row_join = '|'.join([str(v or '').strip() for v in row])
+                        if '示例' in row_join and '勿导入' in row_join:
                             continue
                         try:
                             sku = str(get_cell(row, 'SKU') or '').strip()
@@ -1119,17 +1153,29 @@ class LogisticsWarehouseMixin:
             ws = wb.active
             ws.title = 'warehouse_import'
             headers = ['仓库名称', '供应商', '仓库简称', '区域']
+            ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
+            title_cell = ws.cell(row=1, column=1, value='海外仓导入模板')
+            title_cell.fill = PatternFill(start_color='A8B9A5', end_color='A8B9A5', fill_type='solid')
+            title_cell.font = Font(bold=True, color='2A2420')
+            title_cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
             ws.append(headers)
 
-            for cell in ws[1]:
-                cell.fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
+            for cell in ws[2]:
+                cell.fill = PatternFill(start_color='DDE7DB', end_color='DDE7DB', fill_type='solid')
                 cell.font = Font(bold=True, color='2A2420')
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+            ws.append(['示例仓库（请勿导入）', '示例供应商（请勿导入）', '示例简称', '示例区域'])
+            for cell in ws[3]:
+                cell.fill = PatternFill(start_color='ECECEC', end_color='ECECEC', fill_type='solid')
+                cell.font = Font(italic=True, color='7B8088')
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
             widths = [28, 22, 18, 12]
             for idx, width in enumerate(widths, start=1):
                 ws.column_dimensions[get_column_letter(idx)].width = width
-            ws.freeze_panes = 'A2'
+            ws.freeze_panes = 'A4'
 
             option_ws = wb.create_sheet('_options')
             option_ws.append(['supplier_options', 'region_options'])
@@ -1145,13 +1191,13 @@ class LogisticsWarehouseMixin:
                 supplier_end_row = 1 + len(supplier_names)
                 dv_supplier = DataValidation(type='list', formula1=f"='_options'!$A$2:$A${supplier_end_row}", allow_blank=False)
                 ws.add_data_validation(dv_supplier)
-                dv_supplier.add('B2:B1000')
+                dv_supplier.add('B4:B1000')
 
             if destination_region_names:
                 region_end_row = 1 + len(destination_region_names)
                 dv_region = DataValidation(type='list', formula1=f"='_options'!$B$2:$B${region_end_row}", allow_blank=False)
                 ws.add_data_validation(dv_region)
-                dv_region.add('D2:D1000')
+                dv_region.add('D4:D1000')
 
             return self._send_excel_workbook(wb, 'logistics_warehouse_template.xlsx', start_response)
         except Exception as e:
@@ -1184,7 +1230,8 @@ class LogisticsWarehouseMixin:
 
             wb = load_workbook(io.BytesIO(file_bytes))
             ws = wb.active
-            headers = [str(cell.value or '').strip() for cell in ws[1]]
+            header_row = 2 if str(ws.cell(row=1, column=1).value or '').strip().startswith('海外仓导入模板') else 1
+            headers = [str(cell.value or '').strip() for cell in ws[header_row]]
             header_map = {name: idx for idx, name in enumerate(headers)}
             required_headers = ['仓库名称', '供应商', '仓库简称', '区域']
             for col_name in required_headers:
@@ -1211,9 +1258,12 @@ class LogisticsWarehouseMixin:
                     region_rows = cur.fetchall() or []
                     region_map = {str(r.get('region_name') or '').strip(): int(r.get('id')) for r in region_rows if r.get('id') and str(r.get('region_name') or '').strip()}
 
-                for row_idx in range(2, ws.max_row + 1):
+                for row_idx in range(header_row + 1, ws.max_row + 1):
                     row = ws[row_idx]
                     if not any(cell.value is not None and str(cell.value).strip() for cell in row):
+                        continue
+                    row_join = '|'.join([str(cell.value or '').strip() for cell in row])
+                    if '示例' in row_join and '勿导入' in row_join:
                         continue
                     try:
                         warehouse_name = str(get_cell(row, '仓库名称') or '').strip()
@@ -1387,15 +1437,26 @@ class LogisticsWarehouseMixin:
             ws = wb.active
             ws.title = 'warehouse_inventory'
             headers = ['SKU', '仓库', '可用量']
+            ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
+            title_cell = ws.cell(row=1, column=1, value='海外仓库存导入模板')
+            title_cell.fill = PatternFill(start_color='A8B9A5', end_color='A8B9A5', fill_type='solid')
+            title_cell.font = Font(bold=True, color='2A2420')
+            title_cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
             ws.append(headers)
-            for cell in ws[1]:
-                cell.fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
+            for cell in ws[2]:
+                cell.fill = PatternFill(start_color='DDE7DB', end_color='DDE7DB', fill_type='solid')
                 cell.font = Font(bold=True, color='2A2420')
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            ws.append(['示例SKU（请勿导入）', '示例仓库（请勿导入）', 0])
+            for cell in ws[3]:
+                cell.fill = PatternFill(start_color='ECECEC', end_color='ECECEC', fill_type='solid')
+                cell.font = Font(italic=True, color='7B8088')
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
             widths = [24, 28, 12]
             for idx, width in enumerate(widths, start=1):
                 ws.column_dimensions[get_column_letter(idx)].width = width
-            ws.freeze_panes = 'A2'
+            ws.freeze_panes = 'A4'
             return self._send_excel_workbook(wb, 'warehouse_inventory_template.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
@@ -1429,7 +1490,8 @@ class LogisticsWarehouseMixin:
             if import_mode not in ('partial', 'replace_all'):
                 import_mode = 'partial'
             ws = wb.active
-            header_rows = ws.iter_rows(min_row=1, max_row=1, values_only=True)
+            header_row = 2 if str(ws.cell(row=1, column=1).value or '').strip().startswith('海外仓库存导入模板') else 1
+            header_rows = ws.iter_rows(min_row=header_row, max_row=header_row, values_only=True)
             header_values = next(header_rows, tuple())
             headers = [str(value or '').strip() for value in header_values]
             header_map = {name: idx for idx, name in enumerate(headers)}
@@ -1457,8 +1519,11 @@ class LogisticsWarehouseMixin:
                     warehouse_names = set()
                     warehouse_ids = set()
                     order_product_ids = set()
-                    for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+                    for row_idx, row in enumerate(ws.iter_rows(min_row=header_row + 1, values_only=True), start=header_row + 1):
                         if not any(value is not None and str(value).strip() for value in row):
+                            continue
+                        row_join = '|'.join([str(v or '').strip() for v in row])
+                        if '示例' in row_join and '勿导入' in row_join:
                             continue
                         try:
                             sku = str(get_cell(row, 'SKU') or '').strip()
