@@ -18,6 +18,9 @@ class OrderManagementMixin:
             if action == 'shipping_plans':
                 return self._handle_order_product_shipping_plans(environ, method, start_response, query_params)
 
+            if action == 'delete_impact':
+                return self._handle_order_product_delete_impact(environ, method, start_response, query_params)
+
             if method == 'GET':
                 keyword = query_params.get('q', [''])[0].strip()
                 with self._get_db_connection() as conn:
@@ -28,6 +31,7 @@ class OrderManagementMixin:
                 data = self._read_json_body(environ)
                 sku_family_id = self._parse_int(data.get('sku_family_id'))
                 sku = (data.get('sku') or '').strip()
+                version_no = (data.get('version_no') or '').strip()
                 fabric_id = self._parse_int(data.get('fabric_id'))
                 if not sku or not sku_family_id or not fabric_id:
                     return self.send_json({'status': 'error', 'message': 'Missing fields'}, start_response)
@@ -74,7 +78,7 @@ class OrderManagementMixin:
                             (
                                 sku,
                                 sku_family_id,
-                                (data.get('version_no') or '').strip(),
+                                version_no,
                                 fabric_id,
                                 (data.get('spec_qty_short') or '').strip(),
                                 (data.get('contents_desc_en') or '').strip() or None,
@@ -97,6 +101,13 @@ class OrderManagementMixin:
                             )
                         )
                         new_id = cur.lastrowid
+                    if is_iteration and source_order_product_id and version_no:
+                        self._auto_sync_iteration_shipping_plans(
+                            conn,
+                            new_order_product_id=new_id,
+                            source_order_product_id=source_order_product_id,
+                            version_no=version_no
+                        )
                     self._replace_order_product_relations(
                         conn,
                         new_id,
@@ -109,6 +120,41 @@ class OrderManagementMixin:
 
             if method == 'PUT':
                 data = self._read_json_body(environ)
+                batch_items = data.get('items') if isinstance(data, dict) else None
+                if isinstance(batch_items, list):
+                    updates = []
+                    for item in batch_items:
+                        if not isinstance(item, dict):
+                            continue
+                        item_id = self._parse_int(item.get('id'))
+                        if not item_id:
+                            continue
+                        updates.append((
+                            self._parse_float(item.get('cost_usd')),
+                            (item.get('package_size_class') or '').strip() or None,
+                            self._parse_int(item.get('carton_qty')),
+                            self._parse_float(item.get('last_mile_avg_freight_usd')),
+                            item_id
+                        ))
+
+                    if not updates:
+                        return self.send_json({'status': 'error', 'message': 'Missing fields'}, start_response)
+
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.executemany(
+                                """
+                                UPDATE order_products
+                                SET cost_usd=%s,
+                                    package_size_class=%s,
+                                    carton_qty=%s,
+                                    last_mile_avg_freight_usd=%s
+                                WHERE id=%s
+                                """,
+                                updates
+                            )
+                    return self.send_json({'status': 'success', 'updated': len(updates)}, start_response)
+
                 item_id = self._parse_int(data.get('id'))
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
@@ -180,17 +226,150 @@ class OrderManagementMixin:
 
             if method == 'DELETE':
                 data = self._read_json_body(environ)
-                item_id = data.get('id')
+                item_id = self._parse_int(data.get('id'))
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
+                        cur.execute("DELETE FROM order_product_shipping_plan_items WHERE substitute_order_product_id=%s", (item_id,))
+                        ref_deleted = cur.rowcount or 0
+                        cur.execute("DELETE FROM order_product_shipping_plans WHERE order_product_id=%s", (item_id,))
+                        plan_deleted = cur.rowcount or 0
                         cur.execute("DELETE FROM order_products WHERE id=%s", (item_id,))
-                return self.send_json({'status': 'success'}, start_response)
+                        sku_deleted = cur.rowcount or 0
+                return self.send_json({
+                    'status': 'success',
+                    'deleted': {
+                        'order_product': sku_deleted,
+                        'shipping_plans': plan_deleted,
+                        'substitute_references': ref_deleted
+                    }
+                }, start_response)
 
             return self.send_error(405, 'Method not allowed', start_response)
         except Exception as e:
             print(f"Order Product API error: {str(e)}")
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def _handle_order_product_delete_impact(self, environ, method, start_response, query_params):
+        try:
+            if method != 'GET':
+                return self.send_error(405, 'Method not allowed', start_response)
+
+            target = (query_params.get('target', [''])[0] or '').strip().lower()
+            target_id = self._parse_int(query_params.get('id', [''])[0])
+            if not target or not target_id:
+                return self.send_json({'status': 'error', 'message': 'Missing target or id'}, start_response)
+
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    if target == 'shipping_plan':
+                        cur.execute(
+                            """
+                            SELECT
+                                ops.id,
+                                ops.plan_name,
+                                ops.order_product_id,
+                                op.sku AS owner_sku
+                            FROM order_product_shipping_plans ops
+                            JOIN order_products op ON op.id = ops.order_product_id
+                            WHERE ops.id=%s
+                            LIMIT 1
+                            """,
+                            (target_id,)
+                        )
+                        plan_row = cur.fetchone() or {}
+                        if not plan_row:
+                            return self.send_json({'status': 'error', 'message': 'Plan not found'}, start_response)
+
+                        cur.execute(
+                            """
+                            SELECT op.sku AS substitute_order_sku, opsi.quantity
+                            FROM order_product_shipping_plan_items opsi
+                            JOIN order_products op ON op.id = opsi.substitute_order_product_id
+                            WHERE opsi.shipping_plan_id=%s
+                            ORDER BY opsi.sort_order ASC, opsi.id ASC
+                            """,
+                            (target_id,)
+                        )
+                        items = cur.fetchall() or []
+                        return self.send_json({
+                            'status': 'success',
+                            'impact': {
+                                'target': 'shipping_plan',
+                                'id': target_id,
+                                'plan_name': plan_row.get('plan_name') or '',
+                                'owner_sku': plan_row.get('owner_sku') or '',
+                                'item_count': len(items),
+                                'items': items
+                            }
+                        }, start_response)
+
+                    if target == 'order_product':
+                        cur.execute("SELECT id, sku FROM order_products WHERE id=%s LIMIT 1", (target_id,))
+                        product_row = cur.fetchone() or {}
+                        if not product_row:
+                            return self.send_json({'status': 'error', 'message': 'SKU not found'}, start_response)
+
+                        cur.execute(
+                            "SELECT id, plan_name FROM order_product_shipping_plans WHERE order_product_id=%s ORDER BY id DESC LIMIT 10",
+                            (target_id,)
+                        )
+                        own_plans = cur.fetchall() or []
+
+                        cur.execute(
+                            """
+                            SELECT COUNT(*) AS cnt
+                            FROM order_product_shipping_plan_items opsi
+                            JOIN order_product_shipping_plans ops ON ops.id = opsi.shipping_plan_id
+                            WHERE ops.order_product_id=%s
+                            """,
+                            (target_id,)
+                        )
+                        own_plan_item_count = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
+
+                        cur.execute(
+                            """
+                            SELECT COUNT(*) AS cnt
+                            FROM order_product_shipping_plan_items
+                            WHERE substitute_order_product_id=%s
+                            """,
+                            (target_id,)
+                        )
+                        referenced_count = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
+
+                        cur.execute(
+                            """
+                            SELECT
+                                owner_op.sku AS owner_sku,
+                                ops.plan_name
+                            FROM order_product_shipping_plan_items opsi
+                            JOIN order_product_shipping_plans ops ON ops.id = opsi.shipping_plan_id
+                            JOIN order_products owner_op ON owner_op.id = ops.order_product_id
+                            WHERE opsi.substitute_order_product_id=%s
+                            ORDER BY ops.id DESC
+                            LIMIT 10
+                            """,
+                            (target_id,)
+                        )
+                        referenced_in = cur.fetchall() or []
+
+                        return self.send_json({
+                            'status': 'success',
+                            'impact': {
+                                'target': 'order_product',
+                                'id': target_id,
+                                'sku': product_row.get('sku') or '',
+                                'own_plan_count': len(own_plans),
+                                'own_plan_item_count': own_plan_item_count,
+                                'own_plans': own_plans,
+                                'referenced_count': referenced_count,
+                                'referenced_in': referenced_in
+                            }
+                        }, start_response)
+
+            return self.send_json({'status': 'error', 'message': 'Unsupported target'}, start_response)
+        except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_order_product_carton_calc_api(self, environ, method, start_response):
@@ -407,25 +586,134 @@ class OrderManagementMixin:
 
         with conn.cursor() as cur:
             cur.execute("DELETE FROM order_product_materials WHERE order_product_id=%s", (order_product_id,))
-            for material_id in material_ids:
-                cur.execute(
+            if material_ids:
+                cur.executemany(
                     "INSERT IGNORE INTO order_product_materials (order_product_id, material_id) VALUES (%s, %s)",
-                    (order_product_id, material_id)
+                    [(order_product_id, material_id) for material_id in material_ids]
                 )
 
             cur.execute("DELETE FROM order_product_features WHERE order_product_id=%s", (order_product_id,))
-            for feature_id in (feature_ids or []):
-                cur.execute(
+            if feature_ids:
+                cur.executemany(
                     "INSERT IGNORE INTO order_product_features (order_product_id, feature_id) VALUES (%s, %s)",
-                    (order_product_id, feature_id)
+                    [(order_product_id, feature_id) for feature_id in (feature_ids or [])]
                 )
 
             cur.execute("DELETE FROM order_product_certifications WHERE order_product_id=%s", (order_product_id,))
-            for certification_id in (certification_ids or []):
-                cur.execute(
+            if certification_ids:
+                cur.executemany(
                     "INSERT IGNORE INTO order_product_certifications (order_product_id, certification_id) VALUES (%s, %s)",
-                    (order_product_id, certification_id)
+                    [(order_product_id, certification_id) for certification_id in (certification_ids or [])]
                 )
+
+    def _parse_iteration_generation(self, version_no):
+        text = str(version_no or '').strip()
+        if text.endswith('代'):
+            text = text[:-1].strip()
+        val = self._parse_int(text)
+        return val if val and val > 0 else None
+
+    def _get_or_create_shipping_plan(self, conn, order_product_id, plan_name):
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM order_product_shipping_plans WHERE order_product_id=%s AND plan_name=%s LIMIT 1",
+                (order_product_id, plan_name)
+            )
+            row = cur.fetchone() or {}
+            plan_id = self._parse_int(row.get('id'))
+            if plan_id:
+                return plan_id
+
+            cur.execute(
+                "INSERT INTO order_product_shipping_plans (order_product_id, plan_name) VALUES (%s, %s)",
+                (order_product_id, plan_name)
+            )
+            return cur.lastrowid
+
+    def _set_shipping_plan_items(self, conn, plan_id, substitute_order_product_ids):
+        ids = []
+        seen = set()
+        for raw_id in (substitute_order_product_ids or []):
+            item_id = self._parse_int(raw_id)
+            if not item_id or item_id in seen:
+                continue
+            seen.add(item_id)
+            ids.append(item_id)
+
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM order_product_shipping_plan_items WHERE shipping_plan_id=%s", (plan_id,))
+            if ids:
+                cur.executemany(
+                    """
+                    INSERT INTO order_product_shipping_plan_items
+                        (shipping_plan_id, substitute_order_product_id, quantity, sort_order)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    [
+                        (plan_id, sid, 1, idx + 1)
+                        for idx, sid in enumerate(ids)
+                    ]
+                )
+
+    def _auto_sync_iteration_shipping_plans(self, conn, new_order_product_id, source_order_product_id, version_no):
+        new_generation = self._parse_iteration_generation(version_no)
+        if not new_generation:
+            return
+
+        source_id = self._parse_int(source_order_product_id)
+        new_id = self._parse_int(new_order_product_id)
+        if not source_id or not new_id:
+            return
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, source_order_product_id, is_iteration, version_no
+                FROM order_products
+                WHERE id=%s OR source_order_product_id=%s
+                ORDER BY id ASC
+                """,
+                (source_id, source_id)
+            )
+            family_rows = cur.fetchall() or []
+
+        members = []
+        for row in family_rows:
+            member_id = self._parse_int(row.get('id'))
+            if not member_id:
+                continue
+            if member_id == source_id and not self._parse_int(row.get('is_iteration')):
+                member_generation = 1
+            else:
+                member_generation = self._parse_iteration_generation(row.get('version_no'))
+            if not member_generation:
+                continue
+            members.append((member_id, member_generation))
+
+        if not members:
+            return
+
+        other_members = [(mid, gen) for (mid, gen) in members if mid != new_id]
+        if not other_members:
+            return
+
+        # 旧款：创建/覆盖“迭代款-新代数”方案，且仅包含新SKU。
+        forward_plan_name = f"迭代款-{new_generation}代"
+        for owner_id, _ in other_members:
+            owner_plan_id = self._get_or_create_shipping_plan(conn, owner_id, forward_plan_name)
+            self._set_shipping_plan_items(conn, owner_plan_id, [new_id])
+
+        # 新款：按已有每一代创建对应方案，每个方案包含该代已有SKU。
+        generation_map = {}
+        for member_id, member_generation in other_members:
+            if member_generation <= 0:
+                continue
+            generation_map.setdefault(member_generation, []).append(member_id)
+
+        for member_generation in sorted(generation_map.keys()):
+            reverse_plan_name = f"迭代款-{member_generation}代"
+            new_plan_id = self._get_or_create_shipping_plan(conn, new_id, reverse_plan_name)
+            self._set_shipping_plan_items(conn, new_plan_id, generation_map.get(member_generation, []))
 
     def _handle_order_product_shipping_plans(self, environ, method, start_response, query_params):
         try:
@@ -479,21 +767,79 @@ class OrderManagementMixin:
 
                         cur.execute(
                             """
-                            SELECT
-                                ops.id AS shipping_plan_id,
+                            SELECT DISTINCT
+                                ops.id,
                                 ops.plan_name,
-                                ops.order_product_id AS target_order_product_id,
-                                op.sku AS target_order_sku,
-                                opsi.quantity
+                                ops.order_product_id,
+                                target_op.sku AS target_order_sku
                             FROM order_product_shipping_plan_items opsi
                             JOIN order_product_shipping_plans ops ON ops.id = opsi.shipping_plan_id
-                            JOIN order_products op ON op.id = ops.order_product_id
+                            JOIN order_products target_op ON target_op.id = ops.order_product_id
                             WHERE opsi.substitute_order_product_id = %s
-                            ORDER BY op.sku ASC, ops.plan_name ASC, opsi.sort_order ASC, opsi.id ASC
+                            ORDER BY ops.id DESC
                             """,
                             (order_product_id,)
                         )
-                        usage_items = cur.fetchall() or []
+                        usage_plan_rows = cur.fetchall() or []
+                        usage_plan_ids = [self._parse_int(row.get('id')) for row in usage_plan_rows if self._parse_int(row.get('id'))]
+
+                        usage_item_map = {}
+                        if usage_plan_ids:
+                            usage_placeholders = ','.join(['%s'] * len(usage_plan_ids))
+                            cur.execute(
+                                f"""
+                                SELECT
+                                    opsi.id,
+                                    opsi.shipping_plan_id,
+                                    opsi.substitute_order_product_id,
+                                    opsi.quantity,
+                                    opsi.sort_order,
+                                    op.sku AS substitute_order_sku
+                                FROM order_product_shipping_plan_items opsi
+                                JOIN order_products op ON op.id = opsi.substitute_order_product_id
+                                WHERE opsi.shipping_plan_id IN ({usage_placeholders})
+                                ORDER BY opsi.shipping_plan_id ASC, opsi.sort_order ASC, opsi.id ASC
+                                """,
+                                tuple(usage_plan_ids)
+                            )
+                            for usage_item in (cur.fetchall() or []):
+                                usage_plan_id = self._parse_int(usage_item.get('shipping_plan_id'))
+                                if not usage_plan_id:
+                                    continue
+                                usage_item_map.setdefault(usage_plan_id, []).append(usage_item)
+
+                        current_substitute_ids = set()
+                        for items_in_plan in item_map.values():
+                            for item in (items_in_plan or []):
+                                sid = self._parse_int(item.get('substitute_order_product_id'))
+                                if sid:
+                                    current_substitute_ids.add(sid)
+
+                        usage_items = []
+                        for usage_plan_row in usage_plan_rows:
+                            plan_id = self._parse_int(usage_plan_row.get('id'))
+                            if not plan_id:
+                                continue
+                            target_order_product_id = self._parse_int(usage_plan_row.get('order_product_id'))
+                            usage_plan_items = usage_item_map.get(plan_id, [])
+                            only_contains_current = (
+                                len(usage_plan_items) == 1
+                                and self._parse_int(usage_plan_items[0].get('substitute_order_product_id')) == order_product_id
+                            )
+                            can_quick_apply = (
+                                bool(target_order_product_id)
+                                and only_contains_current
+                                and target_order_product_id not in current_substitute_ids
+                            )
+                            plan_obj = {
+                                'id': plan_id,
+                                'plan_name': usage_plan_row.get('plan_name') or '',
+                                'order_product_id': target_order_product_id,
+                                'target_order_sku': usage_plan_row.get('target_order_sku') or '',
+                                'items': usage_plan_items,
+                                'can_quick_apply': can_quick_apply
+                            }
+                            usage_items.append(plan_obj)
 
                 return self.send_json({'status': 'success', 'items': plans, 'usage_items': usage_items}, start_response)
 
@@ -501,6 +847,69 @@ class OrderManagementMixin:
 
             if method == 'POST':
                 order_product_id = self._parse_int(data.get('order_product_id'))
+                if data.get('quick_apply_from_usage'):
+                    target_order_product_id = self._parse_int(data.get('target_order_product_id'))
+                    if not order_product_id or not target_order_product_id:
+                        return self.send_json({'status': 'error', 'message': 'Missing fields'}, start_response)
+                    if order_product_id == target_order_product_id:
+                        return self.send_json({'status': 'error', 'message': '不能将当前SKU本身设为替代SKU'}, start_response)
+
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute("SELECT sku FROM order_products WHERE id=%s", (target_order_product_id,))
+                            target_row = cur.fetchone() or {}
+                            target_sku = (target_row.get('sku') or '').strip()
+                            if not target_sku:
+                                return self.send_json({'status': 'error', 'message': '目标SKU不存在'}, start_response)
+
+                            cur.execute(
+                                """
+                                SELECT 1
+                                FROM order_product_shipping_plan_items opsi
+                                JOIN order_product_shipping_plans ops ON ops.id = opsi.shipping_plan_id
+                                WHERE ops.order_product_id = %s
+                                  AND opsi.substitute_order_product_id = %s
+                                LIMIT 1
+                                """,
+                                (order_product_id, target_order_product_id)
+                            )
+                            if cur.fetchone():
+                                return self.send_json({'status': 'error', 'message': '当前SKU已将该SKU作为替代发货选项'}, start_response)
+
+                            base_plan_name = f"快速替代-{target_sku}"
+                            plan_name = base_plan_name
+                            suffix = 2
+                            while True:
+                                cur.execute(
+                                    """
+                                    SELECT 1
+                                    FROM order_product_shipping_plans
+                                    WHERE order_product_id=%s AND plan_name=%s
+                                    LIMIT 1
+                                    """,
+                                    (order_product_id, plan_name)
+                                )
+                                if not cur.fetchone():
+                                    break
+                                plan_name = f"{base_plan_name}-{suffix}"
+                                suffix += 1
+
+                            cur.execute(
+                                "INSERT INTO order_product_shipping_plans (order_product_id, plan_name) VALUES (%s, %s)",
+                                (order_product_id, plan_name)
+                            )
+                            new_plan_id = cur.lastrowid
+                            cur.execute(
+                                """
+                                INSERT INTO order_product_shipping_plan_items
+                                    (shipping_plan_id, substitute_order_product_id, quantity, sort_order)
+                                VALUES (%s, %s, %s, %s)
+                                """,
+                                (new_plan_id, target_order_product_id, 1, 1)
+                            )
+
+                    return self.send_json({'status': 'success', 'id': new_plan_id}, start_response)
+
                 plan_name = (data.get('plan_name') or '').strip()
                 items = data.get('items') or []
                 if not order_product_id or not plan_name:
@@ -514,19 +923,22 @@ class OrderManagementMixin:
                         )
                         plan_id = cur.lastrowid
 
+                        insert_rows = []
                         for idx, item in enumerate(items):
                             substitute_order_product_id = self._parse_int(item.get('substitute_order_product_id'))
                             quantity = max(1, self._parse_int(item.get('quantity')) or 1)
                             sort_order = self._parse_int(item.get('sort_order')) or (idx + 1)
                             if not substitute_order_product_id:
                                 continue
-                            cur.execute(
+                            insert_rows.append((plan_id, substitute_order_product_id, quantity, sort_order))
+                        if insert_rows:
+                            cur.executemany(
                                 """
                                 INSERT INTO order_product_shipping_plan_items
                                     (shipping_plan_id, substitute_order_product_id, quantity, sort_order)
                                 VALUES (%s, %s, %s, %s)
                                 """,
-                                (plan_id, substitute_order_product_id, quantity, sort_order)
+                                insert_rows
                             )
                 return self.send_json({'status': 'success', 'id': plan_id}, start_response)
 
@@ -549,19 +961,22 @@ class OrderManagementMixin:
                             (order_product_id, plan_name, plan_id)
                         )
                         cur.execute("DELETE FROM order_product_shipping_plan_items WHERE shipping_plan_id=%s", (plan_id,))
+                        insert_rows = []
                         for idx, item in enumerate(items):
                             substitute_order_product_id = self._parse_int(item.get('substitute_order_product_id'))
                             quantity = max(1, self._parse_int(item.get('quantity')) or 1)
                             sort_order = self._parse_int(item.get('sort_order')) or (idx + 1)
                             if not substitute_order_product_id:
                                 continue
-                            cur.execute(
+                            insert_rows.append((plan_id, substitute_order_product_id, quantity, sort_order))
+                        if insert_rows:
+                            cur.executemany(
                                 """
                                 INSERT INTO order_product_shipping_plan_items
                                     (shipping_plan_id, substitute_order_product_id, quantity, sort_order)
                                 VALUES (%s, %s, %s, %s)
                                 """,
-                                (plan_id, substitute_order_product_id, quantity, sort_order)
+                                insert_rows
                             )
                 return self.send_json({'status': 'success'}, start_response)
 

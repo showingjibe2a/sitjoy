@@ -727,6 +727,36 @@ class DbSchemaBasicsMixin:
                     except Exception:
                         pass
 
+                try:
+                    cur.execute(
+                        """
+                        SELECT DELETE_RULE AS delete_rule
+                        FROM information_schema.REFERENTIAL_CONSTRAINTS
+                        WHERE CONSTRAINT_SCHEMA = DATABASE()
+                          AND TABLE_NAME = 'order_product_shipping_plan_items'
+                          AND CONSTRAINT_NAME = 'fk_opsi_sub_order'
+                        LIMIT 1
+                        """
+                    )
+                    fk_row = cur.fetchone() or {}
+                    delete_rule = str(fk_row.get('delete_rule') or '').upper()
+                    if delete_rule != 'CASCADE':
+                        try:
+                            cur.execute("ALTER TABLE order_product_shipping_plan_items DROP FOREIGN KEY fk_opsi_sub_order")
+                        except Exception:
+                            pass
+                        cur.execute(
+                            """
+                            ALTER TABLE order_product_shipping_plan_items
+                            ADD CONSTRAINT fk_opsi_sub_order
+                            FOREIGN KEY (substitute_order_product_id)
+                            REFERENCES order_products(id)
+                            ON DELETE CASCADE
+                            """
+                        )
+                except Exception:
+                    pass
+
         self._order_product_ready = True
 
     def _ensure_todo_tables(self, lightweight=False):

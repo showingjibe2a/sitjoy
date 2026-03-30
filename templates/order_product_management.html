@@ -220,15 +220,7 @@
         .preview-savebar.active {
             display: inline-flex;
         }
-        .btn-success {
-            background: linear-gradient(90deg, #2f8a42, #3da65a);
-            border: 1px solid #2b7d3d;
-            color: #fff;
-        }
-        .btn-success:hover {
-            box-shadow: 0 8px 20px rgba(61, 166, 90, 0.22);
-            transform: translateY(-1px);
-        }
+
         .shipping-plan-main {
             display: grid;
             gap: 0.8rem;
@@ -243,7 +235,7 @@
             font-size: 0.9rem;
             font-weight: 700;
         }
-        .plan-list {
+        .plan-panel {
             border: 1px solid var(--morandi-sand);
             border-radius: 8px;
             background: #fff;
@@ -252,22 +244,11 @@
             position: relative;
             z-index: 1;
         }
-        .plan-table-head,
         .plan-table-row {
             display: grid;
             grid-template-columns: minmax(0, 1fr) 150px;
             gap: 0.45rem;
             align-items: center;
-        }
-        .plan-table-head {
-            padding: 0.5rem 0.65rem;
-            background: #f7f4ef;
-            border-bottom: 1px solid var(--morandi-sand);
-            color: var(--morandi-slate);
-            font-size: 0.82rem;
-            position: sticky;
-            top: 0;
-            z-index: 2;
         }
         .plan-table-row {
             padding: 0.55rem 0.65rem;
@@ -286,20 +267,20 @@
             gap: 0.35rem;
         }
         .plan-action-cell .btn-secondary,
-        .plan-action-cell .btn-danger,
-        .plan-action-cell .btn-success {
+        .plan-action-cell .btn-danger {
             padding: 0.35rem 0.55rem;
             font-size: 0.8rem;
             line-height: 1.15;
         }
+        .plan-action-cell .btn-accent {
+            padding: 0.35rem 0.55rem;
+            font-size: 0.8rem;
+            line-height: 1.15;
+            white-space: nowrap;
+        }
         .plan-item-title {
             font-weight: 600;
             color: var(--morandi-ink);
-        }
-        .plan-item-sub {
-            margin-top: 0.2rem;
-            color: var(--morandi-slate);
-            font-size: 0.82rem;
         }
         .plan-expand-wrap {
             display: none;
@@ -417,7 +398,6 @@
             align-items: center;
         }
         @media (max-width: 960px) {
-            .plan-table-head,
             .plan-table-row {
                 grid-template-columns: minmax(0, 1fr);
             }
@@ -771,16 +751,12 @@
             <h3 id="shippingPlanTitle" style="margin-top:0;">替代发货方案</h3>
             <div class="shipping-plan-main">
                 <div class="plan-toolbar">
-                    <button type="button" class="btn-success" onclick="openShippingPlanEditor()">新增方案</button>
+                    <button type="button" class="btn-accent" onclick="openShippingPlanEditor()">新增方案</button>
                 </div>
 
                 <div>
                     <h4 class="plan-section-title">SKU替代发货方式</h4>
-                    <div class="plan-list">
-                        <div class="plan-table-head">
-                            <span>方案名称 / 预览</span>
-                            <span style="text-align:right;">操作</span>
-                        </div>
+                    <div class="plan-panel">
                         <div id="shippingPlanList"></div>
                     </div>
                     <div id="shippingPlanEmptyBlock" class="plan-empty-block" style="display:none;">暂无方案，请先新增</div>
@@ -788,11 +764,7 @@
 
                 <div>
                     <h4 class="plan-section-title">SKU组成的其他发货方式</h4>
-                    <div class="plan-list">
-                        <div class="plan-table-head">
-                            <span>预览（当前SKU用于替代）</span>
-                            <span style="text-align:right;">查看</span>
-                        </div>
+                    <div class="plan-panel">
                         <div id="shippingPlanUsageList"></div>
                     </div>
                     <div id="shippingPlanUsageEmptyBlock" class="plan-empty-block" style="display:none;">当前SKU未被其他方案引用</div>
@@ -815,7 +787,7 @@
                     <div id="shippingPlanRows" class="order-link-selected" style="display:none;"></div>
                     <div id="shippingPlanEmptyText" class="plan-empty">暂无SKU，请先新增</div>
                     <div class="plan-row-actions">
-                        <button type="button" class="btn-success" onclick="addShippingPlanRow()">新增SKU</button>
+                        <button type="button" class="btn-accent" onclick="addShippingPlanRow()">新增SKU</button>
                     </div>
                 </div>
             </div>
@@ -854,7 +826,7 @@
         let shippingPlanItems = [];
         let shippingPlanUsageItems = [];
         let shippingPlanExpandedIds = new Set();
-        let shippingPlanUsageExpandedKeys = new Set();
+        let shippingPlanUsageExpandedIds = new Set();
         let shippingPlanEditorDraft = null;
 
         function renderUploadErrorDetails(errors) {
@@ -1647,29 +1619,79 @@
             .catch(err => showModalStatus('请求失败: ' + err, true));
         }
 
-        function deleteOrderProduct(id) {
-            showUploadDialog({
-                title: '删除确认',
-                message: '确认删除该下单产品？',
-                confirmText: '确认删除',
-                cancelText: '取消',
-                onConfirm: function() {
-                    fetch('/api/order-product', {
-                        method: 'DELETE',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ id: id })
-                    })
-                    .then(r => r.json())
-                    .then(data => {
-                        if (data.status === 'success') {
-                            loadOrderProductList();
-                        } else {
-                            showUploadDialog({ title: '删除失败', message: data.message || '删除失败' });
+        function fetchDeleteImpact(target, id) {
+            const t = encodeURIComponent(String(target || ''));
+            const i = encodeURIComponent(String(id || ''));
+            return fetch(`/api/order-product?action=delete_impact&target=${t}&id=${i}`)
+                .then(r => r.json());
+        }
+
+        function deleteOrderProduct(itemOrId) {
+            const deleteId = Number((itemOrId && itemOrId.id) || itemOrId || 0);
+            if (!deleteId) return;
+            fetchDeleteImpact('order_product', deleteId)
+                .then(data => {
+                    if (!data || data.status !== 'success' || !data.impact) {
+                        showUploadDialog({
+                            title: '删除确认',
+                            message: '确认删除该下单产品？系统将同时删除该SKU名下方案，并清理其在其他方案中的替代关联。',
+                            confirmText: '确认删除',
+                            cancelText: '取消',
+                            onConfirm: function() {
+                                executeDeleteOrderProduct(deleteId);
+                            }
+                        });
+                        return;
+                    }
+                    const impact = data.impact;
+                    const ownPlans = (impact.own_plans || []).map(x => `- ${x.plan_name || ''}`).join('\n');
+                    const refPlans = (impact.referenced_in || []).map(x => `- ${x.owner_sku || ''}（${x.plan_name || ''}）`).join('\n');
+                    const message = [
+                        `将删除下单SKU：${impact.sku || ''}`,
+                        `将删除该SKU名下替代发货方案：${Number(impact.own_plan_count || 0)} 个`,
+                        `将删除该SKU名下方案中的替代SKU关联：${Number(impact.own_plan_item_count || 0)} 条`,
+                        `将清理“其他SKU方案中引用当前SKU”的关联：${Number(impact.referenced_count || 0)} 条`,
+                        ownPlans ? `\n将删除的方案（最多显示10条）：\n${ownPlans}` : '',
+                        refPlans ? `\n将清理的外部引用（最多显示10条）：\n${refPlans}` : ''
+                    ].filter(Boolean).join('\n');
+                    showUploadDialog({
+                        title: '删除确认',
+                        message,
+                        confirmText: '确认删除',
+                        cancelText: '取消',
+                        onConfirm: function() {
+                            executeDeleteOrderProduct(deleteId);
                         }
-                    })
-                    .catch(err => showUploadDialog({ title: '请求失败', message: '请求失败: ' + err }));
+                    });
+                })
+                .catch(() => {
+                    showUploadDialog({
+                        title: '删除确认',
+                        message: '确认删除该下单产品？系统将同时删除该SKU名下方案，并清理其在其他方案中的替代关联。',
+                        confirmText: '确认删除',
+                        cancelText: '取消',
+                        onConfirm: function() {
+                            executeDeleteOrderProduct(deleteId);
+                        }
+                    });
+                });
+        }
+
+        function executeDeleteOrderProduct(deleteId) {
+            fetch('/api/order-product', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: deleteId })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    loadOrderProductList();
+                } else {
+                    showUploadDialog({ title: '删除失败', message: data.message || '删除失败' });
                 }
-            });
+            })
+            .catch(err => showUploadDialog({ title: '请求失败', message: '请求失败: ' + err }));
         }
 
         function escapeHtml(value) {
@@ -1687,7 +1709,7 @@
             shippingPlanItems = [];
             shippingPlanUsageItems = [];
             shippingPlanExpandedIds = new Set();
-            shippingPlanUsageExpandedKeys = new Set();
+            shippingPlanUsageExpandedIds = new Set();
             shippingPlanEditorDraft = null;
             document.getElementById('shippingPlanTitle').textContent = `替代发货方案 - ${item.sku || ''}`;
             const modal = document.getElementById('shippingPlanModal');
@@ -1709,7 +1731,7 @@
             shippingPlanItems = [];
             shippingPlanUsageItems = [];
             shippingPlanExpandedIds = new Set();
-            shippingPlanUsageExpandedKeys = new Set();
+            shippingPlanUsageExpandedIds = new Set();
             shippingPlanEditorDraft = null;
         }
 
@@ -1721,7 +1743,7 @@
                     shippingPlanItems = data.status === 'success' ? (data.items || []) : [];
                     shippingPlanUsageItems = data.status === 'success' ? (data.usage_items || []) : [];
                     shippingPlanExpandedIds = new Set();
-                    shippingPlanUsageExpandedKeys = new Set();
+                    shippingPlanUsageExpandedIds = new Set();
                     renderShippingPlanList();
                     renderShippingPlanUsageList();
                 })
@@ -1729,7 +1751,7 @@
                     shippingPlanItems = [];
                     shippingPlanUsageItems = [];
                     shippingPlanExpandedIds = new Set();
-                    shippingPlanUsageExpandedKeys = new Set();
+                    shippingPlanUsageExpandedIds = new Set();
                     renderShippingPlanList();
                     renderShippingPlanUsageList();
                 });
@@ -1744,6 +1766,17 @@
                 shippingPlanExpandedIds.add(key);
             }
             renderShippingPlanList();
+        }
+
+        function toggleShippingPlanUsageExpand(planId) {
+            const key = String(planId || '');
+            if (!key) return;
+            if (shippingPlanUsageExpandedIds.has(key)) {
+                shippingPlanUsageExpandedIds.delete(key);
+            } else {
+                shippingPlanUsageExpandedIds.add(key);
+            }
+            renderShippingPlanUsageList();
         }
 
         function renderShippingPlanList() {
@@ -1772,7 +1805,6 @@
                     <div class="plan-table-row" onclick="toggleShippingPlanExpand(${plan.id})">
                         <div>
                             <div class="plan-item-title">${escapeHtml(plan.plan_name || '')}</div>
-                            <div class="plan-item-sub">替代SKU ${itemCount} 条</div>
                         </div>
                         <div class="plan-action-cell">
                             <button class="btn-secondary" type="button" onclick="event.stopPropagation();openShippingPlanEditor(${plan.id})">编辑</button>
@@ -1791,22 +1823,6 @@
             }).join('');
         }
 
-        function getShippingPlanUsageKey(item) {
-            const planId = String(item.shipping_plan_id || '');
-            const targetId = String(item.target_order_product_id || '');
-            return `${planId}:${targetId}`;
-        }
-
-        function toggleShippingPlanUsageExpand(key) {
-            if (!key) return;
-            if (shippingPlanUsageExpandedKeys.has(key)) {
-                shippingPlanUsageExpandedKeys.delete(key);
-            } else {
-                shippingPlanUsageExpandedKeys.add(key);
-            }
-            renderShippingPlanUsageList();
-        }
-
         function renderShippingPlanUsageList() {
             const list = document.getElementById('shippingPlanUsageList');
             const emptyBlock = document.getElementById('shippingPlanUsageEmptyBlock');
@@ -1817,31 +1833,72 @@
                 return;
             }
             if (emptyBlock) emptyBlock.style.display = 'none';
-            list.innerHTML = shippingPlanUsageItems.map(item => {
-                const key = getShippingPlanUsageKey(item);
-                const preview = `${item.target_order_sku || ''}（${item.plan_name || ''}）`;
-                const isExpanded = shippingPlanUsageExpandedKeys.has(key);
+            list.innerHTML = shippingPlanUsageItems.map(plan => {
+                const planId = String(plan.id || '');
+                const itemCount = (plan.items || []).length;
+                const isExpanded = shippingPlanUsageExpandedIds.has(planId);
+                const itemRows = itemCount
+                    ? (plan.items || []).map(row => `
+                        <div class="plan-expand-row">
+                            <span>${escapeHtml(row.substitute_order_sku || '')}</span>
+                            <span>${Number(row.quantity || 1)}</span>
+                        </div>
+                    `).join('')
+                    : '<div class="plan-empty" style="padding:0.4rem 0;">暂无SKU</div>';
+                const previewTitle = `${plan.target_order_sku || ''}（${plan.plan_name || ''}）`;
                 return `
-                    <div class="plan-table-row" onclick="toggleShippingPlanUsageExpand('${escapeHtml(key)}')">
+                    <div class="plan-table-row" onclick="toggleShippingPlanUsageExpand(${plan.id})">
                         <div>
-                            <div class="plan-item-title">${escapeHtml(preview)}</div>
-                            <div class="plan-item-sub">当前SKU可用于替代：${escapeHtml(item.target_order_sku || '')}</div>
+                            <div class="plan-item-title">${escapeHtml(previewTitle)}</div>
                         </div>
                         <div class="plan-action-cell">
-                            <button class="btn-secondary" type="button" onclick="event.stopPropagation();toggleShippingPlanUsageExpand('${escapeHtml(key)}')">${isExpanded ? '收起' : '展开'}</button>
+                            ${plan.can_quick_apply ? `<button class="btn-accent" type="button" onclick="event.stopPropagation();quickApplyShippingPlanFromUsage(${plan.order_product_id}, '${escapeHtml(plan.target_order_sku || '')}', '${escapeHtml(plan.plan_name || '')}')">快速将该SKU设为替代发货方式</button>` : ''}
                         </div>
                     </div>
                     <div class="plan-expand-wrap ${isExpanded ? 'open' : ''}">
-                        <div class="plan-expand-list">
-                            <div class="plan-expand-head"><span>方案信息</span><span>数量</span></div>
-                            <div class="plan-expand-row">
-                                <span>${escapeHtml(preview)}</span>
-                                <span>${Number(item.quantity || 1)}</span>
+                        ${itemCount ? `
+                            <div class="plan-expand-list">
+                                <div class="plan-expand-head"><span>替代下单SKU</span><span>数量</span></div>
+                                ${itemRows}
                             </div>
-                        </div>
+                        ` : itemRows}
                     </div>
                 `;
             }).join('');
+        }
+
+        function quickApplyShippingPlanFromUsage(targetOrderProductId, targetOrderSku, sourcePlanName) {
+            if (!shippingPlanCurrentOrder || !shippingPlanCurrentOrder.id) return;
+            const targetId = Number(targetOrderProductId || 0);
+            if (!targetId) return;
+            const tipSku = String(targetOrderSku || '').trim() || `ID:${targetId}`;
+            const tipPlan = String(sourcePlanName || '').trim();
+            showUploadDialog({
+                title: '确认快速设置',
+                message: `确认将 SKU ${tipSku}（${tipPlan}）快速添加为当前SKU的替代发货方式？`,
+                confirmText: '确认设置',
+                cancelText: '取消',
+                onConfirm: function() {
+                    fetch('/api/order-product?action=shipping_plans', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            quick_apply_from_usage: 1,
+                            order_product_id: shippingPlanCurrentOrder.id,
+                            target_order_product_id: targetId
+                        })
+                    })
+                        .then(r => r.json())
+                        .then(data => {
+                            if (data.status !== 'success') {
+                                showUploadDialog({ title: '设置失败', message: data.message || '设置失败' });
+                                return;
+                            }
+                            loadShippingPlans();
+                        })
+                        .catch(err => showUploadDialog({ title: '请求失败', message: '请求失败: ' + err }));
+                }
+            });
         }
 
         function openShippingPlanEditor(planId) {
@@ -2019,28 +2076,65 @@
         function deleteShippingPlan(planId) {
             const deleteId = Number(planId || 0);
             if (!deleteId) return;
-            showUploadDialog({
-                title: '删除确认',
-                message: '确认删除该替代发货方案？',
-                confirmText: '确认删除',
-                cancelText: '取消',
-                onConfirm: function() {
-                    fetch('/api/order-product?action=shipping_plans', {
-                        method: 'DELETE',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ id: deleteId })
-                    })
-                        .then(r => r.json())
-                        .then(data => {
-                            if (data.status !== 'success') {
-                                showUploadDialog({ title: '删除失败', message: data.message || '删除失败' });
-                                return;
-                            }
-                            loadShippingPlans();
-                        })
-                        .catch(err => showUploadDialog({ title: '请求失败', message: '请求失败: ' + err }));
-                }
-            });
+            fetchDeleteImpact('shipping_plan', deleteId)
+                .then(data => {
+                    let message = '确认删除该替代发货方案？';
+                    if (data && data.status === 'success' && data.impact) {
+                        const impact = data.impact;
+                        const detail = (impact.items || []).map(x => `- ${x.substitute_order_sku || ''} x${Number(x.quantity || 1)}`).join('\n');
+                        message = [
+                            `将删除方案：${impact.owner_sku || ''}（${impact.plan_name || ''}）`,
+                            `将删除替代SKU关联：${Number(impact.item_count || 0)} 条`,
+                            detail ? `\n关联明细：\n${detail}` : ''
+                        ].filter(Boolean).join('\n');
+                    }
+                    showUploadDialog({
+                        title: '删除确认',
+                        message,
+                        confirmText: '确认删除',
+                        cancelText: '取消',
+                        onConfirm: function() {
+                            fetch('/api/order-product?action=shipping_plans', {
+                                method: 'DELETE',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ id: deleteId })
+                            })
+                                .then(r => r.json())
+                                .then(resp => {
+                                    if (resp.status !== 'success') {
+                                        showUploadDialog({ title: '删除失败', message: resp.message || '删除失败' });
+                                        return;
+                                    }
+                                    loadShippingPlans();
+                                })
+                                .catch(err => showUploadDialog({ title: '请求失败', message: '请求失败: ' + err }));
+                        }
+                    });
+                })
+                .catch(() => {
+                    showUploadDialog({
+                        title: '删除确认',
+                        message: '确认删除该替代发货方案？',
+                        confirmText: '确认删除',
+                        cancelText: '取消',
+                        onConfirm: function() {
+                            fetch('/api/order-product?action=shipping_plans', {
+                                method: 'DELETE',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ id: deleteId })
+                            })
+                                .then(r => r.json())
+                                .then(resp => {
+                                    if (resp.status !== 'success') {
+                                        showUploadDialog({ title: '删除失败', message: resp.message || '删除失败' });
+                                        return;
+                                    }
+                                    loadShippingPlans();
+                                })
+                                .catch(err => showUploadDialog({ title: '请求失败', message: '请求失败: ' + err }));
+                        }
+                    });
+                });
         }
 
         function renderOrderProductTable(items) {
@@ -2088,7 +2182,7 @@
                                     <div class="pm-actions">
                                         <button class="btn-secondary" onclick='openShippingPlanModal(${JSON.stringify(item)})'>替代方案</button>
                                         <button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button>
-                                        <button class="btn-danger" onclick='deleteOrderProduct(${item.id})'>删除</button>
+                                        <button class="btn-danger" onclick='deleteOrderProduct(${JSON.stringify(item)})'>删除</button>
                                     </div>
                                 </td>
                             </tr>
