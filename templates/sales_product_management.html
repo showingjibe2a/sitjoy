@@ -575,15 +575,25 @@
             wrap.style.display = 'block';
         }
 
-        function showUploadDialog({ title, message, confirmText = '确定', cancelText = '', onConfirm = null, onCancel = null, errors = [] }) {
+        function showUploadDialog({ title, message, confirmText = '确定', cancelText = '', onConfirm = null, onCancel = null, errors = [], detected_header_row = null, detected_headers = null, detected_headers_count = null }) {
             const modal = document.getElementById('uploadDialogModal');
             const titleEl = document.getElementById('uploadDialogTitle');
             const msgEl = document.getElementById('uploadDialogMessage');
             const okBtn = document.getElementById('uploadDialogOkBtn');
             const cancelBtn = document.getElementById('uploadDialogCancelBtn');
 
+            let displayMessage = message || '';
+            
+            // 如果有列检测信息，添加到消息前面
+            if (detected_header_row && detected_headers) {
+                const headerList = detected_headers.filter(h => h !== '[空]').join(' | ') || '[无有效列]';
+                displayMessage = `[检测] 第 ${detected_header_row} 行为标题 (${detected_headers_count || 0} 列)\n列表: ${headerList}\n\n${message}`;
+            }
+
             titleEl.textContent = title || '提示';
-            msgEl.textContent = message || '';
+            msgEl.style.whiteSpace = 'pre-wrap';
+            msgEl.style.lineHeight = '1.6';
+            msgEl.textContent = displayMessage;
             okBtn.textContent = confirmText || '确定';
             cancelBtn.style.display = cancelText ? '' : 'none';
             if (cancelText) cancelBtn.textContent = cancelText;
@@ -1281,7 +1291,14 @@
                 const data = parseJsonSafe(xhr);
                 hideUploadProgress();
                 if (data.status !== 'success') {
-                    showUploadDialog({ title: '预检失败', message: data.message || '预检失败', errors: data.errors || [] });
+                    showUploadDialog({
+                        title: '预检失败',
+                        message: data.message || '预检失败',
+                        errors: data.errors || [],
+                        detected_header_row: data.detected_header_row,
+                        detected_headers: data.detected_headers,
+                        detected_headers_count: data.detected_headers_count
+                    });
                     return;
                 }
                 const errorCount = (data.errors || []).length;

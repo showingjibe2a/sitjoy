@@ -485,7 +485,17 @@ class SalesProductMixin:
 
             ws = wb.active
 
-            header_row_idx = 2 if str(ws.cell(row=1, column=1).value or '').strip() == '基础信息' else 1
+            # 智能检测标题行：扫描前5行，找到包含关键字段的行作为标题行
+            header_row_idx = 1
+            key_indicators = ['店铺', '销售平台SKU', '父体编号', '关联下单SKU', 'shop', 'platform_sku', 'parent_code']
+            for row_check in range(1, min(6, ws.max_row + 1)):
+                row_cells = [str(cell.value or '').strip() for cell in ws[row_check]]
+                row_text = '|'.join(row_cells).lower()
+                # 检查是否包含关键指示字段
+                if any(key.lower() in row_text for key in key_indicators):
+                    header_row_idx = row_check
+                    break
+            
             headers = [cell.value for cell in ws[header_row_idx]]
             
             # 中文标签到字段代码的映射
@@ -546,10 +556,33 @@ class SalesProductMixin:
             # 构建列映射，支持中文和旧格式
             header_map = {}
             for idx, h in enumerate(headers):
-                if h:
-                    h_stripped = str(h).strip()
-                    field_code = label_to_code.get(h_stripped, h_stripped)
-                    header_map[field_code] = idx
+                if h is not None:
+                    h_str = str(h).strip()
+                    if h_str:  # 只处理非空的列标题
+                        field_code = label_to_code.get(h_str, h_str)
+                        if field_code not in header_map:  # 避免后面的重复列覆盖前面的
+                            header_map[field_code] = idx
+            
+            # 诊断：保存所有读到的列（含None和空值）供调试
+            detected_headers = [str(h).strip() if h else '[空]' for h in headers]
+            detected_headers_non_empty = [h for h in detected_headers if h != '[空]']
+            has_shop_name_column = 'shop_name' in header_map
+
+            # 如果预检发现没有shop_name列，立即返回诊断信息
+            if not has_shop_name_column:
+                return self.send_json({
+                    'status': 'error',
+                    'message': (
+                        f'导入失败：找不到店铺列。系统在第 {header_row_idx} 行检测到了以下列标题：\n'
+                        f'{", ".join(detected_headers_non_empty) if detected_headers_non_empty else "[无有效列标题]"}\n\n'
+                        f'请确保Excel中包含"店铺(必填)"或"店铺"列。'
+                        f'如果列标题位置与预期不符，请重新下载模板并按照模板格式整理数据。'
+                    ),
+                    'detected_headers': detected_headers,
+                    'detected_header_row': header_row_idx,
+                    'detected_headers_count': len(detected_headers_non_empty),
+                    'expected_shop_column_names': ['店铺(必填)', '店铺(可选)', '店铺', 'shop_name']
+                }, start_response)
 
             def get_cell(row, key):
                 idx = header_map.get(key)
@@ -676,8 +709,6 @@ class SalesProductMixin:
             self._ensure_sales_product_tables()
             with self._get_db_connection() as conn:
                 tx_enabled = False
-                batch_write_count = 0
-                batch_size = 200
                 if not preview_mode:
                     try:
                         conn.autocommit(False)
@@ -742,38 +773,46 @@ class SalesProductMixin:
                 total_rows = 0
                 errors = []
                 data_start_row = header_row_idx + 2
-                update_sql = """
-                    UPDATE sales_products
-                    SET shop_id=%s,
-                        platform_sku=%s,
-                        product_status=%s,
-                        sku_family_id=%s,
-                        parent_id=%s,
-                        child_code=%s,
-                        dachene_yuncang_no=%s,
-                        fabric=%s,
-                        spec_name=%s,
-                        sale_price_usd=%s,
-                        warehouse_cost_usd=%s,
-                        last_mile_cost_usd=%s,
-                        package_length_in=%s,
-                        package_width_in=%s,
-                        package_height_in=%s,
-                        net_weight_lbs=%s,
-                        gross_weight_lbs=%s
-                    WHERE id=%s
-                """
-                insert_sql = """
-                    INSERT INTO sales_products
-                        (shop_id, platform_sku, product_status, sku_family_id, parent_id, child_code, dachene_yuncang_no, fabric, spec_name,
-                     sale_price_usd, warehouse_cost_usd, last_mile_cost_usd,
-                     package_length_in, package_width_in, package_height_in,
-                     net_weight_lbs, gross_weight_lbs)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s,
-                            %s, %s, %s,
-                            %s, %s, %s,
-                            %s, %s)
-                """
+                
+                # 批处理缓冲区
+                batch_updates = []  # [(payload_with_id), ...]
+                batch_inserts = []  # [(payload), ...]
+                batch_links = []    # [(product_id, link_entries), ...]
+                batch_flush_size = 200
+                
+                def flush_batch_writes(cur):
+                    """一次性批量提交到数据库"""
+                    nonlocal batch_updates, batch_inserts
+                    if batch_updates:
+                        for update_payload in batch_updates:
+                            cur.execute(
+                                """
+                                UPDATE sales_products
+                                SET shop_id=%s, platform_sku=%s, product_status=%s, sku_family_id=%s,
+                                    parent_id=%s, child_code=%s, dachene_yuncang_no=%s, fabric=%s, spec_name=%s,
+                                    sale_price_usd=%s, warehouse_cost_usd=%s, last_mile_cost_usd=%s,
+                                    package_length_in=%s, package_width_in=%s, package_height_in=%s,
+                                    net_weight_lbs=%s, gross_weight_lbs=%s
+                                WHERE id=%s
+                                """,
+                                update_payload
+                            )
+                        batch_updates = []
+                    if batch_inserts:
+                        for insert_payload in batch_inserts:
+                            cur.execute(
+                                """
+                                INSERT INTO sales_products
+                                    (shop_id, platform_sku, product_status, sku_family_id, parent_id, child_code, dachene_yuncang_no, fabric, spec_name,
+                                 sale_price_usd, warehouse_cost_usd, last_mile_cost_usd,
+                                 package_length_in, package_width_in, package_height_in,
+                                 net_weight_lbs, gross_weight_lbs)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                """,
+                                insert_payload
+                            )
+                        batch_inserts = []
+                
                 with conn.cursor() as row_cur:
                     for row_idx in range(data_start_row, ws.max_row + 1):
                         row = ws[row_idx]
@@ -904,35 +943,67 @@ class SalesProductMixin:
                                 net_weight_lbs if net_weight_lbs is not None else agg.get('net_weight_lbs'),
                                 gross_weight_lbs if gross_weight_lbs is not None else agg.get('gross_weight_lbs')
                             )
+                            
+                            new_link_sig = link_signature(link_entries)
+                            old_link_sig = existing_link_map.get(final_platform_sku, tuple())
+                            
                             if target_id:
-                                row_cur.execute(update_sql, payload + (target_id,))
+                                # 更新现有产品：加入批处理队列
+                                batch_updates.append(payload + (target_id,))
                                 new_id = target_id
-                            else:
-                                row_cur.execute(insert_sql, payload)
-                                new_id = row_cur.lastrowid
-
-                            if (not target_id) or (new_link_sig != old_link_sig):
-                                if target_id:
-                                    relation_deleted += len(old_link_sig)
-                                relation_created += len(new_link_sig)
-                                self._replace_sales_order_links(conn, new_id, link_entries)
-                            existing_link_map[final_platform_sku] = new_link_sig
-                            if target_id:
                                 updated += 1
                             else:
+                                # 插入新产品：加入批处理队列
+                                batch_inserts.append(payload)
+                                new_id = None  # 会在flush时获得lastrowid
                                 created += 1
-                                sales_map[final_platform_sku] = new_id
-
-                            if tx_enabled:
-                                batch_write_count += 1
-                                if batch_write_count >= batch_size:
+                            
+                            # 记录关联链接需要的操作
+                            if (not target_id) or (new_link_sig != old_link_sig):
+                                batch_links.append((final_platform_sku, new_id, target_id, new_link_sig, old_link_sig, link_entries))
+                            
+                            existing_link_map[final_platform_sku] = new_link_sig
+                            if not target_id:
+                                sales_map[final_platform_sku] = -1  # 占位符，后续会更新
+                            
+                            # 定期flush批处理
+                            if len(batch_updates) + len(batch_inserts) >= batch_flush_size:
+                                flush_batch_writes(row_cur)
+                                if tx_enabled:
                                     conn.commit()
-                                    batch_write_count = 0
+                                    
                         except Exception as e:
                             errors.append({'row': row_idx, 'error': str(e)})
 
+                # 循环结束后，flush最后的batch
+                if batch_updates or batch_inserts:
+                    flush_batch_writes(row_cur)
+                
+                # 对新插入的产品重新查询获得ID映射
+                if batch_inserts and not preview_mode:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT id, platform_sku FROM sales_products WHERE platform_sku IN ({})".format(
+                            ','.join(['%s'] * len([b[1] for b in batch_inserts]))
+                        ), [b[1] for b in batch_inserts])
+                        for row in cur.fetchall() or []:
+                            sales_map[row['platform_sku']] = row['id']
+                
+                # 批量处理所有关联链接
+                for platform_sku, temp_id, target_id, new_link_sig, old_link_sig, link_entries in batch_links:
+                    try:
+                        final_id = target_id or sales_map.get(platform_sku)
+                        if not final_id:
+                            continue
+                        
+                        if target_id:
+                            relation_deleted += len(old_link_sig)
+                        relation_created += len(new_link_sig)
+                        self._replace_sales_order_links(conn, final_id, link_entries)
+                    except Exception as e:
+                        errors.append({'error': f'关联链接处理失败 {platform_sku}: {str(e)}'})
+
                 if tx_enabled:
-                    if batch_write_count > 0:
+                    if batch_updates or batch_inserts or batch_links:
                         conn.commit()
                     conn.autocommit(True)
 
