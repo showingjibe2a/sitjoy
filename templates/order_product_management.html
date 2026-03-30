@@ -220,58 +220,121 @@
         .preview-savebar.active {
             display: inline-flex;
         }
-        .plan-grid {
-            display: grid;
-            grid-template-columns: 320px 1fr;
-            gap: 0.8rem;
-            min-height: 360px;
-            align-items: stretch;
+        .btn-success {
+            background: linear-gradient(90deg, #2f8a42, #3da65a);
+            border: 1px solid #2b7d3d;
+            color: #fff;
         }
-        .plan-list-wrap {
+        .btn-success:hover {
+            box-shadow: 0 8px 20px rgba(61, 166, 90, 0.22);
+            transform: translateY(-1px);
+        }
+        .shipping-plan-main {
+            display: grid;
+            gap: 0.8rem;
+        }
+        .plan-toolbar {
             display: flex;
-            flex-direction: column;
-            min-height: 100%;
+            justify-content: flex-start;
+        }
+        .plan-section-title {
+            margin: 0 0 0.45rem;
+            color: #8d6f54;
+            font-size: 0.9rem;
+            font-weight: 700;
         }
         .plan-list {
             border: 1px solid var(--morandi-sand);
             border-radius: 8px;
             background: #fff;
             overflow: auto;
-            max-height: 420px;
-            flex: 1;
+            max-height: 300px;
             position: relative;
             z-index: 1;
         }
-        .plan-item {
+        .plan-table-head,
+        .plan-table-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 150px;
+            gap: 0.45rem;
+            align-items: center;
+        }
+        .plan-table-head {
+            padding: 0.5rem 0.65rem;
+            background: #f7f4ef;
+            border-bottom: 1px solid var(--morandi-sand);
+            color: var(--morandi-slate);
+            font-size: 0.82rem;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+        .plan-table-row {
             padding: 0.55rem 0.65rem;
             border-bottom: 1px solid var(--morandi-mist);
             cursor: pointer;
             font-size: 0.92rem;
         }
-        .plan-item:last-child { border-bottom: none; }
-        .plan-item.active { background: #f3efe9; }
+        .plan-table-row:last-child { border-bottom: none; }
+        .plan-table-row:hover {
+            background: #faf8f5;
+        }
+        .plan-action-cell {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 0.35rem;
+        }
+        .plan-action-cell .btn-secondary,
+        .plan-action-cell .btn-danger,
+        .plan-action-cell .btn-success {
+            padding: 0.35rem 0.55rem;
+            font-size: 0.8rem;
+            line-height: 1.15;
+        }
         .plan-item-title {
             font-weight: 600;
             color: var(--morandi-ink);
-            display: flex;
-            justify-content: space-between;
-            gap: 0.4rem;
         }
         .plan-item-sub {
             margin-top: 0.2rem;
             color: var(--morandi-slate);
             font-size: 0.82rem;
         }
-        .plan-editor {
-            border: 1px solid var(--morandi-sand);
-            border-radius: 8px;
-            padding: 0.7rem;
+        .plan-expand-wrap {
+            display: none;
+            border-bottom: 1px solid var(--morandi-mist);
             background: #fff;
+            padding: 0.45rem 0.65rem 0.6rem;
+        }
+        .plan-expand-wrap.open {
+            display: block;
+        }
+        .plan-expand-list {
+            border: 1px solid var(--morandi-mist);
+            border-radius: 8px;
+            background: #fff;
+            overflow: hidden;
+        }
+        .plan-expand-head,
+        .plan-expand-row {
             display: grid;
-            gap: 0.65rem;
-            align-content: start;
-            position: relative;
-            z-index: 2;
+            grid-template-columns: minmax(0, 1fr) 110px;
+            gap: 0.45rem;
+            padding: 0.4rem 0.55rem;
+            font-size: 0.84rem;
+            align-items: center;
+        }
+        .plan-expand-head {
+            background: #f8f6f2;
+            color: var(--morandi-slate);
+            border-bottom: 1px solid var(--morandi-mist);
+        }
+        .plan-expand-row {
+            border-bottom: 1px solid var(--morandi-mist);
+        }
+        .plan-expand-row:last-child {
+            border-bottom: none;
         }
         .plan-field-title {
             color: #8d6f54;
@@ -299,27 +362,33 @@
         .plan-empty-block {
             border: 1px solid var(--morandi-sand);
             border-radius: 8px;
-            min-height: 100px;
+            min-height: 78px;
             display: none;
-            align-items: flex-start;
+            align-items: center;
             justify-content: center;
-            padding-top: 0.5rem;
+            padding: 0.5rem;
             color: var(--morandi-slate);
             font-size: 0.9rem;
             background: #fff;
-            margin-top: auto;
         }
-        .plan-save-wrap {
+        .plan-save-wrap,
+        .plan-row-actions {
             display: flex;
-            justify-content: flex-end;
+            justify-content: space-between;
             gap: 0.45rem;
             margin-top: 0.15rem;
+        }
+        .plan-save-wrap {
+            justify-content: flex-end;
         }
         #shippingPlanModal {
             z-index: 3200;
         }
         #shippingPlanModal .pm-modal-content {
             overflow: visible;
+        }
+        #shippingPlanEditorModal {
+            z-index: 3250;
         }
         #uploadDialogModal {
             z-index: 3300;
@@ -346,6 +415,15 @@
             grid-template-columns: minmax(0, 1fr) 110px 64px;
             gap: 0.45rem;
             align-items: center;
+        }
+        @media (max-width: 960px) {
+            .plan-table-head,
+            .plan-table-row {
+                grid-template-columns: minmax(0, 1fr);
+            }
+            .plan-action-cell {
+                justify-content: flex-start;
+            }
         }
         
     </style>
@@ -691,35 +769,59 @@
     <div class="pm-modal" id="shippingPlanModal">
         <div class="pm-modal-content" style="max-width: 980px;">
             <h3 id="shippingPlanTitle" style="margin-top:0;">替代发货方案</h3>
-            <div class="plan-grid">
-                <div class="plan-list-wrap">
-                    <div style="display:flex; gap:0.45rem; margin-bottom:0.5rem;">
-                        <button type="button" class="btn-secondary" onclick="createNewShippingPlan()">新增方案</button>
+            <div class="shipping-plan-main">
+                <div class="plan-toolbar">
+                    <button type="button" class="btn-success" onclick="openShippingPlanEditor()">新增方案</button>
+                </div>
+
+                <div>
+                    <h4 class="plan-section-title">SKU替代发货方式</h4>
+                    <div class="plan-list">
+                        <div class="plan-table-head">
+                            <span>方案名称 / 预览</span>
+                            <span style="text-align:right;">操作</span>
+                        </div>
+                        <div id="shippingPlanList"></div>
                     </div>
-                    <div id="shippingPlanList" class="plan-list"></div>
                     <div id="shippingPlanEmptyBlock" class="plan-empty-block" style="display:none;">暂无方案，请先新增</div>
                 </div>
-                <div class="plan-editor">
-                    <div class="form-group" style="margin:0;">
-                        <div class="plan-field-title">方案名称</div>
-                        <input type="text" id="shippingPlanName" class="required-field" placeholder="例如：缺货分拆-方案A">
-                    </div>
-                    <div>
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.45rem;">
-                            <h4 style="margin:0; color:#8d6f54; font-size:0.82rem; font-weight:600;">替代下单SKU及数量</h4>
-                            <button type="button" class="btn-secondary" onclick="addShippingPlanRow()">新增替代SKU</button>
+
+                <div>
+                    <h4 class="plan-section-title">SKU组成的其他发货方式</h4>
+                    <div class="plan-list">
+                        <div class="plan-table-head">
+                            <span>预览（当前SKU用于替代）</span>
+                            <span style="text-align:right;">查看</span>
                         </div>
-                        <div class="order-link-box">
-                            <div class="order-link-head"><span>替代下单SKU</span><span>数量</span><span></span></div>
-                            <div id="shippingPlanRows" class="order-link-selected" style="display:none;"></div>
-                            <div id="shippingPlanEmptyText" class="plan-empty">暂无替代SKU，请先新增</div>
-                        </div>
+                        <div id="shippingPlanUsageList"></div>
                     </div>
-                    <div class="plan-save-wrap">
-                        <button class="btn-danger" onclick="deleteShippingPlan()" id="shippingPlanDeleteBtn" style="display:none;">删除方案</button>
-                        <button class="btn-primary" onclick="saveShippingPlan()">保存方案</button>
+                    <div id="shippingPlanUsageEmptyBlock" class="plan-empty-block" style="display:none;">当前SKU未被其他方案引用</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="pm-modal" id="shippingPlanEditorModal">
+        <div class="pm-modal-content" style="max-width: 760px;">
+            <h3 id="shippingPlanEditorTitle" style="margin-top:0;">新增替代发货方案</h3>
+            <div class="form-group" style="margin:0 0 0.65rem 0;">
+                <div class="plan-field-title">方案名称</div>
+                <input type="text" id="shippingPlanName" class="required-field" placeholder="例如：缺货分拆-方案A">
+            </div>
+            <div>
+                <h4 style="margin:0 0 0.45rem 0; color:#8d6f54; font-size:0.86rem; font-weight:700;">替代下单SKU及数量</h4>
+                <div class="order-link-box">
+                    <div class="order-link-head"><span>替代下单SKU</span><span>数量</span><span></span></div>
+                    <div id="shippingPlanRows" class="order-link-selected" style="display:none;"></div>
+                    <div id="shippingPlanEmptyText" class="plan-empty">暂无SKU，请先新增</div>
+                    <div class="plan-row-actions">
+                        <button type="button" class="btn-success" onclick="addShippingPlanRow()">新增SKU</button>
                     </div>
                 </div>
+            </div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeShippingPlanEditorModal()">取消</button>
+                <button class="btn-primary" onclick="saveShippingPlan()">保存方案</button>
             </div>
         </div>
     </div>
@@ -750,7 +852,10 @@
         let previewEditDraft = {};
         let shippingPlanCurrentOrder = null;
         let shippingPlanItems = [];
-        let activeShippingPlan = null;
+        let shippingPlanUsageItems = [];
+        let shippingPlanExpandedIds = new Set();
+        let shippingPlanUsageExpandedKeys = new Set();
+        let shippingPlanEditorDraft = null;
 
         function renderUploadErrorDetails(errors) {
             const wrap = document.getElementById('uploadDialogDetails');
@@ -1567,11 +1672,23 @@
             });
         }
 
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         function openShippingPlanModal(item) {
             if (!item || !item.id) return;
             shippingPlanCurrentOrder = item;
             shippingPlanItems = [];
-            activeShippingPlan = null;
+            shippingPlanUsageItems = [];
+            shippingPlanExpandedIds = new Set();
+            shippingPlanUsageExpandedKeys = new Set();
+            shippingPlanEditorDraft = null;
             document.getElementById('shippingPlanTitle').textContent = `替代发货方案 - ${item.sku || ''}`;
             const modal = document.getElementById('shippingPlanModal');
             modal.classList.add('active');
@@ -1584,12 +1701,16 @@
         function closeShippingPlanModal() {
             const modal = document.getElementById('shippingPlanModal');
             modal.classList.remove('active');
+            closeShippingPlanEditorModal();
             if (window.syncModalScrollLock) {
                 window.syncModalScrollLock();
             }
             shippingPlanCurrentOrder = null;
             shippingPlanItems = [];
-            activeShippingPlan = null;
+            shippingPlanUsageItems = [];
+            shippingPlanExpandedIds = new Set();
+            shippingPlanUsageExpandedKeys = new Set();
+            shippingPlanEditorDraft = null;
         }
 
         function loadShippingPlans() {
@@ -1598,21 +1719,31 @@
                 .then(r => r.json())
                 .then(data => {
                     shippingPlanItems = data.status === 'success' ? (data.items || []) : [];
-                    if (!shippingPlanItems.length) {
-                        activeShippingPlan = null;
-                        createNewShippingPlan();
-                    } else {
-                        activeShippingPlan = shippingPlanItems[0];
-                    }
+                    shippingPlanUsageItems = data.status === 'success' ? (data.usage_items || []) : [];
+                    shippingPlanExpandedIds = new Set();
+                    shippingPlanUsageExpandedKeys = new Set();
                     renderShippingPlanList();
-                    renderShippingPlanEditor();
+                    renderShippingPlanUsageList();
                 })
                 .catch(() => {
                     shippingPlanItems = [];
-                    createNewShippingPlan();
+                    shippingPlanUsageItems = [];
+                    shippingPlanExpandedIds = new Set();
+                    shippingPlanUsageExpandedKeys = new Set();
                     renderShippingPlanList();
-                    renderShippingPlanEditor();
+                    renderShippingPlanUsageList();
                 });
+        }
+
+        function toggleShippingPlanExpand(planId) {
+            const key = String(planId || '');
+            if (!key) return;
+            if (shippingPlanExpandedIds.has(key)) {
+                shippingPlanExpandedIds.delete(key);
+            } else {
+                shippingPlanExpandedIds.add(key);
+            }
+            renderShippingPlanList();
         }
 
         function renderShippingPlanList() {
@@ -1621,62 +1752,152 @@
             if (!list) return;
             if (!shippingPlanItems.length) {
                 list.innerHTML = '';
-                if (emptyBlock) emptyBlock.style.display = '';
+                if (emptyBlock) emptyBlock.style.display = 'flex';
                 return;
             }
             if (emptyBlock) emptyBlock.style.display = 'none';
             list.innerHTML = shippingPlanItems.map(plan => {
-                const active = activeShippingPlan && String(activeShippingPlan.id || 'new') === String(plan.id || 'new') ? 'active' : '';
+                const planId = String(plan.id || '');
                 const itemCount = (plan.items || []).length;
-                return `
-                    <div class="plan-item ${active}" onclick="selectShippingPlan(${plan.id})">
-                        <div class="plan-item-title">
-                            <span>${plan.plan_name || ''}</span>
-                            <span></span>
+                const isExpanded = shippingPlanExpandedIds.has(planId);
+                const detailRows = itemCount
+                    ? (plan.items || []).map(row => `
+                        <div class="plan-expand-row">
+                            <span>${escapeHtml(row.substitute_order_sku || '')}</span>
+                            <span>${Number(row.quantity || 1)}</span>
                         </div>
-                        <div class="plan-item-sub">替代SKU ${itemCount} 条</div>
+                    `).join('')
+                    : '<div class="plan-empty" style="padding:0.4rem 0;">暂无替代SKU</div>';
+                return `
+                    <div class="plan-table-row" onclick="toggleShippingPlanExpand(${plan.id})">
+                        <div>
+                            <div class="plan-item-title">${escapeHtml(plan.plan_name || '')}</div>
+                            <div class="plan-item-sub">替代SKU ${itemCount} 条</div>
+                        </div>
+                        <div class="plan-action-cell">
+                            <button class="btn-secondary" type="button" onclick="event.stopPropagation();openShippingPlanEditor(${plan.id})">编辑</button>
+                            <button class="btn-danger" type="button" onclick="event.stopPropagation();deleteShippingPlan(${plan.id})">删除</button>
+                        </div>
+                    </div>
+                    <div class="plan-expand-wrap ${isExpanded ? 'open' : ''}">
+                        ${itemCount ? `
+                            <div class="plan-expand-list">
+                                <div class="plan-expand-head"><span>替代下单SKU</span><span>数量</span></div>
+                                ${detailRows}
+                            </div>
+                        ` : detailRows}
                     </div>
                 `;
             }).join('');
         }
 
-        function selectShippingPlan(planId) {
-            const target = shippingPlanItems.find(x => String(x.id) === String(planId));
-            if (!target) return;
-            activeShippingPlan = JSON.parse(JSON.stringify(target));
-            renderShippingPlanList();
-            renderShippingPlanEditor();
+        function getShippingPlanUsageKey(item) {
+            const planId = String(item.shipping_plan_id || '');
+            const targetId = String(item.target_order_product_id || '');
+            return `${planId}:${targetId}`;
         }
 
-        function createNewShippingPlan() {
-            const v = String((shippingPlanCurrentOrder && shippingPlanCurrentOrder.version_no) || '').trim();
-            const defaultPlanName = v ? `迭代款-${v}` : '';
-            activeShippingPlan = {
-                id: null,
-                order_product_id: shippingPlanCurrentOrder ? shippingPlanCurrentOrder.id : null,
-                plan_name: defaultPlanName,
-                items: []
-            };
-            renderShippingPlanList();
+        function toggleShippingPlanUsageExpand(key) {
+            if (!key) return;
+            if (shippingPlanUsageExpandedKeys.has(key)) {
+                shippingPlanUsageExpandedKeys.delete(key);
+            } else {
+                shippingPlanUsageExpandedKeys.add(key);
+            }
+            renderShippingPlanUsageList();
+        }
+
+        function renderShippingPlanUsageList() {
+            const list = document.getElementById('shippingPlanUsageList');
+            const emptyBlock = document.getElementById('shippingPlanUsageEmptyBlock');
+            if (!list) return;
+            if (!shippingPlanUsageItems.length) {
+                list.innerHTML = '';
+                if (emptyBlock) emptyBlock.style.display = 'flex';
+                return;
+            }
+            if (emptyBlock) emptyBlock.style.display = 'none';
+            list.innerHTML = shippingPlanUsageItems.map(item => {
+                const key = getShippingPlanUsageKey(item);
+                const preview = `${item.target_order_sku || ''}（${item.plan_name || ''}）`;
+                const isExpanded = shippingPlanUsageExpandedKeys.has(key);
+                return `
+                    <div class="plan-table-row" onclick="toggleShippingPlanUsageExpand('${escapeHtml(key)}')">
+                        <div>
+                            <div class="plan-item-title">${escapeHtml(preview)}</div>
+                            <div class="plan-item-sub">当前SKU可用于替代：${escapeHtml(item.target_order_sku || '')}</div>
+                        </div>
+                        <div class="plan-action-cell">
+                            <button class="btn-secondary" type="button" onclick="event.stopPropagation();toggleShippingPlanUsageExpand('${escapeHtml(key)}')">${isExpanded ? '收起' : '展开'}</button>
+                        </div>
+                    </div>
+                    <div class="plan-expand-wrap ${isExpanded ? 'open' : ''}">
+                        <div class="plan-expand-list">
+                            <div class="plan-expand-head"><span>方案信息</span><span>数量</span></div>
+                            <div class="plan-expand-row">
+                                <span>${escapeHtml(preview)}</span>
+                                <span>${Number(item.quantity || 1)}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function openShippingPlanEditor(planId) {
+            if (!shippingPlanCurrentOrder || !shippingPlanCurrentOrder.id) return;
+            if (planId) {
+                const target = shippingPlanItems.find(x => String(x.id) === String(planId));
+                if (!target) return;
+                shippingPlanEditorDraft = JSON.parse(JSON.stringify(target));
+                document.getElementById('shippingPlanEditorTitle').textContent = '编辑替代发货方案';
+            } else {
+                const v = String((shippingPlanCurrentOrder && shippingPlanCurrentOrder.version_no) || '').trim();
+                const defaultPlanName = v ? `迭代款-${v}` : '';
+                shippingPlanEditorDraft = {
+                    id: null,
+                    order_product_id: shippingPlanCurrentOrder.id,
+                    plan_name: defaultPlanName,
+                    items: []
+                };
+                document.getElementById('shippingPlanEditorTitle').textContent = '新增替代发货方案';
+            }
             renderShippingPlanEditor();
+            const modal = document.getElementById('shippingPlanEditorModal');
+            modal.classList.add('active');
+            if (window.syncModalScrollLock) {
+                window.syncModalScrollLock();
+            }
+        }
+
+        function closeShippingPlanEditorModal() {
+            const modal = document.getElementById('shippingPlanEditorModal');
+            if (!modal) return;
+            modal.classList.remove('active');
+            shippingPlanEditorDraft = null;
+            if (window.syncModalScrollLock) {
+                window.syncModalScrollLock();
+            }
         }
 
         function renderShippingPlanEditor() {
             const nameEl = document.getElementById('shippingPlanName');
             const rowsEl = document.getElementById('shippingPlanRows');
             const emptyTextEl = document.getElementById('shippingPlanEmptyText');
-            const delBtn = document.getElementById('shippingPlanDeleteBtn');
-            if (!nameEl || !rowsEl || !delBtn) return;
-            if (!activeShippingPlan) {
+            if (!nameEl || !rowsEl) return;
+            if (!shippingPlanEditorDraft) {
                 nameEl.value = '';
+                rowsEl.innerHTML = '';
                 rowsEl.style.display = 'none';
                 if (emptyTextEl) emptyTextEl.style.display = '';
-                delBtn.style.display = 'none';
                 return;
             }
-            nameEl.value = activeShippingPlan.plan_name || '';
-            delBtn.style.display = activeShippingPlan.id ? '' : 'none';
-            const rows = Array.isArray(activeShippingPlan.items) ? activeShippingPlan.items : [];
+            nameEl.value = shippingPlanEditorDraft.plan_name || '';
+            nameEl.oninput = function() {
+                if (!shippingPlanEditorDraft) return;
+                shippingPlanEditorDraft.plan_name = this.value;
+            };
+            const rows = Array.isArray(shippingPlanEditorDraft.items) ? shippingPlanEditorDraft.items : [];
             if (!rows.length) {
                 rowsEl.innerHTML = '';
                 rowsEl.style.display = 'none';
@@ -1693,7 +1914,7 @@
                 const options = sourceSkuOptions
                     .filter(s => String(s.id) !== String(shippingPlanCurrentOrder.id))
                     .filter(s => !selectedInOtherRows.has(Number(s.id || 0)) || String(s.id) === String(row.substitute_order_product_id || ''))
-                    .map(s => `<option value="${s.id}" ${String(s.id) === String(row.substitute_order_product_id || '') ? 'selected' : ''}>${s.sku || ''}</option>`)
+                    .map(s => `<option value="${s.id}" ${String(s.id) === String(row.substitute_order_product_id || '') ? 'selected' : ''}>${escapeHtml(s.sku || '')}</option>`)
                     .join('');
                 return `
                     <div class="order-link-row plan-row">
@@ -1710,16 +1931,16 @@
             rowsEl.querySelectorAll('[data-plan-field="sku"]').forEach(el => {
                 el.addEventListener('change', function() {
                     const idx = Number(this.getAttribute('data-plan-index'));
-                    if (!Number.isFinite(idx) || !activeShippingPlan || !activeShippingPlan.items[idx]) return;
-                    activeShippingPlan.items[idx].substitute_order_product_id = this.value ? Number(this.value) : null;
+                    if (!Number.isFinite(idx) || !shippingPlanEditorDraft || !shippingPlanEditorDraft.items[idx]) return;
+                    shippingPlanEditorDraft.items[idx].substitute_order_product_id = this.value ? Number(this.value) : null;
                 });
             });
             rowsEl.querySelectorAll('[data-plan-field="qty"]').forEach(el => {
                 el.addEventListener('input', function() {
                     const idx = Number(this.getAttribute('data-plan-index'));
-                    if (!Number.isFinite(idx) || !activeShippingPlan || !activeShippingPlan.items[idx]) return;
+                    if (!Number.isFinite(idx) || !shippingPlanEditorDraft || !shippingPlanEditorDraft.items[idx]) return;
                     const qty = Number(this.value);
-                    activeShippingPlan.items[idx].quantity = Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1;
+                    shippingPlanEditorDraft.items[idx].quantity = Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1;
                 });
             });
             rowsEl.querySelectorAll('select').forEach(el => {
@@ -1730,22 +1951,22 @@
         }
 
         function addShippingPlanRow() {
-            if (!activeShippingPlan) return;
-            if (!Array.isArray(activeShippingPlan.items)) activeShippingPlan.items = [];
-            activeShippingPlan.items.push({ substitute_order_product_id: null, quantity: 1 });
+            if (!shippingPlanEditorDraft) return;
+            if (!Array.isArray(shippingPlanEditorDraft.items)) shippingPlanEditorDraft.items = [];
+            shippingPlanEditorDraft.items.push({ substitute_order_product_id: null, quantity: 1 });
             renderShippingPlanEditor();
         }
 
         function removeShippingPlanRow(idx) {
-            if (!activeShippingPlan || !Array.isArray(activeShippingPlan.items)) return;
-            activeShippingPlan.items.splice(idx, 1);
+            if (!shippingPlanEditorDraft || !Array.isArray(shippingPlanEditorDraft.items)) return;
+            shippingPlanEditorDraft.items.splice(idx, 1);
             renderShippingPlanEditor();
         }
 
         function saveShippingPlan() {
-            if (!shippingPlanCurrentOrder || !shippingPlanCurrentOrder.id || !activeShippingPlan) return;
+            if (!shippingPlanCurrentOrder || !shippingPlanCurrentOrder.id || !shippingPlanEditorDraft) return;
             const planName = (document.getElementById('shippingPlanName').value || '').trim();
-            const items = (activeShippingPlan.items || [])
+            const items = (shippingPlanEditorDraft.items || [])
                 .map((x, idx) => ({
                     substitute_order_product_id: Number(x.substitute_order_product_id || 0),
                     quantity: Math.max(1, Number(x.quantity || 1)),
@@ -1772,12 +1993,12 @@
             }
 
             const payload = {
-                id: activeShippingPlan.id,
+                id: shippingPlanEditorDraft.id,
                 order_product_id: shippingPlanCurrentOrder.id,
                 plan_name: planName,
                 items
             };
-            const method = activeShippingPlan.id ? 'PUT' : 'POST';
+            const method = shippingPlanEditorDraft.id ? 'PUT' : 'POST';
             fetch('/api/order-product?action=shipping_plans', {
                 method,
                 headers: { 'Content-Type': 'application/json' },
@@ -1789,13 +2010,15 @@
                         showUploadDialog({ title: '保存失败', message: data.message || '保存失败' });
                         return;
                     }
+                    closeShippingPlanEditorModal();
                     loadShippingPlans();
                 })
                 .catch(err => showUploadDialog({ title: '请求失败', message: '请求失败: ' + err }));
         }
 
-        function deleteShippingPlan() {
-            if (!activeShippingPlan || !activeShippingPlan.id) return;
+        function deleteShippingPlan(planId) {
+            const deleteId = Number(planId || 0);
+            if (!deleteId) return;
             showUploadDialog({
                 title: '删除确认',
                 message: '确认删除该替代发货方案？',
@@ -1805,7 +2028,7 @@
                     fetch('/api/order-product?action=shipping_plans', {
                         method: 'DELETE',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ id: activeShippingPlan.id })
+                        body: JSON.stringify({ id: deleteId })
                     })
                         .then(r => r.json())
                         .then(data => {
@@ -2570,9 +2793,9 @@
                 closeShippingPlanModal();
             }
         });
-        document.getElementById('shippingPlanName').addEventListener('input', function() {
-            if (activeShippingPlan) {
-                activeShippingPlan.plan_name = this.value || '';
+        document.getElementById('shippingPlanEditorModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeShippingPlanEditorModal();
             }
         });
         document.getElementById('uploadDialogCopyBtn').addEventListener('click', function() {

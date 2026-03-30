@@ -434,6 +434,7 @@ class OrderManagementMixin:
                 if not order_product_id:
                     return self.send_json({'status': 'error', 'message': 'Missing order_product_id'}, start_response)
 
+                usage_items = []
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
@@ -476,7 +477,25 @@ class OrderManagementMixin:
                             pid = self._parse_int(plan.get('id'))
                             plan['items'] = item_map.get(pid, []) if pid else []
 
-                return self.send_json({'status': 'success', 'items': plans}, start_response)
+                        cur.execute(
+                            """
+                            SELECT
+                                ops.id AS shipping_plan_id,
+                                ops.plan_name,
+                                ops.order_product_id AS target_order_product_id,
+                                op.sku AS target_order_sku,
+                                opsi.quantity
+                            FROM order_product_shipping_plan_items opsi
+                            JOIN order_product_shipping_plans ops ON ops.id = opsi.shipping_plan_id
+                            JOIN order_products op ON op.id = ops.order_product_id
+                            WHERE opsi.substitute_order_product_id = %s
+                            ORDER BY op.sku ASC, ops.plan_name ASC, opsi.sort_order ASC, opsi.id ASC
+                            """,
+                            (order_product_id,)
+                        )
+                        usage_items = cur.fetchall() or []
+
+                return self.send_json({'status': 'success', 'items': plans, 'usage_items': usage_items}, start_response)
 
             data = self._read_json_body(environ)
 
