@@ -364,6 +364,10 @@
                             <div class="order-link-box">
                                 <div class="order-link-head"><span>下单SKU</span><span>数量</span><span></span></div>
                                 <div id="orderSkuSelected" class="order-link-selected"></div>
+                                <div style="display: grid; grid-template-columns: 1fr auto; gap: 0.4rem; margin-bottom: 0.4rem;">
+                                    <textarea id="bulkSkuInput" class="optional-field" placeholder="批量导入: 粘贴多个SKU代码（支持逐行、逗号或空格分隔），系统自动计数" style="min-height: 80px; font-family: monospace; font-size: 0.9rem;"></textarea>
+                                    <button type="button" class="btn-secondary" onclick="importBulkSkus()" style="align-self: flex-start;">批量导入</button>
+                                </div>
                                 <div>
                                     <button type="button" class="btn-secondary" onclick="addOrderSkuRow()">新增下单SKU</button>
                                     <button type="button" class="btn-secondary" onclick="clearOrderSkuSelection()">清空</button>
@@ -948,6 +952,87 @@
 
         function clearOrderSkuSelection() {
             selectedOrderSkus = [];
+            renderSelectedOrderSkuRows();
+            autoComputeFabricSpec();
+        }
+
+        function importBulkSkus() {
+            const input = document.getElementById('bulkSkuInput').value.trim();
+            if (!input) {
+                showModalStatus('请先粘贴SKU代码', true);
+                return;
+            }
+
+            // 解析用户输入：支持逐行、逗号、空格、混合分隔
+            const skuList = [];
+            const lines = input.split(/[\n\r]+/);
+            for (const line of lines) {
+                // 每行可能包含多个SKU（逗号或空格分隔）
+                const parts = line.split(/[,\s]+/).filter(s => s.trim());
+                skuList.push(...parts);
+            }
+
+            if (!skuList.length) {
+                showModalStatus('未识别到任何SKU代码', true);
+                return;
+            }
+
+            // 统计SKU出现次数
+            const skuCountMap = {};
+            for (const sku of skuList) {
+                const cleanSku = sku.trim();
+                skuCountMap[cleanSku] = (skuCountMap[cleanSku] || 0) + 1;
+            }
+
+            // 在orderSkuOptions中查找匹配的SKU
+            const matched = [];
+            const unmatchedSkus = [];
+            for (const [sku, count] of Object.entries(skuCountMap)) {
+                const item = (orderSkuOptions || []).find(x => String(x.sku || '').trim() === sku.trim());
+                if (item) {
+                    matched.push({ order_product_id: item.id, quantity: count, sku: sku });
+                } else {
+                    unmatchedSkus.push(sku);
+                }
+            }
+
+            if (!matched.length) {
+                showModalStatus(`未在系统中找到这些SKU: ${unmatchedSkus.join('、')}`, true);
+                return;
+            }
+
+            // 如果有未匹配的SKU，提示用户
+            let message = `成功导入 ${matched.length} 条SKU`;
+            if (unmatchedSkus.length) {
+                message += `，${unmatchedSkus.length} 条未找到 (${unmatchedSkus.join('、')})`;
+            }
+            showModalStatus(message, false);
+
+            // 添加到 selectedOrderSkus（去重合并）
+            const existingMap = {};
+            selectedOrderSkus.forEach(link => {
+                const skuCode = String(link.order_product_id || '');
+                existingMap[skuCode] = link.quantity || 1;
+            });
+
+            for (const {order_product_id, quantity} of matched) {
+                const key = String(order_product_id);
+                if (existingMap[key]) {
+                    // 相同SKU则累加数量
+                    existingMap[key] += quantity;
+                } else {
+                    existingMap[key] = quantity;
+                }
+            }
+
+            // 重新构建 selectedOrderSkus
+            selectedOrderSkus = Object.entries(existingMap).map(([productId, qty]) => ({
+                order_product_id: Number(productId),
+                quantity: Math.max(1, Math.floor(qty))
+            }));
+
+            // 清空输入框
+            document.getElementById('bulkSkuInput').value = '';
             renderSelectedOrderSkuRows();
             autoComputeFabricSpec();
         }

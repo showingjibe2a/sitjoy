@@ -591,24 +591,21 @@ class SalesProductMixin:
                 return row[idx].value
 
             def parse_links(raw):
-                """解析 order_sku_links：支持换行\\n、分号;、竖线|分隔，支持 *数量 或重复计数"""
+                """解析 order_sku_links：支持换行/分号/竖线/逗号分隔，重复SKU自动汇总数量"""
                 if raw is None:
                     return []
                 text = str(raw).strip()
                 if not text:
                     return []
                 
-                # 支持换行符、各类分隔符分割
-                parts = [t.strip() for t in re.split(r'[\n;；|]+', text) if t.strip()]
-                result = []
-                sku_count = {}  # 记录每个SKU的重复计数
+                # 支持换行符、分号、竖线、逗号分隔
+                parts = [t.strip() for t in re.split(r'[\n\r;；|,，]+', text) if t.strip()]
+                sku_qty_map = {}
                 
                 for part in parts:
                     if '*' in part:
-                        # 显式指定数量：MS01A-Brown*2
                         sku, qty = part.split('*', 1)
                     else:
-                        # 未指定数量，检查是否重复出现
                         sku, qty = part, None
                     
                     sku = sku.strip()
@@ -616,23 +613,17 @@ class SalesProductMixin:
                         continue
                     
                     if qty is None:
-                        # 默认计数：重复出现同一SKU则累加
-                        if sku not in sku_count:
-                            sku_count[sku] = 1
-                        else:
-                            sku_count[sku] += 1
-                        qty_val = sku_count[sku]
+                        qty_val = 1
                     else:
-                        # 显式指定的数量
                         qty = qty.strip()
                         try:
                             qty_val = int(qty) if qty else 1
                         except Exception:
                             qty_val = 1
-                    
-                    result.append((sku, max(1, qty_val)))
-                
-                return result
+
+                    sku_qty_map[sku] = sku_qty_map.get(sku, 0) + max(1, qty_val)
+
+                return [(sku, qty) for sku, qty in sku_qty_map.items() if qty > 0]
 
             def link_signature(entries):
                 if not entries:
@@ -777,41 +768,65 @@ class SalesProductMixin:
                 # 批处理缓冲区
                 batch_updates = []  # [(payload_with_id), ...]
                 batch_inserts = []  # [(payload), ...]
-                batch_links = []    # [(product_id, link_entries), ...]
+                batch_insert_skus = []  # 临时缓冲，flush 时清空
+                all_new_insert_skus = []  # 全局累积，记录循环中所有新插入的 SKU
+                batch_links = []    # [(platform_sku, target_id, new_link_sig, old_link_sig, link_entries), ...]
                 batch_flush_size = 200
                 
                 def flush_batch_writes(cur):
-                    """一次性批量提交到数据库"""
-                    nonlocal batch_updates, batch_inserts
+                    """批量提交到数据库"""
+                    nonlocal batch_updates, batch_inserts, batch_insert_skus, all_new_insert_skus
                     if batch_updates:
-                        for update_payload in batch_updates:
-                            cur.execute(
-                                """
-                                UPDATE sales_products
-                                SET shop_id=%s, platform_sku=%s, product_status=%s, sku_family_id=%s,
-                                    parent_id=%s, child_code=%s, dachene_yuncang_no=%s, fabric=%s, spec_name=%s,
-                                    sale_price_usd=%s, warehouse_cost_usd=%s, last_mile_cost_usd=%s,
-                                    package_length_in=%s, package_width_in=%s, package_height_in=%s,
-                                    net_weight_lbs=%s, gross_weight_lbs=%s
-                                WHERE id=%s
-                                """,
-                                update_payload
-                            )
+                        # 用逐行 execute 执行所有 UPDATE（保持单个游标活跃）
+                        try:
+                            for payload in batch_updates:
+                                cur.execute(
+                                    """
+                                    UPDATE sales_products
+                                    SET shop_id=%s, platform_sku=%s, product_status=%s, sku_family_id=%s,
+                                        parent_id=%s, child_code=%s, dachene_yuncang_no=%s, fabric=%s, spec_name=%s,
+                                        sale_price_usd=%s, warehouse_cost_usd=%s, last_mile_cost_usd=%s,
+                                        package_length_in=%s, package_width_in=%s, package_height_in=%s,
+                                        net_weight_lbs=%s, gross_weight_lbs=%s
+                                    WHERE id=%s
+                                    """,
+                                    payload
+                                )
+                        except Exception as e:
+                            errors.append({'error': f'批量更新失败: {str(e)}'})
                         batch_updates = []
+                    
                     if batch_inserts:
-                        for insert_payload in batch_inserts:
-                            cur.execute(
-                                """
-                                INSERT INTO sales_products
-                                    (shop_id, platform_sku, product_status, sku_family_id, parent_id, child_code, dachene_yuncang_no, fabric, spec_name,
-                                 sale_price_usd, warehouse_cost_usd, last_mile_cost_usd,
-                                 package_length_in, package_width_in, package_height_in,
-                                 net_weight_lbs, gross_weight_lbs)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                                """,
-                                insert_payload
-                            )
+                        # 用多行 INSERT VALUES 一次性批量插入（pymysql 支持）
+                        insert_ok = False
+                        try:
+                            if batch_inserts:
+                                # 构建多行 VALUES 语句
+                                placeholders = ','.join(['(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)'] * len(batch_inserts))
+                                insert_values = []
+                                for payload in batch_inserts:
+                                    insert_values.extend(payload)
+                                
+                                cur.execute(
+                                    f"""
+                                    INSERT INTO sales_products
+                                        (shop_id, platform_sku, product_status, sku_family_id, parent_id, child_code, dachene_yuncang_no, fabric, spec_name,
+                                     sale_price_usd, warehouse_cost_usd, last_mile_cost_usd,
+                                     package_length_in, package_width_in, package_height_in,
+                                     net_weight_lbs, gross_weight_lbs)
+                                    VALUES {placeholders}
+                                    """,
+                                    insert_values
+                                )
+                                insert_ok = True
+                        except Exception as e:
+                            errors.append({'error': f'批量插入失败: {str(e)}'})
+                        
+                        # 仅在插入成功后，记录本次新插入 SKU
+                        if insert_ok:
+                            all_new_insert_skus.extend(batch_insert_skus)
                         batch_inserts = []
+                        batch_insert_skus = []
                 
                 with conn.cursor() as row_cur:
                     for row_idx in range(data_start_row, ws.max_row + 1):
@@ -950,49 +965,50 @@ class SalesProductMixin:
                             if target_id:
                                 # 更新现有产品：加入批处理队列
                                 batch_updates.append(payload + (target_id,))
-                                new_id = target_id
                                 updated += 1
                             else:
                                 # 插入新产品：加入批处理队列
                                 batch_inserts.append(payload)
-                                new_id = None  # 会在flush时获得lastrowid
+                                batch_insert_skus.append(final_platform_sku)
                                 created += 1
                             
-                            # 记录关联链接需要的操作
+                            # 记录关联链接需要的操作（延迟到 flush 后处理）
                             if (not target_id) or (new_link_sig != old_link_sig):
-                                batch_links.append((final_platform_sku, new_id, target_id, new_link_sig, old_link_sig, link_entries))
+                                batch_links.append((final_platform_sku, target_id, new_link_sig, old_link_sig, link_entries))
                             
                             existing_link_map[final_platform_sku] = new_link_sig
-                            if not target_id:
-                                sales_map[final_platform_sku] = -1  # 占位符，后续会更新
                             
                             # 定期flush批处理
                             if len(batch_updates) + len(batch_inserts) >= batch_flush_size:
                                 flush_batch_writes(row_cur)
-                                if tx_enabled:
-                                    conn.commit()
                                     
                         except Exception as e:
                             errors.append({'row': row_idx, 'error': str(e)})
 
-                # 循环结束后，flush最后的batch
-                if batch_updates or batch_inserts:
-                    flush_batch_writes(row_cur)
+                    # 循环结束后，flush最后的batch（必须在游标上下文内执行）
+                    if batch_updates or batch_inserts:
+                        flush_batch_writes(row_cur)
                 
-                # 对新插入的产品重新查询获得ID映射
-                if batch_inserts and not preview_mode:
+                # 对所有新插入的产品重新查询获得ID映射
+                if all_new_insert_skus and not preview_mode:
                     with conn.cursor() as cur:
-                        cur.execute("SELECT id, platform_sku FROM sales_products WHERE platform_sku IN ({})".format(
-                            ','.join(['%s'] * len([b[1] for b in batch_inserts]))
-                        ), [b[1] for b in batch_inserts])
-                        for row in cur.fetchall() or []:
-                            sales_map[row['platform_sku']] = row['id']
+                        # 去重后再查询，避免重复 SKU 的多次查询
+                        unique_skus = list(set(all_new_insert_skus))
+                        if unique_skus:
+                            cur.execute("SELECT id, platform_sku FROM sales_products WHERE platform_sku IN ({})".format(
+                                ','.join(['%s'] * len(unique_skus))
+                            ), unique_skus)
+                            for row in cur.fetchall() or []:
+                                sales_map[row['platform_sku']] = row['id']
                 
                 # 批量处理所有关联链接
-                for platform_sku, temp_id, target_id, new_link_sig, old_link_sig, link_entries in batch_links:
+                for platform_sku, target_id, new_link_sig, old_link_sig, link_entries in batch_links:
                     try:
                         final_id = target_id or sales_map.get(platform_sku)
                         if not final_id:
+                            # 如果是新插入的产品但查询失败，记录为错误
+                            if not target_id:
+                                errors.append({'error': f'关联链接处理失败 {platform_sku}: 新产品ID查询失败，无法获得product_id'})
                             continue
                         
                         if target_id:
@@ -1003,8 +1019,7 @@ class SalesProductMixin:
                         errors.append({'error': f'关联链接处理失败 {platform_sku}: {str(e)}'})
 
                 if tx_enabled:
-                    if batch_updates or batch_inserts or batch_links:
-                        conn.commit()
+                    conn.commit()
                     conn.autocommit(True)
 
             return self.send_json({
@@ -1409,6 +1424,7 @@ class SalesProductMixin:
         items = []
         if not isinstance(links, list):
             return items
+        qty_by_order_id = {}
         for entry in links:
             if not isinstance(entry, dict):
                 continue
@@ -1416,22 +1432,58 @@ class SalesProductMixin:
             quantity = self._parse_int(entry.get('quantity')) or 1
             if not order_product_id:
                 continue
+            qty_by_order_id[order_product_id] = qty_by_order_id.get(order_product_id, 0) + max(1, quantity)
+
+        for order_product_id, quantity in qty_by_order_id.items():
             items.append({'order_product_id': order_product_id, 'quantity': max(1, quantity)})
         return items
 
     def _replace_sales_order_links(self, conn, sales_product_id, links):
+        """删除旧关联，批量插入新关联"""
+        if not sales_product_id or sales_product_id < 0:
+            raise ValueError(f'Invalid sales_product_id: {sales_product_id}')
+
+        # 合并同一 order_product_id，避免复合主键 (sales_product_id, order_product_id) 重复
+        merged_links = self._normalize_sales_order_links(links)
+        
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM sales_product_order_links WHERE sales_product_id=%s", (sales_product_id,))
-        if not links:
-            return
-        with conn.cursor() as cur:
-            cur.executemany(
-                """
-                INSERT INTO sales_product_order_links (sales_product_id, order_product_id, quantity)
-                VALUES (%s, %s, %s)
-                """,
-                [(sales_product_id, entry['order_product_id'], entry['quantity']) for entry in links]
-            )
+            # 先删除旧的关联
+            try:
+                cur.execute("DELETE FROM sales_product_order_links WHERE sales_product_id=%s", (sales_product_id,))
+            except Exception as e:
+                raise Exception(f'删除旧关联失败(pid={sales_product_id}): {str(e)}')
+            
+            if not merged_links:
+                return
+            
+            # 用多行 INSERT VALUES 批量插入新关联（pymysql 支持）
+            try:
+                # 构建多行 VALUES 语句
+                placeholders = ','.join(['(%s, %s, %s)'] * len(merged_links))
+                insert_values = []
+                for entry in merged_links:
+                    insert_values.extend([sales_product_id, entry['order_product_id'], entry['quantity']])
+                
+                cur.execute(
+                    f"""
+                    INSERT INTO sales_product_order_links (sales_product_id, order_product_id, quantity)
+                    VALUES {placeholders}
+                    """,
+                    insert_values
+                )
+            except Exception as e:
+                # 如果批量插入失败，回退到逐行插入
+                try:
+                    for entry in merged_links:
+                        cur.execute(
+                            """
+                            INSERT INTO sales_product_order_links (sales_product_id, order_product_id, quantity)
+                            VALUES (%s, %s, %s)
+                            """,
+                            (sales_product_id, entry['order_product_id'], entry['quantity'])
+                        )
+                except Exception as e2:
+                    raise Exception(f'关联链接批量插入失败(pid={sales_product_id}, 入: {len(merged_links)}): {str(e2)}')
 
     def _derive_sales_fields(self, conn, sku_family_id, links):
         if not links:
