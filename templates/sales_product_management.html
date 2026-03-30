@@ -1545,6 +1545,27 @@
                 this.classList.remove('active');
             }
         });
+
+        function fallbackCopyText(text) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', 'readonly');
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            ta.style.top = '0';
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            let ok = false;
+            try {
+                ok = document.execCommand('copy');
+            } catch (e) {
+                ok = false;
+            }
+            document.body.removeChild(ta);
+            return ok;
+        }
+
         document.getElementById('uploadDialogCopyBtn').addEventListener('click', function() {
             const lines = (uploadDialogErrorRows || []).map(item => `行 ${item.row || '-'}\t${item.error || ''}`);
             const text = lines.join('\n') || '无失败明细';
@@ -1552,10 +1573,18 @@
                 navigator.clipboard.writeText(text).then(() => {
                     showTimeoutToast('失败明细已复制');
                 }).catch(() => {
-                    showTimeoutToast('复制失败，请手动复制');
+                    if (fallbackCopyText(text)) {
+                        showTimeoutToast('失败明细已复制');
+                    } else {
+                        showTimeoutToast('复制失败，请手动复制');
+                    }
                 });
             } else {
-                showTimeoutToast('当前环境不支持剪贴板复制');
+                if (fallbackCopyText(text)) {
+                    showTimeoutToast('失败明细已复制');
+                } else {
+                    showTimeoutToast('当前环境不支持剪贴板复制');
+                }
             }
         });
         document.getElementById('pm-modal').addEventListener('click', function(e) {

@@ -395,8 +395,37 @@ class DbSchemaBasicsMixin:
         self._shops_ready = True
 
     def _ensure_order_product_tables(self):
+        marker_key = 'order_product_v2'
+        required_tables = [
+            'order_products',
+            'order_product_materials',
+            'features',
+            'feature_categories',
+            'order_product_features',
+            'order_product_certifications',
+            'order_product_shipping_plans',
+            'order_product_shipping_plan_items',
+        ]
         if self._order_product_ready:
             return
+        if self.__class__._schema_ready_cache.get('order_product'):
+            self._order_product_ready = True
+            return
+        if self._is_schema_marker_ready(marker_key):
+            self._order_product_ready = True
+            self.__class__._schema_ready_cache['order_product'] = True
+            return
+        try:
+            if self._has_required_tables(required_tables):
+                self._order_product_ready = True
+                self.__class__._schema_ready_cache['order_product'] = True
+                self._set_schema_marker_ready(marker_key)
+                return
+        except Exception:
+            pass
+        with self._schema_ensure_lock:
+            if self._order_product_ready:
+                return
         self._ensure_product_table()
         self._ensure_fabric_table()
         self._ensure_category_table()
@@ -758,6 +787,8 @@ class DbSchemaBasicsMixin:
                     pass
 
         self._order_product_ready = True
+        self.__class__._schema_ready_cache['order_product'] = True
+        self._set_schema_marker_ready(marker_key)
 
     def _ensure_todo_tables(self, lightweight=False):
         if self._todo_ready and (lightweight or self._todo_schema_migrated):

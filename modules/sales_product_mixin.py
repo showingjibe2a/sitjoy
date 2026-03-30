@@ -736,135 +736,165 @@ class SalesProductMixin:
 
                 created = 0
                 updated = 0
+                unchanged = 0
                 relation_created = 0
+                relation_deleted = 0
                 total_rows = 0
                 errors = []
                 data_start_row = header_row_idx + 2
-                for row_idx in range(data_start_row, ws.max_row + 1):
-                    row = ws[row_idx]
-                    row_values = [cell.value for cell in row]
-                    if not any(v is not None and str(v).strip() for v in row_values):
-                        continue
-                    total_rows += 1
+                update_sql = """
+                    UPDATE sales_products
+                    SET shop_id=%s,
+                        platform_sku=%s,
+                        product_status=%s,
+                        sku_family_id=%s,
+                        parent_id=%s,
+                        child_code=%s,
+                        dachene_yuncang_no=%s,
+                        fabric=%s,
+                        spec_name=%s,
+                        sale_price_usd=%s,
+                        warehouse_cost_usd=%s,
+                        last_mile_cost_usd=%s,
+                        package_length_in=%s,
+                        package_width_in=%s,
+                        package_height_in=%s,
+                        net_weight_lbs=%s,
+                        gross_weight_lbs=%s
+                    WHERE id=%s
+                """
+                insert_sql = """
+                    INSERT INTO sales_products
+                        (shop_id, platform_sku, product_status, sku_family_id, parent_id, child_code, dachene_yuncang_no, fabric, spec_name,
+                     sale_price_usd, warehouse_cost_usd, last_mile_cost_usd,
+                     package_length_in, package_width_in, package_height_in,
+                     net_weight_lbs, gross_weight_lbs)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s, %s,
+                            %s, %s, %s,
+                            %s, %s)
+                """
+                with conn.cursor() as row_cur:
+                    for row_idx in range(data_start_row, ws.max_row + 1):
+                        row = ws[row_idx]
+                        row_values = [cell.value for cell in row]
+                        if not any(v is not None and str(v).strip() for v in row_values):
+                            continue
+                        total_rows += 1
 
-                    # 支持两种格式：新的合并列 vs 旧的分开列
-                    platform_sku = (get_cell(row, 'platform_sku') or '').strip()
-                    product_status_text = (get_cell(row, 'product_status') or '').strip()
-                    status_map = {'启用': 'enabled', '留用': 'retained', '弃用': 'discarded'}
-                    product_status = status_map.get(product_status_text, (product_status_text or 'enabled').lower())
-                    if product_status not in ('enabled', 'retained', 'discarded'):
-                        product_status = 'enabled'
-                    parent_code = (get_cell(row, 'parent_code') or '').strip() or None
-                    parent_sku_marker = (get_cell(row, 'parent_sku_marker') or '').strip() or None
-                    child_code = (get_cell(row, 'child_code') or '').strip() or None
-                    dachene_yuncang_no = (get_cell(row, 'dachene_yuncang_no') or '').strip() or None
-                    sku_family_name = (get_cell(row, 'sku_family') or '').strip() or None
-                    fabric = (get_cell(row, 'fabric') or '').strip()
-                    spec_name = (get_cell(row, 'spec_name') or '').strip()
-                    sale_price_usd = self._parse_float(get_cell(row, 'sale_price_usd'))
-                    package_length_in = self._parse_float(get_cell(row, 'package_length_in'))
-                    package_width_in = self._parse_float(get_cell(row, 'package_width_in'))
-                    package_height_in = self._parse_float(get_cell(row, 'package_height_in'))
-                    net_weight_lbs = self._parse_float(get_cell(row, 'net_weight_lbs'))
-                    gross_weight_lbs = self._parse_float(get_cell(row, 'gross_weight_lbs'))
-                    order_sku_links = (get_cell(row, 'order_sku_links') or '').strip()
+                        # 支持两种格式：新的合并列 vs 旧的分开列
+                        platform_sku = (get_cell(row, 'platform_sku') or '').strip()
+                        product_status_text = (get_cell(row, 'product_status') or '').strip()
+                        status_map = {'启用': 'enabled', '留用': 'retained', '弃用': 'discarded'}
+                        product_status = status_map.get(product_status_text, (product_status_text or 'enabled').lower())
+                        if product_status not in ('enabled', 'retained', 'discarded'):
+                            product_status = 'enabled'
+                        parent_code = (get_cell(row, 'parent_code') or '').strip() or None
+                        parent_sku_marker = (get_cell(row, 'parent_sku_marker') or '').strip() or None
+                        child_code = (get_cell(row, 'child_code') or '').strip() or None
+                        dachene_yuncang_no = (get_cell(row, 'dachene_yuncang_no') or '').strip() or None
+                        sku_family_name = (get_cell(row, 'sku_family') or '').strip() or None
+                        fabric = (get_cell(row, 'fabric') or '').strip()
+                        spec_name = (get_cell(row, 'spec_name') or '').strip()
+                        sale_price_usd = self._parse_float(get_cell(row, 'sale_price_usd'))
+                        package_length_in = self._parse_float(get_cell(row, 'package_length_in'))
+                        package_width_in = self._parse_float(get_cell(row, 'package_width_in'))
+                        package_height_in = self._parse_float(get_cell(row, 'package_height_in'))
+                        net_weight_lbs = self._parse_float(get_cell(row, 'net_weight_lbs'))
+                        gross_weight_lbs = self._parse_float(get_cell(row, 'gross_weight_lbs'))
+                        order_sku_links = (get_cell(row, 'order_sku_links') or '').strip()
 
-                    if not parent_code:
-                        errors.append({'row': row_idx, 'error': 'Missing parent_code'})
-                        continue
+                        shop_name_text = (get_cell(row, 'shop_name') or '').strip()
+                        if not shop_name_text:
+                            errors.append({'row': row_idx, 'error': 'Missing shop_name'})
+                            continue
+                        shop_id_from_file = shop_map.get(shop_name_text)
+                        if not shop_id_from_file:
+                            errors.append({'row': row_idx, 'error': f'Unknown shop_name: {shop_name_text}'})
+                            continue
 
-                    shop_name_text = (get_cell(row, 'shop_name') or '').strip()
-                    if not shop_name_text:
-                        errors.append({'row': row_idx, 'error': 'Missing shop_name'})
-                        continue
-                    shop_id_from_file = shop_map.get(shop_name_text)
-                    if not shop_id_from_file:
-                        errors.append({'row': row_idx, 'error': f'Unknown shop_name: {shop_name_text}'})
-                        continue
+                        parent_row = None
+                        parent_id = None
+                        if parent_code:
+                            parent_row = parent_map.get(parent_code)
+                            if not parent_row:
+                                if preview_mode:
+                                    parent_row = {'id': None, 'parent_code': parent_code, 'shop_id': shop_id_from_file}
+                                    parent_map[parent_code] = parent_row
+                                else:
+                                    row_cur.execute(
+                                        """
+                                        INSERT INTO sales_parents (parent_code, shop_id, sku_marker)
+                                        VALUES (%s, %s, %s)
+                                        """,
+                                        (parent_code, shop_id_from_file, parent_sku_marker)
+                                    )
+                                    new_parent_id = row_cur.lastrowid
+                                    parent_row = {'id': new_parent_id, 'parent_code': parent_code, 'shop_id': shop_id_from_file}
+                                    parent_map[parent_code] = parent_row
 
-                    parent_row = parent_map.get(parent_code)
-                    if not parent_row:
+                            shop_id = parent_row.get('shop_id')
+                            if not shop_id:
+                                if (not preview_mode) and parent_row.get('id'):
+                                    row_cur.execute("UPDATE sales_parents SET shop_id=%s WHERE id=%s", (shop_id_from_file, parent_row['id']))
+                                shop_id = shop_id_from_file
+                                parent_row['shop_id'] = shop_id
+                            elif int(shop_id) != int(shop_id_from_file):
+                                errors.append({'row': row_idx, 'error': f'Parent/shop mismatch: {parent_code} -> {shop_name_text}'})
+                                continue
+
+                            parent_id = parent_row.get('id')
+                        else:
+                            shop_id = shop_id_from_file
+
+                        link_entries = []
+                        for sku, qty in parse_links(order_sku_links):
+                            order_id = order_map.get(sku)
+                            if not order_id:
+                                errors.append({'row': row_idx, 'error': f'Unknown order SKU: {sku}'})
+                                link_entries = []
+                                break
+                            link_entries.append({'order_product_id': order_id, 'quantity': qty})
+                        if not link_entries:
+                            errors.append({'row': row_idx, 'error': 'Missing order_sku_links'})
+                            continue
+
+                        agg = aggregate_order_links(link_entries)
+                        sku_family_id = sku_family_map.get(sku_family_name) if sku_family_name else agg.get('sku_family_id')
+                        if sku_family_name and not sku_family_id:
+                            errors.append({'row': row_idx, 'error': f'Unknown sku_family: {sku_family_name}'})
+                            continue
+                        if not sku_family_id:
+                            errors.append({'row': row_idx, 'error': '无法根据订单SKU推断归属货号'})
+                            continue
+
+                        auto_fabric = agg.get('auto_fabric') or ''
+                        auto_spec_name = agg.get('auto_spec_name') or ''
+                        auto_platform_sku = ''
+                        sku_family_code = sku_family_code_map.get(sku_family_id) or ''
+                        if sku_family_code and auto_fabric and auto_spec_name:
+                            auto_platform_sku = self._build_sales_platform_sku(sku_family_code, auto_spec_name, agg.get('first_fabric_code') or '')
+
+                        final_fabric = fabric or auto_fabric
+                        final_spec_name = spec_name or auto_spec_name
+                        final_platform_sku = platform_sku or auto_platform_sku
+
+                        if not final_platform_sku:
+                            errors.append({'row': row_idx, 'error': 'Platform SKU missing'})
+                            continue
+
+                        new_link_sig = link_signature(link_entries)
+                        old_link_sig = existing_link_map.get(final_platform_sku, tuple())
                         if preview_mode:
-                            parent_row = {'id': None, 'parent_code': parent_code, 'shop_id': shop_id_from_file}
-                            parent_map[parent_code] = parent_row
-                        else:
-                            with conn.cursor() as cur:
-                                cur.execute(
-                                    """
-                                    INSERT INTO sales_parents (parent_code, shop_id, sku_marker)
-                                    VALUES (%s, %s, %s)
-                                    """,
-                                    (parent_code, shop_id_from_file, parent_sku_marker)
-                                )
-                                new_parent_id = cur.lastrowid
-                            parent_row = {'id': new_parent_id, 'parent_code': parent_code, 'shop_id': shop_id_from_file}
-                            parent_map[parent_code] = parent_row
+                            if sales_map.get(final_platform_sku):
+                                updated += 1
+                            else:
+                                created += 1
+                                sales_map[final_platform_sku] = -1
+                            continue
 
-                    shop_id = parent_row.get('shop_id')
-                    if not shop_id:
-                        if (not preview_mode) and parent_row.get('id'):
-                            with conn.cursor() as cur:
-                                cur.execute("UPDATE sales_parents SET shop_id=%s WHERE id=%s", (shop_id_from_file, parent_row['id']))
-                        shop_id = shop_id_from_file
-                        parent_row['shop_id'] = shop_id
-                    elif int(shop_id) != int(shop_id_from_file):
-                        errors.append({'row': row_idx, 'error': f'Parent/shop mismatch: {parent_code} -> {shop_name_text}'})
-                        continue
-
-                    link_entries = []
-                    for sku, qty in parse_links(order_sku_links):
-                        order_id = order_map.get(sku)
-                        if not order_id:
-                            errors.append({'row': row_idx, 'error': f'Unknown order SKU: {sku}'})
-                            link_entries = []
-                            break
-                        link_entries.append({'order_product_id': order_id, 'quantity': qty})
-                    if not link_entries:
-                        errors.append({'row': row_idx, 'error': 'Missing order_sku_links'})
-                        continue
-
-                    relation_created += len(link_entries)
-
-                    agg = aggregate_order_links(link_entries)
-                    sku_family_id = sku_family_map.get(sku_family_name) if sku_family_name else agg.get('sku_family_id')
-                    if sku_family_name and not sku_family_id:
-                        errors.append({'row': row_idx, 'error': f'Unknown sku_family: {sku_family_name}'})
-                        continue
-                    if not sku_family_id:
-                        errors.append({'row': row_idx, 'error': '无法根据订单SKU推断归属货号'})
-                        continue
-
-                    parent_id = None
-                    if parent_code:
-                        parent_id = parent_row.get('id')
-
-                    manual_platform_sku = bool(platform_sku)
-                    auto_fabric = agg.get('auto_fabric') or ''
-                    auto_spec_name = agg.get('auto_spec_name') or ''
-                    auto_platform_sku = ''
-                    sku_family_code = sku_family_code_map.get(sku_family_id) or ''
-                    if sku_family_code and auto_fabric and auto_spec_name:
-                        auto_platform_sku = self._build_sales_platform_sku(sku_family_code, auto_spec_name, agg.get('first_fabric_code') or '')
-
-                    final_fabric = fabric or auto_fabric
-                    final_spec_name = spec_name or auto_spec_name
-                    final_platform_sku = platform_sku or auto_platform_sku
-
-                    if not final_platform_sku:
-                        errors.append({'row': row_idx, 'error': 'Platform SKU missing'})
-                        continue
-
-                    if preview_mode:
-                        if sales_map.get(final_platform_sku):
-                            updated += 1
-                        else:
-                            created += 1
-                            sales_map[final_platform_sku] = -1
-                        continue
-
-                    try:
-                        target_id = sales_map.get(final_platform_sku)
-                        with conn.cursor() as cur:
+                        try:
+                            target_id = sales_map.get(final_platform_sku)
                             payload = (
                                 shop_id, final_platform_sku, product_status, sku_family_id, parent_id, child_code, dachene_yuncang_no, final_fabric, final_spec_name,
                                 sale_price_usd, agg.get('warehouse_cost_usd'), agg.get('last_mile_cost_usd'),
@@ -875,65 +905,31 @@ class SalesProductMixin:
                                 gross_weight_lbs if gross_weight_lbs is not None else agg.get('gross_weight_lbs')
                             )
                             if target_id:
-                                cur.execute(
-                                    """
-                                    UPDATE sales_products
-                                    SET shop_id=%s,
-                                        platform_sku=%s,
-                                        product_status=%s,
-                                        sku_family_id=%s,
-                                        parent_id=%s,
-                                        child_code=%s,
-                                        dachene_yuncang_no=%s,
-                                        fabric=%s,
-                                        spec_name=%s,
-                                        sale_price_usd=%s,
-                                        warehouse_cost_usd=%s,
-                                        last_mile_cost_usd=%s,
-                                        package_length_in=%s,
-                                        package_width_in=%s,
-                                        package_height_in=%s,
-                                        net_weight_lbs=%s,
-                                        gross_weight_lbs=%s
-                                    WHERE id=%s
-                                    """,
-                                    payload + (target_id,)
-                                )
+                                row_cur.execute(update_sql, payload + (target_id,))
                                 new_id = target_id
                             else:
-                                cur.execute(
-                                    """
-                                    INSERT INTO sales_products
-                                        (shop_id, platform_sku, product_status, sku_family_id, parent_id, child_code, dachene_yuncang_no, fabric, spec_name,
-                                     sale_price_usd, warehouse_cost_usd, last_mile_cost_usd,
-                                     package_length_in, package_width_in, package_height_in,
-                                     net_weight_lbs, gross_weight_lbs)
-                                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s,
-                                            %s, %s, %s,
-                                            %s, %s, %s,
-                                            %s, %s)
-                                    """,
-                                    payload
-                                )
-                                new_id = cur.lastrowid
-                        new_link_sig = link_signature(link_entries)
-                        old_link_sig = existing_link_map.get(final_platform_sku, tuple())
-                        if (not target_id) or (new_link_sig != old_link_sig):
-                            self._replace_sales_order_links(conn, new_id, link_entries)
-                        existing_link_map[final_platform_sku] = new_link_sig
-                        if target_id:
-                            updated += 1
-                        else:
-                            created += 1
-                            sales_map[final_platform_sku] = new_id
+                                row_cur.execute(insert_sql, payload)
+                                new_id = row_cur.lastrowid
 
-                        if tx_enabled:
-                            batch_write_count += 1
-                            if batch_write_count >= batch_size:
-                                conn.commit()
-                                batch_write_count = 0
-                    except Exception as e:
-                        errors.append({'row': row_idx, 'error': str(e)})
+                            if (not target_id) or (new_link_sig != old_link_sig):
+                                if target_id:
+                                    relation_deleted += len(old_link_sig)
+                                relation_created += len(new_link_sig)
+                                self._replace_sales_order_links(conn, new_id, link_entries)
+                            existing_link_map[final_platform_sku] = new_link_sig
+                            if target_id:
+                                updated += 1
+                            else:
+                                created += 1
+                                sales_map[final_platform_sku] = new_id
+
+                            if tx_enabled:
+                                batch_write_count += 1
+                                if batch_write_count >= batch_size:
+                                    conn.commit()
+                                    batch_write_count = 0
+                        except Exception as e:
+                            errors.append({'row': row_idx, 'error': str(e)})
 
                 if tx_enabled:
                     if batch_write_count > 0:
@@ -946,7 +942,10 @@ class SalesProductMixin:
                 'total_rows': total_rows,
                 'created': created,
                 'updated': updated,
+                'unchanged': unchanged,
                 'relation_created': relation_created,
+                'relation_added': relation_created,
+                'relation_deleted': relation_deleted,
                 'errors': errors
             }, start_response)
         except Exception as e:

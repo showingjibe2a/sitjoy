@@ -83,8 +83,28 @@ class SalesSchemaMixin:
             self.__class__._schema_ready_cache['sales_parent'] = True
 
     def _ensure_sales_product_tables(self):
+        marker_key = 'sales_product_v2'
+        required_tables = ['sales_products', 'sales_product_order_links']
         if self._sales_product_ready:
             return
+        if self.__class__._schema_ready_cache.get('sales_product'):
+            self._sales_product_ready = True
+            return
+        if self._is_schema_marker_ready(marker_key):
+            self._sales_product_ready = True
+            self.__class__._schema_ready_cache['sales_product'] = True
+            return
+        try:
+            if self._has_required_tables(required_tables):
+                self._sales_product_ready = True
+                self.__class__._schema_ready_cache['sales_product'] = True
+                self._set_schema_marker_ready(marker_key)
+                return
+        except Exception:
+            pass
+        with self._schema_ensure_lock:
+            if self._sales_product_ready:
+                return
         self._ensure_shops_table()
         self._ensure_sales_parent_tables()
         self._ensure_amazon_ad_tables()
@@ -335,6 +355,8 @@ class SalesSchemaMixin:
                 except Exception:
                     pass
         self._sales_product_ready = True
+        self.__class__._schema_ready_cache['sales_product'] = True
+        self._set_schema_marker_ready(marker_key)
 
     def _ensure_sales_order_registration_tables(self):
         perf_ctx = self._perf_begin('ensure_sales_order_registration_tables_internal')

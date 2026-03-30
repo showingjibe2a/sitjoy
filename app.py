@@ -71,6 +71,7 @@ class WSGIApp(
 ):
     _schema_ready_cache = {
         'certification': False,
+        'order_product': False,
         'sales_parent': False,
         'sales_product': False,
         'sales_order_registration': False,
