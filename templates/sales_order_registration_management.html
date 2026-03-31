@@ -38,7 +38,7 @@
             color: var(--morandi-slate);
             padding: 0 0.2rem;
         }
-        .platform-line-head { grid-template-columns: minmax(0, 1fr) 100px minmax(0, 1fr) 64px; }
+        .platform-line-head { grid-template-columns: minmax(0, 1fr) 100px 64px; }
         .ship-line-head { grid-template-columns: minmax(0, 1fr) 100px 64px; }
         .logistics-line-head { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 64px; }
         .line-list { display: grid; gap: 0.4rem; }
@@ -47,19 +47,17 @@
             gap: 0.45rem;
             align-items: center;
         }
-        .platform-line-row { grid-template-columns: minmax(0, 1fr) 100px minmax(0, 1fr) 64px; }
+        .platform-line-row { grid-template-columns: minmax(0, 1fr) 100px 64px; }
         .ship-line-row { grid-template-columns: minmax(0, 1fr) 100px 64px; }
         .logistics-line-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 64px; }
         .line-row .btn-danger { padding: 0.35rem 0.45rem; font-size: 0.82rem; line-height: 1.15; }
+        .line-row .btn-secondary { padding: 0.35rem 0.45rem; font-size: 0.82rem; line-height: 1.15; }
         .pm-table td { vertical-align: top; }
         .sku-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 0.75rem;
+            grid-template-columns: 1fr;
+            gap: 0.9rem;
             min-width: 0;
-        }
-        @media (max-width: 1160px) {
-            .sku-grid { grid-template-columns: 1fr; }
         }
         .status-tag {
             display: inline-block;
@@ -99,6 +97,157 @@
             cursor: pointer;
             opacity: 0.8;
         }
+        .ship-auto-note {
+            font-size: 0.86rem;
+            color: var(--morandi-slate);
+            margin-top: 0.2rem;
+        }
+        .qty-badge {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 26px;
+            height: 26px;
+            border-radius: 999px;
+            background: var(--morandi-sand);
+            color: #fff;
+            font-size: 0.78rem;
+            font-weight: 700;
+        }
+        .shipment-lines-container {
+            position: relative;
+            display: grid;
+            gap: 0.4rem;
+        }
+        .plan-empty {
+            text-align: center;
+            padding: 0.8rem 0.4rem;
+            color: var(--morandi-slate);
+            font-size: 0.85rem;
+            font-style: italic;
+        }
+        .shipment-plan-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 100px 64px;
+            gap: 0.45rem;
+            align-items: center;
+            margin-left: 1.1rem;
+            padding: 0.1rem 0 0.1rem 0.5rem;
+            border-left: 2px dashed var(--morandi-sand);
+            background: rgba(255, 255, 255, 0.58);
+            border-radius: 4px;
+        }
+        .shipment-plan-name {
+            font-size: 0.75rem;
+            color: var(--morandi-slate);
+            line-height: 1.15;
+        }
+        .plan-qty-control {
+            width: 100px;
+            display: grid;
+            grid-template-columns: 26px minmax(0, 1fr) 26px;
+            gap: 0.28rem;
+            align-items: center;
+        }
+        .plan-qty-cell {
+            height: 42px;
+            border-radius: 6px;
+            border: 2px solid var(--morandi-sand);
+            background: #fff;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--morandi-ink);
+            font-size: 0.86rem;
+            font-variant-numeric: tabular-nums;
+        }
+        .plan-step-btn {
+            width: 22px !important;
+            height: 22px !important;
+            padding: 0 !important;
+            min-width: 22px !important;
+            line-height: 1 !important;
+            border-radius: 999px !important;
+            font-size: 0.72rem !important;
+            font-weight: 700 !important;
+            border: 1px solid var(--morandi-sand) !important;
+            box-shadow: none !important;
+        }
+        .plan-step-btn--dec {
+            background: #b67f7f !important;
+            color: #fff !important;
+        }
+        .plan-step-btn--dec:hover {
+            background: #a97373 !important;
+        }
+        .plan-step-btn--inc {
+            background: #7f9270 !important;
+            color: #fff !important;
+        }
+        .plan-step-btn--inc:hover {
+            background: #728464 !important;
+        }
+        .plan-source-placeholder {
+            width: 64px;
+        }
+        #shipmentPreviewSegment .status-pill {
+            background: #f3efe9;
+            color: var(--morandi-ink);
+            border: 1px solid var(--morandi-sand);
+        }
+        #shipmentPreviewSegment .status-pill.is-active {
+            background: var(--morandi-ink);
+            color: #fff;
+            border-color: var(--morandi-ink);
+            box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.12);
+        }
+        .summary-lines {
+            display: grid;
+            gap: 0.16rem;
+        }
+        .summary-line {
+            display: block;
+            font-size: 0.82rem;
+            color: var(--morandi-ink);
+            line-height: 1.25;
+            padding: 0.08rem 0;
+            border-bottom: 1px dashed rgba(207, 199, 189, 0.5);
+        }
+        .summary-line:last-child {
+            border-bottom: none;
+        }
+        .list-segment {
+            min-width: 150px;
+        }
+        .list-segment .status-pill {
+            padding: 0.2rem 0.45rem;
+            font-size: 0.76rem;
+        }
+        .list-note-wrap {
+            display: grid;
+            gap: 0.28rem;
+            min-width: 220px;
+        }
+        .list-note-input,
+        .list-note-area {
+            width: 100%;
+            border: 2px solid var(--morandi-sand);
+            border-radius: 6px;
+            background: #fff;
+            color: var(--morandi-ink);
+            font-size: 0.82rem;
+            padding: 0.35rem 0.5rem;
+            line-height: 1.25;
+        }
+        .list-note-area {
+            min-height: 54px;
+            resize: vertical;
+        }
+        .list-note-save {
+            justify-self: end;
+            padding: 0.2rem 0.55rem !important;
+            font-size: 0.78rem !important;
+        }
     </style>
 </head>
 <body>
@@ -134,19 +283,22 @@
                 <table class="pm-table" id="listTable">
                     <thead>
                         <tr>
+                            <th>运输状态</th>
+                            <th>是否邀评</th>
+                            <th>是否已发物流邮件</th>
                             <th>店铺</th>
                             <th>订单号</th>
                             <th>日期</th>
                             <th>客户</th>
-                            <th>运输状态</th>
                             <th>销售平台SKU</th>
                             <th>实际发货SKU</th>
                             <th>物流信息</th>
+                            <th>补偿措施 / 备注</th>
                             <th style="width:160px;">操作</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="9" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="12" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
                 <div class="pager-bar" id="pagerBar" style="display:none;">
@@ -244,26 +396,37 @@
                 </div>
 
                 <div class="pm-section">
-                    <h4>SKU信息</h4>
+                    <h4>SKU信息
+                        <span class="help-dot" data-tip="选择销售平台SKU 后自动生成发货SKU，可通过替代方案调整具体发货内容"></span>
+                    </h4>
                     <div class="pm-section-body sku-grid">
                         <div class="line-box">
-                            <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <h5 style="margin:0;">销售平台SKU（可多条）</h5>
-                                <button type="button" class="btn-secondary" onclick="addPlatformLine()">新增平台SKU</button>
+                            <div style="display:flex; justify-content:space-between; align-items:center; gap:0.45rem;">
+                                <h5 style="margin:0; flex:1;">销售平台SKU
+                                    <span class="help-dot" data-tip="店铺中的销售商品 SKU，支持多条添加"></span>
+                                </h5>
                             </div>
-                            <div class="line-head platform-line-head"><span>销售平台SKU</span><span>数量</span><span>替代方案（可选）</span><span></span></div>
+                            <div class="line-head platform-line-head"><span>销售平台SKU</span><span>数量</span><span></span></div>
                             <div id="platformLines" class="line-list"></div>
+                            <div style="display:flex; justify-content:flex-start; margin-top:0.35rem;">
+                                <button type="button" class="btn-accent" onclick="addPlatformLine()">新增平台SKU</button>
+                            </div>
                         </div>
                         <div class="line-box">
                             <div style="display:flex; justify-content:space-between; align-items:center; gap:0.45rem;">
-                                <h5 style="margin:0;">实际发货SKU（可多条）</h5>
-                                <div style="display:flex; gap:0.45rem;">
-                                    <button type="button" class="btn-secondary" onclick="clearShipmentLinesForAuto()">清空并自动计算</button>
-                                    <button type="button" class="btn-secondary" onclick="addShipmentLine()">新增发货SKU</button>
+                                <h5 style="margin:0; flex:1;">实际发货SKU
+                                    <span class="help-dot" data-tip="选择销售平台SKU后将自动生成发货SKU；有替代方案时可在下方展开并调整替代数量。"></span>
+                                </h5>
+                                <div style="display:flex; gap:0.6rem; align-items:center;">
+                                    <div class="status-segment status-segment--inline" id="shipmentPreviewSegment" data-value="edit">
+                                        <button type="button" class="status-pill is-active" data-value="edit">编辑方案</button>
+                                        <button type="button" class="status-pill" data-value="preview">预览总数</button>
+                                    </div>
+                                    <button type="button" class="btn-secondary" onclick="clearShipmentLinesForAuto()">清除并恢复</button>
                                 </div>
                             </div>
                             <div class="line-head ship-line-head"><span>实际发货SKU</span><span>数量</span><span></span></div>
-                            <div id="shipmentLines" class="line-list"></div>
+                            <div id="shipmentLines" class="line-list shipment-lines-container"></div>
                         </div>
                     </div>
                 </div>
@@ -307,13 +470,17 @@
         let shopOptions = [];
         let salesSkuOptions = [];
         let orderSkuOptions = [];
-        let shippingPlanOptions = [];
         let registrationOptionsReady = false;
         let registrationOptionsPromise = null;
         let platformLines = [];
         let shipmentLines = [];
+        let baseShipmentLines = [];
+        let replacementOptionsByBase = {};
+        let replacementSelectionsByBase = {};
         let logisticsLines = [];
         let shipmentAutoMode = true;
+        let shipmentPreviewTimer = null;
+            let shipmentPreviewMode = 'edit';
         let listRequestToken = 0;
         let listPage = 1;
         const listPageSize = 50;
@@ -401,7 +568,6 @@
             }
             wrap.innerHTML = platformLines.map((line, idx) => {
                 const skuOps = salesSkuOptions.map(item => `<option value="${item.platform_sku || ''}" ${String(item.platform_sku || '') === String(line.platform_sku || '') ? 'selected' : ''}>${item.platform_sku || ''}</option>`).join('');
-                const planOps = shippingPlanOptions.map(item => `<option value="${item.id}" ${String(item.id) === String(line.shipping_plan_id || '') ? 'selected' : ''}>${item.order_sku || ''} / ${item.plan_name || ''}</option>`).join('');
                 return `
                     <div class="line-row platform-line-row">
                         <select class="required-field" data-platform-field="sku" data-platform-index="${idx}" data-search-placeholder="搜索销售平台SKU">
@@ -409,10 +575,6 @@
                             ${skuOps}
                         </select>
                         <input type="number" min="1" step="1" class="required-field" data-platform-field="qty" data-platform-index="${idx}" value="${line.quantity || 1}">
-                        <select class="optional-field" data-platform-field="plan" data-platform-index="${idx}" data-search-placeholder="搜索替代方案">
-                            <option value="">不使用替代方案</option>
-                            ${planOps}
-                        </select>
                         <button class="btn-danger" type="button" onclick="removePlatformLine(${idx})">删除</button>
                     </div>
                 `;
@@ -422,6 +584,7 @@
                     const idx = Number(this.getAttribute('data-platform-index'));
                     if (!Number.isFinite(idx) || !platformLines[idx]) return;
                     platformLines[idx].platform_sku = this.value || '';
+                    scheduleShipmentPreview();
                 });
             });
             wrap.querySelectorAll('[data-platform-field="qty"]').forEach(el => {
@@ -430,13 +593,7 @@
                     if (!Number.isFinite(idx) || !platformLines[idx]) return;
                     const qty = Number(this.value);
                     platformLines[idx].quantity = Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1;
-                });
-            });
-            wrap.querySelectorAll('[data-platform-field="plan"]').forEach(el => {
-                el.addEventListener('change', function() {
-                    const idx = Number(this.getAttribute('data-platform-index'));
-                    if (!Number.isFinite(idx) || !platformLines[idx]) return;
-                    platformLines[idx].shipping_plan_id = this.value ? Number(this.value) : null;
+                    scheduleShipmentPreview();
                 });
             });
             wrap.querySelectorAll('select').forEach(el => {
@@ -444,74 +601,282 @@
                     window.refreshUniversalSingleSelect(el);
                 }
             });
+        }
+
+        function rebuildShipmentLinesFromBaseAndReplacements() {
+            const shipmentQtyMap = {};
+            const baseRemainMap = {};
+            baseShipmentLines.forEach(base => {
+                const bid = Number(base.order_product_id || 0);
+                if (!bid) return;
+                baseRemainMap[bid] = Math.max(0, Number(base.quantity || 0));
+            });
+
+            Object.keys(replacementSelectionsByBase).forEach(baseIdKey => {
+                const baseId = Number(baseIdKey);
+                const options = replacementOptionsByBase[baseIdKey] || [];
+                const selected = replacementSelectionsByBase[baseIdKey] || [];
+                if (!baseRemainMap[baseId]) return;
+
+                let requested = 0;
+                selected.forEach(sel => { requested += Math.max(0, Number(sel.quantity || 0)); });
+                const maxCanReplace = baseRemainMap[baseId];
+                if (requested > maxCanReplace) {
+                    let overflow = requested - maxCanReplace;
+                    for (let i = selected.length - 1; i >= 0 && overflow > 0; i -= 1) {
+                        const q = Math.max(0, Number(selected[i].quantity || 0));
+                        const cut = Math.min(q, overflow);
+                        selected[i].quantity = q - cut;
+                        overflow -= cut;
+                    }
+                    replacementSelectionsByBase[baseIdKey] = selected.filter(x => Number(x.quantity || 0) > 0);
+                }
+
+                (replacementSelectionsByBase[baseIdKey] || []).forEach(sel => {
+                    const selQty = Math.max(0, Number(sel.quantity || 0));
+                    if (!selQty) return;
+                    const plan = options.find(op => Number(op.plan_id) === Number(sel.plan_id));
+                    if (!plan) return;
+                    baseRemainMap[baseId] = Math.max(0, Number(baseRemainMap[baseId] || 0) - selQty);
+                    (plan.items || []).forEach(it => {
+                        const targetId = Number(it.order_product_id || 0);
+                        if (!targetId) return;
+                        const unitQty = Math.max(1, Number(it.quantity || 1));
+                        const key = String(targetId);
+                        if (!shipmentQtyMap[key]) {
+                            shipmentQtyMap[key] = {
+                                order_product_id: targetId,
+                                order_sku: it.order_sku || '',
+                                quantity: 0,
+                                source_type: 'plan',
+                                shipping_plan_id: Number(sel.plan_id || 0) || null
+                            };
+                        }
+                        shipmentQtyMap[key].quantity += selQty * unitQty;
+                    });
+                });
+            });
+
+            baseShipmentLines.forEach(base => {
+                const bid = Number(base.order_product_id || 0);
+                const remain = Math.max(0, Number(baseRemainMap[bid] || 0));
+                if (!bid || remain <= 0) return;
+                const key = String(bid);
+                if (!shipmentQtyMap[key]) {
+                    shipmentQtyMap[key] = {
+                        order_product_id: bid,
+                        order_sku: base.order_sku || '',
+                        quantity: 0,
+                        source_type: 'auto',
+                        shipping_plan_id: null
+                    };
+                }
+                shipmentQtyMap[key].quantity += remain;
+            });
+
+            shipmentLines = Object.values(shipmentQtyMap)
+                .filter(x => Number(x.quantity || 0) > 0)
+                .sort((a, b) => String(a.order_sku || '').localeCompare(String(b.order_sku || '')));
+        }
+
+        function requestShipmentPreviewFromPlatform(applyAutoShipment = true) {
+            const cleanPlatform = platformLines
+                .map(x => ({
+                    platform_sku: String(x.platform_sku || '').trim(),
+                    quantity: Math.max(1, Number(x.quantity || 1))
+                }))
+                .filter(x => x.platform_sku);
+
+            if (!cleanPlatform.length) {
+                baseShipmentLines = [];
+                replacementOptionsByBase = {};
+                replacementSelectionsByBase = {};
+                shipmentLines = [];
+                renderShipmentLines();
+                return;
+            }
+
+            fetch('/api/sales-order-registration?action=shipment_preview', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ platform_items: cleanPlatform })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        showModalStatus(data.message || '自动计算发货SKU失败', true);
+                        return;
+                    }
+                    baseShipmentLines = (data.auto_shipments || []).map(x => ({
+                        order_product_id: Number(x.order_product_id || 0),
+                        order_sku: x.order_sku || '',
+                        quantity: Math.max(1, Number(x.quantity || 1))
+                    }));
+                    replacementOptionsByBase = data.replacement_options || {};
+
+                    const validSelections = {};
+                    Object.keys(replacementSelectionsByBase || {}).forEach(baseKey => {
+                        const options = replacementOptionsByBase[baseKey] || [];
+                        const optionIds = new Set(options.map(op => Number(op.plan_id || 0)));
+                        const rows = (replacementSelectionsByBase[baseKey] || []).filter(x => optionIds.has(Number(x.plan_id || 0)));
+                        if (rows.length) validSelections[baseKey] = rows;
+                    });
+                    replacementSelectionsByBase = validSelections;
+
+                    if (applyAutoShipment) {
+                        rebuildShipmentLinesFromBaseAndReplacements();
+                    }
+                    renderShipmentLines();
+                })
+                .catch(err => {
+                    showModalStatus('自动计算发货SKU失败: ' + err, true);
+                });
+        }
+
+        function scheduleShipmentPreview() {
+            if (shipmentPreviewTimer) {
+                clearTimeout(shipmentPreviewTimer);
+            }
+            shipmentPreviewTimer = setTimeout(() => {
+                shipmentPreviewTimer = null;
+                requestShipmentPreviewFromPlatform();
+            }, 220);
         }
 
         function renderShipmentLines() {
             const wrap = document.getElementById('shipmentLines');
-            if (!shipmentLines.length) {
+            const isPreviewMode = shipmentPreviewMode === 'preview';
+            if (!shipmentLines.length && !baseShipmentLines.length) {
                 wrap.innerHTML = '<div class="plan-empty">当前为空：保存时将按销售SKU自动计算实际发货SKU</div>';
                 return;
             }
-            wrap.innerHTML = shipmentLines.map((line, idx) => {
-                const skuOps = orderSkuOptions.map(item => `<option value="${item.sku || ''}" ${String(item.sku || '') === String(line.order_sku || '') ? 'selected' : ''}>${item.sku || ''}</option>`).join('');
-                return `
-                    <div class="line-row ship-line-row">
-                        <select class="required-field" data-ship-field="sku" data-ship-index="${idx}" data-search-placeholder="搜索下单SKU">
-                            <option value="">请选择下单SKU</option>
-                            ${skuOps}
-                        </select>
-                        <input type="number" min="1" step="1" class="required-field" data-ship-field="qty" data-ship-index="${idx}" value="${line.quantity || 1}">
-                        <button class="btn-danger" type="button" onclick="removeShipmentLine(${idx})">删除</button>
-                    </div>
-                `;
-            }).join('');
-            wrap.querySelectorAll('[data-ship-field="sku"]').forEach(el => {
-                el.addEventListener('change', function() {
-                    const idx = Number(this.getAttribute('data-ship-index'));
-                    if (!Number.isFinite(idx) || !shipmentLines[idx]) return;
-                    shipmentLines[idx].order_sku = this.value || '';
-                });
+            const rows = [];
+            const currentMap = {};
+            shipmentLines.forEach(line => {
+                const id = Number(line.order_product_id || 0);
+                if (!id) return;
+                currentMap[String(id)] = line;
             });
-            wrap.querySelectorAll('[data-ship-field="qty"]').forEach(el => {
-                el.addEventListener('input', function() {
-                    const idx = Number(this.getAttribute('data-ship-index'));
-                    if (!Number.isFinite(idx) || !shipmentLines[idx]) return;
-                    const qty = Number(this.value);
-                    shipmentLines[idx].quantity = Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1;
-                });
-            });
-            wrap.querySelectorAll('select').forEach(el => {
-                if (window.refreshUniversalSingleSelect) {
-                    window.refreshUniversalSingleSelect(el);
+
+            if (isPreviewMode) {
+                const previewRows = shipmentLines.filter(x => Number(x.quantity || 0) > 0);
+                if (!previewRows.length) {
+                    wrap.innerHTML = '<div class="plan-empty">当前预览为空</div>';
+                    return;
                 }
+                previewRows.forEach((line, idx) => {
+                    rows.push(`
+                        <div class="line-row ship-line-row" data-ship-idx="${idx}">
+                            <input type="text" class="required-field" value="${line.order_sku || ''}" readonly>
+                            <input type="number" min="0" step="1" class="required-field" value="${Math.max(0, Number(line.quantity || 0))}" readonly>
+                            <button class="btn-secondary" type="button" title="来源：${line.source_type || 'auto'}">${line.source_type === 'plan' ? '方案' : '自动'}</button>
+                        </div>
+                    `);
+                });
+            } else {
+                const baseIds = new Set();
+                baseShipmentLines.forEach((base, idx) => {
+                    const baseId = Number(base.order_product_id || 0);
+                    if (!baseId) return;
+                    baseIds.add(baseId);
+                    const current = currentMap[String(baseId)] || null;
+                    const qty = current ? Math.max(0, Number(current.quantity || 0)) : 0;
+                    rows.push(`
+                        <div class="line-row ship-line-row" data-ship-idx="${idx}">
+                            <input type="text" class="required-field" value="${base.order_sku || ''}" readonly>
+                            <input type="number" min="0" step="1" class="required-field" value="${qty}" readonly>
+                            <button class="btn-secondary" type="button" title="来源：${(current && current.source_type) || 'auto'}">${(current && current.source_type) === 'plan' ? '方案' : '自动'}</button>
+                        </div>
+                    `);
+
+                    const options = replacementOptionsByBase[String(baseId)] || [];
+                    const selected = replacementSelectionsByBase[String(baseId)] || [];
+                    options.forEach(op => {
+                        const cur = selected.find(x => Number(x.plan_id) === Number(op.plan_id));
+                        const curQty = Math.max(0, Number((cur && cur.quantity) || 0));
+                        const summary = (op.items || []).map(i => (i.order_sku || '') + '*' + Math.max(1, Number(i.quantity || 1))).join(' + ');
+                        rows.push(
+                            '<div class="shipment-plan-row">' +
+                                '<div class="shipment-plan-name">' + (op.plan_name || ('方案#' + op.plan_id)) + '：' + summary + '</div>' +
+                                '<div class="plan-qty-control">' +
+                                    '<button type="button" class="plan-step-btn plan-step-btn--dec" data-replace-op="dec" data-base-id="' + baseId + '" data-plan-id="' + op.plan_id + '">-</button>' +
+                                    '<span class="plan-qty-cell">' + curQty + '</span>' +
+                                    '<button type="button" class="plan-step-btn plan-step-btn--inc" data-replace-op="inc" data-base-id="' + baseId + '" data-plan-id="' + op.plan_id + '">+</button>' +
+                                '</div>' +
+                                '<div class="plan-source-placeholder"></div>' +
+                            '</div>'
+                        );
+                    });
+                });
+
+                shipmentLines.forEach((line, idx) => {
+                    const id = Number(line.order_product_id || 0);
+                    if (!id || baseIds.has(id) || Number(line.quantity || 0) <= 0) return;
+                    rows.push(`
+                        <div class="line-row ship-line-row" data-ship-idx="extra-${idx}">
+                            <input type="text" class="required-field" value="${line.order_sku || ''}" readonly>
+                            <input type="number" min="0" step="1" class="required-field" value="${Math.max(0, Number(line.quantity || 0))}" readonly>
+                            <button class="btn-secondary" type="button" title="来源：${line.source_type || 'plan'}">方案</button>
+                        </div>
+                    `);
+                });
+            }
+            
+            wrap.innerHTML = rows.join('');
+
+            wrap.querySelectorAll('[data-replace-op="dec"]').forEach(el => {
+                el.addEventListener('click', function() {
+                    const baseId = Number(this.getAttribute('data-base-id'));
+                    const planId = Number(this.getAttribute('data-plan-id'));
+                    const key = String(baseId);
+                    const list = replacementSelectionsByBase[key] || [];
+                    const idx = list.findIndex(x => Number(x.plan_id) === planId);
+                    if (idx < 0) return;
+                    list[idx].quantity = Math.max(0, Number(list[idx].quantity || 0) - 1);
+                    if (Number(list[idx].quantity || 0) <= 0) {
+                        list.splice(idx, 1);
+                    }
+                    replacementSelectionsByBase[key] = list;
+                    rebuildShipmentLinesFromBaseAndReplacements();
+                    renderShipmentLines();
+                });
+            });
+            
+            wrap.querySelectorAll('[data-replace-op="inc"]').forEach(el => {
+                el.addEventListener('click', function() {
+                    const baseId = Number(this.getAttribute('data-base-id'));
+                    const planId = Number(this.getAttribute('data-plan-id'));
+                    const key = String(baseId);
+                    replacementSelectionsByBase[key] = replacementSelectionsByBase[key] || [];
+                    const list = replacementSelectionsByBase[key];
+                    const idx = list.findIndex(x => Number(x.plan_id) === planId);
+                    if (idx >= 0) {
+                        list[idx].quantity = Math.max(1, Number(list[idx].quantity || 1) + 1);
+                    } else {
+                        list.push({ plan_id: planId, quantity: 1 });
+                    }
+                    replacementSelectionsByBase[key] = list;
+                    rebuildShipmentLinesFromBaseAndReplacements();
+                    renderShipmentLines();
+                });
             });
         }
 
         function addPlatformLine() {
-            platformLines.push({ platform_sku: '', quantity: 1, shipping_plan_id: null });
+            platformLines.push({ platform_sku: '', quantity: 1 });
             renderPlatformLines();
         }
 
         function removePlatformLine(idx) {
             platformLines.splice(idx, 1);
             renderPlatformLines();
-        }
-
-        function addShipmentLine() {
-            shipmentAutoMode = false;
-            shipmentLines.push({ order_sku: '', quantity: 1 });
-            renderShipmentLines();
-        }
-
-        function removeShipmentLine(idx) {
-            shipmentLines.splice(idx, 1);
-            renderShipmentLines();
+            scheduleShipmentPreview();
         }
 
         function clearShipmentLinesForAuto() {
             shipmentAutoMode = true;
-            shipmentLines = [];
-            renderShipmentLines();
+            replacementSelectionsByBase = {};
+            requestShipmentPreviewFromPlatform();
         }
 
         function renderLogisticsLines() {
@@ -594,7 +959,6 @@
                     shopOptions = data.shops || [];
                     salesSkuOptions = data.sales_products || [];
                     orderSkuOptions = data.order_products || [];
-                    shippingPlanOptions = data.shipping_plans || [];
                     registrationOptionsReady = true;
                 })
                 .finally(() => {
@@ -626,15 +990,21 @@
             setSegmentValue(document.getElementById('modalIsLogisticsEmailedSegment'), '0');
             document.getElementById('modalCompensation').value = '';
             document.getElementById('modalRemark').value = '';
-            platformLines = [{ platform_sku: '', quantity: 1, shipping_plan_id: null }];
+            platformLines = [{ platform_sku: '', quantity: 1 }];
             shipmentLines = [];
+            baseShipmentLines = [];
+            replacementOptionsByBase = {};
+            replacementSelectionsByBase = {};
             logisticsLines = [];
             shipmentAutoMode = true;
+            shipmentPreviewMode = 'edit';
             renderPlatformLines();
             renderShipmentLines();
             renderLogisticsLines();
             resetModalStatus();
             document.getElementById('pm-modal').classList.add('active');
+            bindShipmentSegmentChange();
+            setShipmentPreviewMode('edit');
         }
 
         async function openEditModal(item) {
@@ -672,27 +1042,60 @@
                     platformLines = (row.platform_items || []).map(x => ({
                         sales_product_id: x.sales_product_id || null,
                         platform_sku: x.platform_sku || '',
-                        quantity: Number(x.quantity || 1),
-                        shipping_plan_id: x.shipping_plan_id || null
-                    }));
-                    shipmentLines = (row.shipment_items || []).map(x => ({
-                        order_product_id: x.order_product_id || null,
-                        order_sku: x.order_sku || '',
                         quantity: Number(x.quantity || 1)
                     }));
+                    shipmentLines = (row.shipment_items || []).map(x => ({
+                        order_product_id: x.order_product_id ? Number(x.order_product_id) : null,
+                        order_sku: x.order_sku || '',
+                        quantity: Math.max(0, Number(x.quantity || 0)),
+                        source_type: x.source_type || 'auto',
+                        shipping_plan_id: x.shipping_plan_id ? Number(x.shipping_plan_id) : null
+                    }));
+                    baseShipmentLines = [];
+                    replacementOptionsByBase = {};
+                    replacementSelectionsByBase = {};
                     logisticsLines = (row.logistics_items || []).map(x => ({
                         shipping_carrier: x.shipping_carrier || '',
                         tracking_no: x.tracking_no || ''
                     }));
-                    shipmentAutoMode = shipmentLines.length === 0;
-                    if (!platformLines.length) platformLines = [{ platform_sku: '', quantity: 1, shipping_plan_id: null }];
+                    shipmentAutoMode = true;
+                    shipmentPreviewMode = 'preview';
+                    if (!platformLines.length) platformLines = [{ platform_sku: '', quantity: 1 }];
                     renderPlatformLines();
                     renderShipmentLines();
                     renderLogisticsLines();
+                    requestShipmentPreviewFromPlatform(false);
                     resetModalStatus();
                     document.getElementById('pm-modal').classList.add('active');
+                    bindShipmentSegmentChange();
+                    setShipmentPreviewMode('preview');
                 })
                 .catch(err => showDialog({ title: '请求失败', message: '加载失败: ' + err }));
+        }
+
+        function setShipmentPreviewMode(mode) {
+            const safeMode = mode === 'preview' ? 'preview' : 'edit';
+            shipmentPreviewMode = safeMode;
+            const segment = document.getElementById('shipmentPreviewSegment');
+            if (!segment) return;
+            segment.dataset.value = safeMode;
+            segment.querySelectorAll('.status-pill').forEach(btn => {
+                btn.classList.toggle('is-active', (btn.getAttribute('data-value') || '') === safeMode);
+            });
+        }
+
+        function bindShipmentSegmentChange() {
+            const segment = document.getElementById('shipmentPreviewSegment');
+            if (!segment || segment.dataset.bound === '1') return;
+            segment.dataset.bound = '1';
+            segment.querySelectorAll('.status-pill').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const value = this.getAttribute('data-value') || 'edit';
+                    if (value === shipmentPreviewMode) return;
+                    setShipmentPreviewMode(value);
+                    renderShipmentLines();
+                });
+            });
         }
 
         function closeModal() {
@@ -704,14 +1107,16 @@
             const cleanPlatform = platformLines
                 .map(x => ({
                     platform_sku: String(x.platform_sku || '').trim(),
-                    quantity: Math.max(1, Number(x.quantity || 1)),
-                    shipping_plan_id: x.shipping_plan_id ? Number(x.shipping_plan_id) : null
+                    quantity: Math.max(1, Number(x.quantity || 1))
                 }))
                 .filter(x => x.platform_sku);
             const cleanShipment = shipmentLines
                 .map(x => ({
+                    order_product_id: x.order_product_id ? Number(x.order_product_id) : null,
                     order_sku: String(x.order_sku || '').trim(),
-                    quantity: Math.max(1, Number(x.quantity || 1))
+                    quantity: Math.max(1, Number(x.quantity || 1)),
+                    source_type: x.source_type || 'auto',
+                    shipping_plan_id: x.shipping_plan_id ? Number(x.shipping_plan_id) : null
                 }))
                 .filter(x => x.order_sku);
             const cleanLogistics = logisticsLines
@@ -739,7 +1144,7 @@
                 remark: document.getElementById('modalRemark').value.trim(),
                 logistics_items: cleanLogistics,
                 platform_items: cleanPlatform,
-                shipment_items: shipmentAutoMode ? [] : cleanShipment
+                shipment_items: cleanShipment
             };
         }
 
@@ -797,32 +1202,148 @@
             });
         }
 
+        function _escapeHtml(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function _summaryLines(values, loading) {
+            if (loading) return '<span class="status-tag">加载中...</span>';
+            const arr = Array.isArray(values) ? values.filter(Boolean) : [];
+            if (!arr.length) return '<span class="status-tag">-</span>';
+            return '<div class="summary-lines">' + arr.map(x => '<span class="summary-line">' + _escapeHtml(x) + '</span>').join('') + '</div>';
+        }
+
+        function notifyToast(message, isError) {
+            if (window.showAppToast) {
+                window.showAppToast(message, !!isError, isError ? 3200 : 2200);
+                return;
+            }
+            showDialog({ title: isError ? '提示' : '成功', message: String(message || '') });
+        }
+
+        function saveRegistrationPatch(id, patch, done) {
+            const payload = Object.assign({ id }, patch || {});
+            fetch('/api/sales-order-registration?action=quick_update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        throw new Error(data.message || '保存失败');
+                    }
+                    if (typeof done === 'function') done(null, data);
+                })
+                .catch(err => {
+                    if (typeof done === 'function') done(err);
+                });
+        }
+
+        function saveListQuickStatus(id, field, value) {
+            const patch = {};
+            patch[field] = value;
+            saveRegistrationPatch(id, patch, function(err) {
+                if (err) {
+                    notifyToast(String(err && err.message ? err.message : err), true);
+                    return;
+                }
+                listCache = (listCache || []).map(item => {
+                    if (Number(item.id || 0) !== Number(id || 0)) return item;
+                    const next = { ...item };
+                    next[field] = value;
+                    return next;
+                });
+                renderList(listCache);
+                notifyToast('保存成功', false);
+            });
+        }
+
+        function saveListCompRemark(id) {
+            const compEl = document.getElementById('listComp-' + id);
+            const remarkEl = document.getElementById('listRemark-' + id);
+            const compensation_action = compEl ? String(compEl.value || '').trim() : '';
+            const remark = remarkEl ? String(remarkEl.value || '').trim() : '';
+            showDialog({
+                title: '批量保存确认',
+                message: '确认保存补偿措施与备注？',
+                confirmText: '保存',
+                cancelText: '取消',
+                onConfirm: function() {
+                    saveRegistrationPatch(id, { compensation_action, remark }, function(err) {
+                        if (err) {
+                            notifyToast(String(err && err.message ? err.message : err), true);
+                            return;
+                        }
+                        listCache = (listCache || []).map(item => {
+                            if (Number(item.id || 0) !== Number(id || 0)) return item;
+                            return {
+                                ...item,
+                                compensation_action,
+                                remark
+                            };
+                        });
+                        renderList(listCache);
+                        notifyToast('保存成功', false);
+                    });
+                }
+            });
+        }
+
         function renderList(items) {
             const tbody = document.querySelector('#listTable tbody');
             if (!Array.isArray(items) || !items.length) {
-                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;">暂无数据</td></tr>';
                 return;
             }
             tbody.innerHTML = items.map(item => {
-                const platformText = item.summary_loading
-                    ? '<span class="status-tag">加载中...</span>'
-                    : (item.platform_summary || []).map(x => `<span class="status-tag">${x}</span>`).join('');
-                const shipmentText = item.summary_loading
-                    ? '<span class="status-tag">加载中...</span>'
-                    : (item.shipment_summary || []).map(x => `<span class="status-tag">${x}</span>`).join('');
-                const logisticsText = item.summary_loading
-                    ? '<span class="status-tag">加载中...</span>'
-                    : (item.logistics_summary || []).map(x => `<span class="status-tag">${x}</span>`).join('');
+                const platformText = _summaryLines(item.platform_summary, item.summary_loading);
+                const shipmentText = _summaryLines(item.shipment_summary, item.summary_loading);
+                const logisticsText = _summaryLines(item.logistics_summary, item.summary_loading);
+                const shippingStatus = String(item.shipping_status || 'pending');
+                const isReviewInvited = Number(item.is_review_invited || 0);
+                const isLogisticsEmailed = Number(item.is_logistics_emailed || 0);
                 return `
                     <tr>
+                        <td>
+                            <div class="status-segment status-segment--inline list-segment" data-value="${shippingStatus}">
+                                <button type="button" class="status-pill status-pill--pending ${shippingStatus === 'pending' ? 'is-active' : ''}" onclick="saveListQuickStatus(${item.id}, 'shipping_status', 'pending')">Pending</button>
+                                <button type="button" class="status-pill status-pill--unshipped ${shippingStatus === 'unshipped' ? 'is-active' : ''}" onclick="saveListQuickStatus(${item.id}, 'shipping_status', 'unshipped')">Unshipped</button>
+                                <button type="button" class="status-pill status-pill--shipped ${shippingStatus === 'shipped' ? 'is-active' : ''}" onclick="saveListQuickStatus(${item.id}, 'shipping_status', 'shipped')">Shipped</button>
+                                <button type="button" class="status-pill status-pill--cancelled ${shippingStatus === 'cancelled' ? 'is-active' : ''}" onclick="saveListQuickStatus(${item.id}, 'shipping_status', 'cancelled')">Cancelled</button>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="status-segment status-segment--inline list-segment" data-value="${isReviewInvited}">
+                                <button type="button" class="status-pill status-pill--yes ${isReviewInvited === 1 ? 'is-active' : ''}" onclick="saveListQuickStatus(${item.id}, 'is_review_invited', 1)">是</button>
+                                <button type="button" class="status-pill status-pill--no ${isReviewInvited === 0 ? 'is-active' : ''}" onclick="saveListQuickStatus(${item.id}, 'is_review_invited', 0)">否</button>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="status-segment status-segment--inline list-segment" data-value="${isLogisticsEmailed}">
+                                <button type="button" class="status-pill status-pill--yes ${isLogisticsEmailed === 1 ? 'is-active' : ''}" onclick="saveListQuickStatus(${item.id}, 'is_logistics_emailed', 1)">是</button>
+                                <button type="button" class="status-pill status-pill--no ${isLogisticsEmailed === 0 ? 'is-active' : ''}" onclick="saveListQuickStatus(${item.id}, 'is_logistics_emailed', 0)">否</button>
+                            </div>
+                        </td>
                         <td>${item.shop_display_name || item.shop_name || ''}</td>
                         <td>${item.order_no || ''}</td>
                         <td>${item.order_date ? String(item.order_date).slice(0, 10) : ''}</td>
                         <td>${item.customer_name || ''}</td>
-                        <td>${item.shipping_status || 'pending'}</td>
                         <td>${platformText || ''}</td>
-                        <td>${shipmentText || '<span class="status-tag">自动计算</span>'}</td>
+                        <td>${shipmentText || '<span class="status-tag">-</span>'}</td>
                         <td>${logisticsText || ''}</td>
+                        <td>
+                            <div class="list-note-wrap">
+                                <input id="listComp-${item.id}" class="list-note-input" type="text" value="${_escapeHtml(item.compensation_action || '')}" placeholder="补偿措施">
+                                <textarea id="listRemark-${item.id}" class="list-note-area" placeholder="备注">${_escapeHtml(item.remark || '')}</textarea>
+                                <button type="button" class="btn-secondary list-note-save" onclick="saveListCompRemark(${item.id})">保存</button>
+                            </div>
+                        </td>
                         <td>
                             <div class="pm-actions">
                                 <button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button>
@@ -880,7 +1401,7 @@
                 .then(data => {
                     if (currentToken !== listRequestToken) return;
                     if (data.status !== 'success') {
-                        document.querySelector('#listTable tbody').innerHTML = `<tr><td colspan="9" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        document.querySelector('#listTable tbody').innerHTML = `<tr><td colspan="12" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                         listTotal = 0;
                         renderPager();
                         return;
@@ -903,7 +1424,7 @@
                 })
                 .catch(err => {
                     if (currentToken !== listRequestToken) return;
-                    document.querySelector('#listTable tbody').innerHTML = `<tr><td colspan="9" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                    document.querySelector('#listTable tbody').innerHTML = `<tr><td colspan="12" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
                     listTotal = 0;
                     renderPager();
                 });

@@ -425,6 +425,12 @@ input[type="month"] {
     background: #fff !important;
 }
 
+.help-dot::before {
+    content: '?';
+    font-weight: 700;
+    color: var(--morandi-slate);
+}
+
 .help-dot::after {
     content: attr(data-tip);
     position: absolute;

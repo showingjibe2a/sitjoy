@@ -14,6 +14,68 @@ except Exception as e:
 
 
 class SalesManagementMixin:
+    def _registration_get_replacement_options(self, conn, base_order_product_ids):
+        """按基础发货SKU加载可选替代方案及方案明细。"""
+        result = {}
+        ids = [self._parse_int(x) for x in (base_order_product_ids or []) if self._parse_int(x)]
+        if not ids:
+            return result
+
+        placeholders = ','.join(['%s'] * len(ids))
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT ops.id, ops.order_product_id, ops.plan_name
+                FROM order_product_shipping_plans ops
+                WHERE ops.order_product_id IN ({placeholders})
+                ORDER BY ops.order_product_id ASC, ops.plan_name ASC, ops.id ASC
+                """,
+                tuple(ids)
+            )
+            plan_rows = cur.fetchall() or []
+
+            plan_ids = [self._parse_int(x.get('id')) for x in plan_rows if self._parse_int(x.get('id'))]
+            plan_item_map = {}
+            if plan_ids:
+                plan_placeholders = ','.join(['%s'] * len(plan_ids))
+                cur.execute(
+                    f"""
+                    SELECT
+                        opsi.shipping_plan_id,
+                        opsi.substitute_order_product_id,
+                        opsi.quantity,
+                        opsi.sort_order,
+                        op.sku
+                    FROM order_product_shipping_plan_items opsi
+                    JOIN order_products op ON op.id = opsi.substitute_order_product_id
+                    WHERE opsi.shipping_plan_id IN ({plan_placeholders})
+                    ORDER BY opsi.shipping_plan_id ASC, opsi.sort_order ASC, opsi.id ASC
+                    """,
+                    tuple(plan_ids)
+                )
+                for row in (cur.fetchall() or []):
+                    pid = self._parse_int(row.get('shipping_plan_id'))
+                    if not pid:
+                        continue
+                    plan_item_map.setdefault(pid, []).append({
+                        'order_product_id': self._parse_int(row.get('substitute_order_product_id')),
+                        'order_sku': (row.get('sku') or '').strip(),
+                        'quantity': max(1, self._parse_int(row.get('quantity')) or 1)
+                    })
+
+            for row in plan_rows:
+                base_id = self._parse_int(row.get('order_product_id'))
+                plan_id = self._parse_int(row.get('id'))
+                if not base_id or not plan_id:
+                    continue
+                result.setdefault(base_id, []).append({
+                    'plan_id': plan_id,
+                    'plan_name': (row.get('plan_name') or '').strip(),
+                    'items': plan_item_map.get(plan_id, [])
+                })
+
+        return result
+
     def _bool_from_any(self, value, default=0):
         if value is None:
             return 1 if default else 0
@@ -414,6 +476,67 @@ class SalesManagementMixin:
                 self._perf_mark(perf_ctx, 'get_options_payload')
                 return self.send_json(payload, start_response)
 
+            if method == 'POST' and action == 'shipment_preview':
+                data = self._read_json_body(environ)
+                platform_items = self._normalize_registration_platform_items(data.get('platform_items'))
+                if not platform_items:
+                    return self.send_json({'status': 'success', 'auto_shipments': [], 'replacement_options': {}}, start_response)
+
+                with self._get_db_connection() as conn:
+                    self._registration_fill_item_ids(conn, platform_items, [])
+                    auto_shipments = self._resolve_registration_auto_shipments(conn, platform_items)
+                    base_ids = [self._parse_int(x.get('order_product_id')) for x in auto_shipments if self._parse_int(x.get('order_product_id'))]
+                    replacement_options = self._registration_get_replacement_options(conn, base_ids)
+
+                return self.send_json({
+                    'status': 'success',
+                    'auto_shipments': auto_shipments,
+                    'replacement_options': replacement_options
+                }, start_response)
+
+            if method == 'POST' and action == 'quick_update':
+                data = self._read_json_body(environ)
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+
+                updatable = {}
+                if 'shipping_status' in data:
+                    status = (data.get('shipping_status') or 'pending').strip().lower()
+                    if status not in ('pending', 'unshipped', 'shipped', 'cancelled'):
+                        return self.send_json({'status': 'error', 'message': '无效运输状态'}, start_response)
+                    updatable['shipping_status'] = status
+                if 'is_review_invited' in data:
+                    updatable['is_review_invited'] = self._bool_from_any(data.get('is_review_invited'))
+                if 'is_logistics_emailed' in data:
+                    updatable['is_logistics_emailed'] = self._bool_from_any(data.get('is_logistics_emailed'))
+                if 'compensation_action' in data:
+                    updatable['compensation_action'] = (data.get('compensation_action') or '').strip() or None
+                if 'remark' in data:
+                    updatable['remark'] = (data.get('remark') or '').strip() or None
+
+                if not updatable:
+                    return self.send_json({'status': 'error', 'message': 'No fields to update'}, start_response)
+
+                set_sql = []
+                params = []
+                for key, val in updatable.items():
+                    set_sql.append(f"{key}=%s")
+                    params.append(val)
+                set_sql.append("updated_at=CURRENT_TIMESTAMP")
+                params.append(item_id)
+
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE sales_order_registrations SET " + ', '.join(set_sql) + " WHERE id=%s",
+                            tuple(params)
+                        )
+                        if cur.rowcount <= 0:
+                            return self.send_json({'status': 'error', 'message': '记录不存在或未变更'}, start_response)
+
+                return self.send_json({'status': 'success', 'id': item_id}, start_response)
+
             if method == 'GET' and action == 'summaries':
                 ids = []
                 for raw in query_params.get('ids', []):
@@ -516,6 +639,7 @@ class SalesManagementMixin:
                             cur.execute(
                                 """
                                 SELECT r.id, r.shop_id, r.order_no, r.order_date, r.customer_name, r.shipping_status,
+                                        r.is_review_invited, r.is_logistics_emailed, r.compensation_action, r.remark,
                                        r.created_at, r.updated_at, s.shop_name, s.shop_name AS shop_display_name,
                                        (
                                            SELECT GROUP_CONCAT(CONCAT(COALESCE(p.platform_sku, ''), '*', COALESCE(p.quantity, 1)) ORDER BY p.id ASC SEPARATOR '\n')
@@ -548,6 +672,7 @@ class SalesManagementMixin:
                             cur.execute(
                                 """
                                 SELECT r.id, r.shop_id, r.order_no, r.order_date, r.customer_name, r.shipping_status,
+                                        r.is_review_invited, r.is_logistics_emailed, r.compensation_action, r.remark,
                                        r.created_at, r.updated_at, s.shop_name, s.shop_name AS shop_display_name
                                 FROM sales_order_registrations r
                                 LEFT JOIN shops s ON s.id = r.shop_id
