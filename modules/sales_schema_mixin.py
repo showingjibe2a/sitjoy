@@ -1,86 +1,104 @@
 class SalesSchemaMixin:
     def _ensure_sales_parent_tables(self):
+        marker_key = 'sales_parent_v1'
+        required_tables = ['sales_parents']
         if self._sales_parent_ready:
             return
+        if self.__class__._schema_ready_cache.get('sales_parent'):
+            self._sales_parent_ready = True
+            return
+        if self._is_schema_marker_ready(marker_key):
+            self._sales_parent_ready = True
+            self.__class__._schema_ready_cache['sales_parent'] = True
+            return
+        try:
+            if self._has_required_tables(required_tables):
+                self._sales_parent_ready = True
+                self.__class__._schema_ready_cache['sales_parent'] = True
+                self._set_schema_marker_ready(marker_key)
+                return
+        except Exception:
+            pass
+
         with self._schema_ensure_lock:
             if self._sales_parent_ready:
                 return
-        self._ensure_shops_table()
-        create_sales_parents = """
-        CREATE TABLE IF NOT EXISTS sales_parents (
-            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            parent_code VARCHAR(64) NOT NULL UNIQUE,
-            is_enabled TINYINT(1) NOT NULL DEFAULT 1,
-            shop_id INT UNSIGNED NULL,
-            sku_marker VARCHAR(128) NULL,
-            estimated_refund_rate DECIMAL(8,4) NULL,
-            estimated_discount_rate DECIMAL(8,4) NULL,
-            commission_rate DECIMAL(8,4) NULL,
-            estimated_acoas DECIMAL(8,4) NULL,
-            sales_title VARCHAR(200) NULL,
-            sales_intro VARCHAR(500) NULL,
-            sales_bullet_1 VARCHAR(500) NULL,
-            sales_bullet_2 VARCHAR(500) NULL,
-            sales_bullet_3 VARCHAR(500) NULL,
-            sales_bullet_4 VARCHAR(500) NULL,
-            sales_bullet_5 VARCHAR(500) NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            INDEX idx_parent_code (parent_code),
-            INDEX idx_parent_shop (shop_id),
-            CONSTRAINT fk_sales_parents_shop FOREIGN KEY (shop_id)
-                REFERENCES shops(id) ON DELETE SET NULL
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        """
-        with self._get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(create_sales_parents)
-                migration_columns = [
-                    ("is_enabled", "ALTER TABLE sales_parents ADD COLUMN is_enabled TINYINT(1) NOT NULL DEFAULT 1 AFTER parent_code"),
-                    ("shop_id", "ALTER TABLE sales_parents ADD COLUMN shop_id INT UNSIGNED NULL AFTER is_enabled"),
-                    ("sku_marker", "ALTER TABLE sales_parents ADD COLUMN sku_marker VARCHAR(128) NULL AFTER parent_code"),
-                    ("sales_title", "ALTER TABLE sales_parents ADD COLUMN sales_title VARCHAR(200) NULL AFTER estimated_acoas"),
-                    ("sales_intro", "ALTER TABLE sales_parents ADD COLUMN sales_intro VARCHAR(500) NULL AFTER sales_title"),
-                    ("sales_bullet_1", "ALTER TABLE sales_parents ADD COLUMN sales_bullet_1 VARCHAR(500) NULL AFTER sales_intro"),
-                    ("sales_bullet_2", "ALTER TABLE sales_parents ADD COLUMN sales_bullet_2 VARCHAR(500) NULL AFTER sales_bullet_1"),
-                    ("sales_bullet_3", "ALTER TABLE sales_parents ADD COLUMN sales_bullet_3 VARCHAR(500) NULL AFTER sales_bullet_2"),
-                    ("sales_bullet_4", "ALTER TABLE sales_parents ADD COLUMN sales_bullet_4 VARCHAR(500) NULL AFTER sales_bullet_3"),
-                    ("sales_bullet_5", "ALTER TABLE sales_parents ADD COLUMN sales_bullet_5 VARCHAR(500) NULL AFTER sales_bullet_4")
-                ]
-                for col_name, alter_sql in migration_columns:
+            self._ensure_shops_table()
+            create_sales_parents = """
+            CREATE TABLE IF NOT EXISTS sales_parents (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                parent_code VARCHAR(64) NOT NULL UNIQUE,
+                is_enabled TINYINT(1) NOT NULL DEFAULT 1,
+                shop_id INT UNSIGNED NULL,
+                sku_marker VARCHAR(128) NULL,
+                estimated_refund_rate DECIMAL(8,4) NULL,
+                estimated_discount_rate DECIMAL(8,4) NULL,
+                commission_rate DECIMAL(8,4) NULL,
+                estimated_acoas DECIMAL(8,4) NULL,
+                sales_title VARCHAR(200) NULL,
+                sales_intro VARCHAR(500) NULL,
+                sales_bullet_1 VARCHAR(500) NULL,
+                sales_bullet_2 VARCHAR(500) NULL,
+                sales_bullet_3 VARCHAR(500) NULL,
+                sales_bullet_4 VARCHAR(500) NULL,
+                sales_bullet_5 VARCHAR(500) NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_parent_code (parent_code),
+                INDEX idx_parent_shop (shop_id),
+                CONSTRAINT fk_sales_parents_shop FOREIGN KEY (shop_id)
+                    REFERENCES shops(id) ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(create_sales_parents)
+                    migration_columns = [
+                        ("is_enabled", "ALTER TABLE sales_parents ADD COLUMN is_enabled TINYINT(1) NOT NULL DEFAULT 1 AFTER parent_code"),
+                        ("shop_id", "ALTER TABLE sales_parents ADD COLUMN shop_id INT UNSIGNED NULL AFTER is_enabled"),
+                        ("sku_marker", "ALTER TABLE sales_parents ADD COLUMN sku_marker VARCHAR(128) NULL AFTER parent_code"),
+                        ("sales_title", "ALTER TABLE sales_parents ADD COLUMN sales_title VARCHAR(200) NULL AFTER estimated_acoas"),
+                        ("sales_intro", "ALTER TABLE sales_parents ADD COLUMN sales_intro VARCHAR(500) NULL AFTER sales_title"),
+                        ("sales_bullet_1", "ALTER TABLE sales_parents ADD COLUMN sales_bullet_1 VARCHAR(500) NULL AFTER sales_intro"),
+                        ("sales_bullet_2", "ALTER TABLE sales_parents ADD COLUMN sales_bullet_2 VARCHAR(500) NULL AFTER sales_bullet_1"),
+                        ("sales_bullet_3", "ALTER TABLE sales_parents ADD COLUMN sales_bullet_3 VARCHAR(500) NULL AFTER sales_bullet_2"),
+                        ("sales_bullet_4", "ALTER TABLE sales_parents ADD COLUMN sales_bullet_4 VARCHAR(500) NULL AFTER sales_bullet_3"),
+                        ("sales_bullet_5", "ALTER TABLE sales_parents ADD COLUMN sales_bullet_5 VARCHAR(500) NULL AFTER sales_bullet_4")
+                    ]
+                    cur.execute(
+                        """
+                        SELECT COLUMN_NAME
+                        FROM information_schema.COLUMNS
+                        WHERE TABLE_SCHEMA=DATABASE()
+                          AND TABLE_NAME='sales_parents'
+                        """
+                    )
+                    existing_columns = {str((row or {}).get('COLUMN_NAME') or '').strip() for row in (cur.fetchall() or [])}
+                    for col_name, alter_sql in migration_columns:
+                        if col_name in existing_columns:
+                            continue
+                        try:
+                            cur.execute(alter_sql)
+                        except Exception:
+                            pass
+                    try:
+                        cur.execute("ALTER TABLE sales_parents ADD INDEX idx_parent_shop (shop_id)")
+                    except Exception:
+                        pass
                     try:
                         cur.execute(
                             """
-                            SELECT COUNT(*) AS cnt
-                            FROM information_schema.COLUMNS
-                            WHERE TABLE_SCHEMA=DATABASE()
-                              AND TABLE_NAME='sales_parents'
-                              AND COLUMN_NAME=%s
-                            """,
-                            (col_name,)
+                            ALTER TABLE sales_parents
+                            ADD CONSTRAINT fk_sales_parents_shop
+                            FOREIGN KEY (shop_id) REFERENCES shops(id)
+                            ON DELETE SET NULL
+                            """
                         )
-                        row = cur.fetchone()
-                        if row and row.get('cnt', 0) == 0:
-                            cur.execute(alter_sql)
                     except Exception:
                         pass
-                try:
-                    cur.execute("ALTER TABLE sales_parents ADD INDEX idx_parent_shop (shop_id)")
-                except Exception:
-                    pass
-                try:
-                    cur.execute(
-                        """
-                        ALTER TABLE sales_parents
-                        ADD CONSTRAINT fk_sales_parents_shop
-                        FOREIGN KEY (shop_id) REFERENCES shops(id)
-                        ON DELETE SET NULL
-                        """
-                    )
-                except Exception:
-                    pass
-            self._sales_parent_ready = True
-            self.__class__._schema_ready_cache['sales_parent'] = True
+                self._sales_parent_ready = True
+                self.__class__._schema_ready_cache['sales_parent'] = True
+                self._set_schema_marker_ready(marker_key)
 
     def _ensure_sales_product_tables(self):
         marker_key = 'sales_product_v2'
