@@ -285,6 +285,14 @@
     let edits = {};
     let shopOptions = [];
 
+    function notifyToast(message, isError, duration) {
+        if (window.showAppToast) {
+            window.showAppToast(message, !!isError, duration || (isError ? 3200 : 2200));
+            return;
+        }
+        if (message) alert(message);
+    }
+
     function escapeHtml(value) {
         return String(value ?? '').replace(/[&<>"]/g, function(s) {
             return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[s] || s;
@@ -406,30 +414,36 @@
         const parent_code = document.getElementById('editParentCode').value.trim();
         const shop_id = document.getElementById('editShopId').value;
         if (!id || !parent_code || !shop_id) {
-            alert('请填写店铺/品牌和父体编号');
+            notifyToast('请填写店铺/品牌和父体编号', true);
             return;
         }
-        const res = await fetch('/api/parent', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                id,
-                parent_code,
-                is_enabled: document.getElementById('editIsEnabled').checked ? 1 : 0,
-                shop_id,
-                sku_marker: document.getElementById('editSkuMarker').value.trim(),
-                estimated_refund_rate: document.getElementById('editEstimatedRefundRate').value,
-                estimated_discount_rate: document.getElementById('editEstimatedDiscountRate').value,
-                commission_rate: document.getElementById('editCommissionRate').value,
-                estimated_acoas: document.getElementById('editEstimatedAcoas').value
-            })
-        });
-        const data = await res.json();
-        if (data.status === 'success') {
-            closeEdit();
-            await loadParents();
-        } else {
-            alert(data.message || '保存失败');
+        try {
+            notifyToast('正在更新父体...', false, 900);
+            const res = await fetch('/api/parent', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id,
+                    parent_code,
+                    is_enabled: document.getElementById('editIsEnabled').checked ? 1 : 0,
+                    shop_id,
+                    sku_marker: document.getElementById('editSkuMarker').value.trim(),
+                    estimated_refund_rate: document.getElementById('editEstimatedRefundRate').value,
+                    estimated_discount_rate: document.getElementById('editEstimatedDiscountRate').value,
+                    commission_rate: document.getElementById('editCommissionRate').value,
+                    estimated_acoas: document.getElementById('editEstimatedAcoas').value
+                })
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                closeEdit();
+                await loadParents();
+                notifyToast('父体更新成功', false);
+            } else {
+                notifyToast(data.message || '更新失败', true);
+            }
+        } catch (err) {
+            notifyToast((err && err.message) || '更新失败', true);
         }
     }
 
@@ -481,6 +495,11 @@
 
     async function saveChanges() {
         const ids = Object.keys(edits);
+        if (!ids.length) {
+            notifyToast('没有待保存的更新', true);
+            return;
+        }
+        notifyToast(`正在批量更新（${ids.length}条）...`, false, 1100);
         for (const id of ids) {
             const rowBase = items.find(x => String(x.id) === String(id));
             if (!rowBase) continue;
@@ -504,13 +523,14 @@
             });
             const data = await res.json();
             if (data.status !== 'success') {
-                alert(data.message || '保存失败');
+                notifyToast(data.message || `第 ${id} 条更新失败`, true, 3600);
                 return;
             }
         }
         edits = {};
         document.getElementById('floatingSave').classList.remove('active');
         await loadParents();
+        notifyToast(`批量更新成功（${ids.length}条）`, false);
     }
 
     async function deleteParent(id) {
