@@ -174,8 +174,20 @@ class AmazonAdMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def _ensure_amazon_ad_adjustment_table(self):
+        marker_key = 'amazon_ad_adjustment_v1'
+        required_tables = ['amazon_ad_adjustments']
         if self._amazon_ad_adjustment_ready:
             return
+        if self._is_schema_marker_ready(marker_key):
+            self._amazon_ad_adjustment_ready = True
+            return
+        try:
+            if self._has_required_tables(required_tables):
+                self._amazon_ad_adjustment_ready = True
+                self._set_schema_marker_ready(marker_key)
+                return
+        except Exception:
+            pass
         self._ensure_amazon_ad_tables()
         self._ensure_amazon_ad_operation_types_table()
         create_sql = """
@@ -221,10 +233,23 @@ class AmazonAdMixin:
             with conn.cursor() as cur:
                 cur.execute(create_sql)
         self._amazon_ad_adjustment_ready = True
+        self._set_schema_marker_ready(marker_key)
 
     def _ensure_amazon_ad_delivery_table(self):
+        marker_key = 'amazon_ad_delivery_v1'
+        required_tables = ['amazon_ad_deliveries']
         if self._amazon_ad_delivery_ready:
             return
+        if self._is_schema_marker_ready(marker_key):
+            self._amazon_ad_delivery_ready = True
+            return
+        try:
+            if self._has_required_tables(required_tables):
+                self._amazon_ad_delivery_ready = True
+                self._set_schema_marker_ready(marker_key)
+                return
+        except Exception:
+            pass
         self._ensure_amazon_ad_tables()
         create_sql = """
         CREATE TABLE IF NOT EXISTS amazon_ad_deliveries (
@@ -248,10 +273,23 @@ class AmazonAdMixin:
             with conn.cursor() as cur:
                 cur.execute(create_sql)
         self._amazon_ad_delivery_ready = True
+        self._set_schema_marker_ready(marker_key)
 
     def _ensure_amazon_ad_operation_types_table(self):
+        marker_key = 'amazon_ad_operation_types_v1'
+        required_tables = ['amazon_ad_operation_types', 'amazon_ad_operation_reasons']
         if self._amazon_ad_operation_types_ready:
             return
+        if self._is_schema_marker_ready(marker_key):
+            self._amazon_ad_operation_types_ready = True
+            return
+        try:
+            if self._has_required_tables(required_tables):
+                self._amazon_ad_operation_types_ready = True
+                self._set_schema_marker_ready(marker_key)
+                return
+        except Exception:
+            pass
         create_sql = """
         CREATE TABLE IF NOT EXISTS amazon_ad_operation_types (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -334,10 +372,23 @@ class AmazonAdMixin:
                             raise
                 cur.execute(create_reason_sql)
         self._amazon_ad_operation_types_ready = True
+            self._set_schema_marker_ready(marker_key)
 
     def _ensure_amazon_ad_product_table(self):
+        marker_key = 'amazon_ad_product_v1'
+        required_tables = ['amazon_ad_products']
         if self._amazon_ad_product_ready:
             return
+        if self._is_schema_marker_ready(marker_key):
+            self._amazon_ad_product_ready = True
+            return
+        try:
+            if self._has_required_tables(required_tables):
+                self._amazon_ad_product_ready = True
+                self._set_schema_marker_ready(marker_key)
+                return
+        except Exception:
+            pass
         self._ensure_amazon_ad_tables()
         self._ensure_sales_product_tables()
         create_sql = """
@@ -364,10 +415,23 @@ class AmazonAdMixin:
             with conn.cursor() as cur:
                 cur.execute(create_sql)
         self._amazon_ad_product_ready = True
+        self._set_schema_marker_ready(marker_key)
 
     def _ensure_amazon_ad_subtypes_table(self):
+        marker_key = 'amazon_ad_subtypes_v1'
+        required_tables = ['amazon_ad_subtypes', 'amazon_ad_subtype_operation_types']
         if self._amazon_ad_subtypes_ready:
             return
+        if self._is_schema_marker_ready(marker_key):
+            self._amazon_ad_subtypes_ready = True
+            return
+        try:
+            if self._has_required_tables(required_tables):
+                self._amazon_ad_subtypes_ready = True
+                self._set_schema_marker_ready(marker_key)
+                return
+        except Exception:
+            pass
         self._ensure_amazon_ad_operation_types_table()
         create_sql = """
         CREATE TABLE IF NOT EXISTS amazon_ad_subtypes (
@@ -396,10 +460,23 @@ class AmazonAdMixin:
                 cur.execute(create_sql)
                 cur.execute(relation_sql)
         self._amazon_ad_subtypes_ready = True
+        self._set_schema_marker_ready(marker_key)
 
     def _ensure_amazon_ad_tables(self):
+        marker_key = 'amazon_ad_items_v1'
+        required_tables = ['amazon_ad_items']
         if self._amazon_ad_ready:
             return
+        if self._is_schema_marker_ready(marker_key):
+            self._amazon_ad_ready = True
+            return
+        try:
+            if self._has_required_tables(required_tables):
+                self._amazon_ad_ready = True
+                self._set_schema_marker_ready(marker_key)
+                return
+        except Exception:
+            pass
         self._ensure_product_table()
         self._ensure_category_table()
         self._ensure_amazon_ad_subtypes_table()
@@ -437,10 +514,23 @@ class AmazonAdMixin:
             with conn.cursor() as cur:
                 cur.execute(create_sql)
         self._amazon_ad_ready = True
+        self._set_schema_marker_ready(marker_key)
 
     def _ensure_amazon_keyword_tables(self):
+        marker_key = 'amazon_keyword_v1'
+        required_tables = ['amazon_keywords', 'amazon_keyword_tags', 'amazon_keyword_tag_rel', 'amazon_keyword_sku_rel']
         if self._amazon_keyword_ready:
             return
+        if self._is_schema_marker_ready(marker_key):
+            self._amazon_keyword_ready = True
+            return
+        try:
+            if self._has_required_tables(required_tables):
+                self._amazon_keyword_ready = True
+                self._set_schema_marker_ready(marker_key)
+                return
+        except Exception:
+            pass
         self._ensure_category_table()
         self._ensure_product_table()
 
@@ -518,6 +608,8 @@ class AmazonAdMixin:
                 cur.execute(create_tags_sql)
                 cur.execute(create_tag_rel_sql)
                 cur.execute(create_sku_rel_sql)
+        self._amazon_keyword_ready = True
+        self._set_schema_marker_ready(marker_key)
 
         self._amazon_keyword_ready = True
 

@@ -1,7 +1,19 @@
 class DbSchemaBasicsMixin:
     def _ensure_product_table(self):
+        marker_key = 'product_family_v1'
+        required_tables = ['product_families']
         if self._db_ready:
             return
+        if self._is_schema_marker_ready(marker_key):
+            self._db_ready = True
+            return
+        try:
+            if self._has_required_tables(required_tables):
+                self._db_ready = True
+                self._set_schema_marker_ready(marker_key)
+                return
+        except Exception:
+            pass
         create_sql = """
         CREATE TABLE IF NOT EXISTS product_families (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -15,6 +27,7 @@ class DbSchemaBasicsMixin:
                 with conn.cursor() as cur:
                     cur.execute(create_sql)
             self._db_ready = True
+            self._set_schema_marker_ready(marker_key)
         except Exception as e:
             self._db_ready = False
             raise e
@@ -186,8 +199,20 @@ class DbSchemaBasicsMixin:
                     pass
 
     def _ensure_material_types_table(self):
+        marker_key = 'material_types_v1'
+        required_tables = ['material_types']
         if self._material_types_ready:
             return
+        if self._is_schema_marker_ready(marker_key):
+            self._material_types_ready = True
+            return
+        try:
+            if self._has_required_tables(required_tables):
+                self._material_types_ready = True
+                self._set_schema_marker_ready(marker_key)
+                return
+        except Exception:
+            pass
         create_sql = """
         CREATE TABLE IF NOT EXISTS material_types (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -199,10 +224,23 @@ class DbSchemaBasicsMixin:
             with conn.cursor() as cur:
                 cur.execute(create_sql)
         self._material_types_ready = True
+        self._set_schema_marker_ready(marker_key)
 
     def _ensure_materials_table(self):
+        marker_key = 'materials_v1'
+        required_tables = ['materials', 'material_types']
         if self._materials_ready:
             return
+        if self._is_schema_marker_ready(marker_key):
+            self._materials_ready = True
+            return
+        try:
+            if self._has_required_tables(required_tables):
+                self._materials_ready = True
+                self._set_schema_marker_ready(marker_key)
+                return
+        except Exception:
+            pass
         self._ensure_material_types_table()
         type_map = {
             'fabric': '面料',
@@ -337,10 +375,23 @@ class DbSchemaBasicsMixin:
                         except Exception:
                             pass
         self._materials_ready = True
+        self._set_schema_marker_ready(marker_key)
 
     def _ensure_platform_types_table(self):
+        marker_key = 'platform_types_v1'
+        required_tables = ['platform_types']
         if self._platform_types_ready:
             return
+        if self._is_schema_marker_ready(marker_key):
+            self._platform_types_ready = True
+            return
+        try:
+            if self._has_required_tables(required_tables):
+                self._platform_types_ready = True
+                self._set_schema_marker_ready(marker_key)
+                return
+        except Exception:
+            pass
         create_sql = """
         CREATE TABLE IF NOT EXISTS platform_types (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -352,10 +403,23 @@ class DbSchemaBasicsMixin:
             with conn.cursor() as cur:
                 cur.execute(create_sql)
         self._platform_types_ready = True
+        self._set_schema_marker_ready(marker_key)
 
     def _ensure_brands_table(self):
+        marker_key = 'brands_v1'
+        required_tables = ['brands']
         if self._brands_ready:
             return
+        if self._is_schema_marker_ready(marker_key):
+            self._brands_ready = True
+            return
+        try:
+            if self._has_required_tables(required_tables):
+                self._brands_ready = True
+                self._set_schema_marker_ready(marker_key)
+                return
+        except Exception:
+            pass
         create_sql = """
         CREATE TABLE IF NOT EXISTS brands (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -367,10 +431,23 @@ class DbSchemaBasicsMixin:
             with conn.cursor() as cur:
                 cur.execute(create_sql)
         self._brands_ready = True
+        self._set_schema_marker_ready(marker_key)
 
     def _ensure_shops_table(self):
+        marker_key = 'shops_v1'
+        required_tables = ['shops', 'brands', 'platform_types']
         if self._shops_ready:
             return
+        if self._is_schema_marker_ready(marker_key):
+            self._shops_ready = True
+            return
+        try:
+            if self._has_required_tables(required_tables):
+                self._shops_ready = True
+                self._set_schema_marker_ready(marker_key)
+                return
+        except Exception:
+            pass
         self._ensure_platform_types_table()
         self._ensure_brands_table()
         create_sql = """
@@ -393,6 +470,7 @@ class DbSchemaBasicsMixin:
             with conn.cursor() as cur:
                 cur.execute(create_sql)
         self._shops_ready = True
+        self._set_schema_marker_ready(marker_key)
 
     def _ensure_order_product_tables(self):
         marker_key = 'order_product_v2'
@@ -426,11 +504,11 @@ class DbSchemaBasicsMixin:
         with self._schema_ensure_lock:
             if self._order_product_ready:
                 return
-        self._ensure_product_table()
-        self._ensure_fabric_table()
-        self._ensure_category_table()
-        self._ensure_certification_table()
-        self._ensure_materials_table()
+            self._ensure_product_table()
+            self._ensure_fabric_table()
+            self._ensure_category_table()
+            self._ensure_certification_table()
+            self._ensure_materials_table()
 
         create_order_products = """
         CREATE TABLE IF NOT EXISTS order_products (
@@ -560,9 +638,9 @@ class DbSchemaBasicsMixin:
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """
 
-        with self._get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(create_order_products)
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(create_order_products)
                 cur.execute(create_order_product_materials)
                 cur.execute(create_features)
                 cur.execute(
@@ -786,13 +864,27 @@ class DbSchemaBasicsMixin:
                 except Exception:
                     pass
 
-        self._order_product_ready = True
-        self.__class__._schema_ready_cache['order_product'] = True
-        self._set_schema_marker_ready(marker_key)
+            self._order_product_ready = True
+            self.__class__._schema_ready_cache['order_product'] = True
+            self._set_schema_marker_ready(marker_key)
 
     def _ensure_todo_tables(self, lightweight=False):
+        marker_key = 'todo_v1'
+        required_tables = ['users', 'todos', 'todo_assignments', 'sessions']
         if self._todo_ready and (lightweight or self._todo_schema_migrated):
             return
+        if self._is_schema_marker_ready(marker_key):
+            self._todo_ready = True
+            self._todo_schema_migrated = True
+            return
+        try:
+            if self._has_required_tables(required_tables):
+                self._todo_ready = True
+                self._todo_schema_migrated = True
+                self._set_schema_marker_ready(marker_key)
+                return
+        except Exception:
+            pass
 
         with self._todo_ensure_lock:
             if self._todo_ready and (lightweight or self._todo_schema_migrated):
@@ -1012,10 +1104,25 @@ class DbSchemaBasicsMixin:
                         pass
 
             self._todo_schema_migrated = True
+            self._set_schema_marker_ready(marker_key)
 
     def _ensure_certification_table(self):
+        marker_key = 'certification_v1'
+        required_tables = ['certifications']
         if getattr(self, '_certification_ready', False):
             return
+        if self._is_schema_marker_ready(marker_key):
+            self._certification_ready = True
+            self.__class__._schema_ready_cache['certification'] = True
+            return
+        try:
+            if self._has_required_tables(required_tables):
+                self._certification_ready = True
+                self.__class__._schema_ready_cache['certification'] = True
+                self._set_schema_marker_ready(marker_key)
+                return
+        except Exception:
+            pass
         with self._schema_ensure_lock:
             if getattr(self, '_certification_ready', False):
                 return
@@ -1044,6 +1151,7 @@ class DbSchemaBasicsMixin:
                         cur.execute("ALTER TABLE certifications ADD COLUMN icon_name VARCHAR(255) NULL AFTER name")
             self._certification_ready = True
             self.__class__._schema_ready_cache['certification'] = True
+            self._set_schema_marker_ready(marker_key)
 
     def _ensure_certifications_table(self):
         return self._ensure_certification_table()

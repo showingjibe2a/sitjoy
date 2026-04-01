@@ -35,9 +35,24 @@ class AmazonAccountHealthMixin:
         return None
 
     def _ensure_amazon_account_health_table(self):
+        marker_key = 'amazon_account_health_v1'
+        required_tables = ['amazon_account_health']
         if self._amazon_account_health_ready:
             return
-        self._ensure_shops_table()
+        if self._is_schema_marker_ready(marker_key):
+            self._amazon_account_health_ready = True
+            return
+        try:
+            if self._has_required_tables(required_tables):
+                self._amazon_account_health_ready = True
+                self._set_schema_marker_ready(marker_key)
+                return
+        except Exception:
+            pass
+        with self._schema_ensure_lock:
+            if self._amazon_account_health_ready:
+                return
+            self._ensure_shops_table()
         create_sql = """
         CREATE TABLE IF NOT EXISTS amazon_account_health (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -75,6 +90,7 @@ class AmazonAccountHealthMixin:
             with conn.cursor() as cur:
                 cur.execute(create_sql)
         self._amazon_account_health_ready = True
+        self._set_schema_marker_ready(marker_key)
 
     def handle_amazon_account_health_api(self, environ, method, start_response):
         """Amazon 账户健康管理 API（CRUD + 图表）"""

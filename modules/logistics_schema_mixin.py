@@ -37,9 +37,9 @@ class LogisticsSchemaMixin:
         with self._schema_ensure_lock:
             if self._logistics_ready:
                 return
-        self._perf_mark(perf_ctx, 'precheck_done')
-        self._ensure_order_product_tables()
-        self._perf_mark(perf_ctx, 'dependent_ensures_done')
+            self._perf_mark(perf_ctx, 'precheck_done')
+            self._ensure_order_product_tables()
+            self._perf_mark(perf_ctx, 'dependent_ensures_done')
         create_factory_sql = """
         CREATE TABLE IF NOT EXISTS logistics_factories (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -318,19 +318,36 @@ class LogisticsSchemaMixin:
                 transit_item_cols = {str((x or {}).get('Field') or '') for x in (cur.fetchall() or [])}
                 if 'listed_qty' not in transit_item_cols:
                     cur.execute("ALTER TABLE logistics_in_transit_items ADD COLUMN listed_qty INT NOT NULL DEFAULT 0 AFTER shipped_qty")
-            self._logistics_ready = True
-            self.__class__._schema_ready_cache['logistics'] = True
-            self._set_schema_marker_ready(marker_key)
-            self._perf_mark(perf_ctx, 'ensure_complete')
-            self._perf_end(perf_ctx, force=True)
+                self._logistics_ready = True
+                self.__class__._schema_ready_cache['logistics'] = True
+                self._set_schema_marker_ready(marker_key)
+                self._perf_mark(perf_ctx, 'ensure_complete')
+                self._perf_end(perf_ctx, force=True)
 
     def _ensure_factory_inventory_tables(self):
+        marker_key = 'factory_inventory_v1'
+        required_tables = ['factory_stock_inventory', 'factory_wip_inventory']
         if self._factory_inventory_ready:
             return
+        if self.__class__._schema_ready_cache.get('factory_inventory'):
+            self._factory_inventory_ready = True
+            return
+        if self._is_schema_marker_ready(marker_key):
+            self._factory_inventory_ready = True
+            self.__class__._schema_ready_cache['factory_inventory'] = True
+            return
+        try:
+            if self._has_required_tables(required_tables):
+                self._factory_inventory_ready = True
+                self.__class__._schema_ready_cache['factory_inventory'] = True
+                self._set_schema_marker_ready(marker_key)
+                return
+        except Exception:
+            pass
         with self._schema_ensure_lock:
             if self._factory_inventory_ready:
                 return
-        self._ensure_logistics_tables()
+            self._ensure_logistics_tables()
         create_factory_stock = """
         CREATE TABLE IF NOT EXISTS factory_stock_inventory (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -372,5 +389,6 @@ class LogisticsSchemaMixin:
                     cur.execute("ALTER TABLE factory_wip_inventory ADD COLUMN is_completed TINYINT(1) NOT NULL DEFAULT 0 AFTER expected_completion_date")
                 if 'actual_completion_date' not in cols:
                     cur.execute("ALTER TABLE factory_wip_inventory ADD COLUMN actual_completion_date DATE NULL AFTER is_completed")
-        self._factory_inventory_ready = True
-        self.__class__._schema_ready_cache['factory_inventory'] = True
+            self._factory_inventory_ready = True
+            self.__class__._schema_ready_cache['factory_inventory'] = True
+            self._set_schema_marker_ready(marker_key)

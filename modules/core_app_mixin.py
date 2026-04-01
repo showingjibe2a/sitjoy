@@ -132,10 +132,27 @@ class CoreAppMixin:
             os.makedirs(cache_dir, exist_ok=True)
             marker_file = os.path.join(cache_dir, 'schema_ready_markers.json')
             if not os.path.exists(marker_file):
+                self.__class__._schema_marker_cache = {}
+                self.__class__._schema_marker_cache_mtime = None
                 return {}
+
+            try:
+                mtime = os.path.getmtime(marker_file)
+            except Exception:
+                mtime = None
+
+            cached = getattr(self.__class__, '_schema_marker_cache', None)
+            cached_mtime = getattr(self.__class__, '_schema_marker_cache_mtime', None)
+            if isinstance(cached, dict) and cached_mtime is not None and mtime == cached_mtime:
+                return cached
+
             with open(marker_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            return data if isinstance(data, dict) else {}
+            if not isinstance(data, dict):
+                data = {}
+            self.__class__._schema_marker_cache = data
+            self.__class__._schema_marker_cache_mtime = mtime
+            return data
         except Exception:
             return {}
 
@@ -145,7 +162,13 @@ class CoreAppMixin:
             os.makedirs(cache_dir, exist_ok=True)
             marker_file = os.path.join(cache_dir, 'schema_ready_markers.json')
             with open(marker_file, 'w', encoding='utf-8') as f:
-                json.dump(data if isinstance(data, dict) else {}, f, ensure_ascii=False)
+                payload = data if isinstance(data, dict) else {}
+                json.dump(payload, f, ensure_ascii=False)
+            try:
+                self.__class__._schema_marker_cache = payload
+                self.__class__._schema_marker_cache_mtime = os.path.getmtime(marker_file)
+            except Exception:
+                pass
         except Exception:
             pass
 
