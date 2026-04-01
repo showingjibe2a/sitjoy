@@ -1,4 +1,5 @@
 ﻿import ast
+import csv
 import cgi
 import io
 import json
@@ -164,6 +165,104 @@ class LogisticsInTransitMixin:
                         'warehouses': warehouses,
                         'order_products': order_products
                     }, start_response)
+
+                if action == 'export_details':
+                    selected_ids = []
+                    for raw in query_params.get('ids', []):
+                        for token in re.split(r'[,，;；\s]+', str(raw or '').strip()):
+                            if not token:
+                                continue
+                            tid = self._parse_int(token)
+                            if tid and tid not in selected_ids:
+                                selected_ids.append(tid)
+                    if not selected_ids:
+                        return self.send_json({'status': 'error', 'message': '请先选择要导出的记录'}, start_response)
+
+                    field_defs = {
+                        'id': ('记录ID', lambda r: r.get('id') or ''),
+                        'logistics_box_no': ('箱号', lambda r: r.get('logistics_box_no') or ''),
+                        'bill_of_lading_no': ('提单号', lambda r: r.get('bill_of_lading_no') or ''),
+                        'factory_name': ('工厂', lambda r: r.get('factory_name') or ''),
+                        'forwarder_name': ('货代', lambda r: r.get('forwarder_name') or ''),
+                        'destination_region_name': ('目的区域', lambda r: r.get('destination_region_name') or ''),
+                        'destination_warehouse_name': ('目的仓库', lambda r: r.get('destination_warehouse_name') or ''),
+                        'expected_listed_date_latest': ('预计上架时间', lambda r: (r.get('expected_listed_date_latest').strftime('%Y-%m-%d') if hasattr(r.get('expected_listed_date_latest'), 'strftime') else (r.get('expected_listed_date_latest') or ''))),
+                        'inventory_registered': ('已登记上架', lambda r: '是' if self._parse_int(r.get('inventory_registered')) else '否'),
+                        'listed_date': ('实际上架日期', lambda r: (r.get('listed_date').strftime('%Y-%m-%d') if hasattr(r.get('listed_date'), 'strftime') else (r.get('listed_date') or ''))),
+                        'qty_verified': ('已核对上架数量', lambda r: '是' if self._parse_int(r.get('qty_verified')) else '否'),
+                        'qty_consistent': ('数量一致', lambda r: '是' if self._parse_int(r.get('qty_consistent')) else '否'),
+                        'remark': ('备注', lambda r: r.get('remark') or ''),
+                        'sku': ('下单SKU', lambda r: r.get('sku') or ''),
+                        'shipped_qty': ('发货数量', lambda r: r.get('shipped_qty') if r.get('shipped_qty') is not None else ''),
+                        'listed_qty': ('上架数量', lambda r: r.get('listed_qty') if r.get('listed_qty') is not None else ''),
+                    }
+
+                    requested_fields = []
+                    for raw in query_params.get('fields', []):
+                        for token in re.split(r'[,，;；\s]+', str(raw or '').strip()):
+                            key = (token or '').strip()
+                            if key and key in field_defs and key not in requested_fields:
+                                requested_fields.append(key)
+                    if not requested_fields:
+                        requested_fields = [
+                            'logistics_box_no', 'bill_of_lading_no', 'factory_name', 'forwarder_name',
+                            'destination_region_name', 'destination_warehouse_name', 'expected_listed_date_latest',
+                            'sku', 'shipped_qty', 'listed_qty', 'remark'
+                        ]
+
+                    placeholders = ','.join(['%s'] * len(selected_ids))
+                    sql = f"""
+                        SELECT
+                            t.id,
+                            t.logistics_box_no,
+                            t.bill_of_lading_no,
+                            t.expected_listed_date_latest,
+                            t.inventory_registered,
+                            t.listed_date,
+                            t.qty_verified,
+                            t.qty_consistent,
+                            t.remark,
+                            f.factory_name,
+                            fw.forwarder_name,
+                            dr.region_name AS destination_region_name,
+                            ow.warehouse_name AS destination_warehouse_name,
+                            op.sku,
+                            li.shipped_qty,
+                            li.listed_qty,
+                            li.id AS item_id
+                        FROM logistics_in_transit t
+                        LEFT JOIN logistics_factories f ON f.id=t.factory_id
+                        LEFT JOIN logistics_forwarders fw ON fw.id=t.forwarder_id
+                        LEFT JOIN logistics_destination_regions dr ON dr.id=t.destination_region_id
+                        LEFT JOIN logistics_overseas_warehouses ow ON ow.id=t.destination_warehouse_id
+                        LEFT JOIN logistics_in_transit_items li ON li.transit_id=t.id
+                        LEFT JOIN order_products op ON op.id=li.order_product_id
+                        WHERE t.id IN ({placeholders})
+                        ORDER BY t.id DESC, li.id ASC
+                    """
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute(sql, selected_ids)
+                            export_rows = cur.fetchall() or []
+
+                    if not export_rows:
+                        return self.send_json({'status': 'error', 'message': '未找到可导出的数据'}, start_response)
+
+                    output = io.StringIO(newline='')
+                    writer = csv.writer(output)
+                    writer.writerow([field_defs[k][0] for k in requested_fields])
+                    for row in export_rows:
+                        writer.writerow([field_defs[k][1](row) for k in requested_fields])
+                    content = output.getvalue().encode('utf-8-sig')
+
+                    filename = f"在途物流明细导出_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                    headers = [
+                        ('Content-Type', 'text/csv; charset=utf-8'),
+                        ('Content-Disposition', f"attachment; filename*=UTF-8''{quote(filename)}"),
+                        ('Content-Length', str(len(content))),
+                    ]
+                    start_response('200 OK', headers)
+                    return [content]
 
                 item_id = self._parse_int(query_params.get('id', [''])[0])
                 keyword = (query_params.get('q', [''])[0] or '').strip()
