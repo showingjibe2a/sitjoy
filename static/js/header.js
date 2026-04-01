@@ -511,9 +511,9 @@
             if(!dot){
                 dot = document.createElement('span');
                 dot.className = 'help-dot hero-help-dot';
-                dot.textContent = '?';
                 titleRow.appendChild(dot);
             }
+            dot.textContent = '';
             dot.dataset.tip = (note.textContent || '').trim();
             dot.style.display = dot.dataset.tip ? '' : 'none';
 
