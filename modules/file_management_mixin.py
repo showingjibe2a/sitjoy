@@ -3,6 +3,7 @@ import io
 import cgi
 import json
 import base64
+import re
 import mimetypes
 import tempfile
 import zipfile
@@ -15,7 +16,37 @@ except Exception:
     Image = None
 
 
-_RESOURCES_PARENT = '/volume1/公共文件SITJOY'
+def _resolve_resources_parent():
+    env_parent = (os.environ.get('SITJOY_RESOURCES_PARENT') or '').strip()
+    if env_parent:
+        return env_parent
+
+    # NAS 已迁移到存储空间3时优先使用 volume3
+    preferred = [
+        '/volume3/公共文件SITJOY',
+        '/volume1/公共文件SITJOY',
+    ]
+    for p in preferred:
+        if os.path.exists(p):
+            return p
+
+    # 兜底扫描 /volumeN/公共文件SITJOY
+    try:
+        vols = []
+        for name in os.listdir('/'):
+            if re.match(r'^volume\d+$', str(name or '')):
+                vols.append(name)
+        vols.sort(key=lambda x: int(re.sub(r'\D+', '', x) or '0'))
+        for v in vols:
+            p = f'/{v}/公共文件SITJOY'
+            if os.path.exists(p):
+                return p
+    except Exception:
+        pass
+    return '/volume3/公共文件SITJOY'
+
+
+_RESOURCES_PARENT = _resolve_resources_parent()
 _RESOURCES_CHILD_B64 = '44CO5LiK5p626LWE5rqQ44CP'
 _RESOURCES_PARENT_BYTES = _RESOURCES_PARENT.encode('utf-8', errors='surrogatepass')
 _RESOURCES_CHILD_BYTES = base64.b64decode(_RESOURCES_CHILD_B64)
@@ -36,10 +67,11 @@ class FileManagementMixin:
             
             # 检查RESOURCES_PATH是否存在
             if not os.path.exists(RESOURCES_PATH_BYTES):
-                # 列出/volume1/下的文件夹帮助调试
+                # 列出当前卷下的文件夹帮助调试
                 try:
-                    volume_contents = os.listdir('/volume1') if os.path.exists('/volume1') else []
-                    folders_list = [f for f in volume_contents if os.path.isdir(f'/volume1/{f}')]
+                    parent_root = os.path.dirname(_RESOURCES_PARENT.rstrip('/'))
+                    volume_contents = os.listdir(parent_root) if os.path.exists(parent_root) else []
+                    folders_list = [f for f in volume_contents if os.path.isdir(os.path.join(parent_root, f))]
                     # 用Base64编码文件夹列表以避免编码问题
                     try:
                         folders_b64 = base64.b64encode(str(folders_list).encode('utf-8', errors='surrogatepass')).decode('ascii')
@@ -48,6 +80,8 @@ class FileManagementMixin:
                     return self.send_json({
                         'status': 'error', 
                         'message': 'Path not found',
+                        'resources_parent': _RESOURCES_PARENT,
+                        'resources_path': RESOURCES_PATH,
                         'available_folders_b64': folders_b64
                     }, start_response)
                 except:

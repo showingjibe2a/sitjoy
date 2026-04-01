@@ -32,8 +32,21 @@ class ImageProcessingMixin:
             # 检查RESOURCES_PATH是否存在
             if not os.path.exists(RESOURCES_PATH_BYTES):
                 try:
-                    volume_contents = os.listdir('/volume1') if os.path.exists('/volume1') else []
-                    folders_list = [f for f in volume_contents if os.path.isdir(f'/volume1/{f}')]
+                    resources_path_text = os.fsdecode(RESOURCES_PATH_BYTES)
+                    root_dir = os.path.dirname(os.path.dirname(resources_path_text.rstrip('/')))
+                    if not root_dir:
+                        root_dir = '/'
+                    volume_roots = []
+                    for name in os.listdir(root_dir):
+                        if str(name or '').startswith('volume'):
+                            p = os.path.join(root_dir, name)
+                            if os.path.isdir(p):
+                                volume_roots.append(p)
+                    folders_list = []
+                    for vol in volume_roots:
+                        for f in (os.listdir(vol) if os.path.exists(vol) else []):
+                            if os.path.isdir(os.path.join(vol, f)):
+                                folders_list.append(f'{os.path.basename(vol)}/{f}')
                     try:
                         folders_b64 = base64.b64encode(str(folders_list).encode('utf-8', errors='surrogatepass')).decode('ascii')
                     except Exception:
@@ -41,6 +54,7 @@ class ImageProcessingMixin:
                     return self.send_json({
                         'status': 'error', 
                         'message': 'Path not found',
+                        'resources_path': resources_path_text,
                         'available_folders_b64': folders_b64
                     }, start_response)
                 except:
