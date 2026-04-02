@@ -1,8 +1,8 @@
-import json
+﻿import json
 
 
 class PagePermissionMixin:
-    """页面权限辅助能力。"""
+    """椤甸潰鏉冮檺杈呭姪鑳藉姏銆?""
 
     def _permission_keys(self):
         keys = getattr(self, 'PAGE_PERMISSION_KEYS', None)
@@ -45,7 +45,6 @@ class PagePermissionMixin:
     def _get_user_permission_record(self, user_id):
         if not user_id:
             return None
-        self._ensure_todo_tables(lightweight=True)
         with self._get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -90,3 +89,6 @@ class PagePermissionMixin:
             start_response('302 Found', [('Location', '/')])
             return [b'']
         return self.serve_file(template_path, 'text/html', start_response)
+
+
+

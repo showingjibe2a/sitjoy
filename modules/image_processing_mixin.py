@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
-"""图片处理 Mixin - 图片相关API和辅助方法"""
+﻿# -*- coding: utf-8 -*-
+"""鍥剧墖澶勭悊 Mixin - 鍥剧墖鐩稿叧API鍜岃緟鍔╂柟娉?""
 
 import os
 import base64
@@ -7,10 +7,10 @@ import math
 from urllib.parse import parse_qs
 
 class ImageProcessingMixin:
-    """图片处理和列表API"""
+    """鍥剧墖澶勭悊鍜屽垪琛ˋPI"""
 
     def _is_image_name(self, name):
-        """判断是否为图片文件名（兼容 bytes/str）"""
+        """鍒ゆ柇鏄惁涓哄浘鐗囨枃浠跺悕锛堝吋瀹?bytes/str锛?""
         if isinstance(name, (bytes, bytearray)):
             try:
                 name = os.fsdecode(name)
@@ -19,17 +19,17 @@ class ImageProcessingMixin:
         return str(name).lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'))
 
     def handle_images_api(self, environ, start_response):
-        """获取图片列表（用Base64编码路径避免编码问题）"""
+        """鑾峰彇鍥剧墖鍒楄〃锛堢敤Base64缂栫爜璺緞閬垮厤缂栫爜闂锛?""
         images = []
         try:
-            from app import RESOURCES_PATH_BYTES  # 导入全局常量
+            from app import RESOURCES_PATH_BYTES  # 瀵煎叆鍏ㄥ眬甯搁噺
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
             
             page = int(query_params.get('page', ['1'])[0])
             per_page = min(int(query_params.get('per_page', ['100'])[0]), 200)
             
-            # 检查RESOURCES_PATH是否存在
+            # 妫€鏌ESOURCES_PATH鏄惁瀛樺湪
             if not os.path.exists(RESOURCES_PATH_BYTES):
                 try:
                     resources_path_text = os.fsdecode(RESOURCES_PATH_BYTES)
@@ -63,7 +63,7 @@ class ImageProcessingMixin:
                         'message': f'Path not found and cannot list volume'
                     }, start_response)
             
-            # 扫描文件
+            # 鎵弿鏂囦欢
             count = 0
             for root, dirs, files in os.walk(RESOURCES_PATH_BYTES):
                 for file in files:
@@ -72,7 +72,7 @@ class ImageProcessingMixin:
                             full_path = os.path.join(root, file)
                             rel_path = os.path.relpath(full_path, RESOURCES_PATH_BYTES)
                             
-                            # 用Base64编码所有内容
+                            # 鐢˙ase64缂栫爜鎵€鏈夊唴瀹?
                             path_b64 = self._b64_from_fs(rel_path)
                             filename_b64 = self._b64_from_fs(file)
                             
@@ -89,13 +89,13 @@ class ImageProcessingMixin:
                             print(f"File error: {type(e).__name__}")
                             pass
             
-            # 分页
+            # 鍒嗛〉
             total = len(images)
             start_idx = (page - 1) * per_page
             end_idx = start_idx + per_page
             paginated = images[start_idx:end_idx]
             
-            # 计算总页数
+            # 璁＄畻鎬婚〉鏁?
             total_pages = math.ceil(total / per_page) if total > 0 else 1
             
             resp = {
@@ -117,7 +117,7 @@ class ImageProcessingMixin:
             }, start_response)
 
     def handle_certification_images_api(self, environ, start_response):
-        """列出认证文件夹内图片"""
+        """鍒楀嚭璁よ瘉鏂囦欢澶瑰唴鍥剧墖"""
         try:
             folder = self._ensure_certification_folder()
 
@@ -141,9 +141,9 @@ class ImageProcessingMixin:
                             name = raw_bytes.decode('utf-8', errors='replace')
 
                         try:
-                            folder_bytes = os.fsencode('『认证』')
+                            folder_bytes = os.fsencode('銆庤璇併€?)
                         except Exception:
-                            folder_bytes = '『认证』'.encode('utf-8', errors='surrogatepass')
+                            folder_bytes = '銆庤璇併€?.encode('utf-8', errors='surrogatepass')
                         rel_bytes = os.path.join(folder_bytes, raw_bytes)
                         items.append({
                             'name': name,
@@ -158,3 +158,6 @@ class ImageProcessingMixin:
             return self.send_json({'status': 'success', 'items': items}, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+
+

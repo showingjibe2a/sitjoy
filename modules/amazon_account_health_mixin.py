@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
-"""Amazon 账户健康管理 Mixin"""
+﻿# -*- coding: utf-8 -*-
+"""Amazon 璐︽埛鍋ュ悍绠＄悊 Mixin"""
 
 from urllib.parse import parse_qs
 from datetime import datetime
@@ -32,16 +32,10 @@ class AmazonAccountHealthMixin:
                 return dt.strftime('%Y-%m-%d %H:%M:%S')
             except Exception:
                 continue
-        return None
-
-    def _ensure_amazon_account_health_table(self):
-        self._amazon_account_health_ready = True
-        self._set_schema_marker_ready('amazon_account_health_v1')
-
+        return None`r`n
     def handle_amazon_account_health_api(self, environ, method, start_response):
-        """Amazon 账户健康管理 API（CRUD + 图表）"""
+        """Amazon 璐︽埛鍋ュ悍绠＄悊 API锛圕RUD + 鍥捐〃锛?""
         try:
-            self._ensure_amazon_account_health_table()
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
 
@@ -340,7 +334,7 @@ class AmazonAccountHealthMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_amazon_account_health_template_api(self, environ, method, start_response):
-        """Amazon 账户健康模板下载"""
+        """Amazon 璐︽埛鍋ュ悍妯℃澘涓嬭浇"""
         try:
             if method != 'GET':
                 return self.send_error(405, 'Method not allowed', start_response)
@@ -351,7 +345,6 @@ class AmazonAccountHealthMixin:
             from openpyxl.worksheet.datavalidation import DataValidation
             from openpyxl.utils import get_column_letter
 
-            self._ensure_amazon_account_health_table()
             shop_names = []
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
@@ -371,12 +364,12 @@ class AmazonAccountHealthMixin:
             ws.title = 'amazon_account_health'
 
             headers = [
-                '店铺*', '记录日期时间*', '账户状况评级*',
-                '涉嫌侵犯知识产权*', '知识产权投诉*', '商品真实性买家投诉*', '商品状况买家投诉*',
-                '食品和商品安全问题*', '上架政策违规*', '违反受限商品政策*', '违反买家商品评论政策*', '其他违反政策*', '监管合规性*',
-                '订单缺陷率(%)*', '负面反馈(%)*', 'A-to-z(%)*', '信用卡拒付(%)*',
-                '迟发率(%)*', '配送前取消率(%)*', '有效追踪率(%)*', '准时交货率(%)*',
-                '备注'
+                '搴楅摵*', '璁板綍鏃ユ湡鏃堕棿*', '璐︽埛鐘跺喌璇勭骇*',
+                '娑夊珜渚电姱鐭ヨ瘑浜ф潈*', '鐭ヨ瘑浜ф潈鎶曡瘔*', '鍟嗗搧鐪熷疄鎬т拱瀹舵姇璇?', '鍟嗗搧鐘跺喌涔板鎶曡瘔*',
+                '椋熷搧鍜屽晢鍝佸畨鍏ㄩ棶棰?', '涓婃灦鏀跨瓥杩濊*', '杩濆弽鍙楅檺鍟嗗搧鏀跨瓥*', '杩濆弽涔板鍟嗗搧璇勮鏀跨瓥*', '鍏朵粬杩濆弽鏀跨瓥*', '鐩戠鍚堣鎬?',
+                '璁㈠崟缂洪櫡鐜?%)*', '璐熼潰鍙嶉(%)*', 'A-to-z(%)*', '淇＄敤鍗℃嫆浠?%)*',
+                '杩熷彂鐜?%)*', '閰嶉€佸墠鍙栨秷鐜?%)*', '鏈夋晥杩借釜鐜?%)*', '鍑嗘椂浜よ揣鐜?%)*',
+                '澶囨敞'
             ]
             ws.append(headers)
 
@@ -387,7 +380,7 @@ class AmazonAccountHealthMixin:
                 0, 0, 0, 0, 0, 0,
                 0.35, 0.00, 0.00, 0.00,
                 1.20, 0.80, 97.50, 95.20,
-                '示例行（请勿修改，此行不会导入）'
+                '绀轰緥琛岋紙璇峰嬁淇敼锛屾琛屼笉浼氬鍏ワ級'
             ])
 
             for cell in ws[1]:
@@ -420,7 +413,7 @@ class AmazonAccountHealthMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_amazon_account_health_import_api(self, environ, method, start_response):
-        """Amazon 账户健康批量导入"""
+        """Amazon 璐︽埛鍋ュ悍鎵归噺瀵煎叆"""
         try:
             if method != 'POST':
                 return self.send_error(405, 'Method not allowed', start_response)
@@ -455,17 +448,16 @@ class AmazonAccountHealthMixin:
                 return row[idx].value
 
             required_headers = [
-                '店铺*', '记录日期时间*', '账户状况评级*',
-                '涉嫌侵犯知识产权*', '知识产权投诉*', '商品真实性买家投诉*', '商品状况买家投诉*',
-                '食品和商品安全问题*', '上架政策违规*', '违反受限商品政策*', '违反买家商品评论政策*', '其他违反政策*', '监管合规性*',
-                '订单缺陷率(%)*', '负面反馈(%)*', 'A-to-z(%)*', '信用卡拒付(%)*',
-                '迟发率(%)*', '配送前取消率(%)*', '有效追踪率(%)*', '准时交货率(%)*'
+                '搴楅摵*', '璁板綍鏃ユ湡鏃堕棿*', '璐︽埛鐘跺喌璇勭骇*',
+                '娑夊珜渚电姱鐭ヨ瘑浜ф潈*', '鐭ヨ瘑浜ф潈鎶曡瘔*', '鍟嗗搧鐪熷疄鎬т拱瀹舵姇璇?', '鍟嗗搧鐘跺喌涔板鎶曡瘔*',
+                '椋熷搧鍜屽晢鍝佸畨鍏ㄩ棶棰?', '涓婃灦鏀跨瓥杩濊*', '杩濆弽鍙楅檺鍟嗗搧鏀跨瓥*', '杩濆弽涔板鍟嗗搧璇勮鏀跨瓥*', '鍏朵粬杩濆弽鏀跨瓥*', '鐩戠鍚堣鎬?',
+                '璁㈠崟缂洪櫡鐜?%)*', '璐熼潰鍙嶉(%)*', 'A-to-z(%)*', '淇＄敤鍗℃嫆浠?%)*',
+                '杩熷彂鐜?%)*', '閰嶉€佸墠鍙栨秷鐜?%)*', '鏈夋晥杩借釜鐜?%)*', '鍑嗘椂浜よ揣鐜?%)*'
             ]
             for col_name in required_headers:
                 if col_name not in header_map:
-                    return self.send_json({'status': 'error', 'message': f'模板缺少列: {col_name}'}, start_response)
+                    return self.send_json({'status': 'error', 'message': f'妯℃澘缂哄皯鍒? {col_name}'}, start_response)
 
-            self._ensure_amazon_account_health_table()
             created = 0
             updated = 0
             unchanged = 0
@@ -491,43 +483,43 @@ class AmazonAccountHealthMixin:
                     if not any(cell.value is not None and str(cell.value).strip() for cell in row):
                         continue
                     try:
-                        shop_name = str(get_cell(row, '店铺*') or '').strip()
+                        shop_name = str(get_cell(row, '搴楅摵*') or '').strip()
                         shop_id = shop_map.get(shop_name)
                         if not shop_id:
-                            raise ValueError(f'店铺不存在或非Amazon平台: {shop_name}')
+                            raise ValueError(f'搴楅摵涓嶅瓨鍦ㄦ垨闈濧mazon骞冲彴: {shop_name}')
 
-                        record_datetime = self._normalize_datetime_text(get_cell(row, '记录日期时间*'))
+                        record_datetime = self._normalize_datetime_text(get_cell(row, '璁板綍鏃ユ湡鏃堕棿*'))
                         if not record_datetime:
-                            raise ValueError('记录日期时间格式错误，请使用 YYYY-MM-DD HH:MM:SS 或 YYYY-MM-DDTHH:MM')
+                            raise ValueError('璁板綍鏃ユ湡鏃堕棿鏍煎紡閿欒锛岃浣跨敤 YYYY-MM-DD HH:MM:SS 鎴?YYYY-MM-DDTHH:MM')
 
                         parsed = {
-                            'account_health_rating': self._parse_int(get_cell(row, '账户状况评级*')),
-                            'suspected_ip_infringement': self._parse_int(get_cell(row, '涉嫌侵犯知识产权*')),
-                            'intellectual_property_complaints': self._parse_int(get_cell(row, '知识产权投诉*')),
-                            'authenticity_customer_complaints': self._parse_int(get_cell(row, '商品真实性买家投诉*')),
-                            'condition_customer_complaints': self._parse_int(get_cell(row, '商品状况买家投诉*')),
-                            'food_safety_issues': self._parse_int(get_cell(row, '食品和商品安全问题*')),
-                            'listing_policy_violations': self._parse_int(get_cell(row, '上架政策违规*')),
-                            'restricted_product_policy_violations': self._parse_int(get_cell(row, '违反受限商品政策*')),
-                            'customer_review_policy_violations': self._parse_int(get_cell(row, '违反买家商品评论政策*')),
-                            'other_policy_violations': self._parse_int(get_cell(row, '其他违反政策*')),
-                            'regulatory_compliance_issues': self._parse_int(get_cell(row, '监管合规性*')),
-                            'order_defect_rate': self._parse_float(get_cell(row, '订单缺陷率(%)*')),
-                            'negative_feedback_rate': self._parse_float(get_cell(row, '负面反馈(%)*')),
+                            'account_health_rating': self._parse_int(get_cell(row, '璐︽埛鐘跺喌璇勭骇*')),
+                            'suspected_ip_infringement': self._parse_int(get_cell(row, '娑夊珜渚电姱鐭ヨ瘑浜ф潈*')),
+                            'intellectual_property_complaints': self._parse_int(get_cell(row, '鐭ヨ瘑浜ф潈鎶曡瘔*')),
+                            'authenticity_customer_complaints': self._parse_int(get_cell(row, '鍟嗗搧鐪熷疄鎬т拱瀹舵姇璇?')),
+                            'condition_customer_complaints': self._parse_int(get_cell(row, '鍟嗗搧鐘跺喌涔板鎶曡瘔*')),
+                            'food_safety_issues': self._parse_int(get_cell(row, '椋熷搧鍜屽晢鍝佸畨鍏ㄩ棶棰?')),
+                            'listing_policy_violations': self._parse_int(get_cell(row, '涓婃灦鏀跨瓥杩濊*')),
+                            'restricted_product_policy_violations': self._parse_int(get_cell(row, '杩濆弽鍙楅檺鍟嗗搧鏀跨瓥*')),
+                            'customer_review_policy_violations': self._parse_int(get_cell(row, '杩濆弽涔板鍟嗗搧璇勮鏀跨瓥*')),
+                            'other_policy_violations': self._parse_int(get_cell(row, '鍏朵粬杩濆弽鏀跨瓥*')),
+                            'regulatory_compliance_issues': self._parse_int(get_cell(row, '鐩戠鍚堣鎬?')),
+                            'order_defect_rate': self._parse_float(get_cell(row, '璁㈠崟缂洪櫡鐜?%)*')),
+                            'negative_feedback_rate': self._parse_float(get_cell(row, '璐熼潰鍙嶉(%)*')),
                             'a_to_z_rate': self._parse_float(get_cell(row, 'A-to-z(%)*')),
-                            'chargeback_rate': self._parse_float(get_cell(row, '信用卡拒付(%)*')),
-                            'late_shipment_rate': self._parse_float(get_cell(row, '迟发率(%)*')),
-                            'pre_fulfillment_cancel_rate': self._parse_float(get_cell(row, '配送前取消率(%)*')),
-                            'valid_tracking_rate': self._parse_float(get_cell(row, '有效追踪率(%)*')),
-                            'on_time_delivery_rate': self._parse_float(get_cell(row, '准时交货率(%)*')),
-                            'remark': str(get_cell(row, '备注') or '').strip()[:500]
+                            'chargeback_rate': self._parse_float(get_cell(row, '淇＄敤鍗℃嫆浠?%)*')),
+                            'late_shipment_rate': self._parse_float(get_cell(row, '杩熷彂鐜?%)*')),
+                            'pre_fulfillment_cancel_rate': self._parse_float(get_cell(row, '閰嶉€佸墠鍙栨秷鐜?%)*')),
+                            'valid_tracking_rate': self._parse_float(get_cell(row, '鏈夋晥杩借釜鐜?%)*')),
+                            'on_time_delivery_rate': self._parse_float(get_cell(row, '鍑嗘椂浜よ揣鐜?%)*')),
+                            'remark': str(get_cell(row, '澶囨敞') or '').strip()[:500]
                         }
 
                         for key, value in parsed.items():
                             if key == 'remark':
                                 continue
                             if value is None:
-                                raise ValueError(f'{key} 为空或格式错误')
+                                raise ValueError(f'{key} 涓虹┖鎴栨牸寮忛敊璇?)
 
                         with conn.cursor() as cur:
                             cur.execute(
@@ -645,3 +637,7 @@ class AmazonAccountHealthMixin:
             }, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+
+
+

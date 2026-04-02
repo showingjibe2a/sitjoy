@@ -16,10 +16,6 @@ except Exception as e:
 class CoreAppMixin:
     """应用通用能力：缓存、响应、静态文件、DB连接、基础解析。"""
 
-    def _is_sql_only_mode(self):
-        val = str(os.environ.get('SITJOY_SQL_ONLY', '0') or '0').strip().lower()
-        return val in ('1', 'true', 'yes', 'on')
-
     def _perf_enabled(self):
         val = str(os.environ.get('SITJOY_PERF_DEBUG', '1') or '1').strip().lower()
         return val not in ('0', 'false', 'no', 'off')

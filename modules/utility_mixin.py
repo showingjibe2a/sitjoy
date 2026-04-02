@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
-"""工具/仪表盘 Mixin - todo/calendar/feature 等"""
+﻿# -*- coding: utf-8 -*-
+"""宸ュ叿/浠〃鐩?Mixin - todo/calendar/feature 绛?""
 
 from urllib.parse import parse_qs
 from datetime import datetime, timedelta
@@ -7,15 +7,14 @@ import calendar
 import json
 
 class UtilityMixin:
-    """工具/仪表盘 API 处理器"""
+    """宸ュ叿/浠〃鐩?API 澶勭悊鍣?""
 
     def handle_todo_api(self, environ, method, start_response):
-        """待办事项 API（CRUD）"""
+        """寰呭姙浜嬮」 API锛圕RUD锛?""
         try:
-            self._ensure_todo_tables(lightweight=True)
             user_id = self._get_session_user(environ)
             if not user_id:
-                return self.send_json({'status': 'error', 'message': '未登录'}, start_response)
+                return self.send_json({'status': 'error', 'message': '鏈櫥褰?}, start_response)
 
             if method == 'GET':
                 with self._get_db_connection() as conn:
@@ -70,12 +69,11 @@ class UtilityMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_calendar_api(self, environ, method, start_response):
-        """日历数据 API（按月汇总待办）"""
+        """鏃ュ巻鏁版嵁 API锛堟寜鏈堟眹鎬诲緟鍔烇級"""
         try:
             if method != 'GET':
                 return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
 
-            self._ensure_todo_tables(lightweight=True)
             now = datetime.now()
             year = now.year
             month = now.month
@@ -103,9 +101,8 @@ class UtilityMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_feature_api(self, environ, method, start_response):
-        """卖点管理 API（CRUD）"""
+        """鍗栫偣绠＄悊 API锛圕RUD锛?""
         try:
-            self._ensure_order_product_tables()
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
 
@@ -200,4 +197,7 @@ class UtilityMixin:
                     "INSERT IGNORE INTO feature_categories (feature_id, category_id) VALUES (%s, %s)",
                     (feature_id, category_id)
                 )
+
+
+
 

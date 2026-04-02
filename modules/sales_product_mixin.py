@@ -23,7 +23,6 @@ class SalesProductMixin:
         """父体管理 API（CRUD）"""
         try:
             if method != 'GET':
-                self._ensure_sales_parent_tables()
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
 
             def limited_text(value, max_len):
@@ -180,7 +179,6 @@ class SalesProductMixin:
                     if item_id and item_id not in selected_ids:
                         selected_ids.append(item_id)
             
-            self._ensure_sales_product_tables()
             wb = Workbook()
             ws = wb.active
             ws.title = 'sales_products'
@@ -697,7 +695,6 @@ class SalesProductMixin:
                     'gross_weight_lbs': round(gross_weight_lbs, 2)
                 }
 
-            self._ensure_sales_product_tables()
             with self._get_db_connection() as conn:
                 tx_enabled = False
                 if not preview_mode:
@@ -1042,7 +1039,6 @@ class SalesProductMixin:
         """销售产品管理 API（CRUD）"""
         try:
             if method in ('POST', 'PUT', 'DELETE'):
-                self._ensure_sales_product_tables()
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
 
@@ -1616,4 +1612,7 @@ class SalesProductMixin:
         if not (sku_part and spec_part and fabric_part):
             return ''
         return f"{sku_part}-{spec_part}-{fabric_part}"
+
+
+
 

@@ -1,4 +1,4 @@
-# 请求路由分发 Mixin：集中管理 API/页面路由与权限检查。
+﻿# 璇锋眰璺敱鍒嗗彂 Mixin锛氶泦涓鐞?API/椤甸潰璺敱涓庢潈闄愭鏌ャ€?
 
 API_PERMISSION_MAP = {
     '/api/employee': 'home',
@@ -178,10 +178,10 @@ API_ROUTE_MAP = {
 
 
 class RequestRoutingMixin:
-    """请求路由相关能力：API 权限检查 + 页面分发 + API 分发。"""
+    """璇锋眰璺敱鐩稿叧鑳藉姏锛欰PI 鏉冮檺妫€鏌?+ 椤甸潰鍒嗗彂 + API 鍒嗗彂銆?""
 
     def _dispatch_api_request(self, path, environ, method, start_response):
-        """统一 API 路由分发，减少主入口分支数量。"""
+        """缁熶竴 API 璺敱鍒嗗彂锛屽噺灏戜富鍏ュ彛鍒嗘敮鏁伴噺銆?""
         if path.startswith('/api/auth'):
             return self.handle_auth_api(environ, method, start_response)
         if path.startswith('/api/hello'):
@@ -201,26 +201,26 @@ class RequestRoutingMixin:
         return handler(environ, method, start_response)
 
     def _validate_api_permission(self, path, environ, start_response):
-        """统一 API 权限校验：返回错误响应或 None。"""
+        """缁熶竴 API 鏉冮檺鏍￠獙锛氳繑鍥為敊璇搷搴旀垨 None銆?""
         if not path.startswith('/api/') or path.startswith('/api/auth'):
             return None
         user_id = self._get_session_user(environ)
         if not user_id:
-            return self.send_json({'status': 'error', 'message': '未登录'}, start_response)
+            return self.send_json({'status': 'error', 'message': '鏈櫥褰?}, start_response)
         permission_key = API_PERMISSION_MAP.get(path)
         if permission_key and not self._user_has_page_access(user_id, permission_key):
-            return self.send_json({'status': 'error', 'message': '无权限访问该模块'}, start_response)
+            return self.send_json({'status': 'error', 'message': '鏃犳潈闄愯闂妯″潡'}, start_response)
         return None
 
     def _dispatch_page_request(self, path, environ, start_response):
-        """统一页面路由分发：返回页面响应或 None。"""
+        """缁熶竴椤甸潰璺敱鍒嗗彂锛氳繑鍥為〉闈㈠搷搴旀垨 None銆?""
         if path == '/' or path == '/index.html':
             user_id = self._get_session_user(environ)
             if not user_id:
                 start_response('302 Found', [('Location', '/login')])
                 return [b'']
             if not self._user_has_page_access(user_id, 'home'):
-                return self.send_error(403, '无权限访问首页', start_response)
+                return self.send_error(403, '鏃犳潈闄愯闂椤?, start_response)
             return self.serve_file('templates/index.html', 'text/html', start_response)
 
         if path == '/login' or path == '/login.html':
@@ -231,3 +231,6 @@ class RequestRoutingMixin:
             return self._serve_protected_page(environ, start_response, template_path, permission_key)
 
         return None
+
+
+

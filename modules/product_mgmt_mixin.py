@@ -1,15 +1,14 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 import os
 import re
 from urllib.parse import parse_qs
 
 class ProductManagementMixin:
-    """产品管理 Mixin：SKU（产品系列）、分类、材料和相关辅助方法"""
+    """浜у搧绠＄悊 Mixin锛歋KU锛堜骇鍝佺郴鍒楋級銆佸垎绫汇€佹潗鏂欏拰鐩稿叧杈呭姪鏂规硶"""
 
     def handle_sku_api(self, environ, method, start_response):
-        """货号管理 API（CRUD）"""
+        """璐у彿绠＄悊 API锛圕RUD锛?""
         try:
-            self._ensure_fabric_table()
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
 
@@ -132,7 +131,7 @@ class ProductManagementMixin:
 
                 rename_result = self._rename_listing_sku_folder(old_sku_family, sku_family)
                 if rename_result.get('status') != 'success':
-                    return self.send_json({'status': 'error', 'message': rename_result.get('message') or '重命名目录失败'}, start_response)
+                    return self.send_json({'status': 'error', 'message': rename_result.get('message') or '閲嶅懡鍚嶇洰褰曞け璐?}, start_response)
 
                 db_updated = False
                 with self._get_db_connection() as conn:
@@ -176,14 +175,13 @@ class ProductManagementMixin:
         except Exception as e:
             import pymysql
             if pymysql and isinstance(e, pymysql.err.IntegrityError):
-                return self.send_json({'status': 'error', 'message': 'SKU 已存在'}, start_response)
+                return self.send_json({'status': 'error', 'message': 'SKU 宸插瓨鍦?}, start_response)
             print("SKU API error: " + str(e))
             return self.send_error(500, str(e), start_response)
 
     def handle_category_api(self, environ, method, start_response):
-        """品类管理 API（CRUD）"""
+        """鍝佺被绠＄悊 API锛圕RUD锛?""
         try:
-            self._ensure_category_table()
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
 
@@ -259,7 +257,7 @@ class ProductManagementMixin:
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':
-                return self.send_json({'status': 'error', 'message': '不允许删除品类，请使用编辑维护'}, start_response)
+                return self.send_json({'status': 'error', 'message': '涓嶅厑璁稿垹闄ゅ搧绫伙紝璇蜂娇鐢ㄧ紪杈戠淮鎶?}, start_response)
 
             return self.send_error(405, 'Method not allowed', start_response)
         except RuntimeError as e:
@@ -267,14 +265,13 @@ class ProductManagementMixin:
         except Exception as e:
             import pymysql
             if pymysql and isinstance(e, pymysql.err.IntegrityError):
-                return self.send_json({'status': 'error', 'message': '品类已存在'}, start_response)
+                return self.send_json({'status': 'error', 'message': '鍝佺被宸插瓨鍦?}, start_response)
             print("Category API error: " + str(e))
             return self.send_error(500, str(e), start_response)
 
     def handle_material_type_api(self, environ, method, start_response):
-        """材料类型管理 API（CRUD）"""
+        """鏉愭枡绫诲瀷绠＄悊 API锛圕RUD锛?""
         try:
-            self._ensure_material_types_table()
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
 
@@ -359,14 +356,13 @@ class ProductManagementMixin:
         except Exception as e:
             import pymysql
             if pymysql and isinstance(e, pymysql.err.IntegrityError):
-                return self.send_json({'status': 'error', 'message': '材料类型已存在或被使用'}, start_response)
+                return self.send_json({'status': 'error', 'message': '鏉愭枡绫诲瀷宸插瓨鍦ㄦ垨琚娇鐢?}, start_response)
             print("MaterialType API error: " + str(e))
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_material_api(self, environ, method, start_response):
-        """材料管理 API（CRUD）"""
+        """鏉愭枡绠＄悊 API锛圕RUD锛?""
         try:
-            self._ensure_materials_table()
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
 
@@ -378,10 +374,10 @@ class ProductManagementMixin:
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         type_map = {
-                            'fabric': '面料',
-                            'filling': '填充',
-                            'frame': '框架',
-                            'electronics': '电子元器件'
+                            'fabric': '闈㈡枡',
+                            'filling': '濉厖',
+                            'frame': '妗嗘灦',
+                            'electronics': '鐢靛瓙鍏冨櫒浠?
                         }
                         has_type_id = self._materials_has_type_id(conn)
                         if has_type_id:
@@ -591,7 +587,7 @@ class ProductManagementMixin:
         except Exception as e:
             import pymysql
             if pymysql and isinstance(e, pymysql.err.IntegrityError):
-                return self.send_json({'status': 'error', 'message': '材料已存在'}, start_response)
+                return self.send_json({'status': 'error', 'message': '鏉愭枡宸插瓨鍦?}, start_response)
             print("Material API error: " + str(e))
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
@@ -620,7 +616,7 @@ class ProductManagementMixin:
         if not os.path.exists(target):
             os.makedirs(target, exist_ok=True)
         # Create standard subfolders for the SKU
-        for sub in ('源文件', '主图', 'A+', '关联文件', '视频', '上传模板'):
+        for sub in ('婧愭枃浠?, '涓诲浘', 'A+', '鍏宠仈鏂囦欢', '瑙嗛', '涓婁紶妯℃澘'):
             try:
                 sub_bytes = os.fsencode(sub)
             except Exception:
@@ -629,17 +625,17 @@ class ProductManagementMixin:
             if not os.path.exists(sub_path):
                 os.makedirs(sub_path, exist_ok=True)
 
-        # Ensure default common folders under 主图 and A+
-        for parent_sub in ('主图', 'A+'):
+        # Ensure default common folders under 涓诲浘 and A+
+        for parent_sub in ('涓诲浘', 'A+'):
             try:
                 parent_sub_bytes = os.fsencode(parent_sub)
             except Exception:
                 parent_sub_bytes = str(parent_sub).encode('utf-8', errors='surrogatepass')
             parent_path = os.path.join(target, parent_sub_bytes)
             try:
-                common_sub_bytes = os.fsencode('通用')
+                common_sub_bytes = os.fsencode('閫氱敤')
             except Exception:
-                common_sub_bytes = '通用'.encode('utf-8', errors='surrogatepass')
+                common_sub_bytes = '閫氱敤'.encode('utf-8', errors='surrogatepass')
             common_path = os.path.join(parent_path, common_sub_bytes)
             if not os.path.exists(common_path):
                 os.makedirs(common_path, exist_ok=True)
@@ -655,25 +651,25 @@ class ProductManagementMixin:
         new_path = os.path.join(base_folder, self._safe_fsencode(new_name))
 
         if not os.path.exists(old_path):
-            # 旧目录不存在时按新名称补齐目录
+            # 鏃х洰褰曚笉瀛樺湪鏃舵寜鏂板悕绉拌ˉ榻愮洰褰?
             self._ensure_listing_sku_folder(new_name)
             return {'status': 'success', 'renamed': False}
 
         if os.path.exists(new_path):
-            return {'status': 'error', 'message': f'目标目录已存在: {new_name}'}
+            return {'status': 'error', 'message': f'鐩爣鐩綍宸插瓨鍦? {new_name}'}
 
         try:
             os.rename(old_path, new_path)
             return {'status': 'success', 'renamed': True}
         except Exception as e:
-            return {'status': 'error', 'message': f'重命名目录失败: {e}'}
+            return {'status': 'error', 'message': f'閲嶅懡鍚嶇洰褰曞け璐? {e}'}
 
     def _get_material_type_id(self, conn, name_or_code):
         type_map = {
-            'fabric': '面料',
-            'filling': '填充',
-            'frame': '框架',
-            'electronics': '电子元器件'
+            'fabric': '闈㈡枡',
+            'filling': '濉厖',
+            'frame': '妗嗘灦',
+            'electronics': '鐢靛瓙鍏冨櫒浠?
         }
         resolved_name = type_map.get(name_or_code, name_or_code)
         with conn.cursor() as cur:
@@ -701,4 +697,7 @@ class ProductManagementMixin:
 
     def _get_listing_folder_bytes(self):
         return self._join_resources('')
+
+
+
 

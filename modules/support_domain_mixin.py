@@ -1,15 +1,14 @@
-# -*- coding: utf-8 -*-
-"""支持/配置 Mixin - platform_type/brand/shop/certification 等"""
+﻿# -*- coding: utf-8 -*-
+"""鏀寔/閰嶇疆 Mixin - platform_type/brand/shop/certification 绛?""
 
 from urllib.parse import parse_qs
 
 class SupportDomainMixin:
-    """支持域 API 处理器（平台类型、品牌、店铺、认证等）"""
+    """鏀寔鍩?API 澶勭悊鍣紙骞冲彴绫诲瀷銆佸搧鐗屻€佸簵閾恒€佽璇佺瓑锛?""
 
     def handle_platform_type_api(self, environ, method, start_response):
-        """平台类型管理 API（CRUD）"""
+        """骞冲彴绫诲瀷绠＄悊 API锛圕RUD锛?""
         try:
-            self._ensure_platform_types_table()
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
 
@@ -68,9 +67,8 @@ class SupportDomainMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_brand_api(self, environ, method, start_response):
-        """品牌管理 API（CRUD）"""
+        """鍝佺墝绠＄悊 API锛圕RUD锛?""
         try:
-            self._ensure_brands_table()
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
 
@@ -129,9 +127,8 @@ class SupportDomainMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_shop_api(self, environ, method, start_response):
-        """店铺管理 API（CRUD）"""
+        """搴楅摵绠＄悊 API锛圕RUD锛?""
         try:
-            self._ensure_shops_table()
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
 
@@ -224,9 +221,8 @@ class SupportDomainMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_certification_api(self, environ, method, start_response):
-        """认证管理 API（CRUD）"""
+        """璁よ瘉绠＄悊 API锛圕RUD锛?""
         try:
-            self._ensure_certifications_table()
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
 
@@ -283,3 +279,6 @@ class SupportDomainMixin:
         except Exception as e:
             print(f'Certification API error: {str(e)}')
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+
+

@@ -27,7 +27,6 @@ class LogisticsWarehouseMixin:
     def handle_factory_stock_api(self, environ, method, start_response):
         """工厂在库库存 CRUD"""
         try:
-            self._ensure_factory_inventory_tables()
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
 
             if method == 'GET':
@@ -121,7 +120,6 @@ class LogisticsWarehouseMixin:
     def handle_factory_wip_api(self, environ, method, start_response):
         """工厂在制库存 CRUD"""
         try:
-            self._ensure_factory_inventory_tables()
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
 
             def _parse_yes_no(value):
@@ -296,7 +294,6 @@ class LogisticsWarehouseMixin:
             from openpyxl.worksheet.datavalidation import DataValidation
             from openpyxl.utils import get_column_letter
 
-            self._ensure_factory_inventory_tables()
             wb = Workbook()
             ws = wb.active
             ws.title = 'factory_stock'
@@ -403,7 +400,6 @@ class LogisticsWarehouseMixin:
                     return None
                 return row[idx]
 
-            self._ensure_factory_inventory_tables()
             created = 0
             updated = 0
             unchanged = 0
@@ -500,7 +496,6 @@ class LogisticsWarehouseMixin:
             from openpyxl.worksheet.datavalidation import DataValidation
             from openpyxl.utils import get_column_letter
 
-            self._ensure_factory_inventory_tables()
             wb = Workbook()
             ws = wb.active
             ws.title = 'factory_wip'
@@ -643,7 +638,6 @@ class LogisticsWarehouseMixin:
                 text = str(value or '').strip().lower()
                 return 1 if text in ('1', 'true', 'yes', 'y', '是') else 0
 
-            self._ensure_factory_inventory_tables()
             created = 0
             updated = 0
             unchanged = 0
@@ -759,7 +753,6 @@ class LogisticsWarehouseMixin:
 
     def handle_logistics_factory_api(self, environ, method, start_response):
         try:
-            self._ensure_logistics_tables()
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
             if method == 'GET':
                 keyword = (query_params.get('q', [''])[0] or '').strip()
@@ -811,7 +804,6 @@ class LogisticsWarehouseMixin:
 
     def handle_logistics_forwarder_api(self, environ, method, start_response):
         try:
-            self._ensure_logistics_tables()
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
             if method == 'GET':
                 keyword = (query_params.get('q', [''])[0] or '').strip()
@@ -863,7 +855,6 @@ class LogisticsWarehouseMixin:
 
     def handle_logistics_supplier_api(self, environ, method, start_response):
         try:
-            self._ensure_logistics_tables()
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
             if method == 'GET':
                 keyword = (query_params.get('q', [''])[0] or '').strip()
@@ -915,7 +906,6 @@ class LogisticsWarehouseMixin:
 
     def handle_logistics_destination_region_api(self, environ, method, start_response):
         try:
-            self._ensure_logistics_tables()
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
             action = (query_params.get('action', [''])[0] or '').strip().lower()
             if method == 'GET':
@@ -1001,7 +991,6 @@ class LogisticsWarehouseMixin:
 
     def handle_logistics_warehouse_api(self, environ, method, start_response):
         try:
-            self._ensure_logistics_tables()
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
 
             def _resolve_region(conn, destination_region_id, region_name):
@@ -1158,7 +1147,6 @@ class LogisticsWarehouseMixin:
             if Workbook is None:
                 return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
 
-            self._ensure_logistics_tables()
             from openpyxl.styles import PatternFill, Font, Alignment
             from openpyxl.utils import get_column_letter
             from openpyxl.worksheet.datavalidation import DataValidation
@@ -1233,7 +1221,6 @@ class LogisticsWarehouseMixin:
             if load_workbook is None:
                 return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
 
-            self._ensure_logistics_tables()
             content_type = environ.get('CONTENT_TYPE', '')
             if 'multipart/form-data' not in content_type:
                 return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
@@ -1345,7 +1332,6 @@ class LogisticsWarehouseMixin:
 
     def handle_logistics_warehouse_inventory_api(self, environ, method, start_response):
         try:
-            self._ensure_logistics_tables()
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
 
             if method == 'GET':
@@ -1529,7 +1515,6 @@ class LogisticsWarehouseMixin:
                     return None
                 return row[idx]
 
-            self._ensure_logistics_tables()
             created = 0
             updated = 0
             unchanged = 0
@@ -1657,9 +1642,6 @@ class LogisticsWarehouseMixin:
     def handle_logistics_warehouse_dashboard_api(self, environ, method, start_response):
         """仓储看板：SKU库存聚合 + 仓库分列 + 在途角标（只读，工厂库存从独立表读取）"""
         try:
-            self._ensure_logistics_tables()
-            self._ensure_factory_inventory_tables()
-            self._ensure_order_product_tables()
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
             action = (query_params.get('action', [''])[0] or '').strip().lower()
 
@@ -2059,3 +2041,6 @@ class LogisticsWarehouseMixin:
             return self.send_json({'status': 'success', 'warehouses': warehouses, 'factories': factories, 'region_order': ordered_region_names, 'items': rows}, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+
+
