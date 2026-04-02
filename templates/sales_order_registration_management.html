@@ -31,6 +31,26 @@
             gap: 0.45rem;
             min-width: 0;
         }
+        .section-title-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.6rem;
+        }
+        .section-title-main {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            min-width: 0;
+        }
+        .section-toggle-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.3rem 0.65rem !important;
+            font-size: 0.82rem !important;
+            min-width: 0;
+        }
         .line-head {
             display: grid;
             gap: 0.45rem;
@@ -40,7 +60,7 @@
         }
         .platform-line-head { grid-template-columns: minmax(0, 1fr) 100px 64px; }
         .ship-line-head { grid-template-columns: minmax(0, 1fr) 100px 64px; }
-        .logistics-line-head { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 64px; }
+        .logistics-line-head { grid-template-columns: minmax(0, 1fr) 64px; }
         .line-list { display: grid; gap: 0.4rem; }
         .line-row {
             display: grid;
@@ -49,7 +69,7 @@
         }
         .platform-line-row { grid-template-columns: minmax(0, 1fr) 100px 64px; }
         .ship-line-row { grid-template-columns: minmax(0, 1fr) 100px 64px; }
-        .logistics-line-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 64px; }
+        .logistics-line-row { grid-template-columns: minmax(0, 1fr) 64px; }
         .line-row .btn-danger { padding: 0.35rem 0.45rem; font-size: 0.82rem; line-height: 1.15; }
         .line-row .btn-secondary { padding: 0.35rem 0.45rem; font-size: 0.82rem; line-height: 1.15; }
         .pm-table td { vertical-align: top; }
@@ -58,6 +78,9 @@
             grid-template-columns: 1fr;
             gap: 0.9rem;
             min-width: 0;
+        }
+        .sku-grid.is-collapsed {
+            display: none;
         }
         .status-tag {
             display: inline-block;
@@ -283,7 +306,7 @@
                 <table class="pm-table" id="listTable">
                     <thead>
                         <tr>
-                            <th>运输状态</th>
+                            <th>订单状态</th>
                             <th>是否邀评</th>
                             <th>是否已发物流邮件</th>
                             <th>店铺</th>
@@ -332,37 +355,7 @@
                             <input type="date" id="modalOrderDate" class="optional-field optional-date-input" data-optional-date="1">
                         </div>
                         <div class="form-group">
-                            <label for="modalCustomerName">姓名</label>
-                            <input type="text" id="modalCustomerName" class="optional-field">
-                        </div>
-                        <div class="form-group">
-                            <label for="modalPhone">电话(US)</label>
-                            <input type="text" id="modalPhone" class="optional-field" placeholder="例如 +1 415-888-9999">
-                        </div>
-                        <div class="form-group">
-                            <label for="modalZip">邮编(US)</label>
-                            <input type="text" id="modalZip" class="optional-field" placeholder="例如 94016 或 94016-1234">
-                        </div>
-                        <div class="form-group pm-form-span-2">
-                            <label for="modalAddress">地址</label>
-                            <input type="text" id="modalAddress" class="optional-field">
-                        </div>
-                        <div class="form-group">
-                            <label for="modalCity">城市</label>
-                            <input type="text" id="modalCity" class="optional-field">
-                        </div>
-                        <div class="form-group">
-                            <label for="modalState">州</label>
-                            <input type="text" id="modalState" class="optional-field">
-                        </div>
-                    </div>
-                </div>
-
-                <div class="pm-section">
-                    <h4>状态与备注</h4>
-                    <div class="pm-section-body">
-                        <div class="form-group">
-                            <label>运输状态</label>
+                            <label>订单状态（原运输状态）</label>
                             <div class="status-segment status-segment--inline" id="modalShippingStatusSegment" data-value="pending">
                                 <button type="button" class="status-pill status-pill--pending is-active" data-value="pending">Pending</button>
                                 <button type="button" class="status-pill status-pill--unshipped" data-value="unshipped">Unshipped</button>
@@ -370,36 +363,21 @@
                                 <button type="button" class="status-pill status-pill--cancelled" data-value="cancelled">Cancelled</button>
                             </div>
                         </div>
-                        <div class="form-group">
-                            <label>是否邀评</label>
-                            <div class="status-segment status-segment--inline" id="modalIsReviewInvitedSegment" data-value="0">
-                                <button type="button" class="status-pill status-pill--yes" data-value="1">是</button>
-                                <button type="button" class="status-pill status-pill--no is-active" data-value="0">否</button>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label>是否已发物流邮件</label>
-                            <div class="status-segment status-segment--inline" id="modalIsLogisticsEmailedSegment" data-value="0">
-                                <button type="button" class="status-pill status-pill--yes" data-value="1">是</button>
-                                <button type="button" class="status-pill status-pill--no is-active" data-value="0">否</button>
-                            </div>
-                        </div>
-                        <div class="form-group pm-form-span-2">
-                            <label for="modalCompensation">补偿措施</label>
-                            <input type="text" id="modalCompensation" class="optional-field">
-                        </div>
-                        <div class="form-group pm-form-full">
-                            <label for="modalRemark">备注</label>
-                            <textarea id="modalRemark" class="optional-field" rows="3" style="resize:vertical;"></textarea>
-                        </div>
                     </div>
                 </div>
 
                 <div class="pm-section">
-                    <h4>SKU信息
-                        <span class="help-dot" data-tip="选择销售平台SKU 后自动生成发货SKU，可通过替代方案调整具体发货内容"></span>
+                    <h4 class="section-title-row">
+                        <span class="section-title-main">
+                            SKU信息
+                            <span class="help-dot" data-tip="选择销售平台SKU 后自动生成发货SKU，可通过替代方案调整具体发货内容"></span>
+                        </span>
+                        <button type="button" class="btn-secondary section-toggle-btn" id="skuSectionToggleBtn" onclick="toggleSkuSection()" aria-expanded="false">
+                            <span id="skuSectionToggleArrow">▾</span>
+                            <span id="skuSectionToggleText">展开</span>
+                        </button>
                     </h4>
-                    <div class="pm-section-body sku-grid">
+                    <div class="pm-section-body sku-grid is-collapsed" id="skuSectionBody">
                         <div class="line-box">
                             <div style="display:flex; justify-content:space-between; align-items:center; gap:0.45rem;">
                                 <h5 style="margin:0; flex:1;">销售平台SKU
@@ -434,13 +412,65 @@
                 <div class="pm-section">
                     <h4>物流信息</h4>
                     <div class="pm-section-body">
+                        <div class="form-group">
+                            <label for="modalCustomerName">姓名</label>
+                            <input type="text" id="modalCustomerName" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalPhone">电话(US)</label>
+                            <input type="text" id="modalPhone" class="optional-field" placeholder="例如 +1 415-888-9999">
+                        </div>
+                        <div class="form-group pm-form-span-2">
+                            <label for="modalAddress">地址</label>
+                            <input type="text" id="modalAddress" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalCity">城市</label>
+                            <input type="text" id="modalCity" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalState">州</label>
+                            <input type="text" id="modalState" class="optional-field">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalZip">邮编(US)</label>
+                            <input type="text" id="modalZip" class="optional-field" placeholder="例如 94016 或 94016-1234">
+                        </div>
                         <div class="line-box pm-form-full">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <h5 style="margin:0;">物流行（可多条）</h5>
-                                <button type="button" class="btn-secondary" onclick="addLogisticsLine()">新增物流行</button>
+                                <h5 style="margin:0;">跟踪号（可多条）</h5>
+                                <button type="button" class="btn-secondary" onclick="addLogisticsLine()">新增跟踪号</button>
                             </div>
-                            <div class="line-head logistics-line-head"><span>发货物流</span><span>物流单号</span><span></span></div>
+                            <div class="line-head logistics-line-head"><span>跟踪号</span><span></span></div>
                             <div id="logisticsLines" class="line-list"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pm-section">
+                    <h4>售后状态</h4>
+                    <div class="pm-section-body">
+                        <div class="form-group">
+                            <label>是否已发物流邮件</label>
+                            <div class="status-segment status-segment--inline" id="modalIsLogisticsEmailedSegment" data-value="0">
+                                <button type="button" class="status-pill status-pill--yes" data-value="1">是</button>
+                                <button type="button" class="status-pill status-pill--no is-active" data-value="0">否</button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>是否邀评</label>
+                            <div class="status-segment status-segment--inline" id="modalIsReviewInvitedSegment" data-value="0">
+                                <button type="button" class="status-pill status-pill--yes" data-value="1">是</button>
+                                <button type="button" class="status-pill status-pill--no is-active" data-value="0">否</button>
+                            </div>
+                        </div>
+                        <div class="form-group pm-form-span-2">
+                            <label for="modalCompensation">补偿措施</label>
+                            <input type="text" id="modalCompensation" class="optional-field">
+                        </div>
+                        <div class="form-group pm-form-full">
+                            <label for="modalRemark">备注</label>
+                            <textarea id="modalRemark" class="optional-field" rows="3" style="resize:vertical;"></textarea>
                         </div>
                     </div>
                 </div>
@@ -879,31 +909,47 @@
             requestShipmentPreviewFromPlatform();
         }
 
+        function _formatLogisticsLineText(line) {
+            const carrier = String(line && line.shipping_carrier ? line.shipping_carrier : '').trim();
+            const tracking = String(line && line.tracking_no ? line.tracking_no : '').trim();
+            if (carrier && tracking) return carrier + ':' + tracking;
+            return carrier || tracking;
+        }
+
+        function _parseLogisticsLineText(value) {
+            const text = String(value == null ? '' : value).trim();
+            if (!text) {
+                return { shipping_carrier: '', tracking_no: '' };
+            }
+            const colonIndex = text.indexOf(':');
+            if (colonIndex > 0) {
+                return {
+                    shipping_carrier: text.slice(0, colonIndex).trim(),
+                    tracking_no: text.slice(colonIndex + 1).trim()
+                };
+            }
+            return { shipping_carrier: '', tracking_no: text };
+        }
+
         function renderLogisticsLines() {
             const wrap = document.getElementById('logisticsLines');
             if (!logisticsLines.length) {
-                wrap.innerHTML = '<div class="plan-empty">当前未填写物流行（可为空）</div>';
+                wrap.innerHTML = '<div class="plan-empty">当前未填写跟踪号（可为空）</div>';
                 return;
             }
             wrap.innerHTML = logisticsLines.map((line, idx) => `
                 <div class="line-row logistics-line-row">
-                    <input type="text" class="optional-field" data-logi-field="carrier" data-logi-index="${idx}" value="${String(line.shipping_carrier || '').replace(/"/g, '&quot;')}">
-                    <input type="text" class="optional-field" data-logi-field="tracking" data-logi-index="${idx}" value="${String(line.tracking_no || '').replace(/"/g, '&quot;')}">
+                    <input type="text" class="optional-field" data-logi-field="tracking" data-logi-index="${idx}" value="${_formatLogisticsLineText(line).replace(/"/g, '&quot;')}" placeholder="例如 1Z123 或 UPS:1Z123">
                     <button class="btn-danger" type="button" onclick="removeLogisticsLine(${idx})">删除</button>
                 </div>
             `).join('');
-            wrap.querySelectorAll('[data-logi-field="carrier"]').forEach(el => {
-                el.addEventListener('input', function() {
-                    const idx = Number(this.getAttribute('data-logi-index'));
-                    if (!Number.isFinite(idx) || !logisticsLines[idx]) return;
-                    logisticsLines[idx].shipping_carrier = this.value || '';
-                });
-            });
             wrap.querySelectorAll('[data-logi-field="tracking"]').forEach(el => {
                 el.addEventListener('input', function() {
                     const idx = Number(this.getAttribute('data-logi-index'));
                     if (!Number.isFinite(idx) || !logisticsLines[idx]) return;
-                    logisticsLines[idx].tracking_no = this.value || '';
+                    const parsed = _parseLogisticsLineText(this.value || '');
+                    logisticsLines[idx].shipping_carrier = parsed.shipping_carrier || '';
+                    logisticsLines[idx].tracking_no = parsed.tracking_no || '';
                 });
             });
         }
@@ -934,6 +980,24 @@
                     setSegmentValue(segmentEl, this.dataset.value || '');
                 });
             });
+        }
+
+        let skuSectionCollapsed = true;
+
+        function setSkuSectionCollapsed(collapsed) {
+            skuSectionCollapsed = !!collapsed;
+            const body = document.getElementById('skuSectionBody');
+            const button = document.getElementById('skuSectionToggleBtn');
+            const arrow = document.getElementById('skuSectionToggleArrow');
+            const text = document.getElementById('skuSectionToggleText');
+            if (body) body.classList.toggle('is-collapsed', skuSectionCollapsed);
+            if (button) button.setAttribute('aria-expanded', skuSectionCollapsed ? 'false' : 'true');
+            if (arrow) arrow.textContent = skuSectionCollapsed ? '▾' : '▴';
+            if (text) text.textContent = skuSectionCollapsed ? '展开' : '收起';
+        }
+
+        function toggleSkuSection() {
+            setSkuSectionCollapsed(!skuSectionCollapsed);
         }
 
         function loadShopOptions() {
@@ -1001,6 +1065,7 @@
             renderPlatformLines();
             renderShipmentLines();
             renderLogisticsLines();
+            setSkuSectionCollapsed(true);
             resetModalStatus();
             document.getElementById('pm-modal').classList.add('active');
             bindShipmentSegmentChange();
@@ -1064,6 +1129,7 @@
                     renderPlatformLines();
                     renderShipmentLines();
                     renderLogisticsLines();
+                    setSkuSectionCollapsed(true);
                     requestShipmentPreviewFromPlatform(false);
                     resetModalStatus();
                     document.getElementById('pm-modal').classList.add('active');
@@ -1477,6 +1543,9 @@
 
         window.addEventListener('load', loadList);
         window.addEventListener('load', initOptionalFieldListeners);
+        window.addEventListener('load', function() {
+            setSkuSectionCollapsed(true);
+        });
         window.addEventListener('load', function() {
             bindSegment('modalShippingStatusSegment');
             bindSegment('modalIsReviewInvitedSegment');

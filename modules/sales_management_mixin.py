@@ -1,4 +1,4 @@
-import io
+﻿import io
 import cgi
 import re
 from datetime import datetime
@@ -15,7 +15,7 @@ except Exception as e:
 
 class SalesManagementMixin:
     def _registration_get_replacement_options(self, conn, base_order_product_ids):
-        """按基础发货SKU加载可选替代方案及方案明细。"""
+        """按基础发货 SKU 加载替代方案及方案明细。"""
         result = {}
         ids = [self._parse_int(x) for x in (base_order_product_ids or []) if self._parse_int(x)]
         if not ids:
@@ -435,8 +435,6 @@ class SalesManagementMixin:
     def handle_sales_order_registration_api(self, environ, method, start_response):
         perf_ctx = self._perf_begin('sales_order_registration_api', environ, {'entry_method': method})
         try:
-            if not self.__class__._schema_ready_cache.get('sales_order_registration'):
-                self._ensure_sales_order_registration_tables()
             self._perf_mark(perf_ctx, 'ensure_sales_order_registration_tables')
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
             action = (query_params.get('action', [''])[0] or '').strip().lower()
@@ -841,24 +839,79 @@ class SalesManagementMixin:
             if Workbook is None:
                 return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
 
+            from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+            from openpyxl.utils import get_column_letter
+
             wb = Workbook()
             ws = wb.active
             ws.title = 'orders'
+
             headers = [
-                '店铺', '订单号', '下单日期(YYYY-MM-DD)', '客户姓名', '电话', '邮编', '地址', '城市', '州',
-                '发货状态(pending/shipped/delivered/cancelled)', '邀评(0/1)', '物流已邮件(0/1)', '赔偿处理', '备注',
-                '平台SKU明细(平台SKU*数量, 用|分隔)',
-                '发货SKU明细(下单SKU*数量, 用|分隔, 留空则自动计算)',
-                '物流明细(承运商:单号, 用|分隔)'
+                '店铺', '订单号', '订单日期', '订单状态（原运输状态）',
+                '销售平台SKU', '实际发货SKU',
+                '姓名', '电话(US)', '地址', '城市', '州', '邮编(US)', '跟踪号（可多条）',
+                '是否已发物流邮件', '是否邀评', '补偿措施', '备注'
             ]
-            ws.append(headers)
+            groups = [
+                ('订单基础信息', 1, 4),
+                ('SKU信息', 5, 6),
+                ('物流信息', 7, 13),
+                ('售后状态', 14, 17),
+            ]
+            group_colors = [
+                ('A8B9A5', 'DDE7DB'),
+                ('D7C894', 'ECE5CE'),
+                ('B8C3D6', 'E3E8F2'),
+                ('D8B7C5', 'F0E3E8'),
+            ]
+
+            header_font = Font(bold=True, color='2A2420')
+            example_font = Font(italic=True, color='7B8088')
+            thin_border = Border(
+                left=Side(style='thin', color='B7AEA4'),
+                right=Side(style='thin', color='B7AEA4'),
+                top=Side(style='thin', color='B7AEA4'),
+                bottom=Side(style='thin', color='B7AEA4')
+            )
+
+            header_fill_by_col = ['DDE7DB'] * len(headers)
+            for idx, (title, start_col, end_col) in enumerate(groups):
+                title_color, sub_header_color = group_colors[idx % len(group_colors)]
+                ws.merge_cells(start_row=1, start_column=start_col, end_row=1, end_column=end_col)
+                cell = ws.cell(row=1, column=start_col, value=title)
+                cell.fill = PatternFill(start_color=title_color, end_color=title_color, fill_type='solid')
+                cell.font = Font(bold=True, color='2A2420')
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                for col in range(start_col, end_col + 1):
+                    header_fill_by_col[col - 1] = sub_header_color
+
+            for col, title in enumerate(headers, start=1):
+                cell = ws.cell(row=2, column=col, value=title)
+                cell.fill = PatternFill(start_color=header_fill_by_col[col - 1], end_color=header_fill_by_col[col - 1], fill_type='solid')
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                cell.border = thin_border
+                width = 18
+                if col in (1, 2):
+                    width = 16
+                if col in (5, 6, 13):
+                    width = 24
+                if col in (9, 17):
+                    width = 28
+                ws.column_dimensions[get_column_letter(col)].width = width
+
             ws.append([
-                '', 'SO-20250101-001', '2025-01-01', 'John Doe', '1234567890', '90001', '123 Main St', 'Los Angeles', 'CA',
-                'pending', '0', '0', '', '',
-                'MS01-Brown-1A*1|MS01-Gray-1A*1',
-                '',
-                'UPS:1Z123|FedEx:999'
+                '示例店铺', 'SO-20250101-001', '2025-01-01', 'pending',
+                'MS01-Brown-1A*1|MS01-Gray-1A*1', '',
+                'John Doe', '+1 415-888-9999', '123 Main St', 'Los Angeles', 'CA', '90001', 'UPS:1Z123|FedEx:999',
+                '0', '1', '示例补偿', '示例备注'
             ])
+            for cell in ws[3]:
+                cell.fill = PatternFill(start_color='ECECEC', end_color='ECECEC', fill_type='solid')
+                cell.font = example_font
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+            ws.freeze_panes = 'A4'
             return self._send_excel_workbook(wb, 'sales_order_registration_template.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
@@ -886,22 +939,55 @@ class SalesManagementMixin:
             if not file_bytes:
                 return self.send_json({'status': 'error', 'message': 'Empty file'}, start_response)
 
-            self._ensure_sales_order_registration_tables()
             wb = load_workbook(io.BytesIO(file_bytes), data_only=True)
             ws = wb.active
-            headers = [str(x.value or '').strip() for x in ws[1]]
-            index_map = {name: idx for idx, name in enumerate(headers)}
+            first_row = [str(x.value or '').strip() for x in ws[1]]
+            module_titles = {'订单基础信息', 'SKU信息', '物流信息', '售后状态'}
+            header_row_idx = 2 if any(cell in module_titles for cell in first_row) else 1
+            data_start_row = 4 if header_row_idx == 2 else 2
+            headers = [str(x.value or '').strip() for x in ws[header_row_idx]]
+            index_map = {name: idx for idx, name in enumerate(headers) if name}
 
-            def get_val(row_values, key):
-                idx = index_map.get(key)
-                if idx is None or idx >= len(row_values):
-                    return None
-                return row_values[idx]
+            alias_map = {
+                'shop_name': ['店铺'],
+                'order_no': ['订单号'],
+                'order_date': ['订单日期', '下单日期(YYYY-MM-DD)'],
+                'customer_name': ['姓名', '客户姓名'],
+                'phone': ['电话(US)', '电话'],
+                'zip_code': ['邮编(US)', '邮编'],
+                'address': ['地址'],
+                'city': ['城市'],
+                'state': ['州'],
+                'shipping_status': ['订单状态（原运输状态）', '发货状态(pending/shipped/delivered/cancelled)'],
+                'is_logistics_emailed': ['是否已发物流邮件', '物流已邮件(0/1)'],
+                'is_review_invited': ['是否邀评', '邀评(0/1)'],
+                'compensation_action': ['补偿措施', '赔偿处理'],
+                'remark': ['备注'],
+                'platform_text': ['销售平台SKU', '平台SKU明细(平台SKU*数量, 用|分隔)'],
+                'shipment_text': ['实际发货SKU', '发货SKU明细(下单SKU*数量, 用|分隔, 留空则自动计算)'],
+                'logistics_text': ['跟踪号（可多条）', '跟踪号（原物流行，可多条）', '物流明细(承运商:单号, 用|分隔)']
+            }
 
-            required = ['订单号', '平台SKU明细(平台SKU*数量, 用|分隔)']
-            for col in required:
-                if col not in index_map:
-                    return self.send_json({'status': 'error', 'message': f'模板缺少列: {col}'}, start_response)
+            def get_val(row_values, aliases, default=None):
+                for key in aliases:
+                    idx = index_map.get(key)
+                    if idx is None or idx >= len(row_values):
+                        continue
+                    value = row_values[idx]
+                    if value is None:
+                        continue
+                    if str(value).strip() == '':
+                        continue
+                    return value
+                return default
+
+            required_aliases = [
+                ('订单号', alias_map['order_no']),
+                ('销售平台SKU', alias_map['platform_text'])
+            ]
+            for label, aliases in required_aliases:
+                if not any(alias in index_map for alias in aliases):
+                    return self.send_json({'status': 'error', 'message': f'模板缺少列: {label}'}, start_response)
 
             created = 0
             updated = 0
@@ -912,35 +998,35 @@ class SalesManagementMixin:
                     cur.execute("SELECT id, shop_name FROM shops")
                     shop_map = {str(x.get('shop_name') or '').strip(): self._parse_int(x.get('id')) for x in (cur.fetchall() or [])}
 
-                for row_idx in range(2, ws.max_row + 1):
+                for row_idx in range(data_start_row, ws.max_row + 1):
                     row_values = [cell.value for cell in ws[row_idx]]
                     if not any(v is not None and str(v).strip() for v in row_values):
                         continue
                     try:
-                        shop_name = str(get_val(row_values, '店铺') or '').strip()
-                        order_no = str(get_val(row_values, '订单号') or '').strip()
+                        shop_name = str(get_val(row_values, alias_map['shop_name']) or '').strip()
+                        order_no = str(get_val(row_values, alias_map['order_no']) or '').strip()
                         if not order_no:
                             raise ValueError('订单号必填')
 
                         shop_id = shop_map.get(shop_name) if shop_name else None
-                        order_date = self._registration_parse_date(get_val(row_values, '下单日期(YYYY-MM-DD)'))
-                        customer_name = str(get_val(row_values, '客户姓名') or '').strip() or None
-                        phone = str(get_val(row_values, '电话') or '').strip() or None
-                        zip_code = str(get_val(row_values, '邮编') or '').strip() or None
-                        address = str(get_val(row_values, '地址') or '').strip() or None
-                        city = str(get_val(row_values, '城市') or '').strip() or None
-                        state = str(get_val(row_values, '州') or '').strip() or None
-                        shipping_status = str(get_val(row_values, '发货状态(pending/shipped/delivered/cancelled)') or 'pending').strip() or 'pending'
-                        is_review_invited = self._bool_from_any(get_val(row_values, '邀评(0/1)'))
-                        is_logistics_emailed = self._bool_from_any(get_val(row_values, '物流已邮件(0/1)'))
-                        compensation_action = str(get_val(row_values, '赔偿处理') or '').strip() or None
-                        remark = str(get_val(row_values, '备注') or '').strip() or None
+                        order_date = self._registration_parse_date(get_val(row_values, alias_map['order_date']))
+                        customer_name = str(get_val(row_values, alias_map['customer_name']) or '').strip() or None
+                        phone = str(get_val(row_values, alias_map['phone']) or '').strip() or None
+                        zip_code = str(get_val(row_values, alias_map['zip_code']) or '').strip() or None
+                        address = str(get_val(row_values, alias_map['address']) or '').strip() or None
+                        city = str(get_val(row_values, alias_map['city']) or '').strip() or None
+                        state = str(get_val(row_values, alias_map['state']) or '').strip() or None
+                        shipping_status = str(get_val(row_values, alias_map['shipping_status'], 'pending') or 'pending').strip() or 'pending'
+                        is_review_invited = self._bool_from_any(get_val(row_values, alias_map['is_review_invited']))
+                        is_logistics_emailed = self._bool_from_any(get_val(row_values, alias_map['is_logistics_emailed']))
+                        compensation_action = str(get_val(row_values, alias_map['compensation_action']) or '').strip() or None
+                        remark = str(get_val(row_values, alias_map['remark']) or '').strip() or None
 
                         self._validate_us_phone_zip(phone, zip_code)
 
-                        platform_text = get_val(row_values, '平台SKU明细(平台SKU*数量, 用|分隔)')
-                        shipment_text = get_val(row_values, '发货SKU明细(下单SKU*数量, 用|分隔, 留空则自动计算)')
-                        logistics_text = get_val(row_values, '物流明细(承运商:单号, 用|分隔)')
+                        platform_text = get_val(row_values, alias_map['platform_text'])
+                        shipment_text = get_val(row_values, alias_map['shipment_text'])
+                        logistics_text = get_val(row_values, alias_map['logistics_text'])
 
                         parsed_platform = self._registration_parse_item_text(platform_text)
                         if not parsed_platform:
