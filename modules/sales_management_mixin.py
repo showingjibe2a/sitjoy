@@ -840,6 +840,7 @@ class SalesManagementMixin:
                 return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
 
             from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+            from openpyxl.worksheet.datavalidation import DataValidation
             from openpyxl.utils import get_column_letter
 
             wb = Workbook()
@@ -850,7 +851,7 @@ class SalesManagementMixin:
                 '店铺', '订单号', '订单日期', '订单状态（原运输状态）',
                 '销售平台SKU', '实际发货SKU',
                 '姓名', '电话(US)', '地址', '城市', '州', '邮编(US)', '跟踪号（可多条）',
-                '是否已发物流邮件', '是否邀评', '补偿措施', '备注'
+                '是否已发物流邮件（是/否）', '是否邀评（是/否）', '补偿措施', '备注'
             ]
             groups = [
                 ('订单基础信息', 1, 4),
@@ -904,12 +905,18 @@ class SalesManagementMixin:
                 '示例店铺', 'SO-20250101-001', '2025-01-01', 'pending',
                 'MS01-Brown-1A*1|MS01-Gray-1A*1', '',
                 'John Doe', '+1 415-888-9999', '123 Main St', 'Los Angeles', 'CA', '90001', 'UPS:1Z123|FedEx:999',
-                '0', '1', '示例补偿', '示例备注'
+                '否', '是', '示例补偿', '示例备注'
             ])
             for cell in ws[3]:
                 cell.fill = PatternFill(start_color='ECECEC', end_color='ECECEC', fill_type='solid')
                 cell.font = example_font
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+            dv_yes_no = DataValidation(type='list', formula1='"是,否"', allow_blank=True)
+            ws.add_data_validation(dv_yes_no)
+            for row in range(4, 1201):
+                dv_yes_no.add(f'N{row}')
+                dv_yes_no.add(f'O{row}')
 
             ws.freeze_panes = 'A4'
             return self._send_excel_workbook(wb, 'sales_order_registration_template.xlsx', start_response)
@@ -959,8 +966,8 @@ class SalesManagementMixin:
                 'city': ['城市'],
                 'state': ['州'],
                 'shipping_status': ['订单状态（原运输状态）', '发货状态(pending/shipped/delivered/cancelled)'],
-                'is_logistics_emailed': ['是否已发物流邮件', '物流已邮件(0/1)'],
-                'is_review_invited': ['是否邀评', '邀评(0/1)'],
+                'is_logistics_emailed': ['是否已发物流邮件（是/否）', '是否已发物流邮件', '物流已邮件(0/1)'],
+                'is_review_invited': ['是否邀评（是/否）', '是否邀评', '邀评(0/1)'],
                 'compensation_action': ['补偿措施', '赔偿处理'],
                 'remark': ['备注'],
                 'platform_text': ['销售平台SKU', '平台SKU明细(平台SKU*数量, 用|分隔)'],
@@ -989,6 +996,20 @@ class SalesManagementMixin:
                 if not any(alias in index_map for alias in aliases):
                     return self.send_json({'status': 'error', 'message': f'模板缺少列: {label}'}, start_response)
 
+            def _aggregate_sku_items(parsed_items):
+                qty_by_sku = {}
+                sku_order = []
+                for item in (parsed_items or []):
+                    sku = str((item or {}).get('sku') or '').strip()
+                    if not sku:
+                        continue
+                    qty = max(1, self._parse_int((item or {}).get('quantity')) or 1)
+                    if sku not in qty_by_sku:
+                        qty_by_sku[sku] = 0
+                        sku_order.append(sku)
+                    qty_by_sku[sku] += qty
+                return [{'sku': sku, 'quantity': qty_by_sku[sku]} for sku in sku_order]
+
             created = 0
             updated = 0
             errors = []
@@ -997,6 +1018,9 @@ class SalesManagementMixin:
                 with conn.cursor() as cur:
                     cur.execute("SELECT id, shop_name FROM shops")
                     shop_map = {str(x.get('shop_name') or '').strip(): self._parse_int(x.get('id')) for x in (cur.fetchall() or [])}
+
+                staged_map = {}
+                staged_keys = []
 
                 for row_idx in range(data_start_row, ws.max_row + 1):
                     row_values = [cell.value for cell in ws[row_idx]]
@@ -1031,6 +1055,62 @@ class SalesManagementMixin:
                         parsed_platform = self._registration_parse_item_text(platform_text)
                         if not parsed_platform:
                             raise ValueError('平台SKU明细必填')
+                        parsed_shipment = self._registration_parse_item_text(shipment_text)
+                        parsed_logistics = self._registration_parse_logistics_text(logistics_text)
+
+                        group_key = (
+                            shop_id or 0,
+                            order_no,
+                            order_date or '',
+                            customer_name or '',
+                            phone or '',
+                            zip_code or '',
+                            address or '',
+                            city or '',
+                            state or '',
+                            shipping_status or 'pending',
+                            int(is_review_invited or 0),
+                            int(is_logistics_emailed or 0),
+                            compensation_action or '',
+                            remark or ''
+                        )
+
+                        if group_key not in staged_map:
+                            staged_map[group_key] = {
+                                'row': row_idx,
+                                'shop_id': shop_id,
+                                'order_no': order_no,
+                                'order_date': order_date,
+                                'customer_name': customer_name,
+                                'phone': phone,
+                                'zip_code': zip_code,
+                                'address': address,
+                                'city': city,
+                                'state': state,
+                                'shipping_status': shipping_status,
+                                'is_review_invited': is_review_invited,
+                                'is_logistics_emailed': is_logistics_emailed,
+                                'compensation_action': compensation_action,
+                                'remark': remark,
+                                'platform_parsed': [],
+                                'shipment_parsed': [],
+                                'logistics_items': []
+                            }
+                            staged_keys.append(group_key)
+
+                        staged_map[group_key]['platform_parsed'].extend(parsed_platform)
+                        staged_map[group_key]['shipment_parsed'].extend(parsed_shipment)
+                        staged_map[group_key]['logistics_items'].extend(parsed_logistics)
+                    except Exception as row_error:
+                        errors.append({'row': row_idx, 'error': str(row_error)})
+
+                for key in staged_keys:
+                    staged = staged_map.get(key) or {}
+                    try:
+                        platform_agg = _aggregate_sku_items(staged.get('platform_parsed'))
+                        if not platform_agg:
+                            raise ValueError('平台SKU明细必填')
+                        shipment_agg = _aggregate_sku_items(staged.get('shipment_parsed'))
 
                         platform_items = [
                             {
@@ -1039,7 +1119,7 @@ class SalesManagementMixin:
                                 'quantity': x['quantity'],
                                 'shipping_plan_id': None
                             }
-                            for x in parsed_platform
+                            for x in platform_agg
                         ]
                         shipment_items = [
                             {
@@ -1049,24 +1129,35 @@ class SalesManagementMixin:
                                 'source_type': 'manual',
                                 'shipping_plan_id': None
                             }
-                            for x in self._registration_parse_item_text(shipment_text)
+                            for x in shipment_agg
                         ]
-                        logistics_items = self._registration_parse_logistics_text(logistics_text)
+
+                        logistics_items = []
+                        for item in (staged.get('logistics_items') or []):
+                            shipping_carrier = (item.get('shipping_carrier') or '').strip()
+                            tracking_no = (item.get('tracking_no') or '').strip()
+                            if not shipping_carrier and not tracking_no:
+                                continue
+                            logistics_items.append({
+                                'shipping_carrier': shipping_carrier or None,
+                                'tracking_no': tracking_no or None,
+                                'sort_order': len(logistics_items) + 1
+                            })
 
                         self._registration_fill_item_ids(conn, platform_items, shipment_items)
                         if not shipment_items:
                             shipment_items = self._resolve_registration_auto_shipments(conn, platform_items)
 
                         with conn.cursor() as cur:
-                            if shop_id:
+                            if staged.get('shop_id'):
                                 cur.execute(
                                     "SELECT id FROM sales_order_registrations WHERE order_no=%s AND shop_id=%s LIMIT 1",
-                                    (order_no, shop_id)
+                                    (staged.get('order_no'), staged.get('shop_id'))
                                 )
                             else:
                                 cur.execute(
                                     "SELECT id FROM sales_order_registrations WHERE order_no=%s AND shop_id IS NULL LIMIT 1",
-                                    (order_no,)
+                                    (staged.get('order_no'),)
                                 )
                             existing = cur.fetchone() or {}
                             existing_id = self._parse_int(existing.get('id'))
@@ -1080,8 +1171,10 @@ class SalesManagementMixin:
                                     WHERE id=%s
                                     """,
                                     (
-                                        shop_id, order_date, customer_name, phone, zip_code, address, city, state,
-                                        shipping_status, is_review_invited, is_logistics_emailed, compensation_action, remark, existing_id
+                                        staged.get('shop_id'), staged.get('order_date'), staged.get('customer_name'), staged.get('phone'),
+                                        staged.get('zip_code'), staged.get('address'), staged.get('city'), staged.get('state'),
+                                        staged.get('shipping_status'), staged.get('is_review_invited'), staged.get('is_logistics_emailed'),
+                                        staged.get('compensation_action'), staged.get('remark'), existing_id
                                     )
                                 )
                                 registration_id = existing_id
@@ -1095,16 +1188,18 @@ class SalesManagementMixin:
                                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                                     """,
                                     (
-                                        shop_id, order_no, order_date, customer_name, phone, zip_code, address, city, state,
-                                        shipping_status, is_review_invited, is_logistics_emailed, compensation_action, remark
+                                        staged.get('shop_id'), staged.get('order_no'), staged.get('order_date'), staged.get('customer_name'),
+                                        staged.get('phone'), staged.get('zip_code'), staged.get('address'), staged.get('city'), staged.get('state'),
+                                        staged.get('shipping_status'), staged.get('is_review_invited'), staged.get('is_logistics_emailed'),
+                                        staged.get('compensation_action'), staged.get('remark')
                                     )
                                 )
                                 registration_id = cur.lastrowid
                                 created += 1
 
                         self._registration_save_children(conn, registration_id, platform_items, shipment_items, logistics_items)
-                    except Exception as row_error:
-                        errors.append({'row': row_idx, 'error': str(row_error)})
+                    except Exception as group_error:
+                        errors.append({'row': staged.get('row') or 0, 'error': str(group_error)})
 
             return self.send_json({'status': 'success', 'created': created, 'updated': updated, 'errors': errors}, start_response)
         except Exception as e:

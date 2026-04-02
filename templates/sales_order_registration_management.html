@@ -9,7 +9,7 @@
         .required-field, .optional-field {
             padding: 0.65rem 0.8rem !important;
             border-radius: 6px !important;
-            border: 2px solid var(--morandi-sand) !important;
+            border: 1px solid rgba(207, 199, 189, 0.72) !important;
             font-size: 0.95rem !important;
             width: 100%;
             box-sizing: border-box;
@@ -23,7 +23,7 @@
             box-shadow: 0 0 0 3px rgba(42, 36, 32, 0.1) !important;
         }
         .line-box {
-            border: 2px solid var(--morandi-sand);
+            border: 1px solid rgba(207, 199, 189, 0.72);
             border-radius: 8px;
             padding: 0.65rem;
             background: #fff;
@@ -50,6 +50,52 @@
             padding: 0.3rem 0.65rem !important;
             font-size: 0.82rem !important;
             min-width: 0;
+        }
+        .sku-sub-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+        }
+        .mini-expand-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 0.1rem;
+        }
+        .mini-expand-btn {
+            width: 26px;
+            height: 26px;
+            border-radius: 999px;
+            border: 1px solid var(--morandi-sand);
+            background: #f3efe9;
+            color: var(--morandi-ink);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            line-height: 1;
+            font-size: 0.82rem;
+            padding: 0;
+        }
+        .mini-expand-btn:hover {
+            background: #ece7df;
+        }
+        .shipment-section-wrap.is-collapsed {
+            display: none;
+        }
+        .subsection-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.65rem;
+            flex-wrap: wrap;
+        }
+        .subsection-title {
+            margin: 0;
+            font-size: 0.92rem;
+            color: var(--morandi-ink);
         }
         .line-head {
             display: grid;
@@ -78,9 +124,6 @@
             grid-template-columns: 1fr;
             gap: 0.9rem;
             min-width: 0;
-        }
-        .sku-grid.is-collapsed {
-            display: none;
         }
         .status-tag {
             display: inline-block;
@@ -111,7 +154,6 @@
         #modalOrderDate {
             min-height: 42px;
             background-image: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(246,241,235,0.96));
-            border: 2px solid var(--morandi-sand) !important;
             padding-right: 2.2rem !important;
             -webkit-appearance: none;
             appearance: none;
@@ -352,10 +394,10 @@
                         </div>
                         <div class="form-group">
                             <label for="modalOrderDate">订单日期</label>
-                            <input type="date" id="modalOrderDate" class="optional-field optional-date-input" data-optional-date="1">
+                            <input type="date" id="modalOrderDate" class="optional-field optional-date-input app-date-input" data-optional-date="1">
                         </div>
                         <div class="form-group">
-                            <label>订单状态（原运输状态）</label>
+                            <label>订单状态</label>
                             <div class="status-segment status-segment--inline" id="modalShippingStatusSegment" data-value="pending">
                                 <button type="button" class="status-pill status-pill--pending is-active" data-value="pending">Pending</button>
                                 <button type="button" class="status-pill status-pill--unshipped" data-value="unshipped">Unshipped</button>
@@ -367,32 +409,28 @@
                 </div>
 
                 <div class="pm-section">
-                    <h4 class="section-title-row">
-                        <span class="section-title-main">
-                            SKU信息
-                            <span class="help-dot" data-tip="选择销售平台SKU 后自动生成发货SKU，可通过替代方案调整具体发货内容"></span>
-                        </span>
-                        <button type="button" class="btn-secondary section-toggle-btn" id="skuSectionToggleBtn" onclick="toggleSkuSection()" aria-expanded="false">
-                            <span id="skuSectionToggleArrow">▾</span>
-                            <span id="skuSectionToggleText">展开</span>
-                        </button>
-                    </h4>
-                    <div class="pm-section-body sku-grid is-collapsed" id="skuSectionBody">
+                    <h4>SKU信息</h4>
+                    <div class="pm-section-body sku-grid">
+                        <h5 class="sku-sub-title">销售平台SKU
+                            <span class="help-dot" data-tip="店铺中的销售商品 SKU，支持多条添加"></span>
+                        </h5>
                         <div class="line-box">
-                            <div style="display:flex; justify-content:space-between; align-items:center; gap:0.45rem;">
-                                <h5 style="margin:0; flex:1;">销售平台SKU
-                                    <span class="help-dot" data-tip="店铺中的销售商品 SKU，支持多条添加"></span>
-                                </h5>
-                            </div>
                             <div class="line-head platform-line-head"><span>销售平台SKU</span><span>数量</span><span></span></div>
                             <div id="platformLines" class="line-list"></div>
                             <div style="display:flex; justify-content:flex-start; margin-top:0.35rem;">
                                 <button type="button" class="btn-accent" onclick="addPlatformLine()">新增平台SKU</button>
                             </div>
                         </div>
-                        <div class="line-box">
-                            <div style="display:flex; justify-content:space-between; align-items:center; gap:0.45rem;">
-                                <h5 style="margin:0; flex:1;">实际发货SKU
+
+                        <div class="mini-expand-row">
+                            <button type="button" class="mini-expand-btn" id="shipmentSectionToggleBtn" onclick="toggleShipmentSection()" aria-expanded="false" title="展开实际发货SKU">
+                                <span id="shipmentSectionToggleArrow">▾</span>
+                            </button>
+                        </div>
+
+                        <div class="shipment-section-wrap is-collapsed" id="shipmentSectionWrap">
+                            <div class="sku-sub-toolbar">
+                                <h5 class="sku-sub-title">实际发货SKU
                                     <span class="help-dot" data-tip="选择销售平台SKU后将自动生成发货SKU；有替代方案时可在下方展开并调整替代数量。"></span>
                                 </h5>
                                 <div style="display:flex; gap:0.6rem; align-items:center;">
@@ -403,8 +441,10 @@
                                     <button type="button" class="btn-secondary" onclick="clearShipmentLinesForAuto()">清除并恢复</button>
                                 </div>
                             </div>
-                            <div class="line-head ship-line-head"><span>实际发货SKU</span><span>数量</span><span></span></div>
-                            <div id="shipmentLines" class="line-list shipment-lines-container"></div>
+                            <div class="line-box">
+                                <div class="line-head ship-line-head"><span>实际发货SKU</span><span>数量</span><span></span></div>
+                                <div id="shipmentLines" class="line-list shipment-lines-container"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -436,11 +476,11 @@
                             <label for="modalZip">邮编(US)</label>
                             <input type="text" id="modalZip" class="optional-field" placeholder="例如 94016 或 94016-1234">
                         </div>
+                        <div class="subsection-toolbar pm-form-full">
+                            <h5 class="subsection-title">跟踪号（可多条）</h5>
+                            <button type="button" class="btn-secondary" onclick="addLogisticsLine()">新增跟踪号</button>
+                        </div>
                         <div class="line-box pm-form-full">
-                            <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <h5 style="margin:0;">跟踪号（可多条）</h5>
-                                <button type="button" class="btn-secondary" onclick="addLogisticsLine()">新增跟踪号</button>
-                            </div>
                             <div class="line-head logistics-line-head"><span>跟踪号</span><span></span></div>
                             <div id="logisticsLines" class="line-list"></div>
                         </div>
@@ -982,22 +1022,23 @@
             });
         }
 
-        let skuSectionCollapsed = true;
+        let shipmentSectionCollapsed = true;
 
-        function setSkuSectionCollapsed(collapsed) {
-            skuSectionCollapsed = !!collapsed;
-            const body = document.getElementById('skuSectionBody');
-            const button = document.getElementById('skuSectionToggleBtn');
-            const arrow = document.getElementById('skuSectionToggleArrow');
-            const text = document.getElementById('skuSectionToggleText');
-            if (body) body.classList.toggle('is-collapsed', skuSectionCollapsed);
-            if (button) button.setAttribute('aria-expanded', skuSectionCollapsed ? 'false' : 'true');
-            if (arrow) arrow.textContent = skuSectionCollapsed ? '▾' : '▴';
-            if (text) text.textContent = skuSectionCollapsed ? '展开' : '收起';
+        function setShipmentSectionCollapsed(collapsed) {
+            shipmentSectionCollapsed = !!collapsed;
+            const wrap = document.getElementById('shipmentSectionWrap');
+            const button = document.getElementById('shipmentSectionToggleBtn');
+            const arrow = document.getElementById('shipmentSectionToggleArrow');
+            if (wrap) wrap.classList.toggle('is-collapsed', shipmentSectionCollapsed);
+            if (button) {
+                button.setAttribute('aria-expanded', shipmentSectionCollapsed ? 'false' : 'true');
+                button.setAttribute('title', shipmentSectionCollapsed ? '展开实际发货SKU' : '收起实际发货SKU');
+            }
+            if (arrow) arrow.textContent = shipmentSectionCollapsed ? '▾' : '▴';
         }
 
-        function toggleSkuSection() {
-            setSkuSectionCollapsed(!skuSectionCollapsed);
+        function toggleShipmentSection() {
+            setShipmentSectionCollapsed(!shipmentSectionCollapsed);
         }
 
         function loadShopOptions() {
@@ -1065,7 +1106,7 @@
             renderPlatformLines();
             renderShipmentLines();
             renderLogisticsLines();
-            setSkuSectionCollapsed(true);
+            setShipmentSectionCollapsed(true);
             resetModalStatus();
             document.getElementById('pm-modal').classList.add('active');
             bindShipmentSegmentChange();
@@ -1129,7 +1170,7 @@
                     renderPlatformLines();
                     renderShipmentLines();
                     renderLogisticsLines();
-                    setSkuSectionCollapsed(true);
+                    setShipmentSectionCollapsed(true);
                     requestShipmentPreviewFromPlatform(false);
                     resetModalStatus();
                     document.getElementById('pm-modal').classList.add('active');
@@ -1544,7 +1585,7 @@
         window.addEventListener('load', loadList);
         window.addEventListener('load', initOptionalFieldListeners);
         window.addEventListener('load', function() {
-            setSkuSectionCollapsed(true);
+            setShipmentSectionCollapsed(true);
         });
         window.addEventListener('load', function() {
             bindSegment('modalShippingStatusSegment');
