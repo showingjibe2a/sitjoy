@@ -22,7 +22,7 @@ class EncodingUtilsMixin:
         return os.fsdecode(raw)
 
     def _safe_fsencode(self, value):
-        """瀹夊叏鐨勬枃浠剁郴缁熻矾寰勭紪鐮?""
+        """Safely encode file-system path values."""
         if isinstance(value, (bytes, bytearray)):
             return bytes(value)
         try:
@@ -31,7 +31,7 @@ class EncodingUtilsMixin:
             return str(value).encode('utf-8', errors='surrogatepass')
 
     def _safe_fsdecode(self, value):
-        """瀹夊叏鐨勬枃浠剁郴缁熻矾寰勮В鐮?""
+        """Safely decode file-system path values."""
         if isinstance(value, str):
             return value
         try:
@@ -115,14 +115,14 @@ class EncodingUtilsMixin:
                     continue
 
     def _normalize_fabric_remark(self, remark):
-        """鏍囧噯鍖栭潰鏂欏浘鐗囧娉?""
+        """Normalize fabric image remark labels."""
         value = (remark or '').strip()
         allowed = {
             '鍘熷浘',
             '涓诲浘路Swatch',
             '涓诲浘路鍗栫偣',
-            'A+路鐢佃剳绔?,
-            'A+路鎵嬫満绔?,
+            'A+路鐢佃剳绔?',
+            'A+路鎵嬫満绔?',
             'A+路閫氱敤',
         }
         if value in allowed:
@@ -133,16 +133,16 @@ class EncodingUtilsMixin:
             return '涓诲浘路鍗栫偣'
         if 'Swatch' in value or 'swatch' in value:
             return '涓诲浘路Swatch'
-        if 'A+' in value or value.startswith('A锛?):
+        if 'A+' in value or value.startswith('A'):
             if '鐢佃剳' in value:
-                return 'A+路鐢佃剳绔?
+                return 'A+路鐢佃剳绔?'
             if '鎵嬫満' in value:
-                return 'A+路鎵嬫満绔?
+                return 'A+路鎵嬫満绔?'
             return 'A+路閫氱敤'
         return '鍘熷浘'
 
     def _to_int(self, value, default=None):
-        """瀹夊叏鐨勬暣鏁拌浆鎹?""
+        """Safely convert to int."""
         try:
             return int(value)
         except Exception:

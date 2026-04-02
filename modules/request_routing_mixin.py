@@ -178,10 +178,10 @@ API_ROUTE_MAP = {
 
 
 class RequestRoutingMixin:
-    """璇锋眰璺敱鐩稿叧鑳藉姏锛欰PI 鏉冮檺妫€鏌?+ 椤甸潰鍒嗗彂 + API 鍒嗗彂銆?""
+    """Request routing helpers: API/page dispatch and permission checks."""
 
     def _dispatch_api_request(self, path, environ, method, start_response):
-        """缁熶竴 API 璺敱鍒嗗彂锛屽噺灏戜富鍏ュ彛鍒嗘敮鏁伴噺銆?""
+        """Dispatch API requests by path."""
         if path.startswith('/api/auth'):
             return self.handle_auth_api(environ, method, start_response)
         if path.startswith('/api/hello'):
@@ -201,26 +201,26 @@ class RequestRoutingMixin:
         return handler(environ, method, start_response)
 
     def _validate_api_permission(self, path, environ, start_response):
-        """缁熶竴 API 鏉冮檺鏍￠獙锛氳繑鍥為敊璇搷搴旀垨 None銆?""
+        """Validate API permission and return error response or None."""
         if not path.startswith('/api/') or path.startswith('/api/auth'):
             return None
         user_id = self._get_session_user(environ)
         if not user_id:
-            return self.send_json({'status': 'error', 'message': '鏈櫥褰?}, start_response)
+            return self.send_json({'status': 'error', 'message': 'Not logged in'}, start_response)
         permission_key = API_PERMISSION_MAP.get(path)
         if permission_key and not self._user_has_page_access(user_id, permission_key):
             return self.send_json({'status': 'error', 'message': '鏃犳潈闄愯闂妯″潡'}, start_response)
         return None
 
     def _dispatch_page_request(self, path, environ, start_response):
-        """缁熶竴椤甸潰璺敱鍒嗗彂锛氳繑鍥為〉闈㈠搷搴旀垨 None銆?""
+        """Dispatch page requests and return page response or None."""
         if path == '/' or path == '/index.html':
             user_id = self._get_session_user(environ)
             if not user_id:
                 start_response('302 Found', [('Location', '/login')])
                 return [b'']
             if not self._user_has_page_access(user_id, 'home'):
-                return self.send_error(403, '鏃犳潈闄愯闂椤?, start_response)
+                return self.send_error(403, 'No permission to access home page', start_response)
             return self.serve_file('templates/index.html', 'text/html', start_response)
 
         if path == '/login' or path == '/login.html':

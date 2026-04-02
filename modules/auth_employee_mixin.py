@@ -1,4 +1,4 @@
-﻿import base64
+import base64
 import hashlib
 import hmac
 import json
@@ -116,7 +116,7 @@ class AuthEmployeeMixin:
                 username = (data.get('username') or '').strip()
                 password = (data.get('password') or '').strip()
                 if not username or not password:
-                    return self.send_json({'status': 'error', 'message': '鐢ㄦ埛鍚嶅瘑鐮佷笉鑳戒负绌?}, start_response)
+                    return self.send_json({'status': 'error', 'message': '鐢ㄦ埛鍚嶅瘑鐮佷笉鑳戒负绌?'}, start_response)
 
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
@@ -131,7 +131,7 @@ class AuthEmployeeMixin:
                         )
                         row = cur.fetchone()
                         if not row:
-                            return self.send_json({'status': 'error', 'message': '鐢ㄦ埛涓嶅瓨鍦?}, start_response)
+                            return self.send_json({'status': 'error', 'message': '鐢ㄦ埛涓嶅瓨鍦?'}, start_response)
 
                         pwd_hash = hashlib.sha256(password.encode('utf-8', errors='surrogatepass')).hexdigest()
                         if row['password_hash'] != pwd_hash:
@@ -181,7 +181,7 @@ class AuthEmployeeMixin:
             elif method == 'GET' and action == 'current':
                 user_id = self._get_session_user(environ)
                 if not user_id:
-                    return self.send_json({'status': 'error', 'message': '鏈櫥褰?}, start_response)
+                    return self.send_json({'status': 'error', 'message': '鏈櫥褰?'}, start_response)
 
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
@@ -208,7 +208,7 @@ class AuthEmployeeMixin:
                                 'page_permissions': page_permissions,
                                 'page_permission_labels': getattr(self, 'PAGE_PERMISSION_LABELS', {})
                             }, start_response)
-                        return self.send_json({'status': 'error', 'message': '鐢ㄦ埛淇℃伅鏈壘鍒?}, start_response)
+                        return self.send_json({'status': 'error', 'message': '鐢ㄦ埛淇℃伅鏈壘鍒?'}, start_response)
 
             elif method == 'GET' and action == 'debug':
                 session_id = self._get_session_id(environ)
@@ -259,7 +259,7 @@ class AuthEmployeeMixin:
                             )
                             return self.send_json({
                                 'status': 'pending',
-                                'message': '娉ㄥ唽鐢宠宸叉彁浜わ紝璇风瓑寰呯鐞嗗憳瀹℃牳鍚庢柟鍙櫥褰?
+                                'message': 'Registration submitted, waiting for admin approval'
                             }, start_response)
                         except Exception as e:
                             if 'Duplicate' in str(e):
@@ -269,7 +269,7 @@ class AuthEmployeeMixin:
             elif method == 'GET' and action == 'pending_users':
                 user_id = self._get_session_user(environ)
                 if not user_id:
-                    return self.send_json({'status': 'error', 'message': '鏈櫥褰?}, start_response)
+                    return self.send_json({'status': 'error', 'message': '鏈櫥褰?'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
@@ -278,7 +278,7 @@ class AuthEmployeeMixin:
                         )
                         actor_row = cur.fetchone()
                         if not actor_row or not actor_row.get('is_admin'):
-                            return self.send_json({'status': 'error', 'message': '鏃犳潈闄?}, start_response)
+                            return self.send_json({'status': 'error', 'message': '鏃犳潈闄?'}, start_response)
                         cur.execute(
                             """
                             SELECT id, username, name, phone, created_at,
@@ -307,7 +307,7 @@ class AuthEmployeeMixin:
             elif method == 'POST' and action == 'approve_user':
                 user_id = self._get_session_user(environ)
                 if not user_id:
-                    return self.send_json({'status': 'error', 'message': '鏈櫥褰?}, start_response)
+                    return self.send_json({'status': 'error', 'message': '鏈櫥褰?'}, start_response)
                 data = self._read_json_body(environ)
                 target_id = self._parse_int(data.get('id'))
                 approved = 1 if data.get('approve', True) else 0
@@ -321,7 +321,7 @@ class AuthEmployeeMixin:
                         )
                         actor_row = cur.fetchone()
                         if not actor_row or not actor_row.get('is_admin'):
-                            return self.send_json({'status': 'error', 'message': '鏃犳潈闄?}, start_response)
+                            return self.send_json({'status': 'error', 'message': '鏃犳潈闄?'}, start_response)
                         if approved:
                             desired_is_admin = 1 if data.get('is_admin') else 0
                             desired_can_grant_admin = 1 if data.get('can_grant_admin') else 0
@@ -406,7 +406,7 @@ class AuthEmployeeMixin:
 
             if method == 'POST':
                 if not user_is_admin:
-                    return self.send_json({'status': 'error', 'message': '浠呯鐞嗗憳鍙柊澧炶处鍙?}, start_response)
+                    return self.send_json({'status': 'error', 'message': '浠呯鐞嗗憳鍙柊澧炶处鍙?'}, start_response)
 
                 data = self._read_json_body(environ)
                 username = (data.get('username') or '').strip()
@@ -489,7 +489,7 @@ class AuthEmployeeMixin:
 
                 if 'page_permissions' in data:
                     if not user_is_admin:
-                        return self.send_json({'status': 'error', 'message': '浠呯鐞嗗憳鍙慨鏀归〉闈㈣闂潈闄?}, start_response)
+                        return self.send_json({'status': 'error', 'message': '浠呯鐞嗗憳鍙慨鏀归〉闈㈣闂潈闄?'}, start_response)
                     updates.append('page_permissions=%s')
                     params.append(self._serialize_page_permissions(data.get('page_permissions')))
 
@@ -518,7 +518,7 @@ class AuthEmployeeMixin:
                                 (username, item_id)
                             )
                             if cur.fetchone():
-                                return self.send_json({'status': 'error', 'message': '璐﹀彿宸插瓨鍦紝璇锋洿鎹㈠悕绉?}, start_response)
+                                return self.send_json({'status': 'error', 'message': '璐﹀彿宸插瓨鍦紝璇锋洿鎹㈠悕绉?'}, start_response)
                         params.append(item_id)
                         cur.execute(
                             f"UPDATE users SET {', '.join(updates)} WHERE id=%s",
@@ -528,14 +528,14 @@ class AuthEmployeeMixin:
 
             if method == 'DELETE':
                 if not user_is_admin:
-                    return self.send_json({'status': 'error', 'message': '浠呯鐞嗗憳鍙垹闄ゅ憳宸?}, start_response)
+                    return self.send_json({'status': 'error', 'message': '浠呯鐞嗗憳鍙垹闄ゅ憳宸?'}, start_response)
 
                 data = self._read_json_body(environ)
                 item_id = self._parse_int(data.get('id'))
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': '缂哄皯鍛樺伐ID'}, start_response)
                 if int(item_id) == 1:
-                    return self.send_json({'status': 'error', 'message': 'ID=1绠＄悊鍛樹笉鍙垹闄?}, start_response)
+                    return self.send_json({'status': 'error', 'message': 'ID=1绠＄悊鍛樹笉鍙垹闄?'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute("DELETE FROM users WHERE id=%s", (item_id,))
@@ -545,7 +545,7 @@ class AuthEmployeeMixin:
         except Exception as e:
             message = str(e)
             if 'Duplicate' in message or 'duplicate' in message:
-                return self.send_json({'status': 'error', 'message': '璐﹀彿宸插瓨鍦紝璇锋洿鎹㈠悕绉?}, start_response)
+                return self.send_json({'status': 'error', 'message': '璐﹀彿宸插瓨鍦紝璇锋洿鎹㈠悕绉?'}, start_response)
             print('Employee API error: ' + message)
             return self.send_json({'status': 'error', 'message': message}, start_response)
 

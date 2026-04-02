@@ -383,7 +383,8 @@ class FabricManagementMixin:
     def handle_fabric_api(self, environ, method, start_response):
         """面料管理 API（CRUD）"""
         try:
-
+            self._ensure_fabric_table()
+            
             def _normalize_color(value):
                 import re
                 text = str(value or '').strip().upper()

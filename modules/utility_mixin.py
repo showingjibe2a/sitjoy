@@ -1,5 +1,5 @@
 ﻿# -*- coding: utf-8 -*-
-"""宸ュ叿/浠〃鐩?Mixin - todo/calendar/feature 绛?""
+"""Utility mixin for todo, calendar and feature APIs."""
 
 from urllib.parse import parse_qs
 from datetime import datetime, timedelta
@@ -7,14 +7,14 @@ import calendar
 import json
 
 class UtilityMixin:
-    """宸ュ叿/浠〃鐩?API 澶勭悊鍣?""
+    """Utility API handlers."""
 
     def handle_todo_api(self, environ, method, start_response):
-        """寰呭姙浜嬮」 API锛圕RUD锛?""
+        """Todo CRUD API."""
         try:
             user_id = self._get_session_user(environ)
             if not user_id:
-                return self.send_json({'status': 'error', 'message': '鏈櫥褰?}, start_response)
+                return self.send_json({'status': 'error', 'message': 'Not logged in'}, start_response)
 
             if method == 'GET':
                 with self._get_db_connection() as conn:
@@ -101,7 +101,7 @@ class UtilityMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_feature_api(self, environ, method, start_response):
-        """鍗栫偣绠＄悊 API锛圕RUD锛?""
+        """Feature CRUD API."""
         try:
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)

@@ -9,6 +9,7 @@ class AmazonAdMixin:
     def handle_amazon_ad_subtype_api(self, environ, method, start_response):
         """Amazon 广告细分类管理 API（CRUD）"""
         try:
+            self._ensure_amazon_ad_subtypes_table()
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
             
@@ -52,6 +53,7 @@ class AmazonAdMixin:
     def handle_amazon_ad_operation_type_api(self, environ, method, start_response):
         """Amazon 广告操作类型 API"""
         try:
+            self._ensure_amazon_ad_operation_types_table()
             if method == 'GET':
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
@@ -66,6 +68,7 @@ class AmazonAdMixin:
     def handle_amazon_ad_api(self, environ, method, start_response):
         """Amazon 广告 CRUD API"""
         try:
+            self._ensure_amazon_ad_tables()
             if method == 'GET':
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
@@ -99,6 +102,7 @@ class AmazonAdMixin:
     def handle_amazon_ad_delivery_api(self, environ, method, start_response):
         """Amazon 广告配送 API"""
         try:
+            self._ensure_amazon_ad_delivery_table()
             if method == 'GET':
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
@@ -112,6 +116,7 @@ class AmazonAdMixin:
     def handle_amazon_ad_product_api(self, environ, method, start_response):
         """Amazon 广告产品 API"""
         try:
+            self._ensure_amazon_ad_product_table()
             if method == 'GET':
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
@@ -125,6 +130,7 @@ class AmazonAdMixin:
     def handle_amazon_ad_adjustment_api(self, environ, method, start_response):
         """Amazon 广告调整 API"""
         try:
+            self._ensure_amazon_ad_adjustment_table()
             if method == 'GET':
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
@@ -138,6 +144,7 @@ class AmazonAdMixin:
     def handle_amazon_ad_keyword_api(self, environ, method, start_response):
         """Amazon 广告关键词 API"""
         try:
+            self._ensure_amazon_keyword_tables()
             if method == 'GET':
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
@@ -165,4 +172,32 @@ class AmazonAdMixin:
             return self.send_error(405, 'Method not allowed', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def _ensure_amazon_ad_adjustment_table(self):
+        self._amazon_ad_adjustment_ready = True
+        self._set_schema_marker_ready('amazon_ad_adjustment_v1')
+
+    def _ensure_amazon_ad_delivery_table(self):
+        self._amazon_ad_delivery_ready = True
+        self._set_schema_marker_ready('amazon_ad_delivery_v1')
+
+    def _ensure_amazon_ad_operation_types_table(self):
+        self._amazon_ad_operation_types_ready = True
+        self._set_schema_marker_ready('amazon_ad_operation_types_v1')
+
+    def _ensure_amazon_ad_product_table(self):
+        self._amazon_ad_product_ready = True
+        self._set_schema_marker_ready('amazon_ad_product_v1')
+
+    def _ensure_amazon_ad_subtypes_table(self):
+        self._amazon_ad_subtypes_ready = True
+        self._set_schema_marker_ready('amazon_ad_subtypes_v1')
+
+    def _ensure_amazon_ad_tables(self):
+        self._amazon_ad_ready = True
+        self._set_schema_marker_ready('amazon_ad_items_v1')
+
+    def _ensure_amazon_keyword_tables(self):
+        self._amazon_keyword_ready = True
+        self._set_schema_marker_ready('amazon_keyword_v1')
 

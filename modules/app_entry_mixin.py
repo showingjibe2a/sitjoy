@@ -5,7 +5,7 @@ from urllib.parse import parse_qs
 
 
 class AppEntryMixin:
-    """WSGI 鍏ュ彛鐩稿叧鑳藉姏銆?""
+    """WSGI entry point handlers."""
 
     def __call__(self, environ, start_response):
         try:
@@ -31,7 +31,7 @@ class AppEntryMixin:
         except Exception as e:
             print(f"WSGI 閿欒: {str(e)}")
             traceback.print_exc()
-            return self.send_error(500, f'鏈嶅姟鍣ㄩ敊璇? {str(e)}', start_response)
+            return self.send_error(500, f'Server error: {str(e)}', start_response)
 
     def handle_hello_api(self, environ, path, method, start_response):
         try:
@@ -46,7 +46,7 @@ class AppEntryMixin:
                 name = query_params.get('name', ['璁垮'])[0]
 
             response = {
-                'message': f'浣犲ソ锛寋name}锛?,
+                'message': f'Hello, {name}!',
                 'timestamp': datetime.now().isoformat(),
                 'status': 'success'
             }
