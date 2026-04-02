@@ -2,7 +2,7 @@
 
 
 class PagePermissionMixin:
-    """椤甸潰鏉冮檺杈呭姪鑳藉姏銆?""
+    """页面权限辅助能力。"""
 
     def _permission_keys(self):
         keys = getattr(self, 'PAGE_PERMISSION_KEYS', None)

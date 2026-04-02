@@ -22,7 +22,6 @@ class SalesProductMixin:
     def handle_parent_api(self, environ, method, start_response):
         """父体管理 API（CRUD）"""
         try:
-            if method != 'GET':
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
 
             def limited_text(value, max_len):
@@ -1038,7 +1037,6 @@ class SalesProductMixin:
     def handle_sales_product_api(self, environ, method, start_response):
         """销售产品管理 API（CRUD）"""
         try:
-            if method in ('POST', 'PUT', 'DELETE'):
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
 
@@ -1612,7 +1610,4 @@ class SalesProductMixin:
         if not (sku_part and spec_part and fabric_part):
             return ''
         return f"{sku_part}-{spec_part}-{fabric_part}"
-
-
-
 

@@ -34,14 +34,9 @@ class AmazonAccountHealthMixin:
                 continue
         return None
 
-    def _ensure_amazon_account_health_table(self):
-        self._amazon_account_health_ready = True
-        self._set_schema_marker_ready('amazon_account_health_v1')
-
     def handle_amazon_account_health_api(self, environ, method, start_response):
         """Amazon 账户健康管理 API（CRUD + 图表）"""
         try:
-            self._ensure_amazon_account_health_table()
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
 
@@ -350,8 +345,6 @@ class AmazonAccountHealthMixin:
             from openpyxl.styles import PatternFill, Font, Alignment
             from openpyxl.worksheet.datavalidation import DataValidation
             from openpyxl.utils import get_column_letter
-
-            self._ensure_amazon_account_health_table()
             shop_names = []
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
@@ -464,8 +457,6 @@ class AmazonAccountHealthMixin:
             for col_name in required_headers:
                 if col_name not in header_map:
                     return self.send_json({'status': 'error', 'message': f'模板缺少列: {col_name}'}, start_response)
-
-            self._ensure_amazon_account_health_table()
             created = 0
             updated = 0
             unchanged = 0

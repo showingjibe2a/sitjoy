@@ -1,4 +1,4 @@
-﻿import io
+import io
 import cgi
 import re
 from datetime import datetime
@@ -15,7 +15,7 @@ except Exception as e:
 
 class SalesManagementMixin:
     def _registration_get_replacement_options(self, conn, base_order_product_ids):
-        """鎸夊熀纭€鍙戣揣SKU鍔犺浇鍙€夋浛浠ｆ柟妗堝強鏂规鏄庣粏銆?""
+        """按基础发货SKU加载可选替代方案及方案明细。"""
         result = {}
         ids = [self._parse_int(x) for x in (base_order_product_ids or []) if self._parse_int(x)]
         if not ids:
@@ -80,9 +80,9 @@ class SalesManagementMixin:
         if value is None:
             return 1 if default else 0
         text = str(value).strip().lower()
-        if text in ('1', 'true', 'yes', 'y', '鏄?, 'on'):
+        if text in ('1', 'true', 'yes', 'y', '是', 'on'):
             return 1
-        if text in ('0', 'false', 'no', 'n', '鍚?, 'off'):
+        if text in ('0', 'false', 'no', 'n', '否', 'off'):
             return 0
         return 1 if default else 0
 
@@ -94,9 +94,9 @@ class SalesManagementMixin:
             if len(digits) == 11 and digits.startswith('1'):
                 digits = digits[1:]
             if len(digits) != 10:
-                raise ValueError('鐢佃瘽鏍煎紡鏃犳晥锛岃濉啓缇庡浗鐢佃瘽锛?0浣嶆暟瀛楋紝鍙惈+1锛?)
+                raise ValueError('电话格式无效，请填写美国电话（10位数字，可含+1）')
         if zip_text and not re.match(r'^\d{5}(-\d{4})?$', zip_text):
-            raise ValueError('閭紪鏍煎紡鏃犳晥锛岃濉啓缇庡浗閭紪锛?浣嶆垨5+4锛?)
+            raise ValueError('邮编格式无效，请填写美国邮编（5位或5+4）')
 
     def _normalize_registration_platform_items(self, items):
         normalized = []
@@ -253,7 +253,7 @@ class SalesManagementMixin:
         text = str(raw_text).strip()
         if not text:
             return items
-        for token in re.split(r'[\n;锛泑]+', text):
+        for token in re.split(r'[\n;；|]+', text):
             token = (token or '').strip()
             if not token:
                 continue
@@ -277,7 +277,7 @@ class SalesManagementMixin:
         text = str(raw_text).strip()
         if not text:
             return items
-        for index, token in enumerate(re.split(r'[\n;锛泑]+', text), start=1):
+        for index, token in enumerate(re.split(r'[\n;；|]+', text), start=1):
             token = (token or '').strip()
             if not token:
                 continue
@@ -436,6 +436,7 @@ class SalesManagementMixin:
         perf_ctx = self._perf_begin('sales_order_registration_api', environ, {'entry_method': method})
         try:
             if not self.__class__._schema_ready_cache.get('sales_order_registration'):
+                self._ensure_sales_order_registration_tables()
             self._perf_mark(perf_ctx, 'ensure_sales_order_registration_tables')
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
             action = (query_params.get('action', [''])[0] or '').strip().lower()
@@ -503,7 +504,7 @@ class SalesManagementMixin:
                 if 'shipping_status' in data:
                     status = (data.get('shipping_status') or 'pending').strip().lower()
                     if status not in ('pending', 'unshipped', 'shipped', 'cancelled'):
-                        return self.send_json({'status': 'error', 'message': '鏃犳晥杩愯緭鐘舵€?}, start_response)
+                        return self.send_json({'status': 'error', 'message': '无效运输状态'}, start_response)
                     updatable['shipping_status'] = status
                 if 'is_review_invited' in data:
                     updatable['is_review_invited'] = self._bool_from_any(data.get('is_review_invited'))
@@ -532,14 +533,14 @@ class SalesManagementMixin:
                             tuple(params)
                         )
                         if cur.rowcount <= 0:
-                            return self.send_json({'status': 'error', 'message': '璁板綍涓嶅瓨鍦ㄦ垨鏈彉鏇?}, start_response)
+                            return self.send_json({'status': 'error', 'message': '记录不存在或未变更'}, start_response)
 
                 return self.send_json({'status': 'success', 'id': item_id}, start_response)
 
             if method == 'GET' and action == 'summaries':
                 ids = []
                 for raw in query_params.get('ids', []):
-                    for token in re.split(r'[,锛?锛沑s]+', str(raw or '').strip()):
+                    for token in re.split(r'[,，;；\s]+', str(raw or '').strip()):
                         val = self._parse_int(token)
                         if val:
                             ids.append(val)
@@ -715,7 +716,7 @@ class SalesManagementMixin:
 
                 order_no = (data.get('order_no') or '').strip()
                 if not order_no:
-                    return self.send_json({'status': 'error', 'message': '璁㈠崟鍙峰繀濉?}, start_response)
+                    return self.send_json({'status': 'error', 'message': '订单号必填'}, start_response)
 
                 shop_id = self._parse_int(data.get('shop_id'))
                 order_date = self._registration_parse_date(data.get('order_date'))
@@ -733,7 +734,7 @@ class SalesManagementMixin:
 
                 platform_items = self._normalize_registration_platform_items(data.get('platform_items'))
                 if not platform_items:
-                    return self.send_json({'status': 'error', 'message': '璇疯嚦灏戝～鍐?鏉￠攢鍞钩鍙癝KU'}, start_response)
+                    return self.send_json({'status': 'error', 'message': '请至少填写1条销售平台SKU'}, start_response)
                 shipment_items = self._normalize_registration_shipment_items(data.get('shipment_items'))
                 logistics_items = self._normalize_registration_logistics_items(data.get('logistics_items'))
 
@@ -844,11 +845,11 @@ class SalesManagementMixin:
             ws = wb.active
             ws.title = 'orders'
             headers = [
-                '搴楅摵', '璁㈠崟鍙?, '涓嬪崟鏃ユ湡(YYYY-MM-DD)', '瀹㈡埛濮撳悕', '鐢佃瘽', '閭紪', '鍦板潃', '鍩庡競', '宸?,
-                '鍙戣揣鐘舵€?pending/shipped/delivered/cancelled)', '閭€璇?0/1)', '鐗╂祦宸查偖浠?0/1)', '璧斿伩澶勭悊', '澶囨敞',
-                '骞冲彴SKU鏄庣粏(骞冲彴SKU*鏁伴噺, 鐢▅鍒嗛殧)',
-                '鍙戣揣SKU鏄庣粏(涓嬪崟SKU*鏁伴噺, 鐢▅鍒嗛殧, 鐣欑┖鍒欒嚜鍔ㄨ绠?',
-                '鐗╂祦鏄庣粏(鎵胯繍鍟?鍗曞彿, 鐢▅鍒嗛殧)'
+                '店铺', '订单号', '下单日期(YYYY-MM-DD)', '客户姓名', '电话', '邮编', '地址', '城市', '州',
+                '发货状态(pending/shipped/delivered/cancelled)', '邀评(0/1)', '物流已邮件(0/1)', '赔偿处理', '备注',
+                '平台SKU明细(平台SKU*数量, 用|分隔)',
+                '发货SKU明细(下单SKU*数量, 用|分隔, 留空则自动计算)',
+                '物流明细(承运商:单号, 用|分隔)'
             ]
             ws.append(headers)
             ws.append([
@@ -885,6 +886,7 @@ class SalesManagementMixin:
             if not file_bytes:
                 return self.send_json({'status': 'error', 'message': 'Empty file'}, start_response)
 
+            self._ensure_sales_order_registration_tables()
             wb = load_workbook(io.BytesIO(file_bytes), data_only=True)
             ws = wb.active
             headers = [str(x.value or '').strip() for x in ws[1]]
@@ -896,10 +898,10 @@ class SalesManagementMixin:
                     return None
                 return row_values[idx]
 
-            required = ['璁㈠崟鍙?, '骞冲彴SKU鏄庣粏(骞冲彴SKU*鏁伴噺, 鐢▅鍒嗛殧)']
+            required = ['订单号', '平台SKU明细(平台SKU*数量, 用|分隔)']
             for col in required:
                 if col not in index_map:
-                    return self.send_json({'status': 'error', 'message': f'妯℃澘缂哄皯鍒? {col}'}, start_response)
+                    return self.send_json({'status': 'error', 'message': f'模板缺少列: {col}'}, start_response)
 
             created = 0
             updated = 0
@@ -915,34 +917,34 @@ class SalesManagementMixin:
                     if not any(v is not None and str(v).strip() for v in row_values):
                         continue
                     try:
-                        shop_name = str(get_val(row_values, '搴楅摵') or '').strip()
-                        order_no = str(get_val(row_values, '璁㈠崟鍙?) or '').strip()
+                        shop_name = str(get_val(row_values, '店铺') or '').strip()
+                        order_no = str(get_val(row_values, '订单号') or '').strip()
                         if not order_no:
-                            raise ValueError('璁㈠崟鍙峰繀濉?)
+                            raise ValueError('订单号必填')
 
                         shop_id = shop_map.get(shop_name) if shop_name else None
-                        order_date = self._registration_parse_date(get_val(row_values, '涓嬪崟鏃ユ湡(YYYY-MM-DD)'))
-                        customer_name = str(get_val(row_values, '瀹㈡埛濮撳悕') or '').strip() or None
-                        phone = str(get_val(row_values, '鐢佃瘽') or '').strip() or None
-                        zip_code = str(get_val(row_values, '閭紪') or '').strip() or None
-                        address = str(get_val(row_values, '鍦板潃') or '').strip() or None
-                        city = str(get_val(row_values, '鍩庡競') or '').strip() or None
-                        state = str(get_val(row_values, '宸?) or '').strip() or None
-                        shipping_status = str(get_val(row_values, '鍙戣揣鐘舵€?pending/shipped/delivered/cancelled)') or 'pending').strip() or 'pending'
-                        is_review_invited = self._bool_from_any(get_val(row_values, '閭€璇?0/1)'))
-                        is_logistics_emailed = self._bool_from_any(get_val(row_values, '鐗╂祦宸查偖浠?0/1)'))
-                        compensation_action = str(get_val(row_values, '璧斿伩澶勭悊') or '').strip() or None
-                        remark = str(get_val(row_values, '澶囨敞') or '').strip() or None
+                        order_date = self._registration_parse_date(get_val(row_values, '下单日期(YYYY-MM-DD)'))
+                        customer_name = str(get_val(row_values, '客户姓名') or '').strip() or None
+                        phone = str(get_val(row_values, '电话') or '').strip() or None
+                        zip_code = str(get_val(row_values, '邮编') or '').strip() or None
+                        address = str(get_val(row_values, '地址') or '').strip() or None
+                        city = str(get_val(row_values, '城市') or '').strip() or None
+                        state = str(get_val(row_values, '州') or '').strip() or None
+                        shipping_status = str(get_val(row_values, '发货状态(pending/shipped/delivered/cancelled)') or 'pending').strip() or 'pending'
+                        is_review_invited = self._bool_from_any(get_val(row_values, '邀评(0/1)'))
+                        is_logistics_emailed = self._bool_from_any(get_val(row_values, '物流已邮件(0/1)'))
+                        compensation_action = str(get_val(row_values, '赔偿处理') or '').strip() or None
+                        remark = str(get_val(row_values, '备注') or '').strip() or None
 
                         self._validate_us_phone_zip(phone, zip_code)
 
-                        platform_text = get_val(row_values, '骞冲彴SKU鏄庣粏(骞冲彴SKU*鏁伴噺, 鐢▅鍒嗛殧)')
-                        shipment_text = get_val(row_values, '鍙戣揣SKU鏄庣粏(涓嬪崟SKU*鏁伴噺, 鐢▅鍒嗛殧, 鐣欑┖鍒欒嚜鍔ㄨ绠?')
-                        logistics_text = get_val(row_values, '鐗╂祦鏄庣粏(鎵胯繍鍟?鍗曞彿, 鐢▅鍒嗛殧)')
+                        platform_text = get_val(row_values, '平台SKU明细(平台SKU*数量, 用|分隔)')
+                        shipment_text = get_val(row_values, '发货SKU明细(下单SKU*数量, 用|分隔, 留空则自动计算)')
+                        logistics_text = get_val(row_values, '物流明细(承运商:单号, 用|分隔)')
 
                         parsed_platform = self._registration_parse_item_text(platform_text)
                         if not parsed_platform:
-                            raise ValueError('骞冲彴SKU鏄庣粏蹇呭～')
+                            raise ValueError('平台SKU明细必填')
 
                         platform_items = [
                             {
@@ -1021,6 +1023,3 @@ class SalesManagementMixin:
             return self.send_json({'status': 'success', 'created': created, 'updated': updated, 'errors': errors}, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
-
-
-

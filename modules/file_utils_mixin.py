@@ -1,5 +1,5 @@
 ﻿# -*- coding: utf-8 -*-
-"""鏂囦欢绯荤粺宸ュ叿 Mixin - 鏂囦欢鎿嶄綔銆佽矾寰勫鐞嗐€佹枃浠跺す绠＄悊"""
+"""文件系统工具 Mixin - 文件操作、路径处理、文件夹管理"""
 
 import os
 import tempfile
@@ -8,21 +8,21 @@ from datetime import datetime
 import cgi
 
 class FileUtilsMixin:
-    """鏂囦欢绯荤粺鍜屾枃浠舵搷浣滃伐鍏?""
+    """文件系统和文件操作工具"""
 
     def _rename_fabric_image_with_remark(self, old_name, fabric_code, remark, index):
         if not old_name:
             return None
         ext = os.path.splitext(old_name)[1] or '.jpg'
-        remark_str = remark or '鏈垎绫?
+        remark_str = remark or '未分类'
         new_name = f"{fabric_code}-{remark_str}-{index:02d}{ext}"
         if old_name == new_name:
             return old_name
         return new_name
 
     def _join_resources(self, rel_path):
-        """鎷兼帴璧勬簮鐩綍锛堣繑鍥?bytes 璺緞锛?""
-        from app import RESOURCES_PATH_BYTES  # 瀵煎叆鍏ㄥ眬甯搁噺
+        """拼接资源目录（返回 bytes 路径）"""
+        from app import RESOURCES_PATH_BYTES  # 导入全局常量
         if not rel_path:
             return RESOURCES_PATH_BYTES
         try:
@@ -32,21 +32,21 @@ class FileUtilsMixin:
         return os.path.join(RESOURCES_PATH_BYTES, rel_bytes)
 
     def _ensure_fabric_folder(self):
-        """鑾峰彇鎴栧垱寤洪潰鏂欐枃浠跺す"""
-        folder = self._join_resources('闈㈡枡搴?)
+        """获取或创建面料文件夹"""
+        folder = self._join_resources('面料库')
         if not os.path.exists(folder):
             os.makedirs(folder, exist_ok=True)
         return folder
 
     def _ensure_certification_folder(self):
-        """鑾峰彇鎴栧垱寤鸿璇佹枃浠跺す"""
-        folder = self._join_resources('銆庤璇併€?)
+        """获取或创建认证文件夹"""
+        folder = self._join_resources('『认证』')
         if not os.path.exists(folder):
             os.makedirs(folder, exist_ok=True)
         return folder
 
     def _build_fabric_image_plan(self, images, fabric_code):
-        """涓洪潰鏂欏浘鐗囩敓鎴愰噸鍛藉悕璁″垝鍜屾渶缁堝叆搴撴暟鎹?""
+        """为面料图片生成重命名计划和最终入库数据"""
         folder = self._ensure_fabric_folder()
         remark_counters = {}
         planned_images = []
@@ -94,7 +94,7 @@ class FileUtilsMixin:
         }
 
     def _execute_fabric_rename_pairs(self, rename_pairs):
-        """瀹夊叏鎵ц鎵归噺閲嶅懡鍚嶏紝閬垮厤鐩爣鍚嶅啿绐侊紙涓ら樁娈碉細鍏堜复鏃跺悕锛屽啀鐩爣鍚嶏級"""
+        """安全执行批量重命名，避免目标名冲突（两阶段：先临时名，再目标名）"""
         import secrets
         
         if not rename_pairs:
@@ -110,9 +110,9 @@ class FileUtilsMixin:
             if not src or not dst or src == dst:
                 continue
             if src in seen_src:
-                return {'status': 'error', 'message': f'閲嶅婧愭枃浠? {src}'}
+                return {'status': 'error', 'message': f'重复源文件: {src}'}
             if dst in seen_dst:
-                return {'status': 'error', 'message': f'鐩爣鏂囦欢鍚嶅啿绐? {dst}'}
+                return {'status': 'error', 'message': f'目标文件名冲突: {dst}'}
             seen_src.add(src)
             seen_dst.add(dst)
             normalized.append((src, dst))
@@ -125,9 +125,9 @@ class FileUtilsMixin:
             src_path = os.path.join(folder, self._safe_fsencode(src))
             dst_path = os.path.join(folder, self._safe_fsencode(dst))
             if not os.path.exists(src_path):
-                return {'status': 'error', 'message': f'婧愭枃浠朵笉瀛樺湪: {src}'}
+                return {'status': 'error', 'message': f'源文件不存在: {src}'}
             if dst not in src_set and os.path.exists(dst_path):
-                return {'status': 'error', 'message': f'鐩爣鏂囦欢宸插瓨鍦? {dst}'}
+                return {'status': 'error', 'message': f'目标文件已存在: {dst}'}
 
         temp_pairs = []
         for index, (src, dst) in enumerate(normalized):
@@ -178,9 +178,9 @@ class FileUtilsMixin:
             return {'status': 'error', 'message': str(e)}
 
     def handle_upload_api(self, environ, start_response):
-        """澶勭悊鍥剧墖涓婁紶锛坢ultipart/form-data锛?""
+        """处理图片上传（multipart/form-data）"""
         try:
-            from app import RESOURCES_PATH_BYTES  # 瀵煎叆鍏ㄥ眬甯搁噺
+            from app import RESOURCES_PATH_BYTES  # 导入全局常量
             
             if environ['REQUEST_METHOD'] != 'POST':
                 return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
@@ -259,6 +259,3 @@ class FileUtilsMixin:
         except Exception as e:
             print("Upload error: " + str(e))
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
-
-
-

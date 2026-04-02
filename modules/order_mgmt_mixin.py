@@ -10,7 +10,6 @@ class OrderManagementMixin:
     def handle_order_product_api(self, environ, method, start_response):
         """下单产品管理 API - CRUD"""
         try:
-            self._ensure_order_product_tables()
             query_string = environ.get('QUERY_STRING', '')
             query_params = parse_qs(query_string)
             action = (query_params.get('action', [''])[0] or '').strip().lower()

@@ -1,15 +1,15 @@
 ﻿# -*- coding: utf-8 -*-
-"""缂栫爜鍜岃浆鎹㈠伐鍏?Mixin - Unicode/Base64/鏂囦欢绯荤粺缂栫爜澶勭悊"""
+"""编码和转换工具 Mixin - Unicode/Base64/文件系统编码处理"""
 
 import base64
 import unicodedata
 import os
 
 class EncodingUtilsMixin:
-    """缂栫爜銆佽浆鎹㈠拰Unicode澶勭悊宸ュ叿"""
+    """编码、转换和Unicode处理工具"""
 
     def _b64_from_fs(self, value):
-        """灏嗘枃浠剁郴缁熻矾寰?鍚嶇О杞负 Base64锛堜繚鐣欏師濮嬪瓧鑺傦級"""
+        """将文件系统路径/名称转为 Base64（保留原始字节）"""
         try:
             raw = self._safe_fsencode(value)
         except Exception:
@@ -17,12 +17,12 @@ class EncodingUtilsMixin:
         return base64.b64encode(raw).decode('ascii')
 
     def _fs_from_b64(self, value):
-        """浠?Base64 杩樺師鏂囦欢绯荤粺璺緞/鍚嶇О"""
+        """从 Base64 还原文件系统路径/名称"""
         raw = base64.b64decode(value)
         return os.fsdecode(raw)
 
     def _safe_fsencode(self, value):
-        """Safely encode file-system path values."""
+        """安全的文件系统路径编码"""
         if isinstance(value, (bytes, bytearray)):
             return bytes(value)
         try:
@@ -31,7 +31,7 @@ class EncodingUtilsMixin:
             return str(value).encode('utf-8', errors='surrogatepass')
 
     def _safe_fsdecode(self, value):
-        """Safely decode file-system path values."""
+        """安全的文件系统路径解码"""
         if isinstance(value, str):
             return value
         try:
@@ -40,11 +40,11 @@ class EncodingUtilsMixin:
             return bytes(value).decode('utf-8', errors='surrogatepass')
 
     def _b64url_encode(self, raw):
-        """URL瀹夊叏鐨凚ase64缂栫爜"""
+        """URL安全的Base64编码"""
         return base64.urlsafe_b64encode(raw).decode('ascii').rstrip('=')
 
     def _b64url_decode(self, text):
-        """URL瀹夊叏鐨凚ase64瑙ｇ爜"""
+        """URL安全的Base64解码"""
         pad = '=' * (-len(text) % 4)
         return base64.urlsafe_b64decode((text + pad).encode('ascii'))
 
@@ -115,38 +115,35 @@ class EncodingUtilsMixin:
                     continue
 
     def _normalize_fabric_remark(self, remark):
-        """Normalize fabric image remark labels."""
+        """标准化面料图片备注"""
         value = (remark or '').strip()
         allowed = {
-            '鍘熷浘',
-            '涓诲浘路Swatch',
-            '涓诲浘路鍗栫偣',
-            'A+路鐢佃剳绔?',
-            'A+路鎵嬫満绔?',
-            'A+路閫氱敤',
+            '原图',
+            '主图·Swatch',
+            '主图·卖点',
+            'A+·电脑端',
+            'A+·手机端',
+            'A+·通用',
         }
         if value in allowed:
             return value
-        if value in ('骞抽潰鍘熷浘', '瑜剁毐鍘熷浘'):
-            return '鍘熷浘'
-        if '鍗栫偣' in value:
-            return '涓诲浘路鍗栫偣'
+        if value in ('平面原图', '褶皱原图'):
+            return '原图'
+        if '卖点' in value:
+            return '主图·卖点'
         if 'Swatch' in value or 'swatch' in value:
-            return '涓诲浘路Swatch'
-        if 'A+' in value or value.startswith('A'):
-            if '鐢佃剳' in value:
-                return 'A+路鐢佃剳绔?'
-            if '鎵嬫満' in value:
-                return 'A+路鎵嬫満绔?'
-            return 'A+路閫氱敤'
-        return '鍘熷浘'
+            return '主图·Swatch'
+        if 'A+' in value or value.startswith('A＋'):
+            if '电脑' in value:
+                return 'A+·电脑端'
+            if '手机' in value:
+                return 'A+·手机端'
+            return 'A+·通用'
+        return '原图'
 
     def _to_int(self, value, default=None):
-        """Safely convert to int."""
+        """安全的整数转换"""
         try:
             return int(value)
         except Exception:
             return default
-
-
-

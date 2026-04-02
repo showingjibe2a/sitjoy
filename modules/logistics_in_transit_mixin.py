@@ -118,11 +118,6 @@ class LogisticsInTransitMixin:
             action = (query_params.get('action', [''])[0] or '').strip().lower()
             self._perf_mark(perf_ctx, f'parse_query_action:{action or "none"}')
 
-            if not (method == 'GET' and action == 'options'):
-                if not self.__class__._schema_ready_cache.get('logistics'):
-                    self._ensure_logistics_tables()
-                self._perf_mark(perf_ctx, 'ensure_logistics_tables')
-
             def _to_bool_flag(value):
                 return 1 if str(value or '').strip().lower() in ('1', 'true', 'yes', 'on') else 0
 
@@ -790,8 +785,6 @@ class LogisticsInTransitMixin:
             from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
             from openpyxl.comments import Comment
             from openpyxl.worksheet.datavalidation import DataValidation
-
-            self._ensure_logistics_tables()
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
             selected_ids = []
             for raw in query_params.get('ids', []):
@@ -1096,8 +1089,6 @@ class LogisticsInTransitMixin:
                 return self.send_error(405, 'Method not allowed', start_response)
             if load_workbook is None:
                 return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
-
-            self._ensure_logistics_tables()
             content_type = environ.get('CONTENT_TYPE', '')
             if 'multipart/form-data' not in content_type:
                 return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
@@ -1594,7 +1585,6 @@ class LogisticsInTransitMixin:
         try:
             if environ.get('REQUEST_METHOD') != 'POST':
                 return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
-            self._ensure_logistics_tables()
             content_type = environ.get('CONTENT_TYPE', '')
             if 'multipart/form-data' not in content_type:
                 return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
@@ -1662,7 +1652,6 @@ class LogisticsInTransitMixin:
 
     def handle_logistics_in_transit_doc_files_api(self, environ, method, start_response):
         try:
-            self._ensure_logistics_tables()
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
             action = (query_params.get('action', ['list'])[0] or 'list').strip().lower()
 

@@ -5,7 +5,7 @@ from urllib.parse import parse_qs
 
 
 class AppEntryMixin:
-    """WSGI entry point handlers."""
+    """WSGI 入口相关能力。"""
 
     def __call__(self, environ, start_response):
         try:
@@ -29,9 +29,9 @@ class AppEntryMixin:
 
             return self.send_error(404, 'Not Found', start_response)
         except Exception as e:
-            print(f"WSGI 閿欒: {str(e)}")
+            print(f"WSGI 错误: {str(e)}")
             traceback.print_exc()
-            return self.send_error(500, f'Server error: {str(e)}', start_response)
+            return self.send_error(500, f'服务器错误: {str(e)}', start_response)
 
     def handle_hello_api(self, environ, path, method, start_response):
         try:
@@ -39,14 +39,14 @@ class AppEntryMixin:
                 content_length = int(environ.get('CONTENT_LENGTH', 0))
                 body = environ['wsgi.input'].read(content_length)
                 data = json.loads(body.decode('utf-8'))
-                name = data.get('name', '璁垮')
+                name = data.get('name', '访客')
             else:
                 query_string = environ.get('QUERY_STRING', '')
                 query_params = parse_qs(query_string)
-                name = query_params.get('name', ['璁垮'])[0]
+                name = query_params.get('name', ['访客'])[0]
 
             response = {
-                'message': f'Hello, {name}!',
+                'message': f'你好，{name}！',
                 'timestamp': datetime.now().isoformat(),
                 'status': 'success'
             }
@@ -61,5 +61,3 @@ class AppEntryMixin:
             'timestamp': datetime.now().isoformat()
         }
         return self.send_json(response, start_response)
-
-
