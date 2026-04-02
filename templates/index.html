@@ -568,11 +568,12 @@
                         </div>
                         <div class="form-group">
                             <label>是否为循环任务</label>
-                            <div>
-                                <label style="font-weight:600;">
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <label class="switch-wrap">
                                     <input type="checkbox" id="todoModalIsRecurring">
-                                    启用
+                                    <span class="switch-slider"></span>
                                 </label>
+                                <span style="font-size: 13px; color: #666;">启用循环任务</span>
                             </div>
                         </div>
                         <div class="form-group pm-form-full">
@@ -925,21 +926,25 @@
 
         function showTodoModal(action, todoId = null) {
             document.getElementById('todoModal').classList.add('active');
-            const modal = document.getElementById('todoModalForm');
             const today = new Date();
+            const dateString = String(today.getFullYear()).padStart(4, '0') + '-' +
+                             String(today.getMonth() + 1).padStart(2, '0') + '-' +
+                             String(today.getDate()).padStart(2, '0');
             
             if (action === 'create') {
                 document.getElementById('todoModalTitle').textContent = '新增待办';
-                modal.reset();
-                document.getElementById('todoModalStartDate').value = formatDateKey(today.getFullYear(), today.getMonth() + 1, today.getDate());
+                document.getElementById('todoModalTitle_input').value = '';
+                document.getElementById('todoModalStartDate').value = dateString;
                 document.getElementById('todoModalReminderInterval').value = 1;
+                document.getElementById('todoModalPriority').value = 2;
+                document.getElementById('todoModalIsRecurring').checked = false;
+                document.getElementById('todoModalDetail').value = '';
+                document.getElementById('assigneeSelected').innerHTML = '';
             } else if (action === 'edit' && todoId) {
                 document.getElementById('todoModalTitle').textContent = '编辑待办';
                 // 加载现有待办数据（后续实现）
             }
             
-            modal.dataset.action = action;
-            modal.dataset.todoId = todoId || '';
             loadAssigneeCheckboxes();
         }
 

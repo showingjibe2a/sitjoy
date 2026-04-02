@@ -79,6 +79,34 @@ class WSGIApp(
         'factory_inventory': False,
     }
 
+    _DB_SCHEMA_ENSURE_METHODS = [
+        '_ensure_product_table',
+        '_ensure_category_table',
+        '_ensure_fabric_table',
+        '_ensure_material_types_table',
+        '_ensure_materials_table',
+        '_ensure_platform_types_table',
+        '_ensure_brands_table',
+        '_ensure_shops_table',
+        '_ensure_order_product_tables',
+        '_ensure_todo_tables',
+        '_ensure_certification_table',
+        '_ensure_certifications_table',
+        '_ensure_sales_parent_tables',
+        '_ensure_sales_product_tables',
+        '_ensure_sales_order_registration_tables',
+        '_ensure_logistics_tables',
+        '_ensure_factory_inventory_tables',
+        '_ensure_amazon_account_health_table',
+        '_ensure_amazon_ad_adjustment_table',
+        '_ensure_amazon_ad_delivery_table',
+        '_ensure_amazon_ad_operation_types_table',
+        '_ensure_amazon_ad_product_table',
+        '_ensure_amazon_ad_subtypes_table',
+        '_ensure_amazon_ad_tables',
+        '_ensure_amazon_keyword_tables',
+    ]
+
     def __init__(self):
         self.base_path = os.path.dirname(os.path.abspath(__file__))
         self._user_session = {}
@@ -114,6 +142,8 @@ class WSGIApp(
         for flag_name in ready_flags:
             setattr(self, flag_name, False)
 
+        self._apply_sql_only_runtime_guard()
+
         self.PAGE_PERMISSION_KEYS = self._build_page_permission_keys()
         self.PAGE_PERMISSION_LABELS = {key: key for key in self.PAGE_PERMISSION_KEYS}
 
@@ -136,6 +166,19 @@ class WSGIApp(
         for _, (_, key) in PAGE_TEMPLATE_MAP.items():
             add_key(key)
         return ordered
+
+    def _noop_schema_ensure(self, *args, **kwargs):
+        return None
+
+    def _apply_sql_only_runtime_guard(self):
+        if not self._is_sql_only_mode():
+            return
+        for method_name in self._DB_SCHEMA_ENSURE_METHODS:
+            try:
+                if hasattr(self, method_name):
+                    setattr(self, method_name, self._noop_schema_ensure)
+            except Exception:
+                pass
 
 
 application = WSGIApp()

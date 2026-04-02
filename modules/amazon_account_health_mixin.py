@@ -35,62 +35,8 @@ class AmazonAccountHealthMixin:
         return None
 
     def _ensure_amazon_account_health_table(self):
-        marker_key = 'amazon_account_health_v1'
-        required_tables = ['amazon_account_health']
-        if self._amazon_account_health_ready:
-            return
-        if self._is_schema_marker_ready(marker_key):
-            self._amazon_account_health_ready = True
-            return
-        try:
-            if self._has_required_tables(required_tables):
-                self._amazon_account_health_ready = True
-                self._set_schema_marker_ready(marker_key)
-                return
-        except Exception:
-            pass
-        with self._schema_ensure_lock:
-            if self._amazon_account_health_ready:
-                return
-            self._ensure_shops_table()
-        create_sql = """
-        CREATE TABLE IF NOT EXISTS amazon_account_health (
-            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            shop_id INT UNSIGNED NOT NULL,
-            account_health_rating INT NOT NULL,
-            suspected_ip_infringement INT NOT NULL DEFAULT 0,
-            intellectual_property_complaints INT NOT NULL DEFAULT 0,
-            authenticity_customer_complaints INT NOT NULL DEFAULT 0,
-            condition_customer_complaints INT NOT NULL DEFAULT 0,
-            food_safety_issues INT NOT NULL DEFAULT 0,
-            listing_policy_violations INT NOT NULL DEFAULT 0,
-            restricted_product_policy_violations INT NOT NULL DEFAULT 0,
-            customer_review_policy_violations INT NOT NULL DEFAULT 0,
-            other_policy_violations INT NOT NULL DEFAULT 0,
-            regulatory_compliance_issues INT NOT NULL DEFAULT 0,
-            order_defect_rate DECIMAL(8,4) NOT NULL DEFAULT 0,
-            negative_feedback_rate DECIMAL(8,4) NOT NULL DEFAULT 0,
-            a_to_z_rate DECIMAL(8,4) NOT NULL DEFAULT 0,
-            chargeback_rate DECIMAL(8,4) NOT NULL DEFAULT 0,
-            late_shipment_rate DECIMAL(8,4) NOT NULL DEFAULT 0,
-            pre_fulfillment_cancel_rate DECIMAL(8,4) NOT NULL DEFAULT 0,
-            valid_tracking_rate DECIMAL(8,4) NOT NULL DEFAULT 0,
-            on_time_delivery_rate DECIMAL(8,4) NOT NULL DEFAULT 0,
-            record_datetime DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            remark VARCHAR(500) NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            INDEX idx_aah_shop_date (shop_id, record_datetime),
-            INDEX idx_aah_record_datetime (record_datetime),
-            CONSTRAINT fk_aah_shop FOREIGN KEY (shop_id)
-                REFERENCES shops(id) ON DELETE RESTRICT
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        """
-        with self._get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(create_sql)
         self._amazon_account_health_ready = True
-        self._set_schema_marker_ready(marker_key)
+        self._set_schema_marker_ready('amazon_account_health_v1')
 
     def handle_amazon_account_health_api(self, environ, method, start_response):
         """Amazon 账户健康管理 API（CRUD + 图表）"""
