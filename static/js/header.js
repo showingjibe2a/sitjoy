@@ -1726,7 +1726,7 @@
                     const elL = document.querySelector('.nav-logistics'); if(elL) elL.classList.add('active');
                 } else if(path.startsWith('/product-management') || path.startsWith('/fabric-management') || path.startsWith('/feature-management') || path.startsWith('/material-management') || path.startsWith('/certification-management') || path.startsWith('/order-product-management')){
                     const elP = document.querySelector('.nav-product'); if(elP) elP.classList.add('active');
-                } else if(path.startsWith('/sales-product-management') || path.startsWith('/sales-order-registration-management') || path.startsWith('/parent-management')){
+                } else if(path.startsWith('/sales-product-management') || path.startsWith('/sales-product-performance-management') || path.startsWith('/sales-order-registration-management') || path.startsWith('/parent-management')){
                     const elS = document.querySelector('.nav-sales'); if(elS) elS.classList.add('active');
                 } else if(path.startsWith('/about')){
                     const elA = document.querySelector('.nav-about'); if(elA) elA.classList.add('active');

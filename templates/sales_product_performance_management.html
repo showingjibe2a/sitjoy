@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>销售管理 - 产品表现看板</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .perf-toolbar { display: grid; gap: 0.7rem; }
+        .perf-row { display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap; }
+        .perf-row-title { color: var(--morandi-ink); font-weight: 700; min-width: 64px; }
+        .perf-row input[type="date"],
+        .perf-row select,
+        .perf-row button {
+            min-height: 40px;
+            box-sizing: border-box;
+            border-radius: 8px;
+            border: 1px solid var(--morandi-sand);
+            background: #fff;
+            color: var(--morandi-ink);
+            padding: 0.45rem 0.68rem;
+        }
+        .perf-row select[multiple] { min-height: 116px; padding: 0.35rem; }
+        .perf-panel {
+            border: 1px solid rgba(207, 199, 189, 0.55);
+            border-radius: 12px;
+            background: rgba(236, 231, 223, 0.42);
+            padding: 0.9rem;
+            margin-top: 0.8rem;
+        }
+        .perf-chart-wrap {
+            width: 100%;
+            min-height: 300px;
+            border-radius: 10px;
+            background: #fff;
+            border: 1px solid rgba(207, 199, 189, 0.45);
+            padding: 0.55rem;
+            position: relative;
+        }
+        #perfChart { width: 100%; height: 300px; display: block; }
+        .perf-legend { display: flex; flex-wrap: wrap; gap: 0.62rem; font-size: 0.86rem; color: var(--morandi-slate); margin: 0.5rem 0 0.3rem; }
+        .perf-legend-item { display: inline-flex; align-items: center; gap: 0.3rem; }
+        .perf-legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+        .perf-event-tooltip {
+            position: absolute;
+            z-index: 25;
+            min-width: 220px;
+            max-width: 340px;
+            background: #fff;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 8px;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.14);
+            padding: 0.6rem;
+            font-size: 0.86rem;
+            color: var(--morandi-ink);
+            display: none;
+            pointer-events: none;
+            white-space: normal;
+            line-height: 1.45;
+        }
+        .perf-metric-order { display: flex; gap: 0.42rem; flex-wrap: wrap; }
+        .metric-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.28rem;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 999px;
+            padding: 0.26rem 0.45rem;
+            background: #fff;
+            font-size: 0.86rem;
+        }
+        .metric-chip button {
+            min-height: 0;
+            padding: 0.1rem 0.35rem;
+            border-radius: 999px;
+            border: 1px solid var(--morandi-sand);
+            background: #f8f6f3;
+            cursor: pointer;
+            color: var(--morandi-ink);
+        }
+        .perf-group details {
+            border: 1px solid rgba(207, 199, 189, 0.7);
+            border-radius: 10px;
+            background: #fff;
+            margin-bottom: 0.65rem;
+            overflow: hidden;
+        }
+        .perf-group summary {
+            list-style: none;
+            cursor: pointer;
+            padding: 0.6rem 0.8rem;
+            font-weight: 700;
+            color: var(--morandi-ink);
+            background: #f8f6f3;
+            border-bottom: 1px solid rgba(207, 199, 189, 0.45);
+        }
+        .perf-group summary::-webkit-details-marker { display: none; }
+        .perf-group-content { padding: 0.65rem; }
+        .perf-table { width: 100%; border-collapse: collapse; min-width: 960px; }
+        .perf-table th, .perf-table td { border-bottom: 1px solid var(--morandi-mist); text-align: left; padding: 0.42rem 0.48rem; }
+        .perf-table th { background: #f7f4ef; position: sticky; top: 0; z-index: 1; white-space: nowrap; }
+        .perf-table-wrap { overflow: auto; border: 1px solid var(--morandi-sand); border-radius: 8px; }
+        .switch-row { display: flex; gap: 0.9rem; flex-wrap: wrap; font-size: 0.92rem; color: var(--morandi-ink); }
+        .switch-row label { display: inline-flex; align-items: center; gap: 0.32rem; }
+        .status-tip { font-size: 0.86rem; color: var(--morandi-slate); }
+    </style>
+</head>
+<body>
+    <div id="site-header"></div>
+    <div class="container">
+        <div class="page-layout single-column">
+            <section class="module-card">
+                <header class="module-header">
+                    <div>
+                        <h2>产品表现看板</h2>
+                        <p class="module-subtitle">默认按货号折叠，支持货号/面料/规格/SKU多选筛选，图表可叠加待办与广告调整事件线。</p>
+                    </div>
+                </header>
+
+                <div class="perf-toolbar">
+                    <div class="perf-row">
+                        <span class="perf-row-title">日期</span>
+                        <input type="date" id="filterStartDate">
+                        <span>至</span>
+                        <input type="date" id="filterEndDate">
+                        <button type="button" class="btn-primary" id="btnQuery">查询</button>
+                        <button type="button" class="btn-secondary" id="btnReset">重置</button>
+                        <span class="status-tip" id="dataStatus"></span>
+                    </div>
+
+                    <div class="perf-row">
+                        <span class="perf-row-title">货号</span>
+                        <select id="filterSkuFamilies" multiple></select>
+                        <span class="perf-row-title">SKU</span>
+                        <select id="filterPlatformSkus" multiple></select>
+                    </div>
+
+                    <div class="perf-row">
+                        <span class="perf-row-title">面料</span>
+                        <select id="filterFabrics" multiple></select>
+                        <span class="perf-row-title">规格</span>
+                        <select id="filterSpecs" multiple></select>
+                    </div>
+
+                    <div class="perf-row">
+                        <span class="perf-row-title">指标</span>
+                        <select id="metricSelect"></select>
+                        <button type="button" id="btnAddMetric">添加指标</button>
+                        <div class="perf-metric-order" id="metricOrder"></div>
+                    </div>
+
+                    <div class="perf-row switch-row">
+                        <label><input type="checkbox" id="toggleTodos" checked> 显示待办完成事件</label>
+                        <label><input type="checkbox" id="toggleAds" checked> 显示广告调整事件</label>
+                        <span>广告调整类型：</span>
+                        <select id="filterAdTypes" multiple></select>
+                    </div>
+                </div>
+
+                <div class="perf-panel">
+                    <h3>按日趋势</h3>
+                    <div class="perf-legend" id="chartLegend"></div>
+                    <div class="perf-chart-wrap" id="chartWrap">
+                        <canvas id="perfChart"></canvas>
+                        <div class="perf-event-tooltip" id="eventTooltip"></div>
+                    </div>
+                </div>
+
+                <div class="perf-panel perf-group" id="groupContainer"></div>
+            </section>
+        </div>
+    </div>
+
+    <script>
+        const state = {
+            metrics: [],
+            metricOrder: [],
+            metricMap: {},
+            adTypeMap: {},
+            eventByDate: {},
+            chartGeom: null
+        };
+
+        function setTodayRange() {
+            const end = new Date();
+            const start = new Date();
+            start.setDate(end.getDate() - 30);
+            document.getElementById('filterStartDate').value = toDateStr(start);
+            document.getElementById('filterEndDate').value = toDateStr(end);
+        }
+
+        function toDateStr(d) {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+        }
+
+        function getSelectedValues(selectId) {
+            return Array.from(document.getElementById(selectId).selectedOptions || []).map(o => String(o.value || '').trim()).filter(Boolean);
+        }
+
+        function fillMultiSelect(selectId, options, mode) {
+            const el = document.getElementById(selectId);
+            const selected = new Set(getSelectedValues(selectId));
+            el.innerHTML = '';
+            (options || []).forEach(item => {
+                const opt = document.createElement('option');
+                if (mode === 'dict') {
+                    opt.value = String(item.id);
+                    opt.textContent = item.name || String(item.id);
+                } else {
+                    opt.value = String(item);
+                    opt.textContent = String(item);
+                }
+                if (selected.has(opt.value)) opt.selected = true;
+                el.appendChild(opt);
+            });
+        }
+
+        function fillMetricSelect(metrics) {
+            const select = document.getElementById('metricSelect');
+            select.innerHTML = '';
+            (metrics || []).forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m.key;
+                opt.textContent = m.label;
+                select.appendChild(opt);
+                state.metricMap[m.key] = m;
+            });
+        }
+
+        function renderMetricOrder() {
+            const box = document.getElementById('metricOrder');
+            box.innerHTML = '';
+            state.metricOrder.forEach((key, idx) => {
+                const metric = state.metricMap[key];
+                if (!metric) return;
+                const chip = document.createElement('span');
+                chip.className = 'metric-chip';
+                chip.innerHTML = `<span>${metric.label}</span>`;
+
+                const upBtn = document.createElement('button');
+                upBtn.type = 'button';
+                upBtn.textContent = '↑';
+                upBtn.disabled = idx === 0;
+                upBtn.addEventListener('click', () => {
+                    if (idx <= 0) return;
+                    const tmp = state.metricOrder[idx - 1];
+                    state.metricOrder[idx - 1] = state.metricOrder[idx];
+                    state.metricOrder[idx] = tmp;
+                    renderMetricOrder();
+                    loadDashboard();
+                });
+
+                const downBtn = document.createElement('button');
+                downBtn.type = 'button';
+                downBtn.textContent = '↓';
+                downBtn.disabled = idx >= state.metricOrder.length - 1;
+                downBtn.addEventListener('click', () => {
+                    if (idx >= state.metricOrder.length - 1) return;
+                    const tmp = state.metricOrder[idx + 1];
+                    state.metricOrder[idx + 1] = state.metricOrder[idx];
+                    state.metricOrder[idx] = tmp;
+                    renderMetricOrder();
+                    loadDashboard();
+                });
+
+                const rmBtn = document.createElement('button');
+                rmBtn.type = 'button';
+                rmBtn.textContent = 'x';
+                rmBtn.addEventListener('click', () => {
+                    state.metricOrder = state.metricOrder.filter(x => x !== key);
+                    renderMetricOrder();
+                    loadDashboard();
+                });
+
+                chip.appendChild(upBtn);
+                chip.appendChild(downBtn);
+                chip.appendChild(rmBtn);
+                box.appendChild(chip);
+            });
+        }
+
+        async function loadFilters() {
+            const resp = await fetch('/api/sales-product-performance-dashboard?mode=filters', { credentials: 'include' });
+            const data = await resp.json();
+            if (!resp.ok || data.status !== 'success') {
+                throw new Error(data.message || '加载筛选项失败');
+            }
+            const f = data.filters || {};
+            state.metrics = f.metrics || [];
+            fillMultiSelect('filterSkuFamilies', f.sku_families || [], 'dict');
+            fillMultiSelect('filterPlatformSkus', f.platform_skus || [], 'dict');
+            fillMultiSelect('filterFabrics', f.fabrics || [], 'text');
+            fillMultiSelect('filterSpecs', f.spec_names || [], 'text');
+            fillMultiSelect('filterAdTypes', f.ad_operation_types || [], 'dict');
+            fillMetricSelect(state.metrics);
+
+            if (!state.metricOrder.length) {
+                state.metricOrder = ['sales_qty', 'net_sales_amount', 'order_qty', 'ad_spend', 'ad_sales_amount'].filter(k => state.metrics.some(m => m.key === k));
+            }
+            renderMetricOrder();
+        }
+
+        function buildDashboardQuery() {
+            const q = new URLSearchParams();
+            q.set('start_date', document.getElementById('filterStartDate').value || '');
+            q.set('end_date', document.getElementById('filterEndDate').value || '');
+            q.set('metric_keys', state.metricOrder.join(','));
+            q.set('include_todos', document.getElementById('toggleTodos').checked ? '1' : '0');
+            q.set('include_ads', document.getElementById('toggleAds').checked ? '1' : '0');
+
+            const sf = getSelectedValues('filterSkuFamilies');
+            const skus = getSelectedValues('filterPlatformSkus');
+            const fabrics = getSelectedValues('filterFabrics');
+            const specs = getSelectedValues('filterSpecs');
+            const adTypes = getSelectedValues('filterAdTypes');
+            if (sf.length) q.set('sku_family_ids', sf.join(','));
+            if (skus.length) q.set('platform_skus', skus.join(','));
+            if (fabrics.length) q.set('fabrics', fabrics.join(','));
+            if (specs.length) q.set('spec_names', specs.join(','));
+            if (adTypes.length) q.set('ad_operation_type_ids', adTypes.join(','));
+            return q.toString();
+        }
+
+        function formatNumber(v) {
+            const n = Number(v || 0);
+            if (!Number.isFinite(n)) return '-';
+            if (Math.abs(n) >= 1000) return n.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+            return n.toFixed(2).replace(/\.00$/, '');
+        }
+
+        function renderGroups(groups) {
+            const host = document.getElementById('groupContainer');
+            host.innerHTML = '<h3>货号分组明细</h3>';
+            if (!groups || !groups.length) {
+                host.insertAdjacentHTML('beforeend', '<p class="status-tip">暂无符合筛选条件的数据</p>');
+                return;
+            }
+
+            const metricKeys = state.metricOrder.slice();
+            groups.forEach(g => {
+                const details = document.createElement('details');
+                const summary = document.createElement('summary');
+                summary.textContent = `${g.sku_family || '未分组货号'} (${(g.items || []).length} 个SKU)`;
+                details.appendChild(summary);
+
+                const wrap = document.createElement('div');
+                wrap.className = 'perf-group-content';
+                const tableWrap = document.createElement('div');
+                tableWrap.className = 'perf-table-wrap';
+                const table = document.createElement('table');
+                table.className = 'perf-table';
+
+                const headCols = ['SKU', '面料', '规格', '最新日期'].concat(metricKeys.map(k => (state.metricMap[k] && state.metricMap[k].label) || k));
+                table.innerHTML = `<thead><tr>${headCols.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody></tbody>`;
+                const tbody = table.querySelector('tbody');
+
+                (g.items || []).forEach(item => {
+                    const records = item.records || [];
+                    const latest = records.length ? records[0] : {};
+                    const tds = [
+                        item.platform_sku || '-',
+                        item.fabric || '-',
+                        item.spec_name || '-',
+                        latest.record_date || '-'
+                    ].concat(metricKeys.map(k => formatNumber(latest[k])));
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = tds.map(x => `<td>${x}</td>`).join('');
+                    tbody.appendChild(tr);
+                });
+
+                tableWrap.appendChild(table);
+                wrap.appendChild(tableWrap);
+                details.appendChild(wrap);
+                host.appendChild(details);
+            });
+        }
+
+        function mapEvents(events) {
+            state.eventByDate = {};
+            (events || []).forEach(e => {
+                const d = String(e.event_date || '').slice(0, 10);
+                if (!d) return;
+                if (!state.eventByDate[d]) state.eventByDate[d] = [];
+                state.eventByDate[d].push(e);
+            });
+        }
+
+        function renderLegend() {
+            const host = document.getElementById('chartLegend');
+            host.innerHTML = '';
+            state.metricOrder.forEach(k => {
+                const m = state.metricMap[k];
+                if (!m) return;
+                const item = document.createElement('span');
+                item.className = 'perf-legend-item';
+                item.innerHTML = `<span class="perf-legend-dot" style="background:${m.color || '#5b6aa8'}"></span><span>${m.label}</span>`;
+                host.appendChild(item);
+            });
+            const ev = document.createElement('span');
+            ev.className = 'perf-legend-item';
+            ev.innerHTML = '<span class="perf-legend-dot" style="background:#8f8f8f"></span><span>事件线(虚线)</span>';
+            host.appendChild(ev);
+        }
+
+        function renderChart(chartItems, events) {
+            const canvas = document.getElementById('perfChart');
+            const wrap = document.getElementById('chartWrap');
+            const dpr = window.devicePixelRatio || 1;
+            const width = Math.max(820, wrap.clientWidth - 16);
+            const height = 300;
+            canvas.width = Math.floor(width * dpr);
+            canvas.height = Math.floor(height * dpr);
+            canvas.style.width = `${width}px`;
+            canvas.style.height = `${height}px`;
+            const ctx = canvas.getContext('2d');
+            ctx.scale(dpr, dpr);
+            ctx.clearRect(0, 0, width, height);
+
+            if (!chartItems || !chartItems.length || !state.metricOrder.length) {
+                ctx.fillStyle = '#7f7a73';
+                ctx.font = '14px sans-serif';
+                ctx.fillText('暂无趋势数据', 24, 42);
+                state.chartGeom = null;
+                return;
+            }
+
+            const pad = { left: 56, right: 24, top: 18, bottom: 36 };
+            const innerW = width - pad.left - pad.right;
+            const innerH = height - pad.top - pad.bottom;
+            const dates = chartItems.map(x => String(x.record_date || '').slice(0, 10));
+
+            let minV = Infinity;
+            let maxV = -Infinity;
+            state.metricOrder.forEach(k => {
+                chartItems.forEach(row => {
+                    const v = Number(row[k]);
+                    if (!Number.isFinite(v)) return;
+                    if (v < minV) minV = v;
+                    if (v > maxV) maxV = v;
+                });
+            });
+            if (!Number.isFinite(minV) || !Number.isFinite(maxV)) {
+                minV = 0;
+                maxV = 1;
+            }
+            if (minV === maxV) {
+                minV -= 1;
+                maxV += 1;
+            }
+
+            const yTick = 5;
+            ctx.strokeStyle = 'rgba(128, 128, 128, 0.22)';
+            ctx.fillStyle = '#746d64';
+            ctx.font = '12px sans-serif';
+            for (let i = 0; i <= yTick; i += 1) {
+                const y = pad.top + (innerH * i / yTick);
+                const val = maxV - ((maxV - minV) * i / yTick);
+                ctx.beginPath();
+                ctx.moveTo(pad.left, y);
+                ctx.lineTo(width - pad.right, y);
+                ctx.stroke();
+                ctx.fillText(formatNumber(val), 8, y + 4);
+            }
+
+            const xAt = idx => pad.left + (innerW * (dates.length <= 1 ? 0 : (idx / (dates.length - 1))));
+            const yAt = val => pad.top + (innerH * (maxV - val) / (maxV - minV));
+
+            state.metricOrder.forEach(k => {
+                const m = state.metricMap[k];
+                if (!m) return;
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = m.color || '#5b6aa8';
+                ctx.beginPath();
+                chartItems.forEach((row, idx) => {
+                    const v = Number(row[k]);
+                    if (!Number.isFinite(v)) return;
+                    const x = xAt(idx);
+                    const y = yAt(v);
+                    if (idx === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                });
+                ctx.stroke();
+            });
+
+            ctx.fillStyle = '#7f786f';
+            for (let i = 0; i < dates.length; i += Math.max(1, Math.floor(dates.length / 6))) {
+                const x = xAt(i);
+                const label = dates[i] ? dates[i].slice(5) : '';
+                ctx.fillText(label, x - 16, height - 10);
+            }
+
+            mapEvents(events || []);
+            ctx.setLineDash([4, 4]);
+            ctx.strokeStyle = '#8f8f8f';
+            Object.keys(state.eventByDate).forEach(d => {
+                const idx = dates.indexOf(d);
+                if (idx < 0) return;
+                const x = xAt(idx);
+                ctx.beginPath();
+                ctx.moveTo(x, pad.top);
+                ctx.lineTo(x, height - pad.bottom);
+                ctx.stroke();
+            });
+            ctx.setLineDash([]);
+
+            state.chartGeom = {
+                dates,
+                xAt,
+                pad,
+                width,
+                height
+            };
+        }
+
+        function bindChartHover() {
+            const canvas = document.getElementById('perfChart');
+            const tooltip = document.getElementById('eventTooltip');
+            canvas.addEventListener('mousemove', e => {
+                if (!state.chartGeom) {
+                    tooltip.style.display = 'none';
+                    return;
+                }
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                let matchedDate = '';
+                state.chartGeom.dates.forEach((d, idx) => {
+                    const px = state.chartGeom.xAt(idx);
+                    if (Math.abs(px - x) <= 4 && state.eventByDate[d] && state.eventByDate[d].length) {
+                        matchedDate = d;
+                    }
+                });
+
+                if (!matchedDate) {
+                    tooltip.style.display = 'none';
+                    return;
+                }
+
+                const rows = state.eventByDate[matchedDate] || [];
+                tooltip.innerHTML = `<div><strong>${matchedDate}</strong></div>` + rows.map(r => {
+                    if (r.event_type === 'todo') {
+                        const sku = (r.platform_skus || []).join('、');
+                        const sf = (r.sku_families || []).join('、');
+                        return `<div style="margin-top:0.32rem;"><strong>[待办完成]</strong> ${r.title || ''}<br>创建人: ${r.creator || '-'}<br>SKU: ${sku || '-'}<br>货号: ${sf || '-'}<br>${r.detail || ''}</div>`;
+                    }
+                    const sku = (r.platform_skus || []).join('、');
+                    const sf = (r.sku_families || []).join('、');
+                    return `<div style="margin-top:0.32rem;"><strong>[广告调整]</strong> ${r.operation_type_name || ''}<br>目标: ${r.target_object || '-'}<br>SKU: ${sku || '-'}<br>货号: ${sf || '-'}<br>${r.detail || ''}</div>`;
+                }).join('');
+
+                tooltip.style.display = 'block';
+                tooltip.style.left = `${Math.min(rect.width - 350, x + 10)}px`;
+                tooltip.style.top = `${Math.max(8, (e.clientY - rect.top + 8))}px`;
+            });
+            canvas.addEventListener('mouseleave', () => {
+                tooltip.style.display = 'none';
+            });
+        }
+
+        async function loadDashboard() {
+            const status = document.getElementById('dataStatus');
+            status.textContent = '加载中...';
+            try {
+                const query = buildDashboardQuery();
+                const resp = await fetch(`/api/sales-product-performance-dashboard?${query}`, { credentials: 'include' });
+                const data = await resp.json();
+                if (!resp.ok || data.status !== 'success') {
+                    throw new Error(data.message || '加载看板失败');
+                }
+                renderLegend();
+                renderChart(data.chart_items || [], data.events || []);
+                renderGroups(data.groups || []);
+                status.textContent = `货号组: ${(data.groups || []).length}，事件: ${(data.events || []).length}`;
+            } catch (err) {
+                status.textContent = err.message || '加载失败';
+                document.getElementById('groupContainer').innerHTML = '<h3>货号分组明细</h3><p class="status-tip">加载失败，请稍后重试</p>';
+                renderChart([], []);
+            }
+        }
+
+        function bindEvents() {
+            document.getElementById('btnQuery').addEventListener('click', loadDashboard);
+            document.getElementById('btnReset').addEventListener('click', async () => {
+                setTodayRange();
+                Array.from(document.querySelectorAll('select[multiple]')).forEach(sel => {
+                    Array.from(sel.options).forEach(o => { o.selected = false; });
+                });
+                state.metricOrder = ['sales_qty', 'net_sales_amount', 'order_qty', 'ad_spend', 'ad_sales_amount'].filter(k => state.metrics.some(m => m.key === k));
+                renderMetricOrder();
+                await loadDashboard();
+            });
+            document.getElementById('btnAddMetric').addEventListener('click', () => {
+                const key = document.getElementById('metricSelect').value;
+                if (!key) return;
+                if (!state.metricOrder.includes(key)) {
+                    state.metricOrder.push(key);
+                    renderMetricOrder();
+                    loadDashboard();
+                }
+            });
+            document.getElementById('toggleTodos').addEventListener('change', loadDashboard);
+            document.getElementById('toggleAds').addEventListener('change', loadDashboard);
+            document.getElementById('filterAdTypes').addEventListener('change', loadDashboard);
+        }
+
+        async function initPage() {
+            setTodayRange();
+            bindChartHover();
+            bindEvents();
+            await loadFilters();
+            await loadDashboard();
+        }
+
+        window.addEventListener('resize', () => {
+            loadDashboard();
+        });
+        window.addEventListener('load', initPage);
+    </script>
+    <script src="/static/js/header.js"></script>
+</body>
+</html>

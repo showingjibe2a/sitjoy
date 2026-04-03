@@ -9,6 +9,47 @@ import json
 class UtilityMixin:
     """工具/仪表盘 API 处理器"""
 
+    def _todo_parse_date(self, value):
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.strftime('%Y-%m-%d')
+        text = str(value).strip()
+        if not text:
+            return None
+        for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%Y-%m-%d %H:%M:%S', '%Y/%m/%d %H:%M:%S'):
+            try:
+                return datetime.strptime(text, fmt).strftime('%Y-%m-%d')
+            except Exception:
+                continue
+        return None
+
+    def _replace_todo_sales_links(self, conn, todo_id, sales_product_ids, sku_family_ids):
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM todo_sales_links WHERE todo_id=%s", (todo_id,))
+            sp_ids = sorted(set([self._parse_int(x) for x in (sales_product_ids or []) if self._parse_int(x)]))
+            sf_ids = sorted(set([self._parse_int(x) for x in (sku_family_ids or []) if self._parse_int(x)]))
+            for sp_id in sp_ids:
+                cur.execute(
+                    "INSERT INTO todo_sales_links (todo_id, sales_product_id) VALUES (%s, %s)",
+                    (todo_id, sp_id)
+                )
+            for sf_id in sf_ids:
+                cur.execute(
+                    "INSERT INTO todo_sales_links (todo_id, sku_family_id) VALUES (%s, %s)",
+                    (todo_id, sf_id)
+                )
+
+    def _replace_todo_assignees(self, conn, todo_id, assignee_ids):
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM todo_assignments WHERE todo_id=%s", (todo_id,))
+            ids = sorted(set([self._parse_int(x) for x in (assignee_ids or []) if self._parse_int(x)]))
+            for aid in ids:
+                cur.execute(
+                    "INSERT INTO todo_assignments (todo_id, assignee_id, assignment_status) VALUES (%s, %s, %s)",
+                    (todo_id, aid, 'pending')
+                )
+
     def handle_todo_api(self, environ, method, start_response):
         """待办事项 API（CRUD）"""
         try:
@@ -17,13 +58,102 @@ class UtilityMixin:
                 return self.send_json({'status': 'error', 'message': '未登录'}, start_response)
 
             if method == 'GET':
+                query_params = parse_qs(environ.get('QUERY_STRING', ''))
+                include_all = str((query_params.get('include_all', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
+                with_links = str((query_params.get('with_links', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
+                        params = []
+                        where_sql = ''
+                        if not include_all:
+                            where_sql = 'WHERE t.created_by=%s'
+                            params.append(user_id)
                         cur.execute(
-                            "SELECT * FROM todos WHERE created_by=%s ORDER BY due_date ASC LIMIT 300",
-                            (user_id,)
+                            f"""
+                            SELECT t.*, u.name AS creator_name, u.username AS creator_username
+                            FROM todos t
+                            LEFT JOIN users u ON u.id = t.created_by
+                            {where_sql}
+                            ORDER BY t.due_date ASC, t.id DESC
+                            LIMIT 500
+                            """,
+                            tuple(params)
                         )
                         rows = cur.fetchall() or []
+
+                        if with_links and rows:
+                            todo_ids = [self._parse_int(r.get('id')) for r in rows if self._parse_int(r.get('id'))]
+                            if todo_ids:
+                                placeholders = ','.join(['%s'] * len(todo_ids))
+                                cur.execute(
+                                    f"""
+                                    SELECT tsl.todo_id, tsl.sales_product_id, tsl.sku_family_id,
+                                           sp.platform_sku, pf.sku_family
+                                    FROM todo_sales_links tsl
+                                    LEFT JOIN sales_products sp ON sp.id = tsl.sales_product_id
+                                    LEFT JOIN product_families pf ON pf.id = tsl.sku_family_id
+                                    WHERE tsl.todo_id IN ({placeholders})
+                                    ORDER BY tsl.id ASC
+                                    """,
+                                    tuple(todo_ids)
+                                )
+                                link_rows = cur.fetchall() or []
+                                link_map = {}
+                                for lk in link_rows:
+                                    tid = self._parse_int(lk.get('todo_id'))
+                                    if not tid:
+                                        continue
+                                    link_map.setdefault(tid, {
+                                        'sales_product_ids': [],
+                                        'platform_skus': [],
+                                        'sku_family_ids': [],
+                                        'sku_families': []
+                                    })
+                                    sp_id = self._parse_int(lk.get('sales_product_id'))
+                                    sf_id = self._parse_int(lk.get('sku_family_id'))
+                                    sku = str(lk.get('platform_sku') or '').strip()
+                                    sf = str(lk.get('sku_family') or '').strip()
+                                    if sp_id and sp_id not in link_map[tid]['sales_product_ids']:
+                                        link_map[tid]['sales_product_ids'].append(sp_id)
+                                    if sku and sku not in link_map[tid]['platform_skus']:
+                                        link_map[tid]['platform_skus'].append(sku)
+                                    if sf_id and sf_id not in link_map[tid]['sku_family_ids']:
+                                        link_map[tid]['sku_family_ids'].append(sf_id)
+                                    if sf and sf not in link_map[tid]['sku_families']:
+                                        link_map[tid]['sku_families'].append(sf)
+
+                                cur.execute(
+                                    f"""
+                                    SELECT ta.todo_id, ta.assignee_id, u.name, u.username
+                                    FROM todo_assignments ta
+                                    LEFT JOIN users u ON u.id = ta.assignee_id
+                                    WHERE ta.todo_id IN ({placeholders})
+                                    ORDER BY ta.id ASC
+                                    """,
+                                    tuple(todo_ids)
+                                )
+                                ass_rows = cur.fetchall() or []
+                                ass_map = {}
+                                for ar in ass_rows:
+                                    tid = self._parse_int(ar.get('todo_id'))
+                                    if not tid:
+                                        continue
+                                    ass_map.setdefault(tid, []).append({
+                                        'assignee_id': self._parse_int(ar.get('assignee_id')),
+                                        'name': ar.get('name') or '',
+                                        'username': ar.get('username') or ''
+                                    })
+
+                                for r in rows:
+                                    tid = self._parse_int(r.get('id'))
+                                    details = link_map.get(tid, {
+                                        'sales_product_ids': [],
+                                        'platform_skus': [],
+                                        'sku_family_ids': [],
+                                        'sku_families': []
+                                    })
+                                    r.update(details)
+                                    r['assignees'] = ass_map.get(tid, [])
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             if method == 'POST':
@@ -32,13 +162,29 @@ class UtilityMixin:
                 if not title:
                     return self.send_json({'status': 'error', 'message': 'Missing title'}, start_response)
 
+                start_date = self._todo_parse_date(data.get('start_date')) or datetime.now().strftime('%Y-%m-%d')
+                due_date = self._todo_parse_date(data.get('due_date')) or start_date
+                reminder_interval_days = max(1, self._parse_int(data.get('reminder_interval_days')) or 1)
+                is_recurring = 1 if str(data.get('is_recurring', 0)).strip().lower() in ('1', 'true', 'yes', 'on') else 0
+                detail = (data.get('detail') or '').strip() or None
+                priority = self._parse_int(data.get('priority')) or 2
+                assignee_ids = data.get('assignee_ids') or []
+                related_sales_product_ids = data.get('related_sales_product_ids') or []
+                related_sku_family_ids = data.get('related_sku_family_ids') or []
+
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
-                            "INSERT INTO todos (title, created_by) VALUES (%s, %s)",
-                            (title, user_id)
+                            """
+                            INSERT INTO todos
+                            (title, detail, start_date, due_date, reminder_interval_days, is_recurring, status, priority, created_by)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """,
+                            (title, detail, start_date, due_date, reminder_interval_days, is_recurring, 'open', priority, user_id)
                         )
                         new_id = cur.lastrowid
+                    self._replace_todo_assignees(conn, new_id, assignee_ids)
+                    self._replace_todo_sales_links(conn, new_id, related_sales_product_ids, related_sku_family_ids)
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
             if method == 'PUT':
@@ -46,10 +192,24 @@ class UtilityMixin:
                 item_id = data.get('id')
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+
+                status = str(data.get('status') or '').strip().lower()
+                if status not in ('open', 'done'):
+                    status = 'open'
+                related_sales_product_ids = data.get('related_sales_product_ids') if isinstance(data.get('related_sales_product_ids'), list) else None
+                related_sku_family_ids = data.get('related_sku_family_ids') if isinstance(data.get('related_sku_family_ids'), list) else None
+                assignee_ids = data.get('assignee_ids') if isinstance(data.get('assignee_ids'), list) else None
                 
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("UPDATE todos SET status=%s WHERE id=%s", ('open', item_id))
+                        cur.execute(
+                            "UPDATE todos SET status=%s, completed_at=%s WHERE id=%s",
+                            (status, datetime.now().strftime('%Y-%m-%d %H:%M:%S') if status == 'done' else None, item_id)
+                        )
+                    if related_sales_product_ids is not None or related_sku_family_ids is not None:
+                        self._replace_todo_sales_links(conn, item_id, related_sales_product_ids or [], related_sku_family_ids or [])
+                    if assignee_ids is not None:
+                        self._replace_todo_assignees(conn, item_id, assignee_ids)
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':

@@ -2244,6 +2244,399 @@ class SalesProductMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def handle_sales_product_performance_dashboard_api(self, environ, method, start_response):
+        try:
+            if method != 'GET':
+                return self.send_error(405, 'Method not allowed', start_response)
+
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            mode = str((query_params.get('mode', ['dashboard'])[0] or 'dashboard')).strip().lower()
+
+            def parse_csv_text(name):
+                raw_list = query_params.get(name, [])
+                tokens = []
+                for raw in raw_list:
+                    for token in re.split(r'[,，;；\s]+', str(raw or '').strip()):
+                        t = token.strip()
+                        if t and t not in tokens:
+                            tokens.append(t)
+                return tokens
+
+            def parse_csv_int(name):
+                values = []
+                for token in parse_csv_text(name):
+                    val = self._parse_int(token)
+                    if val and val not in values:
+                        values.append(val)
+                return values
+
+            def parse_date(value):
+                text = str(value or '').strip()
+                if not text:
+                    return ''
+                for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%Y-%m-%d %H:%M:%S', '%Y/%m/%d %H:%M:%S'):
+                    try:
+                        return datetime.strptime(text, fmt).strftime('%Y-%m-%d')
+                    except Exception:
+                        continue
+                return text[:10]
+
+            metric_defs = [
+                {'key': 'sales_qty', 'label': '销量', 'color': '#5b6aa8', 'agg': 'sum'},
+                {'key': 'net_sales_amount', 'label': '净销售额', 'color': '#b85c5c', 'agg': 'sum'},
+                {'key': 'order_qty', 'label': '订单量', 'color': '#bc7a3f', 'agg': 'sum'},
+                {'key': 'session_total', 'label': 'Session-Total', 'color': '#44798c', 'agg': 'sum'},
+                {'key': 'ad_impressions', 'label': '广告展示', 'color': '#7e8a57', 'agg': 'sum'},
+                {'key': 'ad_clicks', 'label': '广告点击', 'color': '#8b6f9c', 'agg': 'sum'},
+                {'key': 'ad_orders', 'label': '广告订单量', 'color': '#4d7ea8', 'agg': 'sum'},
+                {'key': 'ad_spend', 'label': '广告花费', 'color': '#b96f3d', 'agg': 'sum'},
+                {'key': 'ad_sales_amount', 'label': '广告销售额', 'color': '#6a8f4e', 'agg': 'sum'},
+                {'key': 'refund_amount', 'label': '退款金额', 'color': '#9b4a4a', 'agg': 'sum'},
+                {'key': 'sub_category_rank', 'label': '小类排名', 'color': '#6d7485', 'agg': 'avg'},
+            ]
+
+            with self._get_db_connection() as conn:
+                if mode == 'filters':
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT sp.id, sp.platform_sku, sp.fabric, sp.spec_name,
+                                   pf.id AS sku_family_id, pf.sku_family
+                            FROM sales_products sp
+                            LEFT JOIN product_families pf ON pf.id = sp.sku_family_id
+                            ORDER BY pf.sku_family ASC, sp.platform_sku ASC
+                            """
+                        )
+                        rows = cur.fetchall() or []
+
+                        cur.execute("SELECT id, name FROM amazon_ad_operation_types ORDER BY id ASC")
+                        op_types = cur.fetchall() or []
+
+                    sku_families = []
+                    sku_family_seen = set()
+                    platform_skus = []
+                    fabrics = []
+                    specs = []
+                    f_seen = set()
+                    s_seen = set()
+
+                    for r in rows:
+                        sf_id = self._parse_int(r.get('sku_family_id'))
+                        sf = str(r.get('sku_family') or '').strip()
+                        if sf_id and sf and sf_id not in sku_family_seen:
+                            sku_family_seen.add(sf_id)
+                            sku_families.append({'id': sf_id, 'name': sf})
+                        sku = str(r.get('platform_sku') or '').strip()
+                        if sku:
+                            platform_skus.append({'id': self._parse_int(r.get('id')), 'name': sku})
+                        fabric = str(r.get('fabric') or '').strip()
+                        spec = str(r.get('spec_name') or '').strip()
+                        if fabric and fabric not in f_seen:
+                            f_seen.add(fabric)
+                            fabrics.append(fabric)
+                        if spec and spec not in s_seen:
+                            s_seen.add(spec)
+                            specs.append(spec)
+
+                    return self.send_json({
+                        'status': 'success',
+                        'filters': {
+                            'sku_families': sku_families,
+                            'platform_skus': platform_skus,
+                            'fabrics': fabrics,
+                            'spec_names': specs,
+                            'metrics': metric_defs,
+                            'ad_operation_types': [{'id': self._parse_int(x.get('id')), 'name': x.get('name') or ''} for x in op_types]
+                        }
+                    }, start_response)
+
+                start_date = parse_date((query_params.get('start_date', [''])[0] or ''))
+                end_date = parse_date((query_params.get('end_date', [''])[0] or ''))
+                sku_family_ids = parse_csv_int('sku_family_ids')
+                platform_skus = parse_csv_text('platform_skus')
+                fabrics = parse_csv_text('fabrics')
+                spec_names = parse_csv_text('spec_names')
+                metric_keys = parse_csv_text('metric_keys')
+                if not metric_keys:
+                    metric_keys = ['sales_qty', 'net_sales_amount', 'order_qty', 'ad_spend', 'ad_sales_amount']
+                include_todos = str((query_params.get('include_todos', ['1'])[0] or '1')).lower() in ('1', 'true', 'yes', 'on')
+                include_ads = str((query_params.get('include_ads', ['1'])[0] or '1')).lower() in ('1', 'true', 'yes', 'on')
+                ad_operation_type_ids = parse_csv_int('ad_operation_type_ids')
+
+                sql = [
+                    """
+                    SELECT spp.*, sp.platform_sku, sp.fabric, sp.spec_name, sp.sku_family_id,
+                           pf.sku_family
+                    FROM sales_product_performances spp
+                    JOIN sales_products sp ON sp.id = spp.sales_product_id
+                    LEFT JOIN product_families pf ON pf.id = sp.sku_family_id
+                    WHERE 1=1
+                    """
+                ]
+                params = []
+                if start_date:
+                    sql.append(' AND spp.record_date >= %s')
+                    params.append(start_date)
+                if end_date:
+                    sql.append(' AND spp.record_date <= %s')
+                    params.append(end_date)
+                if sku_family_ids:
+                    sql.append(f" AND sp.sku_family_id IN ({','.join(['%s'] * len(sku_family_ids))})")
+                    params.extend(sku_family_ids)
+                if platform_skus:
+                    sql.append(f" AND sp.platform_sku IN ({','.join(['%s'] * len(platform_skus))})")
+                    params.extend(platform_skus)
+                if fabrics:
+                    sql.append(f" AND sp.fabric IN ({','.join(['%s'] * len(fabrics))})")
+                    params.extend(fabrics)
+                if spec_names:
+                    sql.append(f" AND sp.spec_name IN ({','.join(['%s'] * len(spec_names))})")
+                    params.extend(spec_names)
+                sql.append(' ORDER BY pf.sku_family ASC, sp.platform_sku ASC, spp.record_date DESC')
+
+                with conn.cursor() as cur:
+                    cur.execute(''.join(sql), tuple(params))
+                    rows = cur.fetchall() or []
+
+                group_map = {}
+                target_sp_ids = set()
+                target_sf_ids = set()
+                for row in rows:
+                    sp_id = self._parse_int(row.get('sales_product_id'))
+                    sf_id = self._parse_int(row.get('sku_family_id'))
+                    sf_name = str(row.get('sku_family') or '未分组货号').strip() or '未分组货号'
+                    sku = str(row.get('platform_sku') or '').strip()
+                    target_sp_ids.add(sp_id)
+                    if sf_id:
+                        target_sf_ids.add(sf_id)
+                    gkey = f"{sf_id or 0}:{sf_name}"
+                    group = group_map.setdefault(gkey, {
+                        'sku_family_id': sf_id,
+                        'sku_family': sf_name,
+                        'items_map': {}
+                    })
+                    item = group['items_map'].setdefault(sp_id, {
+                        'sales_product_id': sp_id,
+                        'platform_sku': sku,
+                        'fabric': row.get('fabric') or '',
+                        'spec_name': row.get('spec_name') or '',
+                        'records': []
+                    })
+                    item['records'].append({
+                        'record_date': str(row.get('record_date') or ''),
+                        'sales_qty': row.get('sales_qty') or 0,
+                        'net_sales_amount': row.get('net_sales_amount') or 0,
+                        'order_qty': row.get('order_qty') or 0,
+                        'session_total': row.get('session_total') or 0,
+                        'ad_impressions': row.get('ad_impressions') or 0,
+                        'ad_clicks': row.get('ad_clicks') or 0,
+                        'ad_orders': row.get('ad_orders') or 0,
+                        'ad_spend': row.get('ad_spend') or 0,
+                        'ad_sales_amount': row.get('ad_sales_amount') or 0,
+                        'refund_amount': row.get('refund_amount') or 0,
+                        'sub_category_rank': row.get('sub_category_rank')
+                    })
+
+                groups = []
+                for g in group_map.values():
+                    items = list(g['items_map'].values())
+                    items.sort(key=lambda x: x.get('platform_sku') or '')
+                    groups.append({
+                        'sku_family_id': g.get('sku_family_id'),
+                        'sku_family': g.get('sku_family') or '',
+                        'items': items
+                    })
+                groups.sort(key=lambda x: x.get('sku_family') or '')
+
+                daily = {}
+                metric_map = {m['key']: m for m in metric_defs}
+                for row in rows:
+                    d = str(row.get('record_date') or '')
+                    bucket = daily.setdefault(d, {'record_date': d, '__rank_count': 0})
+                    for key in metric_keys:
+                        if key not in metric_map:
+                            continue
+                        agg = metric_map[key]['agg']
+                        val = row.get(key)
+                        num = float(val or 0)
+                        if agg == 'avg':
+                            bucket[key] = bucket.get(key, 0.0) + num
+                            bucket['__rank_count'] = bucket.get('__rank_count', 0) + 1
+                        else:
+                            bucket[key] = bucket.get(key, 0.0) + num
+
+                chart_items = []
+                for d in sorted(daily.keys()):
+                    b = daily[d]
+                    out = {'record_date': d}
+                    for key in metric_keys:
+                        if key not in metric_map:
+                            continue
+                        agg = metric_map[key]['agg']
+                        if agg == 'avg':
+                            cnt = b.get('__rank_count', 0) or 1
+                            out[key] = round((b.get(key, 0.0) / cnt), 2)
+                        else:
+                            out[key] = round(b.get(key, 0.0), 2)
+                    chart_items.append(out)
+
+                if not target_sf_ids and sku_family_ids:
+                    target_sf_ids = set(sku_family_ids)
+                if not target_sp_ids and platform_skus:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            f"SELECT id FROM sales_products WHERE platform_sku IN ({','.join(['%s'] * len(platform_skus))})",
+                            tuple(platform_skus)
+                        )
+                        for rr in (cur.fetchall() or []):
+                            rid = self._parse_int(rr.get('id'))
+                            if rid:
+                                target_sp_ids.add(rid)
+
+                events = []
+                if include_todos and (target_sp_ids or target_sf_ids):
+                    sql_t = [
+                        """
+                        SELECT t.id, t.title, t.detail, t.completed_at, t.status,
+                               u.name AS creator_name, u.username AS creator_username,
+                               sp.platform_sku, pf.sku_family
+                        FROM todos t
+                        JOIN todo_sales_links tsl ON tsl.todo_id = t.id
+                        LEFT JOIN users u ON u.id = t.created_by
+                        LEFT JOIN sales_products sp ON sp.id = tsl.sales_product_id
+                        LEFT JOIN product_families pf ON pf.id = tsl.sku_family_id
+                        WHERE t.status='done' AND t.completed_at IS NOT NULL
+                        """
+                    ]
+                    p_t = []
+                    if start_date:
+                        sql_t.append(' AND DATE(t.completed_at) >= %s')
+                        p_t.append(start_date)
+                    if end_date:
+                        sql_t.append(' AND DATE(t.completed_at) <= %s')
+                        p_t.append(end_date)
+                    cond = []
+                    if target_sp_ids:
+                        cond.append(f"tsl.sales_product_id IN ({','.join(['%s'] * len(target_sp_ids))})")
+                        p_t.extend(list(target_sp_ids))
+                    if target_sf_ids:
+                        cond.append(f"tsl.sku_family_id IN ({','.join(['%s'] * len(target_sf_ids))})")
+                        p_t.extend(list(target_sf_ids))
+                    if cond:
+                        sql_t.append(' AND (' + ' OR '.join(cond) + ')')
+
+                    with conn.cursor() as cur:
+                        cur.execute(''.join(sql_t), tuple(p_t))
+                        t_rows = cur.fetchall() or []
+
+                    todo_map = {}
+                    for tr in t_rows:
+                        tid = self._parse_int(tr.get('id'))
+                        if not tid:
+                            continue
+                        todo_map.setdefault(tid, {
+                            'event_type': 'todo',
+                            'event_date': str(tr.get('completed_at') or '')[:10],
+                            'event_datetime': str(tr.get('completed_at') or ''),
+                            'title': tr.get('title') or '',
+                            'detail': tr.get('detail') or '',
+                            'creator': tr.get('creator_name') or tr.get('creator_username') or '',
+                            'platform_skus': [],
+                            'sku_families': []
+                        })
+                        sku = str(tr.get('platform_sku') or '').strip()
+                        sf = str(tr.get('sku_family') or '').strip()
+                        if sku and sku not in todo_map[tid]['platform_skus']:
+                            todo_map[tid]['platform_skus'].append(sku)
+                        if sf and sf not in todo_map[tid]['sku_families']:
+                            todo_map[tid]['sku_families'].append(sf)
+                    events.extend(list(todo_map.values()))
+
+                ad_type_options = []
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id, name FROM amazon_ad_operation_types ORDER BY id ASC")
+                    ad_type_options = [{'id': self._parse_int(x.get('id')), 'name': x.get('name') or ''} for x in (cur.fetchall() or [])]
+
+                if include_ads and (target_sp_ids or target_sf_ids):
+                    sql_a = [
+                        """
+                        SELECT aa.id, aa.adjust_date, aa.target_object, aa.remark,
+                               aot.id AS operation_type_id, aot.name AS operation_type_name,
+                               sp.platform_sku, pf_sp.sku_family AS sku_family_sp, pf_ai.sku_family AS sku_family_ai
+                        FROM amazon_ad_adjustments aa
+                        JOIN amazon_ad_operation_types aot ON aot.id = aa.operation_type_id
+                        LEFT JOIN amazon_ad_items ai ON ai.id = aa.ad_item_id
+                        LEFT JOIN amazon_ad_products aap ON aap.ad_item_id = aa.ad_item_id
+                        LEFT JOIN sales_products sp ON sp.id = aap.sales_product_id
+                        LEFT JOIN product_families pf_sp ON pf_sp.id = sp.sku_family_id
+                        LEFT JOIN product_families pf_ai ON pf_ai.id = ai.sku_family_id
+                        WHERE 1=1
+                        """
+                    ]
+                    p_a = []
+                    if start_date:
+                        sql_a.append(' AND DATE(aa.adjust_date) >= %s')
+                        p_a.append(start_date)
+                    if end_date:
+                        sql_a.append(' AND DATE(aa.adjust_date) <= %s')
+                        p_a.append(end_date)
+                    if ad_operation_type_ids:
+                        sql_a.append(f" AND aa.operation_type_id IN ({','.join(['%s'] * len(ad_operation_type_ids))})")
+                        p_a.extend(ad_operation_type_ids)
+                    cond = []
+                    if target_sp_ids:
+                        cond.append(f"sp.id IN ({','.join(['%s'] * len(target_sp_ids))})")
+                        p_a.extend(list(target_sp_ids))
+                    if target_sf_ids:
+                        cond.append(f"sp.sku_family_id IN ({','.join(['%s'] * len(target_sf_ids))})")
+                        p_a.extend(list(target_sf_ids))
+                        cond.append(f"ai.sku_family_id IN ({','.join(['%s'] * len(target_sf_ids))})")
+                        p_a.extend(list(target_sf_ids))
+                    if cond:
+                        sql_a.append(' AND (' + ' OR '.join(cond) + ')')
+
+                    with conn.cursor() as cur:
+                        cur.execute(''.join(sql_a), tuple(p_a))
+                        a_rows = cur.fetchall() or []
+
+                    ad_map = {}
+                    for ar in a_rows:
+                        aid = self._parse_int(ar.get('id'))
+                        if not aid:
+                            continue
+                        ad_map.setdefault(aid, {
+                            'event_type': 'ad_adjustment',
+                            'event_date': str(ar.get('adjust_date') or '')[:10],
+                            'event_datetime': str(ar.get('adjust_date') or ''),
+                            'operation_type_id': self._parse_int(ar.get('operation_type_id')),
+                            'operation_type_name': ar.get('operation_type_name') or '',
+                            'target_object': ar.get('target_object') or '',
+                            'detail': ar.get('remark') or '',
+                            'platform_skus': [],
+                            'sku_families': []
+                        })
+                        sku = str(ar.get('platform_sku') or '').strip()
+                        sf_sp = str(ar.get('sku_family_sp') or '').strip()
+                        sf_ai = str(ar.get('sku_family_ai') or '').strip()
+                        if sku and sku not in ad_map[aid]['platform_skus']:
+                            ad_map[aid]['platform_skus'].append(sku)
+                        for sf in (sf_sp, sf_ai):
+                            if sf and sf not in ad_map[aid]['sku_families']:
+                                ad_map[aid]['sku_families'].append(sf)
+                    events.extend(list(ad_map.values()))
+
+                events.sort(key=lambda x: (x.get('event_date') or '', x.get('event_datetime') or '', x.get('event_type') or ''))
+                return self.send_json({
+                    'status': 'success',
+                    'groups': groups,
+                    'chart_items': chart_items,
+                    'metric_defs': metric_defs,
+                    'events': events,
+                    'ad_operation_types': ad_type_options
+                }, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
     def _normalize_sales_order_links(self, links):
         items = []
         if not isinstance(links, list):
