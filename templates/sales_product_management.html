@@ -235,6 +235,91 @@
             border-color: #5e5751 !important;
             color: #fff !important;
         }
+        .inline-btn-row {
+            display: flex;
+            gap: 0.45rem;
+            flex-wrap: wrap;
+        }
+        .main-images-manager {
+            border: 2px solid var(--morandi-sand);
+            border-radius: 8px;
+            padding: 0.65rem;
+            background: #fff;
+            display: grid;
+            gap: 0.55rem;
+        }
+        .main-images-toolbar {
+            display: flex;
+            gap: 0.45rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .main-images-folder-tip {
+            color: var(--morandi-slate);
+            font-size: 0.86rem;
+        }
+        .main-images-grid {
+            min-height: 160px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 0.7rem;
+        }
+        .main-images-empty {
+            grid-column: 1 / -1;
+            text-align: center;
+            color: var(--morandi-slate);
+            padding: 1.2rem 0.6rem;
+        }
+        .main-image-card {
+            position: relative;
+            border: 2px solid var(--morandi-sand);
+            border-radius: 10px;
+            overflow: hidden;
+            background: #fff;
+            cursor: pointer;
+        }
+        .main-image-card img {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            object-fit: contain;
+            background: #fff;
+            display: block;
+        }
+        .main-image-info {
+            padding: 0.35rem 0.45rem;
+            display: grid;
+            gap: 0.2rem;
+        }
+        .main-image-name {
+            color: var(--morandi-slate);
+            font-size: 0.72rem;
+            word-break: break-all;
+        }
+        .main-image-desc {
+            color: var(--morandi-ink);
+            font-size: 0.8rem;
+            min-height: 1.2rem;
+            line-height: 1.4;
+        }
+        .main-image-remove {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            background: #8b2c2c;
+            color: #fff;
+            font-size: 1.05rem;
+            font-weight: 700;
+            line-height: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .main-image-remove:hover { background: #6b1f1f; }
     </style>
 </head>
 <body>
@@ -287,6 +372,52 @@
                 </table>
             </div>
         </section>
+
+        <section class="pm-layout" style="margin-top: 1.2rem;">
+            <div class="card pm-card">
+                <div class="pm-toolbar">
+                    <div class="pm-toolbar-actions">
+                        <div class="form-group pm-search" style="margin: 0;">
+                            <span class="pm-search-title">产品表现</span>
+                            <input type="text" id="performanceSearchInput" placeholder="搜索销售平台SKU">
+                            <button class="btn-primary" onclick="loadSalesProductPerformanceList()">搜索</button>
+                            <button class="btn-secondary" onclick="resetPerformanceSearch()">清空</button>
+                        </div>
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-secondary" onclick="downloadSalesProductPerformanceTemplate()">下载模板</button>
+                        <button class="btn-secondary" onclick="triggerSalesProductPerformanceUpload()">批量上传</button>
+                        <input type="file" id="salesProductPerformanceUploadInput" accept=".xlsx" style="display:none;">
+                        <button class="btn-accent" onclick="openCreatePerformanceModal()">新增记录</button>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <table class="pm-table" id="salesProductPerformanceTable">
+                    <thead>
+                        <tr>
+                            <th>日期</th>
+                            <th>销售平台SKU</th>
+                            <th>销量</th>
+                            <th>净销售额</th>
+                            <th>订单量</th>
+                            <th>Session-Total</th>
+                            <th>广告展示</th>
+                            <th>广告点击</th>
+                            <th>广告订单量</th>
+                            <th>广告花费</th>
+                            <th>广告销售额</th>
+                            <th>退款金额</th>
+                            <th>小类排名</th>
+                            <th style="width:160px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="14" style="text-align:center;">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
     </div>
 
     <div class="pm-modal" id="pm-modal">
@@ -304,7 +435,7 @@
                             <select id="modalParentShop" class="required-field"></select>
                         </div>
                         <div class="form-group">
-                            <label for="modalParentCode" class="label-help">父体编号（可选）<span class="help-dot" data-tip="支持搜索和选择，留空则不关联父体">?</span></label>
+                            <label for="modalParentCode" class="label-help">父体编号（可选）<span class="help-dot" data-tip="支持搜索和选择，留空则不关联父体"></span></label>
                             <input type="text" id="modalParentCode" class="optional-field" list="parentCodeSuggestions" placeholder="可手动输入新编号或选已有父体">
                             <datalist id="parentCodeSuggestions"></datalist>
                         </div>
@@ -333,15 +464,15 @@
                             <input type="text" id="modalPlatformSku" class="required-field" placeholder="不可重复，自动生成，可编辑">
                         </div>
                         <div class="form-group">
-                            <label for="modalChildCode" class="label-help">子体编号<span class="help-dot" data-tip="填写亚马逊产品的子ASIN">?</span></label>
+                            <label for="modalChildCode" class="label-help">子体编号<span class="help-dot" data-tip="填写亚马逊产品的子ASIN"></span></label>
                             <input type="text" id="modalChildCode" class="optional-field">
                         </div>
                         <div class="form-group">
-                            <label for="modalDacheneNo" class="label-help">大健云仓编号<span class="help-dot" data-tip="选填，需先在下单产品管理页面维护子Item Code后再选择关联下单SKU及数量">?</span></label>
+                            <label for="modalDacheneNo" class="label-help">大健云仓编号<span class="help-dot" data-tip="选填，需先在下单产品管理页面维护子Item Code后再选择关联下单SKU及数量"></span></label>
                             <input type="text" id="modalDacheneNo" class="optional-field" placeholder="选填">
                         </div>
                         <div class="form-group">
-                            <label for="modalSkuFamily" class="label-help">货号<span class="help-dot" data-tip="用于关联图片文件夹，可搜索并从下拉建议选择；选中第一个下单SKU时会自动带出">?</span></label>
+                            <label for="modalSkuFamily" class="label-help">货号<span class="help-dot" data-tip="用于关联图片文件夹，可搜索并从下拉建议选择；选中第一个下单SKU时会自动带出"></span></label>
                             <div class="pm-select" id="modalSkuFamilySelect">
                                 <button type="button" class="pm-select-trigger" id="modalSkuFamilyTrigger">请选择货号</button>
                                 <div class="pm-select-panel" id="modalSkuFamilyPanel">
@@ -364,13 +495,36 @@
                             <div class="order-link-box">
                                 <div class="order-link-head"><span>下单SKU</span><span>数量</span><span></span></div>
                                 <div id="orderSkuSelected" class="order-link-selected"></div>
-                                <div style="display: grid; grid-template-columns: 1fr auto; gap: 0.4rem; margin-bottom: 0.4rem;">
-                                    <textarea id="bulkSkuInput" class="optional-field" placeholder="批量导入: 粘贴多个SKU代码（支持逐行、逗号或空格分隔），系统自动计数" style="min-height: 80px; font-family: monospace; font-size: 0.9rem;"></textarea>
-                                    <button type="button" class="btn-secondary" onclick="importBulkSkus()" style="align-self: flex-start;">批量导入</button>
-                                </div>
-                                <div>
-                                    <button type="button" class="btn-secondary" onclick="addOrderSkuRow()">新增下单SKU</button>
+                                <div class="inline-btn-row">
+                                    <button type="button" class="btn-accent" onclick="addOrderSkuRow()">新增下单SKU</button>
+                                    <button type="button" class="btn-secondary" onclick="openBulkSkuImportModal()">批量导入</button>
                                     <button type="button" class="btn-secondary" onclick="clearOrderSkuSelection()">清空</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pm-section pm-form-full">
+                    <h4>主图管理</h4>
+                    <div class="pm-section-body pm-form">
+                        <div class="form-group pm-form-full">
+                            <label>规格-面料主图</label>
+                            <div class="main-images-manager">
+                                <div class="main-images-toolbar">
+                                            <select id="modalMainImageType" class="optional-field" style="max-width: 180px;">
+                                                <option value="图文卖点">图文卖点</option>
+                                                <option value="场景图">场景图</option>
+                                                <option value="白底图">白底图</option>
+                                                <option value="细节图">细节图</option>
+                                            </select>
+                                            <button type="button" class="btn-accent" onclick="triggerMainImageUpload()">新增主图</button>
+                                    <button type="button" class="btn-secondary" onclick="refreshMainImageList()">刷新</button>
+                                    <input type="file" id="modalMainImageUpload" accept="image/*" multiple style="display:none;">
+                                </div>
+                                <div id="mainImageFolderTip" class="main-images-folder-tip">保存后自动绑定到货号/主图/规格-面料 子文件夹。双击图片可编辑卖点描述。</div>
+                                <div id="mainImagesGrid" class="main-images-grid">
+                                    <div class="main-images-empty">新增状态下暂无主图，保存后即可上传和管理</div>
                                 </div>
                             </div>
                         </div>
@@ -385,7 +539,7 @@
                             <input type="number" step="0.01" id="modalSalePrice" class="optional-field">
                         </div>
                         <div class="form-group">
-                            <label for="modalWarehouseCost" class="label-help">产品成本及发货至海外仓成本估算(自动)<span class="help-dot" data-tip="USD，不含仓储费">?</span></label>
+                            <label for="modalWarehouseCost" class="label-help">产品成本及发货至海外仓成本估算(自动)<span class="help-dot" data-tip="USD，不含仓储费"></span></label>
                             <input type="number" step="0.01" id="modalWarehouseCost" class="optional-field" readonly>
                         </div>
                         <div class="form-group">
@@ -438,6 +592,69 @@
             <div id="copyList" class="pm-select-list" style="max-height: 380px;"></div>
             <div class="pm-modal-actions">
                 <button class="btn-secondary" onclick="closeCopyModal()">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="pm-modal" id="bulk-sku-modal">
+        <div class="pm-modal-content" style="max-width: 620px;">
+            <h3 style="margin-top:0;">批量导入下单SKU</h3>
+            <div class="form-group pm-form-full" style="margin-top: 0.55rem;">
+                <textarea id="bulkSkuInput" class="optional-field" placeholder="粘贴多个SKU代码（支持逐行、逗号或空格分隔），系统自动计数" style="min-height: 180px; font-family: monospace; font-size: 0.9rem;"></textarea>
+            </div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" type="button" onclick="closeBulkSkuImportModal()">取消</button>
+                <button class="btn-primary" type="button" onclick="importBulkSkus()">导入</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="pm-modal" id="main-image-desc-modal">
+        <div class="pm-modal-content" style="max-width: 620px;">
+            <h3 style="margin-top:0;">编辑图片卖点描述</h3>
+            <div class="form-group pm-form-full" style="margin-top:0.55rem;">
+                <textarea id="mainImageDescInput" class="optional-field" placeholder="请输入自定义卖点描述" style="min-height: 160px;"></textarea>
+            </div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" type="button" onclick="closeMainImageDescModal()">取消</button>
+                <button class="btn-primary" type="button" onclick="saveMainImageDescription()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="pm-modal" id="performance-modal">
+        <div class="pm-modal-content pm-modal-content--wide">
+            <h3 id="performance-modal-title" style="margin-top:0;">新增产品表现记录</h3>
+            <div class="pm-form">
+                <div class="pm-section pm-form-full">
+                    <div class="pm-section-body pm-form">
+                        <div class="form-group pm-form-full">
+                            <label for="performancePlatformSku">销售平台SKU<span class="required-asterisk">*</span></label>
+                            <input type="text" id="performancePlatformSku" class="required-field" list="performanceSkuSuggestions" placeholder="输入或选择销售平台SKU">
+                            <datalist id="performanceSkuSuggestions"></datalist>
+                        </div>
+                        <div class="form-group">
+                            <label for="performanceRecordDate">日期<span class="required-asterisk">*</span></label>
+                            <input type="date" id="performanceRecordDate" class="required-field">
+                        </div>
+                        <div class="form-group"><label for="performanceSalesQty">销量</label><input type="number" step="1" id="performanceSalesQty" class="optional-field"></div>
+                        <div class="form-group"><label for="performanceNetSales">净销售额(USD)</label><input type="number" step="0.01" id="performanceNetSales" class="optional-field"></div>
+                        <div class="form-group"><label for="performanceOrderQty">订单量</label><input type="number" step="1" id="performanceOrderQty" class="optional-field"></div>
+                        <div class="form-group"><label for="performanceSessionTotal">Session-Total</label><input type="number" step="1" id="performanceSessionTotal" class="optional-field"></div>
+                        <div class="form-group"><label for="performanceAdImpressions">广告展示</label><input type="number" step="1" id="performanceAdImpressions" class="optional-field"></div>
+                        <div class="form-group"><label for="performanceAdClicks">广告点击</label><input type="number" step="1" id="performanceAdClicks" class="optional-field"></div>
+                        <div class="form-group"><label for="performanceAdOrders">广告订单量</label><input type="number" step="1" id="performanceAdOrders" class="optional-field"></div>
+                        <div class="form-group"><label for="performanceAdSpend">广告花费(USD)</label><input type="number" step="0.01" id="performanceAdSpend" class="optional-field"></div>
+                        <div class="form-group"><label for="performanceAdSales">广告销售额(USD)</label><input type="number" step="0.01" id="performanceAdSales" class="optional-field"></div>
+                        <div class="form-group"><label for="performanceRefundAmount">退款金额(USD)</label><input type="number" step="0.01" id="performanceRefundAmount" class="optional-field"></div>
+                        <div class="form-group"><label for="performanceSubCategoryRank">小类排名</label><input type="number" step="1" id="performanceSubCategoryRank" class="optional-field"></div>
+                    </div>
+                </div>
+            </div>
+            <div id="performanceStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closePerformanceModal()">取消</button>
+                <button class="btn-primary" onclick="saveSalesProductPerformanceFromModal()">保存</button>
             </div>
         </div>
     </div>
@@ -495,6 +712,10 @@
         const salesProductDetailCache = {};
         let selectedSalesProductIds = new Set();
         let currentProductStatus = 'enabled';
+        let mainImageItems = [];
+        let currentEditingMainImageName = '';
+        let performanceItems = [];
+        let performanceEditId = null;
 
         function normalizeProductStatus(value) {
             const v = String(value || '').trim().toLowerCase();
@@ -950,6 +1171,16 @@
             renderSelectedOrderSkuRows();
         }
 
+        function openBulkSkuImportModal() {
+            document.getElementById('bulk-sku-modal').classList.add('active');
+            const input = document.getElementById('bulkSkuInput');
+            if (input) input.focus();
+        }
+
+        function closeBulkSkuImportModal() {
+            document.getElementById('bulk-sku-modal').classList.remove('active');
+        }
+
         function clearOrderSkuSelection() {
             selectedOrderSkus = [];
             renderSelectedOrderSkuRows();
@@ -1033,8 +1264,400 @@
 
             // 清空输入框
             document.getElementById('bulkSkuInput').value = '';
+            closeBulkSkuImportModal();
             renderSelectedOrderSkuRows();
             autoComputeFabricSpec();
+        }
+
+        function renderMainImageGrid() {
+            const grid = document.getElementById('mainImagesGrid');
+            const tip = document.getElementById('mainImageFolderTip');
+            if (!grid || !tip) return;
+
+            if (!editId) {
+                tip.textContent = '保存后自动绑定到货号/主图/规格-面料 子文件夹。双击图片可编辑卖点描述。';
+                grid.innerHTML = '<div class="main-images-empty">新增状态下暂无主图，保存后即可上传和管理</div>';
+                return;
+            }
+
+            if (!mainImageItems.length) {
+                grid.innerHTML = '<div class="main-images-empty">当前规格-面料子文件夹暂无图片，可点击“新增主图”上传</div>';
+                return;
+            }
+
+            grid.innerHTML = mainImageItems.map(item => {
+                const rawName = String(item.image_name || '');
+                const safeName = rawName.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const safeDesc = String(item.description || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const encodedName = encodeURIComponent(rawName);
+                return `
+                    <div class="main-image-card" ondblclick="openMainImageDescModal(decodeURIComponent('${encodedName}'))">
+                        <button type="button" class="main-image-remove" onclick="deleteMainImage(decodeURIComponent('${encodedName}')); event.stopPropagation();">×</button>
+                        <img src="/api/image-preview?id=${encodeURIComponent(item.image_b64 || '')}&mode=thumb&w=540&q=72" alt="${safeName}" loading="lazy">
+                        <div class="main-image-info">
+                            <div class="main-image-name">${String(item.image_type_name || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+                            <div class="main-image-desc">${safeDesc || '双击添加卖点描述'}</div>
+                            <div class="main-image-name">${safeName}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function refreshMainImageList() {
+            if (!editId) {
+                renderMainImageGrid();
+                return;
+            }
+            fetch(`/api/sales-product-main-images?sales_product_id=${encodeURIComponent(editId)}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        showModalStatus(data.message || '主图加载失败', true);
+                        return;
+                    }
+                    mainImageItems = Array.isArray(data.items) ? data.items : [];
+                    const folder = data.folder || {};
+                    const tip = document.getElementById('mainImageFolderTip');
+                    if (tip) {
+                        tip.textContent = `当前目录：${folder.sku_family || '-'} / 主图 / ${folder.variant_folder || '-'}`;
+                    }
+                    renderMainImageGrid();
+                })
+                .catch(err => {
+                    showModalStatus('主图加载失败: ' + err, true);
+                });
+        }
+
+        function triggerMainImageUpload() {
+            if (!editId) {
+                showModalStatus('请先保存当前子体，再上传主图', true);
+                return;
+            }
+            const input = document.getElementById('modalMainImageUpload');
+            if (input) input.click();
+        }
+
+        function preflightMainImageUpload(files) {
+            if (!editId || !files || !files.length) return Promise.resolve({ duplicate_count: 0, duplicates: [] });
+            const formData = new FormData();
+            formData.append('sales_product_id', String(editId));
+            formData.append('image_type_name', document.getElementById('modalMainImageType').value || '图文卖点');
+            Array.from(files).forEach(file => formData.append('file', file));
+            return fetch('/api/sales-product-main-images-upload?check_only=1', {
+                method: 'POST',
+                body: formData
+            }).then(r => r.json());
+        }
+
+        function uploadMainImages(files, allowDuplicate = false) {
+            if (!editId || !files || !files.length) return;
+            const formData = new FormData();
+            formData.append('sales_product_id', String(editId));
+            formData.append('image_type_name', document.getElementById('modalMainImageType').value || '图文卖点');
+            Array.from(files).forEach(file => {
+                formData.append('file', file);
+            });
+            const url = allowDuplicate ? '/api/sales-product-main-images-upload?allow_duplicate=1' : '/api/sales-product-main-images-upload';
+            fetch(url, {
+                method: 'POST',
+                body: formData
+            }).then(r => r.json()).then(data => {
+                if (data.status === 'duplicate') {
+                    const names = (data.duplicates || []).map(x => x.filename).join('、');
+                    showUploadDialog({
+                        title: '检测到重复图片',
+                        message: names ? `以下图片已存在：\n${names}\n\n是否复用已有图片继续上传？` : '检测到重复图片，是否复用已有图片继续上传？',
+                        confirmText: '复用并上传',
+                        cancelText: '取消',
+                        onConfirm: function() {
+                            uploadMainImages(files, true);
+                        }
+                    });
+                    return;
+                }
+                if (data.status !== 'success') {
+                    showModalStatus(data.message || '主图上传失败', true);
+                    return;
+                }
+                const uploadedCount = (data.files || []).length;
+                const reusedCount = Number(data.reused_assets || 0);
+                const createdCount = Number(data.created_assets || 0);
+                showModalStatus(`主图上传成功：${uploadedCount} 张（新建 ${createdCount}，复用 ${reusedCount}）`, false);
+                refreshMainImageList();
+            }).catch(err => {
+                showModalStatus('主图上传失败: ' + err, true);
+            });
+        }
+
+        function deleteMainImage(imageName) {
+            if (!editId || !imageName) return;
+            showUploadDialog({
+                title: '删除确认',
+                message: `确认删除图片：${imageName}？`,
+                confirmText: '确认删除',
+                cancelText: '取消',
+                onConfirm: function() {
+                    fetch('/api/sales-product-main-images', {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sales_product_id: editId, image_name: imageName })
+                    }).then(r => r.json()).then(data => {
+                        if (data.status !== 'success') {
+                            showModalStatus(data.message || '删除失败', true);
+                            return;
+                        }
+                        showModalStatus('图片已删除', false);
+                        refreshMainImageList();
+                    }).catch(err => showModalStatus('删除失败: ' + err, true));
+                }
+            });
+        }
+
+        function openMainImageDescModal(imageName) {
+            if (!editId || !imageName) return;
+            currentEditingMainImageName = imageName;
+            const current = (mainImageItems || []).find(x => String(x.image_name || '') === String(imageName));
+            document.getElementById('mainImageDescInput').value = current ? (current.description || '') : '';
+            document.getElementById('main-image-desc-modal').classList.add('active');
+            document.getElementById('mainImageDescInput').focus();
+        }
+
+        function closeMainImageDescModal() {
+            document.getElementById('main-image-desc-modal').classList.remove('active');
+            currentEditingMainImageName = '';
+        }
+
+        function saveMainImageDescription() {
+            if (!editId || !currentEditingMainImageName) return;
+            const description = document.getElementById('mainImageDescInput').value.trim();
+            fetch('/api/sales-product-main-images', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    sales_product_id: editId,
+                    image_name: currentEditingMainImageName,
+                    description
+                })
+            }).then(r => r.json()).then(data => {
+                if (data.status !== 'success') {
+                    showModalStatus(data.message || '保存描述失败', true);
+                    return;
+                }
+                closeMainImageDescModal();
+                refreshMainImageList();
+            }).catch(err => showModalStatus('保存描述失败: ' + err, true));
+        }
+
+        function renderPerformanceSkuSuggestions() {
+            const datalist = document.getElementById('performanceSkuSuggestions');
+            if (!datalist) return;
+            const items = (salesProductItems || []).map(item => String(item.platform_sku || '').trim()).filter(Boolean);
+            const unique = Array.from(new Set(items));
+            datalist.innerHTML = unique.slice(0, 2000).map(sku => `<option value="${sku}"></option>`).join('');
+        }
+
+        function showPerformanceStatus(message, isError) {
+            const el = document.getElementById('performanceStatus');
+            if (!el) return;
+            el.style.display = 'block';
+            el.style.background = isError ? '#ffecec' : '#f0fff0';
+            el.style.color = isError ? '#a33' : '#2f6f2f';
+            el.innerText = message;
+        }
+
+        function resetPerformanceStatus() {
+            const el = document.getElementById('performanceStatus');
+            if (!el) return;
+            el.style.display = 'none';
+            el.innerText = '';
+        }
+
+        function resetPerformanceSearch() {
+            const input = document.getElementById('performanceSearchInput');
+            if (input) input.value = '';
+            loadSalesProductPerformanceList();
+        }
+
+        function renderSalesProductPerformanceTable(items) {
+            const tbody = document.querySelector('#salesProductPerformanceTable tbody');
+            if (!tbody) return;
+            if (!(items || []).length) {
+                tbody.innerHTML = '<tr><td colspan="14" style="text-align:center;">暂无数据</td></tr>';
+                return;
+            }
+            tbody.innerHTML = (items || []).map(item => `
+                <tr>
+                    <td>${item.record_date || ''}</td>
+                    <td>${item.platform_sku || ''}</td>
+                    <td>${item.sales_qty ?? ''}</td>
+                    <td>${item.net_sales_amount ?? ''}</td>
+                    <td>${item.order_qty ?? ''}</td>
+                    <td>${item.session_total ?? ''}</td>
+                    <td>${item.ad_impressions ?? ''}</td>
+                    <td>${item.ad_clicks ?? ''}</td>
+                    <td>${item.ad_orders ?? ''}</td>
+                    <td>${item.ad_spend ?? ''}</td>
+                    <td>${item.ad_sales_amount ?? ''}</td>
+                    <td>${item.refund_amount ?? ''}</td>
+                    <td>${item.sub_category_rank ?? ''}</td>
+                    <td>
+                        <div class="pm-actions">
+                            <button class="btn-secondary" onclick='openEditPerformanceModal(${item.id})'>编辑</button>
+                            <button class="btn-danger" onclick='deleteSalesProductPerformance(${item.id})'>删除</button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function loadSalesProductPerformanceList() {
+            const q = (document.getElementById('performanceSearchInput').value || '').trim();
+            const url = q ? `/api/sales-product-performance?q=${encodeURIComponent(q)}` : '/api/sales-product-performance';
+            fetch(url).then(r => r.json()).then(data => {
+                const tbody = document.querySelector('#salesProductPerformanceTable tbody');
+                if (data.status !== 'success') {
+                    tbody.innerHTML = `<tr><td colspan="14" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                    return;
+                }
+                performanceItems = data.items || [];
+                renderSalesProductPerformanceTable(performanceItems);
+            }).catch(err => {
+                const tbody = document.querySelector('#salesProductPerformanceTable tbody');
+                tbody.innerHTML = `<tr><td colspan="14" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+            });
+        }
+
+        function fillPerformanceModal(item) {
+            document.getElementById('performancePlatformSku').value = item.platform_sku || '';
+            document.getElementById('performanceRecordDate').value = item.record_date || '';
+            document.getElementById('performanceSalesQty').value = item.sales_qty ?? '';
+            document.getElementById('performanceNetSales').value = item.net_sales_amount ?? '';
+            document.getElementById('performanceOrderQty').value = item.order_qty ?? '';
+            document.getElementById('performanceSessionTotal').value = item.session_total ?? '';
+            document.getElementById('performanceAdImpressions').value = item.ad_impressions ?? '';
+            document.getElementById('performanceAdClicks').value = item.ad_clicks ?? '';
+            document.getElementById('performanceAdOrders').value = item.ad_orders ?? '';
+            document.getElementById('performanceAdSpend').value = item.ad_spend ?? '';
+            document.getElementById('performanceAdSales').value = item.ad_sales_amount ?? '';
+            document.getElementById('performanceRefundAmount').value = item.refund_amount ?? '';
+            document.getElementById('performanceSubCategoryRank').value = item.sub_category_rank ?? '';
+        }
+
+        function openCreatePerformanceModal() {
+            performanceEditId = null;
+            document.getElementById('performance-modal-title').innerText = '新增产品表现记录';
+            fillPerformanceModal({});
+            document.getElementById('performanceRecordDate').value = new Date().toISOString().slice(0, 10);
+            resetPerformanceStatus();
+            renderPerformanceSkuSuggestions();
+            document.getElementById('performance-modal').classList.add('active');
+        }
+
+        function openEditPerformanceModal(id) {
+            const item = (performanceItems || []).find(x => String(x.id) === String(id));
+            if (!item) {
+                showTimeoutToast('未找到产品表现记录');
+                return;
+            }
+            performanceEditId = id;
+            document.getElementById('performance-modal-title').innerText = '编辑产品表现记录';
+            fillPerformanceModal(item);
+            resetPerformanceStatus();
+            renderPerformanceSkuSuggestions();
+            document.getElementById('performance-modal').classList.add('active');
+        }
+
+        function closePerformanceModal() {
+            document.getElementById('performance-modal').classList.remove('active');
+            performanceEditId = null;
+        }
+
+        function saveSalesProductPerformanceFromModal() {
+            const payload = {
+                platform_sku: document.getElementById('performancePlatformSku').value.trim(),
+                record_date: document.getElementById('performanceRecordDate').value,
+                sales_qty: document.getElementById('performanceSalesQty').value,
+                net_sales_amount: document.getElementById('performanceNetSales').value,
+                order_qty: document.getElementById('performanceOrderQty').value,
+                session_total: document.getElementById('performanceSessionTotal').value,
+                ad_impressions: document.getElementById('performanceAdImpressions').value,
+                ad_clicks: document.getElementById('performanceAdClicks').value,
+                ad_orders: document.getElementById('performanceAdOrders').value,
+                ad_spend: document.getElementById('performanceAdSpend').value,
+                ad_sales_amount: document.getElementById('performanceAdSales').value,
+                refund_amount: document.getElementById('performanceRefundAmount').value,
+                sub_category_rank: document.getElementById('performanceSubCategoryRank').value
+            };
+            if (!payload.platform_sku || !payload.record_date) {
+                showPerformanceStatus('请填写销售平台SKU和日期', true);
+                return;
+            }
+            if (performanceEditId) payload.id = performanceEditId;
+            fetch('/api/sales-product-performance', {
+                method: performanceEditId ? 'PUT' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(r => r.json()).then(data => {
+                if (data.status !== 'success') {
+                    showPerformanceStatus(data.message || '保存失败', true);
+                    return;
+                }
+                closePerformanceModal();
+                loadSalesProductPerformanceList();
+            }).catch(err => showPerformanceStatus('请求失败: ' + err, true));
+        }
+
+        function deleteSalesProductPerformance(id) {
+            showUploadDialog({
+                title: '删除确认',
+                message: '确认删除该产品表现记录？',
+                confirmText: '确认删除',
+                cancelText: '取消',
+                onConfirm: function() {
+                    fetch('/api/sales-product-performance', {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id })
+                    }).then(r => r.json()).then(data => {
+                        if (data.status !== 'success') {
+                            showTimeoutToast(data.message || '删除失败');
+                            return;
+                        }
+                        loadSalesProductPerformanceList();
+                    }).catch(err => showTimeoutToast('删除失败: ' + err));
+                }
+            });
+        }
+
+        function downloadSalesProductPerformanceTemplate() {
+            window.location.href = '/api/sales-product-performance-template';
+        }
+
+        function triggerSalesProductPerformanceUpload() {
+            const input = document.getElementById('salesProductPerformanceUploadInput');
+            if (input) input.click();
+        }
+
+        function uploadSalesProductPerformanceTemplate(file) {
+            if (!file) return;
+            const formData = new FormData();
+            formData.append('file', file);
+            fetch('/api/sales-product-performance-import', {
+                method: 'POST',
+                body: formData
+            }).then(r => r.json()).then(data => {
+                if (data.status !== 'success') {
+                    showUploadDialog({ title: '导入失败', message: data.message || '导入失败', errors: data.errors || [] });
+                    return;
+                }
+                showUploadDialog({
+                    title: '导入完成',
+                    message: `导入完成：新增 ${data.created || 0} 条，更新 ${data.updated || 0} 条，无变更 ${data.unchanged || 0} 条，失败 ${((data.errors || []).length)} 条`,
+                    errors: data.errors || []
+                });
+                loadSalesProductPerformanceList();
+            }).catch(err => showUploadDialog({ title: '请求失败', message: '请求失败: ' + err }));
         }
 
         function normalizeCodePrefix(value) {
@@ -1147,8 +1770,12 @@
             document.getElementById('modalPackageHeight').value = '';
             document.getElementById('modalNetWeight').value = '';
             document.getElementById('modalGrossWeight').value = '';
+            const mainImageType = document.getElementById('modalMainImageType');
+            if (mainImageType) mainImageType.value = '图文卖点';
             selectedOrderSkus = [];
             renderSelectedOrderSkuRows();
+            mainImageItems = [];
+            renderMainImageGrid();
             updateCostWarning();
             resetModalStatus();
             document.getElementById('pm-modal').classList.add('active');
@@ -1195,6 +1822,7 @@
                 quantity: link.quantity || 1
             }));
             renderSelectedOrderSkuRows();
+            refreshMainImageList();
             updateCostWarning();
             resetModalStatus();
             document.getElementById('pm-modal').classList.add('active');
@@ -1202,7 +1830,11 @@
 
         function closeModal() {
             document.getElementById('pm-modal').classList.remove('active');
+            closeBulkSkuImportModal();
+            closeMainImageDescModal();
             editId = null;
+            mainImageItems = [];
+            currentEditingMainImageName = '';
         }
 
         function saveSalesProductFromModal() {
@@ -1469,6 +2101,7 @@
                 salesProductItems = items;
                 Object.keys(salesProductDetailCache).forEach(k => delete salesProductDetailCache[k]);
                 renderSalesGroupedTable(items);
+                renderPerformanceSkuSuggestions();
             }).catch(err => {
                 const tbody = document.querySelector('#salesProductTable tbody');
                 tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
@@ -1604,6 +2237,7 @@
 
         function initPage() {
             loadSalesProductList();
+            loadSalesProductPerformanceList();
             Promise.all([
                 loadShopOptions(),
                 loadSkuFamilyOptions(),
@@ -1642,10 +2276,48 @@
             }
             this.value = '';
         });
+        document.getElementById('salesProductPerformanceUploadInput').addEventListener('change', function() {
+            const file = this.files && this.files[0];
+            if (file) {
+                uploadSalesProductPerformanceTemplate(file);
+            }
+            this.value = '';
+        });
+        document.getElementById('modalMainImageUpload').addEventListener('change', function() {
+            const files = this.files;
+            if (files && files.length) {
+                preflightMainImageUpload(files).then(data => {
+                    if ((data.duplicate_count || 0) > 0) {
+                        const names = (data.duplicates || []).map(x => x.filename).join('、');
+                        showUploadDialog({
+                            title: '检测到重复图片',
+                            message: names ? `以下图片已存在：\n${names}\n\n是否复用已有图片继续上传？` : '检测到重复图片，是否复用已有图片继续上传？',
+                            confirmText: '复用并上传',
+                            cancelText: '取消',
+                            onConfirm: function() {
+                                uploadMainImages(files, true);
+                            }
+                        });
+                    } else {
+                        uploadMainImages(files, false);
+                    }
+                }).catch(err => showModalStatus('主图预检失败: ' + err, true));
+            }
+            this.value = '';
+        });
         document.getElementById('uploadDialogModal').addEventListener('click', function(e) {
             if (e.target === this) {
                 this.classList.remove('active');
             }
+        });
+        document.getElementById('bulk-sku-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeBulkSkuImportModal();
+        });
+        document.getElementById('main-image-desc-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeMainImageDescModal();
+        });
+        document.getElementById('performance-modal').addEventListener('click', function(e) {
+            if (e.target === this) closePerformanceModal();
         });
 
         function fallbackCopyText(text) {

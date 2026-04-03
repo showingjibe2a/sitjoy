@@ -1,6 +1,10 @@
 ﻿import re
 import io
 import cgi
+import os
+import json
+import base64
+import hashlib
 from datetime import datetime
 from urllib.parse import parse_qs
 
@@ -1413,6 +1417,832 @@ class SalesProductMixin:
         variant_folder = os.path.join(main_folder, self._safe_fsencode(variant_folder_name))
         if not os.path.exists(variant_folder):
             os.makedirs(variant_folder, exist_ok=True)
+
+    def _get_sales_product_image_assets_folder(self):
+        folder = self._join_resources('『销售产品图片』/assets')
+        if not os.path.exists(folder):
+            os.makedirs(folder, exist_ok=True)
+        return folder
+
+    def _sha256_hex(self, data_bytes):
+        return hashlib.sha256(data_bytes or b'').hexdigest()
+
+    def _guess_image_ext(self, filename, content):
+        ext = os.path.splitext(os.path.basename(filename or ''))[1].lower()
+        if ext in ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tif', '.tiff'):
+            return ext
+        if content.startswith(b'\xff\xd8\xff'):
+            return '.jpg'
+        if content.startswith(b'\x89PNG'):
+            return '.png'
+        if content.startswith(b'GIF8'):
+            return '.gif'
+        if content.startswith(b'RIFF') and b'WEBP' in content[:16]:
+            return '.webp'
+        return '.jpg'
+
+    def _get_image_type_id_by_name(self, conn, type_name):
+        name = (type_name or '').strip()
+        if not name:
+            name = '图文卖点'
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM image_types WHERE name=%s AND is_enabled=1 LIMIT 1", (name,))
+            row = cur.fetchone() or {}
+        return self._parse_int(row.get('id'))
+
+    def _get_sales_product_image_sort_start(self, conn, sales_product_id):
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COALESCE(MAX(sort_order), 0) AS max_sort FROM sku_image_mappings WHERE sales_product_id=%s",
+                (sales_product_id,)
+            )
+            row = cur.fetchone() or {}
+        return max(0, self._parse_int(row.get('max_sort')) or 0)
+
+    def _find_image_asset_by_sha256(self, conn, sha256):
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM image_assets WHERE sha256=%s LIMIT 1",
+                (sha256,)
+            )
+            return cur.fetchone() or None
+
+    def _save_image_asset_file(self, storage_path, content):
+        abs_path = self._join_resources(storage_path)
+        folder = os.path.dirname(abs_path)
+        if not os.path.exists(folder):
+            os.makedirs(folder, exist_ok=True)
+        with open(abs_path, 'wb') as f:
+            f.write(content or b'')
+        return abs_path
+
+    def _read_sales_product_image_items(self, conn, sales_product_id):
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT sim.id AS mapping_id, sim.sort_order, sim.image_type_id,
+                       ia.id AS image_asset_id, ia.sha256, ia.storage_path, ia.original_filename,
+                       ia.file_ext, ia.mime_type, ia.file_size, ia.description,
+                       it.name AS image_type_name
+                FROM sku_image_mappings sim
+                JOIN image_assets ia ON ia.id = sim.image_asset_id
+                JOIN image_types it ON it.id = sim.image_type_id
+                WHERE sim.sales_product_id=%s
+                ORDER BY sim.sort_order ASC, sim.id ASC
+                """,
+                (sales_product_id,)
+            )
+            rows = cur.fetchall() or []
+        items = []
+        for row in rows:
+            storage_path = (row.get('storage_path') or '').strip()
+            image_name = (row.get('original_filename') or '').strip() or os.path.basename(storage_path)
+            rel_bytes = os.fsencode(storage_path) if isinstance(storage_path, str) else storage_path
+            image_b64 = base64.b64encode(rel_bytes).decode('ascii') if rel_bytes else ''
+            items.append({
+                'mapping_id': row.get('mapping_id'),
+                'image_asset_id': row.get('image_asset_id'),
+                'image_name': image_name,
+                'image_b64': image_b64,
+                'description': row.get('description') or '',
+                'image_type_id': row.get('image_type_id'),
+                'image_type_name': row.get('image_type_name') or '',
+                'sort_order': row.get('sort_order') or 0,
+                'sha256': row.get('sha256') or '',
+                'file_size': row.get('file_size') or 0,
+            })
+        return items
+
+    def _resolve_sales_product_variant_folder(self, sales_product_id, ensure_folder=False):
+        if not sales_product_id:
+            raise RuntimeError('Missing sales_product_id')
+        with self._get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT sp.id, sp.spec_name, sp.fabric, pf.sku_family
+                    FROM sales_products sp
+                    LEFT JOIN product_families pf ON pf.id = sp.sku_family_id
+                    WHERE sp.id=%s
+                    """,
+                    (sales_product_id,)
+                )
+                row = cur.fetchone() or {}
+
+        if not row.get('id'):
+            raise RuntimeError('销售产品不存在')
+
+        sku_name = (row.get('sku_family') or '').strip()
+        spec_part = (row.get('spec_name') or '').strip().replace('/', '-').replace('\\', '-')
+        fabric_part = self._code_before_dash(row.get('fabric')).replace('/', '-').replace('\\', '-')
+        if not (sku_name and spec_part and fabric_part):
+            raise RuntimeError('当前销售产品缺少货号/规格/面料，无法定位主图文件夹')
+
+        if ensure_folder:
+            self._ensure_listing_sales_variant_folder(sku_name, spec_part, fabric_part)
+        base_folder = self._ensure_listing_folder()
+        variant_folder_name = f"{spec_part}-{fabric_part}"
+        folder_path = os.path.join(
+            base_folder,
+            self._safe_fsencode(sku_name),
+            self._safe_fsencode('主图'),
+            self._safe_fsencode(variant_folder_name)
+        )
+        return {
+            'sales_product_id': int(row.get('id')),
+            'sku_family': sku_name,
+            'spec_name': spec_part,
+            'fabric_code': fabric_part,
+            'variant_folder': variant_folder_name,
+            'folder_path': folder_path,
+        }
+
+    def handle_sales_product_main_images_api(self, environ, method, start_response):
+        try:
+            if method == 'GET':
+                query_params = parse_qs(environ.get('QUERY_STRING', ''))
+                sales_product_id = self._parse_int(query_params.get('sales_product_id', [''])[0] or query_params.get('id', [''])[0])
+                if not sales_product_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing sales_product_id'}, start_response)
+
+                with self._get_db_connection() as conn:
+                    items = self._read_sales_product_image_items(conn, sales_product_id)
+                    folder_info = self._resolve_sales_product_variant_folder(sales_product_id, ensure_folder=True)
+
+                return self.send_json({
+                    'status': 'success',
+                    'items': items,
+                    'folder': {
+                        'sku_family': folder_info.get('sku_family') or '',
+                        'variant_folder': folder_info.get('variant_folder') or ''
+                    }
+                }, start_response)
+
+            if method == 'PUT':
+                data = self._read_json_body(environ)
+                sales_product_id = self._parse_int(data.get('sales_product_id'))
+                image_name = str(data.get('image_name') or '').strip()
+                description = str(data.get('description') or '').strip()
+                image_type_name = str(data.get('image_type_name') or '').strip()
+                sort_order = self._parse_int(data.get('sort_order'))
+                if not sales_product_id or not image_name:
+                    return self.send_json({'status': 'error', 'message': 'Missing sales_product_id or image_name'}, start_response)
+
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT sim.id, sim.image_asset_id, sim.sort_order, ia.storage_path, ia.original_filename
+                            FROM sku_image_mappings sim
+                            JOIN image_assets ia ON ia.id = sim.image_asset_id
+                            WHERE sim.sales_product_id=%s AND (ia.original_filename=%s OR ia.storage_path=%s OR ia.storage_path LIKE %s)
+                            ORDER BY sim.sort_order ASC, sim.id ASC
+                            LIMIT 1
+                            """,
+                            (sales_product_id, image_name, image_name, f'%/{image_name}')
+                        )
+                        mapping = cur.fetchone() or {}
+                        if not mapping.get('id'):
+                            return self.send_json({'status': 'error', 'message': '图片不存在'}, start_response)
+
+                        updates = []
+                        params = []
+                        if description is not None:
+                            updates.append('description=%s')
+                            params.append(description)
+                        if image_type_name:
+                            image_type_id = self._get_image_type_id_by_name(conn, image_type_name)
+                            if image_type_id:
+                                updates.append('image_type_id=%s')
+                                params.append(image_type_id)
+                        if sort_order is not None:
+                            updates.append('sort_order=%s')
+                            params.append(max(1, sort_order))
+
+                        if updates:
+                            if description != '':
+                                cur.execute(
+                                    f"UPDATE image_assets SET description=%s WHERE id=%s",
+                                    (description, mapping.get('image_asset_id'))
+                                )
+                            if len(updates) > 1 or (updates and updates[0] != 'description=%s'):
+                                cur.execute(
+                                    f"UPDATE sku_image_mappings SET {', '.join(updates)} WHERE id=%s",
+                                    tuple(params + [mapping.get('id')])
+                                )
+                return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'DELETE':
+                data = self._read_json_body(environ)
+                sales_product_id = self._parse_int(data.get('sales_product_id'))
+                image_name = str(data.get('image_name') or '').strip()
+                if not sales_product_id or not image_name:
+                    return self.send_json({'status': 'error', 'message': 'Missing sales_product_id or image_name'}, start_response)
+
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT sim.id, sim.image_asset_id, ia.storage_path
+                            FROM sku_image_mappings sim
+                            JOIN image_assets ia ON ia.id = sim.image_asset_id
+                            WHERE sim.sales_product_id=%s AND (ia.original_filename=%s OR ia.storage_path=%s OR ia.storage_path LIKE %s)
+                            ORDER BY sim.sort_order ASC, sim.id ASC
+                            LIMIT 1
+                            """,
+                            (sales_product_id, image_name, image_name, f'%/{image_name}')
+                        )
+                        mapping = cur.fetchone() or {}
+                        if not mapping.get('id'):
+                            return self.send_json({'status': 'error', 'message': '图片文件不存在'}, start_response)
+                        image_asset_id = mapping.get('image_asset_id')
+                        cur.execute("DELETE FROM sku_image_mappings WHERE id=%s", (mapping.get('id'),))
+                        cur.execute("SELECT COUNT(*) AS cnt FROM sku_image_mappings WHERE image_asset_id=%s", (image_asset_id,))
+                        remain = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
+                        if remain <= 0:
+                            cur.execute("SELECT storage_path FROM image_assets WHERE id=%s", (image_asset_id,))
+                            asset_row = cur.fetchone() or {}
+                            storage_path = (asset_row.get('storage_path') or '').strip()
+                            if storage_path:
+                                try:
+                                    abs_path = self._join_resources(storage_path)
+                                    if os.path.exists(abs_path):
+                                        os.remove(abs_path)
+                                except Exception:
+                                    pass
+                            cur.execute("DELETE FROM image_assets WHERE id=%s", (image_asset_id,))
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except RuntimeError as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_sales_product_main_images_upload_api(self, environ, start_response):
+        try:
+            if environ['REQUEST_METHOD'] != 'POST':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+
+            content_type = environ.get('CONTENT_TYPE', '')
+            if 'multipart/form-data' not in content_type:
+                return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
+
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            check_only = str((query_params.get('check_only', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
+            allow_duplicate = str((query_params.get('allow_duplicate', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
+
+            content_length = int(environ.get('CONTENT_LENGTH', 0) or 0)
+            raw_body = environ['wsgi.input'].read(content_length) if content_length > 0 else b''
+            env_copy = dict(environ)
+            env_copy['CONTENT_LENGTH'] = str(len(raw_body))
+            form = cgi.FieldStorage(fp=io.BytesIO(raw_body), environ=env_copy, keep_blank_values=True)
+
+            sales_product_id = self._parse_int((form.getfirst('sales_product_id', '') or '').strip())
+            if not sales_product_id:
+                return self.send_json({'status': 'error', 'message': 'Missing sales_product_id'}, start_response)
+
+            image_type_name = (form.getfirst('image_type_name', '') or '').strip() or '图文卖点'
+
+            uploads = []
+            for p in getattr(form, 'list', []) or []:
+                if getattr(p, 'filename', None):
+                    try:
+                        content = p.file.read() or b''
+                    except Exception:
+                        content = b''
+                    uploads.append({'filename': p.filename, 'content': content})
+            if not uploads:
+                return self.send_json({'status': 'error', 'message': 'No valid images uploaded'}, start_response)
+
+            with self._get_db_connection() as conn:
+                image_type_id = self._get_image_type_id_by_name(conn, image_type_name)
+                if not image_type_id:
+                    return self.send_json({'status': 'error', 'message': f'未知图片类型: {image_type_name}'}, start_response)
+
+                duplicates = []
+                normalized = []
+                for item in uploads:
+                    filename = os.path.basename(item.get('filename') or '')
+                    content = item.get('content') or b''
+                    if not filename or not content or not self._is_image_name(filename):
+                        continue
+                    sha256 = self._sha256_hex(content)
+                    asset = self._find_image_asset_by_sha256(conn, sha256)
+                    normalized.append({
+                        'filename': filename,
+                        'content': content,
+                        'sha256': sha256,
+                        'asset': asset,
+                    })
+                    if asset:
+                        duplicates.append({
+                            'filename': filename,
+                            'sha256': sha256,
+                            'image_asset_id': asset.get('id'),
+                            'storage_path': asset.get('storage_path') or '',
+                            'description': asset.get('description') or ''
+                        })
+
+                if check_only:
+                    return self.send_json({
+                        'status': 'success',
+                        'duplicate_count': len(duplicates),
+                        'duplicates': duplicates,
+                        'file_count': len(normalized)
+                    }, start_response)
+
+                if duplicates and not allow_duplicate:
+                    return self.send_json({
+                        'status': 'duplicate',
+                        'message': '检测到重复图片，请确认是否复用已有图片',
+                        'duplicate_count': len(duplicates),
+                        'duplicates': duplicates,
+                        'file_count': len(normalized)
+                    }, start_response)
+
+                start_sort = self._get_sales_product_image_sort_start(conn, sales_product_id)
+                created_assets = 0
+                reused_assets = 0
+                linked = 0
+                results = []
+                asset_folder = self._get_sales_product_image_assets_folder()
+
+                for idx, item in enumerate(normalized, start=1):
+                    filename = item['filename']
+                    content = item['content']
+                    sha256 = item['sha256']
+                    asset = item['asset']
+                    ext = self._guess_image_ext(filename, content)
+                    if asset:
+                        asset_id = asset.get('id')
+                        reused_assets += 1
+                    else:
+                        storage_name = f'{sha256}{ext}'
+                        storage_path = os.path.join('『销售产品图片』', 'assets', storage_name).replace('\\', '/')
+                        abs_path = self._join_resources(storage_path)
+                        if not os.path.exists(abs_path):
+                            self._save_image_asset_file(storage_path, content)
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                """
+                                INSERT INTO image_assets
+                                (sha256, storage_path, original_filename, file_ext, mime_type, file_size, description)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                """,
+                                (
+                                    sha256,
+                                    storage_path,
+                                    filename,
+                                    ext,
+                                    'image/*',
+                                    len(content),
+                                    ''
+                                )
+                            )
+                            asset_id = cur.lastrowid
+                        created_assets += 1
+
+                    sort_order = start_sort + idx
+                    try:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                """
+                                INSERT INTO sku_image_mappings
+                                (sales_product_id, image_asset_id, image_type_id, sort_order)
+                                VALUES (%s, %s, %s, %s)
+                                ON DUPLICATE KEY UPDATE image_type_id=VALUES(image_type_id), sort_order=VALUES(sort_order)
+                                """,
+                                (sales_product_id, asset_id, image_type_id, sort_order)
+                            )
+                            linked += 1
+                    except Exception:
+                        pass
+                    results.append({
+                        'filename': filename,
+                        'sha256': sha256,
+                        'image_asset_id': asset_id,
+                        'sort_order': sort_order,
+                    })
+
+                return self.send_json({
+                    'status': 'success',
+                    'files': [x['filename'] for x in results],
+                    'created_assets': created_assets,
+                    'reused_assets': reused_assets,
+                    'linked': linked,
+                    'duplicates': duplicates
+                }, start_response)
+        except RuntimeError as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_sales_product_performance_api(self, environ, method, start_response):
+        try:
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+
+            def _resolve_sales_product_id(conn, value):
+                item_id = self._parse_int(value)
+                if item_id:
+                    return item_id
+                sku = str(value or '').strip()
+                if not sku:
+                    return None
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id FROM sales_products WHERE platform_sku=%s LIMIT 1", (sku,))
+                    row = cur.fetchone() or {}
+                return self._parse_int(row.get('id'))
+
+            def _normalize_date_text(value):
+                if value is None:
+                    return ''
+                if isinstance(value, datetime):
+                    return value.strftime('%Y-%m-%d')
+                text = str(value).strip()
+                if not text:
+                    return ''
+                for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%Y-%m-%d %H:%M:%S', '%Y/%m/%d %H:%M:%S'):
+                    try:
+                        return datetime.strptime(text, fmt).strftime('%Y-%m-%d')
+                    except Exception:
+                        continue
+                return text[:10]
+
+            if method == 'GET':
+                keyword = (query_params.get('q', [''])[0] or '').strip()
+                item_id = self._parse_int((query_params.get('id', [''])[0] or '').strip())
+                limit = min(1000, max(1, self._parse_int((query_params.get('limit', ['500'])[0] or '500')) or 500))
+                sql = """
+                    SELECT spp.*, sp.platform_sku, sp.sku_family_id, pf.sku_family
+                    FROM sales_product_performances spp
+                    JOIN sales_products sp ON sp.id = spp.sales_product_id
+                    LEFT JOIN product_families pf ON pf.id = sp.sku_family_id
+                """
+                params = []
+                filters = []
+                if item_id:
+                    filters.append('spp.id=%s')
+                    params.append(item_id)
+                if keyword:
+                    like_kw = f'%{keyword}%'
+                    filters.append('(sp.platform_sku LIKE %s OR pf.sku_family LIKE %s)')
+                    params.extend([like_kw, like_kw])
+                if filters:
+                    sql += ' WHERE ' + ' AND '.join(filters)
+                sql += ' ORDER BY spp.record_date DESC, spp.id DESC LIMIT %s'
+                params.append(limit)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(sql, params)
+                        rows = cur.fetchall() or []
+                if item_id:
+                    return self.send_json({'status': 'success', 'item': rows[0] if rows else None}, start_response)
+                return self.send_json({'status': 'success', 'items': rows}, start_response)
+
+            if method in ('POST', 'PUT'):
+                data = self._read_json_body(environ)
+                performance_id = self._parse_int(data.get('id'))
+                sales_product_ref = data.get('sales_product_id') or data.get('platform_sku')
+                record_date = _normalize_date_text(data.get('record_date'))
+                if not record_date:
+                    return self.send_json({'status': 'error', 'message': 'Missing record_date'}, start_response)
+
+                with self._get_db_connection() as conn:
+                    sales_product_id = _resolve_sales_product_id(conn, sales_product_ref)
+                    if not sales_product_id:
+                        return self.send_json({'status': 'error', 'message': '无法根据销售平台SKU找到销售产品'}, start_response)
+
+                    values = {
+                        'sales_qty': self._parse_int(data.get('sales_qty')) or 0,
+                        'net_sales_amount': self._parse_float(data.get('net_sales_amount')) or 0,
+                        'order_qty': self._parse_int(data.get('order_qty')) or 0,
+                        'session_total': self._parse_int(data.get('session_total')) or 0,
+                        'ad_impressions': self._parse_int(data.get('ad_impressions')) or 0,
+                        'ad_clicks': self._parse_int(data.get('ad_clicks')) or 0,
+                        'ad_orders': self._parse_int(data.get('ad_orders')) or 0,
+                        'ad_spend': self._parse_float(data.get('ad_spend')) or 0,
+                        'ad_sales_amount': self._parse_float(data.get('ad_sales_amount')) or 0,
+                        'refund_amount': self._parse_float(data.get('refund_amount')) or 0,
+                        'sub_category_rank': self._parse_int(data.get('sub_category_rank')),
+                    }
+
+                    if performance_id and method == 'PUT':
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                """
+                                UPDATE sales_product_performances
+                                SET sales_product_id=%s, record_date=%s, sales_qty=%s, net_sales_amount=%s,
+                                    order_qty=%s, session_total=%s, ad_impressions=%s, ad_clicks=%s,
+                                    ad_orders=%s, ad_spend=%s, ad_sales_amount=%s, refund_amount=%s,
+                                    sub_category_rank=%s
+                                WHERE id=%s
+                                """,
+                                (
+                                    sales_product_id, record_date, values['sales_qty'], values['net_sales_amount'],
+                                    values['order_qty'], values['session_total'], values['ad_impressions'], values['ad_clicks'],
+                                    values['ad_orders'], values['ad_spend'], values['ad_sales_amount'], values['refund_amount'],
+                                    values['sub_category_rank'], performance_id
+                                )
+                            )
+                        return self.send_json({'status': 'success', 'id': performance_id}, start_response)
+
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            INSERT INTO sales_product_performances
+                            (sales_product_id, record_date, sales_qty, net_sales_amount, order_qty, session_total,
+                             ad_impressions, ad_clicks, ad_orders, ad_spend, ad_sales_amount, refund_amount, sub_category_rank)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ON DUPLICATE KEY UPDATE
+                                sales_qty=VALUES(sales_qty),
+                                net_sales_amount=VALUES(net_sales_amount),
+                                order_qty=VALUES(order_qty),
+                                session_total=VALUES(session_total),
+                                ad_impressions=VALUES(ad_impressions),
+                                ad_clicks=VALUES(ad_clicks),
+                                ad_orders=VALUES(ad_orders),
+                                ad_spend=VALUES(ad_spend),
+                                ad_sales_amount=VALUES(ad_sales_amount),
+                                refund_amount=VALUES(refund_amount),
+                                sub_category_rank=VALUES(sub_category_rank)
+                            """,
+                            (
+                                sales_product_id, record_date, values['sales_qty'], values['net_sales_amount'],
+                                values['order_qty'], values['session_total'], values['ad_impressions'], values['ad_clicks'],
+                                values['ad_orders'], values['ad_spend'], values['ad_sales_amount'], values['refund_amount'],
+                                values['sub_category_rank']
+                            )
+                        )
+                        return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'DELETE':
+                data = self._read_json_body(environ)
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM sales_product_performances WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_sales_product_performance_template_api(self, environ, method, start_response):
+        try:
+            if method != 'GET':
+                return self.send_error(405, 'Method not allowed', start_response)
+            if Workbook is None:
+                return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
+
+            from openpyxl.styles import PatternFill, Font, Alignment
+            from openpyxl.worksheet.datavalidation import DataValidation
+            from openpyxl.utils import get_column_letter
+
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT platform_sku FROM sales_products ORDER BY platform_sku")
+                    sku_rows = cur.fetchall() or []
+            sku_values = [str(row.get('platform_sku') or '').strip() for row in sku_rows if str(row.get('platform_sku') or '').strip()]
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = 'sales_product_performance'
+
+            headers = [
+                '销售平台SKU*', '日期*', '销量*', '净销售额(USD)*', '订单量*', 'Session-Total*',
+                '(广告)展示*', '(广告)点击*', '(广告)订单量*', '(广告)花费(USD)*', '(广告)销售额(USD)*',
+                '退款金额(USD)*', '小类排名*'
+            ]
+            ws.append(headers)
+            ws.append([
+                sku_values[0] if sku_values else '',
+                datetime.now().strftime('%Y-%m-%d'),
+                12,
+                999.99,
+                10,
+                480,
+                2500,
+                88,
+                6,
+                120.50,
+                899.90,
+                0.00,
+                1234
+            ])
+
+            for cell in ws[1]:
+                cell.fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
+                cell.font = Font(bold=True, color='2A2420')
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            for cell in ws[2]:
+                cell.fill = PatternFill(start_color='E8E8E8', end_color='E8E8E8', fill_type='solid')
+                cell.font = Font(italic=True, color='888888')
+
+            widths = [24, 14, 10, 14, 10, 12, 12, 12, 12, 14, 14, 12, 12]
+            for idx, width in enumerate(widths, start=1):
+                ws.column_dimensions[get_column_letter(idx)].width = width
+
+            options_ws = wb.create_sheet('options')
+            options_ws.sheet_state = 'hidden'
+            options_ws.cell(row=1, column=1, value='sales_platform_sku')
+            for idx, sku in enumerate(sku_values, start=2):
+                options_ws.cell(row=idx, column=1, value=sku)
+
+            if sku_values:
+                sku_validation = DataValidation(type='list', formula1=f'=options!$A$2:$A${len(sku_values) + 1}', allow_blank=False)
+                ws.add_data_validation(sku_validation)
+                for row_idx in range(3, 1000):
+                    sku_validation.add(f'A{row_idx}')
+
+            ws.freeze_panes = 'A3'
+            return self._send_excel_workbook(wb, 'sales_product_performance_template.xlsx', start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_sales_product_performance_import_api(self, environ, method, start_response):
+        try:
+            if method != 'POST':
+                return self.send_error(405, 'Method not allowed', start_response)
+            if load_workbook is None:
+                return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
+
+            content_type = environ.get('CONTENT_TYPE', '')
+            if 'multipart/form-data' not in content_type:
+                return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
+
+            content_length = int(environ.get('CONTENT_LENGTH', 0) or 0)
+            raw_body = environ['wsgi.input'].read(content_length) if content_length > 0 else b''
+            env_copy = dict(environ)
+            env_copy['CONTENT_LENGTH'] = str(len(raw_body))
+            form = cgi.FieldStorage(fp=io.BytesIO(raw_body), environ=env_copy, keep_blank_values=True)
+            file_item = form['file'] if 'file' in form else None
+            if file_item is None or getattr(file_item, 'file', None) is None:
+                return self.send_json({'status': 'error', 'message': 'Missing file'}, start_response)
+            file_bytes = file_item.file.read() or b''
+            if not file_bytes:
+                return self.send_json({'status': 'error', 'message': 'Empty file'}, start_response)
+
+            wb = load_workbook(io.BytesIO(file_bytes))
+            ws = wb.active
+            headers = [str(cell.value or '').strip() for cell in ws[1]]
+            header_map = {name: idx for idx, name in enumerate(headers)}
+
+            required = [
+                '销售平台SKU*', '日期*', '销量*', '净销售额(USD)*', '订单量*', 'Session-Total*',
+                '(广告)展示*', '(广告)点击*', '(广告)订单量*', '(广告)花费(USD)*', '(广告)销售额(USD)*',
+                '退款金额(USD)*', '小类排名*'
+            ]
+            for col_name in required:
+                if col_name not in header_map:
+                    return self.send_json({'status': 'error', 'message': f'模板缺少列: {col_name}'}, start_response)
+
+            def get_cell(row, name):
+                idx = header_map.get(name)
+                if idx is None or idx >= len(row):
+                    return None
+                return row[idx].value
+
+            def normalize_date(value):
+                if value is None:
+                    return ''
+                if isinstance(value, datetime):
+                    return value.strftime('%Y-%m-%d')
+                text = str(value).strip()
+                if not text:
+                    return ''
+                for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%Y-%m-%d %H:%M:%S', '%Y/%m/%d %H:%M:%S'):
+                    try:
+                        return datetime.strptime(text, fmt).strftime('%Y-%m-%d')
+                    except Exception:
+                        continue
+                return text[:10]
+
+            def row_signature(payload):
+                return '|'.join([
+                    str(payload.get('sales_qty') or 0),
+                    str(payload.get('net_sales_amount') or 0),
+                    str(payload.get('order_qty') or 0),
+                    str(payload.get('session_total') or 0),
+                    str(payload.get('ad_impressions') or 0),
+                    str(payload.get('ad_clicks') or 0),
+                    str(payload.get('ad_orders') or 0),
+                    str(payload.get('ad_spend') or 0),
+                    str(payload.get('ad_sales_amount') or 0),
+                    str(payload.get('refund_amount') or 0),
+                    str(payload.get('sub_category_rank') or ''),
+                ])
+
+            created = 0
+            updated = 0
+            unchanged = 0
+            errors = []
+
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id, platform_sku FROM sales_products")
+                    sku_map = {str(row.get('platform_sku') or '').strip(): int(row.get('id')) for row in (cur.fetchall() or []) if str(row.get('platform_sku') or '').strip() and row.get('id')}
+
+                    cur.execute("SELECT spp.id, spp.sales_product_id, spp.record_date, spp.sales_qty, spp.net_sales_amount, spp.order_qty, spp.session_total, spp.ad_impressions, spp.ad_clicks, spp.ad_orders, spp.ad_spend, spp.ad_sales_amount, spp.refund_amount, spp.sub_category_rank, sp.platform_sku FROM sales_product_performances spp JOIN sales_products sp ON sp.id=spp.sales_product_id")
+                    existing = {}
+                    for row in (cur.fetchall() or []):
+                        key = (int(row.get('sales_product_id') or 0), str(row.get('record_date') or '').strip())
+                        existing[key] = row
+
+                for row_idx in range(2, ws.max_row + 1):
+                    row = ws[row_idx]
+                    if not any(cell.value is not None and str(cell.value).strip() for cell in row):
+                        continue
+
+                    try:
+                        sku = str(get_cell(row, '销售平台SKU*') or '').strip()
+                        sales_product_id = sku_map.get(sku)
+                        if not sales_product_id:
+                            raise ValueError(f'Unknown platform_sku: {sku}')
+
+                        record_date = normalize_date(get_cell(row, '日期*'))
+                        if not record_date:
+                            raise ValueError('日期格式错误')
+
+                        payload = {
+                            'sales_product_id': sales_product_id,
+                            'record_date': record_date,
+                            'sales_qty': self._parse_int(get_cell(row, '销量*')) or 0,
+                            'net_sales_amount': self._parse_float(get_cell(row, '净销售额(USD)*')) or 0,
+                            'order_qty': self._parse_int(get_cell(row, '订单量*')) or 0,
+                            'session_total': self._parse_int(get_cell(row, 'Session-Total*')) or 0,
+                            'ad_impressions': self._parse_int(get_cell(row, '(广告)展示*')) or 0,
+                            'ad_clicks': self._parse_int(get_cell(row, '(广告)点击*')) or 0,
+                            'ad_orders': self._parse_int(get_cell(row, '(广告)订单量*')) or 0,
+                            'ad_spend': self._parse_float(get_cell(row, '(广告)花费(USD)*')) or 0,
+                            'ad_sales_amount': self._parse_float(get_cell(row, '(广告)销售额(USD)*')) or 0,
+                            'refund_amount': self._parse_float(get_cell(row, '退款金额(USD)*')) or 0,
+                            'sub_category_rank': self._parse_int(get_cell(row, '小类排名*')),
+                        }
+                        signature = row_signature(payload)
+                        existing_row = existing.get((sales_product_id, record_date))
+                        if existing_row:
+                            existing_payload = {
+                                'sales_qty': existing_row.get('sales_qty') or 0,
+                                'net_sales_amount': existing_row.get('net_sales_amount') or 0,
+                                'order_qty': existing_row.get('order_qty') or 0,
+                                'session_total': existing_row.get('session_total') or 0,
+                                'ad_impressions': existing_row.get('ad_impressions') or 0,
+                                'ad_clicks': existing_row.get('ad_clicks') or 0,
+                                'ad_orders': existing_row.get('ad_orders') or 0,
+                                'ad_spend': existing_row.get('ad_spend') or 0,
+                                'ad_sales_amount': existing_row.get('ad_sales_amount') or 0,
+                                'refund_amount': existing_row.get('refund_amount') or 0,
+                                'sub_category_rank': existing_row.get('sub_category_rank') or '',
+                            }
+                            if row_signature(existing_payload) == signature:
+                                unchanged += 1
+                            else:
+                                updated += 1
+                        else:
+                            created += 1
+
+                        cur.execute(
+                            """
+                            INSERT INTO sales_product_performances
+                            (sales_product_id, record_date, sales_qty, net_sales_amount, order_qty, session_total,
+                             ad_impressions, ad_clicks, ad_orders, ad_spend, ad_sales_amount, refund_amount, sub_category_rank)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ON DUPLICATE KEY UPDATE
+                                sales_qty=VALUES(sales_qty),
+                                net_sales_amount=VALUES(net_sales_amount),
+                                order_qty=VALUES(order_qty),
+                                session_total=VALUES(session_total),
+                                ad_impressions=VALUES(ad_impressions),
+                                ad_clicks=VALUES(ad_clicks),
+                                ad_orders=VALUES(ad_orders),
+                                ad_spend=VALUES(ad_spend),
+                                ad_sales_amount=VALUES(ad_sales_amount),
+                                refund_amount=VALUES(refund_amount),
+                                sub_category_rank=VALUES(sub_category_rank)
+                            """,
+                            (
+                                payload['sales_product_id'], payload['record_date'], payload['sales_qty'], payload['net_sales_amount'],
+                                payload['order_qty'], payload['session_total'], payload['ad_impressions'], payload['ad_clicks'],
+                                payload['ad_orders'], payload['ad_spend'], payload['ad_sales_amount'], payload['refund_amount'],
+                                payload['sub_category_rank']
+                            )
+                        )
+                    except Exception as e:
+                        errors.append({'row': row_idx, 'error': str(e)})
+
+            return self.send_json({
+                'status': 'success',
+                'created': created,
+                'updated': updated,
+                'unchanged': unchanged,
+                'errors': errors,
+                'total_rows': created + updated + unchanged + len(errors)
+            }, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def _normalize_sales_order_links(self, links):
         items = []
