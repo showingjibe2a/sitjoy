@@ -373,51 +373,6 @@
             </div>
         </section>
 
-        <section class="pm-layout" style="margin-top: 1.2rem;">
-            <div class="card pm-card">
-                <div class="pm-toolbar">
-                    <div class="pm-toolbar-actions">
-                        <div class="form-group pm-search" style="margin: 0;">
-                            <span class="pm-search-title">产品表现</span>
-                            <input type="text" id="performanceSearchInput" placeholder="搜索销售平台SKU">
-                            <button class="btn-primary" onclick="loadSalesProductPerformanceList()">搜索</button>
-                            <button class="btn-secondary" onclick="resetPerformanceSearch()">清空</button>
-                        </div>
-                        <span class="pm-divider" aria-hidden="true"></span>
-                        <button class="btn-secondary" onclick="downloadSalesProductPerformanceTemplate()">下载模板</button>
-                        <button class="btn-secondary" onclick="triggerSalesProductPerformanceUpload()">批量上传</button>
-                        <input type="file" id="salesProductPerformanceUploadInput" accept=".xlsx" style="display:none;">
-                        <button class="btn-accent" onclick="openCreatePerformanceModal()">新增记录</button>
-                    </div>
-                </div>
-            </div>
-
-            <div>
-                <table class="pm-table" id="salesProductPerformanceTable">
-                    <thead>
-                        <tr>
-                            <th>日期</th>
-                            <th>销售平台SKU</th>
-                            <th>销量</th>
-                            <th>净销售额</th>
-                            <th>订单量</th>
-                            <th>Session-Total</th>
-                            <th>广告展示</th>
-                            <th>广告点击</th>
-                            <th>广告订单量</th>
-                            <th>广告花费</th>
-                            <th>广告销售额</th>
-                            <th>退款金额</th>
-                            <th>小类排名</th>
-                            <th style="width:160px;">操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr><td colspan="14" style="text-align:center;">加载中...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
     </div>
 
     <div class="pm-modal" id="pm-modal">
@@ -622,43 +577,6 @@
         </div>
     </div>
 
-    <div class="pm-modal" id="performance-modal">
-        <div class="pm-modal-content pm-modal-content--wide">
-            <h3 id="performance-modal-title" style="margin-top:0;">新增产品表现记录</h3>
-            <div class="pm-form">
-                <div class="pm-section pm-form-full">
-                    <div class="pm-section-body pm-form">
-                        <div class="form-group pm-form-full">
-                            <label for="performancePlatformSku">销售平台SKU<span class="required-asterisk">*</span></label>
-                            <input type="text" id="performancePlatformSku" class="required-field" list="performanceSkuSuggestions" placeholder="输入或选择销售平台SKU">
-                            <datalist id="performanceSkuSuggestions"></datalist>
-                        </div>
-                        <div class="form-group">
-                            <label for="performanceRecordDate">日期<span class="required-asterisk">*</span></label>
-                            <input type="date" id="performanceRecordDate" class="required-field">
-                        </div>
-                        <div class="form-group"><label for="performanceSalesQty">销量</label><input type="number" step="1" id="performanceSalesQty" class="optional-field"></div>
-                        <div class="form-group"><label for="performanceNetSales">净销售额(USD)</label><input type="number" step="0.01" id="performanceNetSales" class="optional-field"></div>
-                        <div class="form-group"><label for="performanceOrderQty">订单量</label><input type="number" step="1" id="performanceOrderQty" class="optional-field"></div>
-                        <div class="form-group"><label for="performanceSessionTotal">Session-Total</label><input type="number" step="1" id="performanceSessionTotal" class="optional-field"></div>
-                        <div class="form-group"><label for="performanceAdImpressions">广告展示</label><input type="number" step="1" id="performanceAdImpressions" class="optional-field"></div>
-                        <div class="form-group"><label for="performanceAdClicks">广告点击</label><input type="number" step="1" id="performanceAdClicks" class="optional-field"></div>
-                        <div class="form-group"><label for="performanceAdOrders">广告订单量</label><input type="number" step="1" id="performanceAdOrders" class="optional-field"></div>
-                        <div class="form-group"><label for="performanceAdSpend">广告花费(USD)</label><input type="number" step="0.01" id="performanceAdSpend" class="optional-field"></div>
-                        <div class="form-group"><label for="performanceAdSales">广告销售额(USD)</label><input type="number" step="0.01" id="performanceAdSales" class="optional-field"></div>
-                        <div class="form-group"><label for="performanceRefundAmount">退款金额(USD)</label><input type="number" step="0.01" id="performanceRefundAmount" class="optional-field"></div>
-                        <div class="form-group"><label for="performanceSubCategoryRank">小类排名</label><input type="number" step="1" id="performanceSubCategoryRank" class="optional-field"></div>
-                    </div>
-                </div>
-            </div>
-            <div id="performanceStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
-            <div class="pm-modal-actions">
-                <button class="btn-secondary" onclick="closePerformanceModal()">取消</button>
-                <button class="btn-primary" onclick="saveSalesProductPerformanceFromModal()">保存</button>
-            </div>
-        </div>
-    </div>
-
     <footer>
         <p>&copy; 2026 SITJOY | 内部使用</p>
     </footer>
@@ -714,8 +632,6 @@
         let currentProductStatus = 'enabled';
         let mainImageItems = [];
         let currentEditingMainImageName = '';
-        let performanceItems = [];
-        let performanceEditId = null;
 
         function normalizeProductStatus(value) {
             const v = String(value || '').trim().toLowerCase();
@@ -1449,217 +1365,6 @@
             }).catch(err => showModalStatus('保存描述失败: ' + err, true));
         }
 
-        function renderPerformanceSkuSuggestions() {
-            const datalist = document.getElementById('performanceSkuSuggestions');
-            if (!datalist) return;
-            const items = (salesProductItems || []).map(item => String(item.platform_sku || '').trim()).filter(Boolean);
-            const unique = Array.from(new Set(items));
-            datalist.innerHTML = unique.slice(0, 2000).map(sku => `<option value="${sku}"></option>`).join('');
-        }
-
-        function showPerformanceStatus(message, isError) {
-            const el = document.getElementById('performanceStatus');
-            if (!el) return;
-            el.style.display = 'block';
-            el.style.background = isError ? '#ffecec' : '#f0fff0';
-            el.style.color = isError ? '#a33' : '#2f6f2f';
-            el.innerText = message;
-        }
-
-        function resetPerformanceStatus() {
-            const el = document.getElementById('performanceStatus');
-            if (!el) return;
-            el.style.display = 'none';
-            el.innerText = '';
-        }
-
-        function resetPerformanceSearch() {
-            const input = document.getElementById('performanceSearchInput');
-            if (input) input.value = '';
-            loadSalesProductPerformanceList();
-        }
-
-        function renderSalesProductPerformanceTable(items) {
-            const tbody = document.querySelector('#salesProductPerformanceTable tbody');
-            if (!tbody) return;
-            if (!(items || []).length) {
-                tbody.innerHTML = '<tr><td colspan="14" style="text-align:center;">暂无数据</td></tr>';
-                return;
-            }
-            tbody.innerHTML = (items || []).map(item => `
-                <tr>
-                    <td>${item.record_date || ''}</td>
-                    <td>${item.platform_sku || ''}</td>
-                    <td>${item.sales_qty ?? ''}</td>
-                    <td>${item.net_sales_amount ?? ''}</td>
-                    <td>${item.order_qty ?? ''}</td>
-                    <td>${item.session_total ?? ''}</td>
-                    <td>${item.ad_impressions ?? ''}</td>
-                    <td>${item.ad_clicks ?? ''}</td>
-                    <td>${item.ad_orders ?? ''}</td>
-                    <td>${item.ad_spend ?? ''}</td>
-                    <td>${item.ad_sales_amount ?? ''}</td>
-                    <td>${item.refund_amount ?? ''}</td>
-                    <td>${item.sub_category_rank ?? ''}</td>
-                    <td>
-                        <div class="pm-actions">
-                            <button class="btn-secondary" onclick='openEditPerformanceModal(${item.id})'>编辑</button>
-                            <button class="btn-danger" onclick='deleteSalesProductPerformance(${item.id})'>删除</button>
-                        </div>
-                    </td>
-                </tr>
-            `).join('');
-        }
-
-        function loadSalesProductPerformanceList() {
-            const q = (document.getElementById('performanceSearchInput').value || '').trim();
-            const url = q ? `/api/sales-product-performance?q=${encodeURIComponent(q)}` : '/api/sales-product-performance';
-            fetch(url).then(r => r.json()).then(data => {
-                const tbody = document.querySelector('#salesProductPerformanceTable tbody');
-                if (data.status !== 'success') {
-                    tbody.innerHTML = `<tr><td colspan="14" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
-                    return;
-                }
-                performanceItems = data.items || [];
-                renderSalesProductPerformanceTable(performanceItems);
-            }).catch(err => {
-                const tbody = document.querySelector('#salesProductPerformanceTable tbody');
-                tbody.innerHTML = `<tr><td colspan="14" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
-            });
-        }
-
-        function fillPerformanceModal(item) {
-            document.getElementById('performancePlatformSku').value = item.platform_sku || '';
-            document.getElementById('performanceRecordDate').value = item.record_date || '';
-            document.getElementById('performanceSalesQty').value = item.sales_qty ?? '';
-            document.getElementById('performanceNetSales').value = item.net_sales_amount ?? '';
-            document.getElementById('performanceOrderQty').value = item.order_qty ?? '';
-            document.getElementById('performanceSessionTotal').value = item.session_total ?? '';
-            document.getElementById('performanceAdImpressions').value = item.ad_impressions ?? '';
-            document.getElementById('performanceAdClicks').value = item.ad_clicks ?? '';
-            document.getElementById('performanceAdOrders').value = item.ad_orders ?? '';
-            document.getElementById('performanceAdSpend').value = item.ad_spend ?? '';
-            document.getElementById('performanceAdSales').value = item.ad_sales_amount ?? '';
-            document.getElementById('performanceRefundAmount').value = item.refund_amount ?? '';
-            document.getElementById('performanceSubCategoryRank').value = item.sub_category_rank ?? '';
-        }
-
-        function openCreatePerformanceModal() {
-            performanceEditId = null;
-            document.getElementById('performance-modal-title').innerText = '新增产品表现记录';
-            fillPerformanceModal({});
-            document.getElementById('performanceRecordDate').value = new Date().toISOString().slice(0, 10);
-            resetPerformanceStatus();
-            renderPerformanceSkuSuggestions();
-            document.getElementById('performance-modal').classList.add('active');
-        }
-
-        function openEditPerformanceModal(id) {
-            const item = (performanceItems || []).find(x => String(x.id) === String(id));
-            if (!item) {
-                showTimeoutToast('未找到产品表现记录');
-                return;
-            }
-            performanceEditId = id;
-            document.getElementById('performance-modal-title').innerText = '编辑产品表现记录';
-            fillPerformanceModal(item);
-            resetPerformanceStatus();
-            renderPerformanceSkuSuggestions();
-            document.getElementById('performance-modal').classList.add('active');
-        }
-
-        function closePerformanceModal() {
-            document.getElementById('performance-modal').classList.remove('active');
-            performanceEditId = null;
-        }
-
-        function saveSalesProductPerformanceFromModal() {
-            const payload = {
-                platform_sku: document.getElementById('performancePlatformSku').value.trim(),
-                record_date: document.getElementById('performanceRecordDate').value,
-                sales_qty: document.getElementById('performanceSalesQty').value,
-                net_sales_amount: document.getElementById('performanceNetSales').value,
-                order_qty: document.getElementById('performanceOrderQty').value,
-                session_total: document.getElementById('performanceSessionTotal').value,
-                ad_impressions: document.getElementById('performanceAdImpressions').value,
-                ad_clicks: document.getElementById('performanceAdClicks').value,
-                ad_orders: document.getElementById('performanceAdOrders').value,
-                ad_spend: document.getElementById('performanceAdSpend').value,
-                ad_sales_amount: document.getElementById('performanceAdSales').value,
-                refund_amount: document.getElementById('performanceRefundAmount').value,
-                sub_category_rank: document.getElementById('performanceSubCategoryRank').value
-            };
-            if (!payload.platform_sku || !payload.record_date) {
-                showPerformanceStatus('请填写销售平台SKU和日期', true);
-                return;
-            }
-            if (performanceEditId) payload.id = performanceEditId;
-            fetch('/api/sales-product-performance', {
-                method: performanceEditId ? 'PUT' : 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            }).then(r => r.json()).then(data => {
-                if (data.status !== 'success') {
-                    showPerformanceStatus(data.message || '保存失败', true);
-                    return;
-                }
-                closePerformanceModal();
-                loadSalesProductPerformanceList();
-            }).catch(err => showPerformanceStatus('请求失败: ' + err, true));
-        }
-
-        function deleteSalesProductPerformance(id) {
-            showUploadDialog({
-                title: '删除确认',
-                message: '确认删除该产品表现记录？',
-                confirmText: '确认删除',
-                cancelText: '取消',
-                onConfirm: function() {
-                    fetch('/api/sales-product-performance', {
-                        method: 'DELETE',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ id })
-                    }).then(r => r.json()).then(data => {
-                        if (data.status !== 'success') {
-                            showTimeoutToast(data.message || '删除失败');
-                            return;
-                        }
-                        loadSalesProductPerformanceList();
-                    }).catch(err => showTimeoutToast('删除失败: ' + err));
-                }
-            });
-        }
-
-        function downloadSalesProductPerformanceTemplate() {
-            window.location.href = '/api/sales-product-performance-template';
-        }
-
-        function triggerSalesProductPerformanceUpload() {
-            const input = document.getElementById('salesProductPerformanceUploadInput');
-            if (input) input.click();
-        }
-
-        function uploadSalesProductPerformanceTemplate(file) {
-            if (!file) return;
-            const formData = new FormData();
-            formData.append('file', file);
-            fetch('/api/sales-product-performance-import', {
-                method: 'POST',
-                body: formData
-            }).then(r => r.json()).then(data => {
-                if (data.status !== 'success') {
-                    showUploadDialog({ title: '导入失败', message: data.message || '导入失败', errors: data.errors || [] });
-                    return;
-                }
-                showUploadDialog({
-                    title: '导入完成',
-                    message: `导入完成：新增 ${data.created || 0} 条，更新 ${data.updated || 0} 条，无变更 ${data.unchanged || 0} 条，失败 ${((data.errors || []).length)} 条`,
-                    errors: data.errors || []
-                });
-                loadSalesProductPerformanceList();
-            }).catch(err => showUploadDialog({ title: '请求失败', message: '请求失败: ' + err }));
-        }
-
         function normalizeCodePrefix(value) {
             const text = String(value || '').trim();
             if (!text) return '';
@@ -2101,7 +1806,6 @@
                 salesProductItems = items;
                 Object.keys(salesProductDetailCache).forEach(k => delete salesProductDetailCache[k]);
                 renderSalesGroupedTable(items);
-                renderPerformanceSkuSuggestions();
             }).catch(err => {
                 const tbody = document.querySelector('#salesProductTable tbody');
                 tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
@@ -2237,7 +1941,6 @@
 
         function initPage() {
             loadSalesProductList();
-            loadSalesProductPerformanceList();
             Promise.all([
                 loadShopOptions(),
                 loadSkuFamilyOptions(),
@@ -2276,13 +1979,6 @@
             }
             this.value = '';
         });
-        document.getElementById('salesProductPerformanceUploadInput').addEventListener('change', function() {
-            const file = this.files && this.files[0];
-            if (file) {
-                uploadSalesProductPerformanceTemplate(file);
-            }
-            this.value = '';
-        });
         document.getElementById('modalMainImageUpload').addEventListener('change', function() {
             const files = this.files;
             if (files && files.length) {
@@ -2316,10 +2012,6 @@
         document.getElementById('main-image-desc-modal').addEventListener('click', function(e) {
             if (e.target === this) closeMainImageDescModal();
         });
-        document.getElementById('performance-modal').addEventListener('click', function(e) {
-            if (e.target === this) closePerformanceModal();
-        });
-
         function fallbackCopyText(text) {
             const ta = document.createElement('textarea');
             ta.value = text;

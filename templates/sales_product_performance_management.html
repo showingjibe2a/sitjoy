@@ -6,180 +6,691 @@
     <title>销售管理 - 产品表现看板</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
-        .perf-toolbar { display: grid; gap: 0.7rem; }
-        .perf-row { display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap; }
-        .perf-row-title { color: var(--morandi-ink); font-weight: 700; min-width: 64px; }
+        .page-layout.single-column {
+            display: grid;
+            gap: 1rem;
+            min-width: 0;
+            max-width: 100%;
+            overflow-x: hidden;
+        }
+        .sales-perf-card {
+            color: var(--morandi-ink);
+            min-width: 0;
+            overflow: hidden;
+        }
+        .module-header {
+            margin-bottom: 0.8rem;
+        }
+        .module-header h2 {
+            margin: 0;
+            color: var(--morandi-ink);
+            font-size: 1.35rem;
+        }
+        .module-subtitle {
+            margin-top: 0.28rem;
+            color: var(--morandi-slate);
+            font-size: 0.9rem;
+        }
+
+        .perf-toolbar {
+            display: grid;
+            gap: 0.5rem;
+            padding: 0.68rem;
+            border: 1px solid rgba(207, 199, 189, 0.75);
+            background: #f7f4ef;
+            border-radius: 10px;
+        }
+        .perf-toolbar-grid {
+            display: grid;
+            grid-template-columns: 1.45fr 1fr;
+            gap: 0.56rem;
+            align-items: start;
+        }
+        .perf-col {
+            display: grid;
+            gap: 0.52rem;
+            min-width: 0;
+        }
+        .perf-col + .perf-col {
+            border-left: 1px dashed rgba(123, 128, 136, 0.35);
+            padding-left: 0.56rem;
+        }
+        .perf-row {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            flex-wrap: wrap;
+        }
+        .perf-row-tight {
+            gap: 0.32rem;
+        }
+        .perf-row-title {
+            color: var(--morandi-ink);
+            font-weight: 700;
+            min-width: 58px;
+        }
         .perf-row input[type="date"],
-        .perf-row select,
-        .perf-row button {
-            min-height: 40px;
-            box-sizing: border-box;
+        .perf-row button,
+        .perf-row select {
+            min-height: 38px;
             border-radius: 8px;
             border: 1px solid var(--morandi-sand);
             background: #fff;
             color: var(--morandi-ink);
-            padding: 0.45rem 0.68rem;
+            padding: 0.42rem 0.62rem;
         }
-        .perf-row select[multiple] { min-height: 116px; padding: 0.35rem; }
+        .perf-row input[type="date"]:focus,
+        .perf-row select:focus,
+        .check-select-search:focus {
+            outline: none;
+            border-color: var(--morandi-ink);
+            box-shadow: 0 0 0 3px rgba(74, 78, 87, 0.12);
+        }
+        .status-tip {
+            color: var(--morandi-slate);
+            font-size: 0.84rem;
+        }
+        .switch-row {
+            gap: 0.75rem;
+            color: var(--morandi-ink);
+            font-size: 0.9rem;
+        }
+        .switch-row label {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.32rem;
+        }
+        .perf-inline-help {
+            color: var(--morandi-slate);
+            font-size: 0.82rem;
+        }
+
+        .check-select {
+            position: relative;
+            min-width: 145px;
+            width: 180px;
+            max-width: 210px;
+        }
+        .perf-col .check-select {
+            min-width: 130px;
+            width: 160px;
+            max-width: 190px;
+        }
+        .perf-row-tight .check-select {
+            width: 150px;
+            min-width: 120px;
+            max-width: 170px;
+        }
+        .check-select-trigger {
+            width: 100%;
+            text-align: left;
+            min-height: 32px;
+            border-radius: 8px;
+            border: 1px solid var(--morandi-sand);
+            background: #fff;
+            color: var(--morandi-ink);
+            padding: 0.4rem 0.58rem;
+            cursor: pointer;
+        }
+        .check-select-panel {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            right: 0;
+            z-index: 45;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 10px;
+            background: #fff;
+            box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+            padding: 0.5rem;
+            display: none;
+        }
+        .check-select.open .check-select-panel {
+            display: block;
+        }
+        .check-select-actions {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.4rem;
+            gap: 0.35rem;
+        }
+        .check-select-actions button {
+            min-height: 28px;
+            border-radius: 999px;
+            border: 1px solid var(--morandi-sand);
+            background: var(--morandi-mist);
+            color: var(--morandi-ink);
+            padding: 0.18rem 0.5rem;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+        .check-select-search {
+            width: 100%;
+            min-height: 30px;
+            border-radius: 8px;
+            border: 1px solid var(--morandi-sand);
+            background: #fff;
+            padding: 0.35rem 0.55rem;
+            margin-bottom: 0.4rem;
+        }
+        .check-select-list {
+            max-height: 220px;
+            overflow-y: auto;
+            display: grid;
+            gap: 0.25rem;
+        }
+        #selAdTypes .check-select-list {
+            max-height: 120px;
+        }
+        .check-select-item {
+            display: flex;
+            align-items: center;
+            gap: 0.42rem;
+            padding: 0.3rem 0.36rem;
+            border-radius: 7px;
+            cursor: pointer;
+            color: var(--morandi-ink);
+            font-size: 0.88rem;
+        }
+        .check-select-item:hover {
+            background: #f7f4ef;
+        }
+        .check-select-empty {
+            color: var(--morandi-slate);
+            text-align: center;
+            padding: 0.55rem 0.3rem;
+        }
+
+        .perf-metric-order {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.38rem;
+        }
+        .metric-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 999px;
+            padding: 0.22rem 0.44rem;
+            background: #fff;
+            font-size: 0.84rem;
+            color: var(--morandi-ink);
+        }
+        .metric-chip button {
+            min-height: 0;
+            border-radius: 999px;
+            border: 1px solid var(--morandi-sand);
+            background: var(--morandi-mist);
+            color: var(--morandi-ink);
+            padding: 0.08rem 0.32rem;
+            cursor: pointer;
+        }
+
         .perf-panel {
-            border: 1px solid rgba(207, 199, 189, 0.55);
-            border-radius: 12px;
-            background: rgba(236, 231, 223, 0.42);
-            padding: 0.9rem;
-            margin-top: 0.8rem;
+            margin-top: 0.9rem;
+            border: 1px solid rgba(207, 199, 189, 0.75);
+            border-radius: 10px;
+            background: #f7f4ef;
+            padding: 0.82rem;
+            color: var(--morandi-ink);
+            min-width: 0;
+        }
+        .perf-panel-caption {
+            color: var(--morandi-slate);
+            font-size: 0.84rem;
+            font-weight: 600;
+            margin-bottom: 0.45rem;
+        }
+        .perf-panel h3 {
+            margin: 0 0 0.5rem;
+            font-size: 1.06rem;
+            color: var(--morandi-ink);
+        }
+        .perf-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6rem;
+            margin: 0 0 0.45rem;
+            color: var(--morandi-slate);
+            font-size: 0.84rem;
+        }
+        .perf-legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+        .perf-legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
         }
         .perf-chart-wrap {
             width: 100%;
-            min-height: 300px;
-            border-radius: 10px;
+            min-height: 308px;
+            border: 1px solid rgba(207, 199, 189, 0.75);
+            border-radius: 9px;
             background: #fff;
-            border: 1px solid rgba(207, 199, 189, 0.45);
-            padding: 0.55rem;
+            padding: 0.5rem;
             position: relative;
+            overflow: auto;
         }
-        #perfChart { width: 100%; height: 300px; display: block; }
-        .perf-legend { display: flex; flex-wrap: wrap; gap: 0.62rem; font-size: 0.86rem; color: var(--morandi-slate); margin: 0.5rem 0 0.3rem; }
-        .perf-legend-item { display: inline-flex; align-items: center; gap: 0.3rem; }
-        .perf-legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+        #perfChart {
+            width: 100%;
+            height: 300px;
+            display: block;
+        }
         .perf-event-tooltip {
             position: absolute;
-            z-index: 25;
+            z-index: 28;
             min-width: 220px;
-            max-width: 340px;
+            max-width: 360px;
             background: #fff;
             border: 1px solid var(--morandi-sand);
             border-radius: 8px;
             box-shadow: 0 8px 20px rgba(15, 23, 42, 0.14);
-            padding: 0.6rem;
-            font-size: 0.86rem;
+            padding: 0.58rem;
+            font-size: 0.84rem;
             color: var(--morandi-ink);
             display: none;
             pointer-events: none;
-            white-space: normal;
-            line-height: 1.45;
+            line-height: 1.42;
         }
-        .perf-metric-order { display: flex; gap: 0.42rem; flex-wrap: wrap; }
-        .metric-chip {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.28rem;
-            border: 1px solid var(--morandi-sand);
-            border-radius: 999px;
-            padding: 0.26rem 0.45rem;
-            background: #fff;
-            font-size: 0.86rem;
+        .perf-event-click-tip {
+            margin-top: 0.35rem;
+            color: var(--morandi-slate);
+            font-size: 0.82rem;
         }
-        .metric-chip button {
-            min-height: 0;
-            padding: 0.1rem 0.35rem;
-            border-radius: 999px;
-            border: 1px solid var(--morandi-sand);
-            background: #f8f6f3;
-            cursor: pointer;
-            color: var(--morandi-ink);
+        .perf-chart-footer {
+            margin-top: 0.45rem;
+            display: flex;
+            align-items: flex-end;
+            flex-wrap: wrap;
+            gap: 0.55rem;
+            justify-content: flex-start;
         }
+        .perf-chart-footer .check-select {
+            width: 210px;
+            max-width: 240px;
+            min-width: 180px;
+        }
+
         .perf-group details {
-            border: 1px solid rgba(207, 199, 189, 0.7);
-            border-radius: 10px;
+            border: 1px solid rgba(207, 199, 189, 0.76);
+            border-radius: 8px;
             background: #fff;
-            margin-bottom: 0.65rem;
+            margin-bottom: 0.58rem;
             overflow: hidden;
         }
         .perf-group summary {
             list-style: none;
             cursor: pointer;
-            padding: 0.6rem 0.8rem;
+            padding: 0.55rem 0.72rem;
             font-weight: 700;
             color: var(--morandi-ink);
-            background: #f8f6f3;
-            border-bottom: 1px solid rgba(207, 199, 189, 0.45);
+            background: #f9f7f3;
+            border-bottom: 1px solid rgba(207, 199, 189, 0.62);
         }
-        .perf-group summary::-webkit-details-marker { display: none; }
-        .perf-group-content { padding: 0.65rem; }
-        .perf-table { width: 100%; border-collapse: collapse; min-width: 960px; }
-        .perf-table th, .perf-table td { border-bottom: 1px solid var(--morandi-mist); text-align: left; padding: 0.42rem 0.48rem; }
-        .perf-table th { background: #f7f4ef; position: sticky; top: 0; z-index: 1; white-space: nowrap; }
-        .perf-table-wrap { overflow: auto; border: 1px solid var(--morandi-sand); border-radius: 8px; }
-        .switch-row { display: flex; gap: 0.9rem; flex-wrap: wrap; font-size: 0.92rem; color: var(--morandi-ink); }
-        .switch-row label { display: inline-flex; align-items: center; gap: 0.32rem; }
-        .status-tip { font-size: 0.86rem; color: var(--morandi-slate); }
+        .perf-group summary::-webkit-details-marker {
+            display: none;
+        }
+        .perf-group-content {
+            padding: 0.62rem;
+        }
+
+        .perf-table-wrap {
+            overflow: auto;
+            border: 1px solid rgba(207, 199, 189, 0.76);
+            border-radius: 8px;
+            background: #fff;
+            max-width: 100%;
+        }
+        .perf-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 980px;
+            color: var(--morandi-ink);
+            font-size: 0.9rem;
+        }
+        .perf-table th,
+        .perf-table td {
+            padding: 0.42rem 0.5rem;
+            border-bottom: 1px solid rgba(207, 199, 189, 0.55);
+            text-align: left;
+            white-space: nowrap;
+        }
+        .perf-table th {
+            background: #f3efe9;
+            color: var(--morandi-ink);
+            font-weight: 700;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        .perf-table tr.row-focus {
+            background: rgba(123, 154, 176, 0.18);
+        }
+
+        .perf-manage-toolbar {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.52rem;
+            margin-bottom: 0.58rem;
+        }
+        .perf-pagination {
+            margin-top: 0.5rem;
+        }
+        .perf-manage-toolbar input[type="text"] {
+            min-height: 38px;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 8px;
+            background: #fff;
+            color: var(--morandi-ink);
+            min-width: 240px;
+            padding: 0.4rem 0.6rem;
+        }
+        .perf-manage-toolbar select {
+            min-height: 36px;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 8px;
+            background: #fff;
+            color: var(--morandi-ink);
+            padding: 0.3rem 0.48rem;
+        }
+
+        .upload-progress {
+            position: fixed;
+            right: 18px;
+            bottom: 18px;
+            width: 280px;
+            padding: 0.75rem 0.8rem;
+            background: #fff;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 10px;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+            z-index: 60;
+            display: none;
+        }
+        .upload-progress-title {
+            font-size: 0.9rem;
+            color: var(--morandi-ink);
+            margin-bottom: 0.45rem;
+        }
+        .upload-progress-bar {
+            width: 100%;
+            height: 8px;
+            background: var(--morandi-mist);
+            border-radius: 99px;
+            overflow: hidden;
+        }
+        .upload-progress-bar > span {
+            display: block;
+            height: 100%;
+            width: 0%;
+            background: var(--morandi-sand);
+        }
+
+        @media (max-width: 980px) {
+            .module-card {
+                padding: 0.78rem;
+            }
+            .perf-toolbar-grid {
+                grid-template-columns: 1fr;
+            }
+            .perf-col + .perf-col {
+                border-left: none;
+                border-top: 1px dashed rgba(123, 128, 136, 0.35);
+                padding-left: 0;
+                padding-top: 0.6rem;
+            }
+            .perf-toolbar,
+            .perf-panel {
+                padding: 0.68rem;
+            }
+            .check-select {
+                width: 100%;
+                max-width: none;
+            }
+            .perf-col .check-select {
+                width: 100%;
+                max-width: none;
+            }
+            .perf-row-title {
+                min-width: 48px;
+            }
+            .perf-manage-toolbar input[type="text"] {
+                width: 100%;
+                min-width: 0;
+            }
+        }
     </style>
 </head>
 <body>
     <div id="site-header"></div>
     <div class="container">
-        <div class="page-layout single-column">
-            <section class="module-card">
-                <header class="module-header">
-                    <div>
-                        <h2>产品表现看板</h2>
-                        <p class="module-subtitle">默认按货号折叠，支持货号/面料/规格/SKU多选筛选，图表可叠加待办与广告调整事件线。</p>
-                    </div>
-                </header>
+        <div class="page-layout single-column pm-layout">
+            <section class="hero is-standard-page-hero">
+                <div class="hero-title-row">
+                    <h2>产品表现看板</h2>
+                    <span class="help-dot" data-tip="默认按货号折叠；支持多维筛选、指标配置、组内排序、事件线点击定位明细。"></span>
+                </div>
+            </section>
 
+            <div class="card pm-card sales-perf-card">
                 <div class="perf-toolbar">
-                    <div class="perf-row">
-                        <span class="perf-row-title">日期</span>
-                        <input type="date" id="filterStartDate">
-                        <span>至</span>
-                        <input type="date" id="filterEndDate">
-                        <button type="button" class="btn-primary" id="btnQuery">查询</button>
-                        <button type="button" class="btn-secondary" id="btnReset">重置</button>
-                        <span class="status-tip" id="dataStatus"></span>
-                    </div>
+                    <div class="perf-toolbar-grid">
+                        <div class="perf-col perf-col-left">
+                            <div class="perf-row">
+                                <span class="perf-row-title">日期</span>
+                                <input type="date" id="filterStartDate">
+                                <span>至</span>
+                                <input type="date" id="filterEndDate">
+                                <button type="button" class="btn-primary" id="btnQuery">查询</button>
+                                <button type="button" class="btn-secondary" id="btnReset">重置</button>
+                                <span class="status-tip" id="dataStatus"></span>
+                            </div>
 
-                    <div class="perf-row">
-                        <span class="perf-row-title">货号</span>
-                        <select id="filterSkuFamilies" multiple></select>
-                        <span class="perf-row-title">SKU</span>
-                        <select id="filterPlatformSkus" multiple></select>
-                    </div>
+                            <div class="perf-row">
+                                <span class="perf-row-title">货号</span>
+                                <div class="check-select" id="selSkuFamilies"></div>
+                                <span class="perf-row-title">SKU</span>
+                                <div class="check-select" id="selPlatformSkus"></div>
+                            </div>
 
-                    <div class="perf-row">
-                        <span class="perf-row-title">面料</span>
-                        <select id="filterFabrics" multiple></select>
-                        <span class="perf-row-title">规格</span>
-                        <select id="filterSpecs" multiple></select>
-                    </div>
+                            <div class="perf-row">
+                                <span class="perf-row-title">面料</span>
+                                <div class="check-select" id="selFabrics"></div>
+                                <span class="perf-row-title">规格</span>
+                                <div class="check-select" id="selSpecs"></div>
+                            </div>
+                        </div>
 
-                    <div class="perf-row">
-                        <span class="perf-row-title">指标</span>
-                        <select id="metricSelect"></select>
-                        <button type="button" id="btnAddMetric">添加指标</button>
-                        <div class="perf-metric-order" id="metricOrder"></div>
-                    </div>
-
-                    <div class="perf-row switch-row">
-                        <label><input type="checkbox" id="toggleTodos" checked> 显示待办完成事件</label>
-                        <label><input type="checkbox" id="toggleAds" checked> 显示广告调整事件</label>
-                        <span>广告调整类型：</span>
-                        <select id="filterAdTypes" multiple></select>
+                        <div class="perf-col perf-col-right">
+                            <div class="perf-row perf-row-tight">
+                                <span class="perf-row-title" style="min-width:70px;">图表字段</span>
+                                <div class="perf-metric-order" id="metricCheckboxBar"></div>
+                            </div>
+                            <div class="perf-row perf-row-tight switch-row">
+                                <label><input type="checkbox" id="toggleTodos" checked> 显示待办完成事件</label>
+                                <label><input type="checkbox" id="toggleAds" checked> 显示广告调整事件</label>
+                                <span class="perf-row-title" style="min-width:58px;">广告类型</span>
+                                <div class="check-select" id="selAdTypes"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <div class="perf-panel">
-                    <h3>按日趋势</h3>
+                    <div class="perf-panel-caption">按日趋势</div>
                     <div class="perf-legend" id="chartLegend"></div>
                     <div class="perf-chart-wrap" id="chartWrap">
                         <canvas id="perfChart"></canvas>
                         <div class="perf-event-tooltip" id="eventTooltip"></div>
                     </div>
+                    <div class="perf-event-click-tip">提示：点击图中的灰色竖虚线，可自动展开并定位到对应货号/SKU明细。</div>
                 </div>
 
                 <div class="perf-panel perf-group" id="groupContainer"></div>
-            </section>
+
+                <div class="perf-panel">
+                    <div class="perf-panel-caption">记录管理</div>
+                    <div class="perf-manage-toolbar">
+                        <input type="text" id="performanceSearchInput" placeholder="搜索销售平台SKU">
+                        <button class="btn-primary" id="btnPerfSearch" type="button">搜索</button>
+                        <button class="btn-secondary" id="btnPerfReset" type="button">清空</button>
+                        <button class="btn-secondary" id="btnPerfTemplate" type="button">下载模板</button>
+                        <button class="btn-secondary" id="btnPerfImport" type="button">批量上传</button>
+                        <input type="file" id="salesProductPerformanceUploadInput" accept=".xlsx" style="display:none;">
+                        <button class="btn-accent" id="btnPerfCreate" type="button">新增记录</button>
+                    </div>
+                    <div class="pm-table-toolbar">
+                        <div class="pm-table-toolbar-left">
+                            <label for="performancePageSizeSelect">每页</label>
+                            <select class="pm-table-page-size" id="performancePageSizeSelect">
+                                <option value="20">20</option>
+                                <option value="50" selected>50</option>
+                                <option value="100">100</option>
+                                <option value="200">200</option>
+                            </select>
+                            <span class="pm-table-info" id="performanceTableInfo">共 0 条，当前第 1/1 页</span>
+                        </div>
+                        <div class="pm-table-toolbar-right">
+                            <div class="pm-table-pager" id="performancePager"></div>
+                        </div>
+                    </div>
+                    <div class="perf-table-wrap">
+                        <table class="perf-table" id="salesProductPerformanceTable">
+                            <thead>
+                                <tr>
+                                    <th>日期</th>
+                                    <th>销售平台SKU</th>
+                                    <th>销量</th>
+                                    <th>净销售额</th>
+                                    <th>订单量</th>
+                                    <th>Sessions-Total</th>
+                                    <th>广告展示</th>
+                                    <th>广告点击</th>
+                                    <th>广告订单量</th>
+                                    <th>广告花费</th>
+                                    <th>广告销售额</th>
+                                    <th>退款金额</th>
+                                    <th>小类排名</th>
+                                    <th>ACOS</th>
+                                    <th>ACOAS</th>
+                                    <th>ROIS</th>
+                                    <th>CTR</th>
+                                    <th>CVR</th>
+                                    <th>CPC</th>
+                                    <th style="width:160px;">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="20" style="text-align:center;">加载中...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
+    <div class="pm-modal" id="performance-modal">
+        <div class="pm-modal-content pm-modal-content--wide">
+            <h3 id="performance-modal-title" style="margin-top:0;">新增产品表现记录</h3>
+            <div class="pm-form">
+                <div class="pm-section pm-form-full">
+                    <div class="pm-section-body pm-form">
+                        <div class="form-group pm-form-full">
+                            <label for="performancePlatformSku">销售平台SKU<span class="required-asterisk">*</span></label>
+                            <input type="text" id="performancePlatformSku" class="required-field" list="performanceSkuSuggestions" placeholder="输入或选择销售平台SKU">
+                            <datalist id="performanceSkuSuggestions"></datalist>
+                        </div>
+                        <div class="form-group">
+                            <label for="performanceRecordDate">日期<span class="required-asterisk">*</span></label>
+                            <input type="date" id="performanceRecordDate" class="required-field">
+                        </div>
+                        <div class="form-group"><label for="performanceSalesQty">销量</label><input type="number" step="1" id="performanceSalesQty" class="optional-field"></div>
+                        <div class="form-group"><label for="performanceNetSales">净销售额(USD)</label><input type="number" step="0.01" id="performanceNetSales" class="optional-field"></div>
+                        <div class="form-group"><label for="performanceOrderQty">订单量</label><input type="number" step="1" id="performanceOrderQty" class="optional-field"></div>
+                        <div class="form-group"><label for="performanceSessionTotal">Sessions-Total</label><input type="number" step="1" id="performanceSessionTotal" class="optional-field"></div>
+                        <div class="form-group"><label for="performanceAdImpressions">广告展示</label><input type="number" step="1" id="performanceAdImpressions" class="optional-field"></div>
+                        <div class="form-group"><label for="performanceAdClicks">广告点击</label><input type="number" step="1" id="performanceAdClicks" class="optional-field"></div>
+                        <div class="form-group"><label for="performanceAdOrders">广告订单量</label><input type="number" step="1" id="performanceAdOrders" class="optional-field"></div>
+                        <div class="form-group"><label for="performanceAdSpend">广告花费(USD)</label><input type="number" step="0.01" id="performanceAdSpend" class="optional-field"></div>
+                        <div class="form-group"><label for="performanceAdSales">广告销售额(USD)</label><input type="number" step="0.01" id="performanceAdSales" class="optional-field"></div>
+                        <div class="form-group"><label for="performanceRefundAmount">退款金额(USD)</label><input type="number" step="0.01" id="performanceRefundAmount" class="optional-field"></div>
+                        <div class="form-group"><label for="performanceSubCategoryRank">小类排名</label><input type="number" step="1" id="performanceSubCategoryRank" class="optional-field"></div>
+                    </div>
+                </div>
+            </div>
+            <div id="performanceStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" id="btnPerfModalCancel" type="button">取消</button>
+                <button class="btn-primary" id="btnPerfModalSave" type="button">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="pm-modal" id="perf-dialog-modal">
+        <div class="pm-modal-content" style="max-width:560px;">
+            <h3 id="perf-dialog-title" style="margin-top:0;">提示</h3>
+            <div id="perf-dialog-message" class="dialog-message" style="color:var(--morandi-ink); white-space:pre-wrap; line-height:1.5;"></div>
+            <div id="perf-dialog-errors" style="margin-top:0.6rem; max-height:220px; overflow:auto; border:1px solid var(--morandi-sand); border-radius:8px; background:#fff; display:none;"></div>
+            <div class="pm-modal-actions" style="margin-top:0.8rem;">
+                <button class="btn-secondary" id="perf-dialog-cancel" type="button" style="display:none;">取消</button>
+                <button class="btn-primary" id="perf-dialog-ok" type="button">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="uploadProgress" class="upload-progress" aria-live="polite">
+        <div id="uploadProgressText" class="upload-progress-title">准备处理...</div>
+        <div class="upload-progress-bar"><span id="uploadProgressFill"></span></div>
+    </div>
+
     <script>
+        let uploadProcessingTimer = null;
+        let uploadProgressPollingTimer = null;
+        const DERIVED_METRICS = [
+            { key: 'acos', label: 'ACOS', color: '#7c9d74', isComputed: true },
+            { key: 'acoas', label: 'ACOAS', color: '#6b8f7e', isComputed: true },
+            { key: 'rois', label: 'ROIS', color: '#5c7ea3', isComputed: true },
+            { key: 'ctr', label: 'CTR', color: '#9d7f5c', isComputed: true },
+            { key: 'cvr', label: 'CVR', color: '#8d6d92', isComputed: true },
+            { key: 'cpc', label: 'CPC', color: '#a36f6f', isComputed: true }
+        ];
         const state = {
             metrics: [],
             metricOrder: [],
             metricMap: {},
-            adTypeMap: {},
+            dashboardQueried: false,
+            filterDefs: {
+                skuFamilies: { key: 'sku_family_ids', host: 'selSkuFamilies', title: '全部货号', options: [], selected: new Set() },
+                platformSkus: { key: 'platform_skus', host: 'selPlatformSkus', title: '全部SKU', options: [], selected: new Set() },
+                fabrics: { key: 'fabrics', host: 'selFabrics', title: '全部面料', options: [], selected: new Set() },
+                specs: { key: 'spec_names', host: 'selSpecs', title: '全部规格', options: [], selected: new Set() },
+                adTypes: { key: 'ad_operation_type_ids', host: 'selAdTypes', title: '全部类型', options: [], selected: new Set() }
+            },
             eventByDate: {},
-            chartGeom: null
+            chartGeom: null,
+            lastGroups: [],
+            performanceItems: [],
+            performanceEditId: null,
+            performanceSkuPool: [],
+            performancePage: 1,
+            performancePageSize: 50,
+            performanceTotal: 0,
+            performanceTotalPages: 1
         };
+
+        function toDateStr(d) {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+        }
 
         function setTodayRange() {
             const end = new Date();
@@ -189,96 +700,169 @@
             document.getElementById('filterEndDate').value = toDateStr(end);
         }
 
-        function toDateStr(d) {
-            const y = d.getFullYear();
-            const m = String(d.getMonth() + 1).padStart(2, '0');
-            const day = String(d.getDate()).padStart(2, '0');
-            return `${y}-${m}-${day}`;
+        function formatNumber(v) {
+            const n = Number(v || 0);
+            if (!Number.isFinite(n)) return '-';
+            if (Math.abs(n) >= 1000) return n.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+            return n.toFixed(2).replace(/\.00$/, '');
         }
 
-        function getSelectedValues(selectId) {
-            return Array.from(document.getElementById(selectId).selectedOptions || []).map(o => String(o.value || '').trim()).filter(Boolean);
-        }
+        function createFilterSelect(def) {
+            const host = document.getElementById(def.host);
+            if (!host) return;
+            host.innerHTML = `
+                <button type="button" class="check-select-trigger">${def.title}</button>
+                <div class="check-select-panel">
+                    <div class="check-select-actions">
+                        <button type="button" data-action="all">全选</button>
+                        <button type="button" data-action="none">清空</button>
+                    </div>
+                    <input type="text" class="check-select-search" placeholder="搜索">
+                    <div class="check-select-list"></div>
+                </div>
+            `;
 
-        function fillMultiSelect(selectId, options, mode) {
-            const el = document.getElementById(selectId);
-            const selected = new Set(getSelectedValues(selectId));
-            el.innerHTML = '';
-            (options || []).forEach(item => {
-                const opt = document.createElement('option');
-                if (mode === 'dict') {
-                    opt.value = String(item.id);
-                    opt.textContent = item.name || String(item.id);
+            const trigger = host.querySelector('.check-select-trigger');
+            const search = host.querySelector('.check-select-search');
+            const list = host.querySelector('.check-select-list');
+            const btnAll = host.querySelector('button[data-action="all"]');
+            const btnNone = host.querySelector('button[data-action="none"]');
+
+            trigger.addEventListener('click', e => {
+                e.stopPropagation();
+                document.querySelectorAll('.check-select').forEach(x => {
+                    if (x !== host) x.classList.remove('open');
+                });
+                host.classList.toggle('open');
+                if (host.classList.contains('open')) search.focus();
+            });
+            search.addEventListener('input', () => renderFilterOptions(def));
+            btnAll.addEventListener('click', () => {
+                const allValues = (def.options || []).map(x => String(x.value));
+                if (def.selected.size === allValues.length && allValues.length > 0) {
+                    def.selected = new Set();
                 } else {
-                    opt.value = String(item);
-                    opt.textContent = String(item);
+                    def.selected = new Set(allValues);
                 }
-                if (selected.has(opt.value)) opt.selected = true;
-                el.appendChild(opt);
+                renderFilterOptions(def);
+                refreshFilterTrigger(def);
+            });
+            btnNone.addEventListener('click', () => {
+                def.selected = new Set();
+                renderFilterOptions(def);
+                refreshFilterTrigger(def);
+            });
+
+            renderFilterOptions(def);
+            refreshFilterTrigger(def);
+        }
+
+        function renderFilterOptions(def) {
+            const host = document.getElementById(def.host);
+            if (!host) return;
+            const keyword = String(host.querySelector('.check-select-search').value || '').trim().toLowerCase();
+            const list = host.querySelector('.check-select-list');
+            const rows = (def.options || []).filter(x => !keyword || String(x.label || '').toLowerCase().includes(keyword));
+            if (!rows.length) {
+                list.innerHTML = '<div class="check-select-empty">无匹配项</div>';
+                return;
+            }
+            list.innerHTML = rows.map(x => {
+                const checked = def.selected.has(String(x.value)) ? 'checked' : '';
+                return `<label class="check-select-item"><input type="checkbox" value="${String(x.value).replace(/"/g, '&quot;')}" ${checked}><span>${x.label}</span></label>`;
+            }).join('');
+            list.querySelectorAll('input[type="checkbox"]').forEach(box => {
+                box.addEventListener('change', function() {
+                    const val = String(this.value);
+                    if (this.checked) def.selected.add(val);
+                    else def.selected.delete(val);
+                    refreshFilterTrigger(def);
+                });
             });
         }
 
-        function fillMetricSelect(metrics) {
-            const select = document.getElementById('metricSelect');
-            select.innerHTML = '';
-            (metrics || []).forEach(m => {
-                const opt = document.createElement('option');
-                opt.value = m.key;
-                opt.textContent = m.label;
-                select.appendChild(opt);
+        function refreshFilterTrigger(def) {
+            const host = document.getElementById(def.host);
+            if (!host) return;
+            const trigger = host.querySelector('.check-select-trigger');
+            const count = def.selected.size;
+            if (!count) {
+                trigger.textContent = def.title;
+                return;
+            }
+            if (count === 1) {
+                const one = def.options.find(x => def.selected.has(String(x.value)));
+                trigger.textContent = one ? one.label : `${count}项`;
+                return;
+            }
+            trigger.textContent = `已选${count}项`;
+        }
+
+        function getFilterValues(defName) {
+            const def = state.filterDefs[defName];
+            if (!def) return [];
+            return Array.from(def.selected.values());
+        }
+
+        function rebuildMetricMap() {
+            state.metricMap = {};
+            (state.metrics || []).forEach(m => {
+                state.metricMap[m.key] = m;
+            });
+            DERIVED_METRICS.forEach(m => {
                 state.metricMap[m.key] = m;
             });
         }
 
-        function renderMetricOrder() {
-            const box = document.getElementById('metricOrder');
-            box.innerHTML = '';
-            state.metricOrder.forEach((key, idx) => {
-                const metric = state.metricMap[key];
-                if (!metric) return;
-                const chip = document.createElement('span');
-                chip.className = 'metric-chip';
-                chip.innerHTML = `<span>${metric.label}</span>`;
+        function safeDiv(a, b) {
+            const x = Number(a || 0);
+            const y = Number(b || 0);
+            if (!Number.isFinite(x) || !Number.isFinite(y) || y === 0) return 0;
+            return x / y;
+        }
 
-                const upBtn = document.createElement('button');
-                upBtn.type = 'button';
-                upBtn.textContent = '↑';
-                upBtn.disabled = idx === 0;
-                upBtn.addEventListener('click', () => {
-                    if (idx <= 0) return;
-                    const tmp = state.metricOrder[idx - 1];
-                    state.metricOrder[idx - 1] = state.metricOrder[idx];
-                    state.metricOrder[idx] = tmp;
-                    renderMetricOrder();
-                    loadDashboard();
+        function resolveMetricValue(row, key) {
+            if (key === 'acos') return safeDiv(row.ad_spend, row.ad_sales_amount) * 100;
+            if (key === 'acoas') return safeDiv(row.ad_spend, row.net_sales_amount) * 100;
+            if (key === 'rois') return safeDiv(row.net_sales_amount, row.ad_spend);
+            if (key === 'ctr') return safeDiv(row.ad_clicks, row.ad_impressions) * 100;
+            if (key === 'cvr') return safeDiv(row.ad_orders, row.ad_clicks) * 100;
+            if (key === 'cpc') return safeDiv(row.ad_spend, row.ad_clicks);
+            const n = Number(row[key]);
+            return Number.isFinite(n) ? n : 0;
+        }
+
+        function getDefaultMetricOrder() {
+            return [
+                'sales_qty', 'net_sales_amount', 'order_qty', 'ad_spend', 'ad_sales_amount',
+                'acos', 'acoas', 'rois', 'ctr', 'cvr', 'cpc'
+            ].filter(k => state.metricMap[k]);
+        }
+
+        function renderMetricCheckboxBar() {
+            const host = document.getElementById('metricCheckboxBar');
+            if (!host) return;
+            const rows = Object.values(state.metricMap || {});
+            host.innerHTML = rows.map(m => {
+                const checked = state.metricOrder.includes(m.key) ? 'checked' : '';
+                return `<label class="metric-chip"><input type="checkbox" data-metric-key="${m.key}" ${checked}><span>${m.label}</span></label>`;
+            }).join('');
+
+            host.querySelectorAll('input[type="checkbox"][data-metric-key]').forEach(box => {
+                box.addEventListener('change', function() {
+                    const key = String(this.getAttribute('data-metric-key') || '');
+                    if (!key) return;
+                    if (this.checked) {
+                        if (!state.metricOrder.includes(key)) state.metricOrder.push(key);
+                    } else {
+                        state.metricOrder = state.metricOrder.filter(x => x !== key);
+                    }
+                    if (!state.metricOrder.length) {
+                        state.metricOrder = getDefaultMetricOrder();
+                        renderMetricCheckboxBar();
+                    }
+                    if (state.dashboardQueried) loadDashboard();
                 });
-
-                const downBtn = document.createElement('button');
-                downBtn.type = 'button';
-                downBtn.textContent = '↓';
-                downBtn.disabled = idx >= state.metricOrder.length - 1;
-                downBtn.addEventListener('click', () => {
-                    if (idx >= state.metricOrder.length - 1) return;
-                    const tmp = state.metricOrder[idx + 1];
-                    state.metricOrder[idx + 1] = state.metricOrder[idx];
-                    state.metricOrder[idx] = tmp;
-                    renderMetricOrder();
-                    loadDashboard();
-                });
-
-                const rmBtn = document.createElement('button');
-                rmBtn.type = 'button';
-                rmBtn.textContent = 'x';
-                rmBtn.addEventListener('click', () => {
-                    state.metricOrder = state.metricOrder.filter(x => x !== key);
-                    renderMetricOrder();
-                    loadDashboard();
-                });
-
-                chip.appendChild(upBtn);
-                chip.appendChild(downBtn);
-                chip.appendChild(rmBtn);
-                box.appendChild(chip);
             });
         }
 
@@ -290,92 +874,39 @@
             }
             const f = data.filters || {};
             state.metrics = f.metrics || [];
-            fillMultiSelect('filterSkuFamilies', f.sku_families || [], 'dict');
-            fillMultiSelect('filterPlatformSkus', f.platform_skus || [], 'dict');
-            fillMultiSelect('filterFabrics', f.fabrics || [], 'text');
-            fillMultiSelect('filterSpecs', f.spec_names || [], 'text');
-            fillMultiSelect('filterAdTypes', f.ad_operation_types || [], 'dict');
-            fillMetricSelect(state.metrics);
 
-            if (!state.metricOrder.length) {
-                state.metricOrder = ['sales_qty', 'net_sales_amount', 'order_qty', 'ad_spend', 'ad_sales_amount'].filter(k => state.metrics.some(m => m.key === k));
-            }
-            renderMetricOrder();
+            state.filterDefs.skuFamilies.options = (f.sku_families || []).map(x => ({ value: String(x.id), label: x.name || String(x.id) }));
+            state.filterDefs.platformSkus.options = (f.platform_skus || []).map(x => ({ value: x.name || '', label: x.name || '' })).filter(x => x.value);
+            state.filterDefs.fabrics.options = (f.fabrics || []).map(x => ({ value: String(x), label: String(x) }));
+            state.filterDefs.specs.options = (f.spec_names || []).map(x => ({ value: String(x), label: String(x) }));
+            state.filterDefs.adTypes.options = (f.ad_operation_types || []).map(x => ({ value: String(x.id), label: x.name || String(x.id) }));
+
+            createFilterSelect(state.filterDefs.skuFamilies);
+            createFilterSelect(state.filterDefs.platformSkus);
+            createFilterSelect(state.filterDefs.fabrics);
+            createFilterSelect(state.filterDefs.specs);
+            createFilterSelect(state.filterDefs.adTypes);
+
+            rebuildMetricMap();
+            state.metricOrder = getDefaultMetricOrder();
+            renderMetricCheckboxBar();
         }
 
         function buildDashboardQuery() {
             const q = new URLSearchParams();
             q.set('start_date', document.getElementById('filterStartDate').value || '');
             q.set('end_date', document.getElementById('filterEndDate').value || '');
-            q.set('metric_keys', state.metricOrder.join(','));
+            q.set('metric_keys', (state.metrics || []).map(m => m.key).join(','));
             q.set('include_todos', document.getElementById('toggleTodos').checked ? '1' : '0');
             q.set('include_ads', document.getElementById('toggleAds').checked ? '1' : '0');
 
-            const sf = getSelectedValues('filterSkuFamilies');
-            const skus = getSelectedValues('filterPlatformSkus');
-            const fabrics = getSelectedValues('filterFabrics');
-            const specs = getSelectedValues('filterSpecs');
-            const adTypes = getSelectedValues('filterAdTypes');
-            if (sf.length) q.set('sku_family_ids', sf.join(','));
-            if (skus.length) q.set('platform_skus', skus.join(','));
-            if (fabrics.length) q.set('fabrics', fabrics.join(','));
-            if (specs.length) q.set('spec_names', specs.join(','));
-            if (adTypes.length) q.set('ad_operation_type_ids', adTypes.join(','));
+            const setIf = (k, arr) => { if (arr.length) q.set(k, arr.join(',')); };
+            setIf('sku_family_ids', getFilterValues('skuFamilies'));
+            setIf('platform_skus', getFilterValues('platformSkus'));
+            setIf('fabrics', getFilterValues('fabrics'));
+            setIf('spec_names', getFilterValues('specs'));
+            setIf('ad_operation_type_ids', getFilterValues('adTypes'));
             return q.toString();
-        }
-
-        function formatNumber(v) {
-            const n = Number(v || 0);
-            if (!Number.isFinite(n)) return '-';
-            if (Math.abs(n) >= 1000) return n.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
-            return n.toFixed(2).replace(/\.00$/, '');
-        }
-
-        function renderGroups(groups) {
-            const host = document.getElementById('groupContainer');
-            host.innerHTML = '<h3>货号分组明细</h3>';
-            if (!groups || !groups.length) {
-                host.insertAdjacentHTML('beforeend', '<p class="status-tip">暂无符合筛选条件的数据</p>');
-                return;
-            }
-
-            const metricKeys = state.metricOrder.slice();
-            groups.forEach(g => {
-                const details = document.createElement('details');
-                const summary = document.createElement('summary');
-                summary.textContent = `${g.sku_family || '未分组货号'} (${(g.items || []).length} 个SKU)`;
-                details.appendChild(summary);
-
-                const wrap = document.createElement('div');
-                wrap.className = 'perf-group-content';
-                const tableWrap = document.createElement('div');
-                tableWrap.className = 'perf-table-wrap';
-                const table = document.createElement('table');
-                table.className = 'perf-table';
-
-                const headCols = ['SKU', '面料', '规格', '最新日期'].concat(metricKeys.map(k => (state.metricMap[k] && state.metricMap[k].label) || k));
-                table.innerHTML = `<thead><tr>${headCols.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody></tbody>`;
-                const tbody = table.querySelector('tbody');
-
-                (g.items || []).forEach(item => {
-                    const records = item.records || [];
-                    const latest = records.length ? records[0] : {};
-                    const tds = [
-                        item.platform_sku || '-',
-                        item.fabric || '-',
-                        item.spec_name || '-',
-                        latest.record_date || '-'
-                    ].concat(metricKeys.map(k => formatNumber(latest[k])));
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = tds.map(x => `<td>${x}</td>`).join('');
-                    tbody.appendChild(tr);
-                });
-
-                tableWrap.appendChild(table);
-                wrap.appendChild(tableWrap);
-                details.appendChild(wrap);
-                host.appendChild(details);
-            });
         }
 
         function mapEvents(events) {
@@ -399,10 +930,7 @@
                 item.innerHTML = `<span class="perf-legend-dot" style="background:${m.color || '#5b6aa8'}"></span><span>${m.label}</span>`;
                 host.appendChild(item);
             });
-            const ev = document.createElement('span');
-            ev.className = 'perf-legend-item';
-            ev.innerHTML = '<span class="perf-legend-dot" style="background:#8f8f8f"></span><span>事件线(虚线)</span>';
-            host.appendChild(ev);
+            host.insertAdjacentHTML('beforeend', '<span class="perf-legend-item"><span class="perf-legend-dot" style="background:#8f8f8f"></span><span>事件线(虚线)</span></span>');
         }
 
         function renderChart(chartItems, events) {
@@ -411,6 +939,7 @@
             const dpr = window.devicePixelRatio || 1;
             const width = Math.max(820, wrap.clientWidth - 16);
             const height = 300;
+
             canvas.width = Math.floor(width * dpr);
             canvas.height = Math.floor(height * dpr);
             canvas.style.width = `${width}px`;
@@ -424,6 +953,7 @@
                 ctx.font = '14px sans-serif';
                 ctx.fillText('暂无趋势数据', 24, 42);
                 state.chartGeom = null;
+                mapEvents([]);
                 return;
             }
 
@@ -436,7 +966,7 @@
             let maxV = -Infinity;
             state.metricOrder.forEach(k => {
                 chartItems.forEach(row => {
-                    const v = Number(row[k]);
+                    const v = resolveMetricValue(row, k);
                     if (!Number.isFinite(v)) return;
                     if (v < minV) minV = v;
                     if (v > maxV) maxV = v;
@@ -451,10 +981,10 @@
                 maxV += 1;
             }
 
-            const yTick = 5;
             ctx.strokeStyle = 'rgba(128, 128, 128, 0.22)';
             ctx.fillStyle = '#746d64';
             ctx.font = '12px sans-serif';
+            const yTick = 5;
             for (let i = 0; i <= yTick; i += 1) {
                 const y = pad.top + (innerH * i / yTick);
                 const val = maxV - ((maxV - minV) * i / yTick);
@@ -465,8 +995,8 @@
                 ctx.fillText(formatNumber(val), 8, y + 4);
             }
 
-            const xAt = idx => pad.left + (innerW * (dates.length <= 1 ? 0 : (idx / (dates.length - 1))));
-            const yAt = val => pad.top + (innerH * (maxV - val) / (maxV - minV));
+            const xAt = idx => pad.left + (innerW * (dates.length <= 1 ? 0 : idx / (dates.length - 1)));
+            const yAt = v => pad.top + (innerH * (maxV - v) / (maxV - minV));
 
             state.metricOrder.forEach(k => {
                 const m = state.metricMap[k];
@@ -475,7 +1005,7 @@
                 ctx.strokeStyle = m.color || '#5b6aa8';
                 ctx.beginPath();
                 chartItems.forEach((row, idx) => {
-                    const v = Number(row[k]);
+                    const v = resolveMetricValue(row, k);
                     if (!Number.isFinite(v)) return;
                     const x = xAt(idx);
                     const y = yAt(v);
@@ -493,12 +1023,14 @@
             }
 
             mapEvents(events || []);
+            const eventLines = {};
             ctx.setLineDash([4, 4]);
             ctx.strokeStyle = '#8f8f8f';
             Object.keys(state.eventByDate).forEach(d => {
                 const idx = dates.indexOf(d);
                 if (idx < 0) return;
                 const x = xAt(idx);
+                eventLines[d] = x;
                 ctx.beginPath();
                 ctx.moveTo(x, pad.top);
                 ctx.lineTo(x, height - pad.bottom);
@@ -506,60 +1038,154 @@
             });
             ctx.setLineDash([]);
 
-            state.chartGeom = {
-                dates,
-                xAt,
-                pad,
-                width,
-                height
-            };
+            state.chartGeom = { dates, xAt, width, height, pad, eventLines };
         }
 
-        function bindChartHover() {
+        function formatEventBlock(ev) {
+            const sku = (ev.platform_skus || []).join('、') || '-';
+            const sf = (ev.sku_families || []).join('、') || '-';
+            if (ev.event_type === 'todo') {
+                return `<div style="margin-top:0.32rem;"><strong>[待办完成]</strong> ${ev.title || ''}<br>创建人: ${ev.creator || '-'}<br>SKU: ${sku}<br>货号: ${sf}<br>${ev.detail || ''}</div>`;
+            }
+            return `<div style="margin-top:0.32rem;"><strong>[广告调整]</strong> ${ev.operation_type_name || ''}<br>目标: ${ev.target_object || '-'}<br>SKU: ${sku}<br>货号: ${sf}<br>${ev.detail || ''}</div>`;
+        }
+
+        function focusEventsByDate(dateText) {
+            const rows = state.eventByDate[dateText] || [];
+            if (!rows.length) return;
+            const skuSet = new Set();
+            const sfSet = new Set();
+            rows.forEach(r => {
+                (r.platform_skus || []).forEach(x => x && skuSet.add(String(x).trim()));
+                (r.sku_families || []).forEach(x => x && sfSet.add(String(x).trim()));
+            });
+
+            document.querySelectorAll('#groupContainer details').forEach(d => {
+                const sf = String(d.dataset.skuFamily || '').trim();
+                if (!sfSet.size || sfSet.has(sf)) d.open = true;
+            });
+
+            const hitRows = [];
+            document.querySelectorAll('#groupContainer tbody tr').forEach(tr => {
+                const sku = String(tr.dataset.platformSku || '').trim();
+                const sf = String(tr.dataset.skuFamily || '').trim();
+                if ((skuSet.size && skuSet.has(sku)) || (sfSet.size && sfSet.has(sf))) {
+                    hitRows.push(tr);
+                }
+            });
+
+            document.querySelectorAll('#groupContainer tbody tr.row-focus').forEach(tr => tr.classList.remove('row-focus'));
+            hitRows.forEach(tr => tr.classList.add('row-focus'));
+            if (hitRows.length) {
+                hitRows[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            window.setTimeout(() => {
+                document.querySelectorAll('#groupContainer tbody tr.row-focus').forEach(tr => tr.classList.remove('row-focus'));
+            }, 2400);
+        }
+
+        function bindChartInteractions() {
             const canvas = document.getElementById('perfChart');
-            const tooltip = document.getElementById('eventTooltip');
+            const tip = document.getElementById('eventTooltip');
+
             canvas.addEventListener('mousemove', e => {
                 if (!state.chartGeom) {
-                    tooltip.style.display = 'none';
+                    tip.style.display = 'none';
                     return;
                 }
                 const rect = canvas.getBoundingClientRect();
                 const x = e.clientX - rect.left;
-                let matchedDate = '';
-                state.chartGeom.dates.forEach((d, idx) => {
-                    const px = state.chartGeom.xAt(idx);
-                    if (Math.abs(px - x) <= 4 && state.eventByDate[d] && state.eventByDate[d].length) {
-                        matchedDate = d;
+                let hitDate = '';
+                Object.keys(state.chartGeom.eventLines || {}).forEach(d => {
+                    if (Math.abs(state.chartGeom.eventLines[d] - x) <= 4) {
+                        const arr = state.eventByDate[d] || [];
+                        if (arr.length) hitDate = d;
                     }
                 });
-
-                if (!matchedDate) {
-                    tooltip.style.display = 'none';
+                if (!hitDate) {
+                    tip.style.display = 'none';
                     return;
                 }
-
-                const rows = state.eventByDate[matchedDate] || [];
-                tooltip.innerHTML = `<div><strong>${matchedDate}</strong></div>` + rows.map(r => {
-                    if (r.event_type === 'todo') {
-                        const sku = (r.platform_skus || []).join('、');
-                        const sf = (r.sku_families || []).join('、');
-                        return `<div style="margin-top:0.32rem;"><strong>[待办完成]</strong> ${r.title || ''}<br>创建人: ${r.creator || '-'}<br>SKU: ${sku || '-'}<br>货号: ${sf || '-'}<br>${r.detail || ''}</div>`;
-                    }
-                    const sku = (r.platform_skus || []).join('、');
-                    const sf = (r.sku_families || []).join('、');
-                    return `<div style="margin-top:0.32rem;"><strong>[广告调整]</strong> ${r.operation_type_name || ''}<br>目标: ${r.target_object || '-'}<br>SKU: ${sku || '-'}<br>货号: ${sf || '-'}<br>${r.detail || ''}</div>`;
-                }).join('');
-
-                tooltip.style.display = 'block';
-                tooltip.style.left = `${Math.min(rect.width - 350, x + 10)}px`;
-                tooltip.style.top = `${Math.max(8, (e.clientY - rect.top + 8))}px`;
+                const rows = state.eventByDate[hitDate] || [];
+                tip.innerHTML = `<div><strong>${hitDate}</strong></div>${rows.map(formatEventBlock).join('')}`;
+                tip.style.display = 'block';
+                tip.style.left = `${Math.min(rect.width - 365, x + 10)}px`;
+                tip.style.top = `${Math.max(8, e.clientY - rect.top + 8)}px`;
             });
+
             canvas.addEventListener('mouseleave', () => {
-                tooltip.style.display = 'none';
+                tip.style.display = 'none';
+            });
+
+            canvas.addEventListener('click', e => {
+                if (!state.chartGeom) return;
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                let hitDate = '';
+                Object.keys(state.chartGeom.eventLines || {}).forEach(d => {
+                    if (Math.abs(state.chartGeom.eventLines[d] - x) <= 5 && (state.eventByDate[d] || []).length) {
+                        hitDate = d;
+                    }
+                });
+                if (hitDate) focusEventsByDate(hitDate);
+            });
+        }
+
+        function renderGroups(groups) {
+            state.lastGroups = Array.isArray(groups) ? groups : [];
+            const host = document.getElementById('groupContainer');
+            host.innerHTML = '<h3>货号分组明细</h3>';
+            if (!state.lastGroups.length) {
+                host.insertAdjacentHTML('beforeend', '<p class="status-tip">暂无符合筛选条件的数据</p>');
+                return;
+            }
+
+            const metricKeys = state.metricOrder.slice();
+
+            state.lastGroups.forEach(g => {
+                const details = document.createElement('details');
+                details.dataset.skuFamily = g.sku_family || '';
+                const summary = document.createElement('summary');
+                summary.textContent = `${g.sku_family || '未分组货号'} (${(g.items || []).length} 个SKU)`;
+                details.appendChild(summary);
+
+                const wrap = document.createElement('div');
+                wrap.className = 'perf-group-content';
+                const tableWrap = document.createElement('div');
+                tableWrap.className = 'perf-table-wrap';
+                const table = document.createElement('table');
+                table.className = 'perf-table';
+
+                const headCols = ['SKU', '面料', '规格', '最新日期'].concat(metricKeys.map(k => (state.metricMap[k] && state.metricMap[k].label) || k));
+                table.innerHTML = `<thead><tr>${headCols.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody></tbody>`;
+                const tbody = table.querySelector('tbody');
+
+                const items = (g.items || []).slice();
+
+                items.forEach(item => {
+                    const latest = (item.records || [])[0] || {};
+                    const cells = [
+                        item.platform_sku || '-',
+                        item.fabric || '-',
+                        item.spec_name || '-',
+                        latest.record_date || '-'
+                    ].concat(metricKeys.map(k => formatNumber(resolveMetricValue(latest, k))));
+                    const tr = document.createElement('tr');
+                    tr.dataset.platformSku = item.platform_sku || '';
+                    tr.dataset.skuFamily = g.sku_family || '';
+                    tr.innerHTML = cells.map(x => `<td>${x}</td>`).join('');
+                    tbody.appendChild(tr);
+                });
+
+                tableWrap.appendChild(table);
+                wrap.appendChild(tableWrap);
+                details.appendChild(wrap);
+                host.appendChild(details);
             });
         }
 
         async function loadDashboard() {
+            state.dashboardQueried = true;
             const status = document.getElementById('dataStatus');
             status.textContent = '加载中...';
             try {
@@ -580,41 +1206,532 @@
             }
         }
 
+        function showPerformanceStatus(message, isError) {
+            const el = document.getElementById('performanceStatus');
+            el.style.display = 'block';
+            el.style.background = isError ? '#ffecec' : '#f0fff0';
+            el.style.color = isError ? '#a33' : '#2f6f2f';
+            el.innerText = message;
+        }
+
+        function showPerfDialog(opts) {
+            const modal = document.getElementById('perf-dialog-modal');
+            const title = document.getElementById('perf-dialog-title');
+            const msg = document.getElementById('perf-dialog-message');
+            const errBox = document.getElementById('perf-dialog-errors');
+            const okBtn = document.getElementById('perf-dialog-ok');
+            const cancelBtn = document.getElementById('perf-dialog-cancel');
+
+            title.innerText = opts.title || '提示';
+            msg.innerText = opts.message || '';
+            okBtn.innerText = opts.okText || '确定';
+            cancelBtn.innerText = opts.cancelText || '取消';
+            cancelBtn.style.display = opts.onCancel ? '' : 'none';
+
+            const errors = Array.isArray(opts.errors) ? opts.errors : [];
+            if (errors.length) {
+                errBox.style.display = 'block';
+                errBox.innerHTML = `<table class="perf-table" style="min-width:0;"><thead><tr><th style="width:80px;">行号</th><th>问题</th></tr></thead><tbody>${errors.slice(0, 80).map(e => {
+                    if (typeof e === 'string') return `<tr><td>-</td><td>${e}</td></tr>`;
+                    return `<tr><td>${e.row || '-'}</td><td>${e.error || ''}</td></tr>`;
+                }).join('')}</tbody></table>`;
+            } else {
+                errBox.style.display = 'none';
+                errBox.innerHTML = '';
+            }
+
+            okBtn.onclick = function() {
+                modal.classList.remove('active');
+                if (typeof opts.onOk === 'function') opts.onOk();
+            };
+            cancelBtn.onclick = function() {
+                modal.classList.remove('active');
+                if (typeof opts.onCancel === 'function') opts.onCancel();
+            };
+
+            modal.classList.add('active');
+        }
+
+        function alertPerfDialog(message, title, errors) {
+            showPerfDialog({
+                title: title || '提示',
+                message: message || '',
+                errors: errors || []
+            });
+        }
+
+        function confirmPerfDialog(message, title) {
+            return new Promise(resolve => {
+                showPerfDialog({
+                    title: title || '请确认',
+                    message: message || '',
+                    okText: '确认',
+                    cancelText: '取消',
+                    onOk: function() { resolve(true); },
+                    onCancel: function() { resolve(false); }
+                });
+            });
+        }
+
+        function showUploadProgress(text, percent) {
+            const box = document.getElementById('uploadProgress');
+            const textEl = document.getElementById('uploadProgressText');
+            const fillEl = document.getElementById('uploadProgressFill');
+            box.style.display = 'block';
+            textEl.textContent = text || '处理中...';
+            const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+            fillEl.style.width = `${safePercent}%`;
+        }
+
+        function hideUploadProgress() {
+            const box = document.getElementById('uploadProgress');
+            box.style.display = 'none';
+            if (uploadProcessingTimer) {
+                clearInterval(uploadProcessingTimer);
+                uploadProcessingTimer = null;
+            }
+            if (uploadProgressPollingTimer) {
+                clearInterval(uploadProgressPollingTimer);
+                uploadProgressPollingTimer = null;
+            }
+        }
+
+        function buildImportTaskId() {
+            const rand = Math.random().toString(36).slice(2, 10);
+            return `imp_${Date.now()}_${rand}`;
+        }
+
+        function startImportProgressPolling(taskId) {
+            if (!taskId) return;
+            if (uploadProgressPollingTimer) {
+                clearInterval(uploadProgressPollingTimer);
+                uploadProgressPollingTimer = null;
+            }
+            uploadProgressPollingTimer = setInterval(async () => {
+                try {
+                    const data = await fetchJsonSafe(`/api/sales-product-performance-import?mode=progress&task_id=${encodeURIComponent(taskId)}`, {
+                        method: 'GET',
+                        credentials: 'include',
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    });
+                    const total = Number(data.total_rows || 0);
+                    const done = Number(data.processed_rows || 0);
+                    const percent = total > 0 ? Math.floor((done / total) * 100) : 0;
+                    const state = String(data.state || 'running');
+                    const label = total > 0
+                        ? `正在处理数据... ${done}/${total}`
+                        : `正在处理数据... 已处理 ${done} 行`;
+                    showUploadProgress(label, Math.max(1, Math.min(99, percent)));
+                    if (state === 'success') {
+                        showUploadProgress('处理完成，正在返回结果...', 100);
+                        clearInterval(uploadProgressPollingTimer);
+                        uploadProgressPollingTimer = null;
+                    } else if (state === 'error') {
+                        clearInterval(uploadProgressPollingTimer);
+                        uploadProgressPollingTimer = null;
+                    }
+                } catch (e) {
+                    // 轮询失败不打断主流程
+                }
+            }, 700);
+        }
+
+        function startProcessingProgress() {
+            if (uploadProcessingTimer) {
+                clearInterval(uploadProcessingTimer);
+                uploadProcessingTimer = null;
+            }
+            const fillEl = document.getElementById('uploadProgressFill');
+            const textEl = document.getElementById('uploadProgressText');
+            let percent = Math.max(35, parseInt(fillEl.style.width || '0', 10) || 0);
+            uploadProcessingTimer = setInterval(() => {
+                percent = Math.min(98, percent + 1);
+                fillEl.style.width = `${percent}%`;
+                textEl.textContent = `文件已上传，正在处理数据... ${percent}%`;
+            }, 180);
+        }
+
+        async function fetchJsonSafe(url, options) {
+            const r = await fetch(url, options);
+            const text = await r.text();
+            try {
+                return JSON.parse(text);
+            } catch (e) {
+                const sample = String(text || '').slice(0, 220).replace(/\s+/g, ' ').trim();
+                throw new Error(`接口未返回JSON（HTTP ${r.status}）。响应片段: ${sample || '(empty)'}`);
+            }
+        }
+
+        function resetPerformanceStatus() {
+            const el = document.getElementById('performanceStatus');
+            el.style.display = 'none';
+            el.innerText = '';
+        }
+
+        function renderPerformanceSkuSuggestions() {
+            const dl = document.getElementById('performanceSkuSuggestions');
+            const unique = Array.from(new Set(state.performanceSkuPool || [])).filter(Boolean);
+            dl.innerHTML = unique.slice(0, 2000).map(s => `<option value="${s}"></option>`).join('');
+        }
+
+        function renderSalesProductPerformanceTable(items) {
+            const tbody = document.querySelector('#salesProductPerformanceTable tbody');
+            if (!items.length) {
+                tbody.innerHTML = '<tr><td colspan="20" style="text-align:center;">暂无数据</td></tr>';
+                return;
+            }
+            tbody.innerHTML = items.map(item => `
+                <tr>
+                    <td>${item.record_date || ''}</td>
+                    <td>${item.platform_sku || ''}</td>
+                    <td>${item.sales_qty ?? ''}</td>
+                    <td>${item.net_sales_amount ?? ''}</td>
+                    <td>${item.order_qty ?? ''}</td>
+                    <td>${item.session_total ?? ''}</td>
+                    <td>${item.ad_impressions ?? ''}</td>
+                    <td>${item.ad_clicks ?? ''}</td>
+                    <td>${item.ad_orders ?? ''}</td>
+                    <td>${item.ad_spend ?? ''}</td>
+                    <td>${item.ad_sales_amount ?? ''}</td>
+                    <td>${item.refund_amount ?? ''}</td>
+                    <td>${item.sub_category_rank ?? ''}</td>
+                    <td>${formatNumber(resolveMetricValue(item, 'acos'))}</td>
+                    <td>${formatNumber(resolveMetricValue(item, 'acoas'))}</td>
+                    <td>${formatNumber(resolveMetricValue(item, 'rois'))}</td>
+                    <td>${formatNumber(resolveMetricValue(item, 'ctr'))}</td>
+                    <td>${formatNumber(resolveMetricValue(item, 'cvr'))}</td>
+                    <td>${formatNumber(resolveMetricValue(item, 'cpc'))}</td>
+                    <td>
+                        <div class="pm-actions">
+                            <button class="btn-secondary" type="button" onclick="openEditPerformanceModal(${item.id})">编辑</button>
+                            <button class="btn-danger" type="button" onclick="deleteSalesProductPerformance(${item.id})">删除</button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function renderPerformancePagination() {
+            const info = document.getElementById('performanceTableInfo');
+            const pager = document.getElementById('performancePager');
+            if (!info || !pager) return;
+            const page = Number(state.performancePage || 1);
+            const total = Number(state.performanceTotal || 0);
+            const totalPages = Math.max(1, Number(state.performanceTotalPages || 1));
+            info.textContent = `共 ${total} 条，当前第 ${page}/${totalPages} 页，每页 ${state.performancePageSize} 条`;
+            pager.innerHTML = `
+                <button type="button" class="btn-secondary" id="btnPerfPrevPage" ${page <= 1 ? 'disabled' : ''}>上一页</button>
+                <span class="pm-table-pager-current">${page} / ${totalPages}</span>
+                <button type="button" class="btn-secondary" id="btnPerfNextPage" ${page >= totalPages ? 'disabled' : ''}>下一页</button>
+            `;
+            const prev = document.getElementById('btnPerfPrevPage');
+            const next = document.getElementById('btnPerfNextPage');
+            if (prev) prev.addEventListener('click', () => loadSalesProductPerformanceList(page - 1));
+            if (next) next.addEventListener('click', () => loadSalesProductPerformanceList(page + 1));
+        }
+
+        async function loadSalesProductSkuPool() {
+            const r = await fetch('/api/sales-product', { credentials: 'include' });
+            const d = await r.json();
+            if (d.status === 'success') {
+                state.performanceSkuPool = (d.items || []).map(x => String(x.platform_sku || '').trim()).filter(Boolean);
+                renderPerformanceSkuSuggestions();
+            }
+        }
+
+        function loadSalesProductPerformanceList(page) {
+            const nextPage = Math.max(1, Number(page || state.performancePage || 1));
+            state.performancePage = nextPage;
+            state.performancePageSize = Math.max(10, Number(state.performancePageSize || 50));
+            const q = (document.getElementById('performanceSearchInput').value || '').trim();
+            const base = q
+                ? `/api/sales-product-performance?q=${encodeURIComponent(q)}`
+                : '/api/sales-product-performance';
+            const url = `${base}&page=${encodeURIComponent(String(nextPage))}&page_size=${encodeURIComponent(String(state.performancePageSize))}`
+                .replace('/api/sales-product-performance&', '/api/sales-product-performance?');
+            fetch(url, { credentials: 'include' }).then(r => r.json()).then(data => {
+                const tbody = document.querySelector('#salesProductPerformanceTable tbody');
+                if (data.status !== 'success') {
+                    tbody.innerHTML = `<tr><td colspan="20" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                    state.performanceTotal = 0;
+                    state.performanceTotalPages = 1;
+                    renderPerformancePagination();
+                    return;
+                }
+                state.performanceItems = data.items || [];
+                state.performancePage = Number(data.page || nextPage || 1);
+                state.performancePageSize = Number(data.page_size || state.performancePageSize || 50);
+                state.performanceTotal = Number(data.total || 0);
+                state.performanceTotalPages = Number(data.total_pages || 1);
+                renderSalesProductPerformanceTable(state.performanceItems);
+                renderPerformancePagination();
+            }).catch(err => {
+                const tbody = document.querySelector('#salesProductPerformanceTable tbody');
+                tbody.innerHTML = `<tr><td colspan="20" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                state.performanceTotal = 0;
+                state.performanceTotalPages = 1;
+                renderPerformancePagination();
+            });
+        }
+
+        function fillPerformanceModal(item) {
+            document.getElementById('performancePlatformSku').value = item.platform_sku || '';
+            document.getElementById('performanceRecordDate').value = item.record_date || '';
+            document.getElementById('performanceSalesQty').value = item.sales_qty ?? '';
+            document.getElementById('performanceNetSales').value = item.net_sales_amount ?? '';
+            document.getElementById('performanceOrderQty').value = item.order_qty ?? '';
+            document.getElementById('performanceSessionTotal').value = item.session_total ?? '';
+            document.getElementById('performanceAdImpressions').value = item.ad_impressions ?? '';
+            document.getElementById('performanceAdClicks').value = item.ad_clicks ?? '';
+            document.getElementById('performanceAdOrders').value = item.ad_orders ?? '';
+            document.getElementById('performanceAdSpend').value = item.ad_spend ?? '';
+            document.getElementById('performanceAdSales').value = item.ad_sales_amount ?? '';
+            document.getElementById('performanceRefundAmount').value = item.refund_amount ?? '';
+            document.getElementById('performanceSubCategoryRank').value = item.sub_category_rank ?? '';
+        }
+
+        function openCreatePerformanceModal() {
+            state.performanceEditId = null;
+            document.getElementById('performance-modal-title').innerText = '新增产品表现记录';
+            fillPerformanceModal({});
+            document.getElementById('performanceRecordDate').value = new Date().toISOString().slice(0, 10);
+            resetPerformanceStatus();
+            renderPerformanceSkuSuggestions();
+            document.getElementById('performance-modal').classList.add('active');
+        }
+
+        function openEditPerformanceModal(id) {
+            const item = (state.performanceItems || []).find(x => String(x.id) === String(id));
+            if (!item) return;
+            state.performanceEditId = id;
+            document.getElementById('performance-modal-title').innerText = '编辑产品表现记录';
+            fillPerformanceModal(item);
+            resetPerformanceStatus();
+            renderPerformanceSkuSuggestions();
+            document.getElementById('performance-modal').classList.add('active');
+        }
+
+        function closePerformanceModal() {
+            document.getElementById('performance-modal').classList.remove('active');
+            state.performanceEditId = null;
+        }
+
+        function saveSalesProductPerformanceFromModal() {
+            const payload = {
+                platform_sku: document.getElementById('performancePlatformSku').value.trim(),
+                record_date: document.getElementById('performanceRecordDate').value,
+                sales_qty: document.getElementById('performanceSalesQty').value,
+                net_sales_amount: document.getElementById('performanceNetSales').value,
+                order_qty: document.getElementById('performanceOrderQty').value,
+                session_total: document.getElementById('performanceSessionTotal').value,
+                ad_impressions: document.getElementById('performanceAdImpressions').value,
+                ad_clicks: document.getElementById('performanceAdClicks').value,
+                ad_orders: document.getElementById('performanceAdOrders').value,
+                ad_spend: document.getElementById('performanceAdSpend').value,
+                ad_sales_amount: document.getElementById('performanceAdSales').value,
+                refund_amount: document.getElementById('performanceRefundAmount').value,
+                sub_category_rank: document.getElementById('performanceSubCategoryRank').value
+            };
+            if (!payload.platform_sku || !payload.record_date) {
+                showPerformanceStatus('请填写销售平台SKU和日期', true);
+                return;
+            }
+            if (state.performanceEditId) payload.id = state.performanceEditId;
+
+            fetch('/api/sales-product-performance', {
+                method: state.performanceEditId ? 'PUT' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+                credentials: 'include'
+            }).then(r => r.json()).then(data => {
+                if (data.status !== 'success') {
+                    showPerformanceStatus(data.message || '保存失败', true);
+                    return;
+                }
+                closePerformanceModal();
+                loadSalesProductPerformanceList();
+                if (state.dashboardQueried) loadDashboard();
+            }).catch(err => showPerformanceStatus('请求失败: ' + err, true));
+        }
+
+        async function deleteSalesProductPerformance(id) {
+            const ok = await confirmPerfDialog('确认删除该产品表现记录？', '删除确认');
+            if (!ok) return;
+            fetch('/api/sales-product-performance', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id }),
+                credentials: 'include'
+            }).then(r => r.json()).then(data => {
+                if (data.status !== 'success') {
+                    alertPerfDialog(data.message || '删除失败', '删除失败');
+                    return;
+                }
+                showPerfDialog({ title: '删除成功', message: '记录已删除。' });
+                loadSalesProductPerformanceList(state.performancePage);
+                if (state.dashboardQueried) loadDashboard();
+            }).catch(err => alertPerfDialog('删除失败: ' + err, '删除失败'));
+        }
+
+        function uploadSalesProductPerformanceTemplate(file) {
+            if (!file) return;
+            const formData = new FormData();
+            formData.append('file', file);
+            const taskId = buildImportTaskId();
+            showUploadProgress('正在上传模板...', 35);
+            startImportProgressPolling(taskId);
+            fetchJsonSafe(`/api/sales-product-performance-import?task_id=${encodeURIComponent(taskId)}`, {
+                method: 'POST',
+                body: formData,
+                credentials: 'include',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            }).then(data => {
+                hideUploadProgress();
+                if (data.status !== 'success') {
+                    showPerfDialog({ title: '导入失败', message: data.message || '导入失败', errors: data.errors || [] });
+                    return;
+                }
+                const upserted = Number(data.upserted || 0);
+                const skippedSku = Number(data.skipped_unmatched_sku || 0);
+                const skippedId = Number(data.skipped_empty_identifier || 0);
+                const skippedDate = Number(data.skipped_invalid_date || 0);
+                const skippedSample = Number(data.skipped_template_sample || 0);
+                showPerfDialog({
+                    title: '导入完成',
+                    message: `导入完成：匹配 ${data.created || 0} 条，实际写入(新增或更新) ${upserted} 条，未匹配SKU ${skippedSku} 条，空标识 ${skippedId} 条，日期无效 ${skippedDate} 条，示例行跳过 ${skippedSample} 条，失败 ${(data.errors || []).length} 条`,
+                    errors: data.errors || []
+                });
+                loadSalesProductPerformanceList();
+                if (state.dashboardQueried) loadDashboard();
+            }).catch(err => {
+                hideUploadProgress();
+                showPerfDialog({ title: '导入失败', message: '导入失败: ' + err });
+            });
+        }
+
+        function precheckAndUploadSalesProductPerformanceTemplate(file) {
+            if (!file) return;
+            const formData = new FormData();
+            formData.append('file', file);
+            const taskId = buildImportTaskId();
+            showUploadProgress('正在上传模板并预检...', 20);
+            startImportProgressPolling(taskId);
+            fetchJsonSafe(`/api/sales-product-performance-import?check_only=1&task_id=${encodeURIComponent(taskId)}`, {
+                method: 'POST',
+                body: formData,
+                credentials: 'include',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            }).then(data => {
+                hideUploadProgress();
+                if (data.status !== 'success') {
+                    showPerfDialog({ title: '预检失败', message: data.message || '预检失败', errors: data.errors || [] });
+                    return;
+                }
+                const msg = `预检完成：可匹配 ${data.created || 0} 条，未匹配SKU ${data.skipped_unmatched_sku || 0} 条，空标识 ${data.skipped_empty_identifier || 0} 条，日期无效 ${data.skipped_invalid_date || 0} 条，示例行跳过 ${data.skipped_template_sample || 0} 条。\n是否继续上传？`;
+                showPerfDialog({
+                    title: '批量上传预检',
+                    message: msg,
+                    errors: data.errors || [],
+                    okText: '继续上传',
+                    cancelText: '取消',
+                    onOk: function() { uploadSalesProductPerformanceTemplate(file); }
+                });
+            }).catch(err => {
+                hideUploadProgress();
+                showPerfDialog({ title: '预检失败', message: '预检失败: ' + err });
+            });
+        }
+
         function bindEvents() {
+            document.addEventListener('click', e => {
+                if (!e.target.closest('.check-select')) {
+                    document.querySelectorAll('.check-select').forEach(x => x.classList.remove('open'));
+                }
+            });
+
             document.getElementById('btnQuery').addEventListener('click', loadDashboard);
             document.getElementById('btnReset').addEventListener('click', async () => {
                 setTodayRange();
-                Array.from(document.querySelectorAll('select[multiple]')).forEach(sel => {
-                    Array.from(sel.options).forEach(o => { o.selected = false; });
+                Object.keys(state.filterDefs).forEach(name => {
+                    state.filterDefs[name].selected = new Set();
+                    renderFilterOptions(state.filterDefs[name]);
+                    refreshFilterTrigger(state.filterDefs[name]);
                 });
-                state.metricOrder = ['sales_qty', 'net_sales_amount', 'order_qty', 'ad_spend', 'ad_sales_amount'].filter(k => state.metrics.some(m => m.key === k));
-                renderMetricOrder();
-                await loadDashboard();
+                state.metricOrder = getDefaultMetricOrder();
+                renderMetricCheckboxBar();
+                state.dashboardQueried = false;
+                document.getElementById('dataStatus').textContent = '筛选已重置，请点击查询';
+                document.getElementById('groupContainer').innerHTML = '<h3>货号分组明细</h3><p class="status-tip">请先设置条件后点击查询</p>';
+                renderChart([], []);
             });
-            document.getElementById('btnAddMetric').addEventListener('click', () => {
-                const key = document.getElementById('metricSelect').value;
-                if (!key) return;
-                if (!state.metricOrder.includes(key)) {
-                    state.metricOrder.push(key);
-                    renderMetricOrder();
-                    loadDashboard();
-                }
+
+            document.getElementById('toggleTodos').addEventListener('change', () => {
+                if (state.dashboardQueried) loadDashboard();
             });
-            document.getElementById('toggleTodos').addEventListener('change', loadDashboard);
-            document.getElementById('toggleAds').addEventListener('change', loadDashboard);
-            document.getElementById('filterAdTypes').addEventListener('change', loadDashboard);
+            document.getElementById('toggleAds').addEventListener('change', () => {
+                if (state.dashboardQueried) loadDashboard();
+            });
+
+            document.getElementById('btnPerfSearch').addEventListener('click', () => loadSalesProductPerformanceList(1));
+            document.getElementById('btnPerfReset').addEventListener('click', () => {
+                document.getElementById('performanceSearchInput').value = '';
+                loadSalesProductPerformanceList(1);
+            });
+            document.getElementById('performancePageSizeSelect').addEventListener('change', function() {
+                state.performancePageSize = Math.max(10, Number(this.value || 50));
+                loadSalesProductPerformanceList(1);
+            });
+            document.getElementById('btnPerfTemplate').addEventListener('click', () => {
+                window.location.href = '/api/sales-product-performance-template';
+            });
+            document.getElementById('btnPerfImport').addEventListener('click', () => {
+                document.getElementById('salesProductPerformanceUploadInput').click();
+            });
+            document.getElementById('salesProductPerformanceUploadInput').addEventListener('change', function() {
+                const f = this.files && this.files[0];
+                if (f) precheckAndUploadSalesProductPerformanceTemplate(f);
+                this.value = '';
+            });
+            document.getElementById('btnPerfCreate').addEventListener('click', openCreatePerformanceModal);
+            document.getElementById('btnPerfModalCancel').addEventListener('click', closePerformanceModal);
+            document.getElementById('btnPerfModalSave').addEventListener('click', saveSalesProductPerformanceFromModal);
+            document.getElementById('performanceSearchInput').addEventListener('keydown', e => {
+                if (e.key === 'Enter') loadSalesProductPerformanceList(1);
+            });
+            document.getElementById('performance-modal').addEventListener('click', function(e) {
+                if (e.target === this) closePerformanceModal();
+            });
+            document.getElementById('perf-dialog-modal').addEventListener('click', function(e) {
+                if (e.target === this) this.classList.remove('active');
+            });
         }
 
         async function initPage() {
             setTodayRange();
-            bindChartHover();
+            bindChartInteractions();
             bindEvents();
-            await loadFilters();
-            await loadDashboard();
+            await Promise.all([loadFilters(), loadSalesProductSkuPool()]);
+            document.getElementById('performancePageSizeSelect').value = String(state.performancePageSize);
+            document.getElementById('dataStatus').textContent = '请设置条件后点击查询';
+            document.getElementById('groupContainer').innerHTML = '<h3>货号分组明细</h3><p class="status-tip">请先设置条件后点击查询</p>';
+            renderChart([], []);
+            await loadSalesProductPerformanceList(1);
         }
 
+        window.openEditPerformanceModal = openEditPerformanceModal;
+        window.deleteSalesProductPerformance = deleteSalesProductPerformance;
+
         window.addEventListener('resize', () => {
-            loadDashboard();
+            if (state.dashboardQueried) loadDashboard();
         });
         window.addEventListener('load', initPage);
     </script>

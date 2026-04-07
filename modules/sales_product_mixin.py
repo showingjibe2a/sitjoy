@@ -1872,12 +1872,19 @@ class SalesProductMixin:
             if method == 'GET':
                 keyword = (query_params.get('q', [''])[0] or '').strip()
                 item_id = self._parse_int((query_params.get('id', [''])[0] or '').strip())
-                limit = min(1000, max(1, self._parse_int((query_params.get('limit', ['500'])[0] or '500')) or 500))
-                sql = """
-                    SELECT spp.*, sp.platform_sku, sp.sku_family_id, pf.sku_family
+                page_size = min(200, max(10, self._parse_int((query_params.get('page_size', ['50'])[0] or '50')) or 50))
+                page = max(1, self._parse_int((query_params.get('page', ['1'])[0] or '1')) or 1)
+                limit = min(5000, max(1, self._parse_int((query_params.get('limit', [str(page_size)])[0] or str(page_size))) or page_size))
+                page_size = min(page_size, limit)
+                offset = (page - 1) * page_size
+
+                base_sql = """
                     FROM sales_product_performances spp
                     JOIN sales_products sp ON sp.id = spp.sales_product_id
                     LEFT JOIN product_families pf ON pf.id = sp.sku_family_id
+                """
+                data_sql = """
+                    SELECT spp.*, sp.platform_sku, sp.sku_family_id, pf.sku_family
                 """
                 params = []
                 filters = []
@@ -1889,16 +1896,35 @@ class SalesProductMixin:
                     filters.append('(sp.platform_sku LIKE %s OR pf.sku_family LIKE %s)')
                     params.extend([like_kw, like_kw])
                 if filters:
-                    sql += ' WHERE ' + ' AND '.join(filters)
-                sql += ' ORDER BY spp.record_date DESC, spp.id DESC LIMIT %s'
-                params.append(limit)
+                    where_sql = ' WHERE ' + ' AND '.join(filters)
+                else:
+                    where_sql = ''
+
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute(sql, params)
+                        if item_id:
+                            cur.execute(data_sql + base_sql + where_sql + ' ORDER BY spp.record_date DESC, spp.id DESC LIMIT 1', params)
+                            rows = cur.fetchall() or []
+                            return self.send_json({'status': 'success', 'item': rows[0] if rows else None}, start_response)
+
+                        cur.execute('SELECT COUNT(1) AS cnt ' + base_sql + where_sql, params)
+                        total = int((cur.fetchone() or {}).get('cnt') or 0)
+
+                        data_params = list(params)
+                        data_params.extend([offset, page_size])
+                        cur.execute(
+                            data_sql + base_sql + where_sql + ' ORDER BY spp.record_date DESC, spp.id DESC LIMIT %s, %s',
+                            data_params
+                        )
                         rows = cur.fetchall() or []
-                if item_id:
-                    return self.send_json({'status': 'success', 'item': rows[0] if rows else None}, start_response)
-                return self.send_json({'status': 'success', 'items': rows}, start_response)
+                return self.send_json({
+                    'status': 'success',
+                    'items': rows,
+                    'page': page,
+                    'page_size': page_size,
+                    'total': total,
+                    'total_pages': (total + page_size - 1) // page_size if page_size else 1
+                }, start_response)
 
             if method in ('POST', 'PUT'):
                 data = self._read_json_body(environ)
@@ -2012,14 +2038,14 @@ class SalesProductMixin:
             ws.title = 'sales_product_performance'
 
             headers = [
-                '销售平台SKU*', '日期*', '销量*', '净销售额(USD)*', '订单量*', 'Session-Total*',
+                'MSKU/ASIN/子ASIN*', '日期*', '销量*', '净销售额(USD)*', '订单量*', 'Sessions-Total*',
                 '(广告)展示*', '(广告)点击*', '(广告)订单量*', '(广告)花费(USD)*', '(广告)销售额(USD)*',
                 '退款金额(USD)*', '小类排名*'
             ]
             ws.append(headers)
             ws.append([
-                sku_values[0] if sku_values else '',
-                datetime.now().strftime('%Y-%m-%d'),
+                '示例SKU_请删除此行',
+                '示例日期_请删除此行',
                 12,
                 999.99,
                 10,
@@ -2030,7 +2056,7 @@ class SalesProductMixin:
                 120.50,
                 899.90,
                 0.00,
-                1234
+                'Living Room Chairs:5633'
             ])
 
             for cell in ws[1]:
@@ -2064,10 +2090,79 @@ class SalesProductMixin:
 
     def handle_sales_product_performance_import_api(self, environ, method, start_response):
         try:
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+
+            mode = str((query_params.get('mode', [''])[0] or '')).strip().lower()
+            task_id = str((query_params.get('task_id', [''])[0] or '')).strip()
+
+            import tempfile
+
+            def _safe_task_id(raw):
+                t = str(raw or '').strip()
+                if not t:
+                    return ''
+                if not re.match(r'^[a-zA-Z0-9_-]{8,64}$', t):
+                    return ''
+                return t
+
+            def _progress_file_path(tid):
+                progress_dir = os.path.join(tempfile.gettempdir(), 'sitjoy_import_progress')
+                try:
+                    os.makedirs(progress_dir, exist_ok=True)
+                except Exception:
+                    pass
+                return os.path.join(progress_dir, f'sales_product_performance_{tid}.json')
+
+            def _write_progress(tid, payload):
+                if not tid:
+                    return
+                path = _progress_file_path(tid)
+                tmp_path = path + '.tmp'
+                try:
+                    with open(tmp_path, 'w', encoding='utf-8') as f:
+                        json.dump(payload, f, ensure_ascii=False)
+                    os.replace(tmp_path, path)
+                except Exception:
+                    pass
+
+            def _read_progress(tid):
+                if not tid:
+                    return None
+                path = _progress_file_path(tid)
+                if not os.path.exists(path):
+                    return None
+                try:
+                    with open(path, 'r', encoding='utf-8') as f:
+                        return json.load(f)
+                except Exception:
+                    return None
+
+            safe_task_id = _safe_task_id(task_id)
+
+            if method == 'GET' and mode == 'progress':
+                data = _read_progress(safe_task_id)
+                if not data:
+                    return self.send_json({
+                        'status': 'success',
+                        'task_id': safe_task_id,
+                        'state': 'pending',
+                        'processed_rows': 0,
+                        'total_rows': 0,
+                        'created': 0,
+                        'message': '等待任务开始'
+                    }, start_response)
+                data.setdefault('status', 'success')
+                data.setdefault('task_id', safe_task_id)
+                return self.send_json(data, start_response)
+
             if method != 'POST':
                 return self.send_error(405, 'Method not allowed', start_response)
             if load_workbook is None:
                 return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
+            check_only = str((query_params.get('check_only', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
+
+            if not safe_task_id:
+                safe_task_id = hashlib.md5(f"{datetime.now().isoformat()}_{os.getpid()}".encode('utf-8')).hexdigest()[:16]
 
             content_type = environ.get('CONTENT_TYPE', '')
             if 'multipart/form-data' not in content_type:
@@ -2085,25 +2180,61 @@ class SalesProductMixin:
             if not file_bytes:
                 return self.send_json({'status': 'error', 'message': 'Empty file'}, start_response)
 
-            wb = load_workbook(io.BytesIO(file_bytes))
+            # 全程只读模式，降低大文件导入时CPU和内存开销
+            wb = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
             ws = wb.active
-            headers = [str(cell.value or '').strip() for cell in ws[1]]
-            header_map = {name: idx for idx, name in enumerate(headers)}
+            total_rows_hint = max(0, int((ws.max_row or 1)) - 1)
 
-            required = [
-                '销售平台SKU*', '日期*', '销量*', '净销售额(USD)*', '订单量*', 'Session-Total*',
-                '(广告)展示*', '(广告)点击*', '(广告)订单量*', '(广告)花费(USD)*', '(广告)销售额(USD)*',
-                '退款金额(USD)*', '小类排名*'
-            ]
-            for col_name in required:
-                if col_name not in header_map:
-                    return self.send_json({'status': 'error', 'message': f'模板缺少列: {col_name}'}, start_response)
+            # 读取第一行作为headers（read_only模式下避免ws[1]）
+            header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
+            headers = [str(x or '').strip() for x in (header_row or [])]
 
-            def get_cell(row, name):
-                idx = header_map.get(name)
+            def normalize_header(text):
+                t = str(text or '').strip().lower()
+                t = t.replace('\ufeff', '')
+                t = t.replace('*', '')
+                t = t.replace('（', '(').replace('）', ')')
+                t = t.replace('：', ':')
+                t = re.sub(r'[\s\-_/\\|()\[\]{}:]+', '', t)
+                return t
+
+            alias_groups = {
+                'identifier': ['销售平台sku', '销售平台sku/msku/asin/子asin', 'msku/asin/子asin', 'platformsku', 'sku', 'msku', 'asin', '子asin', '子体asin', 'childasin', '子体编码', '子体编号'],
+                'record_date': ['日期', 'date', 'recorddate'],
+                'sales_qty': ['销量', 'salesqty', 'salesquantity'],
+                'net_sales_amount': ['净销售额(usd)', '净销售额', '销售额', 'netsales', 'netsalesamount', 'salesamount'],
+                'order_qty': ['订单量', 'orderqty', 'orderquantity'],
+                'session_total': ['session-total', 'sessions-total', 'sessiontotal', 'sessionstotal'],
+                'ad_impressions': ['(广告)展示', '广告展示', '展示', 'adimpressions', 'impressions'],
+                'ad_clicks': ['(广告)点击', '广告点击', '点击', 'adclicks', 'clicks'],
+                'ad_orders': ['(广告)订单量', '广告订单量', 'adorders', 'ordersfromad'],
+                'ad_spend': ['(广告)花费(usd)', '(广告)花费', '广告花费(usd)', '广告花费', 'adspend', 'spend'],
+                'ad_sales_amount': ['(广告)销售额(usd)', '(广告)销售额', '广告销售额(usd)', '广告销售额', 'adsales', 'adsalesamount'],
+                'refund_amount': ['退款金额(usd)', '退款金额', 'refundamount'],
+                'sub_category_rank': ['小类排名', 'categoryrank', 'subcategoryrank']
+            }
+
+            normalized_headers = [normalize_header(h) for h in headers]
+            resolved_col = {}
+            for key, aliases in alias_groups.items():
+                found = None
+                alias_set = set([normalize_header(x) for x in aliases])
+                for idx, norm_name in enumerate(normalized_headers):
+                    if norm_name in alias_set:
+                        found = idx
+                        break
+                resolved_col[key] = found
+
+            if resolved_col.get('identifier') is None:
+                return self.send_json({'status': 'error', 'message': '模板缺少标识列（销售平台SKU/MSKU/ASIN/子ASIN）'}, start_response)
+            if resolved_col.get('record_date') is None:
+                return self.send_json({'status': 'error', 'message': '模板缺少日期列'}, start_response)
+
+            def get_cell(row, field_key):
+                idx = resolved_col.get(field_key)
                 if idx is None or idx >= len(row):
                     return None
-                return row[idx].value
+                return row[idx]
 
             def normalize_date(value):
                 if value is None:
@@ -2119,6 +2250,43 @@ class SalesProductMixin:
                     except Exception:
                         continue
                 return text[:10]
+
+            def parse_number_flexible(value, as_int=False):
+                if value is None:
+                    return 0 if as_int else 0.0
+                if isinstance(value, (int, float)):
+                    if as_int:
+                        try:
+                            return int(round(float(value)))
+                        except Exception:
+                            return 0
+                    return float(value)
+                text = str(value).strip()
+                if not text:
+                    return 0 if as_int else 0.0
+                text = text.replace('，', ',').replace('$', '').replace('￥', '')
+                text = text.replace(',', '')
+                m = re.search(r'-?\d+(?:\.\d+)?', text)
+                if not m:
+                    return 0 if as_int else 0.0
+                num = float(m.group(0))
+                if as_int:
+                    return int(round(num))
+                return num
+
+            def parse_rank(value):
+                if value is None:
+                    return None
+                text = str(value).strip()
+                if not text:
+                    return None
+                m = re.search(r'(\d+)\s*$', text)
+                if m:
+                    return int(m.group(1))
+                m2 = re.search(r'(\d+)', text)
+                if m2:
+                    return int(m2.group(1))
+                return None
 
             def row_signature(payload):
                 return '|'.join([
@@ -2139,110 +2307,260 @@ class SalesProductMixin:
             updated = 0
             unchanged = 0
             errors = []
+            skipped_empty_identifier = 0
+            skipped_unmatched_sku = 0
+            skipped_invalid_date = 0
+            skipped_template_sample = 0
+            upserted = 0
+
+            _write_progress(safe_task_id, {
+                'status': 'success',
+                'task_id': safe_task_id,
+                'state': 'running',
+                'processed_rows': 0,
+                'total_rows': total_rows_hint,
+                'created': 0,
+                'message': '开始处理...'
+            })
 
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("SELECT id, platform_sku FROM sales_products")
-                    sku_map = {str(row.get('platform_sku') or '').strip(): int(row.get('id')) for row in (cur.fetchall() or []) if str(row.get('platform_sku') or '').strip() and row.get('id')}
-
-                    cur.execute("SELECT spp.id, spp.sales_product_id, spp.record_date, spp.sales_qty, spp.net_sales_amount, spp.order_qty, spp.session_total, spp.ad_impressions, spp.ad_clicks, spp.ad_orders, spp.ad_spend, spp.ad_sales_amount, spp.refund_amount, spp.sub_category_rank, sp.platform_sku FROM sales_product_performances spp JOIN sales_products sp ON sp.id=spp.sales_product_id")
-                    existing = {}
+                    # 一次性加载SKU/ASIN映射，避免双遍Excel扫描导致总时长翻倍
+                    sku_map = {}
+                    asin_map = {}
+                    cur.execute("SELECT id, platform_sku, child_code FROM sales_products")
                     for row in (cur.fetchall() or []):
-                        key = (int(row.get('sales_product_id') or 0), str(row.get('record_date') or '').strip())
-                        existing[key] = row
+                        rid = int(row.get('id') or 0)
+                        sku = str(row.get('platform_sku') or '').strip().lower()
+                        child_code = str(row.get('child_code') or '').strip().lower()
+                        if rid and sku:
+                            sku_map[sku] = rid
+                        if rid and child_code:
+                            asin_map[child_code] = rid
+                    
+                    # 初始化批处理变量
+                    batch_rows = []
+                    batch_size = 300
+                    upsert_sql = (
+                        "INSERT INTO sales_product_performances "
+                        "(sales_product_id,record_date,sales_qty,net_sales_amount,order_qty,session_total,"
+                        "ad_impressions,ad_clicks,ad_orders,ad_spend,ad_sales_amount,refund_amount,sub_category_rank) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                        "ON DUPLICATE KEY UPDATE "
+                        "sales_qty=VALUES(sales_qty),"
+                        "net_sales_amount=VALUES(net_sales_amount),"
+                        "order_qty=VALUES(order_qty),"
+                        "session_total=VALUES(session_total),"
+                        "ad_impressions=VALUES(ad_impressions),"
+                        "ad_clicks=VALUES(ad_clicks),"
+                        "ad_orders=VALUES(ad_orders),"
+                        "ad_spend=VALUES(ad_spend),"
+                        "ad_sales_amount=VALUES(ad_sales_amount),"
+                        "refund_amount=VALUES(refund_amount),"
+                        "sub_category_rank=VALUES(sub_category_rank)"
+                    )
+                    
+                    def flush_batch_data():
+                        if not batch_rows:
+                            return 0
+                        try:
+                            cur.executemany(upsert_sql, batch_rows)
+                            conn.commit()
+                            return len(batch_rows)
+                        except Exception as e:
+                            conn.rollback()
+                            raise RuntimeError(f"批量写入失败: {str(e)[:180]}")
+                        finally:
+                            batch_rows.clear()
 
-                for row_idx in range(2, ws.max_row + 1):
-                    row = ws[row_idx]
-                    if not any(cell.value is not None and str(cell.value).strip() for cell in row):
-                        continue
+                    # 预检模式：只检查前100行用于快速验证；正式模式：处理全部行
+                    process_limit = 100 if check_only else 999999
+                    processed_count = 0
+                    row_count = 0
 
-                    try:
-                        sku = str(get_cell(row, '销售平台SKU*') or '').strip()
-                        sales_product_id = sku_map.get(sku)
-                        if not sales_product_id:
-                            raise ValueError(f'Unknown platform_sku: {sku}')
+                    # 使用iter_rows避免遍历max_row导致的超时问题
+                    for row in ws.iter_rows(min_row=2, values_only=True):
+                        # 达到预检限制时提前退出
+                        if check_only and processed_count >= process_limit:
+                            break
 
-                        record_date = normalize_date(get_cell(row, '日期*'))
-                        if not record_date:
-                            raise ValueError('日期格式错误')
+                        row_count += 1
 
-                        payload = {
-                            'sales_product_id': sales_product_id,
-                            'record_date': record_date,
-                            'sales_qty': self._parse_int(get_cell(row, '销量*')) or 0,
-                            'net_sales_amount': self._parse_float(get_cell(row, '净销售额(USD)*')) or 0,
-                            'order_qty': self._parse_int(get_cell(row, '订单量*')) or 0,
-                            'session_total': self._parse_int(get_cell(row, 'Session-Total*')) or 0,
-                            'ad_impressions': self._parse_int(get_cell(row, '(广告)展示*')) or 0,
-                            'ad_clicks': self._parse_int(get_cell(row, '(广告)点击*')) or 0,
-                            'ad_orders': self._parse_int(get_cell(row, '(广告)订单量*')) or 0,
-                            'ad_spend': self._parse_float(get_cell(row, '(广告)花费(USD)*')) or 0,
-                            'ad_sales_amount': self._parse_float(get_cell(row, '(广告)销售额(USD)*')) or 0,
-                            'refund_amount': self._parse_float(get_cell(row, '退款金额(USD)*')) or 0,
-                            'sub_category_rank': self._parse_int(get_cell(row, '小类排名*')),
-                        }
-                        signature = row_signature(payload)
-                        existing_row = existing.get((sales_product_id, record_date))
-                        if existing_row:
-                            existing_payload = {
-                                'sales_qty': existing_row.get('sales_qty') or 0,
-                                'net_sales_amount': existing_row.get('net_sales_amount') or 0,
-                                'order_qty': existing_row.get('order_qty') or 0,
-                                'session_total': existing_row.get('session_total') or 0,
-                                'ad_impressions': existing_row.get('ad_impressions') or 0,
-                                'ad_clicks': existing_row.get('ad_clicks') or 0,
-                                'ad_orders': existing_row.get('ad_orders') or 0,
-                                'ad_spend': existing_row.get('ad_spend') or 0,
-                                'ad_sales_amount': existing_row.get('ad_sales_amount') or 0,
-                                'refund_amount': existing_row.get('refund_amount') or 0,
-                                'sub_category_rank': existing_row.get('sub_category_rank') or '',
-                            }
-                            if row_signature(existing_payload) == signature:
-                                unchanged += 1
+                        if not any(cell is not None and str(cell).strip() for cell in row):
+                            continue
+
+                        processed_count += 1
+
+                        try:
+                            identifier = str(get_cell(row, 'identifier') or '').strip()
+                            if not identifier:
+                                # 缺少标识，直接跳过（不计入errors）
+                                skipped_empty_identifier += 1
+                                continue
+
+                            low_identifier = identifier.lower()
+                            if any(x in low_identifier for x in ('示例', 'sample', 'demo', 'template', '请删除')):
+                                skipped_template_sample += 1
+                                continue
+                            sales_product_id = sku_map.get(low_identifier)
+                            if not sales_product_id:
+                                sales_product_id = asin_map.get(low_identifier)
+
+                            # SKU无法匹配时，直接跳过该行（不计入errors，不中断流程）
+                            if not sales_product_id:
+                                skipped_unmatched_sku += 1
+                                continue
+
+                            record_date = normalize_date(get_cell(row, 'record_date'))
+                            if not record_date:
+                                # 日期格式错误，直接跳过
+                                skipped_invalid_date += 1
+                                continue
+
+                            # 兼容历史模板样例行保护（避免误导入示例数据）
+                            if record_date == '2026-04-07':
+                                skipped_template_sample += 1
+                                continue
+
+                            # 预检模式：只计算统计，不入库
+                            if check_only:
+                                created += 1
                             else:
-                                updated += 1
-                        else:
-                            created += 1
+                                batch_rows.append((
+                                    sales_product_id,
+                                    record_date,
+                                    parse_number_flexible(get_cell(row, 'sales_qty'), True),
+                                    parse_number_flexible(get_cell(row, 'net_sales_amount'), False),
+                                    parse_number_flexible(get_cell(row, 'order_qty'), True),
+                                    parse_number_flexible(get_cell(row, 'session_total'), True),
+                                    parse_number_flexible(get_cell(row, 'ad_impressions'), True),
+                                    parse_number_flexible(get_cell(row, 'ad_clicks'), True),
+                                    parse_number_flexible(get_cell(row, 'ad_orders'), True),
+                                    parse_number_flexible(get_cell(row, 'ad_spend'), False),
+                                    parse_number_flexible(get_cell(row, 'ad_sales_amount'), False),
+                                    parse_number_flexible(get_cell(row, 'refund_amount'), False),
+                                    parse_rank(get_cell(row, 'sub_category_rank')),
+                                ))
+                                created += 1
 
-                        cur.execute(
-                            """
-                            INSERT INTO sales_product_performances
-                            (sales_product_id, record_date, sales_qty, net_sales_amount, order_qty, session_total,
-                             ad_impressions, ad_clicks, ad_orders, ad_spend, ad_sales_amount, refund_amount, sub_category_rank)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                            ON DUPLICATE KEY UPDATE
-                                sales_qty=VALUES(sales_qty),
-                                net_sales_amount=VALUES(net_sales_amount),
-                                order_qty=VALUES(order_qty),
-                                session_total=VALUES(session_total),
-                                ad_impressions=VALUES(ad_impressions),
-                                ad_clicks=VALUES(ad_clicks),
-                                ad_orders=VALUES(ad_orders),
-                                ad_spend=VALUES(ad_spend),
-                                ad_sales_amount=VALUES(ad_sales_amount),
-                                refund_amount=VALUES(refund_amount),
-                                sub_category_rank=VALUES(sub_category_rank)
-                            """,
-                            (
-                                payload['sales_product_id'], payload['record_date'], payload['sales_qty'], payload['net_sales_amount'],
-                                payload['order_qty'], payload['session_total'], payload['ad_impressions'], payload['ad_clicks'],
-                                payload['ad_orders'], payload['ad_spend'], payload['ad_sales_amount'], payload['refund_amount'],
-                                payload['sub_category_rank']
-                            )
-                        )
-                    except Exception as e:
-                        errors.append({'row': row_idx, 'error': str(e)})
+                                # 达到batch_size则执行
+                                if len(batch_rows) >= batch_size:
+                                    upserted += flush_batch_data()
+                        except Exception as batch_err:
+                            errors.append(f"第{row_count+1}行处理失败: {str(batch_err)[:100]}")
+
+                        if row_count % 50 == 0:
+                            _write_progress(safe_task_id, {
+                                'status': 'success',
+                                'task_id': safe_task_id,
+                                'state': 'running',
+                                'processed_rows': row_count,
+                                'total_rows': total_rows_hint,
+                                'created': created,
+                                'message': f'正在处理第 {row_count} 行'
+                            })
+
+                    # 导入完成后，flush最后的batch数据
+                    if not check_only:
+                        upserted += flush_batch_data()
+                        conn.commit()  # 最终确保commit
+
+            if not check_only and upserted <= 0:
+                msg = (
+                    f"未成功写入任何数据：处理行{row_count}，"
+                    f"匹配行{created}，空标识跳过{skipped_empty_identifier}，"
+                    f"未匹配SKU跳过{skipped_unmatched_sku}，日期无效跳过{skipped_invalid_date}。"
+                    f"示例行跳过{skipped_template_sample}。"
+                    "请检查模板SKU是否能匹配 sales_products.platform_sku/child_code。"
+                )
+                _write_progress(safe_task_id, {
+                    'status': 'error',
+                    'task_id': safe_task_id,
+                    'state': 'error',
+                    'processed_rows': row_count,
+                    'total_rows': total_rows_hint,
+                    'created': created,
+                    'message': msg
+                })
+                return self.send_json({
+                    'status': 'error',
+                    'task_id': safe_task_id,
+                    'message': msg,
+                    'stats': {
+                        'processed_rows': row_count,
+                        'matched_rows': created,
+                        'upserted_rows': upserted,
+                        'skipped_empty_identifier': skipped_empty_identifier,
+                        'skipped_unmatched_sku': skipped_unmatched_sku,
+                        'skipped_invalid_date': skipped_invalid_date
+                        , 'skipped_template_sample': skipped_template_sample
+                    },
+                    'errors': errors[:100]
+                }, start_response)
+
+            _write_progress(safe_task_id, {
+                'status': 'success',
+                'task_id': safe_task_id,
+                'state': 'success',
+                'processed_rows': row_count,
+                'total_rows': total_rows_hint,
+                'created': created,
+                'message': f'处理完成，匹配 {created} 条，写入 {upserted} 条'
+            })
 
             return self.send_json({
                 'status': 'success',
+                'task_id': safe_task_id,
+                'check_only': check_only,
                 'created': created,
                 'updated': updated,
                 'unchanged': unchanged,
+                'upserted': upserted,
+                'skipped_empty_identifier': skipped_empty_identifier,
+                'skipped_unmatched_sku': skipped_unmatched_sku,
+                'skipped_invalid_date': skipped_invalid_date,
+                'skipped_template_sample': skipped_template_sample,
                 'errors': errors,
-                'total_rows': created + updated + unchanged + len(errors)
+                'total_rows': created + updated + unchanged + len(errors),
+                'message': (
+                    f"成功处理：匹配{created}条，写入{upserted}条，"
+                    f"未匹配SKU{skipped_unmatched_sku}条，示例行{skipped_template_sample}条"
+                ) if not check_only else f"预检完成，预计可识别{created}条数据"
             }, start_response)
         except Exception as e:
-            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+            import traceback
+            try:
+                _write_progress(safe_task_id if 'safe_task_id' in locals() else '', {
+                    'status': 'error',
+                    'task_id': safe_task_id if 'safe_task_id' in locals() else '',
+                    'state': 'error',
+                    'processed_rows': 0,
+                    'total_rows': 0,
+                    'created': 0,
+                    'message': str(e)[:200]
+                })
+            except Exception:
+                pass
+            error_str = str(e).lower()
+            
+            if 'sales_product_performances' in error_str or 'table' in error_str and 'doesn\'t exist' in error_str:
+                return self.send_json({
+                    'status': 'error',
+                    'message': '❌ 表不存在：请先在数据库执行 scripts/sql/20260404_00_sales_product_performance.sql'
+                }, start_response)
+            
+            if 'connection' in error_str or 'timeout' in error_str:
+                return self.send_json({
+                    'status': 'error',
+                    'message': f'❌ 数据库连接错误：{str(e)[:100]}'
+                }, start_response)
+            
+            tb = traceback.format_exc()
+            return self.send_json({
+                'status': 'error',
+                'message': str(e)[:200],
+                'detail': tb.split('\n')[-3:-1] if check_only else None
+            }, start_response)
 
     def handle_sales_product_performance_dashboard_api(self, environ, method, start_response):
         try:
@@ -2285,7 +2603,7 @@ class SalesProductMixin:
                 {'key': 'sales_qty', 'label': '销量', 'color': '#5b6aa8', 'agg': 'sum'},
                 {'key': 'net_sales_amount', 'label': '净销售额', 'color': '#b85c5c', 'agg': 'sum'},
                 {'key': 'order_qty', 'label': '订单量', 'color': '#bc7a3f', 'agg': 'sum'},
-                {'key': 'session_total', 'label': 'Session-Total', 'color': '#44798c', 'agg': 'sum'},
+                {'key': 'session_total', 'label': 'Sessions-Total', 'color': '#44798c', 'agg': 'sum'},
                 {'key': 'ad_impressions', 'label': '广告展示', 'color': '#7e8a57', 'agg': 'sum'},
                 {'key': 'ad_clicks', 'label': '广告点击', 'color': '#8b6f9c', 'agg': 'sum'},
                 {'key': 'ad_orders', 'label': '广告订单量', 'color': '#4d7ea8', 'agg': 'sum'},
@@ -2498,11 +2816,10 @@ class SalesProductMixin:
                     sql_t = [
                         """
                         SELECT t.id, t.title, t.detail, t.completed_at, t.status,
-                               u.name AS creator_name, u.username AS creator_username,
+                               '' AS creator_name, '' AS creator_username,
                                sp.platform_sku, pf.sku_family
                         FROM todos t
                         JOIN todo_sales_links tsl ON tsl.todo_id = t.id
-                        LEFT JOIN users u ON u.id = t.created_by
                         LEFT JOIN sales_products sp ON sp.id = tsl.sales_product_id
                         LEFT JOIN product_families pf ON pf.id = tsl.sku_family_id
                         WHERE t.status='done' AND t.completed_at IS NOT NULL
