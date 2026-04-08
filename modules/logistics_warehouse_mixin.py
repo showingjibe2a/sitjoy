@@ -24,6 +24,73 @@ except Exception as _e:
 
 class LogisticsWarehouseMixin:
 
+    def _normalize_id_list_local(self, value):
+        if value is None:
+            return []
+        items = value if isinstance(value, list) else re.split(r'[\s,，;；]+', str(value))
+        out = []
+        seen = set()
+        for raw in items:
+            item_id = self._parse_int(raw)
+            if not item_id or item_id in seen:
+                continue
+            seen.add(item_id)
+            out.append(item_id)
+        return out
+
+    def _replace_factory_order_product_links(self, conn, factory_id, order_product_ids):
+        factory_num = self._parse_int(factory_id)
+        if not factory_num:
+            return
+        ids = self._normalize_id_list_local(order_product_ids)
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM order_product_factory_links WHERE factory_id=%s", (factory_num,))
+            if ids:
+                cur.executemany(
+                    "INSERT INTO order_product_factory_links (order_product_id, factory_id) VALUES (%s, %s)",
+                    [(item_id, factory_num) for item_id in ids]
+                )
+
+    def _attach_factory_order_product_links(self, conn, rows):
+        if not rows:
+            return
+        factory_ids = [self._parse_int(row.get('id')) for row in rows if self._parse_int(row.get('id'))]
+        if not factory_ids:
+            for row in rows:
+                row['order_product_ids'] = []
+                row['order_product_skus'] = []
+            return
+        placeholders = ','.join(['%s'] * len(factory_ids))
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT
+                    opl.factory_id,
+                    op.id AS order_product_id,
+                    op.sku
+                FROM order_product_factory_links opl
+                JOIN order_products op ON op.id = opl.order_product_id
+                WHERE opl.factory_id IN ({placeholders})
+                ORDER BY op.sku ASC
+                """,
+                tuple(factory_ids)
+            )
+            link_rows = cur.fetchall() or []
+        bucket = {}
+        for item in link_rows:
+            factory_id = self._parse_int(item.get('factory_id'))
+            order_product_id = self._parse_int(item.get('order_product_id'))
+            if not factory_id or not order_product_id:
+                continue
+            state = bucket.setdefault(factory_id, {'ids': [], 'skus': []})
+            state['ids'].append(order_product_id)
+            state['skus'].append(str(item.get('sku') or '').strip())
+        for row in rows:
+            row_id = self._parse_int(row.get('id'))
+            state = bucket.get(row_id) or {'ids': [], 'skus': []}
+            row['order_product_ids'] = state['ids']
+            row['order_product_skus'] = state['skus']
+
     def handle_factory_stock_api(self, environ, method, start_response):
         """工厂在库库存 CRUD"""
         try:
@@ -903,25 +970,45 @@ class LogisticsWarehouseMixin:
     def handle_logistics_factory_api(self, environ, method, start_response):
         try:
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            action = (query_params.get('action', [''])[0] or '').strip().lower()
             user_id = self._get_session_user(environ)
             actor_record = self._get_user_permission_record(user_id) if user_id else None
             can_manage_factory_master = bool(actor_record and actor_record.get('is_admin'))
             if method == 'GET':
+                if action == 'order_product_options':
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            # 显示所有可选的 SKU（不按工厂绑定关系筛选）
+                            cur.execute("SELECT id, sku FROM order_products ORDER BY sku ASC")
+                            options = cur.fetchall() or []
+                    return self.send_json({'status': 'success', 'items': options}, start_response)
+
                 keyword = (query_params.get('q', [''])[0] or '').strip()
+                item_id = self._parse_int((query_params.get('id', [''])[0] or '').strip())
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         scope_clause, scope_params = self._factory_scope_clause('id', user_id, prefix='AND')
-                        if keyword:
+                        if item_id:
+                            cur.execute(
+                                f"SELECT id, factory_name, created_at, updated_at FROM logistics_factories WHERE id=%s {scope_clause} LIMIT 1",
+                                (item_id,) + scope_params
+                            )
+                            rows = cur.fetchall() or []
+                        elif keyword:
                             cur.execute(
                                 f"SELECT id, factory_name, created_at, updated_at FROM logistics_factories WHERE factory_name LIKE %s{scope_clause} ORDER BY id DESC",
                                 (f"%{keyword}%",) + scope_params
                             )
+                            rows = cur.fetchall() or []
                         else:
                             cur.execute(
                                 f"SELECT id, factory_name, created_at, updated_at FROM logistics_factories WHERE 1=1 {scope_clause} ORDER BY id DESC",
                                 scope_params
                             )
-                        rows = cur.fetchall() or []
+                            rows = cur.fetchall() or []
+                    self._attach_factory_order_product_links(conn, rows)
+                if item_id:
+                    return self.send_json({'status': 'success', 'item': rows[0] if rows else None}, start_response)
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             data = self._read_json_body(environ)
@@ -929,12 +1016,14 @@ class LogisticsWarehouseMixin:
                 if not can_manage_factory_master:
                     return self.send_json({'status': 'error', 'message': '仅管理员可维护工厂主数据'}, start_response)
                 name = (data.get('factory_name') or '').strip()
+                order_product_ids = self._normalize_id_list_local(data.get('order_product_ids'))
                 if not name:
                     return self.send_json({'status': 'error', 'message': 'Missing factory_name'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute("INSERT INTO logistics_factories (factory_name) VALUES (%s)", (name,))
                         new_id = cur.lastrowid
+                    self._replace_factory_order_product_links(conn, new_id, order_product_ids)
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
             if method == 'PUT':
@@ -942,11 +1031,13 @@ class LogisticsWarehouseMixin:
                     return self.send_json({'status': 'error', 'message': '仅管理员可维护工厂主数据'}, start_response)
                 item_id = self._parse_int(data.get('id'))
                 name = (data.get('factory_name') or '').strip()
+                order_product_ids = self._normalize_id_list_local(data.get('order_product_ids'))
                 if not item_id or not name:
                     return self.send_json({'status': 'error', 'message': 'Missing id or factory_name'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute("UPDATE logistics_factories SET factory_name=%s WHERE id=%s", (name, item_id))
+                    self._replace_factory_order_product_links(conn, item_id, order_product_ids)
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':

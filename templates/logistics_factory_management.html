@@ -26,6 +26,9 @@
                         </div>
                         <span class="pm-divider" aria-hidden="true"></span>
                         <button class="btn-accent" onclick="openCreateModal()">新增</button>
+                        <button class="btn-secondary" type="button" onclick="downloadSkuFactoryTemplate()">下载SKU-工厂关联模板</button>
+                        <button class="btn-primary" type="button" onclick="triggerSkuFactoryImport()">上传SKU-工厂关联表</button>
+                        <input type="file" id="skuFactoryImportInput" accept=".xlsx,.xls" style="display:none;">
                     </div>
                 </div>
             </div>
@@ -53,6 +56,22 @@
                     <label for="factoryName">工厂名称<span class="required-asterisk">*</span></label>
                     <input type="text" id="factoryName" class="required-field" placeholder="请输入工厂名称">
                 </div>
+                <div class="form-group pm-form-full">
+                    <label>关联下单SKU（可多选）</label>
+                    <div class="feature-category-picker is-multi-check" id="factorySkuPicker">
+                        <div class="feature-category-chips" id="factorySkuSelected"></div>
+                        <div class="feature-category-dropdown" id="factorySkuDropdown">
+                            <button type="button" class="feature-category-add" id="factorySkuToggle">
+                                <span class="feature-category-add-icon">+</span>
+                                <span class="feature-category-add-text">选择SKU</span>
+                            </button>
+                            <div class="feature-category-menu" id="factorySkuMenu">
+                                <input type="text" id="factorySkuSearch" class="pm-select-search" placeholder="搜索下单SKU">
+                                <div class="feature-category-list" id="factorySkuList"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
             <div class="pm-modal-actions">
@@ -66,6 +85,92 @@
 
     <script>
         let editId = null;
+        let orderProductOptions = [];
+        let selectedOrderProductIds = [];
+
+        function normalizeIds(value){
+            if(!value) return [];
+            if(Array.isArray(value)) return value.map(v => String(v));
+            return String(value).split(',').map(v => v.trim()).filter(Boolean);
+        }
+        function setOrderProductSelected(value){
+            selectedOrderProductIds = normalizeIds(value);
+            renderOrderProductPicker();
+        }
+        function renderOrderProductPicker(){
+            const chips = document.getElementById('factorySkuSelected');
+            const list = document.getElementById('factorySkuList');
+            if(!chips || !list) return;
+            const keyword = (document.getElementById('factorySkuSearch')?.value || '').trim().toLowerCase();
+            chips.innerHTML = '';
+            selectedOrderProductIds.forEach(id => {
+                const item = orderProductOptions.find(opt => String(opt.id) === String(id));
+                if(!item) return;
+                const chip = document.createElement('span');
+                chip.className = 'feature-category-chip';
+                chip.textContent = item.sku || `SKU${id}`;
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'feature-category-remove';
+                removeBtn.innerText = '×';
+                removeBtn.addEventListener('click', function(){
+                    selectedOrderProductIds = selectedOrderProductIds.filter(itemId => String(itemId) !== String(id));
+                    renderOrderProductPicker();
+                });
+                chip.appendChild(removeBtn);
+                chips.appendChild(chip);
+            });
+
+            const selectedSet = new Set(selectedOrderProductIds.map(id => String(id)));
+            list.innerHTML = '';
+            const available = orderProductOptions.filter(item => {
+                if(selectedSet.has(String(item.id))) return false;
+                if(!keyword) return true;
+                return String(item.sku || '').toLowerCase().includes(keyword);
+            });
+            if(!available.length){
+                const empty = document.createElement('div');
+                empty.className = 'feature-category-empty';
+                empty.textContent = '暂无可选SKU';
+                list.appendChild(empty);
+                return;
+            }
+            available.forEach(item => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'feature-category-option';
+                btn.textContent = item.sku || `SKU${item.id}`;
+                btn.addEventListener('click', function(){
+                    selectedOrderProductIds.push(String(item.id));
+                    renderOrderProductPicker();
+                });
+                list.appendChild(btn);
+            });
+        }
+        function openOrderProductDropdown(){
+            const dropdown = document.getElementById('factorySkuDropdown');
+            if(!dropdown) return;
+            dropdown.classList.add('expanded');
+            dropdown.classList.add('open');
+        }
+        function closeOrderProductDropdown(){
+            const dropdown = document.getElementById('factorySkuDropdown');
+            if(!dropdown) return;
+            dropdown.classList.remove('open');
+            dropdown.classList.remove('expanded');
+        }
+        function loadOrderProductOptions(){
+            fetch('/api/logistics-factory?action=order_product_options', { credentials: 'include' })
+                .then(r => r.json())
+                .then(data => {
+                    orderProductOptions = data.status === 'success' ? (data.items || []) : [];
+                    renderOrderProductPicker();
+                })
+                .catch(() => {
+                    orderProductOptions = [];
+                    renderOrderProductPicker();
+                });
+        }
         function showStatus(msg, err){
             const el = document.getElementById('modalStatus');
             el.style.display = 'block';
@@ -79,13 +184,33 @@
             editId = null;
             document.getElementById('pm-modal-title').innerText = '新增工厂';
             document.getElementById('factoryName').value = '';
+            setOrderProductSelected([]);
+            document.getElementById('factorySkuSearch').value = '';
             resetStatus();
             document.getElementById('pm-modal').classList.add('active');
         }
-        function openEditModal(item){
+        function openEditModal(itemOrId){
+            const item = (typeof itemOrId === 'object' && itemOrId) ? itemOrId : null;
+            const itemId = item ? Number(item.id || 0) : Number(itemOrId || 0);
+            if(!itemId) return;
+            if(!item){
+                fetch(`/api/logistics-factory?id=${encodeURIComponent(String(itemId))}`)
+                    .then(r => r.json())
+                    .then(resp => {
+                        if(resp.status !== 'success' || !resp.item){
+                            alert(resp.message || '未找到工厂详情');
+                            return;
+                        }
+                        openEditModal(resp.item);
+                    })
+                    .catch(err => alert('加载详情失败: ' + err));
+                return;
+            }
             editId = item.id;
             document.getElementById('pm-modal-title').innerText = '编辑工厂';
             document.getElementById('factoryName').value = item.factory_name || '';
+            setOrderProductSelected(item.order_product_ids || []);
+            document.getElementById('factorySkuSearch').value = '';
             resetStatus();
             document.getElementById('pm-modal').classList.add('active');
         }
@@ -93,7 +218,7 @@
         function saveFromModal(){
             const factory_name = document.getElementById('factoryName').value.trim();
             if(!factory_name){ showStatus('请填写工厂名称', true); return; }
-            const payload = { factory_name };
+            const payload = { factory_name, order_product_ids: selectedOrderProductIds };
             let method = 'POST';
             if(editId){ payload.id = editId; method = 'PUT'; }
             fetch('/api/logistics-factory', { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
@@ -103,6 +228,34 @@
                         setTimeout(()=>{ closeModal(); loadList(); }, 300);
                     } else { showStatus(data.message || '操作失败', true); }
                 }).catch(err=>showStatus('请求失败: '+err, true));
+        }
+        function downloadSkuFactoryTemplate(){
+            window.location.href = '/api/order-product?action=factory_links_template';
+        }
+        function triggerSkuFactoryImport(){
+            const input = document.getElementById('skuFactoryImportInput');
+            if(input) input.click();
+        }
+        function uploadSkuFactoryLinks(file){
+            if(!file) return;
+            const formData = new FormData();
+            formData.append('file', file);
+            fetch('/api/order-product?action=factory_links_import', {
+                method: 'POST',
+                body: formData,
+                credentials: 'include'
+            })
+                .then(r=>r.json())
+                .then(data=>{
+                    if(data.status !== 'success'){
+                        alert(data.message || '上传失败');
+                        return;
+                    }
+                    const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
+                    alert(`上传完成：新增 ${data.created || 0} 条，失败 ${errCount} 条`);
+                    loadList();
+                })
+                .catch(err=>alert('上传失败: '+err));
         }
         function removeItem(id){
             if(!confirm('确认删除该工厂？')) return;
@@ -123,6 +276,30 @@
         }
         document.getElementById('pm-modal').addEventListener('click', function(e){ if(e.target===this) closeModal(); });
         document.getElementById('searchInput').addEventListener('keydown', function(e){ if(e.key==='Enter') loadList(); });
+        document.getElementById('factorySkuToggle').addEventListener('click', function(){
+            openOrderProductDropdown();
+            document.getElementById('factorySkuSearch').focus();
+        });
+        document.getElementById('factorySkuSearch').addEventListener('input', function(){
+            renderOrderProductPicker();
+        });
+        document.getElementById('factorySkuDropdown').addEventListener('click', function(e){
+            e.stopPropagation();
+        });
+        document.addEventListener('click', function(e){
+            const dropdown = document.getElementById('factorySkuDropdown');
+            if(dropdown && !dropdown.contains(e.target)){
+                closeOrderProductDropdown();
+            }
+        });
+        document.getElementById('skuFactoryImportInput').addEventListener('change', function(){
+            const file = this.files && this.files[0];
+            if(file){
+                uploadSkuFactoryLinks(file);
+            }
+            this.value = '';
+        });
+        window.addEventListener('load', loadOrderProductOptions);
         window.addEventListener('load', loadList);
     </script>
 </body>

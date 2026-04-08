@@ -420,13 +420,13 @@
         <section class="pm-layout">
             <div class="card pm-card">
                 <div class="pm-toolbar">
-                    <div class="pm-toolbar-actions">
+                       <div class="pm-toolbar-actions" style="margin: 0;">
                         <div class="form-group pm-search" style="margin: 0;">
                             <span class="pm-search-title">搜索</span>
                             <input type="text" id="searchInput" placeholder="搜索SKU/货号/版本号/面料">
                             <button class="btn-primary" onclick="loadOrderProductList()">搜索</button>
                             <button class="btn-secondary" onclick="resetSearch()">清空</button>
-                        </div>
+                                </div>
                         <span class="pm-divider" aria-hidden="true"></span>
                         <button class="btn-secondary" onclick="updateSelectedCartonQty()">更新装箱量</button>
                         <button class="btn-secondary" onclick="downloadOrderProductTemplate()">下载模板</button>
@@ -447,12 +447,12 @@
                             <th class="yesno-col">是否迭代款</th>
                             <th class="yesno-col">是否大健云仓</th>
                             <th>SKU</th>
-                            <th>货号</th>
+                                <th style="width: 100px;">货号</th>
                             <th>版本号</th>
                             <th>颜色</th>
                             <th>规格简称</th>
                             <th>内含物英文描述</th>
-                            <th>成本价($)</th>
+                                <th style="width: 80px;">成本价($)</th>
                             <th>包裹归类</th>
                             <th>装箱量</th>
                             <th>尾程平均运费($)</th>
@@ -525,6 +525,22 @@
                                 <div class="status-segment status-segment--inline">
                                     <button type="button" class="status-pill status-pill--enabled" data-target="modalIsDacheneProduct" data-value="1">是</button>
                                     <button type="button" class="status-pill status-pill--paused" data-target="modalIsDacheneProduct" data-value="0">否</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group pm-form-full">
+                            <label>关联工厂（可多选）</label>
+                            <div class="feature-category-picker is-multi-check" id="factoryLinkPicker">
+                                <div class="feature-category-chips" id="factoryLinkSelected"></div>
+                                <div class="feature-category-dropdown" id="factoryLinkDropdown">
+                                    <button type="button" class="feature-category-add" id="factoryLinkToggle">
+                                        <span class="feature-category-add-icon">+</span>
+                                        <span class="feature-category-add-text">选择工厂</span>
+                                    </button>
+                                    <div class="feature-category-menu" id="factoryLinkMenu">
+                                        <input type="text" id="factoryLinkSearch" class="pm-select-search" placeholder="搜索工厂">
+                                        <div class="feature-category-list" id="factoryLinkList"></div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -809,6 +825,7 @@
         let frameMaterialOptions = [];
         let featureOptions = [];
         let certificationOptions = [];
+        let factoryOptions = [];
         let categoryOptions = [];
         let currentFeatureCategoryId = '';
         let skuManuallyEdited = false;
@@ -816,6 +833,7 @@
         let selectedFrameMaterialIds = [];
         let selectedFeatureIds = [];
         let selectedCertificationIds = [];
+        let selectedFactoryIds = [];
         let uploadProcessingTimer = null;
         let uploadDialogErrorRows = [];
         let toastTimer = null;
@@ -916,6 +934,8 @@
             editId = null;
             editOriginalItem = null;
             skuManuallyEdited = false;
+            setFactoryLinkSelected([]);
+            document.getElementById('factoryLinkSearch').value = '';
             document.getElementById('pm-modal-title').innerText = '新增下单产品';
             setInputValue('modalSku', '');
             setSelectValue('modalSkuFamily', '');
@@ -1007,6 +1027,8 @@
             setPickerSelected('frame', item.frame_material_ids || []);
             setPickerSelected('feature', item.feature_ids || []);
             setPickerSelected('cert', item.certification_ids || []);
+            setFactoryLinkSelected(item.factory_ids || []);
+            document.getElementById('factoryLinkSearch').value = '';
             document.getElementById('modalSaveBtn').innerText = '保存';
             resetModalStatus();
             document.getElementById('pm-modal').classList.add('active');
@@ -1469,6 +1491,92 @@
             renderPicker(key);
         }
 
+        function setFactoryLinkSelected(value) {
+            selectedFactoryIds = normalizeIds(value);
+            renderFactoryLinkPicker();
+        }
+
+        function renderFactoryLinkPicker() {
+            const chips = document.getElementById('factoryLinkSelected');
+            const list = document.getElementById('factoryLinkList');
+            if (!chips || !list) return;
+            const keyword = (document.getElementById('factoryLinkSearch')?.value || '').trim().toLowerCase();
+
+            chips.innerHTML = '';
+            selectedFactoryIds.forEach(id => {
+                const item = factoryOptions.find(opt => String(opt.id) === String(id));
+                if (!item) return;
+                const chip = document.createElement('span');
+                chip.className = 'feature-category-chip';
+                chip.textContent = item.factory_name || `工厂${id}`;
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'feature-category-remove';
+                removeBtn.innerText = '×';
+                removeBtn.addEventListener('click', () => {
+                    selectedFactoryIds = selectedFactoryIds.filter(itemId => String(itemId) !== String(id));
+                    renderFactoryLinkPicker();
+                });
+                chip.appendChild(removeBtn);
+                chips.appendChild(chip);
+            });
+
+            list.innerHTML = '';
+            const selectedSet = new Set(selectedFactoryIds.map(id => String(id)));
+            const available = factoryOptions.filter(item => {
+                if (selectedSet.has(String(item.id))) return false;
+                if (!keyword) return true;
+                return String(item.factory_name || '').toLowerCase().includes(keyword);
+            });
+
+            if (!available.length) {
+                const empty = document.createElement('div');
+                empty.className = 'feature-category-empty';
+                empty.textContent = '暂无可选工厂';
+                list.appendChild(empty);
+                return;
+            }
+
+            available.forEach(item => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'feature-category-option';
+                btn.textContent = item.factory_name || `工厂${item.id}`;
+                btn.addEventListener('click', () => {
+                    if (!selectedSet.has(String(item.id))) {
+                        selectedFactoryIds.push(String(item.id));
+                        renderFactoryLinkPicker();
+                    }
+                });
+                list.appendChild(btn);
+            });
+        }
+
+        function openFactoryLinkDropdown() {
+            const dropdown = document.getElementById('factoryLinkDropdown');
+            if (!dropdown) return;
+            dropdown.classList.add('expanded');
+            dropdown.classList.add('open');
+        }
+
+        function closeFactoryLinkDropdown() {
+            const dropdown = document.getElementById('factoryLinkDropdown');
+            if (!dropdown) return;
+            dropdown.classList.remove('open');
+            dropdown.classList.remove('expanded');
+        }
+
+        async function loadFactoryLinkOptions() {
+            try {
+                const resp = await fetch('/api/logistics-factory', { credentials: 'include' });
+                const data = await resp.json();
+                factoryOptions = data.status === 'success' ? (data.items || []) : [];
+            } catch (err) {
+                factoryOptions = [];
+            }
+            renderFactoryLinkPicker();
+        }
+
         function getPickerState(key) {
             if (key === 'filling') {
                 return { options: fillingMaterialOptions, selected: selectedFillingMaterialIds };
@@ -1621,7 +1729,8 @@
                 filling_material_ids: selectedFillingMaterialIds,
                 frame_material_ids: selectedFrameMaterialIds,
                 feature_ids: selectedFeatureIds,
-                certification_ids: selectedCertificationIds
+                certification_ids: selectedCertificationIds,
+                factory_ids: selectedFactoryIds
             };
 
             if (!payload.sku || !payload.sku_family_id || !payload.fabric_id) {
@@ -1678,6 +1787,9 @@
                 }
                 if (!sameIdList(payload.certification_ids, base.certification_ids)) {
                     patchPayload.certification_ids = payload.certification_ids;
+                }
+                if (!sameIdList(payload.factory_ids, base.factory_ids)) {
+                    patchPayload.factory_ids = payload.factory_ids;
                 }
 
                 if (Object.keys(patchPayload).length === 1) {
@@ -2496,6 +2608,7 @@
 
                 xhr.upload.onprogress = function(evt) {
                     if (!evt.lengthComputable) {
+
                         showUploadProgress('正在上传模板...', 75);
                         return;
                     }
@@ -3030,6 +3143,16 @@
         document.getElementById('certSearch').addEventListener('input', function() {
             renderPicker('cert');
         });
+        document.getElementById('factoryLinkToggle').addEventListener('click', function() {
+            openFactoryLinkDropdown();
+            document.getElementById('factoryLinkSearch').focus();
+        });
+        document.getElementById('factoryLinkSearch').addEventListener('input', function() {
+            renderFactoryLinkPicker();
+        });
+        document.getElementById('factoryLinkDropdown').addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
         document.addEventListener('click', function(e) {
             const fillingDropdown = document.getElementById('fillingDropdown');
             const frameDropdown = document.getElementById('frameDropdown');
@@ -3047,6 +3170,10 @@
             if (certDropdown && !certDropdown.contains(e.target)) {
                 closePickerMenu('cert');
             }
+            const factoryDropdown = document.getElementById('factoryLinkDropdown');
+            if (factoryDropdown && !factoryDropdown.contains(e.target)) {
+                closeFactoryLinkDropdown();
+            }
             const skuSelect = document.getElementById('modalSkuFamilySelect');
             const fabricSelect = document.getElementById('modalFabricSelect');
             const sourceSelect = document.getElementById('modalSourceSkuSelect');
@@ -3060,6 +3187,7 @@
                 closeSelectPanel('source');
             }
         });
+        window.addEventListener('load', loadFactoryLinkOptions);
         
         // 为所有 optional-field 添加值变化检测
         function updateOptionalFieldStyle(el) {

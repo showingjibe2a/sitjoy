@@ -1909,7 +1909,7 @@ body {
     padding: 0.56rem;
     box-shadow: 0 18px 38px rgba(0,0,0,0.2);
     display: none;
-    z-index: 30;
+    z-index: 10000;
 }
 
 .feature-category-dropdown.open .feature-category-menu {
