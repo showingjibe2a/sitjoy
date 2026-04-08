@@ -5,6 +5,7 @@ import os
 import json
 import base64
 import hashlib
+import threading
 from datetime import datetime
 from urllib.parse import parse_qs
 
@@ -1872,7 +1873,7 @@ class SalesProductMixin:
             if method == 'GET':
                 keyword = (query_params.get('q', [''])[0] or '').strip()
                 item_id = self._parse_int((query_params.get('id', [''])[0] or '').strip())
-                page_size = min(200, max(10, self._parse_int((query_params.get('page_size', ['50'])[0] or '50')) or 50))
+                page_size = min(1000, max(10, self._parse_int((query_params.get('page_size', ['50'])[0] or '50')) or 50))
                 page = max(1, self._parse_int((query_params.get('page', ['1'])[0] or '1')) or 1)
                 limit = min(5000, max(1, self._parse_int((query_params.get('limit', [str(page_size)])[0] or str(page_size))) or page_size))
                 page_size = min(page_size, limit)
@@ -2094,6 +2095,8 @@ class SalesProductMixin:
 
             mode = str((query_params.get('mode', [''])[0] or '')).strip().lower()
             task_id = str((query_params.get('task_id', [''])[0] or '')).strip()
+            async_import = str((query_params.get('async', [''])[0] or '')).strip().lower() in ('1', 'true', 'yes', 'on')
+            temp_token = str((query_params.get('from_temp', [''])[0] or '')).strip()
 
             import tempfile
 
@@ -2112,6 +2115,14 @@ class SalesProductMixin:
                 except Exception:
                     pass
                 return os.path.join(progress_dir, f'sales_product_performance_{tid}.json')
+
+            def _temp_upload_path(token):
+                temp_dir = os.path.join(tempfile.gettempdir(), 'sitjoy_import_temp')
+                try:
+                    os.makedirs(temp_dir, exist_ok=True)
+                except Exception:
+                    pass
+                return os.path.join(temp_dir, f'spp_{token}.bin')
 
             def _write_progress(tid, payload):
                 if not tid:
@@ -2164,21 +2175,87 @@ class SalesProductMixin:
             if not safe_task_id:
                 safe_task_id = hashlib.md5(f"{datetime.now().isoformat()}_{os.getpid()}".encode('utf-8')).hexdigest()[:16]
 
-            content_type = environ.get('CONTENT_TYPE', '')
-            if 'multipart/form-data' not in content_type:
-                return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
+            file_bytes = b''
+            if temp_token:
+                temp_path = _temp_upload_path(temp_token)
+                if not os.path.exists(temp_path):
+                    return self.send_json({'status': 'error', 'message': '临时文件不存在，任务可能已过期'}, start_response)
+                with open(temp_path, 'rb') as f:
+                    file_bytes = f.read() or b''
+                if not file_bytes:
+                    return self.send_json({'status': 'error', 'message': '临时文件为空'}, start_response)
+            else:
+                content_type = environ.get('CONTENT_TYPE', '')
+                if 'multipart/form-data' not in content_type:
+                    return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
 
-            content_length = int(environ.get('CONTENT_LENGTH', 0) or 0)
-            raw_body = environ['wsgi.input'].read(content_length) if content_length > 0 else b''
-            env_copy = dict(environ)
-            env_copy['CONTENT_LENGTH'] = str(len(raw_body))
-            form = cgi.FieldStorage(fp=io.BytesIO(raw_body), environ=env_copy, keep_blank_values=True)
-            file_item = form['file'] if 'file' in form else None
-            if file_item is None or getattr(file_item, 'file', None) is None:
-                return self.send_json({'status': 'error', 'message': 'Missing file'}, start_response)
-            file_bytes = file_item.file.read() or b''
-            if not file_bytes:
-                return self.send_json({'status': 'error', 'message': 'Empty file'}, start_response)
+                content_length = int(environ.get('CONTENT_LENGTH', 0) or 0)
+                raw_body = environ['wsgi.input'].read(content_length) if content_length > 0 else b''
+                env_copy = dict(environ)
+                env_copy['CONTENT_LENGTH'] = str(len(raw_body))
+                form = cgi.FieldStorage(fp=io.BytesIO(raw_body), environ=env_copy, keep_blank_values=True)
+                file_item = form['file'] if 'file' in form else None
+                if file_item is None or getattr(file_item, 'file', None) is None:
+                    return self.send_json({'status': 'error', 'message': 'Missing file'}, start_response)
+                file_bytes = file_item.file.read() or b''
+                if not file_bytes:
+                    return self.send_json({'status': 'error', 'message': 'Empty file'}, start_response)
+
+            # 正式导入默认异步，避免网关504；预检保持同步
+            if (not check_only) and (not temp_token):
+                if not async_import:
+                    async_import = True
+                if async_import:
+                    temp_token = safe_task_id
+                    temp_path = _temp_upload_path(temp_token)
+                    with open(temp_path, 'wb') as f:
+                        f.write(file_bytes)
+
+                    _write_progress(safe_task_id, {
+                        'status': 'success',
+                        'task_id': safe_task_id,
+                        'state': 'pending',
+                        'processed_rows': 0,
+                        'total_rows': 0,
+                        'created': 0,
+                        'message': '任务已创建，准备开始处理'
+                    })
+
+                    def _bg_worker():
+                        try:
+                            q = f"task_id={safe_task_id}&check_only=0&async=0&from_temp={temp_token}"
+                            bg_env = {
+                                'QUERY_STRING': q,
+                                'CONTENT_TYPE': '',
+                                'CONTENT_LENGTH': '0',
+                                'wsgi.input': io.BytesIO(b''),
+                            }
+                            self.handle_sales_product_performance_import_api(bg_env, 'POST', lambda *args, **kwargs: None)
+                        except Exception as _e:
+                            _write_progress(safe_task_id, {
+                                'status': 'error',
+                                'task_id': safe_task_id,
+                                'state': 'error',
+                                'processed_rows': 0,
+                                'total_rows': 0,
+                                'created': 0,
+                                'message': str(_e)[:200]
+                            })
+                        finally:
+                            try:
+                                if os.path.exists(temp_path):
+                                    os.remove(temp_path)
+                            except Exception:
+                                pass
+
+                    t = threading.Thread(target=_bg_worker, daemon=True)
+                    t.start()
+                    return self.send_json({
+                        'status': 'success',
+                        'async': True,
+                        'task_id': safe_task_id,
+                        'message': '导入任务已启动，请通过进度接口轮询结果'
+                    }, start_response)
 
             # 全程只读模式，降低大文件导入时CPU和内存开销
             wb = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
@@ -2505,6 +2582,12 @@ class SalesProductMixin:
                 'processed_rows': row_count,
                 'total_rows': total_rows_hint,
                 'created': created,
+                'upserted': upserted,
+                'skipped_empty_identifier': skipped_empty_identifier,
+                'skipped_unmatched_sku': skipped_unmatched_sku,
+                'skipped_invalid_date': skipped_invalid_date,
+                'skipped_template_sample': skipped_template_sample,
+                'errors': errors[:100],
                 'message': f'处理完成，匹配 {created} 条，写入 {upserted} 条'
             })
 
@@ -2619,9 +2702,13 @@ class SalesProductMixin:
                         cur.execute(
                             """
                             SELECT sp.id, sp.platform_sku, sp.fabric, sp.spec_name,
-                                   pf.id AS sku_family_id, pf.sku_family
+                                   pf.id AS sku_family_id, pf.sku_family,
+                                   sh.id AS shop_id, sh.shop_name,
+                                   pt.id AS platform_type_id, pt.name AS platform_type_name
                             FROM sales_products sp
                             LEFT JOIN product_families pf ON pf.id = sp.sku_family_id
+                            LEFT JOIN shops sh ON sh.id = sp.shop_id
+                            LEFT JOIN platform_types pt ON pt.id = sh.platform_type_id
                             ORDER BY pf.sku_family ASC, sp.platform_sku ASC
                             """
                         )
@@ -2635,8 +2722,12 @@ class SalesProductMixin:
                     platform_skus = []
                     fabrics = []
                     specs = []
+                    shops = []
+                    platforms = []
                     f_seen = set()
                     s_seen = set()
+                    shop_seen = set()
+                    platform_seen = set()
 
                     for r in rows:
                         sf_id = self._parse_int(r.get('sku_family_id'))
@@ -2656,6 +2747,18 @@ class SalesProductMixin:
                             s_seen.add(spec)
                             specs.append(spec)
 
+                        shop_id = self._parse_int(r.get('shop_id'))
+                        shop_name = str(r.get('shop_name') or '').strip()
+                        if shop_id and shop_name and shop_id not in shop_seen:
+                            shop_seen.add(shop_id)
+                            shops.append({'id': shop_id, 'name': shop_name})
+
+                        platform_id = self._parse_int(r.get('platform_type_id'))
+                        platform_name = str(r.get('platform_type_name') or '').strip()
+                        if platform_id and platform_name and platform_id not in platform_seen:
+                            platform_seen.add(platform_id)
+                            platforms.append({'id': platform_id, 'name': platform_name})
+
                     return self.send_json({
                         'status': 'success',
                         'filters': {
@@ -2663,6 +2766,8 @@ class SalesProductMixin:
                             'platform_skus': platform_skus,
                             'fabrics': fabrics,
                             'spec_names': specs,
+                            'shops': shops,
+                            'platform_types': platforms,
                             'metrics': metric_defs,
                             'ad_operation_types': [{'id': self._parse_int(x.get('id')), 'name': x.get('name') or ''} for x in op_types]
                         }
@@ -2674,6 +2779,8 @@ class SalesProductMixin:
                 platform_skus = parse_csv_text('platform_skus')
                 fabrics = parse_csv_text('fabrics')
                 spec_names = parse_csv_text('spec_names')
+                shop_ids = parse_csv_int('shop_ids')
+                platform_type_ids = parse_csv_int('platform_type_ids')
                 metric_keys = parse_csv_text('metric_keys')
                 if not metric_keys:
                     metric_keys = ['sales_qty', 'net_sales_amount', 'order_qty', 'ad_spend', 'ad_sales_amount']
@@ -2684,10 +2791,13 @@ class SalesProductMixin:
                 sql = [
                     """
                     SELECT spp.*, sp.platform_sku, sp.fabric, sp.spec_name, sp.sku_family_id,
-                           pf.sku_family
+                              pf.sku_family, sh.id AS shop_id, sh.shop_name,
+                              pt.id AS platform_type_id, pt.name AS platform_type_name
                     FROM sales_product_performances spp
                     JOIN sales_products sp ON sp.id = spp.sales_product_id
                     LEFT JOIN product_families pf ON pf.id = sp.sku_family_id
+                          LEFT JOIN shops sh ON sh.id = sp.shop_id
+                          LEFT JOIN platform_types pt ON pt.id = sh.platform_type_id
                     WHERE 1=1
                     """
                 ]
@@ -2710,6 +2820,12 @@ class SalesProductMixin:
                 if spec_names:
                     sql.append(f" AND sp.spec_name IN ({','.join(['%s'] * len(spec_names))})")
                     params.extend(spec_names)
+                if shop_ids:
+                    sql.append(f" AND sp.shop_id IN ({','.join(['%s'] * len(shop_ids))})")
+                    params.extend(shop_ids)
+                if platform_type_ids:
+                    sql.append(f" AND sh.platform_type_id IN ({','.join(['%s'] * len(platform_type_ids))})")
+                    params.extend(platform_type_ids)
                 sql.append(' ORDER BY pf.sku_family ASC, sp.platform_sku ASC, spp.record_date DESC')
 
                 with conn.cursor() as cur:

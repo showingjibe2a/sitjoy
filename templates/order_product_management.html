@@ -30,7 +30,7 @@
             position: relative;
             width: 100%;
         }
-        .pm-select-trigger {
+        .universal-select-trigger {
             width: 100%;
             text-align: left;
             cursor: pointer;
@@ -489,7 +489,7 @@
                             <div class="form-group" id="iterationFields" style="display:none; margin:0;">
                             <label for="modalSourceSku">来源SKU</label>
                             <div class="pm-select" id="modalSourceSkuSelect">
-                                <button type="button" class="pm-select-trigger" id="modalSourceSkuTrigger">请选择来源SKU</button>
+                                <button type="button" class="universal-select-trigger" id="modalSourceSkuTrigger">请选择来源SKU</button>
                                 <div class="pm-select-panel" id="modalSourceSkuPanel">
                                     <input type="text" class="pm-select-search" id="modalSourceSkuSearch" placeholder="搜索下单SKU">
                                     <div class="pm-select-list" id="modalSourceSkuList"></div>
@@ -535,7 +535,7 @@
                         <div class="form-group">
                             <label for="modalSkuFamily">归属货号<span class="required-asterisk">*</span></label>
                             <div class="pm-select" id="modalSkuFamilySelect">
-                                <button type="button" class="pm-select-trigger" id="modalSkuFamilyTrigger">请选择货号</button>
+                                <button type="button" class="universal-select-trigger" id="modalSkuFamilyTrigger">请选择货号</button>
                                 <div class="pm-select-panel" id="modalSkuFamilyPanel">
                                     <input type="text" class="pm-select-search" id="modalSkuFamilySearch" placeholder="搜索货号">
                                     <div class="pm-select-list" id="modalSkuFamilyList"></div>
@@ -546,7 +546,7 @@
                         <div class="form-group">
                             <label for="modalFabric">面料<span class="required-asterisk">*</span></label>
                             <div class="pm-select" id="modalFabricSelect">
-                                <button type="button" class="pm-select-trigger" id="modalFabricTrigger">请选择面料</button>
+                                <button type="button" class="universal-select-trigger" id="modalFabricTrigger">请选择面料</button>
                                 <div class="pm-select-panel" id="modalFabricPanel">
                                     <input type="text" class="pm-select-search" id="modalFabricSearch" placeholder="搜索面料编号/英文名">
                                     <div class="pm-select-list" id="modalFabricList"></div>
@@ -822,6 +822,7 @@
         let selectedOrderProductIds = new Set();
         let orderProductItemsCache = [];
         let previewEditDraft = {};
+        let editOriginalItem = null;
         let shippingPlanCurrentOrder = null;
         let shippingPlanItems = [];
         let shippingPlanUsageItems = [];
@@ -913,6 +914,7 @@
 
         function openCreateModal() {
             editId = null;
+            editOriginalItem = null;
             skuManuallyEdited = false;
             document.getElementById('pm-modal-title').innerText = '新增下单产品';
             setInputValue('modalSku', '');
@@ -954,8 +956,25 @@
             setTimeout(initOptionalFieldListeners, 50);
         }
 
-        function openEditModal(item) {
+        function openEditModal(itemOrId) {
+            const item = (typeof itemOrId === 'object' && itemOrId) ? itemOrId : null;
+            const itemId = item ? Number(item.id || 0) : Number(itemOrId || 0);
+            if (!itemId) return;
+            if (!item) {
+                fetch(`/api/order-product?id=${encodeURIComponent(String(itemId))}`)
+                    .then(r => r.json())
+                    .then(resp => {
+                        if (resp.status !== 'success' || !resp.item) {
+                            showUploadDialog({ title: '加载失败', message: resp.message || '未找到该SKU详情' });
+                            return;
+                        }
+                        openEditModal(resp.item);
+                    })
+                    .catch(err => showUploadDialog({ title: '请求失败', message: '加载详情失败: ' + err }));
+                return;
+            }
             editId = item.id;
+            editOriginalItem = Object.assign({}, item || {});
             skuManuallyEdited = false;
             document.getElementById('pm-modal-title').innerText = '编辑下单产品';
             setInputValue('modalSku', item.sku || '');
@@ -1000,6 +1019,31 @@
         function closeModal() {
             document.getElementById('pm-modal').classList.remove('active');
             editId = null;
+            editOriginalItem = null;
+        }
+
+        function normalizeIdListForCompare(values) {
+            const out = [];
+            const seen = new Set();
+            (values || []).forEach(v => {
+                const n = Number(v);
+                if (!Number.isFinite(n) || n <= 0) return;
+                const key = String(Math.trunc(n));
+                if (seen.has(key)) return;
+                seen.add(key);
+                out.push(key);
+            });
+            return out.sort();
+        }
+
+        function sameIdList(a, b) {
+            const x = normalizeIdListForCompare(a);
+            const y = normalizeIdListForCompare(b);
+            if (x.length !== y.length) return false;
+            for (let i = 0; i < x.length; i += 1) {
+                if (x[i] !== y[i]) return false;
+            }
+            return true;
         }
 
         function setInputValue(id, value) {
@@ -1073,6 +1117,9 @@
         }
 
         function normalizePreviewFieldValue(field, rawValue) {
+            if (field === 'is_on_market') {
+                return Number(String(rawValue || '0')) === 1 ? 1 : 0;
+            }
             if (field === 'package_size_class') {
                 return String(rawValue || '').trim();
             }
@@ -1112,6 +1159,7 @@
             const normalized = normalizePreviewFieldValue(field, rawValue);
             if (!previewEditDraft[id]) {
                 previewEditDraft[id] = {
+                    is_on_market: item.is_on_market,
                     cost_usd: item.cost_usd,
                     package_size_class: item.package_size_class || '',
                     carton_qty: item.carton_qty,
@@ -1122,6 +1170,8 @@
 
             const draft = previewEditDraft[id];
             const unchanged =
+                normalizePreviewFieldValue('is_on_market', draft.is_on_market) === normalizePreviewFieldValue('is_on_market', item.is_on_market)
+                &&
                 normalizePreviewFieldValue('cost_usd', draft.cost_usd) === normalizePreviewFieldValue('cost_usd', item.cost_usd)
                 && normalizePreviewFieldValue('package_size_class', draft.package_size_class) === normalizePreviewFieldValue('package_size_class', item.package_size_class)
                 && normalizePreviewFieldValue('carton_qty', draft.carton_qty) === normalizePreviewFieldValue('carton_qty', item.carton_qty)
@@ -1156,6 +1206,7 @@
             }
             const items = ids.map(id => ({
                 id: Number(id),
+                is_on_market: normalizePreviewFieldValue('is_on_market', previewEditDraft[id].is_on_market),
                 cost_usd: normalizePreviewFieldValue('cost_usd', previewEditDraft[id].cost_usd),
                 package_size_class: normalizePreviewFieldValue('package_size_class', previewEditDraft[id].package_size_class),
                 carton_qty: normalizePreviewFieldValue('carton_qty', previewEditDraft[id].carton_qty),
@@ -1168,7 +1219,7 @@
                 confirmText: '确认保存',
                 cancelText: '取消',
                 onConfirm: function() {
-                    fetch('/api/order-product', {
+                    fetch('/api/order-product?action=preview_update', {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ items })
@@ -1182,6 +1233,7 @@
                         items.forEach(update => {
                             const item = orderProductItemsCache.find(row => String(row.id) === String(update.id));
                             if (!item) return;
+                            item.is_on_market = update.is_on_market;
                             item.cost_usd = update.cost_usd;
                             item.package_size_class = update.package_size_class;
                             item.carton_qty = update.carton_qty;
@@ -1190,6 +1242,9 @@
                         previewEditDraft = {};
                         renderOrderProductTable(orderProductItemsCache);
                         syncPreviewSaveBar();
+                        if (window.showAppToast) {
+                            window.showAppToast('预览修改已保存', false, 2200);
+                        }
                     })
                     .catch(err => showUploadDialog({ title: '请求失败', message: '请求失败: ' + err }));
                 }
@@ -1595,7 +1650,44 @@
 
             let method = 'POST';
             if (editId) {
+                const base = editOriginalItem || {};
+                const patchPayload = { id: editId };
+                const compareKeys = [
+                    'sku', 'sku_family_id', 'version_no', 'fabric_id', 'spec_qty_short', 'contents_desc_en',
+                    'is_iteration', 'is_on_market', 'is_dachene_product', 'source_order_product_id',
+                    'finished_length_in', 'finished_width_in', 'finished_height_in', 'net_weight_lbs',
+                    'package_length_in', 'package_width_in', 'package_height_in', 'gross_weight_lbs',
+                    'cost_usd', 'carton_qty', 'package_size_class', 'last_mile_avg_freight_usd'
+                ];
+                compareKeys.forEach(key => {
+                    const newVal = payload[key];
+                    const oldVal = base[key];
+                    if (String(newVal ?? '') !== String(oldVal ?? '')) {
+                        patchPayload[key] = newVal;
+                    }
+                });
+
+                if (!sameIdList(payload.filling_material_ids, base.filling_material_ids)) {
+                    patchPayload.filling_material_ids = payload.filling_material_ids;
+                }
+                if (!sameIdList(payload.frame_material_ids, base.frame_material_ids)) {
+                    patchPayload.frame_material_ids = payload.frame_material_ids;
+                }
+                if (!sameIdList(payload.feature_ids, base.feature_ids)) {
+                    patchPayload.feature_ids = payload.feature_ids;
+                }
+                if (!sameIdList(payload.certification_ids, base.certification_ids)) {
+                    patchPayload.certification_ids = payload.certification_ids;
+                }
+
+                if (Object.keys(patchPayload).length === 1) {
+                    showModalStatus('未检测到变化', false);
+                    return;
+                }
+
                 payload.id = editId;
+                Object.keys(payload).forEach(key => { delete payload[key]; });
+                Object.assign(payload, patchPayload);
                 method = 'PUT';
             }
 
@@ -2160,11 +2252,17 @@
                         const packageClassText = getPreviewEffectiveValue(item, 'package_size_class') || '';
                         const cartonQtyText = getPreviewEffectiveValue(item, 'carton_qty');
                         const lastMileText = getPreviewEffectiveValue(item, 'last_mile_avg_freight_usd');
+                        const onMarketText = Number(getPreviewEffectiveValue(item, 'is_on_market') || 0) === 1 ? '1' : '0';
                         const checked = selectedOrderProductIds.has(String(item.id)) ? 'checked' : '';
                         return `
                             <tr>
                                 <td style="text-align:center;"><input type="checkbox" class="order-row-checkbox" data-id="${item.id}" ${checked}></td>
-                                <td class="yesno-col">${renderReadonlyYesNoSwitch(item.is_on_market)}</td>
+                                <td class="preview-edit-cell">
+                                    <select class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="is_on_market">
+                                        <option value="1" ${onMarketText === '1' ? 'selected' : ''}>是</option>
+                                        <option value="0" ${onMarketText === '0' ? 'selected' : ''}>否</option>
+                                    </select>
+                                </td>
                                 <td class="yesno-col">${renderReadonlyYesNoSwitch(item.is_iteration)}</td>
                                 <td class="yesno-col">${renderReadonlyYesNoSwitch(item.is_dachene_product)}</td>
                                 <td>${item.sku}</td>
@@ -2181,7 +2279,7 @@
                                 <td>
                                     <div class="pm-actions">
                                         <button class="btn-secondary" onclick='openShippingPlanModal(${JSON.stringify(item)})'>替代方案</button>
-                                        <button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button>
+                                        <button class="btn-secondary" onclick='openEditModal(${item.id})'>编辑</button>
                                         <button class="btn-danger" onclick='deleteOrderProduct(${JSON.stringify(item)})'>删除</button>
                                     </div>
                                 </td>
@@ -2656,6 +2754,7 @@
             if (!select || !trigger) return;
             const option = select.selectedOptions && select.selectedOptions[0];
             trigger.textContent = option && option.value ? option.textContent : '请选择货号';
+            trigger.classList.toggle('has-value', !!(option && option.value));
         }
 
         function updateFabricTrigger() {
@@ -2664,6 +2763,7 @@
             if (!select || !trigger) return;
             const option = select.selectedOptions && select.selectedOptions[0];
             trigger.textContent = option && option.value ? option.textContent : '请选择面料';
+            trigger.classList.toggle('has-value', !!(option && option.value));
         }
 
         function updateSourceSkuTrigger() {
@@ -2672,6 +2772,7 @@
             if (!select || !trigger) return;
             const option = select.selectedOptions && select.selectedOptions[0];
             trigger.textContent = option && option.value ? option.textContent : '请选择来源SKU';
+            trigger.classList.toggle('has-value', !!(option && option.value));
         }
         
 

@@ -32,10 +32,29 @@
             font-size: 0.9rem;
         }
 
+        .perf-filter-header {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 0.75rem;
+            margin-bottom: 0.2rem;
+        }
+        .perf-filter-title {
+            font-size: 1.08rem;
+            font-weight: 800;
+            color: var(--morandi-ink);
+            letter-spacing: 0.02em;
+        }
+        .perf-filter-subtitle {
+            margin-top: 0.18rem;
+            color: var(--morandi-slate);
+            font-size: 0.84rem;
+        }
+
         .perf-toolbar {
             display: grid;
-            gap: 0.5rem;
-            padding: 0.68rem;
+            gap: 0.4rem;
+            padding: 0.56rem;
             border: 1px solid rgba(207, 199, 189, 0.75);
             background: #f7f4ef;
             border-radius: 10px;
@@ -43,12 +62,12 @@
         .perf-toolbar-grid {
             display: grid;
             grid-template-columns: 1.45fr 1fr;
-            gap: 0.56rem;
+            gap: 0.42rem;
             align-items: start;
         }
         .perf-col {
             display: grid;
-            gap: 0.52rem;
+            gap: 0.36rem;
             min-width: 0;
         }
         .perf-col + .perf-col {
@@ -58,8 +77,23 @@
         .perf-row {
             display: flex;
             align-items: center;
-            gap: 0.4rem;
+            gap: 0.24rem;
             flex-wrap: wrap;
+        }
+        .perf-filter-pair-row,
+        .perf-filter-triple-row {
+            display: grid;
+            grid-template-columns: 56px minmax(140px, 1fr) 56px minmax(140px, 1fr) 56px minmax(140px, 1fr);
+            gap: 0.36rem 0.64rem;
+            align-items: center;
+        }
+        .perf-filter-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-top: 0.22rem;
+            padding-left: 56px;
         }
         .perf-row-tight {
             gap: 0.32rem;
@@ -67,7 +101,10 @@
         .perf-row-title {
             color: var(--morandi-ink);
             font-weight: 700;
-            min-width: 58px;
+            width: 56px;
+            min-width: 56px;
+            flex: 0 0 56px;
+            text-align: left;
         }
         .perf-row input[type="date"],
         .perf-row button,
@@ -78,6 +115,9 @@
             background: #fff;
             color: var(--morandi-ink);
             padding: 0.42rem 0.62rem;
+        }
+        input[type="date"] {
+            text-align: left;
         }
         .perf-row input[type="date"]:focus,
         .perf-row select:focus,
@@ -112,14 +152,19 @@
             max-width: 210px;
         }
         .perf-col .check-select {
-            min-width: 130px;
-            width: 160px;
-            max-width: 190px;
+            min-width: 180px;
+            width: 220px;
+            max-width: 280px;
         }
         .perf-row-tight .check-select {
-            width: 150px;
-            min-width: 120px;
-            max-width: 170px;
+            width: 180px;
+            min-width: 160px;
+            max-width: 260px;
+        }
+        #selAdTypes.check-select {
+            width: 260px;
+            min-width: 240px;
+            max-width: 340px;
         }
         .check-select-trigger {
             width: 100%;
@@ -128,9 +173,13 @@
             border-radius: 8px;
             border: 1px solid var(--morandi-sand);
             background: #fff;
-            color: var(--morandi-ink);
+            color: var(--morandi-slate);
             padding: 0.4rem 0.58rem;
             cursor: pointer;
+            font-weight: 400;
+        }
+        .check-select.has-value .check-select-trigger {
+            color: var(--morandi-ink);
         }
         .check-select-panel {
             position: absolute;
@@ -138,6 +187,7 @@
             left: 0;
             right: 0;
             z-index: 45;
+            min-width: 240px;
             border: 1px solid var(--morandi-sand);
             border-radius: 10px;
             background: #fff;
@@ -192,6 +242,10 @@
             color: var(--morandi-ink);
             font-size: 0.88rem;
         }
+        .check-select-item span {
+            white-space: normal;
+            word-break: break-all;
+        }
         .check-select-item:hover {
             background: #f7f4ef;
         }
@@ -242,6 +296,41 @@
             font-weight: 600;
             margin-bottom: 0.45rem;
         }
+        .perf-chart-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.55rem;
+            flex-wrap: wrap;
+            margin-bottom: 0.28rem;
+        }
+        .perf-chart-granularity {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.36rem;
+            color: var(--morandi-slate);
+            font-size: 0.82rem;
+        }
+        .perf-chart-granularity select {
+            min-height: 30px;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 8px;
+            background: #fff;
+            color: var(--morandi-ink);
+            font-size: 0.82rem;
+            padding: 0.22rem 0.48rem;
+        }
+        .perf-chart-granularity .feature-category-dropdown.universal-select-dropdown {
+            width: auto;
+            min-width: 90px;
+        }
+        .perf-chart-granularity .universal-select-trigger {
+            min-height: 30px;
+            height: 30px;
+            padding: 0.22rem 1.7rem 0.22rem 0.46rem !important;
+            font-size: 0.82rem;
+            border-radius: 8px;
+        }
         .perf-panel h3 {
             margin: 0 0 0.5rem;
             font-size: 1.06rem;
@@ -274,18 +363,28 @@
             background: #fff;
             padding: 0.5rem;
             position: relative;
-            overflow: auto;
+            overflow: visible;
         }
         #perfChart {
             width: 100%;
             height: 300px;
             display: block;
         }
+        .perf-chart-hover-line {
+            position: absolute;
+            top: 0.5rem;
+            bottom: 0.5rem;
+            width: 0;
+            border-left: 1px dashed rgba(141, 106, 106, 0.95);
+            pointer-events: none;
+            display: none;
+            z-index: 12;
+        }
         .perf-event-tooltip {
             position: absolute;
-            z-index: 28;
-            min-width: 220px;
-            max-width: 360px;
+            z-index: 120;
+            min-width: 260px;
+            max-width: 460px;
             background: #fff;
             border: 1px solid var(--morandi-sand);
             border-radius: 8px;
@@ -296,6 +395,70 @@
             display: none;
             pointer-events: none;
             line-height: 1.42;
+        }
+        .perf-chart-detail {
+            margin-top: 0.55rem;
+            display: none;
+            border: 1px solid rgba(207, 199, 189, 0.75);
+            border-radius: 10px;
+            background: #fff;
+            padding: 0.72rem;
+        }
+        .perf-chart-detail.active {
+            display: block;
+        }
+        .perf-chart-detail-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+            margin-bottom: 0.6rem;
+        }
+        .perf-chart-detail-title {
+            font-size: 1rem;
+            font-weight: 800;
+            color: var(--morandi-ink);
+        }
+        .perf-chart-detail-body {
+            display: grid;
+            gap: 0.7rem;
+        }
+        .perf-chart-detail-block {
+            border: 1px solid rgba(207, 199, 189, 0.65);
+            border-radius: 8px;
+            padding: 0.62rem;
+            background: #faf8f4;
+        }
+        .perf-chart-detail-block h4 {
+            margin: 0 0 0.42rem;
+            font-size: 0.92rem;
+            color: var(--morandi-ink);
+        }
+        .perf-chart-detail-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+            gap: 0.42rem;
+        }
+        .perf-chart-detail-row {
+            display: grid;
+            gap: 0.08rem;
+            border: 1px solid rgba(207, 199, 189, 0.62);
+            border-radius: 8px;
+            background: #fff;
+            padding: 0.3rem 0.42rem;
+            color: var(--morandi-ink);
+        }
+        .perf-chart-detail-row span {
+            font-size: 0.76rem;
+            color: var(--morandi-slate);
+        }
+        .perf-chart-detail-row strong {
+            font-size: 0.9rem;
+        }
+        .perf-chart-detail-empty {
+            color: var(--morandi-slate);
+            font-size: 0.86rem;
         }
         .perf-event-click-tip {
             margin-top: 0.35rem;
@@ -321,7 +484,7 @@
             border-radius: 8px;
             background: #fff;
             margin-bottom: 0.58rem;
-            overflow: hidden;
+            overflow: visible;
         }
         .perf-group summary {
             list-style: none;
@@ -332,11 +495,105 @@
             background: #f9f7f3;
             border-bottom: 1px solid rgba(207, 199, 189, 0.62);
         }
+        .perf-group-summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 0.35rem 0.55rem;
+            align-items: center;
+        }
+        .perf-group-summary-item {
+            display: grid;
+            gap: 0.08rem;
+            border: 1px solid rgba(207, 199, 189, 0.62);
+            border-radius: 8px;
+            background: #fff;
+            padding: 0.3rem 0.45rem;
+        }
+        .perf-group-summary-item .label {
+            font-size: 0.74rem;
+            color: var(--morandi-slate);
+            font-weight: 400;
+        }
+        .perf-group-summary-item .value {
+            font-size: 0.9rem;
+            color: var(--morandi-ink);
+            font-weight: 700;
+        }
+        .perf-group-head {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-bottom: 0.55rem;
+        }
+        .perf-group-title {
+            margin: 0;
+            font-size: 1.06rem;
+            color: var(--morandi-ink);
+            font-weight: 800;
+        }
+        .perf-group-meta {
+            color: var(--morandi-slate);
+            font-size: 0.84rem;
+        }
+        .perf-group-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin: 0.15rem 0 0.55rem;
+            padding: 0.22rem 0.35rem;
+            border-radius: 8px;
+            background: rgba(247, 244, 239, 0.42);
+        }
+        .perf-group-toolbar .perf-inline-help {
+            font-size: 0.76rem;
+            color: var(--morandi-slate);
+        }
+        .perf-group-toolbar .check-select {
+            width: 120px;
+            min-width: 120px;
+            max-width: 150px;
+        }
+        .perf-group-toolbar .check-select-trigger {
+            min-height: 26px;
+            padding: 0.22rem 0.42rem;
+            font-size: 0.8rem;
+            color: var(--morandi-slate);
+            background: #fffdf9;
+        }
+        .perf-group-toolbar .check-select-trigger.universal-select-trigger {
+            padding-right: 1.35rem !important;
+            text-align: left;
+        }
+        .perf-group-pager {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.28rem;
+            flex-wrap: wrap;
+        }
+        .perf-group-pager .btn-secondary {
+            min-height: 26px;
+            padding: 0.16rem 0.38rem;
+            font-size: 0.78rem;
+            line-height: 1.1;
+        }
+        .perf-group-pager .perf-inline-help {
+            font-size: 0.75rem;
+        }
         .perf-group summary::-webkit-details-marker {
             display: none;
         }
         .perf-group-content {
             padding: 0.62rem;
+        }
+        .perf-group-header-wrap {
+            margin-bottom: 0.46rem;
+        }
+        .perf-group-header-wrap .perf-table {
+            min-width: 1180px;
         }
 
         .perf-table-wrap {
@@ -345,6 +602,10 @@
             border-radius: 8px;
             background: #fff;
             max-width: 100%;
+        }
+        .perf-group-content .pm-managed-body-wrap {
+            max-height: 420px;
+            overflow: auto;
         }
         .perf-table {
             width: 100%;
@@ -376,28 +637,46 @@
             display: flex;
             align-items: center;
             flex-wrap: wrap;
-            gap: 0.52rem;
+            gap: 0.36rem;
             margin-bottom: 0.58rem;
+            font-size: 0.82rem;
+            color: var(--morandi-slate);
         }
         .perf-pagination {
             margin-top: 0.5rem;
         }
         .perf-manage-toolbar input[type="text"] {
-            min-height: 38px;
+            min-height: 32px;
             border: 1px solid var(--morandi-sand);
             border-radius: 8px;
             background: #fff;
             color: var(--morandi-ink);
-            min-width: 240px;
-            padding: 0.4rem 0.6rem;
+            min-width: 200px;
+            padding: 0.28rem 0.48rem;
+            font-size: 0.85rem;
         }
         .perf-manage-toolbar select {
-            min-height: 36px;
+            min-height: 32px;
             border: 1px solid var(--morandi-sand);
             border-radius: 8px;
             background: #fff;
             color: var(--morandi-ink);
-            padding: 0.3rem 0.48rem;
+            padding: 0.24rem 0.42rem;
+            font-size: 0.82rem;
+        }
+        .perf-manage-toolbar .btn-primary,
+        .perf-manage-toolbar .btn-secondary,
+        .perf-manage-toolbar .btn-accent {
+            min-height: 32px;
+            padding: 0.26rem 0.52rem;
+            font-size: 0.82rem;
+            line-height: 1.2;
+        }
+        .perf-manage-card {
+            margin-top: 0.9rem;
+        }
+        .perf-manage-card .perf-filter-title {
+            margin-bottom: 0.55rem;
         }
 
         .upload-progress {
@@ -458,7 +737,18 @@
                 max-width: none;
             }
             .perf-row-title {
-                min-width: 48px;
+                width: 58px;
+                min-width: 58px;
+                flex: 0 0 58px;
+            }
+            .perf-filter-pair-row {
+                grid-template-columns: 58px 1fr;
+            }
+            .perf-filter-triple-row {
+                grid-template-columns: 58px 1fr;
+            }
+            .perf-filter-actions {
+                padding-left: 58px;
             }
             .perf-manage-toolbar input[type="text"] {
                 width: 100%;
@@ -479,6 +769,12 @@
             </section>
 
             <div class="card pm-card sales-perf-card">
+                <div class="perf-filter-header">
+                    <div>
+                        <div class="perf-filter-title">筛选看板数据</div>
+                        <div class="perf-filter-subtitle">按日期、货号、面料、规格和广告类型筛选图表、分组与明细</div>
+                    </div>
+                </div>
                 <div class="perf-toolbar">
                     <div class="perf-toolbar-grid">
                         <div class="perf-col perf-col-left">
@@ -487,32 +783,39 @@
                                 <input type="date" id="filterStartDate">
                                 <span>至</span>
                                 <input type="date" id="filterEndDate">
-                                <button type="button" class="btn-primary" id="btnQuery">查询</button>
-                                <button type="button" class="btn-secondary" id="btnReset">重置</button>
                                 <span class="status-tip" id="dataStatus"></span>
                             </div>
 
-                            <div class="perf-row">
+                            <div class="perf-row perf-filter-triple-row">
+                                <span class="perf-row-title">平台</span>
+                                <div class="check-select" id="selPlatforms"></div>
+                                <span class="perf-row-title">店铺</span>
+                                <div class="check-select" id="selShops"></div>
                                 <span class="perf-row-title">货号</span>
                                 <div class="check-select" id="selSkuFamilies"></div>
-                                <span class="perf-row-title">SKU</span>
-                                <div class="check-select" id="selPlatformSkus"></div>
                             </div>
 
-                            <div class="perf-row">
+                            <div class="perf-row perf-filter-triple-row">
+                                <span class="perf-row-title">SKU</span>
+                                <div class="check-select" id="selPlatformSkus"></div>
                                 <span class="perf-row-title">面料</span>
                                 <div class="check-select" id="selFabrics"></div>
                                 <span class="perf-row-title">规格</span>
                                 <div class="check-select" id="selSpecs"></div>
                             </div>
+                            <div class="perf-filter-actions">
+                                <button type="button" class="btn-primary" id="btnQuery">查询</button>
+                                <button type="button" class="btn-secondary" id="btnReset">重置</button>
+                            </div>
                         </div>
 
                         <div class="perf-col perf-col-right">
                             <div class="perf-row perf-row-tight">
-                                <span class="perf-row-title" style="min-width:70px;">图表字段</span>
+                                <span class="perf-row-title" style="min-width:70px;">显示字段</span>
                                 <div class="perf-metric-order" id="metricCheckboxBar"></div>
                             </div>
                             <div class="perf-row perf-row-tight switch-row">
+                                <span class="perf-row-title" style="min-width:96px;">图表事件标注</span>
                                 <label><input type="checkbox" id="toggleTodos" checked> 显示待办完成事件</label>
                                 <label><input type="checkbox" id="toggleAds" checked> 显示广告调整事件</label>
                                 <span class="perf-row-title" style="min-width:58px;">广告类型</span>
@@ -523,19 +826,35 @@
                 </div>
 
                 <div class="perf-panel">
-                    <div class="perf-panel-caption">按日趋势</div>
+                    <div class="perf-chart-head">
+                        <div class="perf-panel-caption" id="chartTitle">按日趋势</div>
+                        <div class="perf-chart-granularity">
+                            <span>周期</span>
+                            <select id="chartGranularity" data-universal-no-search="1">
+                                <option value="day">按日</option>
+                                <option value="week">按周</option>
+                                <option value="month">按月</option>
+                            </select>
+                        </div>
+                    </div>
                     <div class="perf-legend" id="chartLegend"></div>
                     <div class="perf-chart-wrap" id="chartWrap">
                         <canvas id="perfChart"></canvas>
+                        <div class="perf-chart-hover-line" id="chartHoverLine"></div>
                         <div class="perf-event-tooltip" id="eventTooltip"></div>
                     </div>
-                    <div class="perf-event-click-tip">提示：点击图中的灰色竖虚线，可自动展开并定位到对应货号/SKU明细。</div>
+                    <div class="perf-event-click-tip">提示：鼠标移动会自动吸附到最近日期，点击可展开或收起图表明细。</div>
+                    <div class="perf-chart-detail" id="chartDetailPanel"></div>
                 </div>
 
                 <div class="perf-panel perf-group" id="groupContainer"></div>
 
+            </div>
+
+            <div class="card pm-card sales-perf-card perf-manage-card">
+                <div class="perf-filter-title">记录管理</div>
+
                 <div class="perf-panel">
-                    <div class="perf-panel-caption">记录管理</div>
                     <div class="perf-manage-toolbar">
                         <input type="text" id="performanceSearchInput" placeholder="搜索销售平台SKU">
                         <button class="btn-primary" id="btnPerfSearch" type="button">搜索</button>
@@ -544,21 +863,6 @@
                         <button class="btn-secondary" id="btnPerfImport" type="button">批量上传</button>
                         <input type="file" id="salesProductPerformanceUploadInput" accept=".xlsx" style="display:none;">
                         <button class="btn-accent" id="btnPerfCreate" type="button">新增记录</button>
-                    </div>
-                    <div class="pm-table-toolbar">
-                        <div class="pm-table-toolbar-left">
-                            <label for="performancePageSizeSelect">每页</label>
-                            <select class="pm-table-page-size" id="performancePageSizeSelect">
-                                <option value="20">20</option>
-                                <option value="50" selected>50</option>
-                                <option value="100">100</option>
-                                <option value="200">200</option>
-                            </select>
-                            <span class="pm-table-info" id="performanceTableInfo">共 0 条，当前第 1/1 页</span>
-                        </div>
-                        <div class="pm-table-toolbar-right">
-                            <div class="pm-table-pager" id="performancePager"></div>
-                        </div>
                     </div>
                     <div class="perf-table-wrap">
                         <table class="perf-table" id="salesProductPerformanceTable">
@@ -653,6 +957,9 @@
     <script>
         let uploadProcessingTimer = null;
         let uploadProgressPollingTimer = null;
+        const PERF_PAGE_SIZE_KEY = 'sales_perf_list_page_size_v1';
+        const PERF_METRIC_ORDER_KEY = 'sales_perf_dashboard_metric_order_v1';
+        const PERF_CHART_GRANULARITY_KEY = 'sales_perf_chart_granularity_v1';
         const DERIVED_METRICS = [
             { key: 'acos', label: 'ACOS', color: '#7c9d74', isComputed: true },
             { key: 'acoas', label: 'ACOAS', color: '#6b8f7e', isComputed: true },
@@ -661,12 +968,16 @@
             { key: 'cvr', label: 'CVR', color: '#8d6d92', isComputed: true },
             { key: 'cpc', label: 'CPC', color: '#a36f6f', isComputed: true }
         ];
+        const PERCENT_METRIC_KEYS = new Set(['acos', 'acoas', 'ctr', 'cvr']);
         const state = {
             metrics: [],
             metricOrder: [],
             metricMap: {},
+            chartGranularity: 'day',
             dashboardQueried: false,
             filterDefs: {
+                platforms: { key: 'platform_type_ids', host: 'selPlatforms', title: '全部平台', options: [], selected: new Set() },
+                shops: { key: 'shop_ids', host: 'selShops', title: '全部店铺', options: [], selected: new Set() },
                 skuFamilies: { key: 'sku_family_ids', host: 'selSkuFamilies', title: '全部货号', options: [], selected: new Set() },
                 platformSkus: { key: 'platform_skus', host: 'selPlatformSkus', title: '全部SKU', options: [], selected: new Set() },
                 fabrics: { key: 'fabrics', host: 'selFabrics', title: '全部面料', options: [], selected: new Set() },
@@ -675,7 +986,12 @@
             },
             eventByDate: {},
             chartGeom: null,
+            chartDataByDate: {},
+            selectedChartDate: '',
+            selectedChartDateOpen: false,
             lastGroups: [],
+            groupSkuRowLimit: 20,
+            groupPaging: {},
             performanceItems: [],
             performanceEditId: null,
             performanceSkuPool: [],
@@ -684,6 +1000,158 @@
             performanceTotal: 0,
             performanceTotalPages: 1
         };
+
+        function loadPerfPageSizeFromStorage() {
+            try {
+                const n = Number(localStorage.getItem(PERF_PAGE_SIZE_KEY) || '50');
+                if ([20, 50, 100, 300, 500, 1000].includes(n)) return n;
+            } catch (e) {}
+            return 50;
+        }
+
+        function savePerfPageSizeToStorage(size) {
+            try { localStorage.setItem(PERF_PAGE_SIZE_KEY, String(size)); } catch (e) {}
+        }
+
+        function loadChartGranularityFromStorage() {
+            try {
+                const v = String(localStorage.getItem(PERF_CHART_GRANULARITY_KEY) || 'day').toLowerCase();
+                if (['day', 'week', 'month'].includes(v)) return v;
+            } catch (e) {}
+            return 'day';
+        }
+
+        function saveChartGranularityToStorage(v) {
+            try { localStorage.setItem(PERF_CHART_GRANULARITY_KEY, String(v || 'day')); } catch (e) {}
+        }
+
+        function loadMetricOrderFromStorage() {
+            try {
+                const raw = localStorage.getItem(PERF_METRIC_ORDER_KEY) || '[]';
+                const arr = JSON.parse(raw);
+                if (Array.isArray(arr)) return arr.map(x => String(x || '').trim()).filter(Boolean);
+            } catch (e) {}
+            return [];
+        }
+
+        function saveMetricOrderToStorage() {
+            try { localStorage.setItem(PERF_METRIC_ORDER_KEY, JSON.stringify(state.metricOrder || [])); } catch (e) {}
+        }
+
+        function toYmd(dateObj) {
+            const y = dateObj.getFullYear();
+            const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const d = String(dateObj.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+
+        function parseYmd(text) {
+            const t = String(text || '').slice(0, 10);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return null;
+            const dt = new Date(`${t}T00:00:00`);
+            if (Number.isNaN(dt.getTime())) return null;
+            return dt;
+        }
+
+        function getBucketKeyByGranularity(dateText, granularity) {
+            const g = String(granularity || 'day').toLowerCase();
+            const dt = parseYmd(dateText);
+            if (!dt) return String(dateText || '').slice(0, 10);
+            if (g === 'month') {
+                return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-01`;
+            }
+            if (g === 'week') {
+                const day = dt.getDay();
+                const diff = day === 0 ? -6 : (1 - day);
+                const monday = new Date(dt);
+                monday.setDate(dt.getDate() + diff);
+                return toYmd(monday);
+            }
+            return toYmd(dt);
+        }
+
+        function aggregateChartByGranularity(chartItems, events, granularity) {
+            const g = String(granularity || 'day').toLowerCase();
+            if (g === 'day') {
+                return { items: chartItems || [], events: events || [] };
+            }
+            const bucketMap = {};
+            (chartItems || []).forEach(row => {
+                const key = getBucketKeyByGranularity(row.record_date, g);
+                const b = bucketMap[key] || (bucketMap[key] = { record_date: key, __sub_rank_sum: 0, __sub_rank_cnt: 0 });
+                Object.keys(row || {}).forEach(k => {
+                    if (k === 'record_date') return;
+                    const num = Number(row[k]);
+                    if (!Number.isFinite(num)) return;
+                    if (k === 'sub_category_rank') {
+                        b.__sub_rank_sum += num;
+                        b.__sub_rank_cnt += 1;
+                    } else {
+                        b[k] = Number(b[k] || 0) + num;
+                    }
+                });
+            });
+
+            const items = Object.keys(bucketMap).sort().map(key => {
+                const b = bucketMap[key];
+                const out = { record_date: b.record_date };
+                Object.keys(b).forEach(k => {
+                    if (k === 'record_date' || k.startsWith('__')) return;
+                    out[k] = Math.round(Number(b[k] || 0) * 100) / 100;
+                });
+                if (b.__sub_rank_cnt > 0) {
+                    out.sub_category_rank = Math.round((b.__sub_rank_sum / b.__sub_rank_cnt) * 100) / 100;
+                }
+                return out;
+            });
+
+            const remappedEvents = (events || []).map(ev => {
+                const oldDate = String(ev.event_date || '').slice(0, 10);
+                return Object.assign({}, ev, { event_date: getBucketKeyByGranularity(oldDate, g) });
+            });
+            return { items, events: remappedEvents };
+        }
+
+        function getChartTitleByGranularity(granularity) {
+            const g = String(granularity || 'day').toLowerCase();
+            if (g === 'month') return '按月趋势';
+            if (g === 'week') return '按周趋势';
+            return '按日趋势';
+        }
+
+        function formatBucketRangeLabel(bucketDate, granularity) {
+            const g = String(granularity || 'day').toLowerCase();
+            const dt = parseYmd(bucketDate);
+            if (!dt) return String(bucketDate || '').slice(0, 10);
+            if (g === 'month') {
+                const first = new Date(dt.getFullYear(), dt.getMonth(), 1);
+                const last = new Date(dt.getFullYear(), dt.getMonth() + 1, 0);
+                return `${toYmd(first)} ~ ${toYmd(last)}`;
+            }
+            if (g === 'week') {
+                const first = new Date(dt);
+                const last = new Date(dt);
+                last.setDate(first.getDate() + 6);
+                return `${toYmd(first)} ~ ${toYmd(last)}`;
+            }
+            return toYmd(dt);
+        }
+
+        function formatBucketShortLabel(bucketDate, granularity) {
+            const g = String(granularity || 'day').toLowerCase();
+            const dt = parseYmd(bucketDate);
+            if (!dt) return String(bucketDate || '').slice(0, 10);
+            if (g === 'month') {
+                return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+            }
+            if (g === 'week') {
+                const first = new Date(dt);
+                const last = new Date(dt);
+                last.setDate(first.getDate() + 6);
+                return `${String(first.getMonth() + 1).padStart(2, '0')}-${String(first.getDate()).padStart(2, '0')}~${String(last.getMonth() + 1).padStart(2, '0')}-${String(last.getDate()).padStart(2, '0')}`;
+            }
+            return String(bucketDate || '').slice(5, 10);
+        }
 
         function toDateStr(d) {
             const y = d.getFullYear();
@@ -707,11 +1175,83 @@
             return n.toFixed(2).replace(/\.00$/, '');
         }
 
+        function isPercentMetricKey(key) {
+            return PERCENT_METRIC_KEYS.has(String(key || '').toLowerCase());
+        }
+
+        function formatMetricValue(v, key) {
+            const n = Number(v || 0);
+            if (!Number.isFinite(n)) return '-';
+            if (isPercentMetricKey(key)) {
+                return `${(n * 100).toFixed(2).replace(/\.00$/, '')}%`;
+            }
+            return formatNumber(n);
+        }
+
+        function niceNumber(range, round) {
+            const safeRange = Math.max(1e-9, Number(range) || 0);
+            const exponent = Math.floor(Math.log10(safeRange));
+            const fraction = safeRange / Math.pow(10, exponent);
+            let niceFraction;
+            if (round) {
+                if (fraction < 1.5) niceFraction = 1;
+                else if (fraction < 3) niceFraction = 2;
+                else if (fraction < 7) niceFraction = 5;
+                else niceFraction = 10;
+            } else {
+                if (fraction <= 1) niceFraction = 1;
+                else if (fraction <= 2) niceFraction = 2;
+                else if (fraction <= 5) niceFraction = 5;
+                else niceFraction = 10;
+            }
+            return niceFraction * Math.pow(10, exponent);
+        }
+
+        function buildNiceScale(minValue, maxValue, tickCount) {
+            let minV = Number(minValue || 0);
+            let maxV = Number(maxValue || 0);
+            if (!Number.isFinite(minV)) minV = 0;
+            if (!Number.isFinite(maxV)) maxV = 1;
+            if (minV === maxV) {
+                const pad = Math.abs(minV || 1) * 0.1;
+                minV -= pad;
+                maxV += pad;
+            }
+            const ticks = Math.max(2, Number(tickCount || 5));
+            const range = niceNumber(maxV - minV, false);
+            const step = niceNumber(range / (ticks - 1), true);
+            const niceMin = Math.floor(minV / step) * step;
+            const niceMax = Math.ceil(maxV / step) * step;
+            return { min: niceMin, max: niceMax, step };
+        }
+
+        function formatAxisTickValue(v, asPercent) {
+            const n = Number(v || 0);
+            if (!Number.isFinite(n)) return '-';
+            if (asPercent) {
+                const p = n * 100;
+                if (Math.abs(p) >= 100) return `${Math.round(p)}%`;
+                return `${p.toFixed(1).replace(/\.0$/, '')}%`;
+            }
+            return formatNumber(n);
+        }
+
+        function getAllMetricKeysForTooltip() {
+            const keys = [];
+            (state.metrics || []).forEach(m => {
+                if (m && m.key) keys.push(String(m.key));
+            });
+            DERIVED_METRICS.forEach(m => {
+                if (m && m.key) keys.push(String(m.key));
+            });
+            return Array.from(new Set(keys));
+        }
+
         function createFilterSelect(def) {
             const host = document.getElementById(def.host);
             if (!host) return;
             host.innerHTML = `
-                <button type="button" class="check-select-trigger">${def.title}</button>
+                <button type="button" class="check-select-trigger universal-select-trigger">${def.title}</button>
                 <div class="check-select-panel">
                     <div class="check-select-actions">
                         <button type="button" data-action="all">全选</button>
@@ -722,7 +1262,7 @@
                 </div>
             `;
 
-            const trigger = host.querySelector('.check-select-trigger');
+            const trigger = host.querySelector('.check-select-trigger, .universal-select-trigger');
             const search = host.querySelector('.check-select-search');
             const list = host.querySelector('.check-select-list');
             const btnAll = host.querySelector('button[data-action="all"]');
@@ -784,18 +1324,24 @@
         function refreshFilterTrigger(def) {
             const host = document.getElementById(def.host);
             if (!host) return;
-            const trigger = host.querySelector('.check-select-trigger');
+            const trigger = host.querySelector('.check-select-trigger, .universal-select-trigger');
             const count = def.selected.size;
             if (!count) {
                 trigger.textContent = def.title;
+                host.classList.remove('has-value');
+                trigger.classList.remove('has-value');
                 return;
             }
             if (count === 1) {
                 const one = def.options.find(x => def.selected.has(String(x.value)));
                 trigger.textContent = one ? one.label : `${count}项`;
+                host.classList.add('has-value');
+                trigger.classList.add('has-value');
                 return;
             }
             trigger.textContent = `已选${count}项`;
+            host.classList.add('has-value');
+            trigger.classList.add('has-value');
         }
 
         function getFilterValues(defName) {
@@ -822,11 +1368,11 @@
         }
 
         function resolveMetricValue(row, key) {
-            if (key === 'acos') return safeDiv(row.ad_spend, row.ad_sales_amount) * 100;
-            if (key === 'acoas') return safeDiv(row.ad_spend, row.net_sales_amount) * 100;
+            if (key === 'acos') return safeDiv(row.ad_spend, row.ad_sales_amount);
+            if (key === 'acoas') return safeDiv(row.ad_spend, row.net_sales_amount);
             if (key === 'rois') return safeDiv(row.net_sales_amount, row.ad_spend);
-            if (key === 'ctr') return safeDiv(row.ad_clicks, row.ad_impressions) * 100;
-            if (key === 'cvr') return safeDiv(row.ad_orders, row.ad_clicks) * 100;
+            if (key === 'ctr') return safeDiv(row.ad_clicks, row.ad_impressions);
+            if (key === 'cvr') return safeDiv(row.ad_orders, row.ad_clicks);
             if (key === 'cpc') return safeDiv(row.ad_spend, row.ad_clicks);
             const n = Number(row[key]);
             return Number.isFinite(n) ? n : 0;
@@ -861,6 +1407,7 @@
                         state.metricOrder = getDefaultMetricOrder();
                         renderMetricCheckboxBar();
                     }
+                    saveMetricOrderToStorage();
                     if (state.dashboardQueried) loadDashboard();
                 });
             });
@@ -875,12 +1422,17 @@
             const f = data.filters || {};
             state.metrics = f.metrics || [];
 
+            state.filterDefs.platforms.options = (f.platform_types || []).map(x => ({ value: String(x.id), label: x.name || String(x.id) }));
+            state.filterDefs.shops.options = (f.shops || []).map(x => ({ value: String(x.id), label: x.name || String(x.id) }));
+
             state.filterDefs.skuFamilies.options = (f.sku_families || []).map(x => ({ value: String(x.id), label: x.name || String(x.id) }));
             state.filterDefs.platformSkus.options = (f.platform_skus || []).map(x => ({ value: x.name || '', label: x.name || '' })).filter(x => x.value);
             state.filterDefs.fabrics.options = (f.fabrics || []).map(x => ({ value: String(x), label: String(x) }));
             state.filterDefs.specs.options = (f.spec_names || []).map(x => ({ value: String(x), label: String(x) }));
             state.filterDefs.adTypes.options = (f.ad_operation_types || []).map(x => ({ value: String(x.id), label: x.name || String(x.id) }));
 
+            createFilterSelect(state.filterDefs.platforms);
+            createFilterSelect(state.filterDefs.shops);
             createFilterSelect(state.filterDefs.skuFamilies);
             createFilterSelect(state.filterDefs.platformSkus);
             createFilterSelect(state.filterDefs.fabrics);
@@ -888,7 +1440,12 @@
             createFilterSelect(state.filterDefs.adTypes);
 
             rebuildMetricMap();
-            state.metricOrder = getDefaultMetricOrder();
+            const storedOrder = loadMetricOrderFromStorage();
+            const allowed = new Set(Object.keys(state.metricMap || {}));
+            state.metricOrder = storedOrder.filter(k => allowed.has(k));
+            if (!state.metricOrder.length) {
+                state.metricOrder = getDefaultMetricOrder();
+            }
             renderMetricCheckboxBar();
         }
 
@@ -901,6 +1458,8 @@
             q.set('include_ads', document.getElementById('toggleAds').checked ? '1' : '0');
 
             const setIf = (k, arr) => { if (arr.length) q.set(k, arr.join(',')); };
+            setIf('platform_type_ids', getFilterValues('platforms'));
+            setIf('shop_ids', getFilterValues('shops'));
             setIf('sku_family_ids', getFilterValues('skuFamilies'));
             setIf('platform_skus', getFilterValues('platformSkus'));
             setIf('fabrics', getFilterValues('fabrics'));
@@ -936,6 +1495,7 @@
         function renderChart(chartItems, events) {
             const canvas = document.getElementById('perfChart');
             const wrap = document.getElementById('chartWrap');
+            const hoverLine = document.getElementById('chartHoverLine');
             const dpr = window.devicePixelRatio || 1;
             const width = Math.max(820, wrap.clientWidth - 16);
             const height = 300;
@@ -953,7 +1513,10 @@
                 ctx.font = '14px sans-serif';
                 ctx.fillText('暂无趋势数据', 24, 42);
                 state.chartGeom = null;
+                state.chartDataByDate = {}
                 mapEvents([]);
+                hideChartDetailPanel();
+                if (hoverLine) hoverLine.style.display = 'none';
                 return;
             }
 
@@ -962,6 +1525,7 @@
             const innerH = height - pad.top - pad.bottom;
             const dates = chartItems.map(x => String(x.record_date || '').slice(0, 10));
 
+            const allPercentMetrics = state.metricOrder.length > 0 && state.metricOrder.every(k => isPercentMetricKey(k));
             let minV = Infinity;
             let maxV = -Infinity;
             state.metricOrder.forEach(k => {
@@ -976,15 +1540,18 @@
                 minV = 0;
                 maxV = 1;
             }
-            if (minV === maxV) {
-                minV -= 1;
-                maxV += 1;
+            if (allPercentMetrics) {
+                minV = Math.max(0, minV);
+                maxV = Math.max(maxV, 0.01);
             }
+            const yTick = 5;
+            const yScale = buildNiceScale(minV, maxV, yTick + 1);
+            minV = yScale.min;
+            maxV = yScale.max;
 
             ctx.strokeStyle = 'rgba(128, 128, 128, 0.22)';
             ctx.fillStyle = '#746d64';
             ctx.font = '12px sans-serif';
-            const yTick = 5;
             for (let i = 0; i <= yTick; i += 1) {
                 const y = pad.top + (innerH * i / yTick);
                 const val = maxV - ((maxV - minV) * i / yTick);
@@ -992,11 +1559,16 @@
                 ctx.moveTo(pad.left, y);
                 ctx.lineTo(width - pad.right, y);
                 ctx.stroke();
-                ctx.fillText(formatNumber(val), 8, y + 4);
+                ctx.fillText(formatAxisTickValue(val, allPercentMetrics), 8, y + 4);
             }
 
             const xAt = idx => pad.left + (innerW * (dates.length <= 1 ? 0 : idx / (dates.length - 1)));
             const yAt = v => pad.top + (innerH * (maxV - v) / (maxV - minV));
+            const rowByDate = {};
+            chartItems.forEach(row => {
+                const d = String(row.record_date || '').slice(0, 10);
+                if (d && !rowByDate[d]) rowByDate[d] = row;
+            });
 
             state.metricOrder.forEach(k => {
                 const m = state.metricMap[k];
@@ -1018,7 +1590,7 @@
             ctx.fillStyle = '#7f786f';
             for (let i = 0; i < dates.length; i += Math.max(1, Math.floor(dates.length / 6))) {
                 const x = xAt(i);
-                const label = dates[i] ? dates[i].slice(5) : '';
+                const label = formatBucketShortLabel(dates[i], state.chartGranularity);
                 ctx.fillText(label, x - 16, height - 10);
             }
 
@@ -1038,7 +1610,8 @@
             });
             ctx.setLineDash([]);
 
-            state.chartGeom = { dates, xAt, width, height, pad, eventLines };
+            state.chartGeom = { dates, xAt, width, height, pad, innerW, rowByDate, eventLines };
+            state.chartDataByDate = rowByDate;
         }
 
         function formatEventBlock(ev) {
@@ -1048,6 +1621,105 @@
                 return `<div style="margin-top:0.32rem;"><strong>[待办完成]</strong> ${ev.title || ''}<br>创建人: ${ev.creator || '-'}<br>SKU: ${sku}<br>货号: ${sf}<br>${ev.detail || ''}</div>`;
             }
             return `<div style="margin-top:0.32rem;"><strong>[广告调整]</strong> ${ev.operation_type_name || ''}<br>目标: ${ev.target_object || '-'}<br>SKU: ${sku}<br>货号: ${sf}<br>${ev.detail || ''}</div>`;
+        }
+
+        function buildDateColumnTooltipHtml(dateText) {
+            const geom = state.chartGeom || {};
+            const row = (geom.rowByDate || {})[dateText] || {};
+            const keys = (state.metricOrder || []).filter(Boolean);
+            const displayRange = formatBucketRangeLabel(dateText, state.chartGranularity);
+            const metricRows = keys.map(k => {
+                const m = (state.metricMap || {})[k] || { label: k };
+                return `<div style="display:flex; justify-content:space-between; gap:0.6rem;"><span>${m.label || k}</span><strong>${formatMetricValue(resolveMetricValue(row, k), k)}</strong></div>`;
+            }).join('');
+            return `
+                <div><strong>${displayRange}</strong></div>
+                <div style="margin-top:0.42rem; border-top:1px solid rgba(207,199,189,0.75); padding-top:0.42rem;">
+                    <div style="font-weight:700; margin-bottom:0.32rem;">当日字段数据</div>
+                    <div style="display:grid; gap:0.2rem;">${metricRows}</div>
+                </div>
+            `;
+        }
+
+        function hideChartDetailPanel() {
+            const panel = document.getElementById('chartDetailPanel');
+            if (!panel) return;
+            panel.classList.remove('active');
+            panel.innerHTML = '';
+            state.selectedChartDate = '';
+            state.selectedChartDateOpen = false;
+        }
+
+        function renderChartDetailPanel(dateText) {
+            const panel = document.getElementById('chartDetailPanel');
+            if (!panel) return;
+            const row = state.chartDataByDate[dateText] || {};
+            const keys = (state.metricOrder || []).filter(Boolean);
+            const events = state.eventByDate[dateText] || [];
+            const displayRange = formatBucketRangeLabel(dateText, state.chartGranularity);
+            const metricHtml = keys.map(k => {
+                const m = (state.metricMap || {})[k] || { label: k };
+                return `<div class="perf-chart-detail-row"><span>${m.label || k}</span><strong>${formatMetricValue(resolveMetricValue(row, k), k)}</strong></div>`;
+            }).join('');
+            const eventHtml = events.length
+                ? events.map(formatEventBlock).join('')
+                : '<div class="perf-chart-detail-empty">当日无待办或广告事件</div>';
+            panel.innerHTML = `
+                <div class="perf-chart-detail-head">
+                    <div class="perf-chart-detail-title">${displayRange} · 图表明细</div>
+                    <button type="button" class="btn-secondary" id="btnToggleChartDetail">收起</button>
+                </div>
+                <div class="perf-chart-detail-body">
+                    <div class="perf-chart-detail-block">
+                        <h4>当日字段数据</h4>
+                        <div class="perf-chart-detail-grid">${metricHtml}</div>
+                    </div>
+                    <div class="perf-chart-detail-block">
+                        <h4>图表事件标注</h4>
+                        <div class="perf-chart-detail-events">${eventHtml}</div>
+                    </div>
+                </div>
+            `;
+            panel.classList.add('active');
+            const btn = document.getElementById('btnToggleChartDetail');
+            if (btn) btn.onclick = hideChartDetailPanel;
+        }
+
+        function toggleChartDetailPanel(dateText) {
+            if (!dateText) return;
+            if (state.selectedChartDate === dateText && state.selectedChartDateOpen) {
+                hideChartDetailPanel();
+                return;
+            }
+            state.selectedChartDate = dateText;
+            state.selectedChartDateOpen = true;
+            renderChartDetailPanel(dateText);
+        }
+
+        function getNearestDateByChartX(x) {
+            const geom = state.chartGeom;
+            if (!geom || !Array.isArray(geom.dates) || !geom.dates.length) return '';
+            const minX = geom.pad.left;
+            const maxX = geom.width - geom.pad.right;
+            if (x < minX || x > maxX) return '';
+            if (geom.dates.length === 1) return geom.dates[0] || '';
+            const ratio = Math.max(0, Math.min(1, (x - minX) / Math.max(1, geom.innerW || 1)));
+            const idx = Math.round(ratio * (geom.dates.length - 1));
+            return geom.dates[idx] || '';
+        }
+
+        function getNearestChartPointByX(x) {
+            const geom = state.chartGeom;
+            if (!geom || !Array.isArray(geom.dates) || !geom.dates.length) return null;
+            const minX = geom.pad.left;
+            const maxX = geom.width - geom.pad.right;
+            if (x < minX || x > maxX) return null;
+            const ratio = Math.max(0, Math.min(1, (x - minX) / Math.max(1, geom.innerW || 1)));
+            const idx = Math.round(ratio * (geom.dates.length - 1));
+            const date = geom.dates[idx] || '';
+            if (!date) return null;
+            const snappedX = typeof geom.xAt === 'function' ? geom.xAt(idx) : x;
+            return { date, idx, x: snappedX };
         }
 
         function focusEventsByDate(dateText) {
@@ -1082,71 +1754,176 @@
             window.setTimeout(() => {
                 document.querySelectorAll('#groupContainer tbody tr.row-focus').forEach(tr => tr.classList.remove('row-focus'));
             }, 2400);
+
+            focusGroupRowsByDate(dateText);
+        }
+
+        function focusGroupRowsByDate(dateText) {
+            if (!dateText) return;
+            const hitRows = [];
+            document.querySelectorAll('#groupContainer tbody tr').forEach(tr => {
+                const recordDates = String(tr.dataset.recordDates || '').split('|').filter(Boolean);
+                if (recordDates.includes(dateText)) hitRows.push(tr);
+            });
+            document.querySelectorAll('#groupContainer tbody tr.row-focus').forEach(tr => tr.classList.remove('row-focus'));
+            hitRows.forEach(tr => tr.classList.add('row-focus'));
+            if (hitRows.length) {
+                hitRows[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            window.setTimeout(() => {
+                document.querySelectorAll('#groupContainer tbody tr.row-focus').forEach(tr => tr.classList.remove('row-focus'));
+            }, 2600);
         }
 
         function bindChartInteractions() {
             const canvas = document.getElementById('perfChart');
             const tip = document.getElementById('eventTooltip');
+            const hoverLine = document.getElementById('chartHoverLine');
 
             canvas.addEventListener('mousemove', e => {
                 if (!state.chartGeom) {
                     tip.style.display = 'none';
+                    hoverLine.style.display = 'none';
                     return;
                 }
                 const rect = canvas.getBoundingClientRect();
                 const x = e.clientX - rect.left;
-                let hitDate = '';
-                Object.keys(state.chartGeom.eventLines || {}).forEach(d => {
-                    if (Math.abs(state.chartGeom.eventLines[d] - x) <= 4) {
-                        const arr = state.eventByDate[d] || [];
-                        if (arr.length) hitDate = d;
-                    }
-                });
-                if (!hitDate) {
+                const point = getNearestChartPointByX(x);
+                if (!point || !point.date) {
                     tip.style.display = 'none';
+                    hoverLine.style.display = 'none';
                     return;
                 }
-                const rows = state.eventByDate[hitDate] || [];
-                tip.innerHTML = `<div><strong>${hitDate}</strong></div>${rows.map(formatEventBlock).join('')}`;
+                tip.innerHTML = buildDateColumnTooltipHtml(point.date);
                 tip.style.display = 'block';
-                tip.style.left = `${Math.min(rect.width - 365, x + 10)}px`;
-                tip.style.top = `${Math.max(8, e.clientY - rect.top + 8)}px`;
+                tip.style.left = `${Math.max(8, Math.min(rect.width - 20, point.x + 14))}px`;
+                const wrapRect = canvas.parentElement.getBoundingClientRect();
+                const tipHeight = Math.max(140, tip.offsetHeight || 0);
+                let top = Math.max(8, e.clientY - wrapRect.top + 10);
+                if (top + tipHeight > wrapRect.height - 8) {
+                    top = Math.max(8, wrapRect.height - tipHeight - 8);
+                }
+                tip.style.top = `${top}px`;
+                hoverLine.style.left = `${Math.max(0, (rect.left - wrapRect.left) + point.x)}px`;
+                hoverLine.style.display = 'block';
             });
 
             canvas.addEventListener('mouseleave', () => {
                 tip.style.display = 'none';
+                hoverLine.style.display = 'none';
             });
 
             canvas.addEventListener('click', e => {
                 if (!state.chartGeom) return;
                 const rect = canvas.getBoundingClientRect();
                 const x = e.clientX - rect.left;
-                let hitDate = '';
-                Object.keys(state.chartGeom.eventLines || {}).forEach(d => {
-                    if (Math.abs(state.chartGeom.eventLines[d] - x) <= 5 && (state.eventByDate[d] || []).length) {
-                        hitDate = d;
-                    }
-                });
-                if (hitDate) focusEventsByDate(hitDate);
+                const point = getNearestChartPointByX(x);
+                if (point && point.date) {
+                    toggleChartDetailPanel(point.date);
+                }
             });
         }
 
         function renderGroups(groups) {
             state.lastGroups = Array.isArray(groups) ? groups : [];
             const host = document.getElementById('groupContainer');
-            host.innerHTML = '<h3>货号分组明细</h3>';
+            const metricKeys = state.metricOrder.slice();
+            const headCols = ['货号', 'SKU', '面料', '规格', '日期范围', '记录数'].concat(metricKeys.map(k => (state.metricMap[k] && state.metricMap[k].label) || k));
+            host.innerHTML = `
+                <div class="perf-panel-caption">货号分组明细</div>
+                <div class="perf-group-meta" style="margin-bottom:0.35rem;">按所选日期范围汇总到 SKU 维度</div>
+            `;
             if (!state.lastGroups.length) {
                 host.insertAdjacentHTML('beforeend', '<p class="status-tip">暂无符合筛选条件的数据</p>');
                 return;
             }
 
-            const metricKeys = state.metricOrder.slice();
-
             state.lastGroups.forEach(g => {
+                const groupKey = String(g.sku_family_id || g.sku_family || 'group').trim();
                 const details = document.createElement('details');
                 details.dataset.skuFamily = g.sku_family || '';
+                details.open = false;
                 const summary = document.createElement('summary');
-                summary.textContent = `${g.sku_family || '未分组货号'} (${(g.items || []).length} 个SKU)`;
+                const sum = {
+                    record_count: 0,
+                    sku_count: 0,
+                    sales_qty: 0,
+                    net_sales_amount: 0,
+                    order_qty: 0,
+                    session_total: 0,
+                    ad_impressions: 0,
+                    ad_clicks: 0,
+                    ad_orders: 0,
+                    ad_spend: 0,
+                    ad_sales_amount: 0,
+                    refund_amount: 0
+                };
+                const skuMap = {};
+                (g.items || []).forEach(it => {
+                    (it.records || []).forEach(rec => {
+                        const latest = rec || {};
+                        sum.record_count += 1;
+                        sum.sales_qty += Number(latest.sales_qty || 0);
+                        sum.net_sales_amount += Number(latest.net_sales_amount || 0);
+                        sum.order_qty += Number(latest.order_qty || 0);
+                        sum.session_total += Number(latest.session_total || 0);
+                        sum.ad_impressions += Number(latest.ad_impressions || 0);
+                        sum.ad_clicks += Number(latest.ad_clicks || 0);
+                        sum.ad_orders += Number(latest.ad_orders || 0);
+                        sum.ad_spend += Number(latest.ad_spend || 0);
+                        sum.ad_sales_amount += Number(latest.ad_sales_amount || 0);
+                        sum.refund_amount += Number(latest.refund_amount || 0);
+
+                        const sku = String(it.platform_sku || '').trim() || '-';
+                        const skuRow = skuMap[sku] || (skuMap[sku] = {
+                            platform_sku: it.platform_sku || '',
+                            fabric: it.fabric || '',
+                            spec_name: it.spec_name || '',
+                            recordDates: new Set(),
+                            minDate: '',
+                            maxDate: '',
+                            sales_qty: 0,
+                            net_sales_amount: 0,
+                            order_qty: 0,
+                            session_total: 0,
+                            ad_impressions: 0,
+                            ad_clicks: 0,
+                            ad_orders: 0,
+                            ad_spend: 0,
+                            ad_sales_amount: 0,
+                            refund_amount: 0,
+                            rows: 0
+                        });
+                        skuRow.rows += 1;
+                        skuRow.recordDates.add(String(latest.record_date || '').slice(0, 10));
+                        const dateText = String(latest.record_date || '').slice(0, 10);
+                        if (!skuRow.minDate || (dateText && dateText < skuRow.minDate)) skuRow.minDate = dateText;
+                        if (!skuRow.maxDate || (dateText && dateText > skuRow.maxDate)) skuRow.maxDate = dateText;
+                        skuRow.sales_qty += Number(latest.sales_qty || 0);
+                        skuRow.net_sales_amount += Number(latest.net_sales_amount || 0);
+                        skuRow.order_qty += Number(latest.order_qty || 0);
+                        skuRow.session_total += Number(latest.session_total || 0);
+                        skuRow.ad_impressions += Number(latest.ad_impressions || 0);
+                        skuRow.ad_clicks += Number(latest.ad_clicks || 0);
+                        skuRow.ad_orders += Number(latest.ad_orders || 0);
+                        skuRow.ad_spend += Number(latest.ad_spend || 0);
+                        skuRow.ad_sales_amount += Number(latest.ad_sales_amount || 0);
+                        skuRow.refund_amount += Number(latest.refund_amount || 0);
+                    });
+                });
+                const aggregatedRows = Object.values(skuMap).sort((a, b) => String(b.maxDate || '').localeCompare(String(a.maxDate || '')) || String(a.platform_sku || '').localeCompare(String(b.platform_sku || '')));
+                sum.sku_count = aggregatedRows.length;
+                summary.innerHTML = `
+                    <div class="perf-group-summary-grid">
+                        <div class="perf-group-summary-item"><span class="label">货号</span><span class="value">${g.sku_family || '未分组货号'}</span></div>
+                        <div class="perf-group-summary-item"><span class="label">SKU数 / 记录数</span><span class="value">${sum.sku_count} / ${sum.record_count}</span></div>
+                        <div class="perf-group-summary-item"><span class="label">销量</span><span class="value">${formatNumber(sum.sales_qty)}</span></div>
+                        <div class="perf-group-summary-item"><span class="label">净销售额</span><span class="value">${formatNumber(sum.net_sales_amount)}</span></div>
+                        <div class="perf-group-summary-item"><span class="label">订单</span><span class="value">${formatNumber(sum.order_qty)}</span></div>
+                        <div class="perf-group-summary-item"><span class="label">广告花费</span><span class="value">${formatNumber(sum.ad_spend)}</span></div>
+                        <div class="perf-group-summary-item"><span class="label">广告销售额</span><span class="value">${formatNumber(sum.ad_sales_amount)}</span></div>
+                    </div>
+                `;
                 details.appendChild(summary);
 
                 const wrap = document.createElement('div');
@@ -1154,28 +1931,32 @@
                 const tableWrap = document.createElement('div');
                 tableWrap.className = 'perf-table-wrap';
                 const table = document.createElement('table');
-                table.className = 'perf-table';
-
-                const headCols = ['SKU', '面料', '规格', '最新日期'].concat(metricKeys.map(k => (state.metricMap[k] && state.metricMap[k].label) || k));
+                const safeGroupKey = String(groupKey || 'group').replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 56) || 'group';
+                table.id = `perfGroupTable_${safeGroupKey}`;
+                table.className = 'perf-table pm-table';
                 table.innerHTML = `<thead><tr>${headCols.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody></tbody>`;
                 const tbody = table.querySelector('tbody');
 
-                const items = (g.items || []).slice();
-
-                items.forEach(item => {
-                    const latest = (item.records || [])[0] || {};
-                    const cells = [
-                        item.platform_sku || '-',
-                        item.fabric || '-',
-                        item.spec_name || '-',
-                        latest.record_date || '-'
-                    ].concat(metricKeys.map(k => formatNumber(resolveMetricValue(latest, k))));
-                    const tr = document.createElement('tr');
-                    tr.dataset.platformSku = item.platform_sku || '';
-                    tr.dataset.skuFamily = g.sku_family || '';
-                    tr.innerHTML = cells.map(x => `<td>${x}</td>`).join('');
-                    tbody.appendChild(tr);
-                });
+                if (!aggregatedRows.length) {
+                    tbody.innerHTML = '<tr><td colspan="999" style="text-align:center; color:#888;">暂无明细</td></tr>';
+                } else {
+                    aggregatedRows.forEach(row => {
+                        const cells = [
+                            g.sku_family || '-',
+                            row.platform_sku || '-',
+                            row.fabric || '-',
+                            row.spec_name || '-',
+                            row.minDate && row.maxDate ? `${row.minDate} ~ ${row.maxDate}` : (row.maxDate || row.minDate || '-'),
+                            row.rows || 0
+                        ].concat(metricKeys.map(k => formatMetricValue(resolveMetricValue(row, k), k)));
+                        const tr = document.createElement('tr');
+                        tr.dataset.platformSku = row.platform_sku || '';
+                        tr.dataset.skuFamily = g.sku_family || '';
+                        tr.dataset.recordDates = Array.from(row.recordDates || []).join('|');
+                        tr.innerHTML = cells.map(x => `<td>${x}</td>`).join('');
+                        tbody.appendChild(tr);
+                    });
+                }
 
                 tableWrap.appendChild(table);
                 wrap.appendChild(tableWrap);
@@ -1195,13 +1976,16 @@
                 if (!resp.ok || data.status !== 'success') {
                     throw new Error(data.message || '加载看板失败');
                 }
+                const transformed = aggregateChartByGranularity(data.chart_items || [], data.events || [], state.chartGranularity);
+                const titleEl = document.getElementById('chartTitle');
+                if (titleEl) titleEl.textContent = getChartTitleByGranularity(state.chartGranularity);
                 renderLegend();
-                renderChart(data.chart_items || [], data.events || []);
+                renderChart(transformed.items || [], transformed.events || []);
                 renderGroups(data.groups || []);
                 status.textContent = `货号组: ${(data.groups || []).length}，事件: ${(data.events || []).length}`;
             } catch (err) {
                 status.textContent = err.message || '加载失败';
-                document.getElementById('groupContainer').innerHTML = '<h3>货号分组明细</h3><p class="status-tip">加载失败，请稍后重试</p>';
+                document.getElementById('groupContainer').innerHTML = '<div class="perf-panel-caption">货号分组明细</div><p class="status-tip">加载失败，请稍后重试</p>';
                 renderChart([], []);
             }
         }
@@ -1296,6 +2080,11 @@
             }
         }
 
+        function showUploadToast(text, percent) {
+            showUploadProgress(text || '完成', Number(percent || 100));
+            window.setTimeout(() => hideUploadProgress(), 2200);
+        }
+
         function buildImportTaskId() {
             const rand = Math.random().toString(36).slice(2, 10);
             return `imp_${Date.now()}_${rand}`;
@@ -1337,6 +2126,25 @@
                     // 轮询失败不打断主流程
                 }
             }, 700);
+        }
+
+        async function waitImportTaskDone(taskId) {
+            const deadline = Date.now() + 1000 * 60 * 30;
+            while (Date.now() < deadline) {
+                const data = await fetchJsonSafe(`/api/sales-product-performance-import?mode=progress&task_id=${encodeURIComponent(taskId)}`, {
+                    method: 'GET',
+                    credentials: 'include',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                const stateText = String(data.state || '').toLowerCase();
+                if (stateText === 'success') return data;
+                if (stateText === 'error') throw new Error(data.message || '导入失败');
+                await new Promise(r => setTimeout(r, 900));
+            }
+            throw new Error('导入超时，请稍后重试');
         }
 
         function startProcessingProgress() {
@@ -1398,12 +2206,12 @@
                     <td>${item.ad_sales_amount ?? ''}</td>
                     <td>${item.refund_amount ?? ''}</td>
                     <td>${item.sub_category_rank ?? ''}</td>
-                    <td>${formatNumber(resolveMetricValue(item, 'acos'))}</td>
-                    <td>${formatNumber(resolveMetricValue(item, 'acoas'))}</td>
-                    <td>${formatNumber(resolveMetricValue(item, 'rois'))}</td>
-                    <td>${formatNumber(resolveMetricValue(item, 'ctr'))}</td>
-                    <td>${formatNumber(resolveMetricValue(item, 'cvr'))}</td>
-                    <td>${formatNumber(resolveMetricValue(item, 'cpc'))}</td>
+                    <td>${formatMetricValue(resolveMetricValue(item, 'acos'), 'acos')}</td>
+                    <td>${formatMetricValue(resolveMetricValue(item, 'acoas'), 'acoas')}</td>
+                    <td>${formatMetricValue(resolveMetricValue(item, 'rois'), 'rois')}</td>
+                    <td>${formatMetricValue(resolveMetricValue(item, 'ctr'), 'ctr')}</td>
+                    <td>${formatMetricValue(resolveMetricValue(item, 'cvr'), 'cvr')}</td>
+                    <td>${formatMetricValue(resolveMetricValue(item, 'cpc'), 'cpc')}</td>
                     <td>
                         <div class="pm-actions">
                             <button class="btn-secondary" type="button" onclick="openEditPerformanceModal(${item.id})">编辑</button>
@@ -1414,23 +2222,114 @@
             `).join('');
         }
 
-        function renderPerformancePagination() {
-            const info = document.getElementById('performanceTableInfo');
-            const pager = document.getElementById('performancePager');
-            if (!info || !pager) return;
-            const page = Number(state.performancePage || 1);
+        function getManagedToolbarForTable(table) {
+            const wrap = table ? table.closest('.pm-table-wrap') : null;
+            if (!wrap) return null;
+            let prev = wrap.previousElementSibling;
+            while (prev) {
+                if (prev.classList && prev.classList.contains('pm-table-toolbar')) {
+                    return prev;
+                }
+                prev = prev.previousElementSibling;
+            }
+            return null;
+        }
+
+        function bindAndSyncManagedTablePager() {
+            const table = document.getElementById('salesProductPerformanceTable');
+            if (!table) return;
+            const toolbar = getManagedToolbarForTable(table);
+            if (!toolbar) return;
+
+            const pageSizeSelect = toolbar.querySelector('.pm-table-page-size');
+            const info = toolbar.querySelector('.pm-table-info');
+            const prevRaw = toolbar.querySelector('.pm-table-prev');
+            const nextRaw = toolbar.querySelector('.pm-table-next');
+            const current = toolbar.querySelector('.pm-table-pager-current');
+            if (!pageSizeSelect || !info || !prevRaw || !nextRaw || !current) return;
+
+            if (toolbar.dataset.serverPagerBound !== '1') {
+                toolbar.dataset.serverPagerBound = '1';
+                pageSizeSelect.dataset.disableSearchable = '1';
+                const selectDropdown = pageSizeSelect.nextElementSibling;
+                if (selectDropdown && selectDropdown.classList && selectDropdown.classList.contains('universal-select-dropdown')) {
+                    selectDropdown.remove();
+                }
+                pageSizeSelect.classList.remove('universal-select-native');
+                delete pageSizeSelect.dataset.searchableEnhanced;
+                pageSizeSelect.style.display = '';
+                const handlePageSizeChange = function(value) {
+                    const selectedSize = Math.max(10, Number(value || 50));
+                    state.performancePageSize = selectedSize;
+                    savePerfPageSizeToStorage(selectedSize);
+                    loadSalesProductPerformanceList(1, { pageSize: selectedSize });
+                };
+                pageSizeSelect.addEventListener('change', function() {
+                    handlePageSizeChange(this.value);
+                });
+                pageSizeSelect.addEventListener('input', function() {
+                    handlePageSizeChange(this.value);
+                });
+                toolbar.addEventListener('change', function(e) {
+                    const target = e.target && e.target.closest ? e.target.closest('.pm-table-page-size') : null;
+                    if (!target) return;
+                    handlePageSizeChange(target.value);
+                });
+                toolbar.addEventListener('click', function(e) {
+                    const optionBtn = e.target.closest('.feature-category-option.universal-select-option');
+                    if (!optionBtn) return;
+                    window.setTimeout(() => {
+                        const sizeFromSelect = Math.max(10, Number(pageSizeSelect.value || 50));
+                        if (sizeFromSelect !== Number(state.performancePageSize || 50)) {
+                            state.performancePageSize = sizeFromSelect;
+                            savePerfPageSizeToStorage(sizeFromSelect);
+                            loadSalesProductPerformanceList(1, { pageSize: sizeFromSelect });
+                        }
+                    }, 0);
+                });
+                prevRaw.addEventListener('click', function() {
+                    if (state.performancePage <= 1) return;
+                    loadSalesProductPerformanceList(state.performancePage - 1);
+                });
+                nextRaw.addEventListener('click', function() {
+                    if (state.performancePage >= state.performanceTotalPages) return;
+                    loadSalesProductPerformanceList(state.performancePage + 1);
+                });
+            }
+
+            const pageSizeSelect2 = toolbar.querySelector('.pm-table-page-size');
+            const prev2 = toolbar.querySelector('.pm-table-prev');
+            const next2 = toolbar.querySelector('.pm-table-next');
+            if (!pageSizeSelect2 || !prev2 || !next2) return;
+
+            pageSizeSelect2.dataset.disableSearchable = '1';
+            const selectDropdown2 = pageSizeSelect2.nextElementSibling;
+            if (selectDropdown2 && selectDropdown2.classList && selectDropdown2.classList.contains('universal-select-dropdown')) {
+                selectDropdown2.remove();
+            }
+            pageSizeSelect2.classList.remove('universal-select-native');
+            delete pageSizeSelect2.dataset.searchableEnhanced;
+            pageSizeSelect2.style.display = '';
+
+            if (!state.performancePageSize || Number(state.performancePageSize) <= 0) {
+                state.performancePageSize = Math.max(10, Number(pageSizeSelect2.value || 50));
+            }
+            pageSizeSelect2.value = String(state.performancePageSize || 50);
             const total = Number(state.performanceTotal || 0);
+            const page = Number(state.performancePage || 1);
             const totalPages = Math.max(1, Number(state.performanceTotalPages || 1));
-            info.textContent = `共 ${total} 条，当前第 ${page}/${totalPages} 页，每页 ${state.performancePageSize} 条`;
-            pager.innerHTML = `
-                <button type="button" class="btn-secondary" id="btnPerfPrevPage" ${page <= 1 ? 'disabled' : ''}>上一页</button>
-                <span class="pm-table-pager-current">${page} / ${totalPages}</span>
-                <button type="button" class="btn-secondary" id="btnPerfNextPage" ${page >= totalPages ? 'disabled' : ''}>下一页</button>
-            `;
-            const prev = document.getElementById('btnPerfPrevPage');
-            const next = document.getElementById('btnPerfNextPage');
-            if (prev) prev.addEventListener('click', () => loadSalesProductPerformanceList(page - 1));
-            if (next) next.addEventListener('click', () => loadSalesProductPerformanceList(page + 1));
+            const start = total > 0 ? ((page - 1) * state.performancePageSize + 1) : 0;
+            const end = total > 0 ? Math.min(page * state.performancePageSize, total) : 0;
+
+            const applyUi = () => {
+                info.textContent = `显示 ${start}-${end} / 共 ${total} 条`;
+                current.textContent = `${page} / ${totalPages}`;
+                prev2.disabled = page <= 1;
+                next2.disabled = page >= totalPages;
+            };
+            applyUi();
+            window.requestAnimationFrame(applyUi);
+            window.setTimeout(applyUi, 80);
         }
 
         async function loadSalesProductSkuPool() {
@@ -1442,10 +2341,29 @@
             }
         }
 
-        function loadSalesProductPerformanceList(page) {
+        function loadSalesProductPerformanceList(page, options) {
             const nextPage = Math.max(1, Number(page || state.performancePage || 1));
             state.performancePage = nextPage;
-            state.performancePageSize = Math.max(10, Number(state.performancePageSize || 50));
+            const table = document.getElementById('salesProductPerformanceTable');
+            const toolbar = getManagedToolbarForTable(table);
+            const toolbarSelect = toolbar ? toolbar.querySelector('.pm-table-page-size') : null;
+            const forcedPageSize = options && Number(options.pageSize) > 0
+                ? Math.max(10, Number(options.pageSize))
+                : null;
+            if (forcedPageSize) {
+                state.performancePageSize = forcedPageSize;
+            } else {
+                let effective = Math.max(10, Number(state.performancePageSize || 50));
+                if (toolbarSelect && Number(toolbarSelect.value) > 0) {
+                    effective = Math.max(10, Number(toolbarSelect.value));
+                }
+                state.performancePageSize = effective;
+            }
+            if (table) {
+                table.dataset.serverPaginationMode = 'server';
+                table.dataset.serverCurrentPage = String(nextPage);
+                table.dataset.serverPageSize = String(state.performancePageSize);
+            }
             const q = (document.getElementById('performanceSearchInput').value || '').trim();
             const base = q
                 ? `/api/sales-product-performance?q=${encodeURIComponent(q)}`
@@ -1458,7 +2376,7 @@
                     tbody.innerHTML = `<tr><td colspan="20" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                     state.performanceTotal = 0;
                     state.performanceTotalPages = 1;
-                    renderPerformancePagination();
+                    bindAndSyncManagedTablePager();
                     return;
                 }
                 state.performanceItems = data.items || [];
@@ -1466,14 +2384,26 @@
                 state.performancePageSize = Number(data.page_size || state.performancePageSize || 50);
                 state.performanceTotal = Number(data.total || 0);
                 state.performanceTotalPages = Number(data.total_pages || 1);
+                if (table) {
+                    table.dataset.serverPaginationMode = 'server';
+                    table.dataset.serverCurrentPage = String(state.performancePage || 1);
+                    table.dataset.serverPageSize = String(state.performancePageSize || 50);
+                    table.dataset.serverTotalRows = String(state.performanceTotal || 0);
+                }
                 renderSalesProductPerformanceTable(state.performanceItems);
-                renderPerformancePagination();
+                bindAndSyncManagedTablePager();
             }).catch(err => {
                 const tbody = document.querySelector('#salesProductPerformanceTable tbody');
                 tbody.innerHTML = `<tr><td colspan="20" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
                 state.performanceTotal = 0;
                 state.performanceTotalPages = 1;
-                renderPerformancePagination();
+                if (table) {
+                    table.dataset.serverPaginationMode = 'server';
+                    table.dataset.serverCurrentPage = String(state.performancePage || 1);
+                    table.dataset.serverPageSize = String(state.performancePageSize || 50);
+                    table.dataset.serverTotalRows = '0';
+                }
+                bindAndSyncManagedTablePager();
             });
         }
 
@@ -1583,7 +2513,7 @@
             const taskId = buildImportTaskId();
             showUploadProgress('正在上传模板...', 35);
             startImportProgressPolling(taskId);
-            fetchJsonSafe(`/api/sales-product-performance-import?task_id=${encodeURIComponent(taskId)}`, {
+            fetchJsonSafe(`/api/sales-product-performance-import?task_id=${encodeURIComponent(taskId)}&async=1`, {
                 method: 'POST',
                 body: formData,
                 credentials: 'include',
@@ -1592,23 +2522,34 @@
                     'X-Requested-With': 'XMLHttpRequest'
                 }
             }).then(data => {
-                hideUploadProgress();
                 if (data.status !== 'success') {
+                    hideUploadProgress();
                     showPerfDialog({ title: '导入失败', message: data.message || '导入失败', errors: data.errors || [] });
                     return;
                 }
-                const upserted = Number(data.upserted || 0);
-                const skippedSku = Number(data.skipped_unmatched_sku || 0);
-                const skippedId = Number(data.skipped_empty_identifier || 0);
-                const skippedDate = Number(data.skipped_invalid_date || 0);
-                const skippedSample = Number(data.skipped_template_sample || 0);
-                showPerfDialog({
-                    title: '导入完成',
-                    message: `导入完成：匹配 ${data.created || 0} 条，实际写入(新增或更新) ${upserted} 条，未匹配SKU ${skippedSku} 条，空标识 ${skippedId} 条，日期无效 ${skippedDate} 条，示例行跳过 ${skippedSample} 条，失败 ${(data.errors || []).length} 条`,
-                    errors: data.errors || []
-                });
-                loadSalesProductPerformanceList();
-                if (state.dashboardQueried) loadDashboard();
+                if (data.async) {
+                    showUploadProgress('上传完成，后台正在处理数据...', 8);
+                    waitImportTaskDone(taskId).then(finalData => {
+                        const upserted = Number(finalData.upserted || 0);
+                        const skippedSku = Number(finalData.skipped_unmatched_sku || 0);
+                        const skippedId = Number(finalData.skipped_empty_identifier || 0);
+                        const skippedDate = Number(finalData.skipped_invalid_date || 0);
+                        const skippedSample = Number(finalData.skipped_template_sample || 0);
+                        showUploadToast(`导入成功：写入 ${upserted} 条`, 100);
+                        showPerfDialog({
+                            title: '导入完成',
+                            message: `导入完成：匹配 ${finalData.created || 0} 条，实际写入(新增或更新) ${upserted} 条，未匹配SKU ${skippedSku} 条，空标识 ${skippedId} 条，日期无效 ${skippedDate} 条，示例行跳过 ${skippedSample} 条，失败 ${(finalData.errors || []).length} 条`,
+                            errors: finalData.errors || []
+                        });
+                        loadSalesProductPerformanceList(1);
+                        if (state.dashboardQueried) loadDashboard();
+                    }).catch(err => {
+                        hideUploadProgress();
+                        showPerfDialog({ title: '导入失败', message: '导入失败: ' + err });
+                    });
+                    return;
+                }
+                hideUploadProgress();
             }).catch(err => {
                 hideUploadProgress();
                 showPerfDialog({ title: '导入失败', message: '导入失败: ' + err });
@@ -1670,7 +2611,8 @@
                 renderMetricCheckboxBar();
                 state.dashboardQueried = false;
                 document.getElementById('dataStatus').textContent = '筛选已重置，请点击查询';
-                document.getElementById('groupContainer').innerHTML = '<h3>货号分组明细</h3><p class="status-tip">请先设置条件后点击查询</p>';
+                document.getElementById('groupContainer').innerHTML = '<div class="perf-panel-caption">货号分组明细</div><p class="status-tip">请先设置条件后点击查询</p>';
+                hideChartDetailPanel();
                 renderChart([], []);
             });
 
@@ -1680,14 +2622,20 @@
             document.getElementById('toggleAds').addEventListener('change', () => {
                 if (state.dashboardQueried) loadDashboard();
             });
+            const granSel = document.getElementById('chartGranularity');
+            if (granSel) {
+                granSel.addEventListener('change', function() {
+                    state.chartGranularity = String(this.value || 'day');
+                    saveChartGranularityToStorage(state.chartGranularity);
+                    const titleEl = document.getElementById('chartTitle');
+                    if (titleEl) titleEl.textContent = getChartTitleByGranularity(state.chartGranularity);
+                    if (state.dashboardQueried) loadDashboard();
+                });
+            }
 
             document.getElementById('btnPerfSearch').addEventListener('click', () => loadSalesProductPerformanceList(1));
             document.getElementById('btnPerfReset').addEventListener('click', () => {
                 document.getElementById('performanceSearchInput').value = '';
-                loadSalesProductPerformanceList(1);
-            });
-            document.getElementById('performancePageSizeSelect').addEventListener('change', function() {
-                state.performancePageSize = Math.max(10, Number(this.value || 50));
                 loadSalesProductPerformanceList(1);
             });
             document.getElementById('btnPerfTemplate').addEventListener('click', () => {
@@ -1720,9 +2668,14 @@
             bindChartInteractions();
             bindEvents();
             await Promise.all([loadFilters(), loadSalesProductSkuPool()]);
-            document.getElementById('performancePageSizeSelect').value = String(state.performancePageSize);
+            state.performancePageSize = loadPerfPageSizeFromStorage();
+            state.chartGranularity = loadChartGranularityFromStorage();
+            const granSel = document.getElementById('chartGranularity');
+            if (granSel) granSel.value = state.chartGranularity;
+            const titleEl = document.getElementById('chartTitle');
+            if (titleEl) titleEl.textContent = getChartTitleByGranularity(state.chartGranularity);
             document.getElementById('dataStatus').textContent = '请设置条件后点击查询';
-            document.getElementById('groupContainer').innerHTML = '<h3>货号分组明细</h3><p class="status-tip">请先设置条件后点击查询</p>';
+            document.getElementById('groupContainer').innerHTML = '<div class="perf-panel-caption">货号分组明细</div><p class="status-tip">请先设置条件后点击查询</p>';
             renderChart([], []);
             await loadSalesProductPerformanceList(1);
         }

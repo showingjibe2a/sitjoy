@@ -23,6 +23,13 @@ class OrderManagementMixin:
             if method == 'GET':
                 keyword = query_params.get('q', [''])[0].strip()
                 with self._get_db_connection() as conn:
+                    item_id = self._parse_int((query_params.get('id', [''])[0] or '').strip())
+                    if item_id:
+                        rows = self._load_order_product_rows(conn, keyword=keyword, include_relations=False, limit_rows=1, item_id=item_id)
+                        item = rows[0] if rows else None
+                        if item:
+                            self._attach_order_product_relations(conn, [item])
+                        return self.send_json({'status': 'success', 'item': item}, start_response)
                     rows = self._load_order_product_rows(conn, keyword=keyword)
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
@@ -119,6 +126,47 @@ class OrderManagementMixin:
 
             if method == 'PUT':
                 data = self._read_json_body(environ)
+                preview_action = (query_params.get('action', [''])[0] or '').strip().lower()
+                if preview_action == 'preview_update':
+                    batch_items = data.get('items') if isinstance(data, dict) else None
+                    if not isinstance(batch_items, list) or not batch_items:
+                        return self.send_json({'status': 'error', 'message': 'Missing preview items'}, start_response)
+
+                    updates = []
+                    for item in batch_items:
+                        if not isinstance(item, dict):
+                            continue
+                        item_id = self._parse_int(item.get('id'))
+                        if not item_id:
+                            continue
+                        updates.append((
+                            self._parse_float(item.get('cost_usd')),
+                            (item.get('package_size_class') or '').strip() or None,
+                            self._parse_int(item.get('carton_qty')),
+                            self._parse_float(item.get('last_mile_avg_freight_usd')),
+                            1 if self._parse_int(item.get('is_on_market')) else 0,
+                            item_id
+                        ))
+
+                    if not updates:
+                        return self.send_json({'status': 'error', 'message': 'No valid preview items'}, start_response)
+
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.executemany(
+                                """
+                                UPDATE order_products
+                                SET cost_usd=%s,
+                                    package_size_class=%s,
+                                    carton_qty=%s,
+                                    last_mile_avg_freight_usd=%s,
+                                    is_on_market=%s
+                                WHERE id=%s
+                                """,
+                                updates
+                            )
+                    return self.send_json({'status': 'success', 'updated': len(updates)}, start_response)
+
                 batch_items = data.get('items') if isinstance(data, dict) else None
                 if isinstance(batch_items, list):
                     updates = []
@@ -426,9 +474,27 @@ class OrderManagementMixin:
             out.append(item_id)
         return out
 
-    def _load_order_product_rows(self, conn, keyword=''):
+    def _load_order_product_rows(self, conn, keyword='', include_relations=False, limit_rows=1200, item_id=None):
+        max_rows = max(1, self._parse_int(limit_rows) or 1200)
         with conn.cursor() as cur:
-            if keyword:
+            if item_id:
+                cur.execute(
+                    """
+                    SELECT
+                        op.*,
+                        pf.sku_family,
+                        pf.category,
+                        fm.fabric_code,
+                        fm.fabric_name_en
+                    FROM order_products op
+                    LEFT JOIN product_families pf ON pf.id = op.sku_family_id
+                    LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
+                    WHERE op.id=%s
+                    LIMIT 1
+                    """,
+                    (item_id,)
+                )
+            elif keyword:
                 like_val = f"%{keyword}%"
                 cur.execute(
                     """
@@ -447,9 +513,9 @@ class OrderManagementMixin:
                        OR fm.fabric_name_en LIKE %s
                        OR op.version_no LIKE %s
                     ORDER BY op.id DESC
-                    LIMIT 1200
+                    LIMIT %s
                     """,
-                    (like_val, like_val, like_val, like_val, like_val)
+                    (like_val, like_val, like_val, like_val, like_val, max_rows)
                 )
             else:
                 cur.execute(
@@ -464,19 +530,25 @@ class OrderManagementMixin:
                     LEFT JOIN product_families pf ON pf.id = op.sku_family_id
                     LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
                     ORDER BY op.id DESC
-                    LIMIT 1200
-                    """
+                    LIMIT %s
+                    """,
+                    (max_rows,)
                 )
             rows = cur.fetchall() or []
 
-            op_ids = [self._parse_int(row.get('id')) for row in rows if self._parse_int(row.get('id'))]
-            material_map = {}
-            feature_map = {}
-            certification_map = {}
+        if include_relations and rows:
+            self._attach_order_product_relations(conn, rows)
+        return rows
 
-            if op_ids:
-                placeholders = ','.join(['%s'] * len(op_ids))
+    def _attach_order_product_relations(self, conn, rows):
+        op_ids = [self._parse_int(row.get('id')) for row in rows if self._parse_int(row.get('id'))]
+        material_map = {}
+        feature_map = {}
+        certification_map = {}
 
+        if op_ids:
+            placeholders = ','.join(['%s'] * len(op_ids))
+            with conn.cursor() as cur:
                 cur.execute(
                     f"""
                     SELECT opm.order_product_id, opm.material_id, m.name, m.name_en,
@@ -527,90 +599,47 @@ class OrderManagementMixin:
                         continue
                     certification_map.setdefault(order_id, []).append(rel)
 
-            for row in rows:
-                order_id = self._parse_int(row.get('id'))
-                materials = material_map.get(order_id, []) if order_id else []
-                features = feature_map.get(order_id, []) if order_id else []
-                certifications = certification_map.get(order_id, []) if order_id else []
+        for row in rows:
+            order_id = self._parse_int(row.get('id'))
+            materials = material_map.get(order_id, []) if order_id else []
+            features = feature_map.get(order_id, []) if order_id else []
+            certifications = certification_map.get(order_id, []) if order_id else []
 
-                filling_ids = []
-                frame_ids = []
-                filling_names = []
-                frame_names = []
-                for material in materials:
-                    material_id = self._parse_int(material.get('material_id'))
-                    if not material_id:
-                        continue
-                    material_name = f"{material.get('name') or ''} / {material.get('name_en') or ''}".strip(' /')
-                    type_name = str(material.get('material_type_name') or '').strip()
-                    is_filling = (type_name == '填充')
-                    is_frame = (type_name == '框架')
-                    if is_filling:
-                        filling_ids.append(material_id)
-                        if material_name:
-                            filling_names.append(material_name)
-                    elif is_frame:
-                        frame_ids.append(material_id)
-                        if material_name:
-                            frame_names.append(material_name)
+            filling_ids = []
+            frame_ids = []
+            filling_names = []
+            frame_names = []
+            for material in materials:
+                material_id = self._parse_int(material.get('material_id'))
+                if not material_id:
+                    continue
+                material_name = f"{material.get('name') or ''} / {material.get('name_en') or ''}".strip(' /')
+                type_name = str(material.get('material_type_name') or '').strip()
+                if type_name == '填充':
+                    filling_ids.append(material_id)
+                    if material_name:
+                        filling_names.append(material_name)
+                elif type_name == '框架':
+                    frame_ids.append(material_id)
+                    if material_name:
+                        frame_names.append(material_name)
 
-                row['filling_material_ids'] = filling_ids
-                row['frame_material_ids'] = frame_ids
-                row['filling_material_names'] = filling_names
-                row['frame_material_names'] = frame_names
+            row['filling_material_ids'] = filling_ids
+            row['frame_material_ids'] = frame_ids
+            row['filling_material_names'] = filling_names
+            row['frame_material_names'] = frame_names
 
-                row['feature_ids'] = [self._parse_int(item.get('feature_id')) for item in features if self._parse_int(item.get('feature_id'))]
-                row['feature_names'] = [
-                    f"{item.get('name') or ''} / {item.get('name_en') or ''}".strip(' /')
-                    for item in features
-                    if item.get('name') or item.get('name_en')
-                ]
+            row['feature_ids'] = [self._parse_int(item.get('feature_id')) for item in features if self._parse_int(item.get('feature_id'))]
+            row['feature_names'] = [
+                f"{item.get('name') or ''} / {item.get('name_en') or ''}".strip(' /')
+                for item in features
+                if item.get('name') or item.get('name_en')
+            ]
 
-                row['certification_ids'] = [
-                    self._parse_int(item.get('certification_id'))
-                    for item in certifications
-                    if self._parse_int(item.get('certification_id'))
-                ]
-                row['certification_names'] = [item.get('name') for item in certifications if item.get('name')]
+            row['certification_ids'] = [self._parse_int(item.get('certification_id')) for item in certifications if self._parse_int(item.get('certification_id'))]
+            row['certification_names'] = [item.get('name') for item in certifications if item.get('name')]
 
         return rows
-
-    def _replace_order_product_relations(self, conn, order_product_id, filling_material_ids, frame_material_ids, feature_ids, certification_ids):
-        material_ids = []
-        seen = set()
-        for item_id in (filling_material_ids or []) + (frame_material_ids or []):
-            if item_id and item_id not in seen:
-                seen.add(item_id)
-                material_ids.append(item_id)
-
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM order_product_materials WHERE order_product_id=%s", (order_product_id,))
-            if material_ids:
-                cur.executemany(
-                    "INSERT IGNORE INTO order_product_materials (order_product_id, material_id) VALUES (%s, %s)",
-                    [(order_product_id, material_id) for material_id in material_ids]
-                )
-
-            cur.execute("DELETE FROM order_product_features WHERE order_product_id=%s", (order_product_id,))
-            if feature_ids:
-                cur.executemany(
-                    "INSERT IGNORE INTO order_product_features (order_product_id, feature_id) VALUES (%s, %s)",
-                    [(order_product_id, feature_id) for feature_id in (feature_ids or [])]
-                )
-
-            cur.execute("DELETE FROM order_product_certifications WHERE order_product_id=%s", (order_product_id,))
-            if certification_ids:
-                cur.executemany(
-                    "INSERT IGNORE INTO order_product_certifications (order_product_id, certification_id) VALUES (%s, %s)",
-                    [(order_product_id, certification_id) for certification_id in (certification_ids or [])]
-                )
-
-    def _parse_iteration_generation(self, version_no):
-        text = str(version_no or '').strip()
-        if text.endswith('代'):
-            text = text[:-1].strip()
-        val = self._parse_int(text)
-        return val if val and val > 0 else None
 
     def _get_or_create_shipping_plan(self, conn, order_product_id, plan_name):
         with conn.cursor() as cur:

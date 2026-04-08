@@ -206,38 +206,23 @@
             margin-right: 8px;
             margin-bottom: 0;
         }
-        .assignee-picker {
-            display: inline-flex;
-            align-items: center;
-            gap: 12px;
-            flex-wrap: wrap;
+        #todoModal .pm-modal-content {
+            overflow: visible;
         }
-        .assignee-selected {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
+        #assigneePicker {
+            min-height: 40px;
+        }
+        #assigneePicker .feature-category-chips {
             min-height: 34px;
             align-items: center;
         }
-        .assignee-tag {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 4px 10px;
-            border-radius: 999px;
-            background: rgba(185, 75, 75, 0.12);
-            color: #7f3d3d;
-            font-size: 12px;
-            font-weight: 600;
+        #assigneePicker .feature-category-dropdown {
+            z-index: 3800;
         }
-        .assignee-tag button {
-            background: none;
-            border: none;
-            color: inherit;
-            cursor: pointer;
-            padding: 0;
-            line-height: 1;
-            font-size: 14px;
+        #assigneePicker .feature-category-menu {
+            z-index: 3900;
+            min-width: 260px;
+            max-height: 280px;
         }
         .assignee-empty {
             font-size: 12px;
@@ -260,6 +245,8 @@
         }
         .assignee-option input {
             accent-color: #b94b4b;
+            width: 16px;
+            min-width: 16px;
         }
 
         /* 员工管理模块 */
@@ -556,7 +543,7 @@
                         </div>
                         <div class="form-group">
                             <label>优先级</label>
-                            <select id="todoModalPriority">
+                            <select id="todoModalPriority" data-universal-no-search="1">
                                 <option value="3">高</option>
                                 <option value="2" selected>中</option>
                                 <option value="1">低</option>
@@ -582,7 +569,7 @@
                         </div>
                         <div class="form-group pm-form-full">
                             <label>分配给（可多选）</label>
-                            <div class="feature-category-picker" id="assigneePicker">
+                            <div class="feature-category-picker is-multi-check" id="assigneePicker">
                                 <div class="feature-category-chips" id="assigneeSelected"></div>
                                 <div class="feature-category-dropdown" id="assigneeDropdown">
                                     <button type="button" class="feature-category-add" id="assigneeToggle">
@@ -980,8 +967,8 @@
             }
             checked.forEach(cb => {
                 const tag = document.createElement('span');
-                tag.className = 'assignee-tag';
-                tag.innerHTML = `${cb.dataset.name || cb.value}<button type="button" data-remove-id="${cb.value}">×</button>`;
+                tag.className = 'feature-category-chip';
+                tag.innerHTML = `<span>${cb.dataset.name || cb.value}</span><button type="button" class="feature-category-remove" data-remove-id="${cb.value}">×</button>`;
                 selectedWrap.appendChild(tag);
             });
             if (toggleText) toggleText.textContent = `已选 ${checked.length} 人`;
@@ -998,7 +985,7 @@
                 if (data.items && Array.isArray(data.items)) {
                     data.items.forEach(emp => {
                         const li = document.createElement('label');
-                        li.className = 'assignee-option';
+                        li.className = 'feature-category-option assignee-option';
                         const displayName = emp.name || emp.username || `用户${emp.id}`;
                         li.innerHTML = `
                             <input type="checkbox" value="${emp.id}" data-name="${displayName}">

@@ -37,6 +37,17 @@ button {
     line-height: 1.2;
 }
 
+input,
+select,
+textarea {
+    text-align: left;
+}
+
+input::placeholder,
+textarea::placeholder {
+    color: rgba(123, 128, 136, 0.62);
+}
+
 input[type="date"],
 input[type="datetime-local"],
 input[type="time"],
@@ -1490,8 +1501,8 @@ button:hover {
     background: var(--morandi-ink);
 }
 
-.pm-select-trigger:hover {
-    background: rgba(207, 199, 189, 0.35) !important;
+.universal-select-trigger:hover {
+    background: #fff !important;
     color: var(--morandi-ink) !important;
 }
 
@@ -1792,7 +1803,7 @@ body {
     border-radius: 12px;
     padding: 0.48rem 0.68rem;
     text-align: left;
-    font-weight: 600;
+    font-weight: 400;
     transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, background 0.15s ease;
     cursor: pointer;
 }
@@ -1947,9 +1958,12 @@ body {
 }
 
 .pm-table-toolbar .universal-select-trigger {
-    min-height: 34px;
-    padding: 0.35rem 1.8rem 0.35rem 0.62rem;
-    font-size: 0.86rem;
+    min-height: 32px;
+    padding: 0.32rem 1.8rem 0.32rem 0.58rem;
+    font-size: 0.84rem;
+    border-radius: 8px;
+    border: 1px solid var(--morandi-sand);
+    font-weight: 400;
 }
 
 .universal-select-dropdown.open-upward .feature-category-menu {
@@ -1963,17 +1977,9 @@ body {
     border: 2px solid var(--morandi-sand);
     border-radius: 6px;
     background-color: #fff;
-    background-image:
-        linear-gradient(45deg, transparent 50%, var(--morandi-slate) 50%),
-        linear-gradient(135deg, var(--morandi-slate) 50%, transparent 50%);
-    background-position:
-        calc(100% - 16px) 52%,
-        calc(100% - 10px) 52%;
-    background-size:
-        6px 6px,
-        6px 6px;
-    background-repeat: no-repeat;
-    color: var(--morandi-ink);
+    position: relative;
+    background-image: none;
+    color: var(--morandi-slate);
     text-align: left;
     font-weight: 400;
     font-size: 0.95rem;
@@ -1981,6 +1987,10 @@ body {
     padding: 0.65rem 2rem 0.65rem 0.8rem;
     box-shadow: none;
     transition: border-color 0.2s ease;
+}
+
+.universal-select-trigger.has-value {
+    color: var(--morandi-ink);
 }
 
 .universal-select-trigger:hover {
@@ -1994,6 +2004,20 @@ body {
 .universal-select-trigger:disabled {
     opacity: 0.65;
     cursor: not-allowed;
+}
+
+.universal-select-trigger::after {
+    content: '';
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid var(--morandi-slate);
+    transform: translateY(-32%);
+    pointer-events: none;
 }
 
 .universal-select-search {
@@ -2023,10 +2047,22 @@ body {
     background: transparent;
 }
 
+.pm-select-list,
+.pm-select-list * {
+    text-align: left !important;
+}
+
+.pm-select-option {
+    text-align: left !important;
+    font-weight: 400 !important;
+}
+
 .feature-category-option.universal-select-option.is-active {
-    border-color: transparent;
-    background: rgba(207, 199, 189, 0.55);
+    border-color: rgba(176, 166, 152, 0.65);
+    background: #f6f2eb;
     box-shadow: none;
+    color: var(--morandi-ink);
+    font-weight: 400 !important;
 }
 
 .feature-category-option.universal-select-option {
@@ -2037,7 +2073,7 @@ body {
     background: var(--morandi-mist);
     color: var(--morandi-ink);
     font-size: 0.92rem;
-    font-weight: 400;
+    font-weight: 400 !important;
     transform: none;
     box-shadow: none;
 }
@@ -2060,6 +2096,32 @@ body {
     opacity: 0.6;
     cursor: not-allowed;
     box-shadow: none;
+}
+
+/* Reusable multi-check picker style (checkbox options inside feature-category picker) */
+.feature-category-picker.is-multi-check .feature-category-menu {
+    z-index: 3900;
+}
+
+.feature-category-picker.is-multi-check .feature-category-option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
+}
+
+.feature-category-picker.is-multi-check .feature-category-option input[type="checkbox"] {
+    width: 16px;
+    min-width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: #b94b4b;
+}
+
+.feature-category-picker.is-multi-check .feature-category-option span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* 统一下拉选单列表模板（供后续下拉菜单复用） */
@@ -2667,15 +2729,24 @@ body {
     background: rgba(255, 255, 255, 0.92);
 }
 
+.permission-item .switch-wrap {
+    margin-left: auto;
+    flex: 0 0 auto;
+}
+
 .permission-grid.is-compact .permission-item {
-    padding: 0.35rem 0.45rem;
+    padding: 0.32rem 0.42rem;
     border-radius: 8px;
+    min-height: 32px;
 }
 
 .permission-name {
     color: var(--morandi-ink);
     font-size: 0.84rem;
     line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .permission-grid.is-compact .permission-name {
@@ -3124,8 +3195,20 @@ select,
     color: var(--morandi-ink) !important;
     font-size: 0.95rem;
     line-height: 1.2;
+    font-weight: 400;
+    text-align: left;
     box-shadow: none !important;
     transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.universal-select-trigger,
+.pm-select-trigger {
+    color: rgba(123, 128, 136, 0.62) !important;
+}
+
+.universal-select-trigger.has-value,
+.pm-select-trigger.has-value {
+    color: var(--morandi-ink) !important;
 }
 
 /* 文本域保持多行，但风格统一 */
@@ -3163,8 +3246,7 @@ textarea.optional.has-value {
 input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
 select:focus,
 textarea:focus,
-.universal-select-trigger:focus,
-.pm-select-trigger:focus {
+.universal-select-trigger:focus {
     outline: none;
     border-color: var(--ui-control-focus-border) !important;
     box-shadow: var(--ui-control-focus-shadow) !important;
@@ -3188,7 +3270,7 @@ textarea:focus,
 }
 
 /* 按钮统一（排除明显的图标圆形微按钮） */
-button:not(.shop-type-add):not(.material-type-add):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.status-pill) {
+button:not(.shop-type-add):not(.material-type-add):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option) {
     min-height: var(--ui-control-height);
     height: var(--ui-control-height);
     padding: 0.58rem 1rem;
@@ -3231,11 +3313,11 @@ table td .btn-danger {
     border-radius: 8px !important;
 }
 
-button:not(.shop-type-add):not(.material-type-add):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.status-pill):hover {
+button:not(.shop-type-add):not(.material-type-add):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):hover {
     transform: translateY(-1px);
 }
 
-button:not(.shop-type-add):not(.material-type-add):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.status-pill):active {
+button:not(.shop-type-add):not(.material-type-add):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):active {
     transform: translateY(0);
 }
 
@@ -3251,20 +3333,80 @@ button:not(.shop-type-add):not(.material-type-add):not(.feature-category-add):no
 .feature-category-option.universal-select-option,
 .pm-select-option {
     border-radius: 8px !important;
+    font-weight: 400 !important;
 }
 
 .universal-select-trigger {
-    background-image:
-        linear-gradient(45deg, transparent 50%, var(--morandi-slate) 50%),
-        linear-gradient(135deg, var(--morandi-slate) 50%, transparent 50%) !important;
-    background-position:
-        calc(100% - 16px) 52%,
-        calc(100% - 10px) 52% !important;
-    background-size:
-        6px 6px,
-        6px 6px !important;
-    background-repeat: no-repeat !important;
+    background-image: none !important;
     padding-right: 2rem !important;
+    font-weight: 400 !important;
+}
+
+/* Reusable compact controls for table toolbars */
+:root {
+    --ui-compact-height: 30px;
+    --ui-compact-pad-y: 0.2rem;
+    --ui-compact-pad-x: 0.58rem;
+    --ui-compact-font: 0.8rem;
+}
+
+.pm-table-toolbar {
+    padding: 0.42rem 0.62rem !important;
+    border-radius: 10px !important;
+    background: #f7f4ee !important;
+    box-shadow: none !important;
+    gap: 0.45rem !important;
+}
+
+.pm-table-toolbar .pm-table-toolbar-left,
+.pm-table-toolbar .pm-table-toolbar-right {
+    gap: 0.42rem !important;
+}
+
+.pm-table-toolbar label,
+.pm-table-toolbar .pm-table-info {
+    font-size: 0.78rem !important;
+    line-height: 1.2;
+    color: var(--morandi-slate);
+    font-weight: 500;
+}
+
+.pm-table-toolbar .pm-table-page-size,
+.pm-table-toolbar .universal-select-trigger,
+.pm-table-toolbar .universal-select-trigger.has-value,
+.pm-table-toolbar .pm-table-prev,
+.pm-table-toolbar .pm-table-next,
+.pm-table-toolbar .pm-table-columns-trigger,
+.pm-table-toolbar .pm-table-columns-reset {
+    min-height: var(--ui-compact-height) !important;
+    height: var(--ui-compact-height) !important;
+    padding: var(--ui-compact-pad-y) var(--ui-compact-pad-x) !important;
+    border-radius: 7px !important;
+    font-size: var(--ui-compact-font) !important;
+    line-height: 1.15 !important;
+}
+
+.pm-table-toolbar .pm-table-page-size,
+.pm-table-toolbar .universal-select-trigger,
+.pm-table-toolbar .universal-select-trigger.has-value {
+    min-width: 76px;
+}
+
+.pm-table-toolbar .universal-select-trigger,
+.pm-table-toolbar .universal-select-trigger.has-value {
+    padding-right: 1.55rem !important;
+}
+
+.pm-table-toolbar .universal-select-trigger::after {
+    right: 9px;
+    border-left-width: 4px;
+    border-right-width: 4px;
+    border-top-width: 5px;
+}
+
+.pm-table-toolbar .pm-table-pager-current {
+    min-width: 64px;
+    font-size: 0.78rem !important;
 }
 
 @media (max-width: 980px) {

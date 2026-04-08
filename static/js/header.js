@@ -962,13 +962,38 @@
 
     function applyPagination(state){
         const rows = getDataRows(state);
-        const total = rows.length;
+        const isServerManaged = String(state.table.dataset.serverPaginationMode || '').toLowerCase() === 'server'
+            || state.table.dataset.serverPaginationMode === '1';
+        const serverTotal = Number(state.table.dataset.serverTotalRows || '0');
+        const serverPageSize = Math.max(1, Number(state.table.dataset.serverPageSize || state.pageSize || '50') || 50);
+        const serverCurrentPage = Math.max(1, Number(state.table.dataset.serverCurrentPage || state.currentPage || '1') || 1);
+        const total = isServerManaged && Number.isFinite(serverTotal) ? Math.max(0, serverTotal) : rows.length;
         if(!total){
             state.currentPage = 1;
             state.info.textContent = '共 0 条';
             state.pageCurrent.textContent = '1 / 1';
             state.prevBtn.disabled = true;
             state.nextBtn.disabled = true;
+            return;
+        }
+
+        if(isServerManaged){
+            state.pageSize = serverPageSize;
+            state.currentPage = serverCurrentPage;
+            const totalPages = Math.max(1, Math.ceil(total / state.pageSize));
+            state.currentPage = Math.max(1, Math.min(state.currentPage, totalPages));
+            if(state.pageSizeSelect && String(state.pageSizeSelect.value || '') !== String(state.pageSize)){
+                state.pageSizeSelect.value = String(state.pageSize);
+            }
+            rows.forEach((row) => {
+                row.style.display = '';
+            });
+            const start = Math.min((state.currentPage - 1) * state.pageSize + 1, total);
+            const end = Math.min(state.currentPage * state.pageSize, total);
+            state.info.textContent = `显示 ${start}-${end} / 共 ${total} 条`;
+            state.pageCurrent.textContent = `${state.currentPage} / ${totalPages}`;
+            state.prevBtn.disabled = state.currentPage <= 1;
+            state.nextBtn.disabled = state.currentPage >= totalPages;
             return;
         }
 

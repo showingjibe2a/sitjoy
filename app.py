@@ -73,7 +73,41 @@ class WSGIApp(
         self._todo_ensure_lock = threading.Lock()
 
         self.PAGE_PERMISSION_KEYS = self._build_page_permission_keys()
-        self.PAGE_PERMISSION_LABELS = {key: key for key in self.PAGE_PERMISSION_KEYS}
+        label_map = {
+            'home': '首页',
+            'about': '关于',
+            'shop_brand_management': '店铺品牌管理',
+            'amazon_account_health_management': '账号健康管理',
+            'amazon_ad_management': '广告管理',
+            'amazon_ad_subtype_management': '广告分类管理',
+            'amazon_ad_delivery_management': '广告投放管理',
+            'amazon_ad_product_management': '广告产品管理',
+            'amazon_ad_adjustment_management': '广告调价管理',
+            'amazon_ad_keyword_management': '广告关键词管理',
+            'logistics_factory_management': '物流工厂管理',
+            'logistics_forwarder_management': '货代管理',
+            'logistics_warehouse_management': '仓库管理',
+            'logistics_warehouse_inventory_management': '仓库库存管理',
+            'logistics_in_transit_management': '在途管理',
+            'logistics_warehouse_dashboard': '仓储看板',
+            'factory_stock_management': '工厂备货管理',
+            'factory_wip_management': '工厂在制管理',
+            'product_management': '产品管理',
+            'fabric_management': '面料管理',
+            'feature_management': '特征管理',
+            'material_management': '材料管理',
+            'certification_management': '认证管理',
+            'order_product_management': '下单产品管理',
+            'sales_product_management': '销售产品管理',
+            'sales_product_performance_management': '产品表现看板',
+            'sales_order_registration_management': '销售订单登记',
+            'parent_management': '父体管理',
+            'gallery': '图库'
+        }
+        self.PAGE_PERMISSION_LABELS = {
+            key: label_map.get(key, key.replace('_', ' '))
+            for key in self.PAGE_PERMISSION_KEYS
+        }
 
     @staticmethod
     def _build_page_permission_keys():
