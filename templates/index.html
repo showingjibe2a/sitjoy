@@ -781,11 +781,9 @@
 
         function buildPermissionGroupHtml(group, labels, permissions, options = {}) {
             const pageKeys = getPermissionGroupPageKeys(group);
-            const moduleKey = group.key || '';
-            const childKeys = pageKeys.filter(key => key !== moduleKey);
-            const moduleChecked = !!permissions[moduleKey] || childKeys.some(key => !!permissions[key]);
+            const moduleChecked = pageKeys.some(key => !!permissions[key]);
             const compactClass = options.compact ? ' is-compact' : '';
-            const pageItems = childKeys.map(key => `
+            const pageItems = pageKeys.map(key => `
                 <div class="permission-item permission-sub-item${compactClass}" data-module-key="${escapeHtml(group.key || '')}">
                     <span class="permission-name">${escapeHtml(labels[key] || key)}</span>
                     ${buildSwitchMarkup(!!permissions[key], `data-role="page_permission" data-module-key="${escapeHtml(group.key || '')}" data-page-key="${escapeHtml(key)}"`, !!options.disablePages || !moduleChecked)}
@@ -796,9 +794,9 @@
                     <div class="permission-group-head">
                         <div class="permission-group-title-wrap">
                             <div class="permission-group-title">${escapeHtml(group.title || group.key || '')}</div>
-                            <div class="permission-group-subtitle">${escapeHtml(childKeys.length ? `${childKeys.length} 个子页面` : '无子页面')}</div>
+                            <div class="permission-group-subtitle">${escapeHtml(pageKeys.length ? `${pageKeys.length} 个页面` : '无子页面')}</div>
                         </div>
-                        ${buildSwitchMarkup(moduleChecked, `data-role="module_permission" data-module-key="${escapeHtml(group.key || '')}" data-page-key="${escapeHtml(moduleKey)}"`, !!options.disablePages)}
+                        ${buildSwitchMarkup(moduleChecked, `data-role="module_gate" data-module-key="${escapeHtml(group.key || '')}"`, !!options.disablePages)}
                     </div>
                     <div class="permission-group-pages${options.compact ? ' is-compact' : ''}">
                         ${pageItems}
@@ -851,9 +849,6 @@
             if (!permissionRoot) {
                 return { is_admin: 0, can_grant_admin: 0, page_permissions: buildDefaultPagePermissions() };
             }
-            permissionRoot.querySelectorAll('[data-role="module_permission"]').forEach(input => {
-                pagePermissions[input.dataset.pageKey] = input.checked ? 1 : 0;
-            });
             permissionRoot.querySelectorAll('[data-role="page_permission"]').forEach(input => {
                 pagePermissions[input.dataset.pageKey] = input.checked ? 1 : 0;
             });
@@ -873,7 +868,7 @@
             if (!controlRoot) return;
             const adminInput = controlRoot.querySelector('[data-role="is_admin"]');
             const grantInput = controlRoot.querySelector('[data-role="can_grant_admin"]');
-            const groupInputs = Array.from(controlRoot.querySelectorAll('[data-role="module_permission"]'));
+            const groupInputs = Array.from(controlRoot.querySelectorAll('[data-role="module_gate"]'));
             if (grantInput && grantInput.checked && adminInput && !adminInput.checked) {
                 adminInput.checked = true;
             }
@@ -884,9 +879,9 @@
                 grantInput.disabled = !canEditAdminGrant();
             }
             groupInputs.forEach(input => {
-                const moduleKey = input.dataset.moduleKey || '';
                 const groupCard = input.closest('.permission-group-card');
                 const children = groupCard ? Array.from(groupCard.querySelectorAll('[data-role="page_permission"]')) : [];
+                input.checked = !!input.checked || children.some(child => child.checked);
                 children.forEach(child => {
                     child.disabled = !input.checked;
                 });
@@ -1695,7 +1690,7 @@
                 pendingUsersTable.addEventListener('change', e => {
                     const row = e.target.closest('tr[data-pending-id]');
                     if (!row) return;
-                    if (e.target.matches('[data-role="module_permission"]')) {
+                    if (e.target.matches('[data-role="module_gate"]')) {
                         row.querySelectorAll('[data-role="page_permission"][data-module-key="' + (e.target.dataset.moduleKey || '') + '"]').forEach(child => {
                             if (!e.target.checked) child.checked = false;
                             child.disabled = !e.target.checked;
@@ -1834,10 +1829,10 @@
             const employeeTable = document.getElementById('employeeTable');
             if (employeeTable) {
                 employeeTable.addEventListener('change', e => {
-                if (!e.target.matches('[data-role="is_admin"], [data-role="can_grant_admin"], [data-role="page_permission"], [data-role="module_permission"]')) return;
+                if (!e.target.matches('[data-role="is_admin"], [data-role="can_grant_admin"], [data-role="page_permission"], [data-role="module_gate"]')) return;
                 const row = e.target.closest('tr[data-employee-id]');
                 if (!row) return;
-                if (e.target.matches('[data-role="module_permission"]')) {
+                if (e.target.matches('[data-role="module_gate"]')) {
                     row.querySelectorAll('[data-role="page_permission"][data-module-key="' + (e.target.dataset.moduleKey || '') + '"]').forEach(child => {
                         if (!e.target.checked) child.checked = false;
                         child.disabled = !e.target.checked;
