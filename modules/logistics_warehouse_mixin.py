@@ -28,43 +28,71 @@ class LogisticsWarehouseMixin:
         """工厂在库库存 CRUD"""
         try:
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            user_id = self._get_session_user(environ)
 
             if method == 'GET':
                 keyword = (query_params.get('q', [''])[0] or '').strip()
                 action = (query_params.get('action', [''])[0] or '').strip().lower()
                 if action == 'options':
+                    scope_ids = self._get_user_factory_scope_ids(user_id)
                     with self._get_db_connection() as conn:
                         with conn.cursor() as cur:
-                            cur.execute("SELECT id, factory_name FROM logistics_factories ORDER BY factory_name ASC")
+                            factory_clause, factory_params = self._factory_scope_clause('id', user_id, prefix='WHERE')
+                            cur.execute(
+                                f"SELECT id, factory_name FROM logistics_factories{factory_clause} ORDER BY factory_name ASC",
+                                factory_params
+                            )
                             factories = cur.fetchall() or []
-                            cur.execute("SELECT id, sku FROM order_products ORDER BY sku ASC")
-                            order_products = cur.fetchall() or []
+                            if scope_ids is None:
+                                cur.execute("SELECT id, sku FROM order_products ORDER BY sku ASC")
+                                order_products = cur.fetchall() or []
+                            elif scope_ids:
+                                placeholders = ','.join(['%s'] * len(scope_ids))
+                                cur.execute(
+                                    f"""
+                                    SELECT DISTINCT op.id, op.sku
+                                    FROM order_products op
+                                    JOIN (
+                                        SELECT order_product_id FROM factory_stock_inventory WHERE factory_id IN ({placeholders})
+                                        UNION
+                                        SELECT order_product_id FROM factory_wip_inventory WHERE factory_id IN ({placeholders})
+                                    ) x ON x.order_product_id = op.id
+                                    ORDER BY op.sku ASC
+                                    """,
+                                    tuple(scope_ids) + tuple(scope_ids)
+                                )
+                                order_products = cur.fetchall() or []
+                            else:
+                                order_products = []
                     return self.send_json({'status': 'success', 'factories': factories, 'order_products': order_products}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
+                        scope_clause, scope_params = self._factory_scope_clause('f.id', user_id, prefix='AND')
                         if keyword:
                             cur.execute(
-                                """
+                                f"""
                                 SELECT fs.id, fs.order_product_id, fs.factory_id, fs.quantity, fs.notes, fs.updated_at,
                                        op.sku, f.factory_name
                                 FROM factory_stock_inventory fs
                                 JOIN order_products op ON op.id = fs.order_product_id
                                 JOIN logistics_factories f ON f.id = fs.factory_id
-                                WHERE op.sku LIKE %s OR f.factory_name LIKE %s
+                                WHERE (op.sku LIKE %s OR f.factory_name LIKE %s){scope_clause}
                                 ORDER BY op.sku ASC, f.factory_name ASC
                                 """,
-                                (f"%{keyword}%", f"%{keyword}%")
+                                (f"%{keyword}%", f"%{keyword}%") + scope_params
                             )
                         else:
                             cur.execute(
-                                """
+                                f"""
                                 SELECT fs.id, fs.order_product_id, fs.factory_id, fs.quantity, fs.notes, fs.updated_at,
                                        op.sku, f.factory_name
                                 FROM factory_stock_inventory fs
                                 JOIN order_products op ON op.id = fs.order_product_id
                                 JOIN logistics_factories f ON f.id = fs.factory_id
+                                WHERE 1=1 {scope_clause}
                                 ORDER BY op.sku ASC, f.factory_name ASC
-                                """
+                                """,
+                                scope_params
                             )
                         rows = cur.fetchall() or []
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
@@ -77,6 +105,8 @@ class LogisticsWarehouseMixin:
                 notes = (data.get('notes') or '').strip() or None
                 if not op_id or not factory_id:
                     return self.send_json({'status': 'error', 'message': '缺少 order_product_id 或 factory_id'}, start_response)
+                if not self._factory_scope_contains(user_id, factory_id):
+                    return self.send_json({'status': 'error', 'message': '无权限操作该工厂数据'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
@@ -98,6 +128,12 @@ class LogisticsWarehouseMixin:
                     return self.send_json({'status': 'error', 'message': '缺少 id'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
+                        cur.execute("SELECT factory_id FROM factory_stock_inventory WHERE id=%s", (item_id,))
+                        existing = cur.fetchone() or {}
+                        if not existing:
+                            return self.send_json({'status': 'error', 'message': '记录不存在'}, start_response)
+                        if not self._factory_scope_contains(user_id, existing.get('factory_id')):
+                            return self.send_json({'status': 'error', 'message': '无权限操作该工厂数据'}, start_response)
                         cur.execute(
                             "UPDATE factory_stock_inventory SET quantity=%s, notes=%s WHERE id=%s",
                             (quantity, notes, item_id)
@@ -110,6 +146,12 @@ class LogisticsWarehouseMixin:
                     return self.send_json({'status': 'error', 'message': '缺少 id'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
+                        cur.execute("SELECT factory_id FROM factory_stock_inventory WHERE id=%s", (item_id,))
+                        existing = cur.fetchone() or {}
+                        if not existing:
+                            return self.send_json({'status': 'error', 'message': '记录不存在'}, start_response)
+                        if not self._factory_scope_contains(user_id, existing.get('factory_id')):
+                            return self.send_json({'status': 'error', 'message': '无权限操作该工厂数据'}, start_response)
                         cur.execute("DELETE FROM factory_stock_inventory WHERE id=%s", (item_id,))
                 return self.send_json({'status': 'success'}, start_response)
 
@@ -121,6 +163,7 @@ class LogisticsWarehouseMixin:
         """工厂在制库存 CRUD"""
         try:
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            user_id = self._get_session_user(environ)
 
             def _parse_yes_no(value):
                 text = str(value if value is not None else '').strip().lower()
@@ -143,18 +186,43 @@ class LogisticsWarehouseMixin:
                 keyword = (query_params.get('q', [''])[0] or '').strip()
                 action = (query_params.get('action', [''])[0] or '').strip().lower()
                 if action == 'options':
+                    scope_ids = self._get_user_factory_scope_ids(user_id)
                     with self._get_db_connection() as conn:
                         with conn.cursor() as cur:
-                            cur.execute("SELECT id, factory_name FROM logistics_factories ORDER BY factory_name ASC")
+                            factory_clause, factory_params = self._factory_scope_clause('id', user_id, prefix='WHERE')
+                            cur.execute(
+                                f"SELECT id, factory_name FROM logistics_factories{factory_clause} ORDER BY factory_name ASC",
+                                factory_params
+                            )
                             factories = cur.fetchall() or []
-                            cur.execute("SELECT id, sku FROM order_products ORDER BY sku ASC")
-                            order_products = cur.fetchall() or []
+                            if scope_ids is None:
+                                cur.execute("SELECT id, sku FROM order_products ORDER BY sku ASC")
+                                order_products = cur.fetchall() or []
+                            elif scope_ids:
+                                placeholders = ','.join(['%s'] * len(scope_ids))
+                                cur.execute(
+                                    f"""
+                                    SELECT DISTINCT op.id, op.sku
+                                    FROM order_products op
+                                    JOIN (
+                                        SELECT order_product_id FROM factory_stock_inventory WHERE factory_id IN ({placeholders})
+                                        UNION
+                                        SELECT order_product_id FROM factory_wip_inventory WHERE factory_id IN ({placeholders})
+                                    ) x ON x.order_product_id = op.id
+                                    ORDER BY op.sku ASC
+                                    """,
+                                    tuple(scope_ids) + tuple(scope_ids)
+                                )
+                                order_products = cur.fetchall() or []
+                            else:
+                                order_products = []
                     return self.send_json({'status': 'success', 'factories': factories, 'order_products': order_products}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
+                        scope_clause, scope_params = self._factory_scope_clause('f.id', user_id, prefix='AND')
                         if keyword:
                             cur.execute(
-                                """
+                                f"""
                                 SELECT fw.id, fw.order_product_id, fw.factory_id, fw.quantity,
                                         fw.expected_completion_date, fw.is_completed, fw.actual_completion_date,
                                         fw.notes, fw.created_at, fw.updated_at,
@@ -162,14 +230,14 @@ class LogisticsWarehouseMixin:
                                 FROM factory_wip_inventory fw
                                 JOIN order_products op ON op.id = fw.order_product_id
                                 JOIN logistics_factories f ON f.id = fw.factory_id
-                                WHERE op.sku LIKE %s OR f.factory_name LIKE %s
+                                WHERE (op.sku LIKE %s OR f.factory_name LIKE %s){scope_clause}
                                 ORDER BY op.sku ASC, f.factory_name ASC, fw.expected_completion_date ASC
                                 """,
-                                (f"%{keyword}%", f"%{keyword}%")
+                                (f"%{keyword}%", f"%{keyword}%") + scope_params
                             )
                         else:
                             cur.execute(
-                                """
+                                f"""
                                 SELECT fw.id, fw.order_product_id, fw.factory_id, fw.quantity,
                                         fw.expected_completion_date, fw.is_completed, fw.actual_completion_date,
                                         fw.notes, fw.created_at, fw.updated_at,
@@ -177,8 +245,10 @@ class LogisticsWarehouseMixin:
                                 FROM factory_wip_inventory fw
                                 JOIN order_products op ON op.id = fw.order_product_id
                                 JOIN logistics_factories f ON f.id = fw.factory_id
+                                WHERE 1=1 {scope_clause}
                                 ORDER BY op.sku ASC, f.factory_name ASC, fw.expected_completion_date ASC
-                                """
+                                """,
+                                scope_params
                             )
                         rows = cur.fetchall() or []
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
@@ -198,6 +268,8 @@ class LogisticsWarehouseMixin:
                     actual_completion_date = None
                 if not op_id or not factory_id:
                     return self.send_json({'status': 'error', 'message': '缺少 order_product_id 或 factory_id'}, start_response)
+                if not self._factory_scope_contains(user_id, factory_id):
+                    return self.send_json({'status': 'error', 'message': '无权限操作该工厂数据'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
@@ -237,6 +309,8 @@ class LogisticsWarehouseMixin:
                         existing = cur.fetchone() or {}
                         if not existing:
                             return self.send_json({'status': 'error', 'message': '记录不存在'}, start_response)
+                        if not self._factory_scope_contains(user_id, existing.get('factory_id')):
+                            return self.send_json({'status': 'error', 'message': '无权限操作该工厂数据'}, start_response)
 
                         previous_completed = int(existing.get('is_completed') or 0)
                         if add_to_factory_stock:
@@ -276,6 +350,12 @@ class LogisticsWarehouseMixin:
                     return self.send_json({'status': 'error', 'message': '缺少 id'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
+                        cur.execute("SELECT factory_id FROM factory_wip_inventory WHERE id=%s", (item_id,))
+                        existing = cur.fetchone() or {}
+                        if not existing:
+                            return self.send_json({'status': 'error', 'message': '记录不存在'}, start_response)
+                        if not self._factory_scope_contains(user_id, existing.get('factory_id')):
+                            return self.send_json({'status': 'error', 'message': '无权限操作该工厂数据'}, start_response)
                         cur.execute("DELETE FROM factory_wip_inventory WHERE id=%s", (item_id,))
                 return self.send_json({'status': 'success'}, start_response)
 
@@ -285,6 +365,8 @@ class LogisticsWarehouseMixin:
 
     def handle_factory_stock_template_api(self, environ, method, start_response):
         try:
+            user_id = self._get_session_user(environ)
+            scope_ids = self._get_user_factory_scope_ids(user_id)
             if method != 'GET':
                 return self.send_error(405, 'Method not allowed', start_response)
             if Workbook is None:
@@ -328,10 +410,33 @@ class LogisticsWarehouseMixin:
 
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("SELECT factory_name FROM logistics_factories ORDER BY factory_name ASC")
+                    factory_clause, factory_params = self._factory_scope_clause('id', user_id, prefix='WHERE')
+                    cur.execute(
+                        f"SELECT factory_name FROM logistics_factories{factory_clause} ORDER BY factory_name ASC",
+                        factory_params
+                    )
                     factories = [str(r.get('factory_name') or '').strip() for r in (cur.fetchall() or []) if r.get('factory_name')]
-                    cur.execute("SELECT sku FROM order_products ORDER BY sku ASC")
-                    skus = [str(r.get('sku') or '').strip() for r in (cur.fetchall() or []) if r.get('sku')]
+                    if scope_ids is None:
+                        cur.execute("SELECT sku FROM order_products ORDER BY sku ASC")
+                        skus = [str(r.get('sku') or '').strip() for r in (cur.fetchall() or []) if r.get('sku')]
+                    elif scope_ids:
+                        placeholders = ','.join(['%s'] * len(scope_ids))
+                        cur.execute(
+                            f"""
+                            SELECT DISTINCT op.sku
+                            FROM order_products op
+                            JOIN (
+                                SELECT order_product_id FROM factory_stock_inventory WHERE factory_id IN ({placeholders})
+                                UNION
+                                SELECT order_product_id FROM factory_wip_inventory WHERE factory_id IN ({placeholders})
+                            ) x ON x.order_product_id = op.id
+                            ORDER BY op.sku ASC
+                            """,
+                            tuple(scope_ids) + tuple(scope_ids)
+                        )
+                        skus = [str(r.get('sku') or '').strip() for r in (cur.fetchall() or []) if r.get('sku')]
+                    else:
+                        skus = []
 
             max_len = max(len(factories), len(skus), 1)
             for i in range(max_len):
@@ -362,6 +467,8 @@ class LogisticsWarehouseMixin:
 
     def handle_factory_stock_import_api(self, environ, method, start_response):
         try:
+            user_id = self._get_session_user(environ)
+            scope_ids = self._get_user_factory_scope_ids(user_id)
             if method != 'POST':
                 return self.send_error(405, 'Method not allowed', start_response)
             if load_workbook is None:
@@ -407,9 +514,31 @@ class LogisticsWarehouseMixin:
 
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("SELECT id, sku FROM order_products")
-                    sku_map = {str(r.get('sku') or '').strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
-                    cur.execute("SELECT id, factory_name FROM logistics_factories")
+                    if scope_ids is None:
+                        cur.execute("SELECT id, sku FROM order_products")
+                        sku_map = {str(r.get('sku') or '').strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
+                    elif scope_ids:
+                        placeholders = ','.join(['%s'] * len(scope_ids))
+                        cur.execute(
+                            f"""
+                            SELECT DISTINCT op.id, op.sku
+                            FROM order_products op
+                            JOIN (
+                                SELECT order_product_id FROM factory_stock_inventory WHERE factory_id IN ({placeholders})
+                                UNION
+                                SELECT order_product_id FROM factory_wip_inventory WHERE factory_id IN ({placeholders})
+                            ) x ON x.order_product_id = op.id
+                            """,
+                            tuple(scope_ids) + tuple(scope_ids)
+                        )
+                        sku_map = {str(r.get('sku') or '').strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
+                    else:
+                        sku_map = {}
+                    factory_clause, factory_params = self._factory_scope_clause('id', user_id, prefix='WHERE')
+                    cur.execute(
+                        f"SELECT id, factory_name FROM logistics_factories{factory_clause}",
+                        factory_params
+                    )
                     factory_map = {str(r.get('factory_name') or '').strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
 
                     normalized_rows = []
@@ -487,6 +616,8 @@ class LogisticsWarehouseMixin:
 
     def handle_factory_wip_template_api(self, environ, method, start_response):
         try:
+            user_id = self._get_session_user(environ)
+            scope_ids = self._get_user_factory_scope_ids(user_id)
             if method != 'GET':
                 return self.send_error(405, 'Method not allowed', start_response)
             if Workbook is None:
@@ -530,10 +661,33 @@ class LogisticsWarehouseMixin:
 
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("SELECT factory_name FROM logistics_factories ORDER BY factory_name ASC")
+                    factory_clause, factory_params = self._factory_scope_clause('id', user_id, prefix='WHERE')
+                    cur.execute(
+                        f"SELECT factory_name FROM logistics_factories{factory_clause} ORDER BY factory_name ASC",
+                        factory_params
+                    )
                     factories = [str(r.get('factory_name') or '').strip() for r in (cur.fetchall() or []) if r.get('factory_name')]
-                    cur.execute("SELECT sku FROM order_products ORDER BY sku ASC")
-                    skus = [str(r.get('sku') or '').strip() for r in (cur.fetchall() or []) if r.get('sku')]
+                    if scope_ids is None:
+                        cur.execute("SELECT sku FROM order_products ORDER BY sku ASC")
+                        skus = [str(r.get('sku') or '').strip() for r in (cur.fetchall() or []) if r.get('sku')]
+                    elif scope_ids:
+                        placeholders = ','.join(['%s'] * len(scope_ids))
+                        cur.execute(
+                            f"""
+                            SELECT DISTINCT op.sku
+                            FROM order_products op
+                            JOIN (
+                                SELECT order_product_id FROM factory_stock_inventory WHERE factory_id IN ({placeholders})
+                                UNION
+                                SELECT order_product_id FROM factory_wip_inventory WHERE factory_id IN ({placeholders})
+                            ) x ON x.order_product_id = op.id
+                            ORDER BY op.sku ASC
+                            """,
+                            tuple(scope_ids) + tuple(scope_ids)
+                        )
+                        skus = [str(r.get('sku') or '').strip() for r in (cur.fetchall() or []) if r.get('sku')]
+                    else:
+                        skus = []
 
             max_len = max(len(factories), len(skus), 1)
             for i in range(max_len):
@@ -565,6 +719,8 @@ class LogisticsWarehouseMixin:
 
     def handle_factory_wip_import_api(self, environ, method, start_response):
         try:
+            user_id = self._get_session_user(environ)
+            scope_ids = self._get_user_factory_scope_ids(user_id)
             if method != 'POST':
                 return self.send_error(405, 'Method not allowed', start_response)
             if load_workbook is None:
@@ -645,9 +801,31 @@ class LogisticsWarehouseMixin:
 
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("SELECT id, sku FROM order_products")
-                    sku_map = {str(r.get('sku') or '').strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
-                    cur.execute("SELECT id, factory_name FROM logistics_factories")
+                    if scope_ids is None:
+                        cur.execute("SELECT id, sku FROM order_products")
+                        sku_map = {str(r.get('sku') or '').strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
+                    elif scope_ids:
+                        placeholders = ','.join(['%s'] * len(scope_ids))
+                        cur.execute(
+                            f"""
+                            SELECT DISTINCT op.id, op.sku
+                            FROM order_products op
+                            JOIN (
+                                SELECT order_product_id FROM factory_stock_inventory WHERE factory_id IN ({placeholders})
+                                UNION
+                                SELECT order_product_id FROM factory_wip_inventory WHERE factory_id IN ({placeholders})
+                            ) x ON x.order_product_id = op.id
+                            """,
+                            tuple(scope_ids) + tuple(scope_ids)
+                        )
+                        sku_map = {str(r.get('sku') or '').strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
+                    else:
+                        sku_map = {}
+                    factory_clause, factory_params = self._factory_scope_clause('id', user_id, prefix='WHERE')
+                    cur.execute(
+                        f"SELECT id, factory_name FROM logistics_factories{factory_clause}",
+                        factory_params
+                    )
                     factory_map = {str(r.get('factory_name') or '').strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
 
                     normalized_rows = []
@@ -754,22 +932,31 @@ class LogisticsWarehouseMixin:
     def handle_logistics_factory_api(self, environ, method, start_response):
         try:
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            user_id = self._get_session_user(environ)
+            actor_record = self._get_user_permission_record(user_id) if user_id else None
+            can_manage_factory_master = bool(actor_record and actor_record.get('is_admin'))
             if method == 'GET':
                 keyword = (query_params.get('q', [''])[0] or '').strip()
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
+                        scope_clause, scope_params = self._factory_scope_clause('id', user_id, prefix='AND')
                         if keyword:
                             cur.execute(
-                                "SELECT id, factory_name, created_at, updated_at FROM logistics_factories WHERE factory_name LIKE %s ORDER BY id DESC",
-                                (f"%{keyword}%",)
+                                f"SELECT id, factory_name, created_at, updated_at FROM logistics_factories WHERE factory_name LIKE %s{scope_clause} ORDER BY id DESC",
+                                (f"%{keyword}%",) + scope_params
                             )
                         else:
-                            cur.execute("SELECT id, factory_name, created_at, updated_at FROM logistics_factories ORDER BY id DESC")
+                            cur.execute(
+                                f"SELECT id, factory_name, created_at, updated_at FROM logistics_factories WHERE 1=1 {scope_clause} ORDER BY id DESC",
+                                scope_params
+                            )
                         rows = cur.fetchall() or []
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             data = self._read_json_body(environ)
             if method == 'POST':
+                if not can_manage_factory_master:
+                    return self.send_json({'status': 'error', 'message': '仅管理员可维护工厂主数据'}, start_response)
                 name = (data.get('factory_name') or '').strip()
                 if not name:
                     return self.send_json({'status': 'error', 'message': 'Missing factory_name'}, start_response)
@@ -780,6 +967,8 @@ class LogisticsWarehouseMixin:
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
             if method == 'PUT':
+                if not can_manage_factory_master:
+                    return self.send_json({'status': 'error', 'message': '仅管理员可维护工厂主数据'}, start_response)
                 item_id = self._parse_int(data.get('id'))
                 name = (data.get('factory_name') or '').strip()
                 if not item_id or not name:
@@ -790,6 +979,8 @@ class LogisticsWarehouseMixin:
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':
+                if not can_manage_factory_master:
+                    return self.send_json({'status': 'error', 'message': '仅管理员可维护工厂主数据'}, start_response)
                 item_id = self._parse_int(data.get('id'))
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)

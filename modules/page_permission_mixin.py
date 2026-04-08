@@ -90,5 +90,59 @@ class PagePermissionMixin:
             return [b'']
         return self.serve_file(template_path, 'text/html', start_response)
 
+    def _get_user_factory_scope_ids(self, user_id):
+        """Return allowed factory ids for a user.
+
+        - `None`: unrestricted (typically admin or table not initialized)
+        - `[]`: no factory access
+        - `[id, ...]`: restricted to these factories
+        """
+        if not user_id:
+            return []
+        record = self._get_user_permission_record(user_id)
+        if record and bool(record.get('is_admin')):
+            return None
+        try:
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT factory_id FROM user_factory_scopes WHERE user_id=%s ORDER BY factory_id ASC",
+                        (user_id,)
+                    )
+                    rows = cur.fetchall() or []
+        except Exception as e:
+            message = str(e).lower()
+            if "doesn't exist" in message or 'does not exist' in message or 'unknown table' in message:
+                return None
+            raise
+        ids = []
+        for row in rows:
+            try:
+                value = int(row.get('factory_id') or 0)
+            except Exception:
+                value = 0
+            if value > 0:
+                ids.append(value)
+        return sorted(set(ids))
+
+    def _factory_scope_clause(self, column_sql, user_id, prefix='AND'):
+        scope_ids = self._get_user_factory_scope_ids(user_id)
+        if scope_ids is None:
+            return ('', tuple())
+        if not scope_ids:
+            return (f' {prefix} 1=0', tuple())
+        placeholders = ','.join(['%s'] * len(scope_ids))
+        return (f' {prefix} {column_sql} IN ({placeholders})', tuple(scope_ids))
+
+    def _factory_scope_contains(self, user_id, factory_id):
+        scope_ids = self._get_user_factory_scope_ids(user_id)
+        if scope_ids is None:
+            return True
+        try:
+            target = int(factory_id or 0)
+        except Exception:
+            target = 0
+        return target > 0 and target in set(scope_ids)
+
 
 

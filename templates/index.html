@@ -888,6 +888,16 @@
             });
         }
 
+        function handlePermissionGateToggle(root, gateInput) {
+            if (!root || !gateInput) return;
+            const moduleKey = gateInput.dataset.moduleKey || '';
+            root.querySelectorAll('[data-role="page_permission"][data-module-key="' + moduleKey + '"]').forEach(child => {
+                if (!gateInput.checked) child.checked = false;
+                child.disabled = !gateInput.checked;
+            });
+            syncPermissionEditor(root);
+        }
+
         function formatDateKey(year, month, day) {
             return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         }
@@ -1691,10 +1701,8 @@
                     const row = e.target.closest('tr[data-pending-id]');
                     if (!row) return;
                     if (e.target.matches('[data-role="module_gate"]')) {
-                        row.querySelectorAll('[data-role="page_permission"][data-module-key="' + (e.target.dataset.moduleKey || '') + '"]').forEach(child => {
-                            if (!e.target.checked) child.checked = false;
-                            child.disabled = !e.target.checked;
-                        });
+                        handlePermissionGateToggle(row, e.target);
+                        return;
                     }
                     syncPermissionEditor(row);
                 });
@@ -1833,12 +1841,10 @@
                 const row = e.target.closest('tr[data-employee-id]');
                 if (!row) return;
                 if (e.target.matches('[data-role="module_gate"]')) {
-                    row.querySelectorAll('[data-role="page_permission"][data-module-key="' + (e.target.dataset.moduleKey || '') + '"]').forEach(child => {
-                        if (!e.target.checked) child.checked = false;
-                        child.disabled = !e.target.checked;
-                    });
+                    handlePermissionGateToggle(row, e.target);
+                } else {
+                    syncPermissionEditor(row);
                 }
-                syncPermissionEditor(row);
                 const payload = collectPermissionEditorState(row);
                 fetch('/api/employee', {
                     method: 'PUT',
@@ -1889,6 +1895,30 @@
                             loadCalendar();
                         });
                 }
+                });
+            }
+
+            const employeeCreatePermissionEditor = document.getElementById('employeeCreatePermissionEditor');
+            if (employeeCreatePermissionEditor) {
+                employeeCreatePermissionEditor.addEventListener('change', e => {
+                    if (!e.target.matches('[data-role="module_gate"], [data-role="page_permission"], [data-role="is_admin"], [data-role="can_grant_admin"]')) return;
+                    if (e.target.matches('[data-role="module_gate"]')) {
+                        handlePermissionGateToggle(employeeCreatePermissionEditor, e.target);
+                        return;
+                    }
+                    syncPermissionEditor(employeeCreatePermissionEditor);
+                });
+            }
+
+            const employeeEditPermissionEditor = document.getElementById('employeeEditPermissionEditor');
+            if (employeeEditPermissionEditor) {
+                employeeEditPermissionEditor.addEventListener('change', e => {
+                    if (!e.target.matches('[data-role="module_gate"], [data-role="page_permission"], [data-role="is_admin"], [data-role="can_grant_admin"]')) return;
+                    if (e.target.matches('[data-role="module_gate"]')) {
+                        handlePermissionGateToggle(employeeEditPermissionEditor, e.target);
+                        return;
+                    }
+                    syncPermissionEditor(employeeEditPermissionEditor);
                 });
             }
 
