@@ -2110,6 +2110,10 @@ body {
     font-weight: 500;
 }
 
+.feature-category-picker.is-multi-check .assignee-option {
+    justify-content: flex-start;
+}
+
 .feature-category-picker.is-multi-check .feature-category-option input[type="checkbox"] {
     width: 16px;
     min-width: 16px;
@@ -2118,10 +2122,22 @@ body {
     accent-color: #b94b4b;
 }
 
+.feature-category-picker.is-multi-check .assignee-option input[type="checkbox"] {
+    display: none;
+}
+
 .feature-category-picker.is-multi-check .feature-category-option span {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.feature-category-picker.is-multi-check #assigneeMenu {
+    min-width: 280px;
+}
+
+.feature-category-picker.is-multi-check #todoModalAssigneeSearch {
+    margin-bottom: 0.45rem;
 }
 
 /* 统一下拉选单列表模板（供后续下拉菜单复用） */
@@ -2714,8 +2730,96 @@ body {
     gap: 0.5rem 0.7rem;
 }
 
+.permission-groups {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 0.7rem;
+    align-items: start;
+}
+
 .permission-grid.is-compact {
     gap: 0.35rem 0.45rem;
+}
+
+.permission-group-card {
+    display: grid;
+    gap: 0.55rem;
+    border: 1px solid rgba(207, 199, 189, 0.95);
+    border-radius: 12px;
+    padding: 0.72rem 0.78rem;
+    background: rgba(255, 255, 255, 0.94);
+    align-content: start;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.06);
+}
+
+.permission-group-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.7rem;
+    min-height: 44px;
+    padding-bottom: 0.22rem;
+    border-bottom: 1px solid rgba(207, 199, 189, 0.55);
+}
+
+.permission-group-title-wrap {
+    min-width: 0;
+    display: grid;
+    gap: 0.18rem;
+}
+
+.permission-group-title {
+    color: var(--morandi-ink);
+    font-size: 0.9rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.permission-group-subtitle {
+    color: var(--morandi-slate);
+    font-size: 0.76rem;
+    line-height: 1.2;
+}
+
+.permission-group-pages {
+    display: grid;
+    gap: 0.35rem;
+    align-content: start;
+}
+
+.permission-group-pages.is-compact {
+    gap: 0.28rem;
+}
+
+.permission-groups.is-compact {
+    gap: 0.45rem;
+}
+
+.permission-groups.is-compact .permission-group-card {
+    padding: 0.55rem 0.6rem;
+    border-radius: 10px;
+}
+
+.permission-groups.is-compact .permission-group-title {
+    font-size: 0.82rem;
+}
+
+.permission-groups.is-compact .permission-group-subtitle {
+    font-size: 0.7rem;
+}
+
+.permission-sub-item {
+    padding-left: 0.5rem;
+    background: rgba(243, 240, 236, 0.82);
+    border-color: rgba(207, 199, 189, 0.7);
+}
+
+.permission-sub-item.is-compact {
+    padding: 0.24rem 0.4rem 0.24rem 0.46rem;
+}
+
+.permission-sub-item .permission-name {
+    white-space: nowrap;
 }
 
 .permission-item {
@@ -2727,6 +2831,7 @@ body {
     border-radius: 10px;
     padding: 0.5rem 0.65rem;
     background: rgba(255, 255, 255, 0.92);
+    min-height: 38px;
 }
 
 .permission-item .switch-wrap {

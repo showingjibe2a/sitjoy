@@ -577,6 +577,7 @@
                                         <span class="feature-category-add-text">添加负责人</span>
                                     </button>
                                     <div class="feature-category-menu" id="assigneeMenu">
+                                        <input type="text" id="todoModalAssigneeSearch" class="universal-select-search" placeholder="搜索负责人">
                                         <div class="feature-category-list" id="todoModalAssigneeList"></div>
                                     </div>
                                 </div>
@@ -722,13 +723,34 @@
             return (currentUser && currentUser.page_permission_labels) || {};
         }
 
+        function getPagePermissionGroups() {
+            return (currentUser && Array.isArray(currentUser.page_permission_groups) && currentUser.page_permission_groups.length)
+                ? currentUser.page_permission_groups
+                : [
+                    { key: 'home', title: '首页', page_keys: ['home'] },
+                    { key: 'shop_brand_management', title: '店铺管理', page_keys: ['shop_brand_management', 'amazon_account_health_management'] },
+                    { key: 'product_management', title: '产品管理', page_keys: ['product_management', 'fabric_management', 'feature_management', 'material_management', 'certification_management', 'order_product_management'] },
+                    { key: 'logistics_factory_management', title: '物流仓储管理', page_keys: ['logistics_factory_management', 'logistics_forwarder_management', 'logistics_warehouse_management', 'logistics_warehouse_inventory_management', 'logistics_in_transit_management', 'factory_stock_management', 'factory_wip_management', 'logistics_warehouse_dashboard'] },
+                    { key: 'gallery', title: '图片管理', page_keys: ['gallery'] },
+                    { key: 'sales_product_management', title: '销售管理', page_keys: ['sales_product_management', 'sales_product_performance_management', 'sales_order_registration_management', 'parent_management'] },
+                    { key: 'amazon_ad_adjustment_management', title: 'Amazon广告管理', page_keys: ['amazon_ad_adjustment_management', 'amazon_ad_keyword_management', 'amazon_ad_management', 'amazon_ad_subtype_management', 'amazon_ad_delivery_management', 'amazon_ad_product_management'] },
+                    { key: 'about', title: '关于', page_keys: ['about'] }
+                ];
+        }
+
+        function getPermissionGroupPageKeys(group) {
+            return Array.isArray(group && group.page_keys) ? group.page_keys.filter(key => key) : [];
+        }
+
         function buildDefaultPagePermissions() {
-            const labels = getPagePermissionLabels();
             const result = {};
-            pagePermissionOrder.forEach(key => {
-                if (labels[key]) result[key] = 1;
+            const groups = getPagePermissionGroups();
+            groups.forEach(group => {
+                getPermissionGroupPageKeys(group).forEach(key => {
+                    result[key] = 1;
+                });
             });
-            Object.keys(labels).forEach(key => {
+            Object.keys(getPagePermissionLabels()).forEach(key => {
                 if (!(key in result)) result[key] = 1;
             });
             return result;
@@ -757,16 +779,42 @@
             `;
         }
 
+        function buildPermissionGroupHtml(group, labels, permissions, options = {}) {
+            const pageKeys = getPermissionGroupPageKeys(group);
+            const moduleKey = group.key || '';
+            const childKeys = pageKeys.filter(key => key !== moduleKey);
+            const moduleChecked = !!permissions[moduleKey] || childKeys.some(key => !!permissions[key]);
+            const compactClass = options.compact ? ' is-compact' : '';
+            const pageItems = childKeys.map(key => `
+                <div class="permission-item permission-sub-item${compactClass}" data-module-key="${escapeHtml(group.key || '')}">
+                    <span class="permission-name">${escapeHtml(labels[key] || key)}</span>
+                    ${buildSwitchMarkup(!!permissions[key], `data-role="page_permission" data-module-key="${escapeHtml(group.key || '')}" data-page-key="${escapeHtml(key)}"`, !!options.disablePages || !moduleChecked)}
+                </div>
+            `).join('');
+            return `
+                <div class="permission-group-card${compactClass}" data-module-key="${escapeHtml(group.key || '')}">
+                    <div class="permission-group-head">
+                        <div class="permission-group-title-wrap">
+                            <div class="permission-group-title">${escapeHtml(group.title || group.key || '')}</div>
+                            <div class="permission-group-subtitle">${escapeHtml(childKeys.length ? `${childKeys.length} 个子页面` : '无子页面')}</div>
+                        </div>
+                        ${buildSwitchMarkup(moduleChecked, `data-role="module_permission" data-module-key="${escapeHtml(group.key || '')}" data-page-key="${escapeHtml(moduleKey)}"`, !!options.disablePages)}
+                    </div>
+                    <div class="permission-group-pages${options.compact ? ' is-compact' : ''}">
+                        ${pageItems}
+                    </div>
+                </div>
+            `;
+        }
+
         function buildPermissionEditorHtml(scopeId, payload, options = {}) {
             const labels = getPagePermissionLabels();
             const permissions = normalizePagePermissions((payload && payload.page_permissions) || payload || {});
-            const orderedKeys = pagePermissionOrder.filter(key => labels[key]).concat(
-                Object.keys(labels).filter(key => !pagePermissionOrder.includes(key))
-            );
             const compactClass = options.compact ? ' is-compact' : '';
             const gridClass = options.gridClass ? ` ${options.gridClass}` : '';
             const adminDisabled = !!options.disableAdmin;
             const grantDisabled = !!options.disableGrant || !canEditAdminGrant();
+            const groups = getPagePermissionGroups();
             return `
                 <div class="permission-block permission-inline-meta" data-permission-editor="${escapeHtml(scopeId)}">
                     ${options.hideFlags ? '' : `
@@ -780,13 +828,8 @@
                             ${buildSwitchMarkup(!!(payload && payload.can_grant_admin), 'data-role="can_grant_admin"', grantDisabled)}
                         </span>
                     </div>`}
-                    <div class="permission-grid${compactClass}${gridClass}">
-                        ${orderedKeys.map(key => `
-                            <div class="permission-item">
-                                <span class="permission-name">${escapeHtml(labels[key] || key)}</span>
-                                ${buildSwitchMarkup(!!permissions[key], `data-role="page_permission" data-page-key="${escapeHtml(key)}"`, !!options.disablePages)}
-                            </div>
-                        `).join('')}
+                    <div class="permission-groups${compactClass}${gridClass}">
+                        ${groups.map(group => buildPermissionGroupHtml(group, labels, permissions, options)).join('')}
                     </div>
                 </div>
             `;
@@ -808,6 +851,9 @@
             if (!permissionRoot) {
                 return { is_admin: 0, can_grant_admin: 0, page_permissions: buildDefaultPagePermissions() };
             }
+            permissionRoot.querySelectorAll('[data-role="module_permission"]').forEach(input => {
+                pagePermissions[input.dataset.pageKey] = input.checked ? 1 : 0;
+            });
             permissionRoot.querySelectorAll('[data-role="page_permission"]').forEach(input => {
                 pagePermissions[input.dataset.pageKey] = input.checked ? 1 : 0;
             });
@@ -827,6 +873,7 @@
             if (!controlRoot) return;
             const adminInput = controlRoot.querySelector('[data-role="is_admin"]');
             const grantInput = controlRoot.querySelector('[data-role="can_grant_admin"]');
+            const groupInputs = Array.from(controlRoot.querySelectorAll('[data-role="module_permission"]'));
             if (grantInput && grantInput.checked && adminInput && !adminInput.checked) {
                 adminInput.checked = true;
             }
@@ -836,6 +883,14 @@
             if (grantInput) {
                 grantInput.disabled = !canEditAdminGrant();
             }
+            groupInputs.forEach(input => {
+                const moduleKey = input.dataset.moduleKey || '';
+                const groupCard = input.closest('.permission-group-card');
+                const children = groupCard ? Array.from(groupCard.querySelectorAll('[data-role="page_permission"]')) : [];
+                children.forEach(child => {
+                    child.disabled = !input.checked;
+                });
+            });
         }
 
         function formatDateKey(year, month, day) {
@@ -926,6 +981,9 @@
                 document.getElementById('todoModalPriority').value = 2;
                 document.getElementById('todoModalIsRecurring').checked = false;
                 document.getElementById('todoModalDetail').value = '';
+                setTodoSelectedAssigneeIds([]);
+                const assigneeSearch = document.getElementById('todoModalAssigneeSearch');
+                if (assigneeSearch) assigneeSearch.value = '';
                 document.getElementById('assigneeSelected').innerHTML = '';
             } else if (action === 'edit' && todoId) {
                 document.getElementById('todoModalTitle').textContent = '编辑待办';
@@ -954,24 +1012,77 @@
             dropdown.classList.remove('expanded');
         }
 
+        function selectAssigneeById(assigneeId) {
+            const id = parseInt(assigneeId, 10);
+            if (!Number.isFinite(id) || id <= 0) return;
+            const selected = new Set(getTodoSelectedAssigneeIds());
+            selected.add(id);
+            setTodoSelectedAssigneeIds(Array.from(selected));
+            updateAssigneeSelected();
+            renderAssigneeOptions(document.getElementById('todoModalAssigneeSearch') ? document.getElementById('todoModalAssigneeSearch').value : '');
+        }
+
+        function removeAssigneeById(assigneeId) {
+            const id = parseInt(assigneeId, 10);
+            const selected = getTodoSelectedAssigneeIds().filter(value => Number(value) !== id);
+            setTodoSelectedAssigneeIds(selected);
+            updateAssigneeSelected();
+            renderAssigneeOptions(document.getElementById('todoModalAssigneeSearch') ? document.getElementById('todoModalAssigneeSearch').value : '');
+        }
+
+        function getTodoSelectedAssigneeIds() {
+            if (!Array.isArray(window.todoSelectedAssigneeIds)) {
+                window.todoSelectedAssigneeIds = [];
+            }
+            return window.todoSelectedAssigneeIds;
+        }
+
+        function setTodoSelectedAssigneeIds(ids) {
+            window.todoSelectedAssigneeIds = Array.from(new Set((ids || []).map(id => parseInt(id, 10)).filter(id => Number.isFinite(id) && id > 0)));
+        }
+
         function updateAssigneeSelected() {
             const selectedWrap = document.getElementById('assigneeSelected');
             const toggleText = document.querySelector('#assigneeToggle .feature-category-add-text');
             if (!selectedWrap) return;
-            const checked = Array.from(document.querySelectorAll('#todoModalAssigneeList input[type="checkbox"]:checked'));
+            const selectedIds = getTodoSelectedAssigneeIds();
+            const options = window.todoAssigneeOptions || [];
             selectedWrap.innerHTML = '';
-            if (checked.length === 0) {
+            if (selectedIds.length === 0) {
                 selectedWrap.innerHTML = '<span class="assignee-empty">未选择负责人</span>';
                 if (toggleText) toggleText.textContent = '选择负责人';
                 return;
             }
-            checked.forEach(cb => {
+            selectedIds.forEach(id => {
+                const option = options.find(item => Number(item.id) === Number(id));
+                const displayName = option ? option.displayName : `用户${id}`;
                 const tag = document.createElement('span');
                 tag.className = 'feature-category-chip';
-                tag.innerHTML = `<span>${cb.dataset.name || cb.value}</span><button type="button" class="feature-category-remove" data-remove-id="${cb.value}">×</button>`;
+                tag.innerHTML = `<span>${escapeHtml(displayName)}</span><button type="button" class="feature-category-remove" data-remove-id="${id}">×</button>`;
                 selectedWrap.appendChild(tag);
             });
-            if (toggleText) toggleText.textContent = `已选 ${checked.length} 人`;
+            if (toggleText) toggleText.textContent = `已选 ${selectedIds.length} 人`;
+        }
+
+        function renderAssigneeOptions(keyword = '') {
+            const list = document.getElementById('todoModalAssigneeList');
+            if (!list) return;
+            const selectedIds = new Set(getTodoSelectedAssigneeIds().map(id => String(id)));
+            const query = String(keyword || '').trim().toLowerCase();
+            const options = (window.todoAssigneeOptions || []).filter(item => {
+                if (selectedIds.has(String(item.id))) return false;
+                if (!query) return true;
+                return item.displayName.toLowerCase().includes(query) || String(item.username || '').toLowerCase().includes(query);
+            });
+            if (options.length === 0) {
+                list.innerHTML = '<div class="feature-category-empty">暂无可选负责人</div>';
+                return;
+            }
+            list.innerHTML = options.map(item => `
+                <button type="button" class="feature-category-option assignee-option" data-assignee-id="${item.id}" data-assignee-name="${escapeHtml(item.displayName)}">
+                    <span>${escapeHtml(item.displayName)}</span>
+                </button>
+            `).join('');
         }
 
         async function loadAssigneeCheckboxes() {
@@ -980,20 +1091,12 @@
                 const data = await resp.json();
                 const list = document.getElementById('todoModalAssigneeList');
                 if (!list) return;
-                list.innerHTML = '';
-                
-                if (data.items && Array.isArray(data.items)) {
-                    data.items.forEach(emp => {
-                        const li = document.createElement('label');
-                        li.className = 'feature-category-option assignee-option';
-                        const displayName = emp.name || emp.username || `用户${emp.id}`;
-                        li.innerHTML = `
-                            <input type="checkbox" value="${emp.id}" data-name="${displayName}">
-                            <span>${displayName}</span>
-                        `;
-                        list.appendChild(li);
-                    });
-                }
+                window.todoAssigneeOptions = Array.isArray(data.items) ? data.items.map(emp => ({
+                    id: emp.id,
+                    username: emp.username || '',
+                    displayName: emp.name || emp.username || `用户${emp.id}`
+                })) : [];
+                renderAssigneeOptions(document.getElementById('todoModalAssigneeSearch') ? document.getElementById('todoModalAssigneeSearch').value : '');
                 updateAssigneeSelected();
             } catch (err) {
                 console.error('加载任务人失败:', err);
@@ -1011,10 +1114,7 @@
             const priority = parseInt(document.getElementById('todoModalPriority').value, 10);
             
             // 收集选中的分配人
-            const assignee_ids = [];
-            document.querySelectorAll('#todoModalAssigneeList input[type="checkbox"]:checked').forEach(cb => {
-                assignee_ids.push(parseInt(cb.value, 10));
-            });
+            const assignee_ids = getTodoSelectedAssigneeIds();
             
             if (!title || !start_date) {
                 alert('请填写事项标题和开始日期');
@@ -1531,9 +1631,20 @@
                 });
             }
 
+            const assigneeSearch = document.getElementById('todoModalAssigneeSearch');
+            if (assigneeSearch) {
+                assigneeSearch.addEventListener('input', () => {
+                    renderAssigneeOptions(assigneeSearch.value);
+                });
+            }
+
             const assigneeList = document.getElementById('todoModalAssigneeList');
             if (assigneeList) {
-                assigneeList.addEventListener('change', updateAssigneeSelected);
+                assigneeList.addEventListener('click', e => {
+                    const option = e.target.closest('[data-assignee-id]');
+                    if (!option) return;
+                    selectAssigneeById(option.dataset.assigneeId);
+                });
             }
 
             const assigneeSelected = document.getElementById('assigneeSelected');
@@ -1541,11 +1652,7 @@
                 assigneeSelected.addEventListener('click', e => {
                     const removeId = e.target.dataset.removeId;
                     if (!removeId) return;
-                    const cb = document.querySelector(`#todoModalAssigneeList input[value="${removeId}"]`);
-                    if (cb) {
-                        cb.checked = false;
-                        updateAssigneeSelected();
-                    }
+                    removeAssigneeById(removeId);
                 });
             }
 
@@ -1588,6 +1695,12 @@
                 pendingUsersTable.addEventListener('change', e => {
                     const row = e.target.closest('tr[data-pending-id]');
                     if (!row) return;
+                    if (e.target.matches('[data-role="module_permission"]')) {
+                        row.querySelectorAll('[data-role="page_permission"][data-module-key="' + (e.target.dataset.moduleKey || '') + '"]').forEach(child => {
+                            if (!e.target.checked) child.checked = false;
+                            child.disabled = !e.target.checked;
+                        });
+                    }
                     syncPermissionEditor(row);
                 });
                 pendingUsersTable.addEventListener('click', e => {
@@ -1721,9 +1834,15 @@
             const employeeTable = document.getElementById('employeeTable');
             if (employeeTable) {
                 employeeTable.addEventListener('change', e => {
-                if (!e.target.matches('[data-role="is_admin"], [data-role="can_grant_admin"], [data-role="page_permission"]')) return;
+                if (!e.target.matches('[data-role="is_admin"], [data-role="can_grant_admin"], [data-role="page_permission"], [data-role="module_permission"]')) return;
                 const row = e.target.closest('tr[data-employee-id]');
                 if (!row) return;
+                if (e.target.matches('[data-role="module_permission"]')) {
+                    row.querySelectorAll('[data-role="page_permission"][data-module-key="' + (e.target.dataset.moduleKey || '') + '"]').forEach(child => {
+                        if (!e.target.checked) child.checked = false;
+                        child.disabled = !e.target.checked;
+                    });
+                }
                 syncPermissionEditor(row);
                 const payload = collectPermissionEditorState(row);
                 fetch('/api/employee', {

@@ -75,39 +75,49 @@ class WSGIApp(
         self.PAGE_PERMISSION_KEYS = self._build_page_permission_keys()
         label_map = {
             'home': '首页',
-            'about': '关于',
-            'shop_brand_management': '店铺品牌管理',
-            'amazon_account_health_management': '账号健康管理',
-            'amazon_ad_management': '广告管理',
-            'amazon_ad_subtype_management': '广告分类管理',
+            'about': '关于 - 我的网页',
+            'shop_brand_management': '店铺/品牌管理',
+            'amazon_account_health_management': 'Amazon账户健康',
+            'amazon_ad_management': '广告信息管理',
+            'amazon_ad_subtype_management': '广告信息分类管理',
             'amazon_ad_delivery_management': '广告投放管理',
-            'amazon_ad_product_management': '广告产品管理',
-            'amazon_ad_adjustment_management': '广告调价管理',
-            'amazon_ad_keyword_management': '广告关键词管理',
-            'logistics_factory_management': '物流工厂管理',
+            'amazon_ad_product_management': '广告商品管理',
+            'amazon_ad_adjustment_management': '广告调整',
+            'amazon_ad_keyword_management': 'Amazon关键词管理',
+            'logistics_factory_management': '工厂管理',
             'logistics_forwarder_management': '货代管理',
-            'logistics_warehouse_management': '仓库管理',
-            'logistics_warehouse_inventory_management': '仓库库存管理',
-            'logistics_in_transit_management': '在途管理',
+            'logistics_warehouse_management': '海外仓仓库管理',
+            'logistics_warehouse_inventory_management': '海外仓库存管理',
+            'logistics_in_transit_management': '在途物流库存管理',
             'logistics_warehouse_dashboard': '仓储看板',
-            'factory_stock_management': '工厂备货管理',
-            'factory_wip_management': '工厂在制管理',
-            'product_management': '产品管理',
+            'factory_stock_management': '工厂在库库存管理',
+            'factory_wip_management': '工厂在制库存管理',
+            'product_management': '品类/货号管理',
             'fabric_management': '面料管理',
-            'feature_management': '特征管理',
+            'feature_management': '卖点管理',
             'material_management': '材料管理',
             'certification_management': '认证管理',
             'order_product_management': '下单产品管理',
             'sales_product_management': '销售产品管理',
             'sales_product_performance_management': '产品表现看板',
-            'sales_order_registration_management': '销售订单登记',
+            'sales_order_registration_management': '订单登记管理',
             'parent_management': '父体管理',
-            'gallery': '图库'
+            'gallery': '图片管理'
         }
         self.PAGE_PERMISSION_LABELS = {
             key: label_map.get(key, key.replace('_', ' '))
             for key in self.PAGE_PERMISSION_KEYS
         }
+        self.PAGE_PERMISSION_GROUPS = [
+            {'key': 'home', 'title': '首页', 'page_keys': ['home']},
+            {'key': 'shop_brand_management', 'title': '店铺管理', 'page_keys': ['shop_brand_management', 'amazon_account_health_management']},
+            {'key': 'product_management', 'title': '产品管理', 'page_keys': ['product_management', 'fabric_management', 'feature_management', 'material_management', 'certification_management', 'order_product_management']},
+            {'key': 'logistics_factory_management', 'title': '物流仓储管理', 'page_keys': ['logistics_factory_management', 'logistics_forwarder_management', 'logistics_warehouse_management', 'logistics_warehouse_inventory_management', 'logistics_in_transit_management', 'factory_stock_management', 'factory_wip_management', 'logistics_warehouse_dashboard']},
+            {'key': 'gallery', 'title': '图片管理', 'page_keys': ['gallery']},
+            {'key': 'sales_product_management', 'title': '销售管理', 'page_keys': ['sales_product_management', 'sales_product_performance_management', 'sales_order_registration_management', 'parent_management']},
+            {'key': 'amazon_ad_adjustment_management', 'title': 'Amazon广告管理', 'page_keys': ['amazon_ad_adjustment_management', 'amazon_ad_keyword_management', 'amazon_ad_management', 'amazon_ad_subtype_management', 'amazon_ad_delivery_management', 'amazon_ad_product_management']},
+            {'key': 'about', 'title': '关于', 'page_keys': ['about']}
+        ]
 
     @staticmethod
     def _build_page_permission_keys():

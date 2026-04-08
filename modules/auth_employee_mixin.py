@@ -206,7 +206,8 @@ class AuthEmployeeMixin:
                                 'is_admin': row['is_admin'],
                                 'can_grant_admin': row.get('can_grant_admin', 0),
                                 'page_permissions': page_permissions,
-                                'page_permission_labels': getattr(self, 'PAGE_PERMISSION_LABELS', {})
+                                'page_permission_labels': getattr(self, 'PAGE_PERMISSION_LABELS', {}),
+                                'page_permission_groups': getattr(self, 'PAGE_PERMISSION_GROUPS', [])
                             }, start_response)
                         return self.send_json({'status': 'error', 'message': '用户信息未找到'}, start_response)
 
