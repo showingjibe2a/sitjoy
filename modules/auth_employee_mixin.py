@@ -105,6 +105,33 @@ class AuthEmployeeMixin:
             print(f"Session DB write failed: {type(e).__name__}: {e}")
         return session_id
 
+    def _parse_factory_scope_payload(self, data):
+        mode_raw = str((data or {}).get('factory_scope_mode') or 'all').strip().lower()
+        mode = 'custom' if mode_raw == 'custom' else 'all'
+        ids_raw = (data or {}).get('factory_scope_ids') or []
+        if not isinstance(ids_raw, list):
+            ids_raw = []
+        ids = []
+        for value in ids_raw:
+            try:
+                number = int(value)
+            except Exception:
+                number = 0
+            if number > 0:
+                ids.append(number)
+        return mode, sorted(set(ids))
+
+    def _replace_user_factory_scopes(self, conn, user_id, scope_mode, factory_ids):
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM user_factory_scopes WHERE user_id=%s", (user_id,))
+            if scope_mode != 'custom':
+                return
+            for factory_id in sorted(set(factory_ids or [])):
+                cur.execute(
+                    "INSERT INTO user_factory_scopes (user_id, factory_id) VALUES (%s, %s)",
+                    (user_id, factory_id)
+                )
+
     def handle_auth_api(self, environ, method, start_response):
         try:
             query_string = environ.get('QUERY_STRING', '')
@@ -389,8 +416,28 @@ class AuthEmployeeMixin:
                                 """
                             )
                         rows = cur.fetchall() or []
+                        user_ids = [int(r.get('id')) for r in rows if r.get('id')]
+                        scope_map = {}
+                        if user_ids:
+                            try:
+                                placeholders = ','.join(['%s'] * len(user_ids))
+                                cur.execute(
+                                    f"SELECT user_id, factory_id FROM user_factory_scopes WHERE user_id IN ({placeholders}) ORDER BY user_id ASC, factory_id ASC",
+                                    tuple(user_ids)
+                                )
+                                for rel in (cur.fetchall() or []):
+                                    uid = int(rel.get('user_id') or 0)
+                                    fid = int(rel.get('factory_id') or 0)
+                                    if uid > 0 and fid > 0:
+                                        scope_map.setdefault(uid, []).append(fid)
+                            except Exception as e:
+                                message = str(e).lower()
+                                if not ("doesn't exist" in message or 'does not exist' in message or 'unknown table' in message):
+                                    raise
                 items = []
                 for row in rows:
+                    uid = int(row.get('id') or 0)
+                    factory_scope_ids = sorted(set(scope_map.get(uid, [])))
                     items.append({
                         'id': row['id'],
                         'username': row['username'],
@@ -401,6 +448,8 @@ class AuthEmployeeMixin:
                         'can_grant_admin': int(row.get('can_grant_admin') or 0),
                         'is_approved': int(row.get('is_approved') or 0),
                         'page_permissions': self._normalize_page_permissions(row.get('page_permissions')),
+                        'factory_scope_mode': 'custom' if factory_scope_ids else 'all',
+                        'factory_scope_ids': factory_scope_ids,
                         'created_at': row.get('created_at')
                     })
                 return self.send_json({'status': 'success', 'items': items}, start_response)
@@ -469,6 +518,13 @@ class AuthEmployeeMixin:
                 birthday = self._parse_date_str(birthday_raw) if birthday_raw else None
                 target_is_admin = self._parse_int(data.get('is_admin'))
                 target_can_grant_admin = self._parse_int(data.get('can_grant_admin'))
+                has_factory_scope_payload = ('factory_scope_mode' in data) or ('factory_scope_ids' in data)
+                factory_scope_mode, factory_scope_ids = self._parse_factory_scope_payload(data)
+
+                if has_factory_scope_payload and not user_is_admin:
+                    return self.send_json({'status': 'error', 'message': '仅管理员可修改工厂范围权限'}, start_response)
+                if has_factory_scope_payload and factory_scope_mode == 'custom' and not factory_scope_ids:
+                    return self.send_json({'status': 'error', 'message': '自定义工厂范围至少选择一个工厂'}, start_response)
 
                 updates = []
                 params = []
@@ -509,10 +565,19 @@ class AuthEmployeeMixin:
                     params.append(1 if target_can_grant_admin else 0)
 
                 if not updates:
-                    return self.send_json({'status': 'error', 'message': '无可更新字段'}, start_response)
+                    if not has_factory_scope_payload:
+                        return self.send_json({'status': 'error', 'message': '无可更新字段'}, start_response)
 
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT id, is_admin, page_permissions FROM users WHERE id=%s",
+                            (item_id,)
+                        )
+                        target_row = cur.fetchone() or {}
+                        if not target_row:
+                            return self.send_json({'status': 'error', 'message': '用户不存在'}, start_response)
+
                         if 'username' in data:
                             cur.execute(
                                 "SELECT id FROM users WHERE username=%s AND id<>%s LIMIT 1",
@@ -520,11 +585,37 @@ class AuthEmployeeMixin:
                             )
                             if cur.fetchone():
                                 return self.send_json({'status': 'error', 'message': '账号已存在，请更换名称'}, start_response)
-                        params.append(item_id)
-                        cur.execute(
-                            f"UPDATE users SET {', '.join(updates)} WHERE id=%s",
-                            tuple(params)
-                        )
+
+                        # If factory scope is customized, default-disable factory master module for non-admin targets.
+                        effective_is_admin = int(target_is_admin if target_is_admin is not None else (target_row.get('is_admin') or 0))
+                        if has_factory_scope_payload and factory_scope_mode == 'custom' and effective_is_admin == 0:
+                            current_permissions = self._normalize_page_permissions(target_row.get('page_permissions'))
+                            if 'page_permissions' in data:
+                                current_permissions = self._normalize_page_permissions(data.get('page_permissions'))
+                            current_permissions['logistics_factory_management'] = 0
+                            serialized_permissions = self._serialize_page_permissions(current_permissions)
+                            if 'page_permissions=%s' in updates:
+                                idx = updates.index('page_permissions=%s')
+                                params[idx] = serialized_permissions
+                            else:
+                                updates.append('page_permissions=%s')
+                                params.append(serialized_permissions)
+
+                        if updates:
+                            params.append(item_id)
+                            cur.execute(
+                                f"UPDATE users SET {', '.join(updates)} WHERE id=%s",
+                                tuple(params)
+                            )
+
+                    if has_factory_scope_payload:
+                        try:
+                            self._replace_user_factory_scopes(conn, item_id, factory_scope_mode, factory_scope_ids)
+                        except Exception as e:
+                            message = str(e).lower()
+                            if "doesn't exist" in message or 'does not exist' in message or 'unknown table' in message:
+                                return self.send_json({'status': 'error', 'message': '缺少 user_factory_scopes 表，请先执行 SQL 脚本 20260408_01_user_factory_scopes.sql'}, start_response)
+                            raise
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':

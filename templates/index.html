@@ -670,6 +670,34 @@
                         <div id="employeeEditPermissionEditor"></div>
                     </div>
                 </div>
+                <div class="form-group pm-form-full">
+                    <div class="permission-panel">
+                        <h4 class="permission-panel-title">工厂数据范围</h4>
+                        <p class="permission-section-subtitle">默认可见全部工厂；切换为自定义后，仅可见选中的工厂及其关联 SKU。</p>
+                        <div class="pm-form" style="grid-template-columns: minmax(180px, 280px); margin-bottom: 0.5rem;">
+                            <div class="form-group" style="margin:0;">
+                                <label>范围模式</label>
+                                <select id="employeeEditFactoryScopeMode" data-universal-no-search="1">
+                                    <option value="all">全部工厂（默认）</option>
+                                    <option value="custom">仅选定工厂</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="employeeEditFactoryScopeCustomWrap" class="feature-category-picker is-multi-check" style="display:none;">
+                            <div class="feature-category-chips" id="employeeEditFactoryScopeSelected"></div>
+                            <div class="feature-category-dropdown" id="employeeEditFactoryScopeDropdown">
+                                <button type="button" class="feature-category-add" id="employeeEditFactoryScopeToggle">
+                                    <span class="feature-category-add-icon">+</span>
+                                    <span class="feature-category-add-text">选择工厂</span>
+                                </button>
+                                <div class="feature-category-menu" id="employeeEditFactoryScopeMenu">
+                                    <input type="text" id="employeeEditFactoryScopeSearch" class="universal-select-search" placeholder="搜索工厂">
+                                    <div class="feature-category-list" id="employeeEditFactoryScopeList"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </form>
             <div id="employeeEditHint" class="response" style="display:none; margin-top:0.75rem;"></div>
             <div class="pm-modal-actions">
@@ -1175,6 +1203,92 @@
             if (modal) modal.classList.remove('active');
         }
 
+        function getEmployeeEditFactoryScopeMode() {
+            const select = document.getElementById('employeeEditFactoryScopeMode');
+            return (select && select.value === 'custom') ? 'custom' : 'all';
+        }
+
+        function getEmployeeEditFactoryScopeIds() {
+            if (!Array.isArray(window.employeeEditFactoryScopeSelectedIds)) {
+                window.employeeEditFactoryScopeSelectedIds = [];
+            }
+            return window.employeeEditFactoryScopeSelectedIds;
+        }
+
+        function setEmployeeEditFactoryScopeIds(ids) {
+            window.employeeEditFactoryScopeSelectedIds = Array.from(new Set((ids || []).map(id => parseInt(id, 10)).filter(id => Number.isFinite(id) && id > 0)));
+        }
+
+        function updateEmployeeEditFactoryScopeSelected() {
+            const selectedWrap = document.getElementById('employeeEditFactoryScopeSelected');
+            const toggleText = document.querySelector('#employeeEditFactoryScopeToggle .feature-category-add-text');
+            if (!selectedWrap) return;
+            const selectedIds = getEmployeeEditFactoryScopeIds();
+            const options = window.employeeEditFactoryScopeOptions || [];
+            selectedWrap.innerHTML = '';
+            if (selectedIds.length === 0) {
+                selectedWrap.innerHTML = '<span class="assignee-empty">未选择工厂</span>';
+                if (toggleText) toggleText.textContent = '选择工厂';
+                return;
+            }
+            selectedIds.forEach(id => {
+                const option = options.find(item => Number(item.id) === Number(id));
+                const displayName = option ? option.factory_name : `工厂${id}`;
+                const tag = document.createElement('span');
+                tag.className = 'feature-category-chip';
+                tag.innerHTML = `<span>${escapeHtml(displayName)}</span><button type="button" class="feature-category-remove" data-remove-factory-id="${id}">×</button>`;
+                selectedWrap.appendChild(tag);
+            });
+            if (toggleText) toggleText.textContent = `已选 ${selectedIds.length} 个工厂`;
+        }
+
+        function renderEmployeeEditFactoryScopeOptions(keyword = '') {
+            const list = document.getElementById('employeeEditFactoryScopeList');
+            if (!list) return;
+            const selectedIds = new Set(getEmployeeEditFactoryScopeIds().map(id => String(id)));
+            const query = String(keyword || '').trim().toLowerCase();
+            const options = (window.employeeEditFactoryScopeOptions || []).filter(item => {
+                if (selectedIds.has(String(item.id))) return false;
+                const name = String(item.factory_name || '').toLowerCase();
+                return !query || name.includes(query);
+            });
+            if (options.length === 0) {
+                list.innerHTML = '<div class="feature-category-empty">暂无可选工厂</div>';
+                return;
+            }
+            list.innerHTML = options.map(item => `
+                <button type="button" class="feature-category-option" data-factory-id="${item.id}">
+                    <span>${escapeHtml(item.factory_name || `工厂${item.id}`)}</span>
+                </button>
+            `).join('');
+        }
+
+        function syncEmployeeEditFactoryScopeMode() {
+            const mode = getEmployeeEditFactoryScopeMode();
+            const wrap = document.getElementById('employeeEditFactoryScopeCustomWrap');
+            if (wrap) wrap.style.display = mode === 'custom' ? '' : 'none';
+        }
+
+        function closeEmployeeEditFactoryScopeDropdown() {
+            const dropdown = document.getElementById('employeeEditFactoryScopeDropdown');
+            if (!dropdown) return;
+            dropdown.classList.remove('open');
+            dropdown.classList.remove('expanded');
+        }
+
+        async function loadEmployeeEditFactoryScopeOptions() {
+            try {
+                const resp = await fetch('/api/logistics-factory', { credentials: 'include' });
+                const data = await resp.json();
+                window.employeeEditFactoryScopeOptions = Array.isArray(data.items) ? data.items : [];
+                renderEmployeeEditFactoryScopeOptions(document.getElementById('employeeEditFactoryScopeSearch') ? document.getElementById('employeeEditFactoryScopeSearch').value : '');
+                updateEmployeeEditFactoryScopeSelected();
+            } catch (err) {
+                window.employeeEditFactoryScopeOptions = [];
+                renderEmployeeEditFactoryScopeOptions('');
+            }
+        }
+
         function openEmployeeEditModal(data) {
             document.getElementById('employeeEditId').value = data.id || '';
             document.getElementById('employeeEditUsername').value = data.username || '';
@@ -1186,6 +1300,15 @@
                 can_grant_admin: data.can_grant_admin,
                 page_permissions: data.page_permissions
             });
+            const modeSelect = document.getElementById('employeeEditFactoryScopeMode');
+            if (modeSelect) {
+                modeSelect.value = data.factory_scope_mode === 'custom' ? 'custom' : 'all';
+            }
+            setEmployeeEditFactoryScopeIds(data.factory_scope_mode === 'custom' ? (data.factory_scope_ids || []) : []);
+            const searchInput = document.getElementById('employeeEditFactoryScopeSearch');
+            if (searchInput) searchInput.value = '';
+            syncEmployeeEditFactoryScopeMode();
+            loadEmployeeEditFactoryScopeOptions();
             resetModalHint('employeeEditHint');
             const modal = document.getElementById('employeeEditModal');
             if (modal) modal.classList.add('active');
@@ -1661,6 +1784,59 @@
                 });
             }
 
+            const employeeEditFactoryScopeMode = document.getElementById('employeeEditFactoryScopeMode');
+            if (employeeEditFactoryScopeMode) {
+                employeeEditFactoryScopeMode.addEventListener('change', () => {
+                    syncEmployeeEditFactoryScopeMode();
+                    closeEmployeeEditFactoryScopeDropdown();
+                });
+            }
+
+            const employeeEditFactoryScopeToggle = document.getElementById('employeeEditFactoryScopeToggle');
+            if (employeeEditFactoryScopeToggle) {
+                employeeEditFactoryScopeToggle.addEventListener('click', e => {
+                    e.stopPropagation();
+                    if (getEmployeeEditFactoryScopeMode() !== 'custom') return;
+                    const dropdown = document.getElementById('employeeEditFactoryScopeDropdown');
+                    if (!dropdown) return;
+                    dropdown.classList.toggle('open');
+                    dropdown.classList.toggle('expanded');
+                });
+            }
+
+            const employeeEditFactoryScopeSearch = document.getElementById('employeeEditFactoryScopeSearch');
+            if (employeeEditFactoryScopeSearch) {
+                employeeEditFactoryScopeSearch.addEventListener('input', () => {
+                    renderEmployeeEditFactoryScopeOptions(employeeEditFactoryScopeSearch.value);
+                });
+            }
+
+            const employeeEditFactoryScopeList = document.getElementById('employeeEditFactoryScopeList');
+            if (employeeEditFactoryScopeList) {
+                employeeEditFactoryScopeList.addEventListener('click', e => {
+                    const option = e.target.closest('[data-factory-id]');
+                    if (!option) return;
+                    const id = parseInt(option.dataset.factoryId, 10);
+                    if (!Number.isFinite(id) || id <= 0) return;
+                    const selected = new Set(getEmployeeEditFactoryScopeIds());
+                    selected.add(id);
+                    setEmployeeEditFactoryScopeIds(Array.from(selected));
+                    updateEmployeeEditFactoryScopeSelected();
+                    renderEmployeeEditFactoryScopeOptions(employeeEditFactoryScopeSearch ? employeeEditFactoryScopeSearch.value : '');
+                });
+            }
+
+            const employeeEditFactoryScopeSelected = document.getElementById('employeeEditFactoryScopeSelected');
+            if (employeeEditFactoryScopeSelected) {
+                employeeEditFactoryScopeSelected.addEventListener('click', e => {
+                    const removeId = parseInt(e.target.dataset.removeFactoryId || '0', 10);
+                    if (!removeId) return;
+                    setEmployeeEditFactoryScopeIds(getEmployeeEditFactoryScopeIds().filter(id => id !== removeId));
+                    updateEmployeeEditFactoryScopeSelected();
+                    renderEmployeeEditFactoryScopeOptions(employeeEditFactoryScopeSearch ? employeeEditFactoryScopeSearch.value : '');
+                });
+            }
+
             const todoList = document.getElementById('todoList');
             if (todoList) {
                 todoList.addEventListener('click', e => {
@@ -1797,6 +1973,12 @@
                     return;
                 }
                 const permissionState = collectPermissionEditorState('employeeEditPermissionEditor');
+                const factoryScopeMode = getEmployeeEditFactoryScopeMode();
+                const factoryScopeIds = factoryScopeMode === 'custom' ? getEmployeeEditFactoryScopeIds() : [];
+                if (factoryScopeMode === 'custom' && factoryScopeIds.length === 0) {
+                    showModalHint('employeeEditHint', '自定义工厂范围至少选择一个工厂', true);
+                    return;
+                }
                 const payload = {
                     id: parseInt(id, 10),
                     username: document.getElementById('employeeEditUsername').value.trim(),
@@ -1805,7 +1987,9 @@
                     phone: document.getElementById('employeeEditPhone').value.trim(),
                     is_admin: permissionState.is_admin,
                     can_grant_admin: permissionState.can_grant_admin,
-                    page_permissions: permissionState.page_permissions
+                    page_permissions: permissionState.page_permissions,
+                    factory_scope_mode: factoryScopeMode,
+                    factory_scope_ids: factoryScopeIds
                 };
                 if (!payload.username) {
                     showModalHint('employeeEditHint', '账号不能为空', true);
@@ -1942,9 +2126,12 @@
 
             document.addEventListener('click', e => {
                 const dropdown = document.getElementById('assigneeDropdown');
-                if (!dropdown) return;
-                if (!dropdown.contains(e.target)) {
+                const employeeFactoryDropdown = document.getElementById('employeeEditFactoryScopeDropdown');
+                if (dropdown && !dropdown.contains(e.target)) {
                     closeAssigneeDropdown();
+                }
+                if (employeeFactoryDropdown && !employeeFactoryDropdown.contains(e.target)) {
+                    closeEmployeeEditFactoryScopeDropdown();
                 }
             });
 

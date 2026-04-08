@@ -123,7 +123,8 @@ class PagePermissionMixin:
                 value = 0
             if value > 0:
                 ids.append(value)
-        return sorted(set(ids))
+        scoped = sorted(set(ids))
+        return scoped if scoped else None
 
     def _factory_scope_clause(self, column_sql, user_id, prefix='AND'):
         scope_ids = self._get_user_factory_scope_ids(user_id)
@@ -143,6 +144,58 @@ class PagePermissionMixin:
         except Exception:
             target = 0
         return target > 0 and target in set(scope_ids)
+
+    def _get_linked_order_product_ids(self, factory_ids=None):
+        """Return order_product ids linked to factories via mapping table.
+
+        - None: mapping table missing or no mapping rows (unrestricted)
+        - []: mapping table exists but no sku linked for requested factories
+        - [id, ...]: restricted sku ids
+        """
+        try:
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT COUNT(1) AS c FROM order_product_factory_links")
+                    count_row = cur.fetchone() or {}
+                    total = int(count_row.get('c') or 0)
+                    if total <= 0:
+                        return None
+                    if factory_ids is None:
+                        cur.execute("SELECT DISTINCT order_product_id FROM order_product_factory_links")
+                    else:
+                        valid_ids = [int(v) for v in (factory_ids or []) if int(v or 0) > 0]
+                        if not valid_ids:
+                            return []
+                        placeholders = ','.join(['%s'] * len(valid_ids))
+                        cur.execute(
+                            f"SELECT DISTINCT order_product_id FROM order_product_factory_links WHERE factory_id IN ({placeholders})",
+                            tuple(valid_ids)
+                        )
+                    rows = cur.fetchall() or []
+        except Exception as e:
+            message = str(e).lower()
+            if "doesn't exist" in message or 'does not exist' in message or 'unknown table' in message:
+                return None
+            raise
+        ids = []
+        for row in rows:
+            try:
+                value = int(row.get('order_product_id') or 0)
+            except Exception:
+                value = 0
+            if value > 0:
+                ids.append(value)
+        return sorted(set(ids))
+
+    def _order_product_allowed_for_factory(self, order_product_id, factory_id):
+        linked = self._get_linked_order_product_ids([factory_id])
+        if linked is None:
+            return True
+        try:
+            target = int(order_product_id or 0)
+        except Exception:
+            target = 0
+        return target > 0 and target in set(linked)
 
 
 

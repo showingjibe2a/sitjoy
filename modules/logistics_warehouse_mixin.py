@@ -43,23 +43,15 @@ class LogisticsWarehouseMixin:
                                 factory_params
                             )
                             factories = cur.fetchall() or []
-                            if scope_ids is None:
+                            sku_scope_ids = self._get_linked_order_product_ids(scope_ids)
+                            if sku_scope_ids is None:
                                 cur.execute("SELECT id, sku FROM order_products ORDER BY sku ASC")
                                 order_products = cur.fetchall() or []
-                            elif scope_ids:
-                                placeholders = ','.join(['%s'] * len(scope_ids))
+                            elif sku_scope_ids:
+                                placeholders = ','.join(['%s'] * len(sku_scope_ids))
                                 cur.execute(
-                                    f"""
-                                    SELECT DISTINCT op.id, op.sku
-                                    FROM order_products op
-                                    JOIN (
-                                        SELECT order_product_id FROM factory_stock_inventory WHERE factory_id IN ({placeholders})
-                                        UNION
-                                        SELECT order_product_id FROM factory_wip_inventory WHERE factory_id IN ({placeholders})
-                                    ) x ON x.order_product_id = op.id
-                                    ORDER BY op.sku ASC
-                                    """,
-                                    tuple(scope_ids) + tuple(scope_ids)
+                                    f"SELECT id, sku FROM order_products WHERE id IN ({placeholders}) ORDER BY sku ASC",
+                                    tuple(sku_scope_ids)
                                 )
                                 order_products = cur.fetchall() or []
                             else:
@@ -107,6 +99,8 @@ class LogisticsWarehouseMixin:
                     return self.send_json({'status': 'error', 'message': '缺少 order_product_id 或 factory_id'}, start_response)
                 if not self._factory_scope_contains(user_id, factory_id):
                     return self.send_json({'status': 'error', 'message': '无权限操作该工厂数据'}, start_response)
+                if not self._order_product_allowed_for_factory(op_id, factory_id):
+                    return self.send_json({'status': 'error', 'message': '该 SKU 未关联到该工厂，不可写入'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
@@ -195,23 +189,15 @@ class LogisticsWarehouseMixin:
                                 factory_params
                             )
                             factories = cur.fetchall() or []
-                            if scope_ids is None:
+                            sku_scope_ids = self._get_linked_order_product_ids(scope_ids)
+                            if sku_scope_ids is None:
                                 cur.execute("SELECT id, sku FROM order_products ORDER BY sku ASC")
                                 order_products = cur.fetchall() or []
-                            elif scope_ids:
-                                placeholders = ','.join(['%s'] * len(scope_ids))
+                            elif sku_scope_ids:
+                                placeholders = ','.join(['%s'] * len(sku_scope_ids))
                                 cur.execute(
-                                    f"""
-                                    SELECT DISTINCT op.id, op.sku
-                                    FROM order_products op
-                                    JOIN (
-                                        SELECT order_product_id FROM factory_stock_inventory WHERE factory_id IN ({placeholders})
-                                        UNION
-                                        SELECT order_product_id FROM factory_wip_inventory WHERE factory_id IN ({placeholders})
-                                    ) x ON x.order_product_id = op.id
-                                    ORDER BY op.sku ASC
-                                    """,
-                                    tuple(scope_ids) + tuple(scope_ids)
+                                    f"SELECT id, sku FROM order_products WHERE id IN ({placeholders}) ORDER BY sku ASC",
+                                    tuple(sku_scope_ids)
                                 )
                                 order_products = cur.fetchall() or []
                             else:
@@ -270,6 +256,8 @@ class LogisticsWarehouseMixin:
                     return self.send_json({'status': 'error', 'message': '缺少 order_product_id 或 factory_id'}, start_response)
                 if not self._factory_scope_contains(user_id, factory_id):
                     return self.send_json({'status': 'error', 'message': '无权限操作该工厂数据'}, start_response)
+                if not self._order_product_allowed_for_factory(op_id, factory_id):
+                    return self.send_json({'status': 'error', 'message': '该 SKU 未关联到该工厂，不可写入'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
@@ -332,6 +320,8 @@ class LogisticsWarehouseMixin:
                             factory_id = self._parse_int(existing.get('factory_id'))
                             if not order_product_id or not factory_id:
                                 return self.send_json({'status': 'error', 'message': '缺少下单SKU或工厂，无法新增到工厂在库'}, start_response)
+                            if not self._order_product_allowed_for_factory(order_product_id, factory_id):
+                                return self.send_json({'status': 'error', 'message': '该 SKU 未关联到该工厂，不可新增到工厂在库'}, start_response)
                             cur.execute(
                                 """
                                 INSERT INTO factory_stock_inventory (order_product_id, factory_id, quantity, notes)
@@ -416,23 +406,15 @@ class LogisticsWarehouseMixin:
                         factory_params
                     )
                     factories = [str(r.get('factory_name') or '').strip() for r in (cur.fetchall() or []) if r.get('factory_name')]
-                    if scope_ids is None:
+                    sku_scope_ids = self._get_linked_order_product_ids(scope_ids)
+                    if sku_scope_ids is None:
                         cur.execute("SELECT sku FROM order_products ORDER BY sku ASC")
                         skus = [str(r.get('sku') or '').strip() for r in (cur.fetchall() or []) if r.get('sku')]
-                    elif scope_ids:
-                        placeholders = ','.join(['%s'] * len(scope_ids))
+                    elif sku_scope_ids:
+                        placeholders = ','.join(['%s'] * len(sku_scope_ids))
                         cur.execute(
-                            f"""
-                            SELECT DISTINCT op.sku
-                            FROM order_products op
-                            JOIN (
-                                SELECT order_product_id FROM factory_stock_inventory WHERE factory_id IN ({placeholders})
-                                UNION
-                                SELECT order_product_id FROM factory_wip_inventory WHERE factory_id IN ({placeholders})
-                            ) x ON x.order_product_id = op.id
-                            ORDER BY op.sku ASC
-                            """,
-                            tuple(scope_ids) + tuple(scope_ids)
+                            f"SELECT sku FROM order_products WHERE id IN ({placeholders}) ORDER BY sku ASC",
+                            tuple(sku_scope_ids)
                         )
                         skus = [str(r.get('sku') or '').strip() for r in (cur.fetchall() or []) if r.get('sku')]
                     else:
@@ -514,22 +496,15 @@ class LogisticsWarehouseMixin:
 
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
-                    if scope_ids is None:
+                    sku_scope_ids = self._get_linked_order_product_ids(scope_ids)
+                    if sku_scope_ids is None:
                         cur.execute("SELECT id, sku FROM order_products")
                         sku_map = {str(r.get('sku') or '').strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
-                    elif scope_ids:
-                        placeholders = ','.join(['%s'] * len(scope_ids))
+                    elif sku_scope_ids:
+                        placeholders = ','.join(['%s'] * len(sku_scope_ids))
                         cur.execute(
-                            f"""
-                            SELECT DISTINCT op.id, op.sku
-                            FROM order_products op
-                            JOIN (
-                                SELECT order_product_id FROM factory_stock_inventory WHERE factory_id IN ({placeholders})
-                                UNION
-                                SELECT order_product_id FROM factory_wip_inventory WHERE factory_id IN ({placeholders})
-                            ) x ON x.order_product_id = op.id
-                            """,
-                            tuple(scope_ids) + tuple(scope_ids)
+                            f"SELECT id, sku FROM order_products WHERE id IN ({placeholders})",
+                            tuple(sku_scope_ids)
                         )
                         sku_map = {str(r.get('sku') or '').strip(): int(r.get('id')) for r in (cur.fetchall() or []) if r.get('id')}
                     else:
@@ -562,6 +537,8 @@ class LogisticsWarehouseMixin:
                                 raise ValueError(f'未找到SKU: {sku}')
                             if not factory_id:
                                 raise ValueError(f'未找到工厂: {factory_name}')
+                            if not self._order_product_allowed_for_factory(order_product_id, factory_id):
+                                raise ValueError(f'SKU {sku} 未关联工厂 {factory_name}')
                             quantity = max(0, int(quantity))
                             normalized_rows.append((order_product_id, factory_id, quantity, notes))
                             pair_keys.add((order_product_id, factory_id))
@@ -667,23 +644,15 @@ class LogisticsWarehouseMixin:
                         factory_params
                     )
                     factories = [str(r.get('factory_name') or '').strip() for r in (cur.fetchall() or []) if r.get('factory_name')]
-                    if scope_ids is None:
+                    sku_scope_ids = self._get_linked_order_product_ids(scope_ids)
+                    if sku_scope_ids is None:
                         cur.execute("SELECT sku FROM order_products ORDER BY sku ASC")
                         skus = [str(r.get('sku') or '').strip() for r in (cur.fetchall() or []) if r.get('sku')]
-                    elif scope_ids:
-                        placeholders = ','.join(['%s'] * len(scope_ids))
+                    elif sku_scope_ids:
+                        placeholders = ','.join(['%s'] * len(sku_scope_ids))
                         cur.execute(
-                            f"""
-                            SELECT DISTINCT op.sku
-                            FROM order_products op
-                            JOIN (
-                                SELECT order_product_id FROM factory_stock_inventory WHERE factory_id IN ({placeholders})
-                                UNION
-                                SELECT order_product_id FROM factory_wip_inventory WHERE factory_id IN ({placeholders})
-                            ) x ON x.order_product_id = op.id
-                            ORDER BY op.sku ASC
-                            """,
-                            tuple(scope_ids) + tuple(scope_ids)
+                            f"SELECT sku FROM order_products WHERE id IN ({placeholders}) ORDER BY sku ASC",
+                            tuple(sku_scope_ids)
                         )
                         skus = [str(r.get('sku') or '').strip() for r in (cur.fetchall() or []) if r.get('sku')]
                     else:
@@ -846,6 +815,8 @@ class LogisticsWarehouseMixin:
                             notes = str(get_cell(row, '备注') or '').strip() or None
                             if not sku or not factory_name or quantity is None:
                                 raise ValueError('SKU/工厂/数量不能为空，且数量需为整数')
+                            if not self._order_product_allowed_for_factory(order_product_id, factory_id):
+                                raise ValueError(f'SKU {sku} 未关联工厂 {factory_name}')
                             if is_completed and not actual_completion_date:
                                 actual_completion_date = datetime.now().strftime('%Y-%m-%d')
                             if not is_completed:
