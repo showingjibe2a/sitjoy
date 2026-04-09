@@ -10,6 +10,7 @@ try:
     from openpyxl import Workbook, load_workbook
     from openpyxl.styles import PatternFill, Font, Alignment
     from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.datavalidation import DataValidation
 except Exception as _openpyxl_import_error:
     Workbook = None
     load_workbook = None
@@ -17,6 +18,7 @@ except Exception as _openpyxl_import_error:
     Font = None
     Alignment = None
     get_column_letter = None
+    DataValidation = None
 
 class OrderManagementMixin:
     """订单/配送管理 API 处理器"""
@@ -177,18 +179,36 @@ class OrderManagementMixin:
 
                     with self._get_db_connection() as conn:
                         with conn.cursor() as cur:
-                            cur.executemany(
-                                """
-                                UPDATE order_products
-                                SET cost_usd=%s,
-                                    package_size_class=%s,
-                                    carton_qty=%s,
-                                    last_mile_avg_freight_usd=%s,
-                                    is_on_market=%s
-                                WHERE id=%s
-                                """,
-                                updates
-                            )
+                            row_map = {}
+                            for cost_usd, package_size_class, carton_qty, last_mile_avg_freight_usd, is_on_market, item_id in updates:
+                                row_map[int(item_id)] = {
+                                    'cost_usd': cost_usd,
+                                    'package_size_class': package_size_class,
+                                    'carton_qty': carton_qty,
+                                    'last_mile_avg_freight_usd': last_mile_avg_freight_usd,
+                                    'is_on_market': is_on_market,
+                                }
+
+                            ids = list(row_map.keys())
+                            case_params = []
+
+                            def build_case(field_name):
+                                parts = []
+                                for rid in ids:
+                                    parts.append('WHEN %s THEN %s')
+                                    case_params.extend([rid, row_map[rid][field_name]])
+                                return f"CASE id {' '.join(parts)} ELSE {field_name} END"
+
+                            set_clause = [
+                                f"cost_usd = {build_case('cost_usd')}",
+                                f"package_size_class = {build_case('package_size_class')}",
+                                f"carton_qty = {build_case('carton_qty')}",
+                                f"last_mile_avg_freight_usd = {build_case('last_mile_avg_freight_usd')}",
+                                f"is_on_market = {build_case('is_on_market')}",
+                            ]
+                            where_placeholders = ','.join(['%s'] * len(ids))
+                            sql = f"UPDATE order_products SET {', '.join(set_clause)} WHERE id IN ({where_placeholders})"
+                            cur.execute(sql, tuple(case_params + ids))
                     return self.send_json({'status': 'success', 'updated': len(updates)}, start_response)
 
                 batch_items = data.get('items') if isinstance(data, dict) else None
@@ -496,12 +516,14 @@ class OrderManagementMixin:
                 'frame_materials': 3,
                 'features': 3,
                 'certifications': 3,
+                'factories': 3,
             }
             export_rows = []
             filling_rel = {}
             frame_rel = {}
             feature_rel = {}
             cert_rel = {}
+            factory_rel = {}
 
             # 获取所有可用的数据用于下拉菜单 + 勾选导出数据
             with self._get_db_connection() as conn:
@@ -536,9 +558,11 @@ class OrderManagementMixin:
 
                         cur.execute("SELECT name FROM certifications ORDER BY name")
                         cert_local = [row['name'] for row in cur.fetchall()]
-                    return (sku_families_local, fabrics_local, filling_local, frame_local, feature_local, cert_local)
+                        cur.execute("SELECT factory_name FROM logistics_factories ORDER BY factory_name")
+                        factory_local = [row['factory_name'] for row in cur.fetchall()]
+                    return (sku_families_local, fabrics_local, filling_local, frame_local, feature_local, cert_local, factory_local)
 
-                sku_families, fabrics, filling_materials, frame_materials, features, certifications = self._get_cached_template_options(
+                sku_families, fabrics, filling_materials, frame_materials, features, certifications, factories = self._get_cached_template_options(
                     'order_product_template_options_v1',
                     _load_order_template_options,
                     ttl_seconds=180
@@ -637,12 +661,28 @@ class OrderManagementMixin:
                                 if rel['name'] not in cert_rel[rel['order_product_id']]:
                                     cert_rel[rel['order_product_id']].append(rel['name'])
 
+                            cur.execute(
+                                f"""
+                                SELECT opl.order_product_id, lf.factory_name
+                                FROM order_product_factory_links opl
+                                JOIN logistics_factories lf ON lf.id = opl.factory_id
+                                WHERE opl.order_product_id IN ({rel_placeholders})
+                                ORDER BY opl.order_product_id, lf.factory_name
+                                """,
+                                tuple(row_ids)
+                            )
+                            for rel in cur.fetchall() or []:
+                                factory_rel.setdefault(rel['order_product_id'], [])
+                                if rel['factory_name'] not in factory_rel[rel['order_product_id']]:
+                                    factory_rel[rel['order_product_id']].append(rel['factory_name'])
+
                             for row in selected_rows:
                                 rid = row['id']
                                 max_multi_columns['filling_materials'] = max(max_multi_columns['filling_materials'], len(filling_rel.get(rid, [])))
                                 max_multi_columns['frame_materials'] = max(max_multi_columns['frame_materials'], len(frame_rel.get(rid, [])))
                                 max_multi_columns['features'] = max(max_multi_columns['features'], len(feature_rel.get(rid, [])))
                                 max_multi_columns['certifications'] = max(max_multi_columns['certifications'], len(cert_rel.get(rid, [])))
+                                max_multi_columns['factories'] = max(max_multi_columns['factories'], len(factory_rel.get(rid, [])))
             
             # 定义组件和字段（带中文标签）
             sections = [
@@ -704,7 +744,8 @@ class OrderManagementMixin:
                         ('filling_materials', '填充材料(可多项)', 'multi_dropdown', filling_materials),
                         ('frame_materials', '框架材料(可多项)', 'multi_dropdown', frame_materials),
                         ('features', '卖点特点(可多项)', 'multi_dropdown', features),
-                        ('certifications', '认证(可多项)', 'multi_dropdown', certifications)
+                        ('certifications', '认证(可多项)', 'multi_dropdown', certifications),
+                        ('factories', '工厂(可多项)', 'multi_dropdown', factories)
                     ]
                 }
             ]
@@ -827,7 +868,7 @@ class OrderManagementMixin:
                     example_row_data.append(('包裹大小归类(Fedx)', 0, 'Small'))
                 elif field_base == 'last_mile_avg_freight_usd':
                     example_row_data.append(('尾程平均运费(美元)', 0, 3.50))
-                elif field_base in ['filling_materials', 'frame_materials', 'features', 'certifications']:
+                elif field_base in ['filling_materials', 'frame_materials', 'features', 'certifications', 'factories']:
                     # 多选字段只在第一列填充示例
                     if col_name.endswith('_1'):
                         if field_base == 'filling_materials':
@@ -838,6 +879,8 @@ class OrderManagementMixin:
                             example_row_data.append(('卖点特点(可多项)', 0, '可拆洗'))
                         elif field_base == 'certifications':
                             example_row_data.append(('认证(可多项)', 0, 'CE'))
+                        elif field_base == 'factories':
+                            example_row_data.append(('工厂(可多项)', 0, '示例工厂A'))
                     else:
                         example_row_data.append(('', 0, None))
                 else:
@@ -927,12 +970,13 @@ class OrderManagementMixin:
                     set_multi_values(data_row, 'frame_materials', frame_rel.get(row_id, []))
                     set_multi_values(data_row, 'features', feature_rel.get(row_id, []))
                     set_multi_values(data_row, 'certifications', cert_rel.get(row_id, []))
+                    set_multi_values(data_row, 'factories', factory_rel.get(row_id, []))
                     data_row += 1
             
             # 设置列宽
             for idx, header in enumerate(column_headers):
                 col_letter = col_idx_to_letter(idx)
-                if '材料' in header or '特点' in header or '认证' in header:
+                if '材料' in header or '特点' in header or '认证' in header or '工厂' in header:
                     ws.column_dimensions[col_letter].width = 18
                 elif 'SKU' in header:
                     ws.column_dimensions[col_letter].width = 15
@@ -1041,10 +1085,11 @@ class OrderManagementMixin:
                 '填充材料(可多项)': 'filling_materials',
                 '框架材料(可多项)': 'frame_materials',
                 '卖点特点(可多项)': 'features',
-                '认证(可多项)': 'certifications'
+                '认证(可多项)': 'certifications',
+                '工厂(可多项)': 'factories'
             }
 
-            multi_base_fields = {'filling_materials', 'frame_materials', 'features', 'certifications'}
+            multi_base_fields = {'filling_materials', 'frame_materials', 'features', 'certifications', 'factories'}
             single_fields = {
                 'sku', 'sku_family', 'fabric_code', 'spec_qty_short', 'is_iteration', 'is_dachene_product', 'source_sku', 'version_no',
                 'contents_desc_en',
@@ -1141,6 +1186,8 @@ class OrderManagementMixin:
                     feature_map = {row['name']: row['id'] for row in cur.fetchall()}
                     cur.execute("SELECT id, name FROM certifications")
                     cert_map = {row['name']: row['id'] for row in cur.fetchall()}
+                    cur.execute("SELECT id, factory_name FROM logistics_factories")
+                    factory_name_map = {row['factory_name']: row['id'] for row in cur.fetchall()}
                     cur.execute(
                         """
                         SELECT id, sku, sku_family_id, version_no, fabric_id, spec_qty_short,
@@ -1173,6 +1220,12 @@ class OrderManagementMixin:
                     cert_rel_map = {}
                     for cr in cert_rows:
                         cert_rel_map.setdefault(cr['order_product_id'], set()).add(cr['certification_id'])
+
+                    cur.execute("SELECT order_product_id, factory_id FROM order_product_factory_links")
+                    factory_rows = cur.fetchall() or []
+                    factory_rel_map = {}
+                    for fr in factory_rows:
+                        factory_rel_map.setdefault(fr['order_product_id'], set()).add(fr['factory_id'])
 
                 def _norm(v):
                     if v is None:
@@ -1269,22 +1322,27 @@ class OrderManagementMixin:
                     frame_ids = collect_multi_select_values(row, 'frame_materials', frame_map)
                     feature_ids = collect_multi_select_values(row, 'features', feature_map)
                     cert_ids = collect_multi_select_values(row, 'certifications', cert_map)
+                    factory_ids = collect_multi_select_values(row, 'factories', factory_name_map)
 
                     dedup_material_ids = set((filling_ids or []) + (frame_ids or []))
                     dedup_feature_ids = set(feature_ids or [])
                     dedup_cert_ids = set(cert_ids or [])
+                    dedup_factory_ids = set(factory_ids or [])
 
                     target_id = order_map.get(sku)
                     old_material_ids = material_map.get(target_id, set()) if target_id else set()
                     old_feature_ids = feature_rel_map.get(target_id, set()) if target_id else set()
                     old_cert_ids = cert_rel_map.get(target_id, set()) if target_id else set()
+                    old_factory_ids = factory_rel_map.get(target_id, set()) if target_id else set()
 
                     relation_added += len(dedup_material_ids - old_material_ids)
                     relation_added += len(dedup_feature_ids - old_feature_ids)
                     relation_added += len(dedup_cert_ids - old_cert_ids)
+                    relation_added += len(dedup_factory_ids - old_factory_ids)
                     relation_deleted += len(old_material_ids - dedup_material_ids)
                     relation_deleted += len(old_feature_ids - dedup_feature_ids)
                     relation_deleted += len(old_cert_ids - dedup_cert_ids)
+                    relation_deleted += len(old_factory_ids - dedup_factory_ids)
 
                     payload_keys = [
                         'sku_family_id', 'version_no', 'fabric_id', 'spec_qty_short', 'contents_desc_en', 'is_iteration', 'is_dachene_product', 'source_order_product_id',
@@ -1296,7 +1354,12 @@ class OrderManagementMixin:
                     if target_id and target_id in order_row_map:
                         old_row = order_row_map[target_id]
                         is_payload_changed = any(_norm(payload.get(k)) != _norm(old_row.get(k)) for k in payload_keys)
-                    is_relation_changed = (dedup_material_ids != old_material_ids) or (dedup_feature_ids != old_feature_ids) or (dedup_cert_ids != old_cert_ids)
+                    is_relation_changed = (
+                        (dedup_material_ids != old_material_ids)
+                        or (dedup_feature_ids != old_feature_ids)
+                        or (dedup_cert_ids != old_cert_ids)
+                        or (dedup_factory_ids != old_factory_ids)
+                    )
 
                     if target_id and (not is_payload_changed) and (not is_relation_changed):
                         unchanged += 1
@@ -1309,6 +1372,7 @@ class OrderManagementMixin:
                             material_map[target_id] = dedup_material_ids
                             feature_rel_map[target_id] = dedup_feature_ids
                             cert_rel_map[target_id] = dedup_cert_ids
+                            factory_rel_map[target_id] = dedup_factory_ids
                         else:
                             created += 1
                             target_id = preview_temp_id
@@ -1318,6 +1382,7 @@ class OrderManagementMixin:
                             material_map[target_id] = dedup_material_ids
                             feature_rel_map[target_id] = dedup_feature_ids
                             cert_rel_map[target_id] = dedup_cert_ids
+                            factory_rel_map[target_id] = dedup_factory_ids
                         continue
 
                     try:
@@ -1375,10 +1440,12 @@ class OrderManagementMixin:
                             self._replace_order_product_material_ids(conn, new_id, filling_ids, frame_ids)
                             self._replace_order_product_feature_ids(conn, new_id, feature_ids)
                             self._replace_order_product_certification_ids(conn, new_id, cert_ids)
+                            self._replace_order_product_factory_links(conn, new_id, factory_ids)
 
                         material_map[new_id] = dedup_material_ids
                         feature_rel_map[new_id] = dedup_feature_ids
                         cert_rel_map[new_id] = dedup_cert_ids
+                        factory_rel_map[new_id] = dedup_factory_ids
                         order_row_map[new_id] = {**payload, 'id': new_id}
                         if target_id:
                             updated += 1
@@ -1815,6 +1882,65 @@ class OrderManagementMixin:
             row['factory_ids'] = [self._parse_int(item.get('factory_id')) for item in factories if self._parse_int(item.get('factory_id'))]
             row['factory_names'] = [item.get('factory_name') for item in factories if item.get('factory_name')]
 
+    def _replace_order_product_relations(self, conn, order_product_id, filling_material_ids, frame_material_ids, feature_ids, certification_ids):
+        self._replace_order_product_material_ids(conn, order_product_id, filling_material_ids, frame_material_ids)
+        self._replace_order_product_feature_ids(conn, order_product_id, feature_ids)
+        self._replace_order_product_certification_ids(conn, order_product_id, certification_ids)
+
+    def _replace_order_product_material_ids(self, conn, order_product_id, filling_material_ids, frame_material_ids):
+        merged = []
+        seen = set()
+        for raw_id in list(filling_material_ids or []) + list(frame_material_ids or []):
+            material_id = self._parse_int(raw_id)
+            if not material_id or material_id in seen:
+                continue
+            seen.add(material_id)
+            merged.append(material_id)
+
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM order_product_materials WHERE order_product_id=%s", (order_product_id,))
+            if merged:
+                cur.executemany(
+                    "INSERT INTO order_product_materials (order_product_id, material_id) VALUES (%s, %s)",
+                    [(order_product_id, material_id) for material_id in merged]
+                )
+
+    def _replace_order_product_feature_ids(self, conn, order_product_id, feature_ids):
+        valid_ids = []
+        seen = set()
+        for raw_id in (feature_ids or []):
+            feature_id = self._parse_int(raw_id)
+            if not feature_id or feature_id in seen:
+                continue
+            seen.add(feature_id)
+            valid_ids.append(feature_id)
+
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM order_product_features WHERE order_product_id=%s", (order_product_id,))
+            if valid_ids:
+                cur.executemany(
+                    "INSERT INTO order_product_features (order_product_id, feature_id) VALUES (%s, %s)",
+                    [(order_product_id, feature_id) for feature_id in valid_ids]
+                )
+
+    def _replace_order_product_certification_ids(self, conn, order_product_id, certification_ids):
+        valid_ids = []
+        seen = set()
+        for raw_id in (certification_ids or []):
+            certification_id = self._parse_int(raw_id)
+            if not certification_id or certification_id in seen:
+                continue
+            seen.add(certification_id)
+            valid_ids.append(certification_id)
+
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM order_product_certifications WHERE order_product_id=%s", (order_product_id,))
+            if valid_ids:
+                cur.executemany(
+                    "INSERT INTO order_product_certifications (order_product_id, certification_id) VALUES (%s, %s)",
+                    [(order_product_id, certification_id) for certification_id in valid_ids]
+                )
+
     def _replace_order_product_factory_links(self, conn, order_product_id, factory_ids):
         valid_ids = []
         seen = set()
@@ -1827,19 +1953,75 @@ class OrderManagementMixin:
 
         with conn.cursor() as cur:
             cur.execute("DELETE FROM order_product_factory_links WHERE order_product_id=%s", (order_product_id,))
-            for factory_id in valid_ids:
-                cur.execute(
+            if valid_ids:
+                cur.executemany(
                     "INSERT INTO order_product_factory_links (order_product_id, factory_id) VALUES (%s, %s)",
-                    (order_product_id, factory_id)
+                    [(order_product_id, factory_id) for factory_id in valid_ids]
                 )
 
     def _handle_order_product_factory_links_template(self, environ, method, start_response):
         try:
             if method != 'GET':
                 return self.send_error(405, 'Method not allowed', start_response)
-            
-            # TODO: 模板生成逻辑（SKU-工厂关联模板）
-            return self.send_json({'status': 'success', 'template': 'order_product_factory_links_template.xlsx'}, start_response)
+
+            if Workbook is None:
+                return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
+
+            conn = self.get_db_connection()
+            try:
+                # 获取所有SKU列表
+                sku_list = []
+                with conn.cursor() as cur:
+                    cur.execute("SELECT DISTINCT sku FROM order_products WHERE sku IS NOT NULL AND sku != '' ORDER BY sku")
+                    sku_list = [row[0] for row in cur.fetchall()]
+                
+                # 获取所有工厂列表
+                factory_list = []
+                with conn.cursor() as cur:
+                    cur.execute("SELECT DISTINCT factory_name FROM logistics_factories WHERE factory_name IS NOT NULL AND factory_name != '' ORDER BY factory_name")
+                    factory_list = [row[0] for row in cur.fetchall()]
+            finally:
+                if conn:
+                    conn.close()
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = 'sku_factory_links'
+
+            ws.cell(row=1, column=1).value = 'SKU'
+            ws.cell(row=1, column=2).value = '工厂'
+            ws.cell(row=2, column=1).value = '示例SKU' if not sku_list else sku_list[0]
+            ws.cell(row=2, column=2).value = '示例工厂' if not factory_list else factory_list[0]
+
+            ws.column_dimensions['A'].width = 28
+            ws.column_dimensions['B'].width = 28
+            ws.freeze_panes = 'A2'
+
+            # 为SKU列(A列)添加数据验证，从第3行开始到第1000行
+            if sku_list and DataValidation is not None:
+                sku_dv = DataValidation(
+                    type='list',
+                    formula1='"' + ','.join(sku_list) + '"',
+                    allow_blank=True
+                )
+                sku_dv.error = '请从列表中选择有效的SKU'
+                sku_dv.errorTitle = '无效的SKU'
+                ws.add_data_validation(sku_dv)
+                sku_dv.add(f'A3:A1000')
+
+            # 为工厂列(B列)添加数据验证，从第3行开始到第1000行
+            if factory_list and DataValidation is not None:
+                factory_dv = DataValidation(
+                    type='list',
+                    formula1='"' + ','.join(factory_list) + '"',
+                    allow_blank=True
+                )
+                factory_dv.error = '请从列表中选择有效的工厂'
+                factory_dv.errorTitle = '无效的工厂'
+                ws.add_data_validation(factory_dv)
+                factory_dv.add(f'B3:B1000')
+
+            return self._send_excel_workbook(wb, 'order_product_factory_links_template.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 

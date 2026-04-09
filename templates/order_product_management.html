@@ -841,6 +841,8 @@
         let orderProductItemsCache = [];
         let previewEditDraft = {};
         let editOriginalItem = null;
+        let isEditModalMode = false;
+        let modalSavePendingTimer = null;
         let shippingPlanCurrentOrder = null;
         let shippingPlanItems = [];
         let shippingPlanUsageItems = [];
@@ -933,6 +935,7 @@
         function openCreateModal() {
             editId = null;
             editOriginalItem = null;
+            isEditModalMode = false;
             skuManuallyEdited = false;
             setFactoryLinkSelected([]);
             document.getElementById('factoryLinkSearch').value = '';
@@ -995,6 +998,7 @@
             }
             editId = item.id;
             editOriginalItem = Object.assign({}, item || {});
+            isEditModalMode = true;
             skuManuallyEdited = false;
             document.getElementById('pm-modal-title').innerText = '编辑下单产品';
             setInputValue('modalSku', item.sku || '');
@@ -1042,6 +1046,16 @@
             document.getElementById('pm-modal').classList.remove('active');
             editId = null;
             editOriginalItem = null;
+            isEditModalMode = false;
+            const saveBtn = document.getElementById('modalSaveBtn');
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.innerText = '保存';
+            }
+            if (modalSavePendingTimer) {
+                clearTimeout(modalSavePendingTimer);
+                modalSavePendingTimer = null;
+            }
         }
 
         function normalizeIdListForCompare(values) {
@@ -1118,6 +1132,18 @@
                 <div class="status-segment status-segment--inline readonly">
                     <span class="status-pill status-pill--enabled ${isYes ? 'is-active' : ''}">是</span>
                     <span class="status-pill status-pill--paused ${!isYes ? 'is-active' : ''}">否</span>
+                </div>
+            `;
+        }
+
+        function renderEditableYesNoSwitch(itemId, field, value) {
+            const isYes = Number(value) === 1;
+            const hiddenId = `preview_${field}_${itemId}`;
+            return `
+                <div class="status-segment status-segment--inline" data-preview-switch="${hiddenId}">
+                    <input type="hidden" id="${hiddenId}" class="preview-edit-field" data-id="${itemId}" data-field="${field}" value="${isYes ? '1' : '0'}">
+                    <button type="button" class="status-pill status-pill--enabled preview-yesno-btn ${isYes ? 'is-active' : ''}" data-switch-id="${hiddenId}" data-switch-value="1">是</button>
+                    <button type="button" class="status-pill status-pill--paused preview-yesno-btn ${!isYes ? 'is-active' : ''}" data-switch-id="${hiddenId}" data-switch-value="0">否</button>
                 </div>
             `;
         }
@@ -1212,6 +1238,25 @@
                     updatePreviewDraft(itemId, field, this.value);
                 });
             });
+
+            document.querySelectorAll('.preview-yesno-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const hiddenId = this.getAttribute('data-switch-id');
+                    const value = this.getAttribute('data-switch-value') === '1' ? '1' : '0';
+                    const input = document.getElementById(hiddenId);
+                    if (!input) return;
+                    input.value = value;
+                    const wrap = this.closest('[data-preview-switch]');
+                    if (wrap) {
+                        wrap.querySelectorAll('.preview-yesno-btn').forEach(x => {
+                            x.classList.toggle('is-active', x.getAttribute('data-switch-value') === value);
+                        });
+                    }
+                    const itemId = input.getAttribute('data-id');
+                    const field = input.getAttribute('data-field');
+                    updatePreviewDraft(itemId, field, value);
+                });
+            });
         }
 
         function cancelPreviewEdits() {
@@ -1235,42 +1280,35 @@
                 last_mile_avg_freight_usd: normalizePreviewFieldValue('last_mile_avg_freight_usd', previewEditDraft[id].last_mile_avg_freight_usd)
             }));
 
-            showUploadDialog({
-                title: '确认保存',
-                message: `你修改了 ${items.length} 条预览数据，确认统一保存吗？`,
-                confirmText: '确认保存',
-                cancelText: '取消',
-                onConfirm: function() {
-                    fetch('/api/order-product?action=preview_update', {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ items })
-                    })
-                    .then(r => r.json())
-                    .then(data => {
-                        if (data.status !== 'success') {
-                            showUploadDialog({ title: '保存失败', message: data.message || '批量保存失败' });
-                            return;
-                        }
-                        items.forEach(update => {
-                            const item = orderProductItemsCache.find(row => String(row.id) === String(update.id));
-                            if (!item) return;
-                            item.is_on_market = update.is_on_market;
-                            item.cost_usd = update.cost_usd;
-                            item.package_size_class = update.package_size_class;
-                            item.carton_qty = update.carton_qty;
-                            item.last_mile_avg_freight_usd = update.last_mile_avg_freight_usd;
-                        });
-                        previewEditDraft = {};
-                        renderOrderProductTable(orderProductItemsCache);
-                        syncPreviewSaveBar();
-                        if (window.showAppToast) {
-                            window.showAppToast('预览修改已保存', false, 2200);
-                        }
-                    })
-                    .catch(err => showUploadDialog({ title: '请求失败', message: '请求失败: ' + err }));
+            // 直接保存，不显示确认弹窗
+            fetch('/api/order-product?action=preview_update', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    showUploadDialog({ title: '保存失败', message: data.message || '批量保存失败' });
+                    return;
                 }
-            });
+                items.forEach(update => {
+                    const item = orderProductItemsCache.find(row => String(row.id) === String(update.id));
+                    if (!item) return;
+                    item.is_on_market = update.is_on_market;
+                    item.cost_usd = update.cost_usd;
+                    item.package_size_class = update.package_size_class;
+                    item.carton_qty = update.carton_qty;
+                    item.last_mile_avg_freight_usd = update.last_mile_avg_freight_usd;
+                });
+                previewEditDraft = {};
+                renderOrderProductTable(orderProductItemsCache);
+                syncPreviewSaveBar();
+                if (window.showAppToast) {
+                    window.showAppToast('预览修改已保存', false, 2200);
+                }
+            })
+            .catch(err => showUploadDialog({ title: '请求失败', message: '请求失败: ' + err }));
         }
 
         function calcCartonQtyBy40HQ(lengthIn, widthIn, heightIn) {
@@ -1328,6 +1366,9 @@
 
         function updateSkuFromInputs() {
             updateFeatureCategoryFilter();
+            if (isEditModalMode) {
+                return;
+            }
             if (skuManuallyEdited) {
                 return;
             }
@@ -1344,7 +1385,7 @@
             if (!isOn) {
                 setSelectValue('modalSourceSku', '');
                 setInputValue('modalVersion', '');
-            } else {
+            } else if (!isEditModalMode) {
                 const sourceId = document.getElementById('modalSourceSku').value;
                 if (sourceId) {
                     setInputValue('modalVersion', getNextIterationVersion(sourceId));
@@ -1557,6 +1598,7 @@
             if (!dropdown) return;
             dropdown.classList.add('expanded');
             dropdown.classList.add('open');
+            ensureFactoryLinkMenuVisible();
         }
 
         function closeFactoryLinkDropdown() {
@@ -1564,6 +1606,28 @@
             if (!dropdown) return;
             dropdown.classList.remove('open');
             dropdown.classList.remove('expanded');
+        }
+
+        function ensureFactoryLinkMenuVisible() {
+            const modal = document.getElementById('pm-modal');
+            const toggle = document.getElementById('factoryLinkToggle');
+            const menu = document.getElementById('factoryLinkMenu');
+            if (!toggle || !menu) return;
+
+            const desiredSpace = 280;
+            const firstRect = toggle.getBoundingClientRect();
+            const firstAvailable = window.innerHeight - firstRect.bottom - 12;
+            if (modal && firstAvailable < desiredSpace) {
+                modal.scrollTop += (desiredSpace - firstAvailable);
+            }
+
+            window.requestAnimationFrame(() => {
+                const rect = toggle.getBoundingClientRect();
+                const available = window.innerHeight - rect.bottom - 12;
+                const maxHeight = Math.max(120, Math.min(380, available));
+                menu.style.maxHeight = `${maxHeight}px`;
+                menu.style.overflowY = 'auto';
+            });
         }
 
         async function loadFactoryLinkOptions() {
@@ -1703,6 +1767,11 @@
         }
 
         function saveOrderProductFromModal() {
+            const saveBtn = document.getElementById('modalSaveBtn');
+            if (saveBtn && saveBtn.disabled) {
+                return;
+            }
+
             const payload = {
                 sku: document.getElementById('modalSku').value.trim(),
                 sku_family_id: document.getElementById('modalSkuFamily').value,
@@ -1803,6 +1872,18 @@
                 method = 'PUT';
             }
 
+            if (saveBtn) {
+                saveBtn.disabled = true;
+                saveBtn.innerText = '保存中...';
+            }
+            showModalStatus('正在保存，请稍候...', false);
+            if (modalSavePendingTimer) {
+                clearTimeout(modalSavePendingTimer);
+            }
+            modalSavePendingTimer = setTimeout(() => {
+                showTimeoutToast('保存仍在进行中，请稍候...');
+            }, 5000);
+
             fetch('/api/order-product', {
                 method: method,
                 headers: { 'Content-Type': 'application/json' },
@@ -1820,7 +1901,17 @@
                     showModalStatus(data.message || '操作失败', true);
                 }
             })
-            .catch(err => showModalStatus('请求失败: ' + err, true));
+            .catch(err => showModalStatus('请求失败: ' + err, true))
+            .finally(() => {
+                if (modalSavePendingTimer) {
+                    clearTimeout(modalSavePendingTimer);
+                    modalSavePendingTimer = null;
+                }
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.innerText = '保存';
+                }
+            });
         }
 
         function fetchDeleteImpact(target, id) {
@@ -2369,12 +2460,7 @@
                         return `
                             <tr>
                                 <td style="text-align:center;"><input type="checkbox" class="order-row-checkbox" data-id="${item.id}" ${checked}></td>
-                                <td class="preview-edit-cell">
-                                    <select class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="is_on_market">
-                                        <option value="1" ${onMarketText === '1' ? 'selected' : ''}>是</option>
-                                        <option value="0" ${onMarketText === '0' ? 'selected' : ''}>否</option>
-                                    </select>
-                                </td>
+                                <td class="preview-edit-cell">${renderEditableYesNoSwitch(item.id, 'is_on_market', onMarketText)}</td>
                                 <td class="yesno-col">${renderReadonlyYesNoSwitch(item.is_iteration)}</td>
                                 <td class="yesno-col">${renderReadonlyYesNoSwitch(item.is_dachene_product)}</td>
                                 <td>${item.sku}</td>
@@ -2974,7 +3060,9 @@
                 btn.textContent = item.sku;
                 btn.addEventListener('click', () => {
                     setSelectValue('modalSourceSku', item.id);
-                    applySourceSkuData(item);
+                    if (!isEditModalMode) {
+                        applySourceSkuData(item);
+                    }
                     closeSelectPanel('source');
                 });
                 list.appendChild(btn);
@@ -3149,9 +3237,22 @@
         });
         document.getElementById('factoryLinkSearch').addEventListener('input', function() {
             renderFactoryLinkPicker();
+            ensureFactoryLinkMenuVisible();
         });
         document.getElementById('factoryLinkDropdown').addEventListener('click', function(e) {
             e.stopPropagation();
+        });
+        document.getElementById('pm-modal').addEventListener('scroll', function() {
+            const dropdown = document.getElementById('factoryLinkDropdown');
+            if (dropdown && dropdown.classList.contains('open')) {
+                ensureFactoryLinkMenuVisible();
+            }
+        });
+        window.addEventListener('resize', function() {
+            const dropdown = document.getElementById('factoryLinkDropdown');
+            if (dropdown && dropdown.classList.contains('open')) {
+                ensureFactoryLinkMenuVisible();
+            }
         });
         document.addEventListener('click', function(e) {
             const fillingDropdown = document.getElementById('fillingDropdown');

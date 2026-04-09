@@ -442,6 +442,54 @@
         panel.classList.add('show');
     }
 
+    function ensureUploadProgressPanel(){
+        let panel = document.getElementById('app-upload-progress-panel');
+        if(panel && document.body.contains(panel)) return panel;
+        panel = document.createElement('div');
+        panel.id = 'app-upload-progress-panel';
+        panel.className = 'app-upload-progress-panel';
+        panel.innerHTML = [
+            '<div class="app-upload-progress-head">',
+            '  <div class="app-upload-progress-title">上传中...</div>',
+            '  <button type="button" class="app-upload-progress-close" aria-label="关闭">×</button>',
+            '</div>',
+            '<div class="app-upload-progress-summary"></div>',
+            '<div class="app-upload-progress-bar"><span></span></div>'
+        ].join('');
+        document.body.appendChild(panel);
+        const closeBtn = panel.querySelector('.app-upload-progress-close');
+        if(closeBtn){
+            closeBtn.addEventListener('click', () => panel.classList.remove('show'));
+        }
+        return panel;
+    }
+
+    function showAppUploadProgress(options){
+        const opt = options && typeof options === 'object' ? options : { title: String(options || '上传中...') };
+        const panel = ensureUploadProgressPanel();
+        const title = String(opt.title || '上传中...').trim() || '上传中...';
+        const summary = String(opt.summary || '').trim();
+        const percent = Math.max(0, Math.min(100, Number(opt.percent || 0)));
+        const titleEl = panel.querySelector('.app-upload-progress-title');
+        const summaryEl = panel.querySelector('.app-upload-progress-summary');
+        const fillEl = panel.querySelector('.app-upload-progress-bar span');
+
+        if(titleEl) titleEl.textContent = title;
+        if(summaryEl){
+            summaryEl.textContent = summary;
+            summaryEl.style.display = summary ? '' : 'none';
+        }
+        if(fillEl){
+            fillEl.style.width = `${percent}%`;
+        }
+        panel.classList.add('show');
+    }
+
+    function hideAppUploadProgress(){
+        const panel = document.getElementById('app-upload-progress-panel');
+        if(panel) panel.classList.remove('show');
+    }
+
     function syncModalScrollLock(){
         const hasActiveModal = !!document.querySelector('.pm-modal.active');
         document.documentElement.classList.toggle('has-active-modal', hasActiveModal);
@@ -467,9 +515,6 @@
             const flushToast = () => {
                 const text = String(el.textContent || '').trim();
                 if(!text) return;
-                const sig = `${text}|${inferErrorFromResponseEl(el) ? 'e' : 's'}`;
-                if(sig === state.lastSig) return;
-                state.lastSig = sig;
                 showAppToast(text, inferErrorFromResponseEl(el));
             };
 
@@ -1679,6 +1724,8 @@
         initOptionalDateInputs(document);
     };
     window.showAppResultPanel = showAppResultPanel;
+    window.showAppUploadProgress = showAppUploadProgress;
+    window.hideAppUploadProgress = hideAppUploadProgress;
 
     function applyHeaderPermissions(authData){
         const permissions = authData && authData.page_permissions ? authData.page_permissions : null;

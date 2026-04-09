@@ -152,12 +152,34 @@
             if(!dropdown) return;
             dropdown.classList.add('expanded');
             dropdown.classList.add('open');
+            ensureOrderProductMenuVisible();
         }
         function closeOrderProductDropdown(){
             const dropdown = document.getElementById('factorySkuDropdown');
             if(!dropdown) return;
             dropdown.classList.remove('open');
             dropdown.classList.remove('expanded');
+        }
+        function ensureOrderProductMenuVisible(){
+            const modal = document.getElementById('pm-modal');
+            const toggle = document.getElementById('factorySkuToggle');
+            const menu = document.getElementById('factorySkuMenu');
+            if(!toggle || !menu) return;
+
+            const desiredSpace = 280;
+            const firstRect = toggle.getBoundingClientRect();
+            const firstAvailable = window.innerHeight - firstRect.bottom - 12;
+            if(modal && firstAvailable < desiredSpace){
+                modal.scrollTop += (desiredSpace - firstAvailable);
+            }
+
+            window.requestAnimationFrame(function(){
+                const rect = toggle.getBoundingClientRect();
+                const available = window.innerHeight - rect.bottom - 12;
+                const maxHeight = Math.max(120, Math.min(380, available));
+                menu.style.maxHeight = `${maxHeight}px`;
+                menu.style.overflowY = 'auto';
+            });
         }
         function loadOrderProductOptions(){
             fetch('/api/logistics-factory?action=order_product_options', { credentials: 'include' })
@@ -282,9 +304,22 @@
         });
         document.getElementById('factorySkuSearch').addEventListener('input', function(){
             renderOrderProductPicker();
+            ensureOrderProductMenuVisible();
         });
         document.getElementById('factorySkuDropdown').addEventListener('click', function(e){
             e.stopPropagation();
+        });
+        document.getElementById('pm-modal').addEventListener('scroll', function(){
+            const dropdown = document.getElementById('factorySkuDropdown');
+            if(dropdown && dropdown.classList.contains('open')){
+                ensureOrderProductMenuVisible();
+            }
+        });
+        window.addEventListener('resize', function(){
+            const dropdown = document.getElementById('factorySkuDropdown');
+            if(dropdown && dropdown.classList.contains('open')){
+                ensureOrderProductMenuVisible();
+            }
         });
         document.addEventListener('click', function(e){
             const dropdown = document.getElementById('factorySkuDropdown');
