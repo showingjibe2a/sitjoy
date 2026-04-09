@@ -1137,6 +1137,8 @@
             cell.addEventListener('click', (event) => {
                 if(Date.now() < suppressSortUntil) return;
                 if(event.target.closest('.pm-col-resizer')) return;
+                if(event.target.closest('input, button, select, textarea, label, a')) return;
+                if(cell.querySelector('input[type="checkbox"]')) return;
                 const origin = Number(cell.dataset.manageColOrigin || '-1');
                 if(state.lockedColumns.has(origin)) return;
                 if(state.sortOrigin !== origin){
@@ -1409,6 +1411,32 @@
             if(Math.abs(state.headWrap.scrollLeft - state.topScroll.scrollLeft) > 1){
                 state.headWrap.scrollLeft = state.topScroll.scrollLeft;
             }
+        });
+
+        // When users interact with checkbox controls in the cloned header,
+        // forward the change to the original table header control that page scripts bind to.
+        state.headerTable.addEventListener('change', (event) => {
+            const target = event.target;
+            if(!target || !(target instanceof HTMLInputElement)) return;
+            if(target.type !== 'checkbox') return;
+
+            const cell = target.closest('th,td');
+            const row = cell ? cell.parentElement : null;
+            if(!cell || !row || !row.parentElement) return;
+
+            const rowIndex = Array.from(row.parentElement.children).indexOf(row);
+            const colIndex = Array.from(row.children).indexOf(cell);
+            if(rowIndex < 0 || colIndex < 0) return;
+
+            const sourceHead = state.table.tHead;
+            const sourceRow = sourceHead && sourceHead.rows ? sourceHead.rows[rowIndex] : null;
+            const sourceCell = sourceRow && sourceRow.cells ? sourceRow.cells[colIndex] : null;
+            if(!sourceCell) return;
+
+            const sourceCheckbox = sourceCell.querySelector('input[type="checkbox"]');
+            if(!sourceCheckbox || sourceCheckbox === target) return;
+            sourceCheckbox.checked = target.checked;
+            sourceCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
         });
 
         const scheduleRefresh = () => {

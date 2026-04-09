@@ -1616,6 +1616,73 @@ button:hover {
 
 .app-result-panel-list li { margin: 0.2rem 0; }
 
+.app-upload-progress-panel {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 5250;
+    width: min(420px, calc(100vw - 24px));
+    background: #fff;
+    border: 1px solid rgba(207, 199, 189, 0.9);
+    border-radius: 12px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+    padding: 0.65rem 0.75rem 0.72rem;
+    display: none;
+}
+
+.app-upload-progress-panel.show { display: block; }
+
+.app-upload-progress-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    margin-bottom: 0.38rem;
+}
+
+.app-upload-progress-title {
+    font-weight: 700;
+    color: var(--morandi-ink);
+    font-size: 0.95rem;
+}
+
+.app-upload-progress-close {
+    border: 1px solid rgba(207, 199, 189, 0.9);
+    border-radius: 999px;
+    width: 24px;
+    height: 24px;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+    background: #fff;
+    color: #6b7280;
+    font-size: 1rem;
+}
+
+.app-upload-progress-summary {
+    font-size: 0.88rem;
+    color: #374151;
+    line-height: 1.4;
+    margin-bottom: 0.5rem;
+    white-space: pre-wrap;
+}
+
+.app-upload-progress-bar {
+    height: 10px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(236, 231, 223, 0.95);
+    border: 1px solid rgba(207, 199, 189, 0.9);
+}
+
+.app-upload-progress-bar span {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: linear-gradient(135deg, #4a7dd8, #2f6f2f);
+    transition: width 0.18s ease;
+}
+
 pre {
     background: #f5f5f5;
     padding: 1rem;

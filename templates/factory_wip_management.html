@@ -214,24 +214,50 @@ function triggerImport(){
 function importTemplate(file){
   const form = new FormData();
   form.append('file', file);
+  if(window.showAppUploadProgress){
+    window.showAppUploadProgress({ title: '正在导入工厂在制模板...', summary: '请稍候', percent: 12 });
+  }
   fetch('/api/factory-wip-import', {
     method: 'POST',
     body: form
   })
     .then(r => r.json())
     .then(d => {
+      if(window.hideAppUploadProgress){
+        window.hideAppUploadProgress();
+      }
       if(d.status !== 'success'){
-        alert(d.message || '导入失败');
+        if(window.showAppResultPanel){
+          window.showAppResultPanel({ title: '导入失败', summary: d.message || '导入失败', isError: true });
+        }
+        if(window.showAppToast){ window.showAppToast(d.message || '导入失败', true, 3200); }
         return;
       }
       const errorCount = Array.isArray(d.errors) ? d.errors.length : 0;
-      alert(`导入完成：新增 ${Number(d.created || 0)}，更新 ${Number(d.updated || 0)}，未变化 ${Number(d.unchanged || 0)}，错误 ${errorCount}`);
+      const summary = `导入完成：新增 ${Number(d.created || 0)}，更新 ${Number(d.updated || 0)}，未变化 ${Number(d.unchanged || 0)}，错误 ${errorCount}`;
+      if(errorCount && window.showAppResultPanel){
+        window.showAppResultPanel({
+          title: '工厂在制导入完成',
+          summary,
+          details: (d.errors || []).map(item => `${item.row || '-'}: ${item.error || item.message || '校验失败'}`),
+          isError: true
+        });
+      }
+      if(window.showAppToast){ window.showAppToast(summary, false, 2600); }
       if(errorCount){
         console.error('导入错误明细:', d.errors);
       }
       loadList();
     })
-    .catch(err => alert(err.message || '导入失败'));
+    .catch(err => {
+      if(window.hideAppUploadProgress){
+        window.hideAppUploadProgress();
+      }
+      if(window.showAppResultPanel){
+        window.showAppResultPanel({ title: '导入失败', summary: err.message || '导入失败', isError: true });
+      }
+      if(window.showAppToast){ window.showAppToast(err.message || '导入失败', true, 3200); }
+    });
 }
 
 function openCreateModal(){
@@ -257,7 +283,7 @@ function openCreateModal(){
   };
 
   if(optionsLoaded) open();
-  else loadOptions().then(open).catch(err => alert(err.message || '加载选项失败'));
+  else loadOptions().then(open).catch(err => { if(window.showAppToast){ window.showAppToast(err.message || '加载选项失败', true, 3200); } });
 }
 
 function openEditModal(id){
@@ -286,7 +312,7 @@ function openEditModal(id){
   };
 
   if(optionsLoaded) open();
-  else loadOptions().then(open).catch(err => alert(err.message || '加载选项失败'));
+  else loadOptions().then(open).catch(err => { if(window.showAppToast){ window.showAppToast(err.message || '加载选项失败', true, 3200); } });
 }
 
 function closeModal(){
@@ -408,12 +434,12 @@ function removeItem(id){
     .then(r => r.json())
     .then(d => {
       if(d.status !== 'success'){
-        alert(d.message || '删除失败');
+        if(window.showAppToast){ window.showAppToast(d.message || '删除失败', true, 3200); }
         return;
       }
       loadList();
     })
-    .catch(err => alert(err.message || '删除失败'));
+    .catch(err => { if(window.showAppToast){ window.showAppToast(err.message || '删除失败', true, 3200); } });
 }
 
 function loadList(){

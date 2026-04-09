@@ -5,6 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>工厂在库库存管理</title>
   <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    .preview-savebar {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 5300;
+      display: none;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.75rem 0.9rem;
+      border: 1px solid rgba(207, 199, 189, 0.9);
+      border-radius: 12px;
+      background: #fff;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+      min-width: min(520px, calc(100vw - 24px));
+    }
+    .preview-savebar.active { display: flex; }
+    .preview-savebar span { flex: 1; color: var(--morandi-ink); font-weight: 700; }
+    .preview-savebar .btn-primary,
+    .preview-savebar .btn-secondary { padding: 0.65rem 1rem; }
+    .preview-edit-input { width: 100%; }
+    .preview-edit-cell { padding-left: 0.35rem !important; padding-right: 0.35rem !important; }
+  </style>
 </head>
 <body>
 <div id="site-header"></div>
@@ -37,6 +60,7 @@
       <table class="pm-table" id="mainTable">
         <thead>
           <tr>
+            <th style="width:54px; text-align:center;"><input type="checkbox" id="stockSelectAll"></th>
             <th>SKU</th>
             <th>工厂</th>
             <th style="width:120px;">数量</th>
@@ -46,7 +70,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
+          <tr><td colspan="7" style="text-align:center;">加载中...</td></tr>
         </tbody>
       </table>
     </div>
@@ -84,12 +108,20 @@
 
 <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
 
+<div id="factoryStockSaveBar" class="preview-savebar" aria-live="polite">
+  <span id="factoryStockSaveText">已修改 0 条预览数据</span>
+  <button type="button" class="btn-secondary" onclick="cancelFactoryStockEdits()">取消修改</button>
+  <button type="button" class="btn-primary" onclick="saveFactoryStockEdits()">统一保存</button>
+</div>
+
 <script>
 let editId = null;
 let optionsLoaded = false;
 let optionFactories = [];
 let optionOrderProducts = [];
 let listCache = [];
+let selectedStockIds = new Set();
+let factoryStockEditDraft = {};
 
 const $ = (s) => document.querySelector(s);
 
@@ -130,7 +162,204 @@ function loadOptions(){
 }
 
 function downloadTemplate(){
-  window.location.href = '/api/factory-stock-template';
+  const ids = Array.from(selectedStockIds).map(v => Number(v)).filter(v => v > 0);
+  const query = ids.length ? `?ids=${encodeURIComponent(ids.join(','))}` : '';
+  window.location.href = `/api/factory-stock-template${query}`;
+}
+
+function bindRowSelectionEvents(){
+  document.querySelectorAll('.stock-row-checkbox').forEach(el => {
+    el.addEventListener('change', function(){
+      const id = Number(this.getAttribute('data-id') || 0);
+      if(!id) return;
+      if(this.checked) selectedStockIds.add(id);
+      else selectedStockIds.delete(id);
+      syncStockSelectAll();
+    });
+  });
+}
+
+function getStockSelectAllCheckboxes(){
+  return Array.from(document.querySelectorAll('input#stockSelectAll'));
+}
+
+function syncStockSelectAll(){
+  const masters = getStockSelectAllCheckboxes();
+  const rows = Array.from(document.querySelectorAll('.stock-row-checkbox'));
+  if(!masters.length) return;
+  if(!rows.length){
+    masters.forEach(master => {
+      master.checked = false;
+      master.indeterminate = false;
+    });
+    return;
+  }
+  const checkedCount = rows.filter(r => r.checked).length;
+  const allChecked = checkedCount === rows.length;
+  const partial = checkedCount > 0 && checkedCount < rows.length;
+  masters.forEach(master => {
+    master.checked = allChecked;
+    master.indeterminate = partial;
+  });
+}
+
+function toggleStockSelectAll(checked){
+  document.querySelectorAll('.stock-row-checkbox').forEach(el => {
+    const id = Number(el.getAttribute('data-id') || 0);
+    el.checked = !!checked;
+    if(!id) return;
+    if(checked) selectedStockIds.add(id);
+    else selectedStockIds.delete(id);
+  });
+  syncStockSelectAll();
+}
+
+function normalizeStockDraftValue(field, rawValue){
+  if(field === 'quantity'){
+    const num = parseInt(String(rawValue || '').trim(), 10);
+    return Number.isFinite(num) ? Math.max(0, num) : 0;
+  }
+  return String(rawValue || '').trim();
+}
+
+function getStockDraft(itemId){
+  const key = String(itemId);
+  if(!factoryStockEditDraft[key]){
+    const item = listCache.find(x => String(x.id) === key);
+    if(!item) return null;
+    factoryStockEditDraft[key] = {
+      quantity: Number(item.quantity || 0),
+      notes: item.notes || ''
+    };
+  }
+  return factoryStockEditDraft[key];
+}
+
+function updateStockDraft(itemId, field, rawValue){
+  const item = listCache.find(x => String(x.id) === String(itemId));
+  if(!item) return;
+  const key = String(itemId);
+  const draft = getStockDraft(itemId);
+  if(!draft) return;
+  draft[field] = normalizeStockDraftValue(field, rawValue);
+  const unchanged = normalizeStockDraftValue('quantity', draft.quantity) === normalizeStockDraftValue('quantity', item.quantity)
+    && normalizeStockDraftValue('notes', draft.notes) === normalizeStockDraftValue('notes', item.notes);
+  if(unchanged){
+    delete factoryStockEditDraft[key];
+  }
+  syncFactoryStockSaveBar();
+}
+
+function bindFactoryStockEditEvents(){
+  document.querySelectorAll('.stock-edit-field').forEach(el => {
+    el.addEventListener('change', function(){
+      updateStockDraft(this.getAttribute('data-id'), this.getAttribute('data-field'), this.value);
+    });
+  });
+}
+
+function countFactoryStockEditedRows(){
+  return Object.keys(factoryStockEditDraft).length;
+}
+
+function syncFactoryStockSaveBar(){
+  const bar = document.getElementById('factoryStockSaveBar');
+  const text = document.getElementById('factoryStockSaveText');
+  if(!bar || !text) return;
+  const count = countFactoryStockEditedRows();
+  text.textContent = `已修改 ${count} 条预览数据`;
+  bar.classList.toggle('active', count > 0);
+}
+
+function cancelFactoryStockEdits(){
+  factoryStockEditDraft = {};
+  renderFactoryStockTable(listCache);
+  syncFactoryStockSaveBar();
+}
+
+function collectFactoryStockUpdateItems(){
+  return Object.keys(factoryStockEditDraft).map(id => ({
+    id: Number(id),
+    quantity: normalizeStockDraftValue('quantity', factoryStockEditDraft[id].quantity),
+    notes: normalizeStockDraftValue('notes', factoryStockEditDraft[id].notes)
+  }));
+}
+
+function saveFactoryStockEdits(){
+  const items = collectFactoryStockUpdateItems();
+  if(!items.length){
+    syncFactoryStockSaveBar();
+    return;
+  }
+  const bar = document.getElementById('factoryStockSaveBar');
+  const saveBtn = bar ? bar.querySelector('.btn-primary') : null;
+  if(saveBtn){
+    saveBtn.disabled = true;
+    saveBtn.textContent = '保存中...';
+  }
+  fetch('/api/factory-stock?action=bulk_update', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items })
+  })
+    .then(r => r.json())
+    .then(d => {
+      if(d.status !== 'success'){
+        if(window.showAppToast){ window.showAppToast(d.message || '批量更新失败', true, 3200); }
+        if(saveBtn){
+          saveBtn.disabled = false;
+          saveBtn.textContent = '统一保存';
+        }
+        return;
+      }
+      factoryStockEditDraft = {};
+      if(window.showAppToast){ window.showAppToast(`批量更新成功：${Number(d.updated || items.length)} 条`, false, 2200); }
+      loadList();
+      syncFactoryStockSaveBar();
+      if(saveBtn){
+        saveBtn.disabled = false;
+        saveBtn.textContent = '统一保存';
+      }
+    })
+    .catch(err => {
+      if(window.showAppToast){ window.showAppToast(err.message || '批量更新失败', true, 3200); }
+      if(saveBtn){
+        saveBtn.disabled = false;
+        saveBtn.textContent = '统一保存';
+      }
+    });
+}
+
+function renderFactoryStockTable(items){
+  const tbody = document.querySelector('#mainTable tbody');
+  const rows = Array.isArray(items) ? items : [];
+  if(!tbody) return;
+  if(!rows.length){
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">暂无数据</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(item => {
+    const draft = getStockDraft(item.id) || { quantity: Number(item.quantity || 0), notes: item.notes || '' };
+    return `
+      <tr>
+        <td style="text-align:center;"><input type="checkbox" class="stock-row-checkbox" data-id="${item.id}" ${selectedStockIds.has(Number(item.id)) ? 'checked' : ''}></td>
+        <td>${item.sku || ''}</td>
+        <td>${item.factory_name || ''}</td>
+        <td class="preview-edit-cell"><input type="number" min="0" step="1" class="inline-input preview-edit-input stock-edit-field" data-id="${item.id}" data-field="quantity" value="${Number(draft.quantity || 0)}"></td>
+        <td class="preview-edit-cell"><input type="text" class="inline-input preview-edit-input stock-edit-field" data-id="${item.id}" data-field="notes" value="${String(draft.notes || '').replace(/"/g, '&quot;')}"></td>
+        <td>${formatDateTime(item.updated_at)}</td>
+        <td>
+          <div class="pm-actions">
+            <button class="btn-secondary" onclick="openEditModal(${item.id})">编辑</button>
+            <button class="btn-danger" onclick="removeItem(${item.id})">删除</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+  bindRowSelectionEvents();
+  bindFactoryStockEditEvents();
+  syncStockSelectAll();
 }
 
 function triggerImport(){
@@ -143,24 +372,50 @@ function triggerImport(){
 function importTemplate(file){
   const form = new FormData();
   form.append('file', file);
+  if(window.showAppUploadProgress){
+    window.showAppUploadProgress({ title: '正在导入工厂库存模板...', summary: '请稍候', percent: 12 });
+  }
   fetch('/api/factory-stock-import', {
     method: 'POST',
     body: form
   })
     .then(r => r.json())
     .then(d => {
+      if(window.hideAppUploadProgress){
+        window.hideAppUploadProgress();
+      }
       if(d.status !== 'success'){
-        alert(d.message || '导入失败');
+        if(window.showAppResultPanel){
+          window.showAppResultPanel({ title: '导入失败', summary: d.message || '导入失败', isError: true });
+        }
+        if(window.showAppToast){ window.showAppToast(d.message || '导入失败', true, 3200); }
         return;
       }
       const errorCount = Array.isArray(d.errors) ? d.errors.length : 0;
-      alert(`导入完成：新增 ${Number(d.created || 0)}，更新 ${Number(d.updated || 0)}，未变化 ${Number(d.unchanged || 0)}，错误 ${errorCount}`);
+      const summary = `导入完成：新增 ${Number(d.created || 0)}，更新 ${Number(d.updated || 0)}，未变化 ${Number(d.unchanged || 0)}，错误 ${errorCount}`;
+      if(errorCount && window.showAppResultPanel){
+        window.showAppResultPanel({
+          title: '工厂库存导入完成',
+          summary,
+          details: (d.errors || []).map(item => `${item.row || '-'}: ${item.error || item.message || '校验失败'}`),
+          isError: true
+        });
+      }
+      if(window.showAppToast){ window.showAppToast(summary, false, 2600); }
       if(errorCount){
         console.error('导入错误明细:', d.errors);
       }
       loadList();
     })
-    .catch(err => alert(err.message || '导入失败'));
+    .catch(err => {
+      if(window.hideAppUploadProgress){
+        window.hideAppUploadProgress();
+      }
+      if(window.showAppResultPanel){
+        window.showAppResultPanel({ title: '导入失败', summary: err.message || '导入失败', isError: true });
+      }
+      if(window.showAppToast){ window.showAppToast(err.message || '导入失败', true, 3200); }
+    });
 }
 
 function openCreateModal(){
@@ -182,7 +437,7 @@ function openCreateModal(){
   };
 
   if(optionsLoaded) open();
-  else loadOptions().then(open).catch(err => alert(err.message || '加载选项失败'));
+  else loadOptions().then(open).catch(err => { if(window.showAppToast){ window.showAppToast(err.message || '加载选项失败', true, 3200); } });
 }
 
 function openEditModal(id){
@@ -207,7 +462,7 @@ function openEditModal(id){
   };
 
   if(optionsLoaded) open();
-  else loadOptions().then(open).catch(err => alert(err.message || '加载选项失败'));
+  else loadOptions().then(open).catch(err => { if(window.showAppToast){ window.showAppToast(err.message || '加载选项失败', true, 3200); } });
 }
 
 function closeModal(){
@@ -260,12 +515,12 @@ function removeItem(id){
     .then(r => r.json())
     .then(d => {
       if(d.status !== 'success'){
-        alert(d.message || '删除失败');
+        if(window.showAppToast){ window.showAppToast(d.message || '删除失败', true, 3200); }
         return;
       }
       loadList();
     })
-    .catch(err => alert(err.message || '删除失败'));
+    .catch(err => { if(window.showAppToast){ window.showAppToast(err.message || '删除失败', true, 3200); } });
 }
 
 function loadList(){
@@ -274,35 +529,34 @@ function loadList(){
   fetch(url)
     .then(r => r.json())
     .then(d => {
-      const tbody = document.querySelector('#mainTable tbody');
       if(d.status !== 'success'){
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">${d.message || '加载失败'}</td></tr>`;
+        const tbody = document.querySelector('#mainTable tbody');
+        if(tbody){ tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#a33;">${d.message || '加载失败'}</td></tr>`; }
+        selectedStockIds = new Set();
+        syncStockSelectAll();
+        syncFactoryStockSaveBar();
         return;
       }
       listCache = d.items || [];
+      factoryStockEditDraft = Object.fromEntries(Object.entries(factoryStockEditDraft).filter(([id]) => listCache.some(item => String(item.id) === String(id))));
+      const availableIds = new Set(listCache.map(item => Number(item.id || 0)).filter(v => v > 0));
+      selectedStockIds = new Set(Array.from(selectedStockIds).filter(id => availableIds.has(id)));
       if(!listCache.length){
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无数据</td></tr>';
+        const tbody = document.querySelector('#mainTable tbody');
+        if(tbody){ tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">暂无数据</td></tr>'; }
+        syncStockSelectAll();
+        syncFactoryStockSaveBar();
         return;
       }
-      tbody.innerHTML = listCache.map(item => `
-        <tr>
-          <td>${item.sku || ''}</td>
-          <td>${item.factory_name || ''}</td>
-          <td>${Number(item.quantity || 0)}</td>
-          <td>${item.notes || ''}</td>
-          <td>${formatDateTime(item.updated_at)}</td>
-          <td>
-            <div class="pm-actions">
-              <button class="btn-secondary" onclick="openEditModal(${item.id})">编辑</button>
-              <button class="btn-danger" onclick="removeItem(${item.id})">删除</button>
-            </div>
-          </td>
-        </tr>
-      `).join('');
+      renderFactoryStockTable(listCache);
+      syncFactoryStockSaveBar();
     })
     .catch(err => {
       const tbody = document.querySelector('#mainTable tbody');
-      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">${err.message || '加载失败'}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#a33;">${err.message || '加载失败'}</td></tr>`;
+      selectedStockIds = new Set();
+      syncStockSelectAll();
+      syncFactoryStockSaveBar();
     });
 }
 
@@ -313,6 +567,12 @@ function resetSearch(){
 
 $('#searchInput').addEventListener('keydown', (e) => {
   if(e.key === 'Enter') loadList();
+});
+document.addEventListener('change', function(e){
+  const target = e.target;
+  if(target && target.id === 'stockSelectAll'){
+    toggleStockSelectAll(!!target.checked);
+  }
 });
 $('#pm-modal').addEventListener('click', (e) => {
   if(e.target === e.currentTarget) closeModal();
@@ -329,6 +589,7 @@ window.addEventListener('load', () => {
   }
   loadOptions().finally(loadList);
 });
+
 </script>
 </body>
 <script src="/static/js/header.js"></script>

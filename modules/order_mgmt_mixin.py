@@ -1146,6 +1146,28 @@ class OrderManagementMixin:
                 if text in ('1', 'true', 'yes', 'y', '是', '对', 'on', '是否迭代款'):
                     return 1
                 return 0
+
+            def normalize_lookup_key(raw):
+                text = str(raw or '').strip()
+                if not text:
+                    return ''
+                text = text.replace('\u3000', ' ').replace('\xa0', ' ')
+                text = re.sub(r'\s+', ' ', text)
+                return text.lower()
+
+            def resolve_option_value(raw, exact_map, normalized_map):
+                text = str(raw or '').strip()
+                if not text:
+                    return None
+                val = exact_map.get(text)
+                if val:
+                    return val
+                text_head = text.split('/', 1)[0].strip()
+                if text_head:
+                    val = exact_map.get(text_head)
+                    if val:
+                        return val
+                return normalized_map.get(normalize_lookup_key(text)) or normalized_map.get(normalize_lookup_key(text_head))
             
             # 支持多列的多选字段收集函数（动态识别所有 _1, _2, _3... 等列）
             def collect_multi_select_values(row, field_base_name, options_map):
@@ -1153,12 +1175,13 @@ class OrderManagementMixin:
                 收集某个多选字段的所有列中的值（动态识别 _1, _2, _3, ... 等）
                 """
                 values = []
+                normalized_options_map = {normalize_lookup_key(k): v for k, v in (options_map or {}).items() if normalize_lookup_key(k)}
                 # 尝试所有可能的后缀（1-20）
                 for i in range(1, 21):
                     col_name = f"{field_base_name}_{i}"
                     cell_value = (get_cell(row, col_name) or '').strip()
                     if cell_value and options_map:
-                        val_id = options_map.get(cell_value)
+                        val_id = resolve_option_value(cell_value, options_map, normalized_options_map)
                         if val_id:
                             values.append(val_id)
                     elif not cell_value:
@@ -1170,8 +1193,20 @@ class OrderManagementMixin:
                 with conn.cursor() as cur:
                     cur.execute("SELECT id, sku_family FROM product_families")
                     sku_map = {row['sku_family']: row['id'] for row in cur.fetchall()}
-                    cur.execute("SELECT id, fabric_code FROM fabric_materials")
-                    fabric_map = {row['fabric_code']: row['id'] for row in cur.fetchall()}
+                    sku_map_norm = {normalize_lookup_key(k): v for k, v in sku_map.items() if normalize_lookup_key(k)}
+                    cur.execute("SELECT id, fabric_code, fabric_name_en FROM fabric_materials")
+                    fabric_rows = cur.fetchall() or []
+                    fabric_map = {}
+                    fabric_map_norm = {}
+                    for row in fabric_rows:
+                        item_id = row.get('id')
+                        code = str(row.get('fabric_code') or '').strip()
+                        name_en = str(row.get('fabric_name_en') or '').strip()
+                        if code:
+                            fabric_map[code] = item_id
+                            fabric_map_norm[normalize_lookup_key(code)] = item_id
+                        if name_en:
+                            fabric_map_norm[normalize_lookup_key(name_en)] = item_id
                     cur.execute(
                         """
                         SELECT m.id, m.name, mt.name AS type_name
@@ -1201,6 +1236,7 @@ class OrderManagementMixin:
                     )
                     order_rows = cur.fetchall() or []
                     order_map = {row['sku']: row['id'] for row in order_rows}
+                    order_map_norm = {normalize_lookup_key(k): v for k, v in order_map.items() if normalize_lookup_key(k)}
                     order_row_map = {row['id']: row for row in order_rows}
 
                     cur.execute("SELECT order_product_id, material_id FROM order_product_materials")
@@ -1280,18 +1316,18 @@ class OrderManagementMixin:
                         errors.append({'row': row_idx, 'error': 'Missing version for iteration'})
                         continue
 
-                    sku_family_id = sku_map.get(sku_family)
-                    fabric_id = fabric_map.get(fabric_code)
+                    sku_family_id = resolve_option_value(sku_family, sku_map, sku_map_norm)
+                    fabric_id = resolve_option_value(fabric_code, fabric_map, fabric_map_norm)
                     if not sku_family_id or not fabric_id:
                         errors.append({'row': row_idx, 'error': 'Invalid sku_family or fabric_code'})
                         continue
 
                     source_order_product_id = None
                     if is_iteration:
-                        if not source_sku or source_sku not in order_map:
+                        source_order_product_id = resolve_option_value(source_sku, order_map, order_map_norm)
+                        if not source_sku or not source_order_product_id:
                             errors.append({'row': row_idx, 'error': 'Invalid source SKU'})
                             continue
-                        source_order_product_id = order_map.get(source_sku)
 
                     payload = {
                         'sku': sku,

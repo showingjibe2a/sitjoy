@@ -220,12 +220,12 @@
                     .then(r => r.json())
                     .then(resp => {
                         if(resp.status !== 'success' || !resp.item){
-                            alert(resp.message || '未找到工厂详情');
+                            if(window.showAppToast){ window.showAppToast(resp.message || '未找到工厂详情', true, 3200); }
                             return;
                         }
                         openEditModal(resp.item);
                     })
-                    .catch(err => alert('加载详情失败: ' + err));
+                    .catch(err => { if(window.showAppToast){ window.showAppToast('加载详情失败: ' + err, true, 3200); } });
                 return;
             }
             editId = item.id;
@@ -260,6 +260,9 @@
         }
         function uploadSkuFactoryLinks(file){
             if(!file) return;
+            if(window.showAppUploadProgress){
+                window.showAppUploadProgress({ title:'正在上传工厂关联模板...', summary:'请稍候', percent: 10 });
+            }
             const formData = new FormData();
             formData.append('file', file);
             fetch('/api/order-product?action=factory_links_import', {
@@ -269,21 +272,44 @@
             })
                 .then(r=>r.json())
                 .then(data=>{
+                    if(window.hideAppUploadProgress){
+                        window.hideAppUploadProgress();
+                    }
                     if(data.status !== 'success'){
-                        alert(data.message || '上传失败');
+                        if(window.showAppResultPanel){
+                            window.showAppResultPanel({ title:'上传失败', summary:data.message || '上传失败', isError:true });
+                        }
+                        if(window.showAppToast){ window.showAppToast(data.message || '上传失败', true, 3200); }
                         return;
                     }
                     const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
-                    alert(`上传完成：新增 ${data.created || 0} 条，失败 ${errCount} 条`);
+                    const summary = `上传完成：新增 ${data.created || 0} 条，失败 ${errCount} 条`;
+                    if(errCount && window.showAppResultPanel){
+                        window.showAppResultPanel({
+                            title:'工厂关联模板导入完成',
+                            summary,
+                            details: (data.errors || []).map(item => `${item.row || '-'}: ${item.error || item.message || '校验失败'}`),
+                            isError:true
+                        });
+                    }
+                    if(window.showAppToast){ window.showAppToast(summary, false, 2600); }
                     loadList();
                 })
-                .catch(err=>alert('上传失败: '+err));
+                .catch(err=>{
+                    if(window.hideAppUploadProgress){
+                        window.hideAppUploadProgress();
+                    }
+                    if(window.showAppResultPanel){
+                        window.showAppResultPanel({ title:'上传失败', summary:'上传失败: ' + err, isError:true });
+                    }
+                    if(window.showAppToast){ window.showAppToast('上传失败: ' + err, true, 3200); }
+                });
         }
         function removeItem(id){
             if(!confirm('确认删除该工厂？')) return;
             fetch('/api/logistics-factory', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id}) })
-                .then(r=>r.json()).then(data=>{ if(data.status==='success') loadList(); else alert(data.message || '删除失败'); })
-                .catch(err=>alert('删除失败: '+err));
+                .then(r=>r.json()).then(data=>{ if(data.status==='success') loadList(); else if(window.showAppToast){ window.showAppToast(data.message || '删除失败', true, 3200); } })
+                .catch(err=>{ if(window.showAppToast){ window.showAppToast('删除失败: '+err, true, 3200); } });
         }
         function loadList(){
             const q = document.getElementById('searchInput').value.trim();
