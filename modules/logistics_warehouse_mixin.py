@@ -406,6 +406,83 @@ class LogisticsWarehouseMixin:
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
             if method == 'PUT':
+                action = (query_params.get('action', [''])[0] or '').strip().lower()
+                if action == 'bulk_update':
+                    items = data.get('items') if isinstance(data, dict) else None
+                    if not isinstance(items, list) or not items:
+                        return self.send_json({'status': 'error', 'message': '缺少批量更新数据'}, start_response)
+
+                    parsed_items = []
+                    seen_ids = set()
+                    for item in items:
+                        if not isinstance(item, dict):
+                            continue
+                        item_id = self._parse_int(item.get('id'))
+                        if not item_id or item_id in seen_ids:
+                            continue
+                        seen_ids.add(item_id)
+                        quantity = max(0, self._parse_int(item.get('quantity')) or 0)
+                        expected_date = _parse_date_text(item.get('expected_completion_date'))
+                        is_completed = _parse_yes_no(item.get('is_completed'))
+                        actual_completion_date = _parse_date_text(item.get('actual_completion_date'))
+                        notes_raw = item.get('notes')
+                        notes = ('' if notes_raw is None else str(notes_raw)).strip() or None
+                        if is_completed and not actual_completion_date:
+                            actual_completion_date = datetime.now().strftime('%Y-%m-%d')
+                        if not is_completed:
+                            actual_completion_date = None
+                        parsed_items.append({
+                            'id': item_id,
+                            'quantity': quantity,
+                            'expected_completion_date': expected_date,
+                            'is_completed': is_completed,
+                            'actual_completion_date': actual_completion_date,
+                            'notes': notes,
+                        })
+
+                    if not parsed_items:
+                        return self.send_json({'status': 'error', 'message': '没有有效的批量更新项'}, start_response)
+
+                    id_list = [item['id'] for item in parsed_items]
+                    id_placeholders = ','.join(['%s'] * len(id_list))
+
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                f"SELECT id, factory_id FROM factory_wip_inventory WHERE id IN ({id_placeholders})",
+                                tuple(id_list)
+                            )
+                            existing_rows = cur.fetchall() or []
+                            existing_map = {self._parse_int(row.get('id')): row for row in existing_rows if self._parse_int(row.get('id'))}
+
+                            missing_ids = [item_id for item_id in id_list if item_id not in existing_map]
+                            if missing_ids:
+                                return self.send_json({'status': 'error', 'message': f'记录不存在: {missing_ids[0]}'}, start_response)
+
+                            for item in parsed_items:
+                                existing_row = existing_map.get(item['id']) or {}
+                                if not self._factory_scope_contains(user_id, existing_row.get('factory_id')):
+                                    return self.send_json({'status': 'error', 'message': '无权限操作该工厂数据'}, start_response)
+
+                            for item in parsed_items:
+                                cur.execute(
+                                    """
+                                    UPDATE factory_wip_inventory
+                                    SET quantity=%s, expected_completion_date=%s, is_completed=%s, actual_completion_date=%s, notes=%s
+                                    WHERE id=%s
+                                    """,
+                                    (
+                                        item['quantity'],
+                                        item['expected_completion_date'],
+                                        item['is_completed'],
+                                        item['actual_completion_date'],
+                                        item['notes'],
+                                        item['id'],
+                                    )
+                                )
+
+                    return self.send_json({'status': 'success', 'updated': len(parsed_items)}, start_response)
+
                 item_id = self._parse_int(data.get('id'))
                 quantity = max(0, self._parse_int(data.get('quantity')) or 0)
                 notes = (data.get('notes') or '').strip() or None
@@ -769,6 +846,14 @@ class LogisticsWarehouseMixin:
         try:
             user_id = self._get_session_user(environ)
             scope_ids = self._get_user_factory_scope_ids(user_id)
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            raw_ids = query_params.get('ids', [''])[0]
+            selected_ids = []
+            for token in re.split(r'[\s,，;；]+', str(raw_ids or '')):
+                item_id = self._parse_int(token)
+                if not item_id or item_id in selected_ids:
+                    continue
+                selected_ids.append(item_id)
             if method != 'GET':
                 return self.send_error(405, 'Method not allowed', start_response)
             if Workbook is None:
@@ -832,6 +917,31 @@ class LogisticsWarehouseMixin:
                     else:
                         skus = []
 
+                    selected_rows = []
+                    if selected_ids:
+                        placeholders = ','.join(['%s'] * len(selected_ids))
+                        scope_clause, scope_params = self._factory_scope_clause('f.id', user_id, prefix='AND')
+                        cur.execute(
+                            f"""
+                            SELECT
+                                fw.id,
+                                op.sku,
+                                f.factory_name,
+                                fw.quantity,
+                                fw.expected_completion_date,
+                                fw.is_completed,
+                                fw.actual_completion_date,
+                                fw.notes
+                            FROM factory_wip_inventory fw
+                            JOIN order_products op ON op.id = fw.order_product_id
+                            JOIN logistics_factories f ON f.id = fw.factory_id
+                            WHERE fw.id IN ({placeholders}) {scope_clause}
+                            ORDER BY op.sku ASC, f.factory_name ASC
+                            """,
+                            tuple(selected_ids) + scope_params
+                        )
+                        selected_rows = cur.fetchall() or []
+
             max_len = max(len(factories), len(skus), 1)
             for i in range(max_len):
                 option_sheet.append([
@@ -854,6 +964,18 @@ class LogisticsWarehouseMixin:
             ws.add_data_validation(dv_completed)
             for row in range(4, max_row + 1):
                 dv_completed.add(f'E{row}')
+
+            if selected_rows:
+                write_row = 4
+                for item in selected_rows:
+                    ws.cell(row=write_row, column=1, value=str(item.get('sku') or '').strip())
+                    ws.cell(row=write_row, column=2, value=str(item.get('factory_name') or '').strip())
+                    ws.cell(row=write_row, column=3, value=int(item.get('quantity') or 0))
+                    ws.cell(row=write_row, column=4, value=item.get('expected_completion_date') or None)
+                    ws.cell(row=write_row, column=5, value='是' if int(item.get('is_completed') or 0) else '否')
+                    ws.cell(row=write_row, column=6, value=item.get('actual_completion_date') or None)
+                    ws.cell(row=write_row, column=7, value=str(item.get('notes') or '').strip())
+                    write_row += 1
 
             ws.freeze_panes = 'A4'
             return self._send_excel_workbook(wb, 'factory_wip_template.xlsx', start_response)

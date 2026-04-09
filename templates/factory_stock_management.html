@@ -223,29 +223,24 @@ function normalizeStockDraftValue(field, rawValue){
 }
 
 function getStockDraft(itemId){
-  const key = String(itemId);
-  if(!factoryStockEditDraft[key]){
-    const item = listCache.find(x => String(x.id) === key);
-    if(!item) return null;
-    factoryStockEditDraft[key] = {
-      quantity: Number(item.quantity || 0),
-      notes: item.notes || ''
-    };
-  }
-  return factoryStockEditDraft[key];
+  return factoryStockEditDraft[String(itemId)] || null;
 }
 
 function updateStockDraft(itemId, field, rawValue){
   const item = listCache.find(x => String(x.id) === String(itemId));
   if(!item) return;
   const key = String(itemId);
-  const draft = getStockDraft(itemId);
-  if(!draft) return;
+  const draft = factoryStockEditDraft[key] || {
+    quantity: Number(item.quantity || 0),
+    notes: item.notes || ''
+  };
   draft[field] = normalizeStockDraftValue(field, rawValue);
   const unchanged = normalizeStockDraftValue('quantity', draft.quantity) === normalizeStockDraftValue('quantity', item.quantity)
     && normalizeStockDraftValue('notes', draft.notes) === normalizeStockDraftValue('notes', item.notes);
   if(unchanged){
     delete factoryStockEditDraft[key];
+  } else {
+    factoryStockEditDraft[key] = draft;
   }
   syncFactoryStockSaveBar();
 }

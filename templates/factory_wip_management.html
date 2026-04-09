@@ -37,6 +37,7 @@
       <table class="pm-table" id="mainTable">
         <thead>
           <tr>
+            <th style="width:54px; text-align:center;"><input type="checkbox" id="wipSelectAll"></th>
             <th>SKU</th>
             <th>工厂</th>
             <th style="width:120px;">数量</th>
@@ -49,7 +50,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr><td colspan="7" style="text-align:center;">加载中...</td></tr>
+          <tr><td colspan="10" style="text-align:center;">加载中...</td></tr>
         </tbody>
       </table>
     </div>
@@ -100,23 +101,38 @@
   </div>
 </div>
 
-<div class="pm-modal" id="completionConfirmModal">
-  <div class="pm-modal-content" style="max-width:420px;">
-    <h3 style="margin-top:0;">确认完工时间</h3>
-    <div class="form-group" style="margin-bottom:.85rem;">
-      <label for="completionConfirmDate">实际完工时间</label>
-      <input id="completionConfirmDate" type="date">
-    </div>
-    <div id="completionConfirmStatus" class="response" style="display:none;margin-top:.55rem;"></div>
-    <div class="pm-modal-actions">
-      <button type="button" class="btn-secondary" onclick="closeCompletionConfirmModal()">取消</button>
-      <button type="button" class="btn-primary" onclick="confirmCompletionUpdate()">确认</button>
-      <button type="button" class="btn-accent" onclick="confirmCompletionAndAddToFactoryStock()">确认并新增到工厂在库</button>
-    </div>
-  </div>
+<footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
+
+<div id="factoryWipSaveBar" class="preview-savebar" aria-live="polite">
+  <span id="factoryWipSaveText">已修改 0 条预览数据</span>
+  <button type="button" class="btn-secondary" onclick="cancelFactoryWipEdits()">取消修改</button>
+  <button type="button" class="btn-primary" onclick="saveFactoryWipEdits()">统一保存</button>
 </div>
 
-<footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
+<style>
+  .preview-savebar {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 5300;
+    display: none;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.75rem 0.9rem;
+    border: 1px solid rgba(207, 199, 189, 0.9);
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+    min-width: min(560px, calc(100vw - 24px));
+  }
+  .preview-savebar.active { display: flex; }
+  .preview-savebar span { flex: 1; color: var(--morandi-ink); font-weight: 700; }
+  .preview-savebar .btn-primary,
+  .preview-savebar .btn-secondary { padding: 0.65rem 1rem; }
+  .preview-edit-input { width: 100%; }
+  .preview-edit-cell { padding-left: 0.35rem !important; padding-right: 0.35rem !important; }
+  .preview-status-segment { min-width: 110px; }
+</style>
 
 <script>
 let editId = null;
@@ -124,7 +140,8 @@ let optionsLoaded = false;
 let optionFactories = [];
 let optionOrderProducts = [];
 let listCache = [];
-let pendingCompletionUpdateId = null;
+let selectedWipIds = new Set();
+let factoryWipEditDraft = {};
 
 const $ = (s) => document.querySelector(s);
 
@@ -201,7 +218,9 @@ function loadOptions(){
 }
 
 function downloadTemplate(){
-  window.location.href = '/api/factory-wip-template';
+  const ids = Array.from(selectedWipIds).map(v => Number(v)).filter(v => v > 0);
+  const query = ids.length ? `?ids=${encodeURIComponent(ids.join(','))}` : '';
+  window.location.href = `/api/factory-wip-template${query}`;
 }
 
 function triggerImport(){
@@ -260,6 +279,232 @@ function importTemplate(file){
     });
 }
 
+function bindRowSelectionEvents(){
+  document.querySelectorAll('.wip-row-checkbox').forEach(el => {
+    el.addEventListener('change', function(){
+      const id = Number(this.getAttribute('data-id') || 0);
+      if(!id) return;
+      if(this.checked) selectedWipIds.add(id);
+      else selectedWipIds.delete(id);
+      syncWipSelectAll();
+    });
+  });
+}
+
+function getWipSelectAllCheckboxes(){
+  return Array.from(document.querySelectorAll('input#wipSelectAll'));
+}
+
+function syncWipSelectAll(){
+  const masters = getWipSelectAllCheckboxes();
+  const rows = Array.from(document.querySelectorAll('.wip-row-checkbox'));
+  if(!masters.length) return;
+  if(!rows.length){
+    masters.forEach(master => {
+      master.checked = false;
+      master.indeterminate = false;
+    });
+    return;
+  }
+  const checkedCount = rows.filter(r => r.checked).length;
+  const allChecked = checkedCount === rows.length;
+  const partial = checkedCount > 0 && checkedCount < rows.length;
+  masters.forEach(master => {
+    master.checked = allChecked;
+    master.indeterminate = partial;
+  });
+}
+
+function toggleWipSelectAll(checked){
+  document.querySelectorAll('.wip-row-checkbox').forEach(el => {
+    const id = Number(el.getAttribute('data-id') || 0);
+    el.checked = !!checked;
+    if(!id) return;
+    if(checked) selectedWipIds.add(id);
+    else selectedWipIds.delete(id);
+  });
+  syncWipSelectAll();
+}
+
+function normalizeWipDraftValue(field, rawValue){
+  if(field === 'quantity'){
+    const num = parseInt(String(rawValue || '').trim(), 10);
+    return Number.isFinite(num) ? Math.max(0, num) : 0;
+  }
+  if(field === 'is_completed'){
+    return String(rawValue || '0') === '1' ? 1 : 0;
+  }
+  if(field === 'expected_completion_date' || field === 'actual_completion_date'){
+    const text = String(rawValue || '').trim();
+    return text ? text.slice(0, 10) : '';
+  }
+  return String(rawValue || '').trim();
+}
+
+function getWipDraft(itemId){
+  return factoryWipEditDraft[String(itemId)] || null;
+}
+
+function getWipMergedValue(item, field){
+  const draft = getWipDraft(item.id) || {};
+  const value = Object.prototype.hasOwnProperty.call(draft, field) ? draft[field] : item[field];
+  return normalizeWipDraftValue(field, value);
+}
+
+function updateWipDraft(itemId, field, rawValue){
+  const item = listCache.find(x => String(x.id) === String(itemId));
+  if(!item) return;
+  const key = String(itemId);
+  const draft = factoryWipEditDraft[key] || {
+    quantity: Number(item.quantity || 0),
+    expected_completion_date: formatDate(item.expected_completion_date),
+    is_completed: Number(item.is_completed || 0) ? 1 : 0,
+    actual_completion_date: formatDate(item.actual_completion_date),
+    notes: item.notes || ''
+  };
+  draft[field] = normalizeWipDraftValue(field, rawValue);
+  if(field === 'is_completed'){
+    if(draft[field] === 1 && !normalizeWipDraftValue('actual_completion_date', draft.actual_completion_date)){
+      draft.actual_completion_date = todayStr();
+      const dateInput = document.querySelector(`.wip-edit-field[data-id="${itemId}"][data-field="actual_completion_date"]`);
+      if(dateInput) dateInput.value = draft.actual_completion_date;
+    }
+    if(draft[field] === 0){
+      draft.actual_completion_date = '';
+      const dateInput = document.querySelector(`.wip-edit-field[data-id="${itemId}"][data-field="actual_completion_date"]`);
+      if(dateInput) dateInput.value = '';
+    }
+  }
+  const unchanged = normalizeWipDraftValue('quantity', draft.quantity) === normalizeWipDraftValue('quantity', item.quantity)
+    && normalizeWipDraftValue('expected_completion_date', draft.expected_completion_date) === normalizeWipDraftValue('expected_completion_date', item.expected_completion_date)
+    && normalizeWipDraftValue('is_completed', draft.is_completed) === normalizeWipDraftValue('is_completed', item.is_completed)
+    && normalizeWipDraftValue('actual_completion_date', draft.actual_completion_date) === normalizeWipDraftValue('actual_completion_date', item.actual_completion_date)
+    && normalizeWipDraftValue('notes', draft.notes) === normalizeWipDraftValue('notes', item.notes);
+  if(unchanged){
+    delete factoryWipEditDraft[key];
+  } else {
+    factoryWipEditDraft[key] = draft;
+  }
+  syncFactoryWipSaveBar();
+}
+
+function setWipStatusSegment(segmentEl, value){
+  if(!segmentEl) return;
+  const finalVal = String(value) === '1' ? '1' : '0';
+  segmentEl.setAttribute('data-value', finalVal);
+  segmentEl.querySelectorAll('[data-value]').forEach(btn => {
+    const active = String(btn.getAttribute('data-value') || '') === finalVal;
+    btn.classList.toggle('is-active', active);
+  });
+}
+
+function bindFactoryWipEditEvents(){
+  document.querySelectorAll('.wip-edit-field').forEach(el => {
+    const handler = function(){
+      updateWipDraft(this.getAttribute('data-id'), this.getAttribute('data-field'), this.value);
+    };
+    el.addEventListener('input', handler);
+    el.addEventListener('change', handler);
+  });
+  document.querySelectorAll('.wip-status-segment button[data-value]').forEach(btn => {
+    btn.addEventListener('click', function(e){
+      e.stopPropagation();
+      const seg = this.closest('.wip-status-segment');
+      if(!seg) return;
+      const itemId = Number(seg.getAttribute('data-id') || 0);
+      const targetValue = String(this.getAttribute('data-value') || '0');
+      setWipStatusSegment(seg, targetValue);
+      updateWipDraft(itemId, 'is_completed', targetValue);
+      const dateInput = document.querySelector(`.wip-edit-field[data-id="${itemId}"][data-field="actual_completion_date"]`);
+      if(dateInput){
+        if(targetValue === '1' && !dateInput.value){
+          dateInput.value = todayStr();
+          updateWipDraft(itemId, 'actual_completion_date', dateInput.value);
+        }
+        if(targetValue === '0'){
+          dateInput.value = '';
+          updateWipDraft(itemId, 'actual_completion_date', '');
+        }
+      }
+    });
+  });
+}
+
+function countFactoryWipEditedRows(){
+  return Object.keys(factoryWipEditDraft).length;
+}
+
+function syncFactoryWipSaveBar(){
+  const bar = document.getElementById('factoryWipSaveBar');
+  const text = document.getElementById('factoryWipSaveText');
+  if(!bar || !text) return;
+  const count = countFactoryWipEditedRows();
+  text.textContent = `已修改 ${count} 条预览数据`;
+  bar.classList.toggle('active', count > 0);
+}
+
+function cancelFactoryWipEdits(){
+  factoryWipEditDraft = {};
+  renderFactoryWipTable(listCache);
+  syncFactoryWipSaveBar();
+}
+
+function collectFactoryWipUpdateItems(){
+  return Object.keys(factoryWipEditDraft).map(id => ({
+    id: Number(id),
+    quantity: normalizeWipDraftValue('quantity', factoryWipEditDraft[id].quantity),
+    expected_completion_date: normalizeWipDraftValue('expected_completion_date', factoryWipEditDraft[id].expected_completion_date),
+    is_completed: normalizeWipDraftValue('is_completed', factoryWipEditDraft[id].is_completed),
+    actual_completion_date: normalizeWipDraftValue('actual_completion_date', factoryWipEditDraft[id].actual_completion_date),
+    notes: normalizeWipDraftValue('notes', factoryWipEditDraft[id].notes)
+  }));
+}
+
+function saveFactoryWipEdits(){
+  const items = collectFactoryWipUpdateItems();
+  if(!items.length){
+    syncFactoryWipSaveBar();
+    return;
+  }
+  const bar = document.getElementById('factoryWipSaveBar');
+  const saveBtn = bar ? bar.querySelector('.btn-primary') : null;
+  if(saveBtn){
+    saveBtn.disabled = true;
+    saveBtn.textContent = '保存中...';
+  }
+  fetch('/api/factory-wip?action=bulk_update', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items })
+  })
+    .then(r => r.json())
+    .then(d => {
+      if(d.status !== 'success'){
+        if(window.showAppToast){ window.showAppToast(d.message || '批量更新失败', true, 3200); }
+        if(saveBtn){
+          saveBtn.disabled = false;
+          saveBtn.textContent = '统一保存';
+        }
+        return;
+      }
+      factoryWipEditDraft = {};
+      if(window.showAppToast){ window.showAppToast(`批量更新成功：${Number(d.updated || items.length)} 条`, false, 2200); }
+      loadList();
+      syncFactoryWipSaveBar();
+      if(saveBtn){
+        saveBtn.disabled = false;
+        saveBtn.textContent = '统一保存';
+      }
+    })
+    .catch(err => {
+      if(window.showAppToast){ window.showAppToast(err.message || '批量更新失败', true, 3200); }
+      if(saveBtn){
+        saveBtn.disabled = false;
+        saveBtn.textContent = '统一保存';
+      }
+    });
+}
+
 function openCreateModal(){
   const open = () => {
     editId = null;
@@ -286,97 +531,9 @@ function openCreateModal(){
   else loadOptions().then(open).catch(err => { if(window.showAppToast){ window.showAppToast(err.message || '加载选项失败', true, 3200); } });
 }
 
-function openEditModal(id){
-  const row = listCache.find(item => Number(item.id) === Number(id));
-  if(!row) return;
-
-  const open = () => {
-    editId = Number(row.id);
-    $('#pm-modal-title').textContent = '编辑工厂在制库存';
-    $('#modalStatus').style.display = 'none';
-    $('#modalOrderProduct').value = String(row.order_product_id || '');
-    $('#modalFactory').value = String(row.factory_id || '');
-    $('#modalQuantity').value = String(Number(row.quantity || 0));
-    $('#modalExpectedDate').value = formatDate(row.expected_completion_date);
-    setSegmentValue(document.getElementById('modalCompletedSegment'), String(Number(row.is_completed || 0) ? 1 : 0));
-    $('#modalActualCompletionDate').value = formatDate(row.actual_completion_date) || todayStr();
-    toggleActualDateGroup();
-    $('#modalNotes').value = row.notes || '';
-    $('#modalOrderProduct').disabled = true;
-    $('#modalFactory').disabled = true;
-    $('#pm-modal').classList.add('active');
-    if(window.refreshUniversalSingleSelect){
-      window.refreshUniversalSingleSelect('modalOrderProduct');
-      window.refreshUniversalSingleSelect('modalFactory');
-    }
-  };
-
-  if(optionsLoaded) open();
-  else loadOptions().then(open).catch(err => { if(window.showAppToast){ window.showAppToast(err.message || '加载选项失败', true, 3200); } });
-}
-
 function closeModal(){
   $('#pm-modal').classList.remove('active');
   editId = null;
-}
-
-function openCompletionConfirmModal(itemId, defaultDate){
-  pendingCompletionUpdateId = Number(itemId || 0);
-  document.getElementById('completionConfirmStatus').style.display = 'none';
-  document.getElementById('completionConfirmDate').value = defaultDate || todayStr();
-  document.getElementById('completionConfirmModal').classList.add('active');
-}
-
-function closeCompletionConfirmModal(){
-  document.getElementById('completionConfirmModal').classList.remove('active');
-  pendingCompletionUpdateId = null;
-}
-
-function quickUpdateCompletion(itemId, isCompleted, actualCompletionDate, addToFactoryStock){
-  const row = getRowById(itemId);
-  if(!row) return;
-  const payload = {
-    id: Number(row.id),
-    quantity: Math.max(0, Number(row.quantity || 0)),
-    expected_completion_date: formatDate(row.expected_completion_date),
-    notes: row.notes || '',
-    is_completed: isCompleted ? 1 : 0,
-    actual_completion_date: isCompleted ? (actualCompletionDate || todayStr()) : '',
-    add_to_factory_stock: addToFactoryStock ? 1 : 0
-  };
-  fetch('/api/factory-wip', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  })
-    .then(r => r.json())
-    .then(d => {
-      if(d.status !== 'success'){
-        window.showAppToast && window.showAppToast(d.message || '更新失败', true);
-        loadList();
-        return;
-      }
-      window.showAppToast && window.showAppToast('更新成功', false);
-      loadList();
-    })
-    .catch(err => {
-      window.showAppToast && window.showAppToast(err.message || '更新失败', true);
-      loadList();
-    });
-}
-
-function confirmCompletionUpdate(){
-  if(!pendingCompletionUpdateId) return;
-  const dateVal = (document.getElementById('completionConfirmDate').value || '').trim() || todayStr();
-  quickUpdateCompletion(pendingCompletionUpdateId, 1, dateVal, false);
-  closeCompletionConfirmModal();
-}
-
-function confirmCompletionAndAddToFactoryStock(){
-  if(!pendingCompletionUpdateId) return;
-  const dateVal = (document.getElementById('completionConfirmDate').value || '').trim() || todayStr();
-  quickUpdateCompletion(pendingCompletionUpdateId, 1, dateVal, true);
-  closeCompletionConfirmModal();
 }
 
 function saveFromModal(){
@@ -450,59 +607,75 @@ function loadList(){
     .then(d => {
       const tbody = document.querySelector('#mainTable tbody');
       if(d.status !== 'success'){
-        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:#a33;">${d.message || '加载失败'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:#a33;">${d.message || '加载失败'}</td></tr>`;
+        selectedWipIds = new Set();
+        syncWipSelectAll();
+        syncFactoryWipSaveBar();
         return;
       }
       listCache = d.items || [];
+      factoryWipEditDraft = Object.fromEntries(Object.entries(factoryWipEditDraft).filter(([id]) => listCache.some(item => String(item.id) === String(id))));
+      const availableIds = new Set(listCache.map(item => Number(item.id || 0)).filter(v => v > 0));
+      selectedWipIds = new Set(Array.from(selectedWipIds).filter(id => availableIds.has(id)));
       if(!listCache.length){
-        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">暂无数据</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">暂无数据</td></tr>';
+        syncWipSelectAll();
+        syncFactoryWipSaveBar();
         return;
       }
-      tbody.innerHTML = listCache.map(item => `
-        <tr>
-          <td>${item.sku || ''}</td>
-          <td>${item.factory_name || ''}</td>
-          <td>${Number(item.quantity || 0)}</td>
-          <td>${formatDate(item.expected_completion_date)}</td>
-          <td>
-            <div class="status-segment status-segment--inline preview-completed-status" data-id="${item.id}" data-value="${Number(item.is_completed || 0) ? '1' : '0'}">
-              <button type="button" class="status-pill status-pill--yes ${Number(item.is_completed || 0) ? 'is-active' : ''}" data-value="1">是</button>
-              <button type="button" class="status-pill status-pill--no ${Number(item.is_completed || 0) ? '' : 'is-active'}" data-value="0">否</button>
-            </div>
-          </td>
-          <td>${formatDate(item.actual_completion_date)}</td>
-          <td>${item.notes || ''}</td>
-          <td>${formatDateTime(item.created_at)}</td>
-          <td>
-            <div class="pm-actions">
-              <button class="btn-secondary" onclick="openEditModal(${item.id})">编辑</button>
-              <button class="btn-danger" onclick="removeItem(${item.id})">删除</button>
-            </div>
-          </td>
-        </tr>
-      `).join('');
-
-      document.querySelectorAll('.preview-completed-status').forEach(seg => {
-        seg.querySelectorAll('button[data-value]').forEach(btn => {
-          btn.addEventListener('click', function(e){
-            e.stopPropagation();
-            const targetValue = String(this.getAttribute('data-value') || '0');
-            const itemId = Number(seg.getAttribute('data-id') || 0);
-            const row = getRowById(itemId);
-            if(!row) return;
-            if(targetValue === '1'){
-              openCompletionConfirmModal(itemId, formatDate(row.actual_completion_date) || todayStr());
-            } else {
-              quickUpdateCompletion(itemId, 0, '', false);
-            }
-          });
-        });
-      });
+      renderFactoryWipTable(listCache);
+      syncFactoryWipSaveBar();
     })
     .catch(err => {
       const tbody = document.querySelector('#mainTable tbody');
-      tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:#a33;">${err.message || '加载失败'}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:#a33;">${err.message || '加载失败'}</td></tr>`;
+      selectedWipIds = new Set();
+      syncWipSelectAll();
+      syncFactoryWipSaveBar();
     });
+}
+
+function renderFactoryWipTable(items){
+  const tbody = document.querySelector('#mainTable tbody');
+  const rows = Array.isArray(items) ? items : [];
+  if(!tbody) return;
+  if(!rows.length){
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">暂无数据</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(item => {
+    const quantity = getWipMergedValue(item, 'quantity');
+    const expectedCompletionDate = getWipMergedValue(item, 'expected_completion_date');
+    const isCompleted = getWipMergedValue(item, 'is_completed');
+    const actualCompletionDate = getWipMergedValue(item, 'actual_completion_date');
+    const notes = getWipMergedValue(item, 'notes');
+    return `
+      <tr>
+        <td style="text-align:center;"><input type="checkbox" class="wip-row-checkbox" data-id="${item.id}" ${selectedWipIds.has(Number(item.id)) ? 'checked' : ''}></td>
+        <td>${item.sku || ''}</td>
+        <td>${item.factory_name || ''}</td>
+        <td class="preview-edit-cell"><input type="number" min="0" step="1" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="quantity" value="${Number(quantity || 0)}"></td>
+        <td class="preview-edit-cell"><input type="date" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="expected_completion_date" value="${expectedCompletionDate || ''}"></td>
+        <td class="preview-edit-cell">
+          <div class="status-segment status-segment--inline preview-status-segment wip-status-segment" data-id="${item.id}" data-value="${Number(isCompleted || 0) ? '1' : '0'}">
+            <button type="button" class="status-pill status-pill--yes ${Number(isCompleted || 0) ? 'is-active' : ''}" data-value="1">是</button>
+            <button type="button" class="status-pill status-pill--no ${Number(isCompleted || 0) ? '' : 'is-active'}" data-value="0">否</button>
+          </div>
+        </td>
+        <td class="preview-edit-cell"><input type="date" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="actual_completion_date" value="${actualCompletionDate || ''}"></td>
+        <td class="preview-edit-cell"><input type="text" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="notes" value="${String(notes || '').replace(/"/g, '&quot;')}"></td>
+        <td>${formatDateTime(item.created_at)}</td>
+        <td>
+          <div class="pm-actions">
+            <button class="btn-danger" onclick="removeItem(${item.id})">删除</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+  bindRowSelectionEvents();
+  bindFactoryWipEditEvents();
+  syncWipSelectAll();
 }
 
 function resetSearch(){
@@ -521,12 +694,15 @@ document.getElementById('modalCompletedSegment').querySelectorAll('button[data-v
   });
 });
 
-$('#pm-modal').addEventListener('click', (e) => {
-  if(e.target === e.currentTarget) closeModal();
+document.addEventListener('change', function(e){
+  const target = e.target;
+  if(target && target.id === 'wipSelectAll'){
+    toggleWipSelectAll(!!target.checked);
+  }
 });
 
-document.getElementById('completionConfirmModal').addEventListener('click', (e) => {
-  if(e.target === e.currentTarget) closeCompletionConfirmModal();
+$('#pm-modal').addEventListener('click', (e) => {
+  if(e.target === e.currentTarget) closeModal();
 });
 
 window.addEventListener('load', () => {
