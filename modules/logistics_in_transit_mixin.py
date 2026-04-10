@@ -384,36 +384,36 @@ class LogisticsInTransitMixin:
                                 return self.send_json({'status': 'success', 'item': None}, start_response)
                             return self.send_json({'status': 'success', 'items': [], 'page': page, 'page_size': page_size, 'total': 0}, start_response)
 
-                        if item_id:
-                            ids = [int(r.get('id')) for r in rows if r.get('id')]
-                            item_map = {}
-                            if ids:
-                                placeholders = ','.join(['%s'] * len(ids))
-                                cur.execute(
-                                    f"""
-                                    SELECT li.transit_id, li.order_product_id, li.shipped_qty, li.listed_qty, op.sku
-                                    FROM logistics_in_transit_items li
-                                    JOIN order_products op ON op.id = li.order_product_id
-                                    WHERE li.transit_id IN ({placeholders})
-                                    ORDER BY li.transit_id, li.id
-                                    """,
-                                    ids
-                                )
-                                item_rows = cur.fetchall() or []
-                                for irow in item_rows:
-                                    transit_id = int(irow.get('transit_id') or 0)
-                                    if not transit_id:
-                                        continue
-                                    item_map.setdefault(transit_id, []).append({
-                                        'order_product_id': irow.get('order_product_id'),
-                                        'sku': irow.get('sku'),
-                                        'shipped_qty': irow.get('shipped_qty'),
-                                        'listed_qty': irow.get('listed_qty')
-                                    })
-                                self._perf_mark(perf_ctx, 'load_item_detail_rows')
+                        ids = [int(r.get('id')) for r in rows if r.get('id')]
+                        item_map = {}
+                        if ids:
+                            placeholders = ','.join(['%s'] * len(ids))
+                            cur.execute(
+                                f"""
+                                SELECT li.transit_id, li.order_product_id, li.shipped_qty, li.listed_qty, op.sku
+                                FROM logistics_in_transit_items li
+                                JOIN order_products op ON op.id = li.order_product_id
+                                WHERE li.transit_id IN ({placeholders})
+                                ORDER BY li.transit_id, li.id
+                                """,
+                                ids
+                            )
+                            item_rows = cur.fetchall() or []
+                            for irow in item_rows:
+                                transit_id = int(irow.get('transit_id') or 0)
+                                if not transit_id:
+                                    continue
+                                item_map.setdefault(transit_id, []).append({
+                                    'order_product_id': irow.get('order_product_id'),
+                                    'sku': irow.get('sku'),
+                                    'shipped_qty': irow.get('shipped_qty'),
+                                    'listed_qty': irow.get('listed_qty')
+                                })
+                            self._perf_mark(perf_ctx, 'load_item_detail_rows')
 
-                            for row in rows:
-                                row['items'] = item_map.get(int(row.get('id') or 0), [])
+                        for row in rows:
+                            row['items'] = item_map.get(int(row.get('id') or 0), [])
+                            if item_id:
                                 row['listed_status'] = '已上架' if row.get('listed_date') else '未上架'
 
                         for row in rows:

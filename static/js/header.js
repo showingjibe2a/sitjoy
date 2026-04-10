@@ -9,6 +9,7 @@
     let activeResizeState = null;
     let activeHelpDotTooltip = null;
     let activeDatePickerState = null;
+    let activeGridSelection = null;
     let suppressSortUntil = 0;
 
     function isElementVisibleForEnhance(el){
@@ -711,6 +712,243 @@
         return rows;
     }
 
+    function isEditableDomTarget(target){
+        if(!target || !target.closest) return false;
+        return !!target.closest('input, textarea, select, button, a, [contenteditable="true"], .universal-select-dropdown, .status-pill');
+    }
+
+    function clearGridSelectionClasses(table){
+        if(!table || !table.querySelectorAll) return;
+        table.querySelectorAll('td.pm-grid-cell-selected, td.pm-grid-cell-anchor').forEach(cell => {
+            cell.classList.remove('pm-grid-cell-selected', 'pm-grid-cell-anchor');
+        });
+        table.classList.remove('is-grid-selecting');
+    }
+
+    function clearGridSelection(){
+        if(!activeGridSelection) return;
+        clearGridSelectionClasses(activeGridSelection.state && activeGridSelection.state.table);
+        activeGridSelection = null;
+    }
+
+    function getVisibleRows(state){
+        return getDataRows(state).filter(row => row && row.style.display !== 'none');
+    }
+
+    function getVisibleCellsInRow(row){
+        return Array.from(row.cells || []).filter(cell => {
+            if(!cell || cell.classList.contains('pm-table-hide-col')) return false;
+            if(cell.style.display === 'none') return false;
+            return true;
+        });
+    }
+
+    function getCellCoord(state, cell){
+        if(!state || !cell) return null;
+        const rows = getVisibleRows(state);
+        for(let r = 0; r < rows.length; r += 1){
+            const cells = getVisibleCellsInRow(rows[r]);
+            const c = cells.indexOf(cell);
+            if(c >= 0) return { row: r, col: c };
+        }
+        return null;
+    }
+
+    function getCellByCoord(state, coord){
+        if(!state || !coord) return null;
+        const rows = getVisibleRows(state);
+        if(coord.row < 0 || coord.row >= rows.length) return null;
+        const cells = getVisibleCellsInRow(rows[coord.row]);
+        if(coord.col < 0 || coord.col >= cells.length) return null;
+        return cells[coord.col] || null;
+    }
+
+    function getRectCells(state, a, b){
+        if(!state || !a || !b) return [];
+        const r1 = Math.min(a.row, b.row);
+        const r2 = Math.max(a.row, b.row);
+        const c1 = Math.min(a.col, b.col);
+        const c2 = Math.max(a.col, b.col);
+        const rows = getVisibleRows(state);
+        const out = [];
+        for(let r = r1; r <= r2; r += 1){
+            const row = rows[r];
+            if(!row) continue;
+            const cells = getVisibleCellsInRow(row);
+            for(let c = c1; c <= c2; c += 1){
+                if(cells[c]) out.push(cells[c]);
+            }
+        }
+        return out;
+    }
+
+    function paintGridSelection(){
+        if(!activeGridSelection || !activeGridSelection.state) return;
+        const state = activeGridSelection.state;
+        clearGridSelectionClasses(state.table);
+        activeGridSelection.selectedCells.forEach(cell => {
+            if(cell && cell.isConnected) cell.classList.add('pm-grid-cell-selected');
+        });
+        const anchorCell = getCellByCoord(state, activeGridSelection.anchorCoord);
+        if(anchorCell) anchorCell.classList.add('pm-grid-cell-anchor');
+        if(activeGridSelection.selectedCells.size > 0){
+            state.table.classList.add('is-grid-selecting');
+        }
+    }
+
+    function ensureGridSelectionState(state){
+        if(activeGridSelection && activeGridSelection.state === state) return activeGridSelection;
+        clearGridSelection();
+        activeGridSelection = {
+            state,
+            selectedCells: new Set(),
+            anchorCoord: null,
+            dragging: false,
+            dragAnchor: null
+        };
+        return activeGridSelection;
+    }
+
+    function selectCellsForState(state, cells, anchorCoord){
+        const selection = ensureGridSelectionState(state);
+        selection.selectedCells = new Set((cells || []).filter(Boolean));
+        selection.anchorCoord = anchorCoord || null;
+        paintGridSelection();
+    }
+
+    function toggleCellForState(state, cell, anchorCoord){
+        const selection = ensureGridSelectionState(state);
+        if(selection.selectedCells.has(cell)) selection.selectedCells.delete(cell);
+        else selection.selectedCells.add(cell);
+        selection.anchorCoord = anchorCoord || selection.anchorCoord;
+        paintGridSelection();
+    }
+
+    function extractCellClipboardText(cell){
+        if(!cell) return '';
+
+        // Prefer status value in table cells (copy current state only, not all button labels).
+        const activeStatus = cell.querySelector('.status-pill.is-active');
+        if(activeStatus){
+            return String(activeStatus.textContent || '').replace(/\s+/g, ' ').trim();
+        }
+
+        const segment = cell.querySelector('.status-segment');
+        if(segment){
+            const value = String(segment.getAttribute('data-value') || '').trim();
+            if(value){
+                let matched = null;
+                segment.querySelectorAll('.status-pill').forEach(btn => {
+                    if(matched) return;
+                    if(String(btn.getAttribute('data-value') || '') === value){
+                        matched = btn;
+                    }
+                });
+                if(matched){
+                    return String(matched.textContent || '').replace(/\s+/g, ' ').trim();
+                }
+            }
+        }
+
+        return String((cell.innerText || cell.textContent || ''))
+            .replace(/\r/g, '')
+            .replace(/\n+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    function copyGridSelectionToClipboard(){
+        if(!activeGridSelection || !activeGridSelection.state || !activeGridSelection.selectedCells.size) return false;
+        const state = activeGridSelection.state;
+        const coords = [];
+        activeGridSelection.selectedCells.forEach(cell => {
+            const coord = getCellCoord(state, cell);
+            if(coord) coords.push(coord);
+        });
+        if(!coords.length) return false;
+
+        const minRow = Math.min.apply(null, coords.map(x => x.row));
+        const maxRow = Math.max.apply(null, coords.map(x => x.row));
+        const minCol = Math.min.apply(null, coords.map(x => x.col));
+        const maxCol = Math.max.apply(null, coords.map(x => x.col));
+        const selectedKey = new Set(coords.map(x => `${x.row}:${x.col}`));
+
+        const lines = [];
+        for(let r = minRow; r <= maxRow; r += 1){
+            const cols = [];
+            for(let c = minCol; c <= maxCol; c += 1){
+                const key = `${r}:${c}`;
+                if(!selectedKey.has(key)){
+                    cols.push('');
+                    continue;
+                }
+                const cell = getCellByCoord(state, { row: r, col: c });
+                const text = extractCellClipboardText(cell);
+                cols.push(text);
+            }
+            lines.push(cols.join('\t'));
+        }
+        const text = lines.join('\n');
+        if(!text) return false;
+
+        if(navigator.clipboard && navigator.clipboard.writeText){
+            navigator.clipboard.writeText(text).then(() => {
+                if(window.showAppToast) window.showAppToast('已复制选中区域', false, 1200);
+            }).catch(() => {});
+            return true;
+        }
+
+        const area = document.createElement('textarea');
+        area.value = text;
+        area.style.position = 'fixed';
+        area.style.left = '-10000px';
+        area.style.top = '-10000px';
+        document.body.appendChild(area);
+        area.focus();
+        area.select();
+        try {
+            document.execCommand('copy');
+            if(window.showAppToast) window.showAppToast('已复制选中区域', false, 1200);
+        } catch (_) {}
+        document.body.removeChild(area);
+        return true;
+    }
+
+    function bindGridSelection(state){
+        if(!state || !state.tbody || state.tbody.dataset.gridSelectBound === '1') return;
+        state.tbody.dataset.gridSelectBound = '1';
+
+        state.tbody.addEventListener('mousedown', (event) => {
+            if(event.button !== 0) return;
+            const cell = event.target && event.target.closest ? event.target.closest('td') : null;
+            if(!cell || !state.tbody.contains(cell)) return;
+            if(cell.classList.contains('pm-table-hide-col')) return;
+            if(isEditableDomTarget(event.target) && event.target !== cell) return;
+
+            const coord = getCellCoord(state, cell);
+            if(!coord) return;
+
+            event.preventDefault();
+            const selection = ensureGridSelectionState(state);
+
+            if(event.shiftKey && selection.anchorCoord){
+                selectCellsForState(state, getRectCells(state, selection.anchorCoord, coord), selection.anchorCoord);
+                return;
+            }
+
+            if(event.ctrlKey || event.metaKey){
+                toggleCellForState(state, cell, coord);
+                return;
+            }
+
+            selectCellsForState(state, [cell], coord);
+            if(activeGridSelection){
+                activeGridSelection.dragging = true;
+                activeGridSelection.dragAnchor = coord;
+            }
+        });
+    }
+
     function mapRowByOrigin(row){
         const map = new Map();
         Array.from(row.cells || []).forEach((cell, idx) => {
@@ -1185,6 +1423,11 @@
     }
 
     function refreshManagedTable(state){
+        if(activeGridSelection && activeGridSelection.state === state){
+            const hasDetached = Array.from(activeGridSelection.selectedCells || []).some(cell => !cell || !cell.isConnected);
+            if(hasDetached) clearGridSelection();
+        }
+
         if(state.isRefreshing){
             state.needRefresh = true;
             return;
@@ -1454,6 +1697,8 @@
         const observer = new MutationObserver(() => scheduleRefresh());
         observer.observe(state.tbody, { childList: true, subtree: false });
         state.observer = observer;
+
+        bindGridSelection(state);
 
         refreshManagedTable(state);
     }
@@ -1857,32 +2102,61 @@
         if(!e.target.closest('.pm-table-columns') && !e.target.closest('.pm-table-columns-panel')) {
             closeColumnsPanel(activeColumnsPanelState);
         }
+        if(activeGridSelection && !e.target.closest('.is-managed-table')) {
+            clearGridSelection();
+        }
     });
 
     document.addEventListener('keydown', (e) => {
+        if((e.ctrlKey || e.metaKey) && String(e.key || '').toLowerCase() === 'c'){
+            if(isEditableDomTarget(e.target)) return;
+            if(copyGridSelectionToClipboard()){
+                e.preventDefault();
+                return;
+            }
+        }
         if(e.key === 'Escape'){
             closeColumnsPanel(activeColumnsPanelState);
             closeAllDropdowns();
             closeDatePicker();
+            clearGridSelection();
         }
     });
 
     document.addEventListener('mousemove', (event) => {
-        if(!activeResizeState) return;
-        const delta = event.clientX - activeResizeState.startX;
-        if(Math.abs(delta) > 2) activeResizeState.hasMoved = true;
-        const width = activeResizeState.startWidth + delta;
-        setColumnWidthByOrigin(activeResizeState.state, activeResizeState.origin, width);
+        if(activeResizeState){
+            const delta = event.clientX - activeResizeState.startX;
+            if(Math.abs(delta) > 2) activeResizeState.hasMoved = true;
+            const width = activeResizeState.startWidth + delta;
+            setColumnWidthByOrigin(activeResizeState.state, activeResizeState.origin, width);
+        }
+
+        if(activeGridSelection && activeGridSelection.dragging && activeGridSelection.state){
+            const anchor = activeGridSelection.dragAnchor;
+            if(!anchor) return;
+            const el = document.elementFromPoint(event.clientX, event.clientY);
+            const cell = el && el.closest ? el.closest('td') : null;
+            const state = activeGridSelection.state;
+            if(!cell || !state.tbody.contains(cell) || cell.classList.contains('pm-table-hide-col')) return;
+            const coord = getCellCoord(state, cell);
+            if(!coord) return;
+            selectCellsForState(state, getRectCells(state, anchor, coord), anchor);
+            activeGridSelection.dragging = true;
+            activeGridSelection.dragAnchor = anchor;
+        }
     });
 
     document.addEventListener('mouseup', () => {
-        if(!activeResizeState) return;
-        if(activeResizeState.hasMoved) suppressSortUntil = Date.now() + 260;
-        activeResizeState.handle.classList.remove('is-active');
-        persistColumnWidths(activeResizeState.state);
-        activeResizeState = null;
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
+        if(activeResizeState){
+            if(activeResizeState.hasMoved) suppressSortUntil = Date.now() + 260;
+            activeResizeState.handle.classList.remove('is-active');
+            persistColumnWidths(activeResizeState.state);
+            activeResizeState = null;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        }
+
+        if(activeGridSelection) activeGridSelection.dragging = false;
     });
 
     window.addEventListener('resize', () => {

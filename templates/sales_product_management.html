@@ -154,6 +154,18 @@
             z-index: 70;
             display: none;
         }
+        .sales-order-sku-cell {
+            white-space: normal !important;
+            line-height: 1.35;
+        }
+        .sales-order-sku-lines {
+            display: grid;
+            gap: 0.18rem;
+        }
+        .sales-order-sku-line {
+            display: block;
+            word-break: break-all;
+        }
         .percent-input {
             position: relative;
             width: 100%;
@@ -635,6 +647,15 @@
         let mainImageItems = [];
         let currentEditingMainImageName = '';
 
+        function escapeHtml(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         function normalizeProductStatus(value) {
             const v = String(value || '').trim().toLowerCase();
             return ['enabled', 'retained', 'discarded'].includes(v) ? v : 'enabled';
@@ -944,9 +965,16 @@
 
             tbody.innerHTML = (items || []).map(item => {
                 const orderSkuDisplay = (() => {
-                    if (!item.order_product_id || !item.order_sku) return '-';
-                    const fabric = item.order_sku_fabric ? `（${item.order_sku_fabric}）` : '';
-                    return `${item.order_sku}${fabric}`;
+                    const links = Array.isArray(item.order_sku_links) ? item.order_sku_links : [];
+                    if (!links.length) return '-';
+                    const lines = links
+                        .filter(x => x && x.sku)
+                        .map(x => {
+                            const qty = Math.max(1, Number(x.quantity || 1));
+                            return `<span class="sales-order-sku-line">${escapeHtml(x.sku)} × ${qty}</span>`;
+                        });
+                    if (!lines.length) return '-';
+                    return `<div class="sales-order-sku-lines">${lines.join('')}</div>`;
                 })();
                 const createdDateStr = item.created_at ? new Date(item.created_at).toLocaleDateString('zh-CN') : '-';
                 return `
@@ -959,7 +987,7 @@
                     <td>${item.platform_sku || ''}</td>
                     <td>${item.child_code || ''}</td>
                     <td>${item.dachene_yuncang_no || ''}</td>
-                    <td>${orderSkuDisplay}</td>
+                    <td class="sales-order-sku-cell">${orderSkuDisplay}</td>
                     <td class="${(Number(item.sale_price_usd || 0) > 0 && Number(item.warehouse_cost_usd || 0) + Number(item.last_mile_cost_usd || 0) > 0 && Number(item.sale_price_usd || 0) < (Number(item.warehouse_cost_usd || 0) + Number(item.last_mile_cost_usd || 0))) ? 'danger-note' : ''}">${item.sale_price_usd || ''}</td>
                     <td>${createdDateStr}</td>
                     <td>
@@ -1807,7 +1835,7 @@
 
         function loadSalesProductList() {
             const q = document.getElementById('searchInput').value.trim();
-            const url = q ? `/api/sales-product?q=${encodeURIComponent(q)}` : '/api/sales-product';
+            const url = q ? `/api/sales-product?q=${encodeURIComponent(q)}&include_links=1` : '/api/sales-product?include_links=1';
             fetch(url).then(r => r.json()).then(data => {
                 const tbody = document.querySelector('#salesProductTable tbody');
                 if (data.status !== 'success') {

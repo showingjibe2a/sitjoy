@@ -739,6 +739,16 @@ input.optional-field[type="datetime-local"]:focus {
     background: rgba(0, 0, 0, 0.04);
 }
 
+.pm-table.is-grid-selecting td.pm-grid-cell-selected {
+    background: rgba(136, 133, 126, 0.2) !important;
+    box-shadow: inset 0 0 0 1px rgba(110, 107, 101, 0.26);
+}
+
+.pm-table.is-grid-selecting td.pm-grid-cell-anchor {
+    background: rgba(136, 133, 126, 0.28) !important;
+    box-shadow: inset 0 0 0 2px rgba(102, 99, 93, 0.44);
+}
+
 .pm-table th {
     background: rgba(236, 231, 223, 0.75);
     color: var(--morandi-ink);
