@@ -390,9 +390,10 @@ class LogisticsInTransitMixin:
                             placeholders = ','.join(['%s'] * len(ids))
                             cur.execute(
                                 f"""
-                                SELECT li.transit_id, li.order_product_id, li.shipped_qty, li.listed_qty, op.sku
+                                SELECT li.transit_id, li.order_product_id, li.shipped_qty, li.listed_qty, op.sku, fm.representative_color
                                 FROM logistics_in_transit_items li
                                 JOIN order_products op ON op.id = li.order_product_id
+                                LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
                                 WHERE li.transit_id IN ({placeholders})
                                 ORDER BY li.transit_id, li.id
                                 """,
@@ -406,6 +407,7 @@ class LogisticsInTransitMixin:
                                 item_map.setdefault(transit_id, []).append({
                                     'order_product_id': irow.get('order_product_id'),
                                     'sku': irow.get('sku'),
+                                    'representative_color': irow.get('representative_color'),
                                     'shipped_qty': irow.get('shipped_qty'),
                                     'listed_qty': irow.get('listed_qty')
                                 })
@@ -557,6 +559,83 @@ class LogisticsInTransitMixin:
                 self._perf_mark(perf_ctx, 'quick_status_write')
                 self._refresh_transit_qty_consistent(item_id)
                 return self.send_json({'status': 'success', 'id': item_id, 'field': field, 'value': bool_value}, start_response)
+
+            if method == 'POST' and action == 'quick_batch_fields':
+                updates = data.get('updates') if isinstance(data.get('updates'), list) else []
+                if not updates:
+                    return self.send_json({'status': 'error', 'message': '缺少更新数据'}, start_response)
+
+                normalized_updates = []
+                for raw in updates:
+                    if not isinstance(raw, dict):
+                        continue
+                    item_id = self._parse_int(raw.get('id'))
+                    if not item_id:
+                        continue
+
+                    payload = {'id': item_id}
+                    if 'expected_listed_date_latest' in raw:
+                        expected_date = _normalize_date(raw.get('expected_listed_date_latest'))
+                        if not expected_date:
+                            return self.send_json({'status': 'error', 'message': f'记录 {item_id} 的预计上架时间不能为空'}, start_response)
+                        payload['expected_listed_date_latest'] = expected_date
+
+                    if 'listed_date' in raw:
+                        payload['listed_date'] = _normalize_date(raw.get('listed_date'))
+
+                    if 'remark' in raw:
+                        payload['remark'] = (raw.get('remark') or '').strip() or None
+
+                    if len(payload.keys()) > 1:
+                        normalized_updates.append(payload)
+
+                if not normalized_updates:
+                    return self.send_json({'status': 'error', 'message': '没有可提交的变更'}, start_response)
+
+                with self._get_db_connection() as conn:
+                    self._perf_mark(perf_ctx, 'db_connected_for_quick_batch_fields')
+                    with conn.cursor() as cur:
+                        for payload in normalized_updates:
+                            item_id = payload['id']
+                            cur.execute(
+                                "SELECT id, qty_verified FROM logistics_in_transit WHERE id=%s LIMIT 1",
+                                (item_id,)
+                            )
+                            existing = cur.fetchone() or {}
+                            if not existing:
+                                return self.send_json({'status': 'error', 'message': f'记录 {item_id} 不存在'}, start_response)
+
+                            sets = []
+                            params = []
+
+                            if 'expected_listed_date_latest' in payload:
+                                sets.append('expected_listed_date_latest=%s')
+                                params.append(payload.get('expected_listed_date_latest'))
+
+                            if 'listed_date' in payload:
+                                listed_date = payload.get('listed_date')
+                                if listed_date is None and self._parse_int(existing.get('qty_verified')):
+                                    return self.send_json({'status': 'error', 'message': f'记录 {item_id} 已核对上架数量，不能清空实际上架日期'}, start_response)
+                                sets.append('listed_date=%s')
+                                params.append(listed_date)
+                                sets.append('inventory_registered=%s')
+                                params.append(1 if listed_date else 0)
+
+                            if 'remark' in payload:
+                                sets.append('remark=%s')
+                                params.append(payload.get('remark'))
+
+                            if not sets:
+                                continue
+
+                            params.append(item_id)
+                            cur.execute(
+                                f"UPDATE logistics_in_transit SET {', '.join(sets)} WHERE id=%s",
+                                tuple(params)
+                            )
+
+                self._perf_mark(perf_ctx, 'quick_batch_fields_write')
+                return self.send_json({'status': 'success', 'updated_count': len(normalized_updates)}, start_response)
 
             if method in ('POST', 'PUT'):
                 item_id = self._parse_int(data.get('id'))

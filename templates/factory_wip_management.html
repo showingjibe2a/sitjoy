@@ -241,7 +241,10 @@ function formatDate(value){
 
 function safeColorValue(value){
   const text = String(value || '').trim();
-  return /^#[0-9a-fA-F]{6}$/.test(text) ? text : '';
+  if(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(text)) return text;
+  if(/^rgba?\(\s*(?:\d{1,3}%?\s*,\s*){2}\d{1,3}%?(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)$/.test(text)) return text;
+  if(/^hsla?\(\s*\d{1,3}(?:deg|rad|turn)?\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%\s*(?:,\s*(?:0|1|0?\.\d+))?\s*\)$/.test(text)) return text;
+  return '';
 }
 
 function todayStr(){
@@ -756,7 +759,7 @@ function renderFactoryWipTable(items){
     const isOnMarket = Number(item.is_on_market || 0) ? 1 : 0;
     const colorValue = safeColorValue(item.representative_color);
     const colorHtml = colorValue
-      ? `<span class="sku-color-chip-wrap"><span class="sku-color-chip" style="background:${colorValue};"></span><span>${colorValue}</span></span>`
+      ? `<span class="sku-color-chip-wrap"><span class="sku-color-chip" style="background:${colorValue};"></span></span>`
       : '<span class="sku-color-empty">-</span>';
     return `
       <tr>

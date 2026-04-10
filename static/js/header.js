@@ -827,6 +827,20 @@
     function extractCellClipboardText(cell){
         if(!cell) return '';
 
+        const transitDetailList = cell.querySelector('[data-transit-detail-list="1"]');
+        if(transitDetailList){
+            const detailRows = Array.from(transitDetailList.querySelectorAll('[data-transit-detail-row="1"]'));
+            if(detailRows.length){
+                return detailRows.map((row) => {
+                    const color = row.querySelector('.transit-color-dot') ? '●' : String((row.querySelector('.transit-detail-color-col') || {}).textContent || '').replace(/\s+/g, ' ').trim();
+                    const sku = String((row.querySelector('.transit-detail-sku-text') || row.querySelector('.transit-detail-sku-col') || {}).textContent || '').replace(/\s+/g, ' ').trim();
+                    const shipped = String((row.querySelector('.transit-detail-qty-col') || {}).textContent || '').replace(/\s+/g, ' ').trim();
+                    const listed = String((row.querySelector('.transit-detail-listed-col') || {}).textContent || '').replace(/\s+/g, ' ').trim();
+                    return [color, sku, shipped, listed].join('\t');
+                }).join('\n');
+            }
+        }
+
         // Prefer status value in table cells (copy current state only, not all button labels).
         const activeStatus = cell.querySelector('.status-pill.is-active');
         if(activeStatus){
@@ -1469,22 +1483,28 @@
                     .map(meta => meta.origin)
             );
             state.lockedColumns.forEach(origin => state.visibleColumns.add(origin));
-            state.columnsWrap.style.display = headerCount >= 2 ? '' : 'none';
-            renderColumnPanel(state);
+            if(!state.light){
+                state.columnsWrap.style.display = headerCount >= 2 ? '' : 'none';
+                renderColumnPanel(state);
+            }
         }
 
         ensureRowSortOrigin(state);
-        applyColumnOrder(state);
-        applyColumnVisibility(state);
-        syncDetachedHeader(state);
-        applyColumnWidths(state);
+        if(!state.light){
+            applyColumnOrder(state);
+            applyColumnVisibility(state);
+            syncDetachedHeader(state);
+            applyColumnWidths(state);
+        }
         ensureSortableHeaders(state);
         refreshSortHeaderUi(state);
         applySort(state);
-        ensureResizeHandles(state);
-        applyPagination(state);
-        syncTopScroll(state);
-        if(activeColumnsPanelState === state) repositionColumnsPanel(state);
+        if(!state.light){
+            ensureResizeHandles(state);
+            applyPagination(state);
+            syncTopScroll(state);
+            if(activeColumnsPanelState === state) repositionColumnsPanel(state);
+        }
 
         state.isRefreshing = false;
         if(state.needRefresh){
@@ -1496,56 +1516,67 @@
     function createManagedTable(table, index){
         if(managedTableState.has(table) || !shouldManageTable(table)) return;
 
+        const manageMode = String(table.dataset.tableManageMode || '').trim().toLowerCase();
+        const isLightTable = manageMode === 'light';
+
         if(!table.id) table.dataset.manageKey = `managed-${index + 1}`;
         table.classList.add('is-managed-table');
         table.classList.add('pm-table');
 
         let wrap = table.parentElement;
-        if(!wrap || !wrap.classList.contains('pm-table-wrap')){
-            wrap = document.createElement('div');
-            wrap.className = 'pm-table-wrap';
-            table.parentNode.insertBefore(wrap, table);
-            wrap.appendChild(table);
+        let headWrap = null;
+        let headTable = null;
+        let toolbar = null;
+        let topScroll = null;
+        let topScrollInner = null;
+
+        if(!isLightTable){
+            if(!wrap || !wrap.classList.contains('pm-table-wrap')){
+                wrap = document.createElement('div');
+                wrap.className = 'pm-table-wrap';
+                table.parentNode.insertBefore(wrap, table);
+                wrap.appendChild(table);
+            }
+            wrap.classList.add('is-managed-wrap', 'pm-managed-body-wrap');
+
+            headWrap = document.createElement('div');
+            headWrap.className = 'pm-table-wrap pm-managed-head-wrap is-managed-wrap';
+            headTable = document.createElement('table');
+            headTable.className = `${table.className} pm-managed-head-table`;
+            headTable.setAttribute('data-disable-table-manage', '1');
+            headWrap.appendChild(headTable);
+
+            toolbar = document.createElement('div');
+            toolbar.className = 'pm-table-toolbar';
+            toolbar.innerHTML = `
+                <div class="pm-table-toolbar-left">
+                    <label>每页</label>
+                    <select class="pm-table-page-size" data-universal-no-search="1"></select>
+                    <span class="pm-table-info"></span>
+                </div>
+                <div class="pm-table-toolbar-right">
+                    <button type="button" class="pm-table-columns-reset btn-secondary" title="恢复默认列宽">重置列宽</button>
+                    <div class="pm-table-columns">
+                        <button type="button" class="pm-table-columns-trigger btn-secondary" aria-expanded="false">字段显示</button>
+                        <div class="pm-table-columns-panel"></div>
+                    </div>
+                    <div class="pm-table-pager">
+                        <button type="button" class="pm-table-prev btn-secondary">上一页</button>
+                        <span class="pm-table-pager-current">1 / 1</span>
+                        <button type="button" class="pm-table-next btn-secondary">下一页</button>
+                    </div>
+                </div>
+            `;
+            wrap.parentNode.insertBefore(toolbar, wrap);
+
+            topScroll = document.createElement('div');
+            topScroll.className = 'pm-table-top-scroll';
+            topScrollInner = document.createElement('div');
+            topScrollInner.className = 'pm-table-top-scroll-inner';
+            topScroll.appendChild(topScrollInner);
+            wrap.parentNode.insertBefore(headWrap, wrap);
+            wrap.parentNode.insertBefore(topScroll, wrap);
         }
-        wrap.classList.add('is-managed-wrap', 'pm-managed-body-wrap');
-
-        const headWrap = document.createElement('div');
-        headWrap.className = 'pm-table-wrap pm-managed-head-wrap is-managed-wrap';
-        const headTable = document.createElement('table');
-        headTable.className = `${table.className} pm-managed-head-table`;
-        headTable.setAttribute('data-disable-table-manage', '1');
-        headWrap.appendChild(headTable);
-
-        const toolbar = document.createElement('div');
-        toolbar.className = 'pm-table-toolbar';
-        toolbar.innerHTML = `
-            <div class="pm-table-toolbar-left">
-                <label>每页</label>
-                <select class="pm-table-page-size" data-universal-no-search="1"></select>
-                <span class="pm-table-info"></span>
-            </div>
-            <div class="pm-table-toolbar-right">
-                <button type="button" class="pm-table-columns-reset btn-secondary" title="恢复默认列宽">重置列宽</button>
-                <div class="pm-table-columns">
-                    <button type="button" class="pm-table-columns-trigger btn-secondary" aria-expanded="false">字段显示</button>
-                    <div class="pm-table-columns-panel"></div>
-                </div>
-                <div class="pm-table-pager">
-                    <button type="button" class="pm-table-prev btn-secondary">上一页</button>
-                    <span class="pm-table-pager-current">1 / 1</span>
-                    <button type="button" class="pm-table-next btn-secondary">下一页</button>
-                </div>
-            </div>
-        `;
-        wrap.parentNode.insertBefore(toolbar, wrap);
-
-        const topScroll = document.createElement('div');
-        topScroll.className = 'pm-table-top-scroll';
-        const topScrollInner = document.createElement('div');
-        topScrollInner.className = 'pm-table-top-scroll-inner';
-        topScroll.appendChild(topScrollInner);
-        wrap.parentNode.insertBefore(headWrap, wrap);
-        wrap.parentNode.insertBefore(topScroll, wrap);
 
         const state = {
             table,
@@ -1556,15 +1587,16 @@
             toolbar,
             topScroll,
             topScrollInner,
-            pageSizeSelect: toolbar.querySelector('.pm-table-page-size'),
-            info: toolbar.querySelector('.pm-table-info'),
-            prevBtn: toolbar.querySelector('.pm-table-prev'),
-            nextBtn: toolbar.querySelector('.pm-table-next'),
-            pageCurrent: toolbar.querySelector('.pm-table-pager-current'),
-            columnsWrap: toolbar.querySelector('.pm-table-columns'),
-            columnsTrigger: toolbar.querySelector('.pm-table-columns-trigger'),
-            columnPanel: toolbar.querySelector('.pm-table-columns-panel'),
-            resetBtn: toolbar.querySelector('.pm-table-columns-reset'),
+            light: isLightTable,
+            pageSizeSelect: toolbar ? toolbar.querySelector('.pm-table-page-size') : null,
+            info: toolbar ? toolbar.querySelector('.pm-table-info') : null,
+            prevBtn: toolbar ? toolbar.querySelector('.pm-table-prev') : null,
+            nextBtn: toolbar ? toolbar.querySelector('.pm-table-next') : null,
+            pageCurrent: toolbar ? toolbar.querySelector('.pm-table-pager-current') : null,
+            columnsWrap: toolbar ? toolbar.querySelector('.pm-table-columns') : null,
+            columnsTrigger: toolbar ? toolbar.querySelector('.pm-table-columns-trigger') : null,
+            columnPanel: toolbar ? toolbar.querySelector('.pm-table-columns-panel') : null,
+            resetBtn: toolbar ? toolbar.querySelector('.pm-table-columns-reset') : null,
             pageSize: readPersistedPageSize(table),
             currentPage: 1,
             headerSignature: '',
@@ -1586,104 +1618,106 @@
         };
         managedTableState.set(table, state);
 
-        if(state.columnPanel && state.columnPanel.parentNode !== document.body){
+        if(!isLightTable && state.columnPanel && state.columnPanel.parentNode !== document.body){
             document.body.appendChild(state.columnPanel);
         }
 
-        PAGE_SIZE_OPTIONS.forEach(size => {
-            const option = document.createElement('option');
-            option.value = String(size);
-            option.textContent = String(size);
-            if(size === state.pageSize) option.selected = true;
-            state.pageSizeSelect.appendChild(option);
-        });
+        if(!isLightTable){
+            PAGE_SIZE_OPTIONS.forEach(size => {
+                const option = document.createElement('option');
+                option.value = String(size);
+                option.textContent = String(size);
+                if(size === state.pageSize) option.selected = true;
+                state.pageSizeSelect.appendChild(option);
+            });
 
-        enhanceSingleSelect(state.pageSizeSelect);
+            enhanceSingleSelect(state.pageSizeSelect);
 
-        state.pageSizeSelect.addEventListener('change', () => {
-            state.pageSize = Number(state.pageSizeSelect.value || '50');
-            state.currentPage = 1;
-            persistPageSize(state);
-            applyPagination(state);
-        });
+            state.pageSizeSelect.addEventListener('change', () => {
+                state.pageSize = Number(state.pageSizeSelect.value || '50');
+                state.currentPage = 1;
+                persistPageSize(state);
+                applyPagination(state);
+            });
 
-        state.prevBtn.addEventListener('click', () => {
-            if(state.currentPage <= 1) return;
-            state.currentPage -= 1;
-            applyPagination(state);
-        });
+            state.prevBtn.addEventListener('click', () => {
+                if(state.currentPage <= 1) return;
+                state.currentPage -= 1;
+                applyPagination(state);
+            });
 
-        state.nextBtn.addEventListener('click', () => {
-            state.currentPage += 1;
-            applyPagination(state);
-        });
+            state.nextBtn.addEventListener('click', () => {
+                state.currentPage += 1;
+                applyPagination(state);
+            });
 
-        state.columnsTrigger.addEventListener('click', (event) => {
-            event.stopPropagation();
-            if(state.columnPanel.classList.contains('open')) closeColumnsPanel(state);
-            else openColumnsPanel(state);
-        });
+            state.columnsTrigger.addEventListener('click', (event) => {
+                event.stopPropagation();
+                if(state.columnPanel.classList.contains('open')) closeColumnsPanel(state);
+                else openColumnsPanel(state);
+            });
 
-        state.resetBtn.addEventListener('click', () => {
-            try { localStorage.removeItem(makeStorageKey(state.table, 'column-widths')); } catch (_) {}
-            state.columnWidths = Object.assign({}, state.defaultColumnWidths || {});
-            persistColumnWidths(state);
-            applyColumnWidths(state);
-            syncTopScroll(state);
-        });
+            state.resetBtn.addEventListener('click', () => {
+                try { localStorage.removeItem(makeStorageKey(state.table, 'column-widths')); } catch (_) {}
+                state.columnWidths = Object.assign({}, state.defaultColumnWidths || {});
+                persistColumnWidths(state);
+                applyColumnWidths(state);
+                syncTopScroll(state);
+            });
 
-        state.wrap.addEventListener('scroll', () => {
-            if(Math.abs(state.headWrap.scrollLeft - state.wrap.scrollLeft) > 1){
-                state.headWrap.scrollLeft = state.wrap.scrollLeft;
-            }
-            if(Math.abs(state.topScroll.scrollLeft - state.wrap.scrollLeft) > 1){
-                state.topScroll.scrollLeft = state.wrap.scrollLeft;
-            }
-        });
+            state.wrap.addEventListener('scroll', () => {
+                if(Math.abs(state.headWrap.scrollLeft - state.wrap.scrollLeft) > 1){
+                    state.headWrap.scrollLeft = state.wrap.scrollLeft;
+                }
+                if(Math.abs(state.topScroll.scrollLeft - state.wrap.scrollLeft) > 1){
+                    state.topScroll.scrollLeft = state.wrap.scrollLeft;
+                }
+            });
 
-        state.headWrap.addEventListener('scroll', () => {
-            if(Math.abs(state.wrap.scrollLeft - state.headWrap.scrollLeft) > 1){
-                state.wrap.scrollLeft = state.headWrap.scrollLeft;
-            }
-            if(Math.abs(state.topScroll.scrollLeft - state.headWrap.scrollLeft) > 1){
-                state.topScroll.scrollLeft = state.headWrap.scrollLeft;
-            }
-        });
+            state.headWrap.addEventListener('scroll', () => {
+                if(Math.abs(state.wrap.scrollLeft - state.headWrap.scrollLeft) > 1){
+                    state.wrap.scrollLeft = state.headWrap.scrollLeft;
+                }
+                if(Math.abs(state.topScroll.scrollLeft - state.headWrap.scrollLeft) > 1){
+                    state.topScroll.scrollLeft = state.headWrap.scrollLeft;
+                }
+            });
 
-        state.topScroll.addEventListener('scroll', () => {
-            if(Math.abs(state.wrap.scrollLeft - state.topScroll.scrollLeft) > 1){
-                state.wrap.scrollLeft = state.topScroll.scrollLeft;
-            }
-            if(Math.abs(state.headWrap.scrollLeft - state.topScroll.scrollLeft) > 1){
-                state.headWrap.scrollLeft = state.topScroll.scrollLeft;
-            }
-        });
+            state.topScroll.addEventListener('scroll', () => {
+                if(Math.abs(state.wrap.scrollLeft - state.topScroll.scrollLeft) > 1){
+                    state.wrap.scrollLeft = state.topScroll.scrollLeft;
+                }
+                if(Math.abs(state.headWrap.scrollLeft - state.topScroll.scrollLeft) > 1){
+                    state.headWrap.scrollLeft = state.topScroll.scrollLeft;
+                }
+            });
 
-        // When users interact with checkbox controls in the cloned header,
-        // forward the change to the original table header control that page scripts bind to.
-        state.headerTable.addEventListener('change', (event) => {
-            const target = event.target;
-            if(!target || !(target instanceof HTMLInputElement)) return;
-            if(target.type !== 'checkbox') return;
+            // When users interact with checkbox controls in the cloned header,
+            // forward the change to the original table header control that page scripts bind to.
+            state.headerTable.addEventListener('change', (event) => {
+                const target = event.target;
+                if(!target || !(target instanceof HTMLInputElement)) return;
+                if(target.type !== 'checkbox') return;
 
-            const cell = target.closest('th,td');
-            const row = cell ? cell.parentElement : null;
-            if(!cell || !row || !row.parentElement) return;
+                const cell = target.closest('th,td');
+                const row = cell ? cell.parentElement : null;
+                if(!cell || !row || !row.parentElement) return;
 
-            const rowIndex = Array.from(row.parentElement.children).indexOf(row);
-            const colIndex = Array.from(row.children).indexOf(cell);
-            if(rowIndex < 0 || colIndex < 0) return;
+                const rowIndex = Array.from(row.parentElement.children).indexOf(row);
+                const colIndex = Array.from(row.children).indexOf(cell);
+                if(rowIndex < 0 || colIndex < 0) return;
 
-            const sourceHead = state.table.tHead;
-            const sourceRow = sourceHead && sourceHead.rows ? sourceHead.rows[rowIndex] : null;
-            const sourceCell = sourceRow && sourceRow.cells ? sourceRow.cells[colIndex] : null;
-            if(!sourceCell) return;
+                const sourceHead = state.table.tHead;
+                const sourceRow = sourceHead && sourceHead.rows ? sourceHead.rows[rowIndex] : null;
+                const sourceCell = sourceRow && sourceRow.cells ? sourceRow.cells[colIndex] : null;
+                if(!sourceCell) return;
 
-            const sourceCheckbox = sourceCell.querySelector('input[type="checkbox"]');
-            if(!sourceCheckbox || sourceCheckbox === target) return;
-            sourceCheckbox.checked = target.checked;
-            sourceCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
-        });
+                const sourceCheckbox = sourceCell.querySelector('input[type="checkbox"]');
+                if(!sourceCheckbox || sourceCheckbox === target) return;
+                sourceCheckbox.checked = target.checked;
+                sourceCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+        }
 
         const scheduleRefresh = () => {
             if(state.refreshScheduled) return;
