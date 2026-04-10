@@ -151,6 +151,30 @@ class LogisticsInTransitMixin:
                             if scope in ('all', 'with_order_products'):
                                 cur.execute("SELECT id, sku FROM order_products ORDER BY sku ASC LIMIT %s", (option_limit,))
                                 order_products = cur.fetchall() or []
+
+                            links = []
+                            factory_ids = [self._parse_int(item.get('id')) for item in factories if self._parse_int(item.get('id'))]
+                            order_product_ids = [self._parse_int(item.get('id')) for item in order_products if self._parse_int(item.get('id'))]
+                            if factory_ids and order_product_ids:
+                                factory_placeholders = ','.join(['%s'] * len(factory_ids))
+                                op_placeholders = ','.join(['%s'] * len(order_product_ids))
+                                cur.execute(
+                                    f"""
+                                    SELECT order_product_id, factory_id
+                                    FROM order_product_factory_links
+                                    WHERE factory_id IN ({factory_placeholders})
+                                      AND order_product_id IN ({op_placeholders})
+                                    """,
+                                    tuple(factory_ids) + tuple(order_product_ids)
+                                )
+                                links = [
+                                    {
+                                        'order_product_id': self._parse_int(item.get('order_product_id')),
+                                        'factory_id': self._parse_int(item.get('factory_id'))
+                                    }
+                                    for item in (cur.fetchall() or [])
+                                    if self._parse_int(item.get('order_product_id')) and self._parse_int(item.get('factory_id'))
+                                ]
                     self._perf_mark(perf_ctx, 'get_options_payload')
                     return self.send_json({
                         'status': 'success',
@@ -158,7 +182,8 @@ class LogisticsInTransitMixin:
                         'forwarders': forwarders,
                         'destination_regions': destination_regions,
                         'warehouses': warehouses,
-                        'order_products': order_products
+                        'order_products': order_products,
+                        'links': links
                     }, start_response)
 
                 if action == 'export_details':

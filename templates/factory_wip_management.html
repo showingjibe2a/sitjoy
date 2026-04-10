@@ -38,7 +38,9 @@
         <thead>
           <tr>
             <th style="width:54px; text-align:center;"><input type="checkbox" id="wipSelectAll"></th>
+            <th style="width:150px;">在市状态</th>
             <th>SKU</th>
+            <th style="width:120px;">颜色</th>
             <th>工厂</th>
             <th style="width:120px;">数量</th>
             <th style="width:140px;">预计完工日期</th>
@@ -50,7 +52,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr><td colspan="10" style="text-align:center;">加载中...</td></tr>
+          <tr><td colspan="12" style="text-align:center;">加载中...</td></tr>
         </tbody>
       </table>
     </div>
@@ -132,6 +134,12 @@
   .preview-edit-input { width: 100%; }
   .preview-edit-cell { padding-left: 0.35rem !important; padding-right: 0.35rem !important; }
   .preview-status-segment { min-width: 110px; }
+  .market-status-segment { min-width: 108px; }
+  .market-status-segment .status-pill--yes.is-active { background: #6f9d7d; color: #fff; }
+  .market-status-segment .status-pill--no.is-active { background: #ad6f6f; color: #fff; }
+  .sku-color-chip-wrap { display: inline-flex; align-items: center; gap: 0.4rem; }
+  .sku-color-chip { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(60, 60, 60, 0.25); display: inline-block; }
+  .sku-color-empty { color: var(--morandi-slate); }
 </style>
 
 <script>
@@ -229,6 +237,11 @@ function formatDateTime(value){
 function formatDate(value){
   if(!value) return '';
   return String(value).slice(0, 10);
+}
+
+function safeColorValue(value){
+  const text = String(value || '').trim();
+  return /^#[0-9a-fA-F]{6}$/.test(text) ? text : '';
 }
 
 function todayStr(){
@@ -698,7 +711,7 @@ function loadList(){
     .then(d => {
       const tbody = document.querySelector('#mainTable tbody');
       if(d.status !== 'success'){
-        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:#a33;">${d.message || '加载失败'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;color:#a33;">${d.message || '加载失败'}</td></tr>`;
         selectedWipIds = new Set();
         syncWipSelectAll();
         syncFactoryWipSaveBar();
@@ -709,7 +722,7 @@ function loadList(){
       const availableIds = new Set(listCache.map(item => Number(item.id || 0)).filter(v => v > 0));
       selectedWipIds = new Set(Array.from(selectedWipIds).filter(id => availableIds.has(id)));
       if(!listCache.length){
-        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">暂无数据</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;">暂无数据</td></tr>';
         syncWipSelectAll();
         syncFactoryWipSaveBar();
         return;
@@ -719,7 +732,7 @@ function loadList(){
     })
     .catch(err => {
       const tbody = document.querySelector('#mainTable tbody');
-      tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:#a33;">${err.message || '加载失败'}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;color:#a33;">${err.message || '加载失败'}</td></tr>`;
       selectedWipIds = new Set();
       syncWipSelectAll();
       syncFactoryWipSaveBar();
@@ -731,7 +744,7 @@ function renderFactoryWipTable(items){
   const rows = Array.isArray(items) ? items : [];
   if(!tbody) return;
   if(!rows.length){
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">暂无数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;">暂无数据</td></tr>';
     return;
   }
   tbody.innerHTML = rows.map(item => {
@@ -740,10 +753,22 @@ function renderFactoryWipTable(items){
     const isCompleted = getWipMergedValue(item, 'is_completed');
     const actualCompletionDate = getWipMergedValue(item, 'actual_completion_date');
     const notes = getWipMergedValue(item, 'notes');
+    const isOnMarket = Number(item.is_on_market || 0) ? 1 : 0;
+    const colorValue = safeColorValue(item.representative_color);
+    const colorHtml = colorValue
+      ? `<span class="sku-color-chip-wrap"><span class="sku-color-chip" style="background:${colorValue};"></span><span>${colorValue}</span></span>`
+      : '<span class="sku-color-empty">-</span>';
     return `
       <tr>
         <td style="text-align:center;"><input type="checkbox" class="wip-row-checkbox" data-id="${item.id}" ${selectedWipIds.has(Number(item.id)) ? 'checked' : ''}></td>
+        <td>
+          <div class="status-segment status-segment--inline readonly-segment market-status-segment" data-value="${isOnMarket ? '1' : '0'}">
+            <button type="button" class="status-pill status-pill--yes ${isOnMarket ? 'is-active' : ''}" data-value="1">在市</button>
+            <button type="button" class="status-pill status-pill--no ${isOnMarket ? '' : 'is-active'}" data-value="0">下市</button>
+          </div>
+        </td>
         <td>${item.sku || ''}</td>
+        <td>${colorHtml}</td>
         <td>${item.factory_name || ''}</td>
         <td class="preview-edit-cell"><input type="number" min="0" step="1" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="quantity" value="${Number(quantity || 0)}"></td>
         <td class="preview-edit-cell"><input type="date" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="expected_completion_date" value="${expectedCompletionDate || ''}"></td>

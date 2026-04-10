@@ -159,10 +159,12 @@ class LogisticsWarehouseMixin:
                             cur.execute(
                                 f"""
                                 SELECT fs.id, fs.order_product_id, fs.factory_id, fs.quantity, fs.notes, fs.updated_at,
-                                       op.sku, f.factory_name
+                                        op.sku, op.is_on_market, f.factory_name,
+                                        fm.representative_color
                                 FROM factory_stock_inventory fs
                                 JOIN order_products op ON op.id = fs.order_product_id
                                 JOIN logistics_factories f ON f.id = fs.factory_id
+                                    LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
                                 WHERE (op.sku LIKE %s OR f.factory_name LIKE %s){scope_clause}
                                 ORDER BY op.sku ASC, f.factory_name ASC
                                 """,
@@ -172,10 +174,12 @@ class LogisticsWarehouseMixin:
                             cur.execute(
                                 f"""
                                 SELECT fs.id, fs.order_product_id, fs.factory_id, fs.quantity, fs.notes, fs.updated_at,
-                                       op.sku, f.factory_name
+                                        op.sku, op.is_on_market, f.factory_name,
+                                        fm.representative_color
                                 FROM factory_stock_inventory fs
                                 JOIN order_products op ON op.id = fs.order_product_id
                                 JOIN logistics_factories f ON f.id = fs.factory_id
+                                    LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
                                 WHERE 1=1 {scope_clause}
                                 ORDER BY op.sku ASC, f.factory_name ASC
                                 """,
@@ -403,10 +407,12 @@ class LogisticsWarehouseMixin:
                                 SELECT fw.id, fw.order_product_id, fw.factory_id, fw.quantity,
                                         fw.expected_completion_date, fw.is_completed, fw.actual_completion_date,
                                         fw.notes, fw.created_at, fw.updated_at,
-                                       op.sku, f.factory_name
+                                        op.sku, op.is_on_market, f.factory_name,
+                                        fm.representative_color
                                 FROM factory_wip_inventory fw
                                 JOIN order_products op ON op.id = fw.order_product_id
                                 JOIN logistics_factories f ON f.id = fw.factory_id
+                                    LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
                                 WHERE (op.sku LIKE %s OR f.factory_name LIKE %s){scope_clause}
                                 ORDER BY op.sku ASC, f.factory_name ASC, fw.expected_completion_date ASC
                                 """,
@@ -418,10 +424,12 @@ class LogisticsWarehouseMixin:
                                 SELECT fw.id, fw.order_product_id, fw.factory_id, fw.quantity,
                                         fw.expected_completion_date, fw.is_completed, fw.actual_completion_date,
                                         fw.notes, fw.created_at, fw.updated_at,
-                                       op.sku, f.factory_name
+                                        op.sku, op.is_on_market, f.factory_name,
+                                        fm.representative_color
                                 FROM factory_wip_inventory fw
                                 JOIN order_products op ON op.id = fw.order_product_id
                                 JOIN logistics_factories f ON f.id = fw.factory_id
+                                    LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
                                 WHERE 1=1 {scope_clause}
                                 ORDER BY op.sku ASC, f.factory_name ASC, fw.expected_completion_date ASC
                                 """,

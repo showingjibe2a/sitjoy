@@ -27,6 +27,12 @@
     .preview-savebar .btn-secondary { padding: 0.65rem 1rem; }
     .preview-edit-input { width: 100%; }
     .preview-edit-cell { padding-left: 0.35rem !important; padding-right: 0.35rem !important; }
+    .market-status-segment { min-width: 108px; }
+    .market-status-segment .status-pill--yes.is-active { background: #6f9d7d; color: #fff; }
+    .market-status-segment .status-pill--no.is-active { background: #ad6f6f; color: #fff; }
+    .sku-color-chip-wrap { display: inline-flex; align-items: center; gap: 0.4rem; }
+    .sku-color-chip { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(60, 60, 60, 0.25); display: inline-block; }
+    .sku-color-empty { color: var(--morandi-slate); }
   </style>
 </head>
 <body>
@@ -61,7 +67,9 @@
         <thead>
           <tr>
             <th style="width:54px; text-align:center;"><input type="checkbox" id="stockSelectAll"></th>
+            <th style="width:150px;">在市状态</th>
             <th>SKU</th>
+            <th style="width:120px;">颜色</th>
             <th>工厂</th>
             <th style="width:120px;">数量</th>
             <th>备注</th>
@@ -70,7 +78,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr><td colspan="7" style="text-align:center;">加载中...</td></tr>
+          <tr><td colspan="9" style="text-align:center;">加载中...</td></tr>
         </tbody>
       </table>
     </div>
@@ -204,6 +212,11 @@ function formatDateTime(value){
   if(!value) return '';
   const text = String(value);
   return text.includes('T') ? text.replace('T', ' ').slice(0, 19) : text.slice(0, 19);
+}
+
+function safeColorValue(value){
+  const text = String(value || '').trim();
+  return /^#[0-9a-fA-F]{6}$/.test(text) ? text : '';
 }
 
 function loadOptions(){
@@ -390,15 +403,27 @@ function renderFactoryStockTable(items){
   const rows = Array.isArray(items) ? items : [];
   if(!tbody) return;
   if(!rows.length){
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">暂无数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">暂无数据</td></tr>';
     return;
   }
   tbody.innerHTML = rows.map(item => {
     const draft = getStockDraft(item.id) || { quantity: Number(item.quantity || 0), notes: item.notes || '' };
+    const isOnMarket = Number(item.is_on_market || 0) ? 1 : 0;
+    const colorValue = safeColorValue(item.representative_color);
+    const colorHtml = colorValue
+      ? `<span class="sku-color-chip-wrap"><span class="sku-color-chip" style="background:${colorValue};"></span><span>${colorValue}</span></span>`
+      : '<span class="sku-color-empty">-</span>';
     return `
       <tr>
         <td style="text-align:center;"><input type="checkbox" class="stock-row-checkbox" data-id="${item.id}" ${selectedStockIds.has(Number(item.id)) ? 'checked' : ''}></td>
+        <td>
+          <div class="status-segment status-segment--inline readonly-segment market-status-segment" data-value="${isOnMarket ? '1' : '0'}">
+            <button type="button" class="status-pill status-pill--yes ${isOnMarket ? 'is-active' : ''}" data-value="1">在市</button>
+            <button type="button" class="status-pill status-pill--no ${isOnMarket ? '' : 'is-active'}" data-value="0">下市</button>
+          </div>
+        </td>
         <td>${item.sku || ''}</td>
+        <td>${colorHtml}</td>
         <td>${item.factory_name || ''}</td>
         <td class="preview-edit-cell"><input type="number" min="0" step="1" class="inline-input preview-edit-input stock-edit-field" data-id="${item.id}" data-field="quantity" value="${Number(draft.quantity || 0)}"></td>
         <td class="preview-edit-cell"><input type="text" class="inline-input preview-edit-input stock-edit-field" data-id="${item.id}" data-field="notes" value="${String(draft.notes || '').replace(/"/g, '&quot;')}"></td>
@@ -588,7 +613,7 @@ function loadList(){
     .then(d => {
       if(d.status !== 'success'){
         const tbody = document.querySelector('#mainTable tbody');
-        if(tbody){ tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#a33;">${d.message || '加载失败'}</td></tr>`; }
+        if(tbody){ tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:#a33;">${d.message || '加载失败'}</td></tr>`; }
         selectedStockIds = new Set();
         syncStockSelectAll();
         syncFactoryStockSaveBar();
@@ -600,7 +625,7 @@ function loadList(){
       selectedStockIds = new Set(Array.from(selectedStockIds).filter(id => availableIds.has(id)));
       if(!listCache.length){
         const tbody = document.querySelector('#mainTable tbody');
-        if(tbody){ tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">暂无数据</td></tr>'; }
+        if(tbody){ tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">暂无数据</td></tr>'; }
         syncStockSelectAll();
         syncFactoryStockSaveBar();
         return;
@@ -610,7 +635,7 @@ function loadList(){
     })
     .catch(err => {
       const tbody = document.querySelector('#mainTable tbody');
-      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#a33;">${err.message || '加载失败'}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:#a33;">${err.message || '加载失败'}</td></tr>`;
       selectedStockIds = new Set();
       syncStockSelectAll();
       syncFactoryStockSaveBar();
