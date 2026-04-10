@@ -624,12 +624,45 @@ class AuthEmployeeMixin:
 
                 data = self._read_json_body(environ)
                 item_id = self._parse_int(data.get('id'))
+                confirm_username = str(data.get('confirm_username') or '').strip()
+                confirm_phrase = str(data.get('confirm_phrase') or '').strip().upper()
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': '缺少员工ID'}, start_response)
                 if int(item_id) == 1:
                     return self.send_json({'status': 'error', 'message': 'ID=1管理员不可删除'}, start_response)
+                if not confirm_username or confirm_phrase != 'DELETE':
+                    return self.send_json({'status': 'error', 'message': '删除确认信息不完整，请重新确认'}, start_response)
+                if int(item_id) == int(user_id or 0):
+                    return self.send_json({'status': 'error', 'message': '不可删除当前登录账号'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT id, username,
+                                   COALESCE(is_admin, 0) AS is_admin,
+                                   COALESCE(can_grant_admin, 0) AS can_grant_admin
+                            FROM users WHERE id=%s
+                            """,
+                            (item_id,)
+                        )
+                        target_row = cur.fetchone() or {}
+                        if not target_row:
+                            return self.send_json({'status': 'error', 'message': '用户不存在'}, start_response)
+
+                        target_username = str(target_row.get('username') or '').strip()
+                        if not target_username or target_username != confirm_username:
+                            return self.send_json({'status': 'error', 'message': '确认账号名不匹配，删除已取消'}, start_response)
+
+                        if int(target_row.get('is_admin') or 0) or int(target_row.get('can_grant_admin') or 0):
+                            return self.send_json({'status': 'error', 'message': '管理员账号不可直接删除，请先取消管理员权限'}, start_response)
+
+                        try:
+                            cur.execute("DELETE FROM user_factory_scopes WHERE user_id=%s", (item_id,))
+                        except Exception as scope_err:
+                            scope_msg = str(scope_err).lower()
+                            if "doesn't exist" not in scope_msg and 'does not exist' not in scope_msg and 'unknown table' not in scope_msg:
+                                raise
+
                         cur.execute("DELETE FROM users WHERE id=%s", (item_id,))
                 return self.send_json({'status': 'success'}, start_response)
 

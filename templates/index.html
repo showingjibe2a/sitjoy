@@ -954,6 +954,40 @@
             el.textContent = '';
         }
 
+        function confirmEmployeeDeletion(employee) {
+            if (!employee || !employee.id) {
+                alert('未找到用户信息，已取消删除。');
+                return { ok: false };
+            }
+            const username = String(employee.username || '').trim();
+            if (!username) {
+                alert('目标用户缺少账号名，已取消删除。');
+                return { ok: false };
+            }
+            const firstConfirm = confirm(`危险操作：删除后用户将无法登录。\n\n账号：${username}\n\n是否继续？`);
+            if (!firstConfirm) return { ok: false };
+
+            const typedUsername = prompt(`请输入账号名以确认删除：\n${username}`);
+            if (typedUsername === null) return { ok: false };
+            if (String(typedUsername).trim() !== username) {
+                alert('账号名不匹配，已取消删除。');
+                return { ok: false };
+            }
+
+            const typedPhrase = prompt('请输入 DELETE 作为最终确认');
+            if (typedPhrase === null) return { ok: false };
+            if (String(typedPhrase).trim().toUpperCase() !== 'DELETE') {
+                alert('最终确认口令错误，已取消删除。');
+                return { ok: false };
+            }
+
+            return {
+                ok: true,
+                confirm_username: username,
+                confirm_phrase: 'DELETE'
+            };
+        }
+
         function fetchCurrentAuthState(forceRefresh = false) {
             if (forceRefresh || !window.__sitjoyAuthStatePromise) {
                 window.__sitjoyAuthStatePromise = fetch('/api/auth?action=current', {
@@ -1421,6 +1455,8 @@
                     tbody.innerHTML = items.map(emp => {
                         const displayName = emp.name || '-';
                         const formattedBday = emp.birthday ? new Date(emp.birthday + 'T00:00:00').toLocaleDateString('zh-CN', { month:'numeric', day:'numeric' }) : '-';
+                        const isSelf = currentUser && Number(currentUser.id || 0) === Number(emp.id || 0);
+                        const canDelete = !isSelf && !Number(emp.is_admin || 0) && !Number(emp.can_grant_admin || 0);
                         return `
                             <tr data-employee-id="${emp.id}">
                                 <td>${emp.username || '-'}</td>
@@ -1435,7 +1471,9 @@
                                 <td>
                                     <div class="pm-actions">
                                         <button class="btn-secondary" data-action="edit" data-id="${emp.id}">编辑</button>
-                                        <button class="btn-danger" data-action="delete" data-id="${emp.id}">删除</button>
+                                        ${canDelete
+                                            ? `<button class="btn-danger" data-action="delete" data-id="${emp.id}">删除</button>`
+                                            : `<button class="btn-danger" disabled title="当前账号或管理员账号不可直接删除">删除</button>`}
                                     </div>
                                 </td>
                             </tr>
@@ -2068,13 +2106,26 @@
                     return;
                 }
                 if (action === 'delete') {
+                    const item = (window.employeeMap || {})[String(id)] || null;
+                    const confirmPayload = confirmEmployeeDeletion(item);
+                    if (!confirmPayload.ok) return;
                     fetch('/api/employee', {
                         method: 'DELETE',
                         credentials: 'include',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ id: id })
+                        body: JSON.stringify({
+                            id: id,
+                            confirm_username: confirmPayload.confirm_username,
+                            confirm_phrase: confirmPayload.confirm_phrase
+                        })
                     })
-                        .then(() => {
+                        .then(r => r.json())
+                        .then(data => {
+                            if (data && data.status === 'error') {
+                                alert(data.message || '删除失败');
+                                loadEmployees();
+                                return;
+                            }
                             loadEmployees();
                             loadCalendar();
                         });
