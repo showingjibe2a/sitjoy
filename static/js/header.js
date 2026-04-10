@@ -171,6 +171,9 @@
     function openDropdown(select, state){
         if(!state || state.trigger.disabled) return;
         closeAllDropdowns();
+        if(state.menu.parentElement !== document.body){
+            document.body.appendChild(state.menu);
+        }
         renderDropdownOptions(select, state);
         state.menu.classList.add('universal-select-floating-menu');
         state.menu.style.display = 'block';

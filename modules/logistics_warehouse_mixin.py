@@ -123,7 +123,35 @@ class LogisticsWarehouseMixin:
                                 order_products = cur.fetchall() or []
                             else:
                                 order_products = []
-                    return self.send_json({'status': 'success', 'factories': factories, 'order_products': order_products}, start_response)
+
+                            factory_ids = [self._parse_int(item.get('id')) for item in factories if self._parse_int(item.get('id'))]
+                            order_product_ids = [self._parse_int(item.get('id')) for item in order_products if self._parse_int(item.get('id'))]
+                            links = []
+                            if factory_ids and order_product_ids:
+                                factory_placeholders = ','.join(['%s'] * len(factory_ids))
+                                op_placeholders = ','.join(['%s'] * len(order_product_ids))
+                                cur.execute(
+                                    f"""
+                                    SELECT order_product_id, factory_id
+                                    FROM order_product_factory_links
+                                    WHERE factory_id IN ({factory_placeholders})
+                                      AND order_product_id IN ({op_placeholders})
+                                    """,
+                                    tuple(factory_ids) + tuple(order_product_ids)
+                                )
+                                links = [
+                                    {
+                                        'order_product_id': self._parse_int(item.get('order_product_id')),
+                                        'factory_id': self._parse_int(item.get('factory_id'))
+                                    }
+                                    for item in (cur.fetchall() or [])
+                                    if self._parse_int(item.get('order_product_id')) and self._parse_int(item.get('factory_id'))
+                                ]
+
+                    return self.send_json(
+                        {'status': 'success', 'factories': factories, 'order_products': order_products, 'links': links},
+                        start_response
+                    )
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         scope_clause, scope_params = self._factory_scope_clause('f.id', user_id, prefix='AND')
@@ -337,7 +365,35 @@ class LogisticsWarehouseMixin:
                                 order_products = cur.fetchall() or []
                             else:
                                 order_products = []
-                    return self.send_json({'status': 'success', 'factories': factories, 'order_products': order_products}, start_response)
+
+                            factory_ids = [self._parse_int(item.get('id')) for item in factories if self._parse_int(item.get('id'))]
+                            order_product_ids = [self._parse_int(item.get('id')) for item in order_products if self._parse_int(item.get('id'))]
+                            links = []
+                            if factory_ids and order_product_ids:
+                                factory_placeholders = ','.join(['%s'] * len(factory_ids))
+                                op_placeholders = ','.join(['%s'] * len(order_product_ids))
+                                cur.execute(
+                                    f"""
+                                    SELECT order_product_id, factory_id
+                                    FROM order_product_factory_links
+                                    WHERE factory_id IN ({factory_placeholders})
+                                      AND order_product_id IN ({op_placeholders})
+                                    """,
+                                    tuple(factory_ids) + tuple(order_product_ids)
+                                )
+                                links = [
+                                    {
+                                        'order_product_id': self._parse_int(item.get('order_product_id')),
+                                        'factory_id': self._parse_int(item.get('factory_id'))
+                                    }
+                                    for item in (cur.fetchall() or [])
+                                    if self._parse_int(item.get('order_product_id')) and self._parse_int(item.get('factory_id'))
+                                ]
+
+                    return self.send_json(
+                        {'status': 'success', 'factories': factories, 'order_products': order_products, 'links': links},
+                        start_response
+                    )
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         scope_clause, scope_params = self._factory_scope_clause('f.id', user_id, prefix='AND')

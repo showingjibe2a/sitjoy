@@ -119,6 +119,9 @@ let editId = null;
 let optionsLoaded = false;
 let optionFactories = [];
 let optionOrderProducts = [];
+let optionLinks = [];
+let skuFactoryMap = new Map();
+let factorySkuMap = new Map();
 let listCache = [];
 let selectedStockIds = new Set();
 let factoryStockEditDraft = {};
@@ -142,6 +145,61 @@ function fillSelect(id, items, valueKey, textKey, placeholder){
   if(window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(el);
 }
 
+function rebuildOptionLinkMaps(){
+  skuFactoryMap = new Map();
+  factorySkuMap = new Map();
+  (optionLinks || []).forEach(link => {
+    const opId = Number(link.order_product_id || 0);
+    const factoryId = Number(link.factory_id || 0);
+    if(!opId || !factoryId) return;
+    if(!skuFactoryMap.has(opId)) skuFactoryMap.set(opId, new Set());
+    if(!factorySkuMap.has(factoryId)) factorySkuMap.set(factoryId, new Set());
+    skuFactoryMap.get(opId).add(factoryId);
+    factorySkuMap.get(factoryId).add(opId);
+  });
+}
+
+function syncStockModalLinkedOptions(){
+  const skuSelect = document.getElementById('modalOrderProduct');
+  const factorySelect = document.getElementById('modalFactory');
+  if(!skuSelect || !factorySelect) return;
+
+  const selectedSkuId = Number(skuSelect.value || 0);
+  const selectedFactoryId = Number(factorySelect.value || 0);
+
+  let factories = optionFactories.slice();
+  if(selectedSkuId){
+    const allowedFactoryIds = skuFactoryMap.get(selectedSkuId) || new Set();
+    factories = optionFactories.filter(item => allowedFactoryIds.has(Number(item.id || 0)));
+  }
+
+  let skus = optionOrderProducts.slice();
+  if(selectedFactoryId){
+    const allowedSkuIds = factorySkuMap.get(selectedFactoryId) || new Set();
+    skus = optionOrderProducts.filter(item => allowedSkuIds.has(Number(item.id || 0)));
+  }
+
+  fillSelect('modalFactory', factories, 'id', 'factory_name', '请选择工厂');
+  fillSelect('modalOrderProduct', skus, 'id', 'sku', '请选择下单SKU');
+
+  if(selectedFactoryId && factories.some(item => Number(item.id || 0) === selectedFactoryId)){
+    factorySelect.value = String(selectedFactoryId);
+  } else {
+    factorySelect.value = '';
+  }
+
+  if(selectedSkuId && skus.some(item => Number(item.id || 0) === selectedSkuId)){
+    skuSelect.value = String(selectedSkuId);
+  } else {
+    skuSelect.value = '';
+  }
+
+  if(window.refreshUniversalSingleSelect){
+    window.refreshUniversalSingleSelect(factorySelect);
+    window.refreshUniversalSingleSelect(skuSelect);
+  }
+}
+
 function formatDateTime(value){
   if(!value) return '';
   const text = String(value);
@@ -155,6 +213,8 @@ function loadOptions(){
       if(d.status !== 'success') throw new Error(d.message || '加载选项失败');
       optionFactories = d.factories || [];
       optionOrderProducts = d.order_products || [];
+      optionLinks = d.links || [];
+      rebuildOptionLinkMaps();
       fillSelect('modalFactory', optionFactories, 'id', 'factory_name', '请选择工厂');
       fillSelect('modalOrderProduct', optionOrderProducts, 'id', 'sku', '请选择下单SKU');
       optionsLoaded = true;
@@ -424,6 +484,7 @@ function openCreateModal(){
     $('#modalNotes').value = '';
     $('#modalOrderProduct').disabled = false;
     $('#modalFactory').disabled = false;
+    syncStockModalLinkedOptions();
     $('#pm-modal').classList.add('active');
     if(window.refreshUniversalSingleSelect){
       window.refreshUniversalSingleSelect('modalOrderProduct');
@@ -449,6 +510,7 @@ function openEditModal(id){
     $('#modalNotes').value = row.notes || '';
     $('#modalOrderProduct').disabled = true;
     $('#modalFactory').disabled = true;
+    syncStockModalLinkedOptions();
     $('#pm-modal').classList.add('active');
     if(window.refreshUniversalSingleSelect){
       window.refreshUniversalSingleSelect('modalOrderProduct');
@@ -571,6 +633,13 @@ document.addEventListener('change', function(e){
 });
 $('#pm-modal').addEventListener('click', (e) => {
   if(e.target === e.currentTarget) closeModal();
+});
+
+document.addEventListener('change', function(e){
+  const target = e.target;
+  if(target && (target.id === 'modalOrderProduct' || target.id === 'modalFactory')){
+    syncStockModalLinkedOptions();
+  }
 });
 
 window.addEventListener('load', () => {

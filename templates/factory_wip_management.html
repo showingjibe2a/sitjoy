@@ -139,6 +139,9 @@ let editId = null;
 let optionsLoaded = false;
 let optionFactories = [];
 let optionOrderProducts = [];
+let optionLinks = [];
+let skuFactoryMap = new Map();
+let factorySkuMap = new Map();
 let listCache = [];
 let selectedWipIds = new Set();
 let factoryWipEditDraft = {};
@@ -160,6 +163,61 @@ function fillSelect(id, items, valueKey, textKey, placeholder){
     <option value="${item[valueKey]}">${item[textKey] || ''}</option>
   `).join('');
   if(window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(el);
+}
+
+function rebuildOptionLinkMaps(){
+  skuFactoryMap = new Map();
+  factorySkuMap = new Map();
+  (optionLinks || []).forEach(link => {
+    const opId = Number(link.order_product_id || 0);
+    const factoryId = Number(link.factory_id || 0);
+    if(!opId || !factoryId) return;
+    if(!skuFactoryMap.has(opId)) skuFactoryMap.set(opId, new Set());
+    if(!factorySkuMap.has(factoryId)) factorySkuMap.set(factoryId, new Set());
+    skuFactoryMap.get(opId).add(factoryId);
+    factorySkuMap.get(factoryId).add(opId);
+  });
+}
+
+function syncWipModalLinkedOptions(){
+  const skuSelect = document.getElementById('modalOrderProduct');
+  const factorySelect = document.getElementById('modalFactory');
+  if(!skuSelect || !factorySelect) return;
+
+  const selectedSkuId = Number(skuSelect.value || 0);
+  const selectedFactoryId = Number(factorySelect.value || 0);
+
+  let factories = optionFactories.slice();
+  if(selectedSkuId){
+    const allowedFactoryIds = skuFactoryMap.get(selectedSkuId) || new Set();
+    factories = optionFactories.filter(item => allowedFactoryIds.has(Number(item.id || 0)));
+  }
+
+  let skus = optionOrderProducts.slice();
+  if(selectedFactoryId){
+    const allowedSkuIds = factorySkuMap.get(selectedFactoryId) || new Set();
+    skus = optionOrderProducts.filter(item => allowedSkuIds.has(Number(item.id || 0)));
+  }
+
+  fillSelect('modalFactory', factories, 'id', 'factory_name', '请选择工厂');
+  fillSelect('modalOrderProduct', skus, 'id', 'sku', '请选择下单SKU');
+
+  if(selectedFactoryId && factories.some(item => Number(item.id || 0) === selectedFactoryId)){
+    factorySelect.value = String(selectedFactoryId);
+  } else {
+    factorySelect.value = '';
+  }
+
+  if(selectedSkuId && skus.some(item => Number(item.id || 0) === selectedSkuId)){
+    skuSelect.value = String(selectedSkuId);
+  } else {
+    skuSelect.value = '';
+  }
+
+  if(window.refreshUniversalSingleSelect){
+    window.refreshUniversalSingleSelect(factorySelect);
+    window.refreshUniversalSingleSelect(skuSelect);
+  }
 }
 
 function formatDateTime(value){
@@ -211,6 +269,8 @@ function loadOptions(){
       if(d.status !== 'success') throw new Error(d.message || '加载选项失败');
       optionFactories = d.factories || [];
       optionOrderProducts = d.order_products || [];
+      optionLinks = d.links || [];
+      rebuildOptionLinkMaps();
       fillSelect('modalFactory', optionFactories, 'id', 'factory_name', '请选择工厂');
       fillSelect('modalOrderProduct', optionOrderProducts, 'id', 'sku', '请选择下单SKU');
       optionsLoaded = true;
@@ -520,6 +580,37 @@ function openCreateModal(){
     $('#modalNotes').value = '';
     $('#modalOrderProduct').disabled = false;
     $('#modalFactory').disabled = false;
+    syncWipModalLinkedOptions();
+    $('#pm-modal').classList.add('active');
+    if(window.refreshUniversalSingleSelect){
+      window.refreshUniversalSingleSelect('modalOrderProduct');
+      window.refreshUniversalSingleSelect('modalFactory');
+    }
+  };
+
+  if(optionsLoaded) open();
+  else loadOptions().then(open).catch(err => { if(window.showAppToast){ window.showAppToast(err.message || '加载选项失败', true, 3200); } });
+}
+
+function openEditModal(id){
+  const row = listCache.find(item => Number(item.id) === Number(id));
+  if(!row) return;
+
+  const open = () => {
+    editId = Number(row.id);
+    $('#pm-modal-title').textContent = '编辑工厂在制库存';
+    $('#modalStatus').style.display = 'none';
+    $('#modalOrderProduct').value = String(row.order_product_id || '');
+    $('#modalFactory').value = String(row.factory_id || '');
+    $('#modalQuantity').value = String(Number(row.quantity || 0));
+    $('#modalExpectedDate').value = formatDate(row.expected_completion_date);
+    setSegmentValue(document.getElementById('modalCompletedSegment'), String(Number(row.is_completed || 0) ? 1 : 0));
+    $('#modalActualCompletionDate').value = formatDate(row.actual_completion_date) || todayStr();
+    toggleActualDateGroup();
+    $('#modalNotes').value = row.notes || '';
+    $('#modalOrderProduct').disabled = true;
+    $('#modalFactory').disabled = true;
+    syncWipModalLinkedOptions();
     $('#pm-modal').classList.add('active');
     if(window.refreshUniversalSingleSelect){
       window.refreshUniversalSingleSelect('modalOrderProduct');
@@ -667,6 +758,7 @@ function renderFactoryWipTable(items){
         <td>${formatDateTime(item.created_at)}</td>
         <td>
           <div class="pm-actions">
+            <button class="btn-secondary" onclick="openEditModal(${item.id})">编辑</button>
             <button class="btn-danger" onclick="removeItem(${item.id})">删除</button>
           </div>
         </td>
@@ -698,6 +790,9 @@ document.addEventListener('change', function(e){
   const target = e.target;
   if(target && target.id === 'wipSelectAll'){
     toggleWipSelectAll(!!target.checked);
+  }
+  if(target && (target.id === 'modalOrderProduct' || target.id === 'modalFactory')){
+    syncWipModalLinkedOptions();
   }
 });
 
