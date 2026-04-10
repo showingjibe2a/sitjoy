@@ -362,12 +362,14 @@
                             <th>销售平台SKU</th>
                             <th>子体编号</th>
                             <th>大健云仓编号</th>
+                            <th>下单SKU</th>
                             <th>售价</th>
+                            <th>创建时间</th>
                             <th style="width:160px;">操作</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="10" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="12" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -932,7 +934,7 @@
         function renderSalesGroupedTable(items) {
             const tbody = document.querySelector('#salesProductTable tbody');
             if (!(items || []).length) {
-                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;">暂无数据</td></tr>';
                 syncSalesSelectAllCheckbox();
                 return;
             }
@@ -940,7 +942,14 @@
             const availableIdSet = new Set((items || []).map(x => String(x.id)));
             selectedSalesProductIds = new Set(Array.from(selectedSalesProductIds).filter(id => availableIdSet.has(String(id))));
 
-            tbody.innerHTML = (items || []).map(item => `
+            tbody.innerHTML = (items || []).map(item => {
+                const orderSkuDisplay = (() => {
+                    if (!item.order_product_id || !item.order_sku) return '-';
+                    const fabric = item.order_sku_fabric ? `（${item.order_sku_fabric}）` : '';
+                    return `${item.order_sku}${fabric}`;
+                })();
+                const createdDateStr = item.created_at ? new Date(item.created_at).toLocaleDateString('zh-CN') : '-';
+                return `
                 <tr>
                     <td style="text-align:center;"><input type="checkbox" class="sales-row-checkbox" data-id="${item.id}" ${selectedSalesProductIds.has(String(item.id)) ? 'checked' : ''}></td>
                     <td>${renderInlineProductStatus(item)}</td>
@@ -950,7 +959,9 @@
                     <td>${item.platform_sku || ''}</td>
                     <td>${item.child_code || ''}</td>
                     <td>${item.dachene_yuncang_no || ''}</td>
+                    <td>${orderSkuDisplay}</td>
                     <td class="${(Number(item.sale_price_usd || 0) > 0 && Number(item.warehouse_cost_usd || 0) + Number(item.last_mile_cost_usd || 0) > 0 && Number(item.sale_price_usd || 0) < (Number(item.warehouse_cost_usd || 0) + Number(item.last_mile_cost_usd || 0))) ? 'danger-note' : ''}">${item.sale_price_usd || ''}</td>
+                    <td>${createdDateStr}</td>
                     <td>
                         <div class="pm-actions">
                             <button class="btn-secondary" onclick='openEditModal(${item.id})'>编辑</button>
@@ -958,7 +969,8 @@
                         </div>
                     </td>
                 </tr>
-            `).join('');
+            `;
+            }).join('');
             bindSalesRowSelectionEvents();
             syncSalesSelectAllCheckbox();
         }
@@ -1799,7 +1811,7 @@
             fetch(url).then(r => r.json()).then(data => {
                 const tbody = document.querySelector('#salesProductTable tbody');
                 if (data.status !== 'success') {
-                    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                     return;
                 }
                 const items = data.items || [];
@@ -1808,7 +1820,7 @@
                 renderSalesGroupedTable(items);
             }).catch(err => {
                 const tbody = document.querySelector('#salesProductTable tbody');
-                tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
             });
         }
 

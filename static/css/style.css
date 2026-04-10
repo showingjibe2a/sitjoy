@@ -299,7 +299,8 @@ input[type="month"] {
 }
 
 .container {
-    width: min(1880px, calc(100vw - 48px));
+    width: 100%;
+    min-width: 1300px;
     max-width: none;
     margin: 0 auto;
     padding: 1.15rem 1.5rem 2rem;
@@ -1983,7 +1984,7 @@ body {
     top: calc(100% + 0.4rem);
     bottom: auto;
     max-height: 320px;
-    overflow-y: auto;
+    overflow-y: hidden;
     z-index: 12000;
 }
 
