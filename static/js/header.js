@@ -1058,6 +1058,132 @@
         return true;
     }
 
+    function parseClipboardMatrix(text){
+        const raw = String(text || '').replace(/\r/g, '');
+        if(!raw) return [];
+        const rows = raw.split('\n').filter(line => line.length > 0);
+        return rows.map(line => line.split('\t'));
+    }
+
+    function getEditableFieldFromCell(cell){
+        if(!cell || !cell.querySelector) return null;
+        const candidate = cell.querySelector('input:not([type="checkbox"]):not([type="hidden"]):not([disabled]):not([readonly]), textarea:not([disabled]):not([readonly]), select:not([disabled]):not([readonly])');
+        return candidate || null;
+    }
+
+    function setFieldValueByPaste(field, raw){
+        if(!field) return;
+        const value = String(raw === null || raw === undefined ? '' : raw).trim();
+        if(field instanceof HTMLInputElement){
+            const type = String(field.type || '').toLowerCase();
+            if(type === 'number'){
+                const cleaned = value.replace(/,/g, '');
+                const num = Number(cleaned);
+                field.value = (!Number.isNaN(num) && cleaned !== '') ? String(num) : '';
+            } else if(type === 'date'){
+                const parsed = parseDateText(value);
+                field.value = parsed ? formatDateParts(parsed) : '';
+            } else if(type === 'datetime-local'){
+                const stamp = Date.parse(value);
+                if(!Number.isNaN(stamp)){
+                    const d = new Date(stamp);
+                    const yyyy = d.getFullYear();
+                    const mm = String(d.getMonth() + 1).padStart(2, '0');
+                    const dd = String(d.getDate()).padStart(2, '0');
+                    const hh = String(d.getHours()).padStart(2, '0');
+                    const mi = String(d.getMinutes()).padStart(2, '0');
+                    field.value = `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+                } else {
+                    field.value = '';
+                }
+            } else {
+                field.value = value;
+            }
+        } else if(field instanceof HTMLTextAreaElement){
+            field.value = value;
+        } else if(field instanceof HTMLSelectElement){
+            const options = Array.from(field.options || []);
+            const hit = options.find(opt => String(opt.value || '').trim() === value) || options.find(opt => String(opt.textContent || '').trim() === value);
+            if(hit) field.value = String(hit.value || '');
+            else field.value = value;
+        } else {
+            return;
+        }
+
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        field.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function applyMatrixPasteToActiveSelection(state, matrix){
+        if(!state || !Array.isArray(matrix) || !matrix.length) return false;
+        if(!activeGridSelection || activeGridSelection.state !== state || !activeGridSelection.selectedCells.size) return false;
+
+        const coords = [];
+        activeGridSelection.selectedCells.forEach(cell => {
+            const coord = getCellCoord(state, cell);
+            if(coord) coords.push(coord);
+        });
+        if(!coords.length) return false;
+
+        const rowMin = Math.min.apply(null, coords.map(x => x.row));
+        const rowMax = Math.max.apply(null, coords.map(x => x.row));
+        const colMin = Math.min.apply(null, coords.map(x => x.col));
+        const colMax = Math.max.apply(null, coords.map(x => x.col));
+        const selected = new Set(coords.map(x => `${x.row}:${x.col}`));
+
+        let applied = 0;
+        for(let r = rowMin; r <= rowMax; r += 1){
+            for(let c = colMin; c <= colMax; c += 1){
+                if(!selected.has(`${r}:${c}`)) continue;
+                const cell = getCellByCoord(state, { row: r, col: c });
+                const field = getEditableFieldFromCell(cell);
+                if(!field) continue;
+                const v = matrix[(r - rowMin) % matrix.length] || [''];
+                const text = v[(c - colMin) % v.length] || '';
+                setFieldValueByPaste(field, text);
+                applied += 1;
+            }
+        }
+        return applied > 0;
+    }
+
+    function applyMatrixPasteFromField(state, startField, matrix){
+        if(!state || !startField || !Array.isArray(matrix) || !matrix.length) return false;
+        const startCell = startField.closest('td');
+        if(!startCell) return false;
+        const startCoord = getCellCoord(state, startCell);
+        if(!startCoord) return false;
+
+        let applied = 0;
+        for(let r = 0; r < matrix.length; r += 1){
+            const rowVals = matrix[r] || [''];
+            for(let c = 0; c < rowVals.length; c += 1){
+                const cell = getCellByCoord(state, { row: startCoord.row + r, col: startCoord.col + c });
+                const field = getEditableFieldFromCell(cell);
+                if(!field) continue;
+                setFieldValueByPaste(field, rowVals[c] || '');
+                applied += 1;
+            }
+        }
+        return applied > 0;
+    }
+
+    function getManagedStateByElement(el){
+        if(!el || !el.closest) return null;
+        const table = el.closest('table.is-managed-table');
+        if(!table) return null;
+        return managedTableState.get(table) || null;
+    }
+
+    function getManagedStateFromSelection(){
+        if(!activeGridSelection || !activeGridSelection.state) return null;
+        return activeGridSelection.state;
+    }
+
+    function hasActiveManagedSelection(state){
+        return !!(state && activeGridSelection && activeGridSelection.state === state && activeGridSelection.selectedCells && activeGridSelection.selectedCells.size > 0);
+    }
+
     function bindGridSelection(state){
         if(!state || !state.tbody || state.tbody.dataset.gridSelectBound === '1') return;
         state.tbody.dataset.gridSelectBound = '1';
@@ -2774,6 +2900,38 @@
             closeDatePicker();
             closeBatchConfirmModal();
             clearGridSelection();
+        }
+    });
+
+    document.addEventListener('paste', (e) => {
+        const target = e.target;
+        if(!target || !(target instanceof HTMLElement)) return;
+        const field = target.closest('input, textarea, select');
+        const state = field ? getManagedStateByElement(field) : getManagedStateFromSelection();
+        if(!state) return;
+
+        const text = (e.clipboardData && e.clipboardData.getData) ? e.clipboardData.getData('text/plain') : '';
+        const matrix = parseClipboardMatrix(text);
+        if(!matrix.length) return;
+
+        // Keep native paste for single-value input paste.
+        const isSingle = matrix.length === 1 && (matrix[0] || []).length <= 1;
+        const hasSelection = hasActiveManagedSelection(state);
+        const hasMultiSelection = hasSelection && activeGridSelection.selectedCells.size > 1;
+        if(isSingle && !hasMultiSelection) return;
+
+        e.preventDefault();
+
+        let applied = false;
+        if(hasSelection){
+            applied = applyMatrixPasteToActiveSelection(state, matrix);
+        }
+        if(!applied && field){
+            applied = applyMatrixPasteFromField(state, field, matrix);
+        }
+
+        if(applied && window.showAppToast){
+            window.showAppToast('已粘贴到预览输入区域', false, 1200);
         }
     });
 

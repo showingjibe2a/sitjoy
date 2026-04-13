@@ -1007,7 +1007,7 @@ class LogisticsWarehouseMixin:
             ws = wb.active
             ws.title = 'factory_wip'
 
-            headers = ['SKU', '工厂', '数量', '预计完工日期', '合同编号', '是否完工(是/否)', '实际完工时间', '备注', '最初预计完工日期(自动维护)']
+            headers = ['工厂', '合同编号', 'SKU', '数量', '预计完工日期', '是否完工(是/否)', '实际完工时间', '备注']
             ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
             title_cell = ws.cell(row=1, column=1, value='工厂在制库存导入模板')
             title_cell.fill = PatternFill(start_color='A8B9A5', end_color='A8B9A5', fill_type='solid')
@@ -1020,14 +1020,14 @@ class LogisticsWarehouseMixin:
                 cell.font = Font(bold=True, color='2A2420')
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
-            sample_row = ['示例SKU（请勿导入）', '示例工厂（请勿导入）', 50, '2026-03-31', 'CT-2026-001', '否', '', '示例行（请勿导入，此行仅演示格式）', '2026-03-31']
+            sample_row = ['示例工厂（请勿导入）', 'CT-2026-001', '示例SKU（请勿导入）', 50, '2026-03-31', '否', '', '示例行（请勿导入，此行仅演示格式）']
             ws.append(sample_row)
             for cell in ws[3]:
                 cell.fill = PatternFill(start_color='ECECEC', end_color='ECECEC', fill_type='solid')
                 cell.font = Font(italic=True, color='7B8088')
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
-            widths = [24, 24, 10, 16, 18, 14, 16, 28, 22]
+            widths = [24, 18, 24, 10, 16, 14, 16, 28]
             for idx, width in enumerate(widths, start=1):
                 ws.column_dimensions[get_column_letter(idx)].width = width
 
@@ -1097,12 +1097,12 @@ class LogisticsWarehouseMixin:
                 dv_factory = DataValidation(type='list', formula1=f"='_options'!$A$2:$A${len(factories) + 1}", allow_blank=False)
                 ws.add_data_validation(dv_factory)
                 for row in range(4, max_row + 1):
-                    dv_factory.add(f'B{row}')
+                    dv_factory.add(f'A{row}')
             if skus:
                 dv_sku = DataValidation(type='list', formula1=f"='_options'!$B$2:$B${len(skus) + 1}", allow_blank=False)
                 ws.add_data_validation(dv_sku)
                 for row in range(4, max_row + 1):
-                    dv_sku.add(f'A{row}')
+                    dv_sku.add(f'C{row}')
             dv_completed = DataValidation(type='list', formula1='"否,是"', allow_blank=True)
             ws.add_data_validation(dv_completed)
             for row in range(4, max_row + 1):
@@ -1111,15 +1111,14 @@ class LogisticsWarehouseMixin:
             if selected_rows:
                 write_row = 4
                 for item in selected_rows:
-                    ws.cell(row=write_row, column=1, value=str(item.get('sku') or '').strip())
-                    ws.cell(row=write_row, column=2, value=str(item.get('factory_name') or '').strip())
-                    ws.cell(row=write_row, column=3, value=int(item.get('quantity') or 0))
-                    ws.cell(row=write_row, column=4, value=item.get('expected_completion_date') or None)
-                    ws.cell(row=write_row, column=5, value=str(item.get('contract_no') or '').strip())
+                    ws.cell(row=write_row, column=1, value=str(item.get('factory_name') or '').strip())
+                    ws.cell(row=write_row, column=2, value=str(item.get('contract_no') or '').strip())
+                    ws.cell(row=write_row, column=3, value=str(item.get('sku') or '').strip())
+                    ws.cell(row=write_row, column=4, value=int(item.get('quantity') or 0))
+                    ws.cell(row=write_row, column=5, value=item.get('expected_completion_date') or None)
                     ws.cell(row=write_row, column=6, value='是' if int(item.get('is_completed') or 0) else '否')
                     ws.cell(row=write_row, column=7, value=item.get('actual_completion_date') or None)
                     ws.cell(row=write_row, column=8, value=str(item.get('notes') or '').strip())
-                    ws.cell(row=write_row, column=9, value=item.get('initial_expected_completion_date') or None)
                     write_row += 1
 
             ws.freeze_panes = 'A4'
@@ -1159,7 +1158,7 @@ class LogisticsWarehouseMixin:
             headers = [str(value or '').strip() for value in header_values]
             header_map = {name: idx for idx, name in enumerate(headers)}
 
-            for required in ('SKU', '工厂', '数量'):
+            for required in ('工厂', 'SKU', '数量'):
                 if required not in header_map:
                     return self.send_json({'status': 'error', 'message': f'模板缺少列: {required}'}, start_response)
 
@@ -1262,8 +1261,8 @@ class LogisticsWarehouseMixin:
                         if '示例' in row_join and '勿导入' in row_join:
                             continue
                         try:
-                            sku = str(get_cell(row, 'SKU') or '').strip()
                             factory_name = str(get_cell(row, '工厂') or '').strip()
+                            sku = str(get_cell(row, 'SKU') or '').strip()
                             quantity = self._parse_int(get_cell(row, '数量'))
                             expected_completion_date = parse_date(get_cell(row, '预计完工日期'))
                             contract_no = parse_contract_no(get_cell(row, '合同编号'))

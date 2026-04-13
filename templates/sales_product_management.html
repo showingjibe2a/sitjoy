@@ -1427,7 +1427,7 @@
 
             const fabrics = [];
             const fabricCodes = [];
-            const specs = [];
+            const specEntries = [];
             let warehouseCost = 0;
             let lastMileCost = 0;
             let packageLength = 0;
@@ -1441,7 +1441,12 @@
                 const fabricCode = normalizeCodePrefix(item.source.fabric_code || item.source.fabric_name_en || '');
                 if (fabricCode && !fabricCodes.includes(fabricCode)) fabricCodes.push(fabricCode);
                 const spec = (item.source.spec_qty_short || '').trim();
-                if (spec) specs.push(`${item.link.quantity}${spec}`);
+                if (spec) {
+                    specEntries.push({
+                        key: String(spec).toUpperCase(),
+                        text: `${item.link.quantity}${spec}`
+                    });
+                }
 
                 const qty = Number(item.link.quantity) || 1;
                 warehouseCost += (Number(item.source.cost_usd) || 0) * qty;
@@ -1456,14 +1461,15 @@
             if (!manualFabric) {
                 document.getElementById('modalFabric').value = fabrics.join(' / ');
             }
+            specEntries.sort((a, b) => String(a.key || '').localeCompare(String(b.key || ''), 'en', { numeric: true, sensitivity: 'base' }));
+            const specName = specEntries.map(x => x.text).join('');
             if (!manualSpecName) {
-                document.getElementById('modalSpecName').value = specs.join('');
+                document.getElementById('modalSpecName').value = specName;
             }
             
             // 自动生成平台SKU：货号-规格名称-面料编号（面料编号仅取-前）
             if (!manualPlatformSku) {
                 const skuFamily = getSelectedSkuFamilyText();
-                const specName = specs.join('');
                 const fabric = fabricCodes.length > 0 ? fabricCodes[0] : '';
                 if (skuFamily && specName && fabric) {
                     document.getElementById('modalPlatformSku').value = `${skuFamily}-${specName}-${fabric}`;
