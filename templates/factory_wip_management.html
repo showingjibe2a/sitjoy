@@ -42,17 +42,20 @@
             <th>SKU</th>
             <th style="width:120px;">颜色</th>
             <th>工厂</th>
+            <th style="width:160px;">合同编号</th>
             <th style="width:120px;">数量</th>
             <th style="width:140px;">预计完工日期</th>
+            <th style="width:170px;">最初预计完工日期</th>
             <th style="width:160px;">是否完工</th>
             <th style="width:140px;">实际完工时间</th>
             <th>备注</th>
             <th style="width:180px;">创建时间</th>
+            <th style="width:180px;">更新时间</th>
             <th style="width:160px;">操作</th>
           </tr>
         </thead>
         <tbody>
-          <tr><td colspan="12" style="text-align:center;">加载中...</td></tr>
+          <tr><td colspan="15" style="text-align:center;">加载中...</td></tr>
         </tbody>
       </table>
     </div>
@@ -72,12 +75,21 @@
         <select id="modalFactory"></select>
       </div>
       <div class="form-group">
+        <label for="modalContractNo">合同编号</label>
+        <input id="modalContractNo" type="text" list="contractNoList" placeholder="可选，不填则按单条显示">
+        <datalist id="contractNoList"></datalist>
+      </div>
+      <div class="form-group">
         <label for="modalQuantity">数量<span class="required-asterisk">*</span></label>
         <input id="modalQuantity" type="number" min="0" step="1" value="0">
       </div>
       <div class="form-group">
         <label for="modalExpectedDate">预计完工日期</label>
         <input id="modalExpectedDate" type="date">
+      </div>
+      <div class="form-group">
+        <label>最初预计完工日期</label>
+        <div id="modalInitialExpectedText" class="history-text">-</div>
       </div>
       <div class="form-group">
         <label>是否完工</label>
@@ -140,6 +152,8 @@
   .sku-color-chip-wrap { display: inline-flex; align-items: center; gap: 0.4rem; }
   .sku-color-chip { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(60, 60, 60, 0.25); display: inline-block; }
   .sku-color-empty { color: var(--morandi-slate); }
+  .history-text { min-height: 38px; border: 1px solid rgba(207,199,189,.55); border-radius: 8px; padding: .5rem .65rem; background: transparent; color: var(--morandi-slate); display: flex; align-items: center; }
+  .wip-contract-group-row td { background: rgba(236, 231, 223, 0.62); font-weight: 700; color: var(--morandi-ink); }
 </style>
 
 <script>
@@ -148,11 +162,13 @@ let optionsLoaded = false;
 let optionFactories = [];
 let optionOrderProducts = [];
 let optionLinks = [];
+let optionContracts = [];
 let skuFactoryMap = new Map();
 let factorySkuMap = new Map();
 let listCache = [];
 let selectedWipIds = new Set();
 let factoryWipEditDraft = {};
+let modalInitialExpectedLocked = '';
 
 const $ = (s) => document.querySelector(s);
 
@@ -239,6 +255,21 @@ function formatDate(value){
   return String(value).slice(0, 10);
 }
 
+function renderContractOptions(){
+  const listEl = document.getElementById('contractNoList');
+  if(!listEl) return;
+  listEl.innerHTML = (optionContracts || []).map(item => `<option value="${String(item.contract_no || '').replace(/"/g, '&quot;')}"></option>`).join('');
+}
+
+function syncModalInitialExpectedText(seedValue){
+  const target = document.getElementById('modalInitialExpectedText');
+  if(!target) return;
+  const locked = formatDate(seedValue || modalInitialExpectedLocked || '');
+  const fallback = formatDate(document.getElementById('modalExpectedDate')?.value || '');
+  const text = locked || fallback || '-';
+  target.textContent = text;
+}
+
 function safeColorValue(value){
   const text = String(value || '').trim();
   if(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(text)) return text;
@@ -286,9 +317,11 @@ function loadOptions(){
       optionFactories = d.factories || [];
       optionOrderProducts = d.order_products || [];
       optionLinks = d.links || [];
+      optionContracts = d.contracts || [];
       rebuildOptionLinkMaps();
       fillSelect('modalFactory', optionFactories, 'id', 'factory_name', '请选择工厂');
       fillSelect('modalOrderProduct', optionOrderProducts, 'id', 'sku', '请选择下单SKU');
+      renderContractOptions();
       optionsLoaded = true;
     });
 }
@@ -589,7 +622,10 @@ function openCreateModal(){
     $('#modalOrderProduct').value = '';
     $('#modalFactory').value = '';
     $('#modalQuantity').value = '0';
+    $('#modalContractNo').value = '';
     $('#modalExpectedDate').value = '';
+    modalInitialExpectedLocked = '';
+    syncModalInitialExpectedText('');
     setSegmentValue(document.getElementById('modalCompletedSegment'), '0');
     $('#modalActualCompletionDate').value = todayStr();
     toggleActualDateGroup();
@@ -619,7 +655,10 @@ function openEditModal(id){
     $('#modalOrderProduct').value = String(row.order_product_id || '');
     $('#modalFactory').value = String(row.factory_id || '');
     $('#modalQuantity').value = String(Number(row.quantity || 0));
+    $('#modalContractNo').value = row.contract_no || '';
     $('#modalExpectedDate').value = formatDate(row.expected_completion_date);
+    modalInitialExpectedLocked = formatDate(row.initial_expected_completion_date);
+    syncModalInitialExpectedText(row.initial_expected_completion_date);
     setSegmentValue(document.getElementById('modalCompletedSegment'), String(Number(row.is_completed || 0) ? 1 : 0));
     $('#modalActualCompletionDate').value = formatDate(row.actual_completion_date) || todayStr();
     toggleActualDateGroup();
@@ -647,6 +686,7 @@ function saveFromModal(){
   const order_product_id = Number($('#modalOrderProduct').value || 0);
   const factory_id = Number($('#modalFactory').value || 0);
   const quantity = Math.max(0, parseInt($('#modalQuantity').value || '0', 10) || 0);
+  const contract_no = ($('#modalContractNo').value || '').trim();
   const expected_completion_date = ($('#modalExpectedDate').value || '').trim();
   const is_completed = String(document.getElementById('modalCompletedSegment')?.getAttribute('data-value') || '0') === '1' ? 1 : 0;
   let actual_completion_date = ($('#modalActualCompletionDate').value || '').trim();
@@ -665,8 +705,8 @@ function saveFromModal(){
   }
 
   const payload = editId
-    ? { id: editId, quantity, expected_completion_date, is_completed, actual_completion_date, notes }
-    : { order_product_id, factory_id, quantity, expected_completion_date, is_completed, actual_completion_date, notes };
+    ? { id: editId, quantity, contract_no, expected_completion_date, is_completed, actual_completion_date, notes }
+    : { order_product_id, factory_id, quantity, contract_no, expected_completion_date, is_completed, actual_completion_date, notes };
 
   fetch('/api/factory-wip', {
     method: editId ? 'PUT' : 'POST',
@@ -714,7 +754,7 @@ function loadList(){
     .then(d => {
       const tbody = document.querySelector('#mainTable tbody');
       if(d.status !== 'success'){
-        tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;color:#a33;">${d.message || '加载失败'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="15" style="text-align:center;color:#a33;">${d.message || '加载失败'}</td></tr>`;
         selectedWipIds = new Set();
         syncWipSelectAll();
         syncFactoryWipSaveBar();
@@ -725,7 +765,7 @@ function loadList(){
       const availableIds = new Set(listCache.map(item => Number(item.id || 0)).filter(v => v > 0));
       selectedWipIds = new Set(Array.from(selectedWipIds).filter(id => availableIds.has(id)));
       if(!listCache.length){
-        tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;">暂无数据</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="15" style="text-align:center;">暂无数据</td></tr>';
         syncWipSelectAll();
         syncFactoryWipSaveBar();
         return;
@@ -735,7 +775,7 @@ function loadList(){
     })
     .catch(err => {
       const tbody = document.querySelector('#mainTable tbody');
-      tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;color:#a33;">${err.message || '加载失败'}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="15" style="text-align:center;color:#a33;">${err.message || '加载失败'}</td></tr>`;
       selectedWipIds = new Set();
       syncWipSelectAll();
       syncFactoryWipSaveBar();
@@ -747,12 +787,34 @@ function renderFactoryWipTable(items){
   const rows = Array.isArray(items) ? items : [];
   if(!tbody) return;
   if(!rows.length){
-    tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;">暂无数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="15" style="text-align:center;">暂无数据</td></tr>';
     return;
   }
-  tbody.innerHTML = rows.map(item => {
+
+  const groups = [];
+  const grouped = new Map();
+  rows.forEach(item => {
+    const contractNo = String(item.contract_no || '').trim();
+    if(!contractNo){
+      groups.push({ key: `single_${item.id}`, contractNo: '', rows: [item], single: true });
+      return;
+    }
+    if(!grouped.has(contractNo)){
+      grouped.set(contractNo, { key: `contract_${contractNo}`, contractNo, rows: [], single: false });
+      groups.push(grouped.get(contractNo));
+    }
+    grouped.get(contractNo).rows.push(item);
+  });
+
+  const html = [];
+  groups.forEach(group => {
+    if(!group.single){
+      html.push(`<tr class="wip-contract-group-row"><td colspan="15">合同 ${group.contractNo}（${group.rows.length} 条）</td></tr>`);
+    }
+    group.rows.forEach(item => {
     const quantity = getWipMergedValue(item, 'quantity');
     const expectedCompletionDate = getWipMergedValue(item, 'expected_completion_date');
+    const initialExpectedCompletionDate = formatDate(item.initial_expected_completion_date);
     const isCompleted = getWipMergedValue(item, 'is_completed');
     const actualCompletionDate = getWipMergedValue(item, 'actual_completion_date');
     const notes = getWipMergedValue(item, 'notes');
@@ -761,7 +823,7 @@ function renderFactoryWipTable(items){
     const colorHtml = colorValue
       ? `<span class="sku-color-chip-wrap"><span class="sku-color-chip" style="background:${colorValue};"></span></span>`
       : '<span class="sku-color-empty">-</span>';
-    return `
+    html.push(`
       <tr>
         <td style="text-align:center;"><input type="checkbox" class="wip-row-checkbox" data-id="${item.id}" ${selectedWipIds.has(Number(item.id)) ? 'checked' : ''}></td>
         <td>
@@ -773,8 +835,10 @@ function renderFactoryWipTable(items){
         <td>${item.sku || ''}</td>
         <td>${colorHtml}</td>
         <td>${item.factory_name || ''}</td>
+        <td>${item.contract_no || '-'}</td>
         <td class="preview-edit-cell"><input type="number" min="0" step="1" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="quantity" value="${Number(quantity || 0)}"></td>
         <td class="preview-edit-cell"><input type="date" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="expected_completion_date" value="${expectedCompletionDate || ''}"></td>
+        <td><div class="history-text">${initialExpectedCompletionDate || '-'}</div></td>
         <td class="preview-edit-cell">
           <div class="status-segment status-segment--inline preview-status-segment wip-status-segment" data-id="${item.id}" data-value="${Number(isCompleted || 0) ? '1' : '0'}">
             <button type="button" class="status-pill status-pill--yes ${Number(isCompleted || 0) ? 'is-active' : ''}" data-value="1">是</button>
@@ -784,6 +848,7 @@ function renderFactoryWipTable(items){
         <td class="preview-edit-cell"><input type="date" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="actual_completion_date" value="${actualCompletionDate || ''}"></td>
         <td class="preview-edit-cell"><input type="text" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="notes" value="${String(notes || '').replace(/"/g, '&quot;')}"></td>
         <td>${formatDateTime(item.created_at)}</td>
+        <td>${formatDateTime(item.update_time || item.updated_at)}</td>
         <td>
           <div class="pm-actions">
             <button class="btn-secondary" onclick="openEditModal(${item.id})">编辑</button>
@@ -791,8 +856,11 @@ function renderFactoryWipTable(items){
           </div>
         </td>
       </tr>
-    `;
-  }).join('');
+    `);
+    });
+  });
+
+  tbody.innerHTML = html.join('');
   bindRowSelectionEvents();
   bindFactoryWipEditEvents();
   syncWipSelectAll();
@@ -812,6 +880,10 @@ document.getElementById('modalCompletedSegment').querySelectorAll('button[data-v
     setSegmentValue(document.getElementById('modalCompletedSegment'), this.getAttribute('data-value') || '0');
     toggleActualDateGroup();
   });
+});
+
+document.getElementById('modalExpectedDate').addEventListener('input', () => {
+  syncModalInitialExpectedText();
 });
 
 document.addEventListener('change', function(e){

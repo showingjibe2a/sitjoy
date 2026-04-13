@@ -343,6 +343,21 @@ class LogisticsWarehouseMixin:
                         continue
                 return None
 
+            def _normalize_contract_no(value):
+                text = str(value or '').strip()
+                return text[:128] if text else None
+
+            def _resolve_contract_id(cur, contract_no):
+                normalized = _normalize_contract_no(contract_no)
+                if not normalized:
+                    return None, None
+                cur.execute("SELECT id, contract_no FROM factory_contracts WHERE contract_no=%s LIMIT 1", (normalized,))
+                existing = cur.fetchone() or {}
+                if existing.get('id'):
+                    return int(existing.get('id')), str(existing.get('contract_no') or normalized)
+                cur.execute("INSERT INTO factory_contracts (contract_no) VALUES (%s)", (normalized,))
+                return int(cur.lastrowid), normalized
+
             if method == 'GET':
                 keyword = (query_params.get('q', [''])[0] or '').strip()
                 action = (query_params.get('action', [''])[0] or '').strip().lower()
@@ -394,8 +409,17 @@ class LogisticsWarehouseMixin:
                                     if self._parse_int(item.get('order_product_id')) and self._parse_int(item.get('factory_id'))
                                 ]
 
+                            cur.execute("SELECT id, contract_no FROM factory_contracts ORDER BY contract_no ASC")
+                            contracts = cur.fetchall() or []
+
                     return self.send_json(
-                        {'status': 'success', 'factories': factories, 'order_products': order_products, 'links': links},
+                        {
+                            'status': 'success',
+                            'factories': factories,
+                            'order_products': order_products,
+                            'links': links,
+                            'contracts': contracts
+                        },
                         start_response
                     )
                 with self._get_db_connection() as conn:
@@ -404,14 +428,17 @@ class LogisticsWarehouseMixin:
                         if keyword:
                             cur.execute(
                                 f"""
-                                SELECT fw.id, fw.order_product_id, fw.factory_id, fw.quantity,
+                                SELECT fw.id, fw.order_product_id, fw.factory_id, fw.contract_id, fw.quantity,
                                         fw.expected_completion_date, fw.is_completed, fw.actual_completion_date,
-                                        fw.notes, fw.created_at, fw.updated_at,
+                                        fw.initial_expected_completion_date,
+                                        fw.notes, fw.created_at, fw.updated_at, fw.update_time,
+                                        fc.contract_no,
                                         op.sku, op.is_on_market, f.factory_name,
                                         fm.representative_color
                                 FROM factory_wip_inventory fw
                                 JOIN order_products op ON op.id = fw.order_product_id
                                 JOIN logistics_factories f ON f.id = fw.factory_id
+                                    LEFT JOIN factory_contracts fc ON fc.id = fw.contract_id
                                     LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
                                 WHERE (op.sku LIKE %s OR f.factory_name LIKE %s){scope_clause}
                                 ORDER BY op.sku ASC, f.factory_name ASC, fw.expected_completion_date ASC
@@ -421,14 +448,17 @@ class LogisticsWarehouseMixin:
                         else:
                             cur.execute(
                                 f"""
-                                SELECT fw.id, fw.order_product_id, fw.factory_id, fw.quantity,
+                                SELECT fw.id, fw.order_product_id, fw.factory_id, fw.contract_id, fw.quantity,
                                         fw.expected_completion_date, fw.is_completed, fw.actual_completion_date,
-                                        fw.notes, fw.created_at, fw.updated_at,
+                                        fw.initial_expected_completion_date,
+                                        fw.notes, fw.created_at, fw.updated_at, fw.update_time,
+                                        fc.contract_no,
                                         op.sku, op.is_on_market, f.factory_name,
                                         fm.representative_color
                                 FROM factory_wip_inventory fw
                                 JOIN order_products op ON op.id = fw.order_product_id
                                 JOIN logistics_factories f ON f.id = fw.factory_id
+                                    LEFT JOIN factory_contracts fc ON fc.id = fw.contract_id
                                     LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
                                 WHERE 1=1 {scope_clause}
                                 ORDER BY op.sku ASC, f.factory_name ASC, fw.expected_completion_date ASC
@@ -444,6 +474,7 @@ class LogisticsWarehouseMixin:
                 factory_id = self._parse_int(data.get('factory_id'))
                 quantity = max(0, self._parse_int(data.get('quantity')) or 0)
                 notes = (data.get('notes') or '').strip() or None
+                contract_no = _normalize_contract_no(data.get('contract_no'))
                 expected_date = _parse_date_text(data.get('expected_completion_date'))
                 is_completed = _parse_yes_no(data.get('is_completed'))
                 actual_completion_date = _parse_date_text(data.get('actual_completion_date'))
@@ -459,12 +490,27 @@ class LogisticsWarehouseMixin:
                     return self.send_json({'status': 'error', 'message': '该 SKU 未关联到该工厂，不可写入'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
+                        contract_id, contract_no = _resolve_contract_id(cur, contract_no)
                         cur.execute(
                             """
-                            INSERT INTO factory_wip_inventory (order_product_id, factory_id, quantity, expected_completion_date, is_completed, actual_completion_date, notes)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            INSERT INTO factory_wip_inventory (
+                                order_product_id, factory_id, contract_id, quantity,
+                                expected_completion_date, initial_expected_completion_date,
+                                is_completed, actual_completion_date, notes
+                            )
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                             """,
-                            (op_id, factory_id, quantity, expected_date, is_completed, actual_completion_date, notes)
+                            (
+                                op_id,
+                                factory_id,
+                                contract_id,
+                                quantity,
+                                expected_date,
+                                expected_date,
+                                is_completed,
+                                actual_completion_date,
+                                notes
+                            )
                         )
                         new_id = cur.lastrowid
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
@@ -488,6 +534,8 @@ class LogisticsWarehouseMixin:
                         quantity = max(0, self._parse_int(item.get('quantity')) or 0)
                         expected_date = _parse_date_text(item.get('expected_completion_date'))
                         is_completed = _parse_yes_no(item.get('is_completed'))
+                        contract_no = _normalize_contract_no(item.get('contract_no')) if ('contract_no' in item) else None
+                        has_contract_no = 'contract_no' in item
                         actual_completion_date = _parse_date_text(item.get('actual_completion_date'))
                         notes_raw = item.get('notes')
                         notes = ('' if notes_raw is None else str(notes_raw)).strip() or None
@@ -498,6 +546,8 @@ class LogisticsWarehouseMixin:
                         parsed_items.append({
                             'id': item_id,
                             'quantity': quantity,
+                            'contract_no': contract_no,
+                            'has_contract_no': has_contract_no,
                             'expected_completion_date': expected_date,
                             'is_completed': is_completed,
                             'actual_completion_date': actual_completion_date,
@@ -513,7 +563,7 @@ class LogisticsWarehouseMixin:
                     with self._get_db_connection() as conn:
                         with conn.cursor() as cur:
                             cur.execute(
-                                f"SELECT id, factory_id FROM factory_wip_inventory WHERE id IN ({id_placeholders})",
+                                f"SELECT id, factory_id, contract_id FROM factory_wip_inventory WHERE id IN ({id_placeholders})",
                                 tuple(id_list)
                             )
                             existing_rows = cur.fetchall() or []
@@ -529,14 +579,27 @@ class LogisticsWarehouseMixin:
                                     return self.send_json({'status': 'error', 'message': '无权限操作该工厂数据'}, start_response)
 
                             for item in parsed_items:
+                                contract_id = None
+                                if item.get('has_contract_no'):
+                                    contract_id, _ = _resolve_contract_id(cur, item.get('contract_no'))
+                                else:
+                                    existing_row = existing_map.get(item['id']) or {}
+                                    contract_id = self._parse_int(existing_row.get('contract_id'))
                                 cur.execute(
                                     """
                                     UPDATE factory_wip_inventory
-                                    SET quantity=%s, expected_completion_date=%s, is_completed=%s, actual_completion_date=%s, notes=%s
+                                    SET
+                                        quantity=%s,
+                                        contract_id=%s,
+                                        expected_completion_date=%s,
+                                        is_completed=%s,
+                                        actual_completion_date=%s,
+                                        notes=%s
                                     WHERE id=%s
                                     """,
                                     (
                                         item['quantity'],
+                                        contract_id,
                                         item['expected_completion_date'],
                                         item['is_completed'],
                                         item['actual_completion_date'],
@@ -550,6 +613,7 @@ class LogisticsWarehouseMixin:
                 item_id = self._parse_int(data.get('id'))
                 quantity = max(0, self._parse_int(data.get('quantity')) or 0)
                 notes = (data.get('notes') or '').strip() or None
+                contract_no = _normalize_contract_no(data.get('contract_no'))
                 expected_date = _parse_date_text(data.get('expected_completion_date'))
                 is_completed = _parse_yes_no(data.get('is_completed'))
                 add_to_factory_stock = _parse_yes_no(data.get('add_to_factory_stock'))
@@ -584,8 +648,20 @@ class LogisticsWarehouseMixin:
                                 return self.send_json({'status': 'error', 'message': '该记录已完工，已阻止重复新增到工厂在库'}, start_response)
 
                         cur.execute(
-                            "UPDATE factory_wip_inventory SET quantity=%s, expected_completion_date=%s, is_completed=%s, actual_completion_date=%s, notes=%s WHERE id=%s",
-                            (quantity, expected_date, is_completed, actual_completion_date, notes, item_id)
+                            """
+                            UPDATE factory_wip_inventory
+                            SET quantity=%s, contract_id=%s, expected_completion_date=%s, is_completed=%s, actual_completion_date=%s, notes=%s
+                            WHERE id=%s
+                            """,
+                            (
+                                quantity,
+                                _resolve_contract_id(cur, contract_no)[0],
+                                expected_date,
+                                is_completed,
+                                actual_completion_date,
+                                notes,
+                                item_id
+                            )
                         )
 
                         if add_to_factory_stock:
@@ -931,7 +1007,7 @@ class LogisticsWarehouseMixin:
             ws = wb.active
             ws.title = 'factory_wip'
 
-            headers = ['SKU', '工厂', '数量', '预计完工日期', '是否完工(是/否)', '实际完工时间', '备注']
+            headers = ['SKU', '工厂', '数量', '预计完工日期', '合同编号', '是否完工(是/否)', '实际完工时间', '备注', '最初预计完工日期(自动维护)']
             ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
             title_cell = ws.cell(row=1, column=1, value='工厂在制库存导入模板')
             title_cell.fill = PatternFill(start_color='A8B9A5', end_color='A8B9A5', fill_type='solid')
@@ -944,14 +1020,14 @@ class LogisticsWarehouseMixin:
                 cell.font = Font(bold=True, color='2A2420')
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
-            sample_row = ['示例SKU（请勿导入）', '示例工厂（请勿导入）', 50, '2026-03-31', '否', '', '示例行（请勿导入，此行仅演示格式）']
+            sample_row = ['示例SKU（请勿导入）', '示例工厂（请勿导入）', 50, '2026-03-31', 'CT-2026-001', '否', '', '示例行（请勿导入，此行仅演示格式）', '2026-03-31']
             ws.append(sample_row)
             for cell in ws[3]:
                 cell.fill = PatternFill(start_color='ECECEC', end_color='ECECEC', fill_type='solid')
                 cell.font = Font(italic=True, color='7B8088')
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
-            widths = [24, 24, 10, 16, 14, 16, 28]
+            widths = [24, 24, 10, 16, 18, 14, 16, 28, 22]
             for idx, width in enumerate(widths, start=1):
                 ws.column_dimensions[get_column_letter(idx)].width = width
 
@@ -993,12 +1069,15 @@ class LogisticsWarehouseMixin:
                                 f.factory_name,
                                 fw.quantity,
                                 fw.expected_completion_date,
+                                fc.contract_no,
                                 fw.is_completed,
                                 fw.actual_completion_date,
-                                fw.notes
+                                fw.notes,
+                                fw.initial_expected_completion_date
                             FROM factory_wip_inventory fw
                             JOIN order_products op ON op.id = fw.order_product_id
                             JOIN logistics_factories f ON f.id = fw.factory_id
+                            LEFT JOIN factory_contracts fc ON fc.id = fw.contract_id
                             WHERE fw.id IN ({placeholders}) {scope_clause}
                             ORDER BY op.sku ASC, f.factory_name ASC
                             """,
@@ -1027,7 +1106,7 @@ class LogisticsWarehouseMixin:
             dv_completed = DataValidation(type='list', formula1='"否,是"', allow_blank=True)
             ws.add_data_validation(dv_completed)
             for row in range(4, max_row + 1):
-                dv_completed.add(f'E{row}')
+                dv_completed.add(f'F{row}')
 
             if selected_rows:
                 write_row = 4
@@ -1036,9 +1115,11 @@ class LogisticsWarehouseMixin:
                     ws.cell(row=write_row, column=2, value=str(item.get('factory_name') or '').strip())
                     ws.cell(row=write_row, column=3, value=int(item.get('quantity') or 0))
                     ws.cell(row=write_row, column=4, value=item.get('expected_completion_date') or None)
-                    ws.cell(row=write_row, column=5, value='是' if int(item.get('is_completed') or 0) else '否')
-                    ws.cell(row=write_row, column=6, value=item.get('actual_completion_date') or None)
-                    ws.cell(row=write_row, column=7, value=str(item.get('notes') or '').strip())
+                    ws.cell(row=write_row, column=5, value=str(item.get('contract_no') or '').strip())
+                    ws.cell(row=write_row, column=6, value='是' if int(item.get('is_completed') or 0) else '否')
+                    ws.cell(row=write_row, column=7, value=item.get('actual_completion_date') or None)
+                    ws.cell(row=write_row, column=8, value=str(item.get('notes') or '').strip())
+                    ws.cell(row=write_row, column=9, value=item.get('initial_expected_completion_date') or None)
                     write_row += 1
 
             ws.freeze_panes = 'A4'
@@ -1123,6 +1204,21 @@ class LogisticsWarehouseMixin:
                 text = str(value or '').strip().lower()
                 return 1 if text in ('1', 'true', 'yes', 'y', '是') else 0
 
+            def parse_contract_no(value):
+                text = str(value or '').strip()
+                return text[:128] if text else None
+
+            def resolve_contract_id(cur, contract_no):
+                normalized = parse_contract_no(contract_no)
+                if not normalized:
+                    return None
+                cur.execute("SELECT id FROM factory_contracts WHERE contract_no=%s LIMIT 1", (normalized,))
+                hit = cur.fetchone() or {}
+                if hit.get('id'):
+                    return int(hit.get('id'))
+                cur.execute("INSERT INTO factory_contracts (contract_no) VALUES (%s)", (normalized,))
+                return int(cur.lastrowid)
+
             created = 0
             updated = 0
             unchanged = 0
@@ -1170,6 +1266,7 @@ class LogisticsWarehouseMixin:
                             factory_name = str(get_cell(row, '工厂') or '').strip()
                             quantity = self._parse_int(get_cell(row, '数量'))
                             expected_completion_date = parse_date(get_cell(row, '预计完工日期'))
+                            contract_no = parse_contract_no(get_cell(row, '合同编号'))
                             is_completed = parse_yes_no(get_cell(row, '是否完工(是/否)'))
                             actual_completion_date = parse_date(get_cell(row, '实际完工时间'))
                             notes = str(get_cell(row, '备注') or '').strip() or None
@@ -1188,7 +1285,7 @@ class LogisticsWarehouseMixin:
                             if not is_completed:
                                 actual_completion_date = None
                             quantity = max(0, int(quantity))
-                            normalized_rows.append((order_product_id, factory_id, quantity, expected_completion_date, is_completed, actual_completion_date, notes))
+                            normalized_rows.append((order_product_id, factory_id, quantity, expected_completion_date, contract_no, is_completed, actual_completion_date, notes))
                             pair_keys.add((order_product_id, factory_id))
                         except Exception as row_error:
                             errors.append({'row': row_idx, 'error': str(row_error)})
@@ -1201,7 +1298,9 @@ class LogisticsWarehouseMixin:
                         fa_placeholders = ','.join(['%s'] * len(factory_ids))
                         cur.execute(
                             f"""
-                            SELECT id, order_product_id, factory_id, quantity, expected_completion_date, is_completed, actual_completion_date, notes
+                            SELECT id, order_product_id, factory_id, contract_id, quantity,
+                                expected_completion_date, initial_expected_completion_date,
+                                is_completed, actual_completion_date, notes
                             FROM factory_wip_inventory
                             WHERE order_product_id IN ({op_placeholders})
                               AND factory_id IN ({fa_placeholders})
@@ -1215,19 +1314,23 @@ class LogisticsWarehouseMixin:
                                 continue
                             existing_map[key] = {
                                 'id': int(ex.get('id')),
+                                'contract_id': self._parse_int(ex.get('contract_id')),
                                 'quantity': int(ex.get('quantity') or 0),
                                 'expected_completion_date': (str(ex.get('expected_completion_date') or '').strip() or None),
+                                'initial_expected_completion_date': (str(ex.get('initial_expected_completion_date') or '').strip() or None),
                                 'is_completed': int(ex.get('is_completed') or 0),
                                 'actual_completion_date': (str(ex.get('actual_completion_date') or '').strip() or None),
                                 'notes': (ex.get('notes') or '').strip() or None
                             }
 
-                    for order_product_id, factory_id, quantity, expected_completion_date, is_completed, actual_completion_date, notes in normalized_rows:
+                    for order_product_id, factory_id, quantity, expected_completion_date, contract_no, is_completed, actual_completion_date, notes in normalized_rows:
                         key = (order_product_id, factory_id)
                         ex = existing_map.get(key)
+                        contract_id = resolve_contract_id(cur, contract_no)
                         if ex:
                             same = (
                                 ex.get('quantity') == quantity and
+                                (self._parse_int(ex.get('contract_id')) or None) == (contract_id or None) and
                                 (ex.get('expected_completion_date') or None) == (expected_completion_date or None) and
                                 int(ex.get('is_completed') or 0) == int(is_completed or 0) and
                                 (ex.get('actual_completion_date') or None) == (actual_completion_date or None) and
@@ -1239,20 +1342,30 @@ class LogisticsWarehouseMixin:
                             cur.execute(
                                 """
                                 UPDATE factory_wip_inventory
-                                SET quantity=%s, expected_completion_date=%s, is_completed=%s, actual_completion_date=%s, notes=%s
+                                                                SET quantity=%s, contract_id=%s, expected_completion_date=%s, is_completed=%s, actual_completion_date=%s, notes=%s
                                 WHERE id=%s
                                 """,
-                                (quantity, expected_completion_date, is_completed, actual_completion_date, notes, ex['id'])
+                                                                (quantity, contract_id, expected_completion_date, is_completed, actual_completion_date, notes, ex['id'])
                             )
                             updated += 1
                         else:
                             cur.execute(
                                 """
                                 INSERT INTO factory_wip_inventory
-                                  (order_product_id, factory_id, quantity, expected_completion_date, is_completed, actual_completion_date, notes)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                                                    (order_product_id, factory_id, contract_id, quantity, expected_completion_date, initial_expected_completion_date, is_completed, actual_completion_date, notes)
+                                                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                                 """,
-                                (order_product_id, factory_id, quantity, expected_completion_date, is_completed, actual_completion_date, notes)
+                                                                (
+                                                                        order_product_id,
+                                                                        factory_id,
+                                                                        contract_id,
+                                                                        quantity,
+                                                                        expected_completion_date,
+                                                                        expected_completion_date,
+                                                                        is_completed,
+                                                                        actual_completion_date,
+                                                                        notes
+                                                                )
                             )
                             created += 1
 

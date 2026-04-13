@@ -10,6 +10,7 @@
     let activeHelpDotTooltip = null;
     let activeDatePickerState = null;
     let activeGridSelection = null;
+    let activeBatchConfirmState = null;
     let suppressSortUntil = 0;
 
     function isElementVisibleForEnhance(el){
@@ -593,7 +594,7 @@
         return cells.map((cell, idx) => {
             if(!cell.dataset.manageColOrigin) cell.dataset.manageColOrigin = String(idx);
             const origin = Number(cell.dataset.manageColOrigin);
-            const rawLabel = (cell.textContent || '').trim();
+            const rawLabel = extractHeaderLabelText(cell);
             const fallback = cell.querySelector('input[type="checkbox"]') ? '多选框' : `字段${origin + 1}`;
             return {
                 origin,
@@ -601,6 +602,18 @@
                 cell
             };
         });
+    }
+
+    function extractHeaderLabelText(cell){
+        if(!cell) return '';
+        const clone = cell.cloneNode(true);
+        clone.querySelectorAll('.pm-col-resizer, .transit-sub-sort-btn, button, input, select, textarea, .help-dot, script, style, svg').forEach(node => {
+            if(node && node.parentNode) node.parentNode.removeChild(node);
+        });
+        return String(clone.textContent || '')
+            .replace(/[↕↑↓▲▼▴▾]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
     }
 
     function computeDefaultColumnWidth(state, meta){
@@ -1128,6 +1141,7 @@
 
         const cloned = srcRow.cloneNode(true);
         cloned.querySelectorAll('.pm-col-resizer').forEach(node => node.remove());
+        cloned.querySelectorAll('[data-sort-bound]').forEach(node => node.removeAttribute('data-sort-bound'));
         dstHead.appendChild(cloned);
 
         srcHead.classList.add('pm-managed-hidden-head');
@@ -1459,13 +1473,460 @@
         });
     }
 
+    function normalizeComparableValue(raw){
+        const text = String(raw === null || raw === undefined ? '' : raw).trim();
+        if(!text) return '';
+
+        const lowered = text.toLowerCase();
+        if(/^(是|已|启用|开启|正常|有效|true|yes|on|active)$/i.test(lowered)) return 1;
+        if(/^(否|未|禁用|关闭|异常|无效|false|no|off|inactive)$/i.test(lowered)) return 0;
+
+        const plainNumeric = text.replace(/,/g, '').replace(/%$/, '');
+        const numeric = Number(plainNumeric);
+        if(plainNumeric && !Number.isNaN(numeric) && /^-?\d+(\.\d+)?$/.test(plainNumeric)) return numeric;
+
+        const dateOnly = parseDateText(text);
+        if(dateOnly){
+            return Date.UTC(dateOnly.year, dateOnly.month - 1, dateOnly.day);
+        }
+
+        const stamp = Date.parse(text);
+        if(!Number.isNaN(stamp) && /\d{4}[-/.]\d{1,2}[-/.]\d{1,2}/.test(text)) return stamp;
+
+        return lowered;
+    }
+
+    function readControlComparableValue(cell){
+        if(!cell || !cell.querySelectorAll) return null;
+        const explicit = String(cell.getAttribute('data-sort-value') || cell.dataset.sortValue || '').trim();
+        if(explicit) return normalizeComparableValue(explicit);
+
+        const input = cell.querySelector('input:not([type="hidden"])');
+        if(input){
+            const type = String(input.type || '').toLowerCase();
+            if(type === 'checkbox' || type === 'radio') return input.checked ? 1 : 0;
+            if(type === 'date' || type === 'datetime-local'){
+                const parsed = parseDateText(input.value || '');
+                if(parsed) return Date.UTC(parsed.year, parsed.month - 1, parsed.day);
+            }
+            const value = String(input.value || '').trim();
+            if(value) return normalizeComparableValue(value);
+        }
+
+        const select = cell.querySelector('select');
+        if(select){
+            const option = select.options && select.selectedIndex >= 0 ? select.options[select.selectedIndex] : null;
+            const selectedText = option ? String(option.textContent || option.value || '').trim() : String(select.value || '').trim();
+            if(selectedText) return normalizeComparableValue(selectedText);
+        }
+
+        const textarea = cell.querySelector('textarea');
+        if(textarea){
+            const value = String(textarea.value || '').trim();
+            if(value) return normalizeComparableValue(value);
+        }
+
+        const activePill = cell.querySelector('.status-pill.is-active');
+        if(activePill){
+            const pillValue = String(activePill.getAttribute('data-value') || activePill.textContent || '').trim();
+            if(pillValue) return normalizeComparableValue(pillValue);
+        }
+
+        const pressedButton = cell.querySelector('button[aria-pressed="true"]');
+        if(pressedButton){
+            const pressedValue = String(pressedButton.getAttribute('data-value') || pressedButton.textContent || '').trim();
+            if(pressedValue) return normalizeComparableValue(pressedValue);
+        }
+
+        return null;
+    }
+
     function readCellComparableValue(cell){
         if(!cell) return '';
-        const text = String(cell.textContent || '').trim();
-        const normalized = text.replace(/,/g, '');
-        const numeric = Number(normalized);
-        if(normalized && !Number.isNaN(numeric) && /^-?\d+(\.\d+)?$/.test(normalized)) return numeric;
-        return text.toLowerCase();
+        const controlValue = readControlComparableValue(cell);
+        if(controlValue !== null && controlValue !== undefined && controlValue !== '') return controlValue;
+        return normalizeComparableValue(String(cell.textContent || '').replace(/[↕↑↓▲▼▴▾]/g, ' ').replace(/\s+/g, ' ').trim());
+    }
+
+    function resolveCheckboxSelectionId(checkbox, idx){
+        if(!checkbox) return '';
+        const row = checkbox.closest('tr');
+        const raw = String(
+            checkbox.getAttribute('data-id')
+            || checkbox.dataset.id
+            || checkbox.value
+            || (row && (row.getAttribute('data-id') || row.dataset.id))
+            || ''
+        ).trim();
+        if(raw) return raw;
+        return `__row_${idx + 1}`;
+    }
+
+    function getManagedSelectionCheckboxes(state){
+        if(!state || !state.tbody) return [];
+        const rows = Array.from(state.tbody.rows || []);
+        const fromLockedColumns = [];
+
+        if(state.lockedColumns && state.lockedColumns.size){
+            rows.forEach(row => {
+                const byOrigin = mapRowByOrigin(row);
+                state.lockedColumns.forEach(origin => {
+                    const cell = byOrigin.get(origin);
+                    if(!cell) return;
+                    const cb = cell.querySelector('input[type="checkbox"]');
+                    if(cb && !fromLockedColumns.includes(cb)) fromLockedColumns.push(cb);
+                });
+            });
+        }
+
+        if(fromLockedColumns.length) return fromLockedColumns;
+
+        return Array.from(state.tbody.querySelectorAll('input[type="checkbox"]')).filter(cb => {
+            if(cb.disabled) return false;
+            if(!cb.closest('tr')) return false;
+            if(cb.classList.contains('switch-input')) return false;
+            return cb.hasAttribute('data-id') || cb.classList.contains('row-check') || cb.name === 'row-check' || /select|check/i.test(String(cb.className || ''));
+        });
+    }
+
+    function getManagedSelectedIds(state){
+        const set = new Set();
+        getManagedSelectionCheckboxes(state).forEach((cb, idx) => {
+            if(!cb.checked) return;
+            const id = resolveCheckboxSelectionId(cb, idx);
+            if(id) set.add(id);
+        });
+        return Array.from(set.values());
+    }
+
+    function getManagedSelectedRowEntries(state){
+        const entries = [];
+        getManagedSelectionCheckboxes(state).forEach((cb, idx) => {
+            if(!cb.checked) return;
+            const row = cb.closest('tr');
+            if(!row) return;
+            entries.push({ id: resolveCheckboxSelectionId(cb, idx), row, checkbox: cb });
+        });
+        return entries;
+    }
+
+    function csvEscape(value){
+        const text = String(value === null || value === undefined ? '' : value);
+        if(/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+        return text;
+    }
+
+    function exportManagedRowsToCsv(state, rows){
+        if(!state || !state.table || !Array.isArray(rows) || !rows.length) return false;
+        const exportOrigins = (state.columnOrder || []).filter(origin => {
+            if(state.lockedColumns && state.lockedColumns.has(origin)) return false;
+            return state.visibleColumns ? state.visibleColumns.has(origin) : true;
+        });
+        if(!exportOrigins.length) return false;
+
+        const headerMap = new Map((state.headers || []).map(h => [Number(h.origin), String(h.label || '').trim()]));
+        const lines = [];
+        lines.push(exportOrigins.map(origin => csvEscape(headerMap.get(Number(origin)) || `字段${Number(origin) + 1}`)).join(','));
+
+        rows.forEach(row => {
+            const byOrigin = mapRowByOrigin(row);
+            const line = exportOrigins.map(origin => {
+                const cell = byOrigin.get(Number(origin));
+                const raw = cell ? String(cell.textContent || '').replace(/[↕↑↓▲▼▴▾]/g, ' ').replace(/\s+/g, ' ').trim() : '';
+                return csvEscape(raw);
+            }).join(',');
+            lines.push(line);
+        });
+
+        const csv = lines.join('\r\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        const date = new Date();
+        const yyyy = date.getFullYear();
+        const mm = String(date.getMonth() + 1).padStart(2, '0');
+        const dd = String(date.getDate()).padStart(2, '0');
+        const tableName = (state.table.id || state.table.dataset.manageKey || 'table').replace(/[^a-zA-Z0-9_-]+/g, '_');
+        link.href = url;
+        link.download = `${tableName}_selected_${yyyy}${mm}${dd}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        return true;
+    }
+
+    function findRowDeleteButton(row){
+        if(!row || !row.querySelectorAll) return null;
+        const buttons = Array.from(row.querySelectorAll('button, a'));
+        const primary = buttons.find(btn => btn.classList.contains('btn-danger') || btn.getAttribute('data-action') === 'delete');
+        if(primary) return primary;
+        return buttons.find(btn => /删除/.test(String(btn.textContent || '').trim())) || null;
+    }
+
+    function withSilentConfirm(task){
+        if(typeof task !== 'function') return;
+        const originalConfirm = window.confirm;
+        window.confirm = function(){ return true; };
+        try {
+            task();
+        } finally {
+            window.confirm = originalConfirm;
+        }
+    }
+
+    function defaultManagedTableBatchDownload(ids, table, state){
+        const entries = getManagedSelectedRowEntries(state).filter(item => ids.includes(item.id));
+        const rows = entries.map(item => item.row);
+        if(!rows.length){
+            showAppToast('未找到可下载的勾选行。', true);
+            return;
+        }
+        if(exportManagedRowsToCsv(state, rows)){
+            showAppToast(`已导出 ${rows.length} 条勾选数据。`, false);
+            return;
+        }
+        showAppToast('批量下载失败：未能生成导出内容。', true);
+    }
+
+    function defaultManagedTableBatchDelete(ids, table, state){
+        const entries = getManagedSelectedRowEntries(state).filter(item => ids.includes(item.id));
+        const buttons = entries.map(item => findRowDeleteButton(item.row)).filter(Boolean);
+        if(!buttons.length){
+            showAppToast('当前页面未找到可触发的删除按钮，请在表格上配置 data-batch-delete-handler。', true);
+            return;
+        }
+
+        buttons.forEach((btn, idx) => {
+            window.setTimeout(() => {
+                withSilentConfirm(() => {
+                    if(btn && typeof btn.click === 'function') btn.click();
+                });
+            }, idx * 120);
+        });
+        showAppToast(`已触发 ${buttons.length} 条删除操作。`, false);
+    }
+
+    function ensureBatchConfirmModal(){
+        let modal = document.getElementById('pm-batch-delete-modal');
+        if(modal && document.body.contains(modal)) return modal;
+
+        modal = document.createElement('div');
+        modal.id = 'pm-batch-delete-modal';
+        modal.className = 'pm-modal pm-batch-delete-modal';
+        modal.innerHTML = [
+            '<div class="pm-modal-content pm-batch-delete-content">',
+            '  <h3>批量删除确认</h3>',
+            '  <p class="pm-batch-delete-desc"></p>',
+            '  <label class="pm-batch-delete-ack">',
+            '    <input type="checkbox" class="pm-batch-delete-ack-input">',
+            '    <span>我已阅读并确认操作后果。</span>',
+            '  </label>',
+            '  <div class="pm-actions pm-batch-delete-actions">',
+            '    <button type="button" class="btn-secondary" data-action="cancel">取消</button>',
+            '    <button type="button" class="btn-danger" data-action="confirm" disabled>二次确认删除</button>',
+            '  </div>',
+            '</div>'
+        ].join('');
+        document.body.appendChild(modal);
+
+        const ack = modal.querySelector('.pm-batch-delete-ack-input');
+        const confirmBtn = modal.querySelector('[data-action="confirm"]');
+        const cancelBtn = modal.querySelector('[data-action="cancel"]');
+
+        if(ack && confirmBtn){
+            ack.addEventListener('change', () => {
+                confirmBtn.disabled = !ack.checked;
+            });
+        }
+        if(cancelBtn){
+            cancelBtn.addEventListener('click', () => closeBatchConfirmModal());
+        }
+        if(confirmBtn){
+            confirmBtn.addEventListener('click', () => {
+                if(!activeBatchConfirmState || !ack || !ack.checked) return;
+                const current = activeBatchConfirmState;
+                closeBatchConfirmModal();
+                current.onConfirm();
+            });
+        }
+        modal.addEventListener('click', (event) => {
+            if(event.target === modal) closeBatchConfirmModal();
+        });
+        return modal;
+    }
+
+    function closeBatchConfirmModal(){
+        const modal = document.getElementById('pm-batch-delete-modal');
+        if(!modal) return;
+        modal.classList.remove('active');
+        activeBatchConfirmState = null;
+        syncModalScrollLock();
+    }
+
+    function openBatchConfirmModal(count, onConfirm){
+        const modal = ensureBatchConfirmModal();
+        if(!modal) return;
+        const ack = modal.querySelector('.pm-batch-delete-ack-input');
+        const confirmBtn = modal.querySelector('[data-action="confirm"]');
+        const desc = modal.querySelector('.pm-batch-delete-desc');
+
+        if(desc){
+            desc.textContent = `即将删除 ${count} 条已勾选记录，该操作通常不可恢复。`;
+        }
+        if(ack){
+            ack.checked = false;
+        }
+        if(confirmBtn){
+            confirmBtn.disabled = true;
+        }
+
+        activeBatchConfirmState = { onConfirm };
+        modal.classList.add('active');
+        syncModalScrollLock();
+    }
+
+    function emitManagedBulkEvent(state, eventName, ids){
+        const detail = {
+            table: state ? state.table : null,
+            tableId: state && state.table ? (state.table.id || state.table.dataset.manageKey || '') : '',
+            ids: Array.isArray(ids) ? ids.slice() : [],
+            handled: false
+        };
+        const ev = new CustomEvent(eventName, { detail, bubbles: true });
+        document.dispatchEvent(ev);
+        return detail;
+    }
+
+    function runManagedBatchAction(state, action, ids){
+        if(!state || !state.table || !Array.isArray(ids) || !ids.length) return;
+        const fnKey = action === 'download' ? 'batchDownloadHandler' : 'batchDeleteHandler';
+        const fnName = String(state.table.dataset[fnKey] || '').trim();
+        const configuredHandler = (fnName && typeof window[fnName] === 'function') ? window[fnName] : null;
+        const globalHook = action === 'download' ? window.onManagedTableBatchDownload : window.onManagedTableBatchDelete;
+
+        // Execute exactly one callback channel to avoid duplicate side effects.
+        const selectedHandler = configuredHandler || (typeof globalHook === 'function' ? globalHook : null);
+        let handled = false;
+
+        if(selectedHandler){
+            try {
+                selectedHandler(ids.slice(), state.table, state);
+                handled = true;
+            } catch (err) {
+                showAppToast(`批量${action === 'download' ? '下载' : '删除'}执行失败: ${err && err.message ? err.message : err}`, true);
+                return;
+            }
+        }
+
+        if(!handled){
+            const detail = emitManagedBulkEvent(state, action === 'download' ? 'pm:table-batch-download' : 'pm:table-batch-delete', ids);
+            if(detail.handled) handled = true;
+        }
+
+        if(!handled){
+            showAppToast(`批量${action === 'download' ? '下载' : '删除'}未执行，请为该页面配置 data-batch-${action}-handler 或全局回调。`, true);
+        }
+    }
+
+    function ensureManagedBatchBar(state){
+        if(!state || !state.wrap) return null;
+        if(state.batchBar && document.body.contains(state.batchBar)) return state.batchBar;
+
+        const bar = document.createElement('div');
+        bar.className = 'pm-batch-float-bar';
+        bar.innerHTML = [
+            '<span class="pm-batch-float-count">已勾选 0 条</span>',
+            '<button type="button" class="btn-secondary" data-action="download">批量下载数据</button>',
+            '<button type="button" class="btn-danger" data-action="delete">批量删除</button>'
+        ].join('');
+        document.body.appendChild(bar);
+
+        const downloadBtn = bar.querySelector('[data-action="download"]');
+        const deleteBtn = bar.querySelector('[data-action="delete"]');
+
+        if(downloadBtn){
+            downloadBtn.addEventListener('click', () => {
+                const ids = getManagedSelectedIds(state);
+                if(!ids.length) return;
+                runManagedBatchAction(state, 'download', ids);
+            });
+        }
+
+        if(deleteBtn){
+            deleteBtn.addEventListener('click', () => {
+                const ids = getManagedSelectedIds(state);
+                if(!ids.length) return;
+                openBatchConfirmModal(ids.length, () => {
+                    runManagedBatchAction(state, 'delete', ids);
+                });
+            });
+        }
+
+        state.batchBar = bar;
+        return bar;
+    }
+
+    function getPreviewSaveBarOffset(){
+        let maxHeight = 0;
+        document.querySelectorAll('.preview-savebar').forEach((bar) => {
+            const style = window.getComputedStyle(bar);
+            if(style.display === 'none' || style.visibility === 'hidden') return;
+            const rect = bar.getBoundingClientRect();
+            if(!rect || rect.height <= 0) return;
+            maxHeight = Math.max(maxHeight, Math.ceil(rect.height) + 18);
+        });
+        return maxHeight;
+    }
+
+    function positionManagedBatchBar(state){
+        if(!state || !state.batchBar) return;
+        const baseBottom = 18;
+        const extraBottom = getPreviewSaveBarOffset();
+        state.batchBar.style.bottom = `${baseBottom + extraBottom}px`;
+    }
+
+    function syncManagedBatchBarAsync(state){
+        if(!state) return;
+        if(state.batchSyncTimer){
+            window.clearTimeout(state.batchSyncTimer);
+            state.batchSyncTimer = 0;
+        }
+        state.batchSyncTimer = window.setTimeout(() => {
+            state.batchSyncTimer = 0;
+            syncManagedBatchBar(state);
+        }, 30);
+    }
+
+    function syncManagedBatchBar(state){
+        if(!state || !state.tbody || state.light) return;
+        const checkboxList = getManagedSelectionCheckboxes(state);
+        if(!checkboxList.length){
+            if(state.batchBar) state.batchBar.classList.remove('active');
+            return;
+        }
+
+        const ids = getManagedSelectedIds(state);
+        const bar = ensureManagedBatchBar(state);
+        if(!bar) return;
+        const countEl = bar.querySelector('.pm-batch-float-count');
+        if(countEl){
+            countEl.textContent = `已勾选 ${ids.length} 条`;
+        }
+        bar.classList.toggle('active', ids.length > 0);
+        positionManagedBatchBar(state);
+    }
+
+    function ensureManagedBatchHandlers(state){
+        if(!state || !state.table || state.light) return;
+        const hasCheckbox = getManagedSelectionCheckboxes(state).length > 0;
+        if(!hasCheckbox) return;
+        if(!String(state.table.dataset.batchDownloadHandler || '').trim()){
+            state.table.dataset.batchDownloadHandler = 'onManagedTableBatchDownload';
+        }
+        if(!String(state.table.dataset.batchDeleteHandler || '').trim()){
+            state.table.dataset.batchDeleteHandler = 'onManagedTableBatchDelete';
+        }
     }
 
     function applySort(state){
@@ -1623,6 +2084,7 @@
         }
 
         ensureRowSortOrigin(state);
+        ensureManagedBatchHandlers(state);
         if(!state.light){
             applyColumnOrder(state);
             applyColumnVisibility(state);
@@ -1635,6 +2097,7 @@
         if(!state.light){
             ensureResizeHandles(state);
             applyPagination(state);
+            syncManagedBatchBar(state);
             syncTopScroll(state);
             if(activeColumnsPanelState === state) repositionColumnsPanel(state);
         }
@@ -1747,7 +2210,8 @@
             sortApplied: false,
             isRefreshing: false,
             needRefresh: false,
-            refreshScheduled: false
+            refreshScheduled: false,
+            batchBar: null
         };
         managedTableState.set(table, state);
 
@@ -1849,6 +2313,21 @@
                 if(!sourceCheckbox || sourceCheckbox === target) return;
                 sourceCheckbox.checked = target.checked;
                 sourceCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+                syncManagedBatchBarAsync(state);
+            });
+
+            state.table.addEventListener('change', (event) => {
+                const target = event.target;
+                if(!target || !(target instanceof HTMLInputElement)) return;
+                if(target.type !== 'checkbox') return;
+                syncManagedBatchBarAsync(state);
+            });
+
+            state.table.addEventListener('click', (event) => {
+                const target = event.target;
+                if(!target || !(target instanceof HTMLInputElement)) return;
+                if(target.type !== 'checkbox') return;
+                syncManagedBatchBarAsync(state);
             });
         }
 
@@ -1873,6 +2352,13 @@
     function enhanceManagedTables(root){
         const scope = root && root.querySelectorAll ? root : document;
         scope.querySelectorAll('table').forEach((table, index) => createManagedTable(table, index));
+    }
+
+    function repositionManagedBatchBars(){
+        managedTableState.forEach((state) => {
+            if(!state || !state.batchBar || !state.batchBar.classList.contains('active')) return;
+            positionManagedBatchBar(state);
+        });
     }
 
     function initOptionalDateInputs(root){
@@ -2286,6 +2772,7 @@
             closeColumnsPanel(activeColumnsPanelState);
             closeAllDropdowns();
             closeDatePicker();
+            closeBatchConfirmModal();
             clearGridSelection();
         }
     });
@@ -2350,15 +2837,20 @@
         repositionOpenDropdowns();
         if(activeDatePickerState && activeDatePickerState.input) positionDatePicker(activeDatePickerState.input, activeDatePickerState);
         if(activeColumnsPanelState) repositionColumnsPanel(activeColumnsPanelState);
+        repositionManagedBatchBars();
     });
 
     window.addEventListener('focus', () => {
-        refreshTransitDetailSortHeaderUi();
+        if(typeof window.refreshTransitDetailSortHeaderUi === 'function'){
+            window.refreshTransitDetailSortHeaderUi();
+        }
     });
 
     document.addEventListener('visibilitychange', () => {
         if(!document.hidden) {
-            refreshTransitDetailSortHeaderUi();
+            if(typeof window.refreshTransitDetailSortHeaderUi === 'function'){
+                window.refreshTransitDetailSortHeaderUi();
+            }
         }
     });
 
@@ -2367,6 +2859,7 @@
         if(activeDatePickerState && activeDatePickerState.input) positionDatePicker(activeDatePickerState.input, activeDatePickerState);
         hideHelpDotTooltip();
         if(activeColumnsPanelState) repositionColumnsPanel(activeColumnsPanelState);
+        repositionManagedBatchBars();
     }, true);
 
     const boot = () => {
@@ -2384,6 +2877,18 @@
             showAppToast(message, !!isError, duration);
         };
 
+        if(typeof window.onManagedTableBatchDownload !== 'function'){
+            window.onManagedTableBatchDownload = function(ids, table, state){
+                defaultManagedTableBatchDownload(ids, table, state);
+            };
+        }
+
+        if(typeof window.onManagedTableBatchDelete !== 'function'){
+            window.onManagedTableBatchDelete = function(ids, table, state){
+                defaultManagedTableBatchDelete(ids, table, state);
+            };
+        }
+
         syncModalScrollLock();
 
         let bodyEnhanceScheduled = false;
@@ -2399,6 +2904,7 @@
                 initOptionalDateInputs(document);
                 bridgeLegacyResponseToToast(document);
                 syncModalScrollLock();
+                repositionManagedBatchBars();
             });
         });
         bodyObserver.observe(document.body, {
