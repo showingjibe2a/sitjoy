@@ -1175,18 +1175,18 @@ class LogisticsWarehouseMixin:
                             notes = str(get_cell(row, '备注') or '').strip() or None
                             if not sku or not factory_name or quantity is None:
                                 raise ValueError('SKU/工厂/数量不能为空，且数量需为整数')
-                            if not self._order_product_allowed_for_factory(order_product_id, factory_id):
-                                raise ValueError(f'SKU {sku} 未关联工厂 {factory_name}')
-                            if is_completed and not actual_completion_date:
-                                actual_completion_date = datetime.now().strftime('%Y-%m-%d')
-                            if not is_completed:
-                                actual_completion_date = None
                             order_product_id = sku_map.get(sku)
                             factory_id = factory_map.get(factory_name)
                             if not order_product_id:
                                 raise ValueError(f'未找到SKU: {sku}')
                             if not factory_id:
                                 raise ValueError(f'未找到工厂: {factory_name}')
+                            if not self._order_product_allowed_for_factory(order_product_id, factory_id):
+                                raise ValueError(f'SKU {sku} 未关联工厂 {factory_name}')
+                            if is_completed and not actual_completion_date:
+                                actual_completion_date = datetime.now().strftime('%Y-%m-%d')
+                            if not is_completed:
+                                actual_completion_date = None
                             quantity = max(0, int(quantity))
                             normalized_rows.append((order_product_id, factory_id, quantity, expected_completion_date, is_completed, actual_completion_date, notes))
                             pair_keys.add((order_product_id, factory_id))
