@@ -438,6 +438,7 @@ class LogisticsInTransitMixin:
             if method == 'POST' and action == 'verify_qty':
                 item_id = self._parse_int(data.get('id'))
                 verify_items = data.get('items') if isinstance(data.get('items'), list) else []
+                apply_to_overseas_stock = _to_bool_flag(data.get('apply_to_overseas_stock'))
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
 
@@ -454,12 +455,15 @@ class LogisticsInTransitMixin:
                 with self._get_db_connection() as conn:
                     self._perf_mark(perf_ctx, 'db_connected_for_verify_qty')
                     with conn.cursor() as cur:
-                        cur.execute("SELECT id, inventory_registered FROM logistics_in_transit WHERE id=%s LIMIT 1", (item_id,))
+                        cur.execute("SELECT id, inventory_registered, destination_warehouse_id FROM logistics_in_transit WHERE id=%s LIMIT 1", (item_id,))
                         existing = cur.fetchone()
                         if not existing:
                             return self.send_json({'status': 'error', 'message': '在途物流记录不存在'}, start_response)
                         if not self._parse_int(existing.get('inventory_registered')):
                             return self.send_json({'status': 'error', 'message': '需要先登记上架才能确认已核对上架数量'}, start_response)
+                        warehouse_id = self._parse_int(existing.get('destination_warehouse_id'))
+                        if apply_to_overseas_stock and not warehouse_id:
+                            return self.send_json({'status': 'error', 'message': '未设置目的仓库，无法叠加到海外仓在库'}, start_response)
 
                         cur.execute(
                             "SELECT order_product_id, shipped_qty FROM logistics_in_transit_items WHERE transit_id=%s",
@@ -480,11 +484,27 @@ class LogisticsInTransitMixin:
                                 "UPDATE logistics_in_transit_items SET listed_qty=%s WHERE transit_id=%s AND order_product_id=%s",
                                 updates
                             )
+
+                        added_stock_rows = 0
+                        if apply_to_overseas_stock and warehouse_id:
+                            for listed_qty, _tid, order_product_id in updates:
+                                qty = max(0, self._parse_int(listed_qty) or 0)
+                                if not order_product_id or qty <= 0:
+                                    continue
+                                cur.execute(
+                                    """
+                                    INSERT INTO logistics_overseas_inventory (warehouse_id, order_product_id, available_qty, in_transit_qty)
+                                    VALUES (%s, %s, %s, %s)
+                                    ON DUPLICATE KEY UPDATE available_qty=COALESCE(available_qty,0)+VALUES(available_qty)
+                                    """,
+                                    (warehouse_id, order_product_id, qty, 0)
+                                )
+                                added_stock_rows += 1
                         cur.execute("UPDATE logistics_in_transit SET qty_verified=1 WHERE id=%s", (item_id,))
 
                 self._refresh_transit_qty_consistent(item_id)
                 self._perf_mark(perf_ctx, 'verify_qty_write')
-                return self.send_json({'status': 'success', 'id': item_id}, start_response)
+                return self.send_json({'status': 'success', 'id': item_id, 'added_stock_rows': added_stock_rows if apply_to_overseas_stock else 0}, start_response)
 
             if method == 'POST' and action == 'quick_status':
                 item_id = self._parse_int(data.get('id'))

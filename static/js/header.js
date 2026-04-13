@@ -719,8 +719,9 @@
 
     function clearGridSelectionClasses(table){
         if(!table || !table.querySelectorAll) return;
-        table.querySelectorAll('td.pm-grid-cell-selected, td.pm-grid-cell-anchor').forEach(cell => {
+        table.querySelectorAll('td.pm-grid-cell-selected, td.pm-grid-cell-anchor, .pm-grid-detail-selected, .pm-grid-detail-anchor').forEach(cell => {
             cell.classList.remove('pm-grid-cell-selected', 'pm-grid-cell-anchor');
+            cell.classList.remove('pm-grid-detail-selected', 'pm-grid-detail-anchor');
         });
         table.classList.remove('is-grid-selecting');
     }
@@ -741,6 +742,69 @@
             if(cell.style.display === 'none') return false;
             return true;
         });
+    }
+
+    function isTransitDetailCell(cell){
+        return !!(cell && cell.querySelector && cell.querySelector('[data-transit-detail-list="1"]'));
+    }
+
+    function getTransitDetailValueMatrix(cell){
+        if(!isTransitDetailCell(cell)) return [];
+        const list = cell.querySelector('[data-transit-detail-list="1"]');
+        if(!list) return [];
+        const rows = Array.from(list.querySelectorAll('[data-transit-detail-row="1"]'));
+        return rows.map((row) => {
+            const color = row.querySelector('.transit-color-dot') ? '●' : String((row.querySelector('.transit-detail-color-col') || {}).textContent || '').replace(/\s+/g, ' ').trim();
+            const sku = String((row.querySelector('.transit-detail-sku-text') || row.querySelector('.transit-detail-sku-col') || {}).textContent || '').replace(/\s+/g, ' ').trim();
+            const shipped = String((row.querySelector('.transit-detail-qty-col') || {}).textContent || '').replace(/\s+/g, ' ').trim();
+            const listed = String((row.querySelector('.transit-detail-listed-col') || {}).textContent || '').replace(/\s+/g, ' ').trim();
+            return [color, sku, shipped, listed];
+        });
+    }
+
+    function getTransitDetailNodeCoord(target, cell){
+        if(!target || !cell || !cell.contains(target)) return null;
+        const rowNode = target.closest('[data-transit-detail-row="1"]');
+        if(!rowNode || !cell.contains(rowNode)) return null;
+        const rowNodes = Array.from(cell.querySelectorAll('[data-transit-detail-row="1"]'));
+        const row = rowNodes.indexOf(rowNode);
+        if(row < 0) return null;
+        let col = -1;
+        if(target.closest('.transit-detail-color-col')) col = 0;
+        else if(target.closest('.transit-detail-sku-col, .transit-detail-sku-text')) col = 1;
+        else if(target.closest('.transit-detail-qty-col')) col = 2;
+        else if(target.closest('.transit-detail-listed-col')) col = 3;
+        if(col < 0) return null;
+        return { row, col };
+    }
+
+    function normalizeTransitDetailRect(a, b){
+        if(!a || !b) return null;
+        return {
+            r1: Math.min(Number(a.row), Number(b.row)),
+            r2: Math.max(Number(a.row), Number(b.row)),
+            c1: Math.min(Number(a.col), Number(b.col)),
+            c2: Math.max(Number(a.col), Number(b.col))
+        };
+    }
+
+    function getTransitDetailNodesByRect(cell, rect){
+        if(!cell || !rect) return [];
+        const rows = Array.from(cell.querySelectorAll('[data-transit-detail-row="1"]'));
+        const out = [];
+        for(let r = rect.r1; r <= rect.r2; r += 1){
+            const row = rows[r];
+            if(!row) continue;
+            for(let c = rect.c1; c <= rect.c2; c += 1){
+                let node = null;
+                if(c === 0) node = row.querySelector('.transit-detail-color-col');
+                else if(c === 1) node = row.querySelector('.transit-detail-sku-col') || row.querySelector('.transit-detail-sku-text');
+                else if(c === 2) node = row.querySelector('.transit-detail-qty-col');
+                else if(c === 3) node = row.querySelector('.transit-detail-listed-col');
+                if(node) out.push(node);
+            }
+        }
+        return out;
     }
 
     function getCellCoord(state, cell){
@@ -791,6 +855,14 @@
         });
         const anchorCell = getCellByCoord(state, activeGridSelection.anchorCoord);
         if(anchorCell) anchorCell.classList.add('pm-grid-cell-anchor');
+        (activeGridSelection.detailSelections || new Map()).forEach((detailSel, cell) => {
+            if(!cell || !cell.isConnected || !detailSel || !detailSel.anchor || !detailSel.current) return;
+            const rect = normalizeTransitDetailRect(detailSel.anchor, detailSel.current);
+            const nodes = getTransitDetailNodesByRect(cell, rect);
+            nodes.forEach(node => node.classList.add('pm-grid-detail-selected'));
+            const anchorNodes = getTransitDetailNodesByRect(cell, normalizeTransitDetailRect(detailSel.anchor, detailSel.anchor));
+            if(anchorNodes[0]) anchorNodes[0].classList.add('pm-grid-detail-anchor');
+        });
         if(activeGridSelection.selectedCells.size > 0){
             state.table.classList.add('is-grid-selecting');
         }
@@ -804,7 +876,9 @@
             selectedCells: new Set(),
             anchorCoord: null,
             dragging: false,
-            dragAnchor: null
+            dragAnchor: null,
+            detailSelections: new Map(),
+            detailDragging: null
         };
         return activeGridSelection;
     }
@@ -813,6 +887,10 @@
         const selection = ensureGridSelectionState(state);
         selection.selectedCells = new Set((cells || []).filter(Boolean));
         selection.anchorCoord = anchorCoord || null;
+        if(selection.selectedCells.size !== 1){
+            selection.detailSelections = new Map();
+            selection.detailDragging = null;
+        }
         paintGridSelection();
     }
 
@@ -821,24 +899,19 @@
         if(selection.selectedCells.has(cell)) selection.selectedCells.delete(cell);
         else selection.selectedCells.add(cell);
         selection.anchorCoord = anchorCoord || selection.anchorCoord;
+        if(selection.selectedCells.size !== 1){
+            selection.detailSelections = new Map();
+            selection.detailDragging = null;
+        }
         paintGridSelection();
     }
 
     function extractCellClipboardText(cell){
         if(!cell) return '';
 
-        const transitDetailList = cell.querySelector('[data-transit-detail-list="1"]');
-        if(transitDetailList){
-            const detailRows = Array.from(transitDetailList.querySelectorAll('[data-transit-detail-row="1"]'));
-            if(detailRows.length){
-                return detailRows.map((row) => {
-                    const color = row.querySelector('.transit-color-dot') ? '●' : String((row.querySelector('.transit-detail-color-col') || {}).textContent || '').replace(/\s+/g, ' ').trim();
-                    const sku = String((row.querySelector('.transit-detail-sku-text') || row.querySelector('.transit-detail-sku-col') || {}).textContent || '').replace(/\s+/g, ' ').trim();
-                    const shipped = String((row.querySelector('.transit-detail-qty-col') || {}).textContent || '').replace(/\s+/g, ' ').trim();
-                    const listed = String((row.querySelector('.transit-detail-listed-col') || {}).textContent || '').replace(/\s+/g, ' ').trim();
-                    return [color, sku, shipped, listed].join('\t');
-                }).join('\n');
-            }
+        const transitDetailRows = getTransitDetailValueMatrix(cell);
+        if(transitDetailRows.length){
+            return transitDetailRows.map(row => row.join('\t')).join('\n');
         }
 
         // Prefer status value in table cells (copy current state only, not all button labels).
@@ -889,18 +962,62 @@
 
         const lines = [];
         for(let r = minRow; r <= maxRow; r += 1){
-            const cols = [];
+            let rowExpand = 1;
             for(let c = minCol; c <= maxCol; c += 1){
                 const key = `${r}:${c}`;
-                if(!selectedKey.has(key)){
-                    cols.push('');
-                    continue;
-                }
+                if(!selectedKey.has(key)) continue;
                 const cell = getCellByCoord(state, { row: r, col: c });
-                const text = extractCellClipboardText(cell);
-                cols.push(text);
+                if(!cell || !isTransitDetailCell(cell)) continue;
+                const detailMatrix = getTransitDetailValueMatrix(cell);
+                if(!detailMatrix.length) continue;
+                const detailSel = (activeGridSelection.detailSelections || new Map()).get(cell);
+                if(detailSel && detailSel.anchor && detailSel.current){
+                    const rect = normalizeTransitDetailRect(detailSel.anchor, detailSel.current);
+                    rowExpand = Math.max(rowExpand, rect.r2 - rect.r1 + 1);
+                } else {
+                    rowExpand = Math.max(rowExpand, detailMatrix.length);
+                }
             }
-            lines.push(cols.join('\t'));
+
+            for(let sub = 0; sub < rowExpand; sub += 1){
+                const cols = [];
+                for(let c = minCol; c <= maxCol; c += 1){
+                    const key = `${r}:${c}`;
+                    if(!selectedKey.has(key)){
+                        cols.push('');
+                        continue;
+                    }
+                    const cell = getCellByCoord(state, { row: r, col: c });
+                    if(!cell){
+                        cols.push('');
+                        continue;
+                    }
+
+                    if(isTransitDetailCell(cell)){
+                        const matrix = getTransitDetailValueMatrix(cell);
+                        const detailSel = (activeGridSelection.detailSelections || new Map()).get(cell);
+                        if(detailSel && detailSel.anchor && detailSel.current){
+                            const rect = normalizeTransitDetailRect(detailSel.anchor, detailSel.current);
+                            const targetRow = rect.r1 + sub;
+                            const rowValues = matrix[targetRow] || [];
+                            for(let dc = rect.c1; dc <= rect.c2; dc += 1){
+                                cols.push(String(rowValues[dc] || ''));
+                            }
+                            continue;
+                        }
+                        const rowValues = matrix[sub] || [];
+                        cols.push(String(rowValues[0] || ''));
+                        cols.push(String(rowValues[1] || ''));
+                        cols.push(String(rowValues[2] || ''));
+                        cols.push(String(rowValues[3] || ''));
+                        continue;
+                    }
+
+                    const text = sub === 0 ? extractCellClipboardText(cell) : '';
+                    cols.push(text);
+                }
+                lines.push(cols.join('\t'));
+            }
         }
         const text = lines.join('\n');
         if(!text) return false;
@@ -945,6 +1062,18 @@
             event.preventDefault();
             const selection = ensureGridSelectionState(state);
 
+            const detailCoord = getTransitDetailNodeCoord(event.target, cell);
+            if(detailCoord){
+                selectCellsForState(state, [cell], coord);
+                selection.detailSelections = new Map();
+                selection.detailSelections.set(cell, { anchor: detailCoord, current: detailCoord });
+                selection.detailDragging = { cell, anchor: detailCoord };
+                selection.dragging = false;
+                selection.dragAnchor = null;
+                paintGridSelection();
+                return;
+            }
+
             if(event.shiftKey && selection.anchorCoord){
                 selectCellsForState(state, getRectCells(state, selection.anchorCoord, coord), selection.anchorCoord);
                 return;
@@ -956,6 +1085,8 @@
             }
 
             selectCellsForState(state, [cell], coord);
+            selection.detailSelections = new Map();
+            selection.detailDragging = null;
             if(activeGridSelection){
                 activeGridSelection.dragging = true;
                 activeGridSelection.dragAnchor = coord;
@@ -1373,6 +1504,7 @@
         const headerRow = getPrimaryHeaderRow(state);
         if(!headerRow) return;
         Array.from(headerRow.cells || []).forEach(cell => {
+            if(cell.dataset.disableSort === '1') return;
             const origin = Number(cell.dataset.manageColOrigin || '-1');
             cell.classList.remove('pm-sortable', 'pm-sort-asc', 'pm-sort-desc');
             if(state.lockedColumns.has(origin)) return;
@@ -1387,6 +1519,7 @@
         const headerRow = getPrimaryHeaderRow(state);
         if(!headerRow) return;
         Array.from(headerRow.cells).forEach(cell => {
+            if(cell.dataset.disableSort === '1') return;
             if(cell.dataset.sortBound === '1') return;
             cell.dataset.sortBound = '1';
             cell.addEventListener('click', (event) => {
@@ -2165,6 +2298,23 @@
             setColumnWidthByOrigin(activeResizeState.state, activeResizeState.origin, width);
         }
 
+        if(activeGridSelection && activeGridSelection.detailDragging && activeGridSelection.state){
+            const dragInfo = activeGridSelection.detailDragging;
+            const state = activeGridSelection.state;
+            const cell = dragInfo.cell;
+            if(!cell || !cell.isConnected || !state.tbody.contains(cell)) return;
+            const el = document.elementFromPoint(event.clientX, event.clientY);
+            const hoverCell = el && el.closest ? el.closest('td') : null;
+            if(!hoverCell || hoverCell !== cell) return;
+            const detailCoord = getTransitDetailNodeCoord(el, cell);
+            if(!detailCoord) return;
+            const detailSel = (activeGridSelection.detailSelections || new Map()).get(cell);
+            if(!detailSel) return;
+            detailSel.current = detailCoord;
+            paintGridSelection();
+            return;
+        }
+
         if(activeGridSelection && activeGridSelection.dragging && activeGridSelection.state){
             const anchor = activeGridSelection.dragAnchor;
             if(!anchor) return;
@@ -2190,13 +2340,26 @@
             document.body.style.userSelect = '';
         }
 
-        if(activeGridSelection) activeGridSelection.dragging = false;
+        if(activeGridSelection){
+            activeGridSelection.dragging = false;
+            activeGridSelection.detailDragging = null;
+        }
     });
 
     window.addEventListener('resize', () => {
         repositionOpenDropdowns();
         if(activeDatePickerState && activeDatePickerState.input) positionDatePicker(activeDatePickerState.input, activeDatePickerState);
         if(activeColumnsPanelState) repositionColumnsPanel(activeColumnsPanelState);
+    });
+
+    window.addEventListener('focus', () => {
+        refreshTransitDetailSortHeaderUi();
+    });
+
+    document.addEventListener('visibilitychange', () => {
+        if(!document.hidden) {
+            refreshTransitDetailSortHeaderUi();
+        }
     });
 
     window.addEventListener('scroll', () => {
