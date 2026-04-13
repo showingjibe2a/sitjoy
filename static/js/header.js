@@ -1437,8 +1437,11 @@
             applyColumnVisibility(state);
             syncDetachedHeader(state);
             applyColumnWidths(state);
+            ensureSortableHeaders(state);
             ensureResizeHandles(state);
             refreshSortHeaderUi(state);
+            applySort(state);
+            applyPagination(state);
             syncTopScroll(state);
             renderColumnPanel(state);
         });
@@ -1480,8 +1483,11 @@
                 applyColumnVisibility(state);
                 syncDetachedHeader(state);
                 applyColumnWidths(state);
+                ensureSortableHeaders(state);
                 ensureResizeHandles(state);
                 refreshSortHeaderUi(state);
+                applySort(state);
+                applyPagination(state);
                 syncTopScroll(state);
             });
 
@@ -2552,7 +2558,8 @@
         const parsed = parseDateText(text);
         if(!parsed){
             input.classList.add('app-date-invalid');
-            input.classList.toggle('has-value', !!text);
+            input.value = '';
+            input.classList.remove('has-value');
             return '';
         }
         const normalized = formatDateParts(parsed);
@@ -2753,6 +2760,13 @@
                     closeDatePicker();
                 }
             });
+            input.addEventListener('beforeinput', (event) => {
+                if(!event || event.inputType !== 'insertText') return;
+                const text = String(event.data || '');
+                if(!/^[0-9-]+$/.test(text)){
+                    event.preventDefault();
+                }
+            });
             input.addEventListener('blur', () => {
                 window.setTimeout(() => {
                     if(activeDatePickerState && activeDatePickerState.panel && activeDatePickerState.panel.contains(document.activeElement)) return;
@@ -2760,6 +2774,7 @@
                 }, 40);
             });
             input.addEventListener('input', () => {
+                input.value = String(input.value || '').replace(/[^0-9-]/g, '').slice(0, 10);
                 input.classList.toggle('has-value', !!String(input.value || '').trim());
             });
 
@@ -2917,8 +2932,7 @@
         // Keep native paste for single-value input paste.
         const isSingle = matrix.length === 1 && (matrix[0] || []).length <= 1;
         const hasSelection = hasActiveManagedSelection(state);
-        const hasMultiSelection = hasSelection && activeGridSelection.selectedCells.size > 1;
-        if(isSingle && !hasMultiSelection) return;
+        if(isSingle && !hasSelection) return;
 
         e.preventDefault();
 
