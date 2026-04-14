@@ -327,6 +327,89 @@
         }, Math.max(800, timeout));
     }
 
+    function ensureAppConfirmModal(){
+        let modal = document.getElementById('app-confirm-modal');
+        if(modal && document.body.contains(modal)) return modal;
+        modal = document.createElement('div');
+        modal.id = 'app-confirm-modal';
+        modal.className = 'pm-modal';
+        modal.innerHTML = [
+            '<div class="pm-modal-content" style="max-width:520px;">',
+            '  <h3 class="app-confirm-title" style="margin-top:0;">确认操作</h3>',
+            '  <p class="app-confirm-message" style="margin:.5rem 0 0;color:var(--morandi-ink);line-height:1.6;white-space:pre-line;"></p>',
+            '  <div class="pm-modal-actions" style="margin-top:1rem;">',
+            '    <button type="button" class="btn-secondary" data-action="cancel">取消</button>',
+            '    <button type="button" class="btn-danger" data-action="confirm">确认</button>',
+            '  </div>',
+            '</div>'
+        ].join('');
+        document.body.appendChild(modal);
+        return modal;
+    }
+
+    function showAppConfirm(options){
+        const opt = options && typeof options === 'object' ? options : { message: String(options || '') };
+        const title = String(opt.title || '确认操作').trim() || '确认操作';
+        const message = String(opt.message || '确认继续执行该操作？').trim() || '确认继续执行该操作？';
+        const confirmText = String(opt.confirmText || '确认').trim() || '确认';
+        const cancelText = String(opt.cancelText || '取消').trim() || '取消';
+
+        const modal = ensureAppConfirmModal();
+        const titleEl = modal.querySelector('.app-confirm-title');
+        const msgEl = modal.querySelector('.app-confirm-message');
+        const confirmBtn = modal.querySelector('[data-action="confirm"]');
+        const cancelBtn = modal.querySelector('[data-action="cancel"]');
+        if(titleEl) titleEl.textContent = title;
+        if(msgEl) msgEl.textContent = message;
+        if(confirmBtn) confirmBtn.textContent = confirmText;
+        if(cancelBtn) cancelBtn.textContent = cancelText;
+
+        const cleanup = () => {
+            modal.classList.remove('active');
+            if(confirmBtn) confirmBtn.removeEventListener('click', onConfirm);
+            if(cancelBtn) cancelBtn.removeEventListener('click', onCancel);
+            modal.removeEventListener('click', onBackdrop);
+            document.removeEventListener('keydown', onEsc);
+            syncModalScrollLock();
+        };
+
+        const onConfirm = () => {
+            cleanup();
+            if(typeof opt.onConfirm === 'function') opt.onConfirm();
+            if(typeof opt.onClose === 'function') opt.onClose(true);
+        };
+
+        const onCancel = () => {
+            cleanup();
+            if(typeof opt.onCancel === 'function') opt.onCancel();
+            if(typeof opt.onClose === 'function') opt.onClose(false);
+        };
+
+        const onBackdrop = (event) => {
+            if(event.target === modal) onCancel();
+        };
+
+        const onEsc = (event) => {
+            if(event.key === 'Escape') onCancel();
+        };
+
+        if(confirmBtn) confirmBtn.addEventListener('click', onConfirm);
+        if(cancelBtn) cancelBtn.addEventListener('click', onCancel);
+        modal.addEventListener('click', onBackdrop);
+        document.addEventListener('keydown', onEsc);
+
+        modal.classList.add('active');
+        syncModalScrollLock();
+    }
+
+    function showAppConfirmAsync(options){
+        return new Promise((resolve) => {
+            showAppConfirm(Object.assign({}, (options || {}), {
+                onClose: (ok) => resolve(!!ok)
+            }));
+        });
+    }
+
     function ensureHelpDotTooltip(){
         if(activeHelpDotTooltip && document.body.contains(activeHelpDotTooltip)) return activeHelpDotTooltip;
         const tooltip = document.createElement('div');
@@ -922,6 +1005,19 @@
     function extractCellClipboardText(cell){
         if(!cell) return '';
 
+        const textInput = cell.querySelector('input:not([type="checkbox"]):not([type="hidden"]), textarea');
+        if(textInput){
+            const value = String(textInput.value || '').trim();
+            if(value) return value;
+        }
+
+        const select = cell.querySelector('select');
+        if(select){
+            const option = select.options && select.selectedIndex >= 0 ? select.options[select.selectedIndex] : null;
+            const value = option ? String(option.textContent || option.value || '').trim() : String(select.value || '').trim();
+            if(value) return value;
+        }
+
         const transitDetailRows = getTransitDetailValueMatrix(cell);
         if(transitDetailRows.length){
             return transitDetailRows.map(row => row.join('\t')).join('\n');
@@ -1194,6 +1290,20 @@
             if(!cell || !state.tbody.contains(cell)) return;
             if(cell.classList.contains('pm-table-hide-col')) return;
             if(isEditableDomTarget(event.target) && event.target !== cell) return;
+
+            const activeEl = document.activeElement;
+            if(
+                activeEl &&
+                activeEl instanceof HTMLElement &&
+                activeEl !== event.target &&
+                activeEl !== cell &&
+                activeEl.closest &&
+                activeEl.closest('table.is-managed-table')
+            ){
+                if(activeEl.matches('input, textarea, select')){
+                    try { activeEl.blur(); } catch (_) {}
+                }
+            }
 
             const coord = getCellCoord(state, cell);
             if(!coord) return;
@@ -2903,7 +3013,8 @@
 
     document.addEventListener('keydown', (e) => {
         if((e.ctrlKey || e.metaKey) && String(e.key || '').toLowerCase() === 'c'){
-            if(isEditableDomTarget(e.target)) return;
+            const hasManagedSelection = !!(activeGridSelection && activeGridSelection.selectedCells && activeGridSelection.selectedCells.size > 0);
+            if(isEditableDomTarget(e.target) && !hasManagedSelection) return;
             if(copyGridSelectionToClipboard()){
                 e.preventDefault();
                 return;
@@ -3048,6 +3159,8 @@
         window.showAppToast = function(message, isError, duration){
             showAppToast(message, !!isError, duration);
         };
+        window.showAppConfirm = showAppConfirm;
+        window.showAppConfirmAsync = showAppConfirmAsync;
 
         if(typeof window.onManagedTableBatchDownload !== 'function'){
             window.onManagedTableBatchDownload = function(ids, table, state){

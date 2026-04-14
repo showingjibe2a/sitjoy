@@ -296,8 +296,11 @@
             .catch(err => showModalStatus('请求失败: ' + err, true));
         }
 
-        function deleteShop(id) {
-            if (!confirm('确认删除该店铺？')) return;
+        async function deleteShop(id) {
+            const ok = window.showAppConfirmAsync
+                ? await window.showAppConfirmAsync({ title: '删除确认', message: '确认删除该店铺？', confirmText: '确认删除' })
+                : false;
+            if (!ok) return;
             fetch('/api/shop', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },

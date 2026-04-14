@@ -80,8 +80,11 @@
                     else showModalStatus(data.message || '操作失败', true);
                 }).catch(err => showModalStatus('请求失败: ' + err, true));
         }
-        function deleteCertification(id) {
-            if (!confirm('确认删除该认证？')) return;
+        async function deleteCertification(id) {
+            const ok = window.showAppConfirmAsync
+                ? await window.showAppConfirmAsync({ title: '删除确认', message: '确认删除该认证？', confirmText: '确认删除' })
+                : false;
+            if (!ok) return;
             fetch('/api/certification', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id }) })
                 .then(r => r.json()).then(data => { if (data.status === 'success') loadCertificationList(); else alert(data.message || '删除失败'); })
                 .catch(err => alert('请求失败: ' + err));

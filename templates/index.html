@@ -954,7 +954,7 @@
             el.textContent = '';
         }
 
-        function confirmEmployeeDeletion(employee) {
+        async function confirmEmployeeDeletion(employee) {
             if (!employee || !employee.id) {
                 alert('未找到用户信息，已取消删除。');
                 return { ok: false };
@@ -964,7 +964,9 @@
                 alert('目标用户缺少账号名，已取消删除。');
                 return { ok: false };
             }
-            const firstConfirm = confirm(`危险操作：删除后用户将无法登录。\n\n账号：${username}\n\n是否继续？`);
+            const firstConfirm = window.showAppConfirmAsync
+                ? await window.showAppConfirmAsync({ title: '危险操作确认', message: `危险操作：删除后用户将无法登录。\n\n账号：${username}\n\n是否继续？`, confirmText: '继续删除' })
+                : false;
             if (!firstConfirm) return { ok: false };
 
             const typedUsername = prompt(`请输入账号名以确认删除：\n${username}`);
@@ -2096,7 +2098,7 @@
                     })
                     .catch(() => loadEmployees());
                 });
-                employeeTable.addEventListener('click', e => {
+                employeeTable.addEventListener('click', async e => {
                 const action = e.target.dataset.action;
                 const id = e.target.dataset.id;
                 if (!action || !id) return;
@@ -2107,7 +2109,7 @@
                 }
                 if (action === 'delete') {
                     const item = (window.employeeMap || {})[String(id)] || null;
-                    const confirmPayload = confirmEmployeeDeletion(item);
+                    const confirmPayload = await confirmEmployeeDeletion(item);
                     if (!confirmPayload.ok) return;
                     fetch('/api/employee', {
                         method: 'DELETE',

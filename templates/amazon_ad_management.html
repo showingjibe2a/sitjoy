@@ -903,8 +903,11 @@
                 .catch(err => showAdImportStatus('导入失败: ' + err, true));
         }
 
-        function deleteAd(id) {
-            if (!confirm('确认删除该广告记录？')) return;
+        async function deleteAd(id) {
+            const ok = window.showAppConfirmAsync
+                ? await window.showAppConfirmAsync({ title: '删除确认', message: '确认删除该广告记录？', confirmText: '确认删除' })
+                : false;
+            if (!ok) return;
             fetch('/api/amazon-ad', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },

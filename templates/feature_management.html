@@ -182,8 +182,11 @@
             .catch(err => showModalStatus('请求失败: ' + err, true));
         }
 
-        function deleteFeature(id) {
-            if (!confirm('确认删除该卖点？')) return;
+        async function deleteFeature(id) {
+            const ok = window.showAppConfirmAsync
+                ? await window.showAppConfirmAsync({ title: '删除确认', message: '确认删除该卖点？', confirmText: '确认删除' })
+                : false;
+            if (!ok) return;
             fetch('/api/feature', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },

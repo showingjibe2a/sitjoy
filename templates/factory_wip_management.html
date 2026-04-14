@@ -34,7 +34,7 @@
     </div>
 
     <div>
-      <table class="pm-table" id="mainTable">
+      <table class="pm-table" id="mainTable" data-batch-delete-handler="handleFactoryWipBatchDelete">
         <thead>
           <tr>
             <th style="width:54px; text-align:center;"><input type="checkbox" id="wipSelectAll"></th>
@@ -153,7 +153,6 @@
   .sku-color-chip { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(60, 60, 60, 0.25); display: inline-block; }
   .sku-color-empty { color: var(--morandi-slate); }
   .history-text { min-height: 38px; border: 1px solid rgba(207,199,189,.55); border-radius: 8px; padding: .5rem .65rem; background: transparent; color: var(--morandi-slate); display: flex; align-items: center; }
-  .wip-contract-group-row td { background: rgba(236, 231, 223, 0.62); font-weight: 700; color: var(--morandi-ink); }
 </style>
 
 <script>
@@ -734,8 +733,11 @@ function saveFromModal(){
     .catch(err => showModalStatus(err.message || '保存失败', true));
 }
 
-function removeItem(id){
-  if(!confirm('确认删除该记录？')) return;
+async function removeItem(id){
+  const ok = window.showAppConfirmAsync
+    ? await window.showAppConfirmAsync({ title:'删除确认', message:'确认删除该记录？', confirmText:'确认删除' })
+    : false;
+  if(!ok) return;
   fetch('/api/factory-wip', {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
@@ -750,6 +752,32 @@ function removeItem(id){
       loadList();
     })
     .catch(err => { if(window.showAppToast){ window.showAppToast(err.message || '删除失败', true, 3200); } });
+}
+
+function handleFactoryWipBatchDelete(ids){
+  const payloadIds = Array.isArray(ids) ? ids.map(v => Number(v)).filter(v => Number.isFinite(v) && v > 0) : [];
+  if(!payloadIds.length){
+    if(window.showAppToast){ window.showAppToast('没有可删除的有效记录', true, 2400); }
+    return;
+  }
+  fetch('/api/factory-wip?action=bulk_delete', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids: payloadIds })
+  })
+    .then(r => r.json())
+    .then(d => {
+      if(d.status !== 'success'){
+        if(window.showAppToast){ window.showAppToast(d.message || '批量删除失败', true, 3200); }
+        return;
+      }
+      payloadIds.forEach(id => selectedWipIds.delete(Number(id)));
+      if(window.showAppToast){ window.showAppToast(`批量删除成功：${Number(d.deleted || payloadIds.length)} 条`, false, 2200); }
+      loadList();
+    })
+    .catch(err => {
+      if(window.showAppToast){ window.showAppToast(err.message || '批量删除失败', true, 3200); }
+    });
 }
 
 function loadList(){
@@ -796,28 +824,8 @@ function renderFactoryWipTable(items){
     tbody.innerHTML = '<tr><td colspan="15" style="text-align:center;">暂无数据</td></tr>';
     return;
   }
-
-  const groups = [];
-  const grouped = new Map();
-  rows.forEach(item => {
-    const contractNo = String(item.contract_no || '').trim();
-    if(!contractNo){
-      groups.push({ key: `single_${item.id}`, contractNo: '', rows: [item], single: true });
-      return;
-    }
-    if(!grouped.has(contractNo)){
-      grouped.set(contractNo, { key: `contract_${contractNo}`, contractNo, rows: [], single: false });
-      groups.push(grouped.get(contractNo));
-    }
-    grouped.get(contractNo).rows.push(item);
-  });
-
   const html = [];
-  groups.forEach(group => {
-    if(!group.single){
-      html.push(`<tr class="wip-contract-group-row"><td colspan="15">合同 ${group.contractNo}（${group.rows.length} 条）</td></tr>`);
-    }
-    group.rows.forEach(item => {
+  rows.forEach(item => {
     const quantity = getWipMergedValue(item, 'quantity');
     const expectedCompletionDate = getWipMergedValue(item, 'expected_completion_date');
     const initialExpectedCompletionDate = formatDate(item.initial_expected_completion_date);
@@ -863,7 +871,6 @@ function renderFactoryWipTable(items){
         </td>
       </tr>
     `);
-    });
   });
 
   tbody.innerHTML = html.join('');

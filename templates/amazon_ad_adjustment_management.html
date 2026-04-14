@@ -579,8 +579,11 @@
             postRecord(true);
         }
 
-        function deleteRecord(id) {
-            if (!confirm('确定删除该条调整记录吗？')) return;
+        async function deleteRecord(id) {
+            const ok = window.showAppConfirmAsync
+                ? await window.showAppConfirmAsync({ title: '删除确认', message: '确定删除该条调整记录吗？', confirmText: '确认删除' })
+                : false;
+            if (!ok) return;
             fetch('/api/amazon-ad-adjustment', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },

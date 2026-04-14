@@ -362,8 +362,11 @@
             .catch(err => showModalStatus('请求失败: ' + err, true));
         }
 
-        function deleteMaterial(id) {
-            if (!confirm('确认删除该材料？')) return;
+        async function deleteMaterial(id) {
+            const ok = window.showAppConfirmAsync
+                ? await window.showAppConfirmAsync({ title: '删除确认', message: '确认删除该材料？', confirmText: '确认删除' })
+                : false;
+            if (!ok) return;
             fetch('/api/material', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
@@ -616,8 +619,11 @@
             .catch(err => showTypeModalStatus('请求失败: ' + err, true));
         }
 
-        function deleteMaterialType(id) {
-            if (!confirm('确认删除该材料类型？')) return;
+        async function deleteMaterialType(id) {
+            const ok = window.showAppConfirmAsync
+                ? await window.showAppConfirmAsync({ title: '删除确认', message: '确认删除该材料类型？', confirmText: '确认删除' })
+                : false;
+            if (!ok) return;
             fetch('/api/material-type', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },

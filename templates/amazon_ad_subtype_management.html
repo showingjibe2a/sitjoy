@@ -536,9 +536,12 @@
             .catch(err => showSubtypeStatus('请求失败: ' + err, true));
         }
 
-        function deleteSubtypeFromModal() {
+        async function deleteSubtypeFromModal() {
             if (!subtypeEditId) return;
-            if (!confirm('确认删除该分类？')) return;
+            const ok = window.showAppConfirmAsync
+                ? await window.showAppConfirmAsync({ title: '删除确认', message: '确认删除该分类？', confirmText: '确认删除' })
+                : false;
+            if (!ok) return;
             fetch('/api/amazon-ad-subtype', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
@@ -676,9 +679,12 @@
             .catch(err => showOpTypeStatus('请求失败: ' + err, true));
         }
 
-        function deleteOpTypeFromModal() {
+        async function deleteOpTypeFromModal() {
             if (!opTypeEditId) return;
-            if (!confirm('确认删除该操作类型？')) return;
+            const ok = window.showAppConfirmAsync
+                ? await window.showAppConfirmAsync({ title: '删除确认', message: '确认删除该操作类型？', confirmText: '确认删除' })
+                : false;
+            if (!ok) return;
             fetch('/api/amazon-ad-operation-type', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
@@ -696,8 +702,11 @@
             .catch(err => showOpTypeStatus('请求失败: ' + err, true));
         }
 
-        function deleteOpTypeRow(id) {
-            if (!confirm('确认删除该操作类型？')) return;
+        async function deleteOpTypeRow(id) {
+            const ok = window.showAppConfirmAsync
+                ? await window.showAppConfirmAsync({ title: '删除确认', message: '确认删除该操作类型？', confirmText: '确认删除' })
+                : false;
+            if (!ok) return;
             fetch('/api/amazon-ad-operation-type', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
@@ -914,8 +923,11 @@
                 });
         }
 
-        function deleteSubtypeRow(id) {
-            if (!confirm('确认删除该分类？')) return;
+        async function deleteSubtypeRow(id) {
+            const ok = window.showAppConfirmAsync
+                ? await window.showAppConfirmAsync({ title: '删除确认', message: '确认删除该分类？', confirmText: '确认删除' })
+                : false;
+            if (!ok) return;
             fetch('/api/amazon-ad-subtype', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },

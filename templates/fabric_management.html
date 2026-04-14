@@ -1052,8 +1052,11 @@
             .catch(err => showModalStatus('请求失败: ' + err, true));
         }
 
-        function deleteFabric(id) {
-            if (!confirm('确认删除该面料？')) return;
+        async function deleteFabric(id) {
+            const ok = window.showAppConfirmAsync
+                ? await window.showAppConfirmAsync({ title: '删除确认', message: '确认删除该面料？', confirmText: '确认删除' })
+                : false;
+            if (!ok) return;
             fetch('/api/fabric', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
@@ -1345,7 +1348,11 @@
                 const btnOk = document.getElementById('imageDeleteOkBtn');
                 const btnCancel = document.getElementById('imageDeleteCancelBtn');
                 if (!modal || !textEl || !btnOk || !btnCancel) {
-                    resolve(window.confirm(message || '确认删除？'));
+                    if (window.showAppConfirmAsync) {
+                        window.showAppConfirmAsync({ title: '删除确认', message: (message || '确认删除？'), confirmText: '确认删除' }).then(resolve);
+                    } else {
+                        resolve(false);
+                    }
                     return;
                 }
 

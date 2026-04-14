@@ -484,8 +484,11 @@
                 .then(r=>r.json()).then(data=>{ if(data.status==='success'){ showStatus('保存成功', false); setTimeout(()=>{ closeModal(); loadList(); }, 300); } else { showStatus(data.message||'操作失败', true); } })
                 .catch(err=>showStatus('请求失败: '+err, true));
         }
-        function removeItem(id){
-            if(!confirm('确认删除该仓库？')) return;
+        async function removeItem(id){
+            const ok = window.showAppConfirmAsync
+                ? await window.showAppConfirmAsync({ title:'删除确认', message:'确认删除该仓库？', confirmText:'确认删除' })
+                : false;
+            if(!ok) return;
             fetch('/api/logistics-warehouse', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id}) })
                 .then(r=>r.json()).then(data=>{ if(data.status==='success') loadList(); else alert(data.message||'删除失败'); })
                 .catch(err=>alert('删除失败: '+err));

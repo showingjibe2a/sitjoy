@@ -358,6 +358,22 @@ class LogisticsWarehouseMixin:
                 cur.execute("INSERT INTO factory_contracts (contract_no) VALUES (%s)", (normalized,))
                 return int(cur.lastrowid), normalized
 
+            def _cleanup_orphan_contracts(cur, contract_ids):
+                ids = [self._parse_int(v) for v in (contract_ids or []) if self._parse_int(v)]
+                if not ids:
+                    return
+                placeholders = ','.join(['%s'] * len(ids))
+                cur.execute(
+                    f"""
+                    DELETE fc
+                    FROM factory_contracts fc
+                    LEFT JOIN factory_wip_inventory fw ON fw.contract_id = fc.id
+                    WHERE fc.id IN ({placeholders})
+                      AND fw.id IS NULL
+                    """,
+                    tuple(ids)
+                )
+
             if method == 'GET':
                 keyword = (query_params.get('q', [''])[0] or '').strip()
                 action = (query_params.get('action', [''])[0] or '').strip().lower()
@@ -687,18 +703,50 @@ class LogisticsWarehouseMixin:
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':
+                action = (query_params.get('action', [''])[0] or '').strip().lower()
+                if action == 'bulk_delete':
+                    raw_ids = data.get('ids') if isinstance(data, dict) else None
+                    id_list = self._normalize_id_list_local(raw_ids)
+                    if not id_list:
+                        return self.send_json({'status': 'error', 'message': '缺少有效 ids'}, start_response)
+                    placeholders = ','.join(['%s'] * len(id_list))
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                f"SELECT id, factory_id, contract_id FROM factory_wip_inventory WHERE id IN ({placeholders})",
+                                tuple(id_list)
+                            )
+                            rows = cur.fetchall() or []
+                            row_map = {self._parse_int(r.get('id')): r for r in rows if self._parse_int(r.get('id'))}
+                            missing = [item_id for item_id in id_list if item_id not in row_map]
+                            if missing:
+                                return self.send_json({'status': 'error', 'message': f'记录不存在: {missing[0]}'}, start_response)
+                            denied = []
+                            for item_id in id_list:
+                                row = row_map.get(item_id) or {}
+                                if not self._factory_scope_contains(user_id, row.get('factory_id')):
+                                    denied.append(item_id)
+                            if denied:
+                                return self.send_json({'status': 'error', 'message': f'无权限操作以下记录: {denied[:5]}'}, start_response)
+
+                            contract_ids = [self._parse_int((row_map.get(item_id) or {}).get('contract_id')) for item_id in id_list]
+                            cur.execute(f"DELETE FROM factory_wip_inventory WHERE id IN ({placeholders})", tuple(id_list))
+                            _cleanup_orphan_contracts(cur, contract_ids)
+                    return self.send_json({'status': 'success', 'deleted': len(id_list)}, start_response)
+
                 item_id = self._parse_int(data.get('id'))
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': '缺少 id'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("SELECT factory_id FROM factory_wip_inventory WHERE id=%s", (item_id,))
+                        cur.execute("SELECT factory_id, contract_id FROM factory_wip_inventory WHERE id=%s", (item_id,))
                         existing = cur.fetchone() or {}
                         if not existing:
                             return self.send_json({'status': 'error', 'message': '记录不存在'}, start_response)
                         if not self._factory_scope_contains(user_id, existing.get('factory_id')):
                             return self.send_json({'status': 'error', 'message': '无权限操作该工厂数据'}, start_response)
                         cur.execute("DELETE FROM factory_wip_inventory WHERE id=%s", (item_id,))
+                        _cleanup_orphan_contracts(cur, [existing.get('contract_id')])
                 return self.send_json({'status': 'success'}, start_response)
 
             return self.send_error(405, 'Method not allowed', start_response)
