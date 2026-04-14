@@ -100,6 +100,105 @@ class LogisticsWarehouseMixin:
             if method == 'GET':
                 keyword = (query_params.get('q', [''])[0] or '').strip()
                 action = (query_params.get('action', [''])[0] or '').strip().lower()
+                if action == '__disabled_filter_options__':
+                    column = self._parse_int(query_params.get('column', ['0'])[0])
+                    search = (query_params.get('q', [''])[0] or '').strip()
+                    exact = _parse_yes_no(query_params.get('exact', ['0'])[0])
+                    limit = max(1, min(200, self._parse_int(query_params.get('limit', ['120'])[0]) or 120))
+                    filter_map = {
+                        1: {
+                            'value_expr': "CASE WHEN COALESCE(op.is_on_market, 0) = 1 THEN '1' ELSE '0' END",
+                            'label_expr': "CASE WHEN COALESCE(op.is_on_market, 0) = 1 THEN '在市' ELSE '下市' END",
+                        },
+                        2: {
+                            'value_expr': "NULLIF(TRIM(op.sku), '')",
+                            'label_expr': "NULLIF(TRIM(op.sku), '')",
+                        },
+                        3: {
+                            'value_expr': "NULLIF(TRIM(COALESCE(fm.representative_color, '')), '')",
+                            'label_expr': "NULLIF(TRIM(COALESCE(fm.representative_color, '')), '')",
+                        },
+                        4: {
+                            'value_expr': "NULLIF(TRIM(f.factory_name), '')",
+                            'label_expr': "NULLIF(TRIM(f.factory_name), '')",
+                        },
+                        5: {
+                            'value_expr': "NULLIF(TRIM(COALESCE(fc.order_no, '')), '')",
+                            'label_expr': "NULLIF(TRIM(COALESCE(fc.order_no, '')), '')",
+                        },
+                        6: {
+                            'value_expr': "NULLIF(TRIM(COALESCE(fc.contract_no, '')), '')",
+                            'label_expr': "NULLIF(TRIM(COALESCE(fc.contract_no, '')), '')",
+                        },
+                        7: {
+                            'value_expr': "CAST(fw.quantity AS CHAR)",
+                            'label_expr': "CAST(fw.quantity AS CHAR)",
+                        },
+                        8: {
+                            'value_expr': "DATE_FORMAT(fw.expected_completion_date, '%Y-%m-%d')",
+                            'label_expr': "DATE_FORMAT(fw.expected_completion_date, '%Y-%m-%d')",
+                        },
+                        9: {
+                            'value_expr': "DATE_FORMAT(fw.initial_expected_completion_date, '%Y-%m-%d')",
+                            'label_expr': "DATE_FORMAT(fw.initial_expected_completion_date, '%Y-%m-%d')",
+                        },
+                        10: {
+                            'value_expr': "CASE WHEN COALESCE(fw.is_completed, 0) = 1 THEN '1' ELSE '0' END",
+                            'label_expr': "CASE WHEN COALESCE(fw.is_completed, 0) = 1 THEN '是' ELSE '否' END",
+                        },
+                        11: {
+                            'value_expr': "DATE_FORMAT(fw.actual_completion_date, '%Y-%m-%d')",
+                            'label_expr': "DATE_FORMAT(fw.actual_completion_date, '%Y-%m-%d')",
+                        },
+                        12: {
+                            'value_expr': "NULLIF(TRIM(COALESCE(fw.notes, '')), '')",
+                            'label_expr': "NULLIF(TRIM(COALESCE(fw.notes, '')), '')",
+                        },
+                        13: {
+                            'value_expr': "DATE_FORMAT(fw.created_at, '%Y-%m-%d %H:%i:%s')",
+                            'label_expr': "DATE_FORMAT(fw.created_at, '%Y-%m-%d %H:%i:%s')",
+                        },
+                        14: {
+                            'value_expr': "DATE_FORMAT(COALESCE(fw.update_time, fw.updated_at), '%Y-%m-%d %H:%i:%s')",
+                            'label_expr': "DATE_FORMAT(COALESCE(fw.update_time, fw.updated_at), '%Y-%m-%d %H:%i:%s')",
+                        },
+                    }
+                    config = filter_map.get(column)
+                    if not config:
+                        return self.send_json({'status': 'error', 'message': '不支持的筛选列'}, start_response)
+                    scope_clause, scope_params = self._factory_scope_clause('f.id', user_id, prefix='AND')
+                    base_sql = f"""
+                        SELECT {config['value_expr']} AS value, {config['label_expr']} AS label
+                        FROM factory_wip_inventory fw
+                        JOIN order_products op ON op.id = fw.order_product_id
+                        JOIN logistics_factories f ON f.id = fw.factory_id
+                        LEFT JOIN factory_contracts fc ON fc.id = fw.contract_id
+                        LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
+                        WHERE 1=1 {scope_clause}
+                    """
+                    sql = f"""
+                        SELECT value, label, COUNT(*) AS count
+                        FROM (
+                            {base_sql}
+                        ) src
+                        WHERE value IS NOT NULL AND value != ''
+                    """
+                    params = list(scope_params)
+                    if search:
+                        if exact:
+                            sql += " AND (value = %s OR label = %s)"
+                            params.extend([search, search])
+                        else:
+                            like = f"%{search}%"
+                            sql += " AND (value LIKE %s OR label LIKE %s)"
+                            params.extend([like, like])
+                    sql += " GROUP BY value, label ORDER BY count DESC, label ASC LIMIT %s"
+                    params.append(limit)
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute(sql, tuple(params))
+                            values = cur.fetchall() or []
+                    return self.send_json({'status': 'success', 'column': column, 'values': values}, start_response)
                 if action == 'options':
                     scope_ids = self._get_user_factory_scope_ids(user_id)
                     with self._get_db_connection() as conn:
@@ -440,6 +539,105 @@ class LogisticsWarehouseMixin:
             if method == 'GET':
                 keyword = (query_params.get('q', [''])[0] or '').strip()
                 action = (query_params.get('action', [''])[0] or '').strip().lower()
+                if action == 'filter_options':
+                    column = self._parse_int(query_params.get('column', ['0'])[0])
+                    search = (query_params.get('q', [''])[0] or '').strip()
+                    exact = _parse_yes_no(query_params.get('exact', ['0'])[0])
+                    limit = max(1, min(200, self._parse_int(query_params.get('limit', ['120'])[0]) or 120))
+                    filter_map = {
+                        1: {
+                            'value_expr': "CASE WHEN COALESCE(op.is_on_market, 0) = 1 THEN '1' ELSE '0' END",
+                            'label_expr': "CASE WHEN COALESCE(op.is_on_market, 0) = 1 THEN '在市' ELSE '下市' END",
+                        },
+                        2: {
+                            'value_expr': "NULLIF(TRIM(op.sku), '')",
+                            'label_expr': "NULLIF(TRIM(op.sku), '')",
+                        },
+                        3: {
+                            'value_expr': "NULLIF(TRIM(COALESCE(fm.representative_color, '')), '')",
+                            'label_expr': "NULLIF(TRIM(COALESCE(fm.representative_color, '')), '')",
+                        },
+                        4: {
+                            'value_expr': "NULLIF(TRIM(f.factory_name), '')",
+                            'label_expr': "NULLIF(TRIM(f.factory_name), '')",
+                        },
+                        5: {
+                            'value_expr': "NULLIF(TRIM(COALESCE(fc.order_no, '')), '')",
+                            'label_expr': "NULLIF(TRIM(COALESCE(fc.order_no, '')), '')",
+                        },
+                        6: {
+                            'value_expr': "NULLIF(TRIM(COALESCE(fc.contract_no, '')), '')",
+                            'label_expr': "NULLIF(TRIM(COALESCE(fc.contract_no, '')), '')",
+                        },
+                        7: {
+                            'value_expr': "CAST(fw.quantity AS CHAR)",
+                            'label_expr': "CAST(fw.quantity AS CHAR)",
+                        },
+                        8: {
+                            'value_expr': "DATE_FORMAT(fw.expected_completion_date, '%Y-%m-%d')",
+                            'label_expr': "DATE_FORMAT(fw.expected_completion_date, '%Y-%m-%d')",
+                        },
+                        9: {
+                            'value_expr': "DATE_FORMAT(fw.initial_expected_completion_date, '%Y-%m-%d')",
+                            'label_expr': "DATE_FORMAT(fw.initial_expected_completion_date, '%Y-%m-%d')",
+                        },
+                        10: {
+                            'value_expr': "CASE WHEN COALESCE(fw.is_completed, 0) = 1 THEN '1' ELSE '0' END",
+                            'label_expr': "CASE WHEN COALESCE(fw.is_completed, 0) = 1 THEN '是' ELSE '否' END",
+                        },
+                        11: {
+                            'value_expr': "DATE_FORMAT(fw.actual_completion_date, '%Y-%m-%d')",
+                            'label_expr': "DATE_FORMAT(fw.actual_completion_date, '%Y-%m-%d')",
+                        },
+                        12: {
+                            'value_expr': "NULLIF(TRIM(COALESCE(fw.notes, '')), '')",
+                            'label_expr': "NULLIF(TRIM(COALESCE(fw.notes, '')), '')",
+                        },
+                        13: {
+                            'value_expr': "DATE_FORMAT(fw.created_at, '%Y-%m-%d %H:%i:%s')",
+                            'label_expr': "DATE_FORMAT(fw.created_at, '%Y-%m-%d %H:%i:%s')",
+                        },
+                        14: {
+                            'value_expr': "DATE_FORMAT(COALESCE(fw.update_time, fw.updated_at), '%Y-%m-%d %H:%i:%s')",
+                            'label_expr': "DATE_FORMAT(COALESCE(fw.update_time, fw.updated_at), '%Y-%m-%d %H:%i:%s')",
+                        },
+                    }
+                    config = filter_map.get(column)
+                    if not config:
+                        return self.send_json({'status': 'error', 'message': '不支持的筛选列'}, start_response)
+                    scope_clause, scope_params = self._factory_scope_clause('f.id', user_id, prefix='AND')
+                    base_sql = f"""
+                        SELECT {config['value_expr']} AS value, {config['label_expr']} AS label
+                        FROM factory_wip_inventory fw
+                        JOIN order_products op ON op.id = fw.order_product_id
+                        JOIN logistics_factories f ON f.id = fw.factory_id
+                        LEFT JOIN factory_contracts fc ON fc.id = fw.contract_id
+                        LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
+                        WHERE 1=1 {scope_clause}
+                    """
+                    sql = f"""
+                        SELECT value, label, COUNT(*) AS count
+                        FROM (
+                            {base_sql}
+                        ) src
+                        WHERE value IS NOT NULL AND value != ''
+                    """
+                    params = list(scope_params)
+                    if search:
+                        if exact:
+                            sql += " AND (value = %s OR label = %s)"
+                            params.extend([search, search])
+                        else:
+                            like = f"%{search}%"
+                            sql += " AND (value LIKE %s OR label LIKE %s)"
+                            params.extend([like, like])
+                    sql += " GROUP BY value, label ORDER BY count DESC, label ASC LIMIT %s"
+                    params.append(limit)
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute(sql, tuple(params))
+                            values = cur.fetchall() or []
+                    return self.send_json({'status': 'success', 'column': column, 'values': values}, start_response)
                 if action == 'options':
                     scope_ids = self._get_user_factory_scope_ids(user_id)
                     with self._get_db_connection() as conn:

@@ -139,10 +139,10 @@
     align-items: center;
     gap: 0.6rem;
     padding: 0.75rem 0.9rem;
-    border: 1px solid rgba(207, 199, 189, 0.9);
-    border-radius: 12px;
+    border: 1px solid rgba(188,180,170,.82);
+    border-radius: 7px;
     background: #fff;
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+    box-shadow: 0 6px 16px rgba(15,23,42,.09);
     min-width: min(560px, calc(100vw - 24px));
   }
   .preview-savebar.active { display: flex; }
@@ -175,8 +175,350 @@ let listCache = [];
 let selectedWipIds = new Set();
 let factoryWipEditDraft = {};
 let modalInitialExpectedLocked = '';
+let factoryWipColumnFilters = {};
+let activeWipFilterColumn = null;
+let factoryWipFilterOptionCache = new Map();
+let factoryWipFilterOptionRequest = 0;
+let factoryWipFilterOptionTimer = null;
+
+const WIP_FILTER_COLUMNS = {
+  1: { key: 'is_on_market', label: '在市状态', finite: true },
+  2: { key: 'sku', label: 'SKU' },
+  3: { key: 'representative_color', label: '颜色' },
+  4: { key: 'factory_name', label: '工厂', finite: true },
+  5: { key: 'order_no', label: '订单号' },
+  6: { key: 'contract_no', label: '合同编号' },
+  7: { key: 'quantity', label: '数量' },
+  8: { key: 'expected_completion_date', label: '预计完工日期' },
+  9: { key: 'initial_expected_completion_date', label: '最初预计完工日期' },
+  10: { key: 'is_completed', label: '是否完工', finite: true },
+  11: { key: 'actual_completion_date', label: '实际完工时间' },
+  12: { key: 'notes', label: '备注' },
+  13: { key: 'created_at', label: '创建时间' },
+  14: { key: 'update_time', label: '更新时间' }
+};
 
 const $ = (s) => document.querySelector(s);
+
+function getWipFilterText(item, colIndex){
+  if(!item) return '';
+  if(colIndex === 1) return Number(item.is_on_market || 0) ? '在市' : '下市';
+  if(colIndex === 3) return String(item.representative_color || '').trim() || '-';
+  if(colIndex === 10) return Number(item.is_completed || 0) ? '是' : '否';
+  if(colIndex === 13) return formatDateTime(item.created_at || '');
+  if(colIndex === 14) return formatDateTime(item.update_time || item.updated_at || '');
+  const config = WIP_FILTER_COLUMNS[colIndex] || {};
+  const key = config.key;
+  if(!key) return '';
+  return String(item[key] == null ? '' : item[key]).trim();
+}
+
+function getWipFilterState(colIndex){
+  const key = String(colIndex);
+  if(!factoryWipColumnFilters[key]){
+    factoryWipColumnFilters[key] = { query: '', exact: false, selected: [] };
+  }
+  return factoryWipColumnFilters[key];
+}
+
+function hasWipFilterActive(colIndex){
+  const state = getWipFilterState(colIndex);
+  return Boolean((state.query || '').trim()) || (Array.isArray(state.selected) && state.selected.length > 0);
+}
+
+function applyWipColumnFilters(rows){
+  const list = Array.isArray(rows) ? rows : [];
+  const activeCols = Object.keys(WIP_FILTER_COLUMNS).map(v => Number(v)).filter(col => hasWipFilterActive(col));
+  if(!activeCols.length) return list.slice();
+  return list.filter(item => {
+    for(const colIndex of activeCols){
+      const state = getWipFilterState(colIndex);
+      const value = getWipFilterText(item, colIndex);
+      const valueLower = value.toLowerCase();
+      const query = String(state.query || '').trim();
+      const selected = Array.isArray(state.selected) ? state.selected.map(v => String(v)) : [];
+      if(selected.length && !selected.includes(value)) return false;
+      if(query){
+        if(state.exact){
+          if(value !== query) return false;
+        } else {
+          if(!valueLower.includes(query.toLowerCase())) return false;
+        }
+      }
+    }
+    return true;
+  });
+}
+
+function clearWipFilterOptionCache(){
+  factoryWipFilterOptionCache = new Map();
+}
+
+function getWipFilterOptionCacheKey(colIndex, query, exact){
+  return `${Number(colIndex) || 0}|${String(query || '').trim().toLowerCase()}|${exact ? 1 : 0}`;
+}
+
+function normalizeWipFilterOptionItem(item, colIndex){
+  if(!item) return null;
+  const rawValue = String(item.value == null ? '' : item.value).trim();
+  if(!rawValue) return null;
+  const label = String(item.label == null || item.label === '' ? rawValue : item.label).trim() || rawValue;
+  const count = Number(item.count || 0) || 0;
+  const column = Number(colIndex) || 0;
+  return { value: rawValue, label, count, column };
+}
+
+function setWipFilterOptionsLoading(message){
+  const optionsEl = document.getElementById('wipFilterOptions');
+  const statusEl = document.getElementById('wipFilterStatus');
+  if(statusEl) statusEl.textContent = message || '';
+  if(optionsEl){
+    optionsEl.innerHTML = '<div class="wip-col-filter-option" style="opacity:.72;">加载中...</div>';
+  }
+}
+
+function renderWipFilterOptions(colIndex, items){
+  const optionsEl = document.getElementById('wipFilterOptions');
+  const statusEl = document.getElementById('wipFilterStatus');
+  if(!optionsEl) return;
+  const state = getWipFilterState(colIndex);
+  const selectedSet = new Set(Array.isArray(state.selected) ? state.selected.map(v => String(v)) : []);
+  const normalized = [];
+  const seen = new Set();
+  (Array.isArray(items) ? items : []).forEach(item => {
+    const normalizedItem = normalizeWipFilterOptionItem(item, colIndex);
+    if(!normalizedItem) return;
+    if(seen.has(normalizedItem.value)) return;
+    seen.add(normalizedItem.value);
+    normalized.push(normalizedItem);
+  });
+  selectedSet.forEach(value => {
+    if(seen.has(value)) return;
+    seen.add(value);
+    normalized.unshift({ value, label: value, count: 0, column: Number(colIndex) || 0, pinned: true });
+  });
+  const total = normalized.length;
+  if(statusEl){
+    statusEl.textContent = total ? `显示 ${total} 项${total >= 100 ? '，可继续输入缩小范围' : ''}` : '暂无匹配项';
+  }
+  optionsEl.innerHTML = total
+    ? normalized.map(item => {
+        const checked = selectedSet.has(item.value) ? 'checked' : '';
+        const countText = item.count > 0 ? ` <span style="color:var(--morandi-slate);">(${item.count})</span>` : '';
+        const label = String(item.label || item.value || '-').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const value = String(item.value).replace(/"/g, '&quot;');
+        return `<label class="wip-col-filter-option"><input type="checkbox" data-value="${value}" ${checked}>${label}${countText}</label>`;
+      }).join('')
+    : '<div class="wip-col-filter-option" style="opacity:.7;">暂无可选项</div>';
+}
+
+function scheduleWipFilterOptionsLoad(colIndex, force = false){
+  if(colIndex == null) return;
+  const popup = document.getElementById('wipColFilterPopup');
+  if(!popup || !popup.classList.contains('open')) return;
+  if(factoryWipFilterOptionTimer){
+    clearTimeout(factoryWipFilterOptionTimer);
+    factoryWipFilterOptionTimer = null;
+  }
+  factoryWipFilterOptionTimer = setTimeout(() => {
+    loadWipFilterOptions(colIndex, force);
+  }, 160);
+}
+
+function loadWipFilterOptions(colIndex, force = false){
+  if(!WIP_FILTER_COLUMNS[colIndex]) return Promise.resolve([]);
+  const state = getWipFilterState(colIndex);
+  const query = String(state.query || '').trim();
+  const exact = !!state.exact;
+  const cacheKey = getWipFilterOptionCacheKey(colIndex, query, exact);
+  if(!force && factoryWipFilterOptionCache.has(cacheKey)){
+    renderWipFilterOptions(colIndex, factoryWipFilterOptionCache.get(cacheKey));
+    return Promise.resolve(factoryWipFilterOptionCache.get(cacheKey));
+  }
+  const requestId = ++factoryWipFilterOptionRequest;
+  setWipFilterOptionsLoading('加载筛选项...');
+  const params = new URLSearchParams({ action: 'filter_options', column: String(colIndex), q: query, exact: exact ? '1' : '0', limit: '120' });
+  return fetch(`/api/factory-wip?${params.toString()}`)
+    .then(r => r.json())
+    .then(d => {
+      if(requestId !== factoryWipFilterOptionRequest) return [];
+      if(d.status !== 'success') throw new Error(d.message || '加载筛选项失败');
+      const values = Array.isArray(d.values) ? d.values : [];
+      factoryWipFilterOptionCache.set(cacheKey, values);
+      renderWipFilterOptions(colIndex, values);
+      return values;
+    })
+    .catch(err => {
+      if(requestId !== factoryWipFilterOptionRequest) return [];
+      const statusEl = document.getElementById('wipFilterStatus');
+      if(statusEl) statusEl.textContent = err.message || '加载筛选项失败';
+      const optionsEl = document.getElementById('wipFilterOptions');
+      if(optionsEl){
+        optionsEl.innerHTML = '<div class="wip-col-filter-option" style="opacity:.7;">加载失败</div>';
+      }
+      return [];
+    });
+}
+
+function ensureWipColumnFilterPopup(){
+  let popup = document.getElementById('wipColFilterPopup');
+  if(popup) return popup;
+  popup = document.createElement('div');
+  popup.id = 'wipColFilterPopup';
+  popup.className = 'wip-col-filter-pop';
+  popup.innerHTML = `
+    <div class="wip-col-filter-title" id="wipFilterTitle">列筛选</div>
+    <div class="wip-col-filter-row">
+      <input id="wipFilterQuery" type="text" class="inline-input" placeholder="输入筛选关键词（模糊匹配）">
+    </div>
+    <div class="wip-col-filter-row">
+      <label class="wip-col-filter-option" style="padding:0;">
+        <input id="wipFilterExact" type="checkbox">精确匹配
+      </label>
+    </div>
+    <div class="wip-col-filter-status" id="wipFilterStatus"></div>
+    <div class="wip-col-filter-options" id="wipFilterOptions"></div>
+    <div class="wip-col-filter-actions">
+      <button type="button" class="btn-secondary" id="wipFilterResetBtn">重置</button>
+      <button type="button" class="btn-primary" id="wipFilterApplyBtn">应用</button>
+    </div>
+  `;
+  document.body.appendChild(popup);
+
+  const apply = () => {
+    if(activeWipFilterColumn == null) return;
+    const queryEl = document.getElementById('wipFilterQuery');
+    const exactEl = document.getElementById('wipFilterExact');
+    const optionsEl = document.getElementById('wipFilterOptions');
+    const selected = Array.from(optionsEl.querySelectorAll('input[type="checkbox"][data-value]:checked')).map(cb => String(cb.dataset.value || ''));
+    const state = getWipFilterState(activeWipFilterColumn);
+    state.query = String(queryEl ? queryEl.value : '').trim();
+    state.exact = !!(exactEl && exactEl.checked);
+    state.selected = selected;
+    popup.classList.remove('open');
+    activeWipFilterColumn = null;
+    refreshWipFilterButtons();
+    renderFactoryWipTable(applyWipColumnFilters(listCache));
+    syncFactoryWipSaveBar();
+  };
+
+  const reset = () => {
+    if(activeWipFilterColumn == null) return;
+    const state = getWipFilterState(activeWipFilterColumn);
+    state.query = '';
+    state.exact = false;
+    state.selected = [];
+    popup.classList.remove('open');
+    activeWipFilterColumn = null;
+    refreshWipFilterButtons();
+    renderFactoryWipTable(applyWipColumnFilters(listCache));
+    syncFactoryWipSaveBar();
+  };
+
+  popup.querySelector('#wipFilterApplyBtn').addEventListener('click', apply);
+  popup.querySelector('#wipFilterResetBtn').addEventListener('click', reset);
+  const queryInput = popup.querySelector('#wipFilterQuery');
+  const exactInput = popup.querySelector('#wipFilterExact');
+  if(queryInput){
+    queryInput.addEventListener('input', () => {
+      if(activeWipFilterColumn == null) return;
+      const state = getWipFilterState(activeWipFilterColumn);
+      state.query = String(queryInput.value || '').trim();
+      scheduleWipFilterOptionsLoad(activeWipFilterColumn, false);
+    });
+  }
+  if(exactInput){
+    exactInput.addEventListener('change', () => {
+      if(activeWipFilterColumn == null) return;
+      const state = getWipFilterState(activeWipFilterColumn);
+      state.exact = !!exactInput.checked;
+      scheduleWipFilterOptionsLoad(activeWipFilterColumn, false);
+    });
+  }
+  return popup;
+}
+
+function openWipFilterPopup(btn, colIndex){
+  if(!WIP_FILTER_COLUMNS[colIndex]) return;
+  const popup = ensureWipColumnFilterPopup();
+  activeWipFilterColumn = colIndex;
+  const state = getWipFilterState(colIndex);
+  const title = document.getElementById('wipFilterTitle');
+  const queryEl = document.getElementById('wipFilterQuery');
+  const exactEl = document.getElementById('wipFilterExact');
+  if(title) title.textContent = `${WIP_FILTER_COLUMNS[colIndex].label || '列'}筛选`;
+  if(queryEl) queryEl.value = String(state.query || '');
+  if(exactEl) exactEl.checked = !!state.exact;
+  popup.classList.add('open');
+  setWipFilterOptionsLoading('加载筛选项...');
+
+  const rect = btn.getBoundingClientRect();
+  const top = rect.bottom + 6;
+  const popupWidth = Math.max(220, popup.offsetWidth || 0);
+  const left = Math.min(window.innerWidth - popupWidth - 10, Math.max(10, rect.left));
+  popup.style.top = `${Math.max(10, top)}px`;
+  popup.style.left = `${Math.max(10, left)}px`;
+  loadWipFilterOptions(colIndex, false);
+}
+
+function closeWipFilterPopup(){
+  const popup = document.getElementById('wipColFilterPopup');
+  if(popup) popup.classList.remove('open');
+  activeWipFilterColumn = null;
+}
+
+function refreshWipFilterButtons(){
+  document.querySelectorAll('.wip-col-filter-btn[data-col-index]').forEach(btn => {
+    const col = Number(btn.dataset.colIndex || 0);
+    btn.classList.toggle('has-filter', hasWipFilterActive(col));
+  });
+}
+
+function installWipColumnFilterButtons(){
+  if(!window.SitjoyColumnFilter) return;
+  const table = document.getElementById('mainTable');
+  if(!table) return;
+  table.querySelectorAll('.wip-col-filter-btn').forEach(btn => btn.remove());
+  document.querySelectorAll('.pm-managed-head-table .wip-col-filter-btn').forEach(btn => btn.remove());
+  if(!window.__factoryWipColumnFilterHandle){
+    const existingHandle = window.SitjoyColumnFilter.get(table);
+    if(existingHandle && typeof existingHandle.destroy === 'function'){
+      existingHandle.destroy();
+    }
+  }
+  const handle = window.__factoryWipColumnFilterHandle || window.SitjoyColumnFilter.attach(table, {
+    columns: Object.keys(WIP_FILTER_COLUMNS).map(key => {
+      const index = Number(key);
+      const config = WIP_FILTER_COLUMNS[index] || {};
+      return { index, label: config.label || `字段${index}` };
+    }),
+    fetchOptions: ({ column, query, exact, limit }) => {
+      const params = new URLSearchParams({
+        action: 'filter_options',
+        column: String(column.index),
+        q: query || '',
+        exact: exact ? '1' : '0',
+        limit: String(limit || 120)
+      });
+      return fetch(`/api/factory-wip?${params.toString()}`).then(r => r.json()).then(d => {
+        if(d.status !== 'success') throw new Error(d.message || '加载筛选项失败');
+        return d.values || [];
+      });
+    },
+    onApply: (filters) => {
+      factoryWipColumnFilters = filters || {};
+      renderFactoryWipTable(applyWipColumnFilters(listCache));
+      syncFactoryWipSaveBar();
+    },
+    onReset: (filters) => {
+      factoryWipColumnFilters = filters || {};
+      renderFactoryWipTable(applyWipColumnFilters(listCache));
+      syncFactoryWipSaveBar();
+    }
+  });
+  window.__factoryWipColumnFilterHandle = handle;
+  if(handle) handle.refreshButtons();
+}
 
 function showModalStatus(message, isError){
   const el = $('#modalStatus');
@@ -441,7 +783,7 @@ function importTemplate(file){
       if(errorCount){
         console.error('导入错误明细:', d.errors);
       }
-      loadList();
+      loadOptions().catch(() => null).finally(loadList);
     })
     .catch(err => {
       if(window.hideAppUploadProgress){
@@ -663,7 +1005,7 @@ function syncFactoryWipSaveBar(){
 
 function cancelFactoryWipEdits(){
   factoryWipEditDraft = {};
-  renderFactoryWipTable(listCache);
+  renderFactoryWipTable(applyWipColumnFilters(listCache));
   syncFactoryWipSaveBar();
 }
 
@@ -709,7 +1051,7 @@ function saveFactoryWipEdits(){
       }
       factoryWipEditDraft = {};
       if(window.showAppToast){ window.showAppToast(`批量更新成功：${Number(d.updated || items.length)} 条`, false, 2200); }
-      loadList();
+      loadOptions().catch(() => null).finally(loadList);
       syncFactoryWipSaveBar();
       if(saveBtn){
         saveBtn.disabled = false;
@@ -841,7 +1183,7 @@ function saveFromModal(){
       showModalStatus('保存成功', false);
       setTimeout(() => {
         closeModal();
-        loadList();
+        loadOptions().catch(() => null).finally(loadList);
       }, 260);
     })
     .catch(err => showModalStatus(err.message || '保存失败', true));
@@ -909,16 +1251,18 @@ function loadList(){
         return;
       }
       listCache = d.items || [];
+      clearWipFilterOptionCache();
       factoryWipEditDraft = Object.fromEntries(Object.entries(factoryWipEditDraft).filter(([id]) => listCache.some(item => String(item.id) === String(id))));
       const availableIds = new Set(listCache.map(item => Number(item.id || 0)).filter(v => v > 0));
       selectedWipIds = new Set(Array.from(selectedWipIds).filter(id => availableIds.has(id)));
       if(!listCache.length){
         tbody.innerHTML = '<tr><td colspan="16" style="text-align:center;">暂无数据</td></tr>';
+        installWipColumnFilterButtons();
         syncWipSelectAll();
         syncFactoryWipSaveBar();
         return;
       }
-      renderFactoryWipTable(listCache);
+      renderFactoryWipTable(applyWipColumnFilters(listCache));
       syncFactoryWipSaveBar();
     })
     .catch(err => {
@@ -989,6 +1333,8 @@ function renderFactoryWipTable(items){
   });
 
   tbody.innerHTML = html.join('');
+  installWipColumnFilterButtons();
+  refreshWipFilterButtons();
   bindRowSelectionEvents();
   bindFactoryWipEditEvents();
   syncWipSelectAll();
@@ -1056,7 +1402,9 @@ window.addEventListener('load', () => {
       importTemplate(file);
     });
   }
+  installWipColumnFilterButtons();
   loadOptions().finally(loadList);
+  setTimeout(installWipColumnFilterButtons, 200);
 });
 </script>
 </body>

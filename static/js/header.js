@@ -1648,7 +1648,8 @@
     }
 
     function applyPagination(state){
-        const rows = getDataRows(state);
+        const allRows = getDataRows(state);
+        const rows = allRows.filter(row => String(row.dataset.pmFilterHidden || '0') !== '1');
         const isServerManaged = String(state.table.dataset.serverPaginationMode || '').toLowerCase() === 'server'
             || state.table.dataset.serverPaginationMode === '1';
         const serverTotal = Number(state.table.dataset.serverTotalRows || '0');
@@ -1661,6 +1662,9 @@
             state.pageCurrent.textContent = '1 / 1';
             state.prevBtn.disabled = true;
             state.nextBtn.disabled = true;
+            allRows.forEach((row) => {
+                row.style.display = 'none';
+            });
             return;
         }
 
@@ -1674,6 +1678,9 @@
             }
             rows.forEach((row) => {
                 row.style.display = '';
+            });
+            allRows.forEach((row) => {
+                if(String(row.dataset.pmFilterHidden || '0') === '1') row.style.display = 'none';
             });
             const start = Math.min((state.currentPage - 1) * state.pageSize + 1, total);
             const end = Math.min(state.currentPage * state.pageSize, total);
@@ -1689,6 +1696,9 @@
         const start = (state.currentPage - 1) * state.pageSize;
         const end = Math.min(start + state.pageSize, total);
 
+        allRows.forEach((row) => {
+            row.style.display = 'none';
+        });
         rows.forEach((row, idx) => {
             row.style.display = (idx >= start && idx < end) ? '' : 'none';
         });
@@ -1705,6 +1715,128 @@
         const t = String(label || '').trim();
         if(!t) return false;
         return /多选|选择|勾选/.test(t);
+    }
+
+    function readCellFilterText(cell){
+        if(!cell) return '';
+        const input = cell.querySelector('input:not([type="hidden"])');
+        if(input){
+            const type = String(input.type || '').toLowerCase();
+            if(type === 'checkbox' || type === 'radio') return input.checked ? '1' : '0';
+            return String(input.value || '').trim();
+        }
+        const select = cell.querySelector('select');
+        if(select){
+            const option = select.options && select.selectedIndex >= 0 ? select.options[select.selectedIndex] : null;
+            return String(option ? (option.textContent || option.value || '') : (select.value || '')).trim();
+        }
+        const textarea = cell.querySelector('textarea');
+        if(textarea) return String(textarea.value || '').trim();
+        const activePill = cell.querySelector('.status-pill.is-active');
+        if(activePill){
+            return String(activePill.getAttribute('data-value') || activePill.textContent || '').trim();
+        }
+        return String(cell.textContent || '').replace(/[↕↑↓▲▼▴▾]/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+
+    function getRowCellByIndex(row, columnIndex){
+        if(!row || !row.cells || columnIndex < 0) return null;
+        return row.cells[columnIndex] || null;
+    }
+
+    function collectManagedColumnFilterOptions(state, columnIndex, query, exact, limit){
+        const rows = getDataRows(state);
+        const q = String(query || '').trim().toLowerCase();
+        const isExact = !!exact;
+        const counts = new Map();
+        rows.forEach(row => {
+            const cell = getRowCellByIndex(row, columnIndex);
+            const value = readCellFilterText(cell);
+            if(!value) return;
+            const text = String(value).trim();
+            if(!text) return;
+            if(q){
+                if(isExact){
+                    if(text !== String(query || '').trim()) return;
+                } else if(!text.toLowerCase().includes(q)) {
+                    return;
+                }
+            }
+            counts.set(text, (counts.get(text) || 0) + 1);
+        });
+        return Array.from(counts.entries())
+            .map(([value, count]) => ({ value, label: value, count }))
+            .sort((a, b) => {
+                if((b.count || 0) !== (a.count || 0)) return (b.count || 0) - (a.count || 0);
+                return String(a.label || '').localeCompare(String(b.label || ''), 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+            })
+            .slice(0, Math.max(1, Number(limit || 120) || 120));
+    }
+
+    function applyManagedColumnFilters(state, snapshot){
+        const filters = snapshot || {};
+        const rows = getDataRows(state);
+        rows.forEach(row => {
+            let pass = true;
+            for(const key of Object.keys(filters)){
+                const columnIndex = Number(key);
+                if(columnIndex < 0) continue;
+                const filter = filters[key] || {};
+                const query = String(filter.query || '').trim();
+                const exact = !!filter.exact;
+                const selected = Array.isArray(filter.selected) ? filter.selected.map(v => String(v)) : [];
+                if(!query && !selected.length) continue;
+                const cell = getRowCellByIndex(row, columnIndex);
+                const value = String(readCellFilterText(cell) || '');
+                if(selected.length && !selected.includes(value)){
+                    pass = false;
+                    break;
+                }
+                if(query){
+                    if(exact){
+                        if(value !== query){ pass = false; break; }
+                    } else if(!value.toLowerCase().includes(query.toLowerCase())) {
+                        pass = false;
+                        break;
+                    }
+                }
+            }
+            row.dataset.pmFilterHidden = pass ? '0' : '1';
+        });
+        state.currentPage = 1;
+        applyPagination(state);
+        syncManagedBatchBar(state);
+    }
+
+    function ensureManagedTableColumnFilter(state){
+        if(!state || !state.table || !state.table.tHead || !state.table.tHead.rows || !state.table.tHead.rows.length) return;
+        if(String(state.table.dataset.serverPaginationMode || '').toLowerCase() === 'server' || state.table.dataset.serverPaginationMode === '1') return;
+        if(!window.SitjoyColumnFilter || typeof window.SitjoyColumnFilter.attach !== 'function') return;
+
+        const headerCells = Array.from(state.table.tHead.rows[0].cells || []);
+        const columns = headerCells.map((cell, index) => {
+            const label = extractHeaderLabelText(cell);
+            return { index, label: label || `字段${index + 1}` };
+        }).filter(item => {
+            const label = String(item.label || '').trim();
+            if(!label) return false;
+            if(/操作|详情|动作/.test(label)) return false;
+            return true;
+        });
+        if(!columns.length) return;
+
+        if(state.columnFilterHandle){
+            state.columnFilterHandle.refreshButtons();
+            return;
+        }
+
+        state.columnFilterHandle = window.SitjoyColumnFilter.attach(state.table, {
+            columns,
+            limit: 120,
+            fetchOptions: ({ columnIndex, query, exact, limit }) => collectManagedColumnFilterOptions(state, columnIndex, query, exact, limit),
+            onApply: (filters) => applyManagedColumnFilters(state, filters),
+            onReset: (filters) => applyManagedColumnFilters(state, filters)
+        });
     }
 
     function ensureRowSortOrigin(state){
@@ -1789,6 +1921,390 @@
         if(controlValue !== null && controlValue !== undefined && controlValue !== '') return controlValue;
         return normalizeComparableValue(String(cell.textContent || '').replace(/[↕↑↓▲▼▴▾]/g, ' ').replace(/\s+/g, ' ').trim());
     }
+
+    const columnFilterRegistry = new WeakMap();
+    let activeColumnFilterState = null;
+    let activeColumnFilterRequestId = 0;
+
+    function resolveColumnFilterTable(tableOrSelector){
+        if(!tableOrSelector) return null;
+        if(typeof tableOrSelector === 'string') return document.querySelector(tableOrSelector);
+        return tableOrSelector;
+    }
+
+    function normalizeColumnFilterValue(item){
+        if(item === null || item === undefined) return null;
+        if(typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean'){
+            const text = String(item).trim();
+            if(!text) return null;
+            return { value: text, label: text, count: 0 };
+        }
+        const value = String(item.value ?? item.id ?? item.key ?? '').trim();
+        if(!value) return null;
+        const label = String(item.label ?? item.text ?? item.name ?? item.title ?? value).trim() || value;
+        const count = Number(item.count ?? item.total ?? 0) || 0;
+        return { value, label, count };
+    }
+
+    function createColumnFilterPopup(){
+        let popup = document.getElementById('pmColumnFilterPopup');
+        if(popup) return popup;
+        popup = document.createElement('div');
+        popup.id = 'pmColumnFilterPopup';
+        popup.className = 'pm-column-filter-pop';
+        popup.innerHTML = `
+            <div class="pm-column-filter-title" data-role="title">列筛选</div>
+            <div class="pm-column-filter-row">
+                <input type="text" class="inline-input" data-role="query" placeholder="输入筛选关键词（模糊匹配）">
+            </div>
+            <div class="pm-column-filter-row">
+                <label class="pm-column-filter-option" style="padding:0;">
+                    <input type="checkbox" data-role="exact">精确匹配
+                </label>
+            </div>
+            <div class="pm-column-filter-status" data-role="status"></div>
+            <div class="pm-column-filter-options" data-role="options"></div>
+            <div class="pm-column-filter-actions">
+                <button type="button" class="btn-secondary" data-role="reset">重置</button>
+                <button type="button" class="btn-primary" data-role="apply">应用</button>
+            </div>
+        `;
+        document.body.appendChild(popup);
+        return popup;
+    }
+
+    function closeColumnFilterPopup(){
+        if(activeColumnFilterState && activeColumnFilterState.popup){
+            activeColumnFilterState.popup.classList.remove('open');
+        }
+        activeColumnFilterState = null;
+    }
+
+    function columnFilterStateSnapshot(handle){
+        const snapshot = {};
+        handle.filters.forEach((value, key) => {
+            snapshot[String(key)] = {
+                query: String(value.query || ''),
+                exact: !!value.exact,
+                selected: Array.isArray(value.selected) ? value.selected.slice() : []
+            };
+        });
+        return snapshot;
+    }
+
+    function isColumnFilterActive(filterState){
+        return !!(filterState && ((String(filterState.query || '').trim()) || (Array.isArray(filterState.selected) && filterState.selected.length)));
+    }
+
+    function syncColumnFilterButtons(handle){
+        if(!handle || !handle.table) return;
+        const state = managedTableState.get(handle.table) || null;
+        const hostTables = [handle.table];
+        if(state && state.headerTable) hostTables.push(state.headerTable);
+        hostTables.forEach(host => {
+            host.querySelectorAll('.pm-column-filter-btn[data-column-index]').forEach(btn => {
+                const idx = Number(btn.dataset.columnIndex || 0);
+                btn.classList.toggle('has-filter', isColumnFilterActive(handle.filters.get(idx)));
+            });
+        });
+    }
+
+    function renderColumnFilterOptions(handle, columnIndex, items){
+        const popup = handle.popup || createColumnFilterPopup();
+        const optionsEl = popup.querySelector('[data-role="options"]');
+        const statusEl = popup.querySelector('[data-role="status"]');
+        const state = handle.filters.get(columnIndex) || { query: '', exact: false, selected: [] };
+        const selectedSet = new Set(Array.isArray(state.selected) ? state.selected.map(v => String(v)) : []);
+        const normalized = [];
+        const seen = new Set();
+
+        (Array.isArray(items) ? items : []).forEach(item => {
+            const normalizedItem = normalizeColumnFilterValue(item);
+            if(!normalizedItem) return;
+            if(seen.has(normalizedItem.value)) return;
+            seen.add(normalizedItem.value);
+            normalized.push(normalizedItem);
+        });
+
+        selectedSet.forEach(value => {
+            if(seen.has(value)) return;
+            seen.add(value);
+            normalized.unshift({ value, label: value, count: 0 });
+        });
+
+        statusEl.textContent = normalized.length ? `显示 ${normalized.length} 项` : '暂无可选项';
+        optionsEl.innerHTML = normalized.length ? normalized.map(item => {
+            const checked = selectedSet.has(item.value) ? 'checked' : '';
+            const countText = item.count > 0 ? ` <span style="color:var(--morandi-slate);">(${item.count})</span>` : '';
+            return `<label class="pm-column-filter-option"><input type="checkbox" data-value="${String(item.value).replace(/"/g, '&quot;')}" ${checked}>${String(item.label || item.value || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}${countText}</label>`;
+        }).join('') : '<div class="pm-column-filter-option" style="opacity:.7;">暂无可选项</div>';
+    }
+
+    function getColumnFilterFetchKey(columnIndex, query, exact, limit){
+        return `${Number(columnIndex) || 0}|${String(query || '').trim().toLowerCase()}|${exact ? 1 : 0}|${Number(limit) || 0}`;
+    }
+
+    function attachColumnFilter(tableOrSelector, config){
+        const table = resolveColumnFilterTable(tableOrSelector);
+        if(!table || !table.tHead || !table.tHead.rows || !table.tHead.rows.length) return null;
+        if(table.dataset.columnFilterAttached === '1'){
+            const existing = columnFilterRegistry.get(table);
+            if(existing){
+                existing.refreshButtons();
+                return existing;
+            }
+        }
+
+        const state = {
+            table,
+            config: config || {},
+            popup: createColumnFilterPopup(),
+            filters: new Map(),
+            optionCache: new Map(),
+            requestId: 0,
+            activeColumn: null,
+            timer: null,
+        };
+
+        function getColumnConfig(columnIndex){
+            const columns = Array.isArray(state.config.columns) ? state.config.columns : [];
+            return columns.find(item => Number(item.index) === Number(columnIndex)) || null;
+        }
+
+        function loadOptions(columnIndex, force){
+            const columnConfig = getColumnConfig(columnIndex);
+            if(!columnConfig || typeof state.config.fetchOptions !== 'function') return Promise.resolve([]);
+            const filterState = state.filters.get(columnIndex) || { query: '', exact: false, selected: [] };
+            const query = String(filterState.query || '').trim();
+            const exact = !!filterState.exact;
+            const limit = Number(columnConfig.limit || state.config.limit || 120) || 120;
+            const cacheKey = getColumnFilterFetchKey(columnIndex, query, exact, limit);
+            if(!force && state.optionCache.has(cacheKey)){
+                renderColumnFilterOptions(state, columnIndex, state.optionCache.get(cacheKey));
+                return Promise.resolve(state.optionCache.get(cacheKey));
+            }
+
+            const requestId = ++state.requestId;
+            const popup = state.popup;
+            const statusEl = popup.querySelector('[data-role="status"]');
+            const optionsEl = popup.querySelector('[data-role="options"]');
+            if(statusEl) statusEl.textContent = '加载筛选项...';
+            if(optionsEl) optionsEl.innerHTML = '<div class="pm-column-filter-option" style="opacity:.7;">加载中...</div>';
+
+            return Promise.resolve(state.config.fetchOptions({
+                table,
+                column: columnConfig,
+                columnIndex,
+                query,
+                exact,
+                limit,
+                filters: columnFilterStateSnapshot(state)
+            })).then(result => {
+                if(requestId !== state.requestId) return [];
+                const values = Array.isArray(result) ? result : (result && Array.isArray(result.values) ? result.values : []);
+                state.optionCache.set(cacheKey, values);
+                renderColumnFilterOptions(state, columnIndex, values);
+                return values;
+            }).catch(err => {
+                if(requestId !== state.requestId) return [];
+                if(statusEl) statusEl.textContent = err && err.message ? err.message : '加载筛选项失败';
+                if(optionsEl) optionsEl.innerHTML = '<div class="pm-column-filter-option" style="opacity:.7;">加载失败</div>';
+                return [];
+            });
+        }
+
+        function applyFilters(){
+            if(typeof state.config.onApply === 'function'){
+                state.config.onApply(columnFilterStateSnapshot(state), state);
+            }
+            state.popup.classList.remove('open');
+            state.activeColumn = null;
+            activeColumnFilterState = null;
+            syncColumnFilterButtons(state);
+        }
+
+        function resetFilter(columnIndex){
+            state.filters.set(columnIndex, { query: '', exact: false, selected: [] });
+            if(typeof state.config.onReset === 'function'){
+                state.config.onReset(columnFilterStateSnapshot(state), state);
+            } else if(typeof state.config.onApply === 'function'){
+                state.config.onApply(columnFilterStateSnapshot(state), state);
+            }
+            state.popup.classList.remove('open');
+            state.activeColumn = null;
+            activeColumnFilterState = null;
+            syncColumnFilterButtons(state);
+        }
+
+        function open(columnIndex, button){
+            const columnConfig = getColumnConfig(columnIndex);
+            if(!columnConfig) return;
+            const filterState = state.filters.get(columnIndex) || { query: '', exact: false, selected: [] };
+            state.filters.set(columnIndex, filterState);
+            state.activeColumn = columnIndex;
+            activeColumnFilterState = state;
+
+            const popup = state.popup;
+            popup.querySelector('[data-role="title"]').textContent = `${columnConfig.label || '列'}筛选`;
+            popup.querySelector('[data-role="query"]').value = String(filterState.query || '');
+            popup.querySelector('[data-role="exact"]').checked = !!filterState.exact;
+            popup.classList.add('open');
+
+            const rect = button.getBoundingClientRect();
+            const popupWidth = Math.max(220, popup.offsetWidth || 0);
+            const left = Math.min(window.innerWidth - popupWidth - 10, Math.max(10, rect.left));
+            popup.style.top = `${Math.max(10, rect.bottom + 6)}px`;
+            popup.style.left = `${Math.max(10, left)}px`;
+
+            loadOptions(columnIndex, false);
+        }
+
+        function refreshButtons(){
+            const managed = managedTableState.get(table) || null;
+            const hosts = [table];
+            if(managed && managed.headerTable) hosts.push(managed.headerTable);
+            hosts.forEach(host => {
+                const headerRow = host.tHead && host.tHead.rows ? host.tHead.rows[0] : null;
+                if(!headerRow) return;
+                Array.from(headerRow.cells || []).forEach((cell, idx) => {
+                    const columnConfig = getColumnConfig(idx);
+                    if(!columnConfig) return;
+                    cell.classList.add('pm-column-filter-th');
+                    let btn = cell.querySelector('.pm-column-filter-btn');
+                    if(!btn){
+                        btn = document.createElement('button');
+                        btn.type = 'button';
+                        btn.className = 'pm-column-filter-btn';
+                        btn.dataset.columnIndex = String(idx);
+                        btn.title = '列筛选';
+                        cell.appendChild(btn);
+                    }
+                    btn.classList.toggle('has-filter', isColumnFilterActive(state.filters.get(idx)));
+                });
+            });
+        }
+
+        const popup = state.popup;
+        popup.addEventListener('click', (event) => event.stopPropagation());
+        popup.querySelector('[data-role="apply"]').addEventListener('click', () => applyFilters());
+        popup.querySelector('[data-role="reset"]').addEventListener('click', () => {
+            if(state.activeColumn == null) return;
+            resetFilter(state.activeColumn);
+        });
+        popup.querySelector('[data-role="query"]').addEventListener('input', () => {
+            if(state.activeColumn == null) return;
+            const filterState = state.filters.get(state.activeColumn) || { query: '', exact: false, selected: [] };
+            filterState.query = String(popup.querySelector('[data-role="query"]').value || '').trim();
+            state.filters.set(state.activeColumn, filterState);
+            if(state.timer) window.clearTimeout(state.timer);
+            state.timer = window.setTimeout(() => loadOptions(state.activeColumn, false), 160);
+        });
+        popup.querySelector('[data-role="exact"]').addEventListener('change', () => {
+            if(state.activeColumn == null) return;
+            const filterState = state.filters.get(state.activeColumn) || { query: '', exact: false, selected: [] };
+            filterState.exact = !!popup.querySelector('[data-role="exact"]').checked;
+            state.filters.set(state.activeColumn, filterState);
+            if(state.timer) window.clearTimeout(state.timer);
+            state.timer = window.setTimeout(() => loadOptions(state.activeColumn, false), 160);
+        });
+        popup.querySelector('[data-role="options"]').addEventListener('change', (event) => {
+            const target = event.target;
+            if(!target || !target.matches('input[type="checkbox"][data-value]')) return;
+            if(state.activeColumn == null) return;
+            const filterState = state.filters.get(state.activeColumn) || { query: '', exact: false, selected: [] };
+            const selected = new Set(Array.isArray(filterState.selected) ? filterState.selected.map(v => String(v)) : []);
+            const value = String(target.dataset.value || '');
+            if(target.checked) selected.add(value); else selected.delete(value);
+            filterState.selected = Array.from(selected.values());
+            state.filters.set(state.activeColumn, filterState);
+        });
+
+        const clickHandler = (event) => {
+            const button = event.target && event.target.closest ? event.target.closest('.pm-column-filter-btn[data-column-index]') : null;
+            const managed = managedTableState.get(table) || null;
+            const inMainTable = !!(button && table.contains(button));
+            const inHeadClone = !!(button && managed && managed.headerTable && managed.headerTable.contains(button));
+            if(button && (inMainTable || inHeadClone)){
+                event.preventDefault();
+                event.stopPropagation();
+                const columnIndex = Number(button.dataset.columnIndex || 0);
+                if(activeColumnFilterState === state && state.activeColumn === columnIndex && popup.classList.contains('open')){
+                    closeColumnFilterPopup();
+                    return;
+                }
+                open(columnIndex, button);
+                return;
+            }
+            const eventInsideManagedHead = !!(managed && managed.headerTable && managed.headerTable.contains(event.target));
+            if(activeColumnFilterState === state && popup.classList.contains('open') && !popup.contains(event.target) && !table.contains(event.target) && !eventInsideManagedHead){
+                closeColumnFilterPopup();
+            }
+        };
+        document.addEventListener('click', clickHandler);
+
+        const keyHandler = (event) => {
+            if(activeColumnFilterState !== state) return;
+            if(event.key === 'Escape'){
+                closeColumnFilterPopup();
+            }
+            if(event.key === 'Enter' && popup.classList.contains('open')){
+                const applyBtn = popup.querySelector('[data-role="apply"]');
+                if(applyBtn){
+                    event.preventDefault();
+                    applyBtn.click();
+                }
+            }
+        };
+        document.addEventListener('keydown', keyHandler);
+
+        const handle = {
+            table,
+            refreshButtons,
+            syncButtons: refreshButtons,
+            getFilters: () => columnFilterStateSnapshot(state),
+            setFilters: (snapshot) => {
+                state.filters = new Map();
+                Object.entries(snapshot || {}).forEach(([key, value]) => {
+                    const index = Number(key);
+                    state.filters.set(index, {
+                        query: String(value && value.query ? value.query : ''),
+                        exact: !!(value && value.exact),
+                        selected: Array.isArray(value && value.selected) ? value.selected.slice() : []
+                    });
+                });
+                refreshButtons();
+            },
+            close: closeColumnFilterPopup,
+            destroy: () => {
+                document.removeEventListener('click', clickHandler);
+                document.removeEventListener('keydown', keyHandler);
+                if(table.dataset) table.dataset.columnFilterAttached = '0';
+                columnFilterRegistry.delete(table);
+                if(activeColumnFilterState === state) closeColumnFilterPopup();
+            }
+        };
+
+        table.dataset.columnFilterAttached = '1';
+        columnFilterRegistry.set(table, handle);
+        refreshButtons();
+        return handle;
+    }
+
+    window.SitjoyColumnFilter = {
+        attach: attachColumnFilter,
+        close: closeColumnFilterPopup,
+        refresh(tableOrSelector){
+            const table = resolveColumnFilterTable(tableOrSelector);
+            if(!table) return null;
+            const handle = columnFilterRegistry.get(table) || null;
+            if(handle) handle.refreshButtons();
+            return handle;
+        },
+        get(tableOrSelector){
+            const table = resolveColumnFilterTable(tableOrSelector);
+            return table ? (columnFilterRegistry.get(table) || null) : null;
+        }
+    };
 
     function resolveCheckboxSelectionId(checkbox, idx){
         if(!checkbox) return '';
@@ -2343,6 +2859,7 @@
             syncTopScroll(state);
             if(activeColumnsPanelState === state) repositionColumnsPanel(state);
         }
+        ensureManagedTableColumnFilter(state);
 
         state.isRefreshing = false;
         if(state.needRefresh){
@@ -2453,7 +2970,8 @@
             isRefreshing: false,
             needRefresh: false,
             refreshScheduled: false,
-            batchBar: null
+            batchBar: null,
+            columnFilterHandle: null
         };
         managedTableState.set(table, state);
 
