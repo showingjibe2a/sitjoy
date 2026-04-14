@@ -428,6 +428,53 @@
       text-overflow: clip;
       white-space: nowrap;
     }
+    #boardBodyTable tbody tr.sku-row > td {
+      transition: background-color .12s ease, box-shadow .12s ease;
+    }
+    #boardBodyTable tbody tr.sku-row:hover > td {
+      background: rgba(154, 163, 168, .22) !important;
+    }
+    #boardBodyTable td.board-hover-col {
+      background: rgba(154, 163, 168, .16) !important;
+    }
+    #boardBodyTable tbody tr.sku-row:hover > td.board-hover-col {
+      background: rgba(154, 163, 168, .26) !important;
+    }
+    #boardBodyTable td.board-selectable-cell {
+      cursor: cell;
+      user-select: none;
+    }
+    #boardBodyTable tr.board-hover-row > td,
+    #boardBodyTable tr.board-fixed-row > td {
+      background: rgba(154, 163, 168, .18) !important;
+    }
+    #boardBodyTable tr.board-fixed-row > td {
+      background: rgba(154, 163, 168, .24) !important;
+    }
+    #boardBodyTable td.board-hover-col,
+    #boardHeadTable th.board-hover-head {
+      background: rgba(154, 163, 168, .20) !important;
+    }
+    #boardBodyTable td.board-fixed-col,
+    #boardHeadTable th.board-fixed-head {
+      background: rgba(154, 163, 168, .28) !important;
+    }
+    #boardBodyTable td.board-hover-anchor {
+      background: rgba(154, 163, 168, .30) !important;
+      box-shadow: inset 0 0 0 2px rgba(95, 90, 83, .24);
+    }
+    #boardBodyTable td.board-fixed-anchor {
+      background: rgba(154, 163, 168, .38) !important;
+      box-shadow: inset 0 0 0 2px rgba(82, 78, 72, .48);
+    }
+    #boardBodyTable td.board-cell-selected {
+      background: rgba(154, 163, 168, .22) !important;
+      box-shadow: inset 0 0 0 1px rgba(95, 90, 83, .22);
+    }
+    #boardBodyTable td.board-cell-anchor {
+      background: rgba(154, 163, 168, .30) !important;
+      box-shadow: inset 0 0 0 2px rgba(82, 78, 72, .42);
+    }
   </style>
 </head>
 <body>
@@ -493,10 +540,330 @@ let wrapWarehouseShortName = false;
 const WRAP_SHORT_NAME_KEY = 'sitjoy:warehouse-short-wrap-enabled';
 let boardColWidths = [];
 let suppressHeaderToggleUntil = 0;
+let boardCellUiBound = false;
+let boardCellMouseDown = false;
+let boardHoverRow = -1;
+let boardHoverCol = -1;
+let boardSelectionAnchor = null;
+let boardSelectionFocus = null;
+let boardSelectionBounds = null;
+let boardSelectionMode = 'cell';
+let boardSelectionLocked = false;
 
 let REGION_ORDER = ['美西', '美中', '美东南', '美东'];
 
 function $(s){ return document.querySelector(s); }
+
+function getVisibleSkuRows(){
+  return Array.from(document.querySelectorAll('#boardBodyTable tbody tr.sku-row'))
+    .filter(tr => !tr.classList.contains('hidden-row'));
+}
+
+function refreshSelectableCellMeta(){
+  const rows = getVisibleSkuRows();
+  rows.forEach((tr, rowIndex) => {
+    tr.dataset.boardRowIndex = String(rowIndex);
+    Array.from(tr.children).forEach((td, colIndex) => {
+      td.dataset.boardColIndex = String(colIndex);
+      td.classList.add('board-selectable-cell');
+    });
+  });
+}
+
+function clearHoverColumn(){
+  if(boardHoverCol < 0) return;
+  getVisibleSkuRows().forEach(tr => {
+    const td = tr.querySelector(`td[data-board-col-index="${boardHoverCol}"]`);
+    if(td) td.classList.remove('board-hover-col');
+  });
+  document.querySelectorAll('#boardHeadTable th.board-hover-head').forEach(th => th.classList.remove('board-hover-head'));
+  boardHoverCol = -1;
+}
+
+function getHeaderCellsForColumns(columns){
+  const headerCells = Array.from(document.querySelectorAll('#boardHeadTable th[data-col-start]'));
+  const colSet = new Set((columns || []).map(value => Number(value)).filter(value => Number.isFinite(value)));
+  return headerCells.filter(cell => {
+    const start = Number(cell.dataset.colStart);
+    const end = Number(cell.dataset.colEnd);
+    if(!Number.isFinite(start) || !Number.isFinite(end)) return false;
+    for(let col = start; col <= end; col += 1){
+      if(colSet.has(col)) return true;
+    }
+    return;
+  }
+  );
+}
+
+function clearHoverRow(){
+  if(boardHoverRow < 0) return;
+  const row = document.querySelector(`#boardBodyTable tbody tr.sku-row[data-board-row-index="${boardHoverRow}"]`);
+  if(row) row.classList.remove('board-hover-row');
+  boardHoverRow = -1;
+}
+
+function clearHoverState(){
+  clearHoverColumn();
+  clearHoverRow();
+  document.querySelectorAll('#boardBodyTable td.board-hover-anchor, #boardHeadTable th.board-hover-head').forEach(el => el.classList.remove('board-hover-anchor', 'board-hover-head'));
+}
+
+function setHoverForCell(pos){
+  if(boardSelectionLocked || !pos) return;
+  clearHoverState();
+  const row = document.querySelector(`#boardBodyTable tbody tr.sku-row[data-board-row-index="${pos.row}"]`);
+  if(row) row.classList.add('board-hover-row');
+  const rowCell = row ? row.querySelector(`td[data-board-col-index="${pos.col}"]`) : null;
+  if(rowCell) rowCell.classList.add('board-hover-anchor');
+  getVisibleSkuRows().forEach(tr => {
+    const td = tr.querySelector(`td[data-board-col-index="${pos.col}"]`);
+    if(td) td.classList.add('board-hover-col');
+  });
+  getHeaderCellsForColumns([pos.col]).forEach(th => th.classList.add('board-hover-head'));
+  boardHoverRow = pos.row;
+  clearHoverColumn();
+  boardHoverCol = pos.col;
+}
+
+function applyHoverColumn(colIndex){
+  const targetCol = Number(colIndex);
+  if(!Number.isFinite(targetCol) || targetCol < 0){
+    clearHoverState();
+    return;
+  }
+  clearHoverState();
+  getVisibleSkuRows().forEach(tr => {
+    const td = tr.querySelector(`td[data-board-col-index="${targetCol}"]`);
+    if(td) td.classList.add('board-hover-col');
+  });
+  getHeaderCellsForColumns([targetCol]).forEach(th => th.classList.add('board-hover-head'));
+  boardHoverCol = targetCol;
+}
+
+function clearSelectionVisual(){
+  document.querySelectorAll(
+    '#boardBodyTable tr.board-fixed-row, #boardBodyTable td.board-fixed-col, #boardBodyTable td.board-fixed-anchor, #boardBodyTable td.board-cell-selected, #boardBodyTable td.board-cell-anchor, #boardHeadTable th.board-fixed-head'
+  ).forEach(el => {
+    el.classList.remove('board-fixed-row', 'board-fixed-col', 'board-fixed-anchor', 'board-cell-selected', 'board-cell-anchor', 'board-fixed-head');
+  });
+}
+
+function clearBoardSelectionVisual(){
+  clearSelectionVisual();
+}
+
+function clearBoardSelection(){
+  clearBoardSelectionVisual();
+  boardSelectionAnchor = null;
+  boardSelectionFocus = null;
+  boardSelectionBounds = null;
+  boardSelectionMode = 'cell';
+  boardSelectionLocked = false;
+}
+
+function getCellPos(td){
+  if(!td) return null;
+  const tr = td.closest('tr.sku-row');
+  if(!tr) return null;
+  const row = Number(tr.dataset.boardRowIndex);
+  const col = Number(td.dataset.boardColIndex);
+  if(!Number.isFinite(row) || !Number.isFinite(col)) return null;
+  return { row, col };
+}
+
+function getCellByPos(row, col){
+  const tr = document.querySelector(`#boardBodyTable tbody tr.sku-row[data-board-row-index="${row}"]`);
+  if(!tr) return null;
+  return tr.querySelector(`td[data-board-col-index="${col}"]`);
+}
+
+function applyBoardSelectionUi(){
+  clearBoardSelectionVisual();
+  clearHoverState();
+  if(!boardSelectionBounds) return;
+  const minRow = Number(boardSelectionBounds.minRow);
+  const maxRow = Number(boardSelectionBounds.maxRow);
+  const minCol = Number(boardSelectionBounds.minCol);
+  const maxCol = Number(boardSelectionBounds.maxCol);
+  if(boardSelectionMode === 'range'){
+    for(let row = minRow; row <= maxRow; row += 1){
+      const tr = document.querySelector(`#boardBodyTable tbody tr.sku-row[data-board-row-index="${row}"]`);
+      if(tr) tr.classList.add('board-fixed-row');
+      for(let col = minCol; col <= maxCol; col += 1){
+        const td = getCellByPos(row, col);
+        if(td) td.classList.add('board-cell-selected');
+      }
+    }
+    getHeaderCellsForColumns(Array.from({ length: maxCol - minCol + 1 }, (_, idx) => minCol + idx)).forEach(th => th.classList.add('board-fixed-head'));
+    const anchorCell = getCellByPos(minRow, minCol);
+    if(anchorCell) anchorCell.classList.add('board-cell-anchor');
+    return;
+  }
+
+  const row = document.querySelector(`#boardBodyTable tbody tr.sku-row[data-board-row-index="${minRow}"]`);
+  if(row) row.classList.add('board-fixed-row');
+  getVisibleSkuRows().forEach(tr => {
+    const td = tr.querySelector(`td[data-board-col-index="${minCol}"]`);
+    if(td) td.classList.add('board-fixed-col');
+  });
+  getHeaderCellsForColumns([minCol]).forEach(th => th.classList.add('board-fixed-head'));
+  const anchorCell = getCellByPos(minRow, minCol);
+  if(anchorCell) anchorCell.classList.add('board-fixed-anchor', 'board-cell-anchor');
+}
+
+function selectBoardCellRange(anchor, focus){
+  if(!anchor || !focus) return;
+  boardSelectionMode = 'range';
+  boardSelectionLocked = true;
+  const minRow = Math.min(anchor.row, focus.row);
+  const maxRow = Math.max(anchor.row, focus.row);
+  const minCol = Math.min(anchor.col, focus.col);
+  const maxCol = Math.max(anchor.col, focus.col);
+  boardSelectionBounds = { minRow, maxRow, minCol, maxCol };
+  applyBoardSelectionUi();
+}
+
+function selectBoardSingleCell(pos){
+  if(!pos) return;
+  boardSelectionMode = 'cell';
+  boardSelectionLocked = true;
+  boardSelectionAnchor = pos;
+  boardSelectionFocus = pos;
+  boardSelectionBounds = { minRow: pos.row, maxRow: pos.row, minCol: pos.col, maxCol: pos.col };
+  applyBoardSelectionUi();
+}
+
+function getBoardCellCopyText(td){
+  if(!td) return '';
+  const mainText = td.querySelector('.inv-main-text');
+  if(mainText) return String(mainText.textContent || '').trim();
+  const clone = td.cloneNode(true);
+  clone.querySelectorAll('.badge-tip, .source-toggle, .group-toggle').forEach(el => el.remove());
+  return String(clone.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
+function copyTextToClipboard(text){
+  if(!text) return Promise.resolve(false);
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    return navigator.clipboard.writeText(text).then(() => true).catch(() => false);
+  }
+  return new Promise(resolve => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch(_) { ok = false; }
+    document.body.removeChild(ta);
+    resolve(ok);
+  });
+}
+
+function copyBoardSelection(){
+  if(!boardSelectionBounds) return;
+  const lines = [];
+  for(let row = boardSelectionBounds.minRow; row <= boardSelectionBounds.maxRow; row += 1){
+    const cols = [];
+    for(let col = boardSelectionBounds.minCol; col <= boardSelectionBounds.maxCol; col += 1){
+      const td = getCellByPos(row, col);
+      cols.push(getBoardCellCopyText(td));
+    }
+    lines.push(cols.join('\t'));
+  }
+  const payload = lines.join('\n');
+  copyTextToClipboard(payload).then(ok => {
+    if(window.showAppToast){
+      window.showAppToast(ok ? '已复制选中单元格' : '复制失败，请重试', !ok);
+    }
+  });
+}
+
+function bindBoardCellUiEvents(){
+  if(boardCellUiBound) return;
+  boardCellUiBound = true;
+  const tbody = document.querySelector('#boardBodyTable tbody');
+  if(!tbody) return;
+
+  tbody.addEventListener('mousedown', function(event){
+    if(event.button !== 0) return;
+    const td = event.target.closest('td.board-selectable-cell');
+    if(!td || !tbody.contains(td)) return;
+    if(event.target.closest('.source-toggle, .badge-tip')) return;
+    const pos = getCellPos(td);
+    if(!pos) return;
+    event.preventDefault();
+    boardCellMouseDown = true;
+    if(boardSelectionLocked && boardSelectionMode === 'cell' && boardSelectionBounds && boardSelectionBounds.minRow === pos.row && boardSelectionBounds.minCol === pos.col && boardSelectionBounds.maxRow === pos.row && boardSelectionBounds.maxCol === pos.col){
+      clearBoardSelection();
+      setHoverForCell(pos);
+      return;
+    }
+    if(event.shiftKey && boardSelectionAnchor){
+      boardSelectionFocus = pos;
+      selectBoardCellRange(boardSelectionAnchor, boardSelectionFocus);
+      return;
+    }
+    selectBoardSingleCell(pos);
+  });
+
+  tbody.addEventListener('mouseover', function(event){
+    const td = event.target.closest('td.board-selectable-cell');
+    if(!td || !tbody.contains(td)) return;
+    const col = Number(td.dataset.boardColIndex);
+    const pos = getCellPos(td);
+    if(boardSelectionLocked){
+      if(boardCellMouseDown && boardSelectionMode === 'range' && boardSelectionAnchor && pos){
+        boardSelectionFocus = pos;
+        selectBoardCellRange(boardSelectionAnchor, boardSelectionFocus);
+      }
+      return;
+    }
+    if(pos){
+      setHoverForCell(pos);
+    } else if(Number.isFinite(col)) {
+      applyHoverColumn(col);
+    }
+    if(boardCellMouseDown && boardSelectionAnchor){
+      const pos = getCellPos(td);
+      if(!pos) return;
+      boardSelectionFocus = pos;
+      selectBoardCellRange(boardSelectionAnchor, boardSelectionFocus);
+    }
+  });
+
+  tbody.addEventListener('mouseleave', function(){
+    if(!boardSelectionLocked) clearHoverState();
+  });
+
+  document.addEventListener('mouseup', function(){
+    boardCellMouseDown = false;
+  });
+
+  document.addEventListener('keydown', function(event){
+    const key = String(event.key || '').toLowerCase();
+    if(!(event.ctrlKey || event.metaKey) || key !== 'c') return;
+    const active = document.activeElement;
+    if(active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+    if(!boardSelectionBounds) return;
+    event.preventDefault();
+    copyBoardSelection();
+  });
+}
+
+function setupBoardCellUi(){
+  refreshSelectableCellMeta();
+  if(boardSelectionLocked && boardSelectionBounds){
+    applyBoardSelectionUi();
+  } else {
+    clearHoverState();
+    clearSelectionVisual();
+  }
+  bindBoardCellUiEvents();
+}
 
 function setSegmentValue(seg, value){
   if(!seg) return;
@@ -1115,6 +1482,7 @@ function renderBoard(){
       renderBoard();
     });
   });
+  setupBoardCellUi();
   attachColumnResizeHandles(totalCols);
   syncTopScrollbar();
 }

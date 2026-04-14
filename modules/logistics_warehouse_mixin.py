@@ -347,16 +347,79 @@ class LogisticsWarehouseMixin:
                 text = str(value or '').strip()
                 return text[:128] if text else None
 
-            def _resolve_contract_id(cur, contract_no):
-                normalized = _normalize_contract_no(contract_no)
-                if not normalized:
-                    return None, None
-                cur.execute("SELECT id, contract_no FROM factory_contracts WHERE contract_no=%s LIMIT 1", (normalized,))
-                existing = cur.fetchone() or {}
-                if existing.get('id'):
-                    return int(existing.get('id')), str(existing.get('contract_no') or normalized)
-                cur.execute("INSERT INTO factory_contracts (contract_no) VALUES (%s)", (normalized,))
-                return int(cur.lastrowid), normalized
+            def _normalize_order_no(value):
+                text = str(value or '').strip()
+                return text[:128] if text else None
+
+            def _resolve_contract_binding(cur, factory_id, contract_no, order_no):
+                factory_id = self._parse_int(factory_id)
+                if not factory_id:
+                    raise ValueError('缺少工厂信息，无法匹配合同/订单编号')
+
+                normalized_contract = _normalize_contract_no(contract_no)
+                normalized_order = _normalize_order_no(order_no)
+                if not normalized_contract and not normalized_order:
+                    return None, None, None
+
+                by_contract = None
+                by_order = None
+
+                if normalized_contract:
+                    cur.execute(
+                        """
+                        SELECT id, contract_no, order_no
+                        FROM factory_contracts
+                        WHERE factory_id=%s AND contract_no=%s
+                        LIMIT 1
+                        """,
+                        (factory_id, normalized_contract)
+                    )
+                    by_contract = cur.fetchone() or None
+
+                if normalized_order:
+                    cur.execute(
+                        """
+                        SELECT id, contract_no, order_no
+                        FROM factory_contracts
+                        WHERE factory_id=%s AND order_no=%s
+                        LIMIT 1
+                        """,
+                        (factory_id, normalized_order)
+                    )
+                    by_order = cur.fetchone() or None
+
+                if by_contract and by_order and int(by_contract.get('id') or 0) != int(by_order.get('id') or 0):
+                    raise ValueError('合同编号与订单编号不匹配，请检查输入')
+
+                existing = by_contract or by_order
+                if existing:
+                    existing_contract = _normalize_contract_no(existing.get('contract_no'))
+                    existing_order = _normalize_order_no(existing.get('order_no'))
+                    if normalized_contract and existing_contract and normalized_contract != existing_contract:
+                        raise ValueError('合同编号与已存在映射不一致')
+                    if normalized_order and existing_order and normalized_order != existing_order:
+                        raise ValueError('订单编号与已存在映射不一致')
+                    if normalized_contract and not normalized_order and not existing_order:
+                        raise ValueError('该合同编号尚未绑定订单编号，请同时填写订单编号')
+                    if normalized_order and not normalized_contract and not existing_contract:
+                        raise ValueError('该订单编号尚未绑定合同编号，请同时填写合同编号')
+                    return (
+                        int(existing.get('id')),
+                        existing_contract or normalized_contract,
+                        existing_order or normalized_order,
+                    )
+
+                if not (normalized_contract and normalized_order):
+                    raise ValueError('新增合同/订单映射时需同时填写合同编号与订单编号')
+
+                cur.execute(
+                    """
+                    INSERT INTO factory_contracts (factory_id, contract_no, order_no)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (factory_id, normalized_contract, normalized_order)
+                )
+                return int(cur.lastrowid), normalized_contract, normalized_order
 
             def _cleanup_orphan_contracts(cur, contract_ids):
                 ids = [self._parse_int(v) for v in (contract_ids or []) if self._parse_int(v)]
@@ -425,7 +488,17 @@ class LogisticsWarehouseMixin:
                                     if self._parse_int(item.get('order_product_id')) and self._parse_int(item.get('factory_id'))
                                 ]
 
-                            cur.execute("SELECT id, contract_no FROM factory_contracts ORDER BY contract_no ASC")
+                            scope_clause, scope_params = self._factory_scope_clause('f.id', user_id, prefix='WHERE')
+                            cur.execute(
+                                f"""
+                                SELECT fc.id, fc.factory_id, fc.contract_no, fc.order_no, f.factory_name
+                                FROM factory_contracts fc
+                                JOIN logistics_factories f ON f.id = fc.factory_id
+                                {scope_clause}
+                                ORDER BY f.factory_name ASC, fc.contract_no ASC
+                                """,
+                                scope_params
+                            )
                             contracts = cur.fetchall() or []
 
                     return self.send_json(
@@ -448,6 +521,7 @@ class LogisticsWarehouseMixin:
                                         fw.expected_completion_date, fw.is_completed, fw.actual_completion_date,
                                         fw.initial_expected_completion_date,
                                         fw.notes, fw.created_at, fw.updated_at, fw.update_time,
+                                    fc.order_no,
                                         fc.contract_no,
                                         op.sku, op.is_on_market, f.factory_name,
                                         fm.representative_color
@@ -468,6 +542,7 @@ class LogisticsWarehouseMixin:
                                         fw.expected_completion_date, fw.is_completed, fw.actual_completion_date,
                                         fw.initial_expected_completion_date,
                                         fw.notes, fw.created_at, fw.updated_at, fw.update_time,
+                                    fc.order_no,
                                         fc.contract_no,
                                         op.sku, op.is_on_market, f.factory_name,
                                         fm.representative_color
@@ -489,6 +564,7 @@ class LogisticsWarehouseMixin:
                 op_id = self._parse_int(data.get('order_product_id'))
                 factory_id = self._parse_int(data.get('factory_id'))
                 quantity = max(0, self._parse_int(data.get('quantity')) or 0)
+                order_no = _normalize_order_no(data.get('order_no'))
                 notes = (data.get('notes') or '').strip() or None
                 contract_no = _normalize_contract_no(data.get('contract_no'))
                 expected_date = _parse_date_text(data.get('expected_completion_date'))
@@ -506,7 +582,7 @@ class LogisticsWarehouseMixin:
                     return self.send_json({'status': 'error', 'message': '该 SKU 未关联到该工厂，不可写入'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        contract_id, contract_no = _resolve_contract_id(cur, contract_no)
+                        contract_id, contract_no, order_no = _resolve_contract_binding(cur, factory_id, contract_no, order_no)
                         cur.execute(
                             """
                             INSERT INTO factory_wip_inventory (
@@ -550,6 +626,8 @@ class LogisticsWarehouseMixin:
                         quantity = max(0, self._parse_int(item.get('quantity')) or 0)
                         expected_date = _parse_date_text(item.get('expected_completion_date'))
                         is_completed = _parse_yes_no(item.get('is_completed'))
+                        order_no = _normalize_order_no(item.get('order_no')) if ('order_no' in item) else None
+                        has_order_no = 'order_no' in item
                         contract_no = _normalize_contract_no(item.get('contract_no')) if ('contract_no' in item) else None
                         has_contract_no = 'contract_no' in item
                         actual_completion_date = _parse_date_text(item.get('actual_completion_date'))
@@ -562,6 +640,8 @@ class LogisticsWarehouseMixin:
                         parsed_items.append({
                             'id': item_id,
                             'quantity': quantity,
+                            'order_no': order_no,
+                            'has_order_no': has_order_no,
                             'contract_no': contract_no,
                             'has_contract_no': has_contract_no,
                             'expected_completion_date': expected_date,
@@ -596,8 +676,14 @@ class LogisticsWarehouseMixin:
 
                             for item in parsed_items:
                                 contract_id = None
-                                if item.get('has_contract_no'):
-                                    contract_id, _ = _resolve_contract_id(cur, item.get('contract_no'))
+                                if item.get('has_contract_no') or item.get('has_order_no'):
+                                    existing_row = existing_map.get(item['id']) or {}
+                                    contract_id, _, _ = _resolve_contract_binding(
+                                        cur,
+                                        existing_row.get('factory_id'),
+                                        item.get('contract_no') if item.get('has_contract_no') else None,
+                                        item.get('order_no') if item.get('has_order_no') else None,
+                                    )
                                 else:
                                     existing_row = existing_map.get(item['id']) or {}
                                     contract_id = self._parse_int(existing_row.get('contract_id'))
@@ -628,6 +714,7 @@ class LogisticsWarehouseMixin:
 
                 item_id = self._parse_int(data.get('id'))
                 quantity = max(0, self._parse_int(data.get('quantity')) or 0)
+                order_no = _normalize_order_no(data.get('order_no'))
                 notes = (data.get('notes') or '').strip() or None
                 contract_no = _normalize_contract_no(data.get('contract_no'))
                 expected_date = _parse_date_text(data.get('expected_completion_date'))
@@ -671,7 +758,7 @@ class LogisticsWarehouseMixin:
                             """,
                             (
                                 quantity,
-                                _resolve_contract_id(cur, contract_no)[0],
+                                _resolve_contract_binding(cur, existing.get('factory_id'), contract_no, order_no)[0],
                                 expected_date,
                                 is_completed,
                                 actual_completion_date,
@@ -1055,7 +1142,7 @@ class LogisticsWarehouseMixin:
             ws = wb.active
             ws.title = 'factory_wip'
 
-            headers = ['工厂', '合同编号', 'SKU', '数量', '预计完工日期', '是否完工(是/否)', '实际完工时间', '备注']
+            headers = ['工厂', '订单号', '合同编号', 'SKU', '数量', '预计完工日期', '是否完工(是/否)', '实际完工时间', '备注']
             ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
             title_cell = ws.cell(row=1, column=1, value='工厂在制库存导入模板')
             title_cell.fill = PatternFill(start_color='A8B9A5', end_color='A8B9A5', fill_type='solid')
@@ -1068,14 +1155,14 @@ class LogisticsWarehouseMixin:
                 cell.font = Font(bold=True, color='2A2420')
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
-            sample_row = ['示例工厂（请勿导入）', 'CT-2026-001', '示例SKU（请勿导入）', 50, '2026-03-31', '否', '', '示例行（请勿导入，此行仅演示格式）']
+            sample_row = ['示例工厂（请勿导入）', 'OD-2026-001', 'CT-2026-001', '示例SKU（请勿导入）', 50, '2026-03-31', '否', '', '示例行（请勿导入，此行仅演示格式）']
             ws.append(sample_row)
             for cell in ws[3]:
                 cell.fill = PatternFill(start_color='ECECEC', end_color='ECECEC', fill_type='solid')
                 cell.font = Font(italic=True, color='7B8088')
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
-            widths = [24, 18, 24, 10, 16, 14, 16, 28]
+            widths = [24, 18, 18, 24, 10, 16, 14, 16, 28]
             for idx, width in enumerate(widths, start=1):
                 ws.column_dimensions[get_column_letter(idx)].width = width
 
@@ -1117,6 +1204,7 @@ class LogisticsWarehouseMixin:
                                 f.factory_name,
                                 fw.quantity,
                                 fw.expected_completion_date,
+                                fc.order_no,
                                 fc.contract_no,
                                 fw.is_completed,
                                 fw.actual_completion_date,
@@ -1150,23 +1238,24 @@ class LogisticsWarehouseMixin:
                 dv_sku = DataValidation(type='list', formula1=f"='_options'!$B$2:$B${len(skus) + 1}", allow_blank=False)
                 ws.add_data_validation(dv_sku)
                 for row in range(4, max_row + 1):
-                    dv_sku.add(f'C{row}')
+                    dv_sku.add(f'D{row}')
             dv_completed = DataValidation(type='list', formula1='"否,是"', allow_blank=True)
             ws.add_data_validation(dv_completed)
             for row in range(4, max_row + 1):
-                dv_completed.add(f'F{row}')
+                dv_completed.add(f'G{row}')
 
             if selected_rows:
                 write_row = 4
                 for item in selected_rows:
                     ws.cell(row=write_row, column=1, value=str(item.get('factory_name') or '').strip())
-                    ws.cell(row=write_row, column=2, value=str(item.get('contract_no') or '').strip())
-                    ws.cell(row=write_row, column=3, value=str(item.get('sku') or '').strip())
-                    ws.cell(row=write_row, column=4, value=int(item.get('quantity') or 0))
-                    ws.cell(row=write_row, column=5, value=item.get('expected_completion_date') or None)
-                    ws.cell(row=write_row, column=6, value='是' if int(item.get('is_completed') or 0) else '否')
-                    ws.cell(row=write_row, column=7, value=item.get('actual_completion_date') or None)
-                    ws.cell(row=write_row, column=8, value=str(item.get('notes') or '').strip())
+                    ws.cell(row=write_row, column=2, value=str(item.get('order_no') or '').strip())
+                    ws.cell(row=write_row, column=3, value=str(item.get('contract_no') or '').strip())
+                    ws.cell(row=write_row, column=4, value=str(item.get('sku') or '').strip())
+                    ws.cell(row=write_row, column=5, value=int(item.get('quantity') or 0))
+                    ws.cell(row=write_row, column=6, value=item.get('expected_completion_date') or None)
+                    ws.cell(row=write_row, column=7, value='是' if int(item.get('is_completed') or 0) else '否')
+                    ws.cell(row=write_row, column=8, value=item.get('actual_completion_date') or None)
+                    ws.cell(row=write_row, column=9, value=str(item.get('notes') or '').strip())
                     write_row += 1
 
             ws.freeze_panes = 'A4'
@@ -1255,15 +1344,72 @@ class LogisticsWarehouseMixin:
                 text = str(value or '').strip()
                 return text[:128] if text else None
 
-            def resolve_contract_id(cur, contract_no):
-                normalized = parse_contract_no(contract_no)
-                if not normalized:
+            def parse_order_no(value):
+                text = str(value or '').strip()
+                return text[:128] if text else None
+
+            def resolve_contract_binding(cur, factory_id, contract_no, order_no):
+                factory_id = self._parse_int(factory_id)
+                if not factory_id:
+                    raise ValueError('缺少工厂信息，无法匹配合同/订单编号')
+
+                normalized_contract = parse_contract_no(contract_no)
+                normalized_order = parse_order_no(order_no)
+                if not normalized_contract and not normalized_order:
                     return None
-                cur.execute("SELECT id FROM factory_contracts WHERE contract_no=%s LIMIT 1", (normalized,))
-                hit = cur.fetchone() or {}
-                if hit.get('id'):
-                    return int(hit.get('id'))
-                cur.execute("INSERT INTO factory_contracts (contract_no) VALUES (%s)", (normalized,))
+
+                by_contract = None
+                by_order = None
+                if normalized_contract:
+                    cur.execute(
+                        """
+                        SELECT id, contract_no, order_no
+                        FROM factory_contracts
+                        WHERE factory_id=%s AND contract_no=%s
+                        LIMIT 1
+                        """,
+                        (factory_id, normalized_contract)
+                    )
+                    by_contract = cur.fetchone() or None
+                if normalized_order:
+                    cur.execute(
+                        """
+                        SELECT id, contract_no, order_no
+                        FROM factory_contracts
+                        WHERE factory_id=%s AND order_no=%s
+                        LIMIT 1
+                        """,
+                        (factory_id, normalized_order)
+                    )
+                    by_order = cur.fetchone() or None
+
+                if by_contract and by_order and int(by_contract.get('id') or 0) != int(by_order.get('id') or 0):
+                    raise ValueError('合同编号与订单编号不匹配')
+
+                existing = by_contract or by_order
+                if existing:
+                    existing_contract = parse_contract_no(existing.get('contract_no'))
+                    existing_order = parse_order_no(existing.get('order_no'))
+                    if normalized_contract and existing_contract and normalized_contract != existing_contract:
+                        raise ValueError('合同编号与已存在映射不一致')
+                    if normalized_order and existing_order and normalized_order != existing_order:
+                        raise ValueError('订单编号与已存在映射不一致')
+                    if normalized_contract and not normalized_order and not existing_order:
+                        raise ValueError('该合同编号尚未绑定订单编号，请同时填写订单编号')
+                    if normalized_order and not normalized_contract and not existing_contract:
+                        raise ValueError('该订单编号尚未绑定合同编号，请同时填写合同编号')
+                    return int(existing.get('id'))
+
+                if not (normalized_contract and normalized_order):
+                    raise ValueError('新增映射时需同时填写合同编号和订单编号')
+
+                cur.execute(
+                    """
+                    INSERT INTO factory_contracts (factory_id, contract_no, order_no)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (factory_id, normalized_contract, normalized_order)
+                )
                 return int(cur.lastrowid)
 
             created = 0
@@ -1313,6 +1459,7 @@ class LogisticsWarehouseMixin:
                             sku = str(get_cell(row, 'SKU') or '').strip()
                             quantity = self._parse_int(get_cell(row, '数量'))
                             expected_completion_date = parse_date(get_cell(row, '预计完工日期'))
+                            order_no = parse_order_no(get_cell(row, '订单号'))
                             contract_no = parse_contract_no(get_cell(row, '合同编号'))
                             is_completed = parse_yes_no(get_cell(row, '是否完工(是/否)'))
                             actual_completion_date = parse_date(get_cell(row, '实际完工时间'))
@@ -1332,7 +1479,7 @@ class LogisticsWarehouseMixin:
                             if not is_completed:
                                 actual_completion_date = None
                             quantity = max(0, int(quantity))
-                            normalized_rows.append((order_product_id, factory_id, quantity, expected_completion_date, contract_no, is_completed, actual_completion_date, notes))
+                            normalized_rows.append((order_product_id, factory_id, quantity, expected_completion_date, order_no, contract_no, is_completed, actual_completion_date, notes))
                             pair_keys.add((order_product_id, factory_id))
                         except Exception as row_error:
                             errors.append({'row': row_idx, 'error': str(row_error)})
@@ -1370,10 +1517,10 @@ class LogisticsWarehouseMixin:
                                 'notes': (ex.get('notes') or '').strip() or None
                             }
 
-                    for order_product_id, factory_id, quantity, expected_completion_date, contract_no, is_completed, actual_completion_date, notes in normalized_rows:
+                    for order_product_id, factory_id, quantity, expected_completion_date, order_no, contract_no, is_completed, actual_completion_date, notes in normalized_rows:
                         key = (order_product_id, factory_id)
                         ex = existing_map.get(key)
-                        contract_id = resolve_contract_id(cur, contract_no)
+                        contract_id = resolve_contract_binding(cur, factory_id, contract_no, order_no)
                         if ex:
                             same = (
                                 ex.get('quantity') == quantity and

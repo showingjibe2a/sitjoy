@@ -42,6 +42,7 @@
             <th>SKU</th>
             <th style="width:120px;">颜色</th>
             <th>工厂</th>
+            <th style="width:160px;">订单号</th>
             <th style="width:160px;">合同编号</th>
             <th style="width:120px;">数量</th>
             <th style="width:140px;">预计完工日期</th>
@@ -55,7 +56,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr><td colspan="15" style="text-align:center;">加载中...</td></tr>
+          <tr><td colspan="16" style="text-align:center;">加载中...</td></tr>
         </tbody>
       </table>
     </div>
@@ -66,9 +67,14 @@
   <div class="pm-modal-content">
     <h3 id="pm-modal-title" style="margin-top:0;">新增工厂在制库存</h3>
     <div class="pm-form">
-      <div class="form-group">
+      <div class="form-group pm-form-full">
         <label for="modalFactory">工厂<span class="required-asterisk">*</span></label>
         <select id="modalFactory"></select>
+      </div>
+      <div class="form-group">
+        <label for="modalOrderNo">订单号</label>
+        <input id="modalOrderNo" type="text" list="orderNoList" placeholder="可选">
+        <datalist id="orderNoList"></datalist>
       </div>
       <div class="form-group">
         <label for="modalContractNo">合同编号</label>
@@ -153,6 +159,7 @@
   .sku-color-chip { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(60, 60, 60, 0.25); display: inline-block; }
   .sku-color-empty { color: var(--morandi-slate); }
   .history-text { min-height: 38px; border: 1px solid rgba(207,199,189,.55); border-radius: 8px; padding: .5rem .65rem; background: transparent; color: var(--morandi-slate); display: flex; align-items: center; }
+  .pm-form-full { grid-column: 1 / -1; }
 </style>
 
 <script>
@@ -241,6 +248,9 @@ function syncWipModalLinkedOptions(){
     window.refreshUniversalSingleSelect(factorySelect);
     window.refreshUniversalSingleSelect(skuSelect);
   }
+  const finalFactoryId = Number(factorySelect.value || 0);
+  renderContractOptions(finalFactoryId);
+  renderOrderOptions(finalFactoryId);
 }
 
 function formatDateTime(value){
@@ -254,10 +264,65 @@ function formatDate(value){
   return String(value).slice(0, 10);
 }
 
-function renderContractOptions(){
+function normalizePairText(value){
+  return String(value || '').trim();
+}
+
+function getFactoryContracts(factoryId){
+  const fid = Number(factoryId || 0);
+  if(!fid) return [];
+  return (optionContracts || []).filter(item => Number(item.factory_id || 0) === fid);
+}
+
+function renderContractOptions(factoryId){
   const listEl = document.getElementById('contractNoList');
   if(!listEl) return;
-  listEl.innerHTML = (optionContracts || []).map(item => `<option value="${String(item.contract_no || '').replace(/"/g, '&quot;')}"></option>`).join('');
+  const seen = new Set();
+  listEl.innerHTML = getFactoryContracts(factoryId)
+    .map(item => normalizePairText(item.contract_no))
+    .filter(text => text && !seen.has(text) && seen.add(text))
+    .map(text => `<option value="${text.replace(/"/g, '&quot;')}"></option>`)
+    .join('');
+}
+
+function renderOrderOptions(factoryId){
+  const listEl = document.getElementById('orderNoList');
+  if(!listEl) return;
+  const seen = new Set();
+  listEl.innerHTML = getFactoryContracts(factoryId)
+    .map(item => normalizePairText(item.order_no))
+    .filter(text => text && !seen.has(text) && seen.add(text))
+    .map(text => `<option value="${text.replace(/"/g, '&quot;')}"></option>`)
+    .join('');
+}
+
+function findContractPairByContractNo(factoryId, contractNo){
+  const target = normalizePairText(contractNo);
+  if(!target) return null;
+  return getFactoryContracts(factoryId).find(item => normalizePairText(item.contract_no) === target) || null;
+}
+
+function findContractPairByOrderNo(factoryId, orderNo){
+  const target = normalizePairText(orderNo);
+  if(!target) return null;
+  return getFactoryContracts(factoryId).find(item => normalizePairText(item.order_no) === target) || null;
+}
+
+function syncModalContractOrderPair(changedField){
+  const factoryId = Number(document.getElementById('modalFactory')?.value || 0);
+  const contractInput = document.getElementById('modalContractNo');
+  const orderInput = document.getElementById('modalOrderNo');
+  if(!contractInput || !orderInput) return;
+  if(changedField === 'contract_no'){
+    const hit = findContractPairByContractNo(factoryId, contractInput.value);
+    if(hit) orderInput.value = normalizePairText(hit.order_no);
+    return;
+  }
+  if(changedField === 'order_no'){
+    const hit = findContractPairByOrderNo(factoryId, orderInput.value);
+    if(hit) contractInput.value = normalizePairText(hit.contract_no);
+    return;
+  }
 }
 
 function syncModalInitialExpectedText(seedValue){
@@ -320,7 +385,9 @@ function loadOptions(){
       rebuildOptionLinkMaps();
       fillSelect('modalFactory', optionFactories, 'id', 'factory_name', '请选择工厂');
       fillSelect('modalOrderProduct', optionOrderProducts, 'id', 'sku', '请选择下单SKU');
-      renderContractOptions();
+      const currentFactoryId = Number(document.getElementById('modalFactory')?.value || 0);
+      renderContractOptions(currentFactoryId);
+      renderOrderOptions(currentFactoryId);
       optionsLoaded = true;
     });
 }
@@ -438,6 +505,9 @@ function normalizeWipDraftValue(field, rawValue){
   if(field === 'contract_no'){
     return String(rawValue || '').trim();
   }
+  if(field === 'order_no'){
+    return String(rawValue || '').trim();
+  }
   if(field === 'quantity'){
     const num = parseInt(String(rawValue || '').trim(), 10);
     return Number.isFinite(num) ? Math.max(0, num) : 0;
@@ -467,6 +537,7 @@ function updateWipDraft(itemId, field, rawValue){
   if(!item) return;
   const key = String(itemId);
   const draft = factoryWipEditDraft[key] || {
+    order_no: item.order_no || '',
     contract_no: item.contract_no || '',
     quantity: Number(item.quantity || 0),
     expected_completion_date: formatDate(item.expected_completion_date),
@@ -488,6 +559,7 @@ function updateWipDraft(itemId, field, rawValue){
     }
   }
   const unchanged = normalizeWipDraftValue('quantity', draft.quantity) === normalizeWipDraftValue('quantity', item.quantity)
+    && normalizeWipDraftValue('order_no', draft.order_no) === normalizeWipDraftValue('order_no', item.order_no)
     && normalizeWipDraftValue('contract_no', draft.contract_no) === normalizeWipDraftValue('contract_no', item.contract_no)
     && normalizeWipDraftValue('expected_completion_date', draft.expected_completion_date) === normalizeWipDraftValue('expected_completion_date', item.expected_completion_date)
     && normalizeWipDraftValue('is_completed', draft.is_completed) === normalizeWipDraftValue('is_completed', item.is_completed)
@@ -511,10 +583,43 @@ function setWipStatusSegment(segmentEl, value){
   });
 }
 
+function syncDraftContractOrderPair(itemId, changedField){
+  const item = listCache.find(x => String(x.id) === String(itemId));
+  if(!item) return;
+  const factoryId = Number(item.factory_id || 0);
+  if(!factoryId) return;
+  const key = String(itemId);
+  const draft = factoryWipEditDraft[key] || null;
+  if(!draft) return;
+  if(changedField === 'contract_no'){
+    const hit = findContractPairByContractNo(factoryId, draft.contract_no);
+    if(hit){
+      draft.order_no = normalizePairText(hit.order_no);
+      const input = document.querySelector(`.wip-edit-field[data-id="${itemId}"][data-field="order_no"]`);
+      if(input) input.value = draft.order_no;
+    }
+    return;
+  }
+  if(changedField === 'order_no'){
+    const hit = findContractPairByOrderNo(factoryId, draft.order_no);
+    if(hit){
+      draft.contract_no = normalizePairText(hit.contract_no);
+      const input = document.querySelector(`.wip-edit-field[data-id="${itemId}"][data-field="contract_no"]`);
+      if(input) input.value = draft.contract_no;
+    }
+  }
+}
+
 function bindFactoryWipEditEvents(){
   document.querySelectorAll('.wip-edit-field').forEach(el => {
     const handler = function(){
-      updateWipDraft(this.getAttribute('data-id'), this.getAttribute('data-field'), this.value);
+      const itemId = this.getAttribute('data-id');
+      const field = this.getAttribute('data-field');
+      updateWipDraft(itemId, field, this.value);
+      if(field === 'contract_no' || field === 'order_no'){
+        syncDraftContractOrderPair(itemId, field);
+        updateWipDraft(itemId, field, this.value);
+      }
     };
     el.addEventListener('input', handler);
     el.addEventListener('change', handler);
@@ -565,6 +670,7 @@ function cancelFactoryWipEdits(){
 function collectFactoryWipUpdateItems(){
   return Object.keys(factoryWipEditDraft).map(id => ({
     id: Number(id),
+    order_no: normalizeWipDraftValue('order_no', factoryWipEditDraft[id].order_no),
     contract_no: normalizeWipDraftValue('contract_no', factoryWipEditDraft[id].contract_no),
     quantity: normalizeWipDraftValue('quantity', factoryWipEditDraft[id].quantity),
     expected_completion_date: normalizeWipDraftValue('expected_completion_date', factoryWipEditDraft[id].expected_completion_date),
@@ -625,8 +731,9 @@ function openCreateModal(){
     $('#pm-modal-title').textContent = '新增工厂在制库存';
     $('#modalStatus').style.display = 'none';
     $('#modalOrderProduct').value = '';
-    $('#modalFactory').value = '';
+    $('#modalFactory').value = optionFactories.length ? String(optionFactories[0].id || '') : '';
     $('#modalQuantity').value = '0';
+    $('#modalOrderNo').value = '';
     $('#modalContractNo').value = '';
     $('#modalExpectedDate').value = '';
     modalInitialExpectedLocked = '';
@@ -638,6 +745,10 @@ function openCreateModal(){
     $('#modalOrderProduct').disabled = false;
     $('#modalFactory').disabled = false;
     syncWipModalLinkedOptions();
+    if(!$('#modalFactory').value && optionFactories.length){
+      $('#modalFactory').value = String(optionFactories[0].id || '');
+    }
+    syncModalContractOrderPair('contract_no');
     $('#pm-modal').classList.add('active');
     if(window.refreshUniversalSingleSelect){
       window.refreshUniversalSingleSelect('modalOrderProduct');
@@ -660,6 +771,7 @@ function openEditModal(id){
     $('#modalOrderProduct').value = String(row.order_product_id || '');
     $('#modalFactory').value = String(row.factory_id || '');
     $('#modalQuantity').value = String(Number(row.quantity || 0));
+    $('#modalOrderNo').value = row.order_no || '';
     $('#modalContractNo').value = row.contract_no || '';
     $('#modalExpectedDate').value = formatDate(row.expected_completion_date);
     modalInitialExpectedLocked = formatDate(row.initial_expected_completion_date);
@@ -671,6 +783,7 @@ function openEditModal(id){
     $('#modalOrderProduct').disabled = true;
     $('#modalFactory').disabled = true;
     syncWipModalLinkedOptions();
+    syncModalContractOrderPair('contract_no');
     $('#pm-modal').classList.add('active');
     if(window.refreshUniversalSingleSelect){
       window.refreshUniversalSingleSelect('modalOrderProduct');
@@ -691,6 +804,7 @@ function saveFromModal(){
   const order_product_id = Number($('#modalOrderProduct').value || 0);
   const factory_id = Number($('#modalFactory').value || 0);
   const quantity = Math.max(0, parseInt($('#modalQuantity').value || '0', 10) || 0);
+  const order_no = ($('#modalOrderNo').value || '').trim();
   const contract_no = ($('#modalContractNo').value || '').trim();
   const expected_completion_date = ($('#modalExpectedDate').value || '').trim();
   const is_completed = String(document.getElementById('modalCompletedSegment')?.getAttribute('data-value') || '0') === '1' ? 1 : 0;
@@ -710,8 +824,8 @@ function saveFromModal(){
   }
 
   const payload = editId
-    ? { id: editId, quantity, contract_no, expected_completion_date, is_completed, actual_completion_date, notes }
-    : { order_product_id, factory_id, quantity, contract_no, expected_completion_date, is_completed, actual_completion_date, notes };
+    ? { id: editId, quantity, order_no, contract_no, expected_completion_date, is_completed, actual_completion_date, notes }
+    : { order_product_id, factory_id, quantity, order_no, contract_no, expected_completion_date, is_completed, actual_completion_date, notes };
 
   fetch('/api/factory-wip', {
     method: editId ? 'PUT' : 'POST',
@@ -788,7 +902,7 @@ function loadList(){
     .then(d => {
       const tbody = document.querySelector('#mainTable tbody');
       if(d.status !== 'success'){
-        tbody.innerHTML = `<tr><td colspan="15" style="text-align:center;color:#a33;">${d.message || '加载失败'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="16" style="text-align:center;color:#a33;">${d.message || '加载失败'}</td></tr>`;
         selectedWipIds = new Set();
         syncWipSelectAll();
         syncFactoryWipSaveBar();
@@ -799,7 +913,7 @@ function loadList(){
       const availableIds = new Set(listCache.map(item => Number(item.id || 0)).filter(v => v > 0));
       selectedWipIds = new Set(Array.from(selectedWipIds).filter(id => availableIds.has(id)));
       if(!listCache.length){
-        tbody.innerHTML = '<tr><td colspan="15" style="text-align:center;">暂无数据</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="16" style="text-align:center;">暂无数据</td></tr>';
         syncWipSelectAll();
         syncFactoryWipSaveBar();
         return;
@@ -809,7 +923,7 @@ function loadList(){
     })
     .catch(err => {
       const tbody = document.querySelector('#mainTable tbody');
-      tbody.innerHTML = `<tr><td colspan="15" style="text-align:center;color:#a33;">${err.message || '加载失败'}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="16" style="text-align:center;color:#a33;">${err.message || '加载失败'}</td></tr>`;
       selectedWipIds = new Set();
       syncWipSelectAll();
       syncFactoryWipSaveBar();
@@ -821,7 +935,7 @@ function renderFactoryWipTable(items){
   const rows = Array.isArray(items) ? items : [];
   if(!tbody) return;
   if(!rows.length){
-    tbody.innerHTML = '<tr><td colspan="15" style="text-align:center;">暂无数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="16" style="text-align:center;">暂无数据</td></tr>';
     return;
   }
   const html = [];
@@ -849,6 +963,7 @@ function renderFactoryWipTable(items){
         <td>${item.sku || ''}</td>
         <td>${colorHtml}</td>
         <td>${item.factory_name || ''}</td>
+        <td class="preview-edit-cell"><input type="text" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="order_no" value="${String(item.order_no || '').replace(/"/g, '&quot;')}" placeholder="可选"></td>
         <td class="preview-edit-cell"><input type="text" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="contract_no" value="${String(item.contract_no || '').replace(/"/g, '&quot;')}" placeholder="可选"></td>
         <td class="preview-edit-cell"><input type="number" min="0" step="1" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="quantity" value="${Number(quantity || 0)}"></td>
         <td class="preview-edit-cell"><input type="date" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="expected_completion_date" value="${expectedCompletionDate || ''}"></td>
@@ -906,6 +1021,25 @@ document.addEventListener('change', function(e){
   }
   if(target && (target.id === 'modalOrderProduct' || target.id === 'modalFactory')){
     syncWipModalLinkedOptions();
+    if(target.id === 'modalFactory'){
+      syncModalContractOrderPair('contract_no');
+    }
+  }
+  if(target && target.id === 'modalContractNo'){
+    syncModalContractOrderPair('contract_no');
+  }
+  if(target && target.id === 'modalOrderNo'){
+    syncModalContractOrderPair('order_no');
+  }
+});
+
+document.addEventListener('input', function(e){
+  const target = e.target;
+  if(target && target.id === 'modalContractNo'){
+    syncModalContractOrderPair('contract_no');
+  }
+  if(target && target.id === 'modalOrderNo'){
+    syncModalContractOrderPair('order_no');
   }
 });
 
