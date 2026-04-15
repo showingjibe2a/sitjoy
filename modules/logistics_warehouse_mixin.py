@@ -1,9 +1,10 @@
 ﻿import cgi
+import csv
 import io
 import os
 import re
 from datetime import datetime, date, timedelta
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, quote
 
 try:
     from openpyxl import Workbook, load_workbook
@@ -199,6 +200,48 @@ class LogisticsWarehouseMixin:
                             cur.execute(sql, tuple(params))
                             values = cur.fetchall() or []
                     return self.send_json({'status': 'success', 'column': column, 'values': values}, start_response)
+                if action == 'download_all_stock_data':
+                    scope_clause, scope_params = self._factory_scope_clause('f.id', user_id, prefix='AND')
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                f"""
+                                SELECT f.factory_name, op.sku, fs.quantity, fs.notes, fs.updated_at
+                                FROM factory_stock_inventory fs
+                                JOIN order_products op ON op.id = fs.order_product_id
+                                JOIN logistics_factories f ON f.id = fs.factory_id
+                                WHERE 1=1 {scope_clause}
+                                ORDER BY f.factory_name ASC, op.sku ASC
+                                """,
+                                scope_params
+                            )
+                            rows = cur.fetchall() or []
+
+                    output = io.StringIO(newline='')
+                    writer = csv.writer(output)
+                    writer.writerow(['工厂', 'SKU', '数量', '备注', '更新时间'])
+                    for row in rows:
+                        updated_at = row.get('updated_at')
+                        updated_text = ''
+                        if updated_at:
+                            updated_text = str(updated_at).replace('T', ' ')[:19]
+                        writer.writerow([
+                            row.get('factory_name') or '',
+                            row.get('sku') or '',
+                            self._parse_int(row.get('quantity')) or 0,
+                            row.get('notes') or '',
+                            updated_text,
+                        ])
+
+                    content = output.getvalue().encode('utf-8-sig')
+                    filename = f"工厂在库库存_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                    headers = [
+                        ('Content-Type', 'text/csv; charset=utf-8'),
+                        ('Content-Disposition', f"attachment; filename*=UTF-8''{quote(filename)}"),
+                        ('Content-Length', str(len(content))),
+                    ]
+                    start_response('200 OK', headers)
+                    return [content]
                 if action == 'options':
                     scope_ids = self._get_user_factory_scope_ids(user_id)
                     with self._get_db_connection() as conn:
@@ -539,6 +582,61 @@ class LogisticsWarehouseMixin:
             if method == 'GET':
                 keyword = (query_params.get('q', [''])[0] or '').strip()
                 action = (query_params.get('action', [''])[0] or '').strip().lower()
+                if action == 'download_unfinished_data':
+                    scope_clause, scope_params = self._factory_scope_clause('f.id', user_id, prefix='AND')
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                f"""
+                                SELECT
+                                    f.factory_name,
+                                    op.sku,
+                                    fw.quantity,
+                                    fc.order_no,
+                                    fc.contract_no,
+                                    fw.expected_completion_date,
+                                    fw.initial_expected_completion_date,
+                                    fw.notes,
+                                    COALESCE(fw.update_time, fw.updated_at) AS update_time
+                                FROM factory_wip_inventory fw
+                                JOIN order_products op ON op.id = fw.order_product_id
+                                JOIN logistics_factories f ON f.id = fw.factory_id
+                                LEFT JOIN factory_contracts fc ON fc.id = fw.contract_id
+                                WHERE COALESCE(fw.is_completed, 0) = 0 {scope_clause}
+                                ORDER BY f.factory_name ASC, op.sku ASC, fw.expected_completion_date ASC
+                                """,
+                                scope_params
+                            )
+                            rows = cur.fetchall() or []
+
+                    output = io.StringIO(newline='')
+                    writer = csv.writer(output)
+                    writer.writerow(['工厂', 'SKU', '数量', '订单号', '合同编号', '预计完工日期', '最初预计完工日期', '备注', '更新时间'])
+                    for row in rows:
+                        expected_completion = row.get('expected_completion_date')
+                        initial_expected = row.get('initial_expected_completion_date')
+                        update_time = row.get('update_time')
+                        writer.writerow([
+                            row.get('factory_name') or '',
+                            row.get('sku') or '',
+                            self._parse_int(row.get('quantity')) or 0,
+                            row.get('order_no') or '',
+                            row.get('contract_no') or '',
+                            str(expected_completion)[:10] if expected_completion else '',
+                            str(initial_expected)[:10] if initial_expected else '',
+                            row.get('notes') or '',
+                            str(update_time).replace('T', ' ')[:19] if update_time else '',
+                        ])
+
+                    content = output.getvalue().encode('utf-8-sig')
+                    filename = f"工厂在制未完工库存_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                    headers = [
+                        ('Content-Type', 'text/csv; charset=utf-8'),
+                        ('Content-Disposition', f"attachment; filename*=UTF-8''{quote(filename)}"),
+                        ('Content-Length', str(len(content))),
+                    ]
+                    start_response('200 OK', headers)
+                    return [content]
                 if action == 'filter_options':
                     column = self._parse_int(query_params.get('column', ['0'])[0])
                     search = (query_params.get('q', [''])[0] or '').strip()
@@ -546,60 +644,60 @@ class LogisticsWarehouseMixin:
                     limit = max(1, min(200, self._parse_int(query_params.get('limit', ['120'])[0]) or 120))
                     filter_map = {
                         1: {
-                            'value_expr': "CASE WHEN COALESCE(op.is_on_market, 0) = 1 THEN '1' ELSE '0' END",
-                            'label_expr': "CASE WHEN COALESCE(op.is_on_market, 0) = 1 THEN '在市' ELSE '下市' END",
-                        },
-                        2: {
-                            'value_expr': "NULLIF(TRIM(op.sku), '')",
-                            'label_expr': "NULLIF(TRIM(op.sku), '')",
-                        },
-                        3: {
-                            'value_expr': "NULLIF(TRIM(COALESCE(fm.representative_color, '')), '')",
-                            'label_expr': "NULLIF(TRIM(COALESCE(fm.representative_color, '')), '')",
-                        },
-                        4: {
                             'value_expr': "NULLIF(TRIM(f.factory_name), '')",
                             'label_expr': "NULLIF(TRIM(f.factory_name), '')",
                         },
-                        5: {
+                        2: {
                             'value_expr': "NULLIF(TRIM(COALESCE(fc.order_no, '')), '')",
                             'label_expr': "NULLIF(TRIM(COALESCE(fc.order_no, '')), '')",
                         },
-                        6: {
+                        3: {
                             'value_expr': "NULLIF(TRIM(COALESCE(fc.contract_no, '')), '')",
                             'label_expr': "NULLIF(TRIM(COALESCE(fc.contract_no, '')), '')",
+                        },
+                        4: {
+                            'value_expr': "NULLIF(TRIM(COALESCE(fm.representative_color, '')), '')",
+                            'label_expr': "NULLIF(TRIM(COALESCE(fm.representative_color, '')), '')",
+                        },
+                        5: {
+                            'value_expr': "NULLIF(TRIM(op.sku), '')",
+                            'label_expr': "NULLIF(TRIM(op.sku), '')",
+                        },
+                        6: {
+                            'value_expr': "CASE WHEN COALESCE(op.is_on_market, 0) = 1 THEN '1' ELSE '0' END",
+                            'label_expr': "CASE WHEN COALESCE(op.is_on_market, 0) = 1 THEN '在市' ELSE '下市' END",
                         },
                         7: {
                             'value_expr': "CAST(fw.quantity AS CHAR)",
                             'label_expr': "CAST(fw.quantity AS CHAR)",
                         },
                         8: {
-                            'value_expr': "DATE_FORMAT(fw.expected_completion_date, '%Y-%m-%d')",
-                            'label_expr': "DATE_FORMAT(fw.expected_completion_date, '%Y-%m-%d')",
+                            'value_expr': "DATE_FORMAT(fw.expected_completion_date, '%%Y-%%m-%%d')",
+                            'label_expr': "DATE_FORMAT(fw.expected_completion_date, '%%Y-%%m-%%d')",
                         },
                         9: {
-                            'value_expr': "DATE_FORMAT(fw.initial_expected_completion_date, '%Y-%m-%d')",
-                            'label_expr': "DATE_FORMAT(fw.initial_expected_completion_date, '%Y-%m-%d')",
+                            'value_expr': "DATE_FORMAT(fw.initial_expected_completion_date, '%%Y-%%m-%%d')",
+                            'label_expr': "DATE_FORMAT(fw.initial_expected_completion_date, '%%Y-%%m-%%d')",
                         },
                         10: {
                             'value_expr': "CASE WHEN COALESCE(fw.is_completed, 0) = 1 THEN '1' ELSE '0' END",
                             'label_expr': "CASE WHEN COALESCE(fw.is_completed, 0) = 1 THEN '是' ELSE '否' END",
                         },
                         11: {
-                            'value_expr': "DATE_FORMAT(fw.actual_completion_date, '%Y-%m-%d')",
-                            'label_expr': "DATE_FORMAT(fw.actual_completion_date, '%Y-%m-%d')",
+                            'value_expr': "DATE_FORMAT(fw.actual_completion_date, '%%Y-%%m-%%d')",
+                            'label_expr': "DATE_FORMAT(fw.actual_completion_date, '%%Y-%%m-%%d')",
                         },
                         12: {
                             'value_expr': "NULLIF(TRIM(COALESCE(fw.notes, '')), '')",
                             'label_expr': "NULLIF(TRIM(COALESCE(fw.notes, '')), '')",
                         },
                         13: {
-                            'value_expr': "DATE_FORMAT(fw.created_at, '%Y-%m-%d %H:%i:%s')",
-                            'label_expr': "DATE_FORMAT(fw.created_at, '%Y-%m-%d %H:%i:%s')",
+                            'value_expr': "DATE_FORMAT(fw.created_at, '%%Y-%%m-%%d %%H:%%i:%%s')",
+                            'label_expr': "DATE_FORMAT(fw.created_at, '%%Y-%%m-%%d %%H:%%i:%%s')",
                         },
                         14: {
-                            'value_expr': "DATE_FORMAT(COALESCE(fw.update_time, fw.updated_at), '%Y-%m-%d %H:%i:%s')",
-                            'label_expr': "DATE_FORMAT(COALESCE(fw.update_time, fw.updated_at), '%Y-%m-%d %H:%i:%s')",
+                            'value_expr': "DATE_FORMAT(COALESCE(fw.update_time, fw.updated_at), '%%Y-%%m-%%d %%H:%%i:%%s')",
+                            'label_expr': "DATE_FORMAT(COALESCE(fw.update_time, fw.updated_at), '%%Y-%%m-%%d %%H:%%i:%%s')",
                         },
                     }
                     config = filter_map.get(column)

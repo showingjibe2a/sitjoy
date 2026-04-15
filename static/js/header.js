@@ -1005,6 +1005,9 @@
     function extractCellClipboardText(cell){
         if(!cell) return '';
 
+        const explicitExport = String(cell.getAttribute('data-export-value') || cell.dataset.exportValue || '').trim();
+        if(explicitExport) return explicitExport;
+
         const textInput = cell.querySelector('input:not([type="checkbox"]):not([type="hidden"]), textarea');
         if(textInput){
             const value = String(textInput.value || '').trim();
@@ -1042,6 +1045,23 @@
                 });
                 if(matched){
                     return String(matched.textContent || '').replace(/\s+/g, ' ').trim();
+                }
+            }
+        }
+
+        const colorChip = cell.querySelector('.sku-color-chip, .transit-color-dot, [data-color-chip]');
+        if(colorChip){
+            const chipColor = String(
+                colorChip.getAttribute('data-color')
+                || colorChip.dataset.color
+                || colorChip.style.backgroundColor
+                || ''
+            ).trim();
+            if(chipColor) return chipColor;
+            if(typeof window.getComputedStyle === 'function'){
+                const computedColor = String(window.getComputedStyle(colorChip).backgroundColor || '').trim();
+                if(computedColor && computedColor.toLowerCase() !== 'rgba(0, 0, 0, 0)' && computedColor.toLowerCase() !== 'transparent'){
+                    return computedColor;
                 }
             }
         }
@@ -1875,6 +1895,9 @@
         const explicit = String(cell.getAttribute('data-sort-value') || cell.dataset.sortValue || '').trim();
         if(explicit) return normalizeComparableValue(explicit);
 
+        const explicitExport = String(cell.getAttribute('data-export-value') || cell.dataset.exportValue || '').trim();
+        if(explicitExport) return normalizeComparableValue(explicitExport);
+
         const input = cell.querySelector('input:not([type="hidden"])');
         if(input){
             const type = String(input.type || '').toLowerCase();
@@ -1910,6 +1933,23 @@
         if(pressedButton){
             const pressedValue = String(pressedButton.getAttribute('data-value') || pressedButton.textContent || '').trim();
             if(pressedValue) return normalizeComparableValue(pressedValue);
+        }
+
+        const colorChip = cell.querySelector('.sku-color-chip, .transit-color-dot, [data-color-chip]');
+        if(colorChip){
+            const colorText = String(
+                colorChip.getAttribute('data-color')
+                || colorChip.dataset.color
+                || colorChip.style.backgroundColor
+                || ''
+            ).trim();
+            if(colorText) return normalizeComparableValue(colorText);
+            if(typeof window.getComputedStyle === 'function'){
+                const computedColor = String(window.getComputedStyle(colorChip).backgroundColor || '').trim();
+                if(computedColor && computedColor.toLowerCase() !== 'rgba(0, 0, 0, 0)' && computedColor.toLowerCase() !== 'transparent'){
+                    return normalizeComparableValue(computedColor);
+                }
+            }
         }
 
         return null;
@@ -2374,6 +2414,13 @@
         return text;
     }
 
+    function readCellExportText(cell){
+        if(!cell) return '';
+        const explicit = String(cell.getAttribute('data-export-value') || cell.dataset.exportValue || '').trim();
+        if(explicit) return explicit;
+        return extractCellClipboardText(cell);
+    }
+
     function exportManagedRowsToCsv(state, rows){
         if(!state || !state.table || !Array.isArray(rows) || !rows.length) return false;
         const exportOrigins = (state.columnOrder || []).filter(origin => {
@@ -2390,7 +2437,7 @@
             const byOrigin = mapRowByOrigin(row);
             const line = exportOrigins.map(origin => {
                 const cell = byOrigin.get(Number(origin));
-                const raw = cell ? String(cell.textContent || '').replace(/[↕↑↓▲▼▴▾]/g, ' ').replace(/\s+/g, ' ').trim() : '';
+                const raw = cell ? String(readCellExportText(cell) || '').replace(/[↕↑↓▲▼▴▾]/g, ' ').replace(/\s+/g, ' ').trim() : '';
                 return csvEscape(raw);
             }).join(',');
             lines.push(line);

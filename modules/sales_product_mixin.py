@@ -2773,6 +2773,10 @@ class SalesProductMixin:
                         }
                     }, start_response)
 
+                import time
+                perf_t_start = time.time()
+                perf_timings = {}
+                
                 start_date = parse_date((query_params.get('start_date', [''])[0] or ''))
                 end_date = parse_date((query_params.get('end_date', [''])[0] or ''))
                 sku_family_ids = parse_csv_int('sku_family_ids')
@@ -2784,20 +2788,86 @@ class SalesProductMixin:
                 metric_keys = parse_csv_text('metric_keys')
                 if not metric_keys:
                     metric_keys = ['sales_qty', 'net_sales_amount', 'order_qty', 'ad_spend', 'ad_sales_amount']
-                include_todos = str((query_params.get('include_todos', ['1'])[0] or '1')).lower() in ('1', 'true', 'yes', 'on')
-                include_ads = str((query_params.get('include_ads', ['1'])[0] or '1')).lower() in ('1', 'true', 'yes', 'on')
+                include_todos = str((query_params.get('include_todos', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
+                include_ads = str((query_params.get('include_ads', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
                 ad_operation_type_ids = parse_csv_int('ad_operation_type_ids')
+                perf_timings['params'] = time.time() - perf_t_start
 
+                # === 优化1：数据库端聚合图表数据（GROUP BY + SUM/AVG）===
+                perf_t_a = time.time()
+                agg_columns = "DATE(spp.record_date) as record_date"
+                for key in metric_keys:
+                    metric = next((m for m in metric_defs if m['key'] == key), None)
+                    if metric:
+                        agg = metric['agg']
+                        if agg == 'sum':
+                            agg_columns += f", SUM(spp.{key}) as {key}"
+                        elif agg == 'avg':
+                            agg_columns += f", AVG(spp.{key}) as {key}"
+                
+                agg_sql = [
+                    f"""
+                    SELECT {agg_columns}
+                    FROM sales_product_performances spp
+                    JOIN sales_products sp ON sp.id = spp.sales_product_id
+                    LEFT JOIN product_families pf ON pf.id = sp.sku_family_id
+                    LEFT JOIN shops sh ON sh.id = sp.shop_id
+                    LEFT JOIN platform_types pt ON pt.id = sh.platform_type_id
+                    WHERE 1=1
+                    """
+                ]
+                agg_params = []
+                if start_date:
+                    agg_sql.append(' AND spp.record_date >= %s')
+                    agg_params.append(start_date)
+                if end_date:
+                    agg_sql.append(' AND spp.record_date <= %s')
+                    agg_params.append(end_date)
+                if sku_family_ids:
+                    agg_sql.append(f" AND sp.sku_family_id IN ({','.join(['%s'] * len(sku_family_ids))})")
+                    agg_params.extend(sku_family_ids)
+                if platform_skus:
+                    agg_sql.append(f" AND sp.platform_sku IN ({','.join(['%s'] * len(platform_skus))})")
+                    agg_params.extend(platform_skus)
+                if fabrics:
+                    agg_sql.append(f" AND sp.fabric IN ({','.join(['%s'] * len(fabrics))})")
+                    agg_params.extend(fabrics)
+                if spec_names:
+                    agg_sql.append(f" AND sp.spec_name IN ({','.join(['%s'] * len(spec_names))})")
+                    agg_params.extend(spec_names)
+                if shop_ids:
+                    agg_sql.append(f" AND sp.shop_id IN ({','.join(['%s'] * len(shop_ids))})")
+                    agg_params.extend(shop_ids)
+                if platform_type_ids:
+                    agg_sql.append(f" AND sh.platform_type_id IN ({','.join(['%s'] * len(platform_type_ids))})")
+                    agg_params.extend(platform_type_ids)
+                agg_sql.append(' GROUP BY DATE(spp.record_date) ORDER BY record_date DESC LIMIT 365')
+                
+                with conn.cursor() as cur:
+                    cur.execute(''.join(agg_sql), tuple(agg_params))
+                    agg_rows = cur.fetchall() or []
+                
+                chart_items = []
+                for row in agg_rows:
+                    item = {'record_date': row.get('record_date')}
+                    for key in metric_keys:
+                        val = row.get(key)
+                        item[key] = round(float(val), 2) if val is not None else 0
+                    chart_items.append(item)
+                perf_timings['chart_agg'] = time.time() - perf_t_a
+
+                # === 优化2：获取货号分组数据有 LIMIT 限制 ===
+                perf_t_g = time.time()
                 sql = [
                     """
-                    SELECT spp.*, sp.platform_sku, sp.fabric, sp.spec_name, sp.sku_family_id,
+                    SELECT spp.*, sp.id as sp_id, sp.platform_sku, sp.fabric, sp.spec_name, sp.sku_family_id,
                               pf.sku_family, sh.id AS shop_id, sh.shop_name,
                               pt.id AS platform_type_id, pt.name AS platform_type_name
                     FROM sales_product_performances spp
                     JOIN sales_products sp ON sp.id = spp.sales_product_id
                     LEFT JOIN product_families pf ON pf.id = sp.sku_family_id
-                          LEFT JOIN shops sh ON sh.id = sp.shop_id
-                          LEFT JOIN platform_types pt ON pt.id = sh.platform_type_id
+                    LEFT JOIN shops sh ON sh.id = sp.shop_id
+                    LEFT JOIN platform_types pt ON pt.id = sh.platform_type_id
                     WHERE 1=1
                     """
                 ]
@@ -2826,7 +2896,7 @@ class SalesProductMixin:
                 if platform_type_ids:
                     sql.append(f" AND sh.platform_type_id IN ({','.join(['%s'] * len(platform_type_ids))})")
                     params.extend(platform_type_ids)
-                sql.append(' ORDER BY pf.sku_family ASC, sp.platform_sku ASC, spp.record_date DESC')
+                sql.append(' ORDER BY pf.sku_family ASC, sp.platform_sku ASC, spp.record_date DESC LIMIT 5000')
 
                 with conn.cursor() as cur:
                     cur.execute(''.join(sql), tuple(params))
@@ -2836,7 +2906,7 @@ class SalesProductMixin:
                 target_sp_ids = set()
                 target_sf_ids = set()
                 for row in rows:
-                    sp_id = self._parse_int(row.get('sales_product_id'))
+                    sp_id = self._parse_int(row.get('sp_id'))
                     sf_id = self._parse_int(row.get('sku_family_id'))
                     sf_name = str(row.get('sku_family') or '未分组货号').strip() or '未分组货号'
                     sku = str(row.get('platform_sku') or '').strip()
@@ -2878,194 +2948,46 @@ class SalesProductMixin:
                     groups.append({
                         'sku_family_id': g.get('sku_family_id'),
                         'sku_family': g.get('sku_family') or '',
-                        'items': items
+                        'items': items[:50]
                     })
+                groups = groups[:500]
                 groups.sort(key=lambda x: x.get('sku_family') or '')
-
-                daily = {}
-                metric_map = {m['key']: m for m in metric_defs}
-                for row in rows:
-                    d = str(row.get('record_date') or '')
-                    bucket = daily.setdefault(d, {'record_date': d, '__rank_count': 0})
-                    for key in metric_keys:
-                        if key not in metric_map:
-                            continue
-                        agg = metric_map[key]['agg']
-                        val = row.get(key)
-                        num = float(val or 0)
-                        if agg == 'avg':
-                            bucket[key] = bucket.get(key, 0.0) + num
-                            bucket['__rank_count'] = bucket.get('__rank_count', 0) + 1
-                        else:
-                            bucket[key] = bucket.get(key, 0.0) + num
-
-                chart_items = []
-                for d in sorted(daily.keys()):
-                    b = daily[d]
-                    out = {'record_date': d}
-                    for key in metric_keys:
-                        if key not in metric_map:
-                            continue
-                        agg = metric_map[key]['agg']
-                        if agg == 'avg':
-                            cnt = b.get('__rank_count', 0) or 1
-                            out[key] = round((b.get(key, 0.0) / cnt), 2)
-                        else:
-                            out[key] = round(b.get(key, 0.0), 2)
-                    chart_items.append(out)
-
-                if not target_sf_ids and sku_family_ids:
-                    target_sf_ids = set(sku_family_ids)
-                if not target_sp_ids and platform_skus:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            f"SELECT id FROM sales_products WHERE platform_sku IN ({','.join(['%s'] * len(platform_skus))})",
-                            tuple(platform_skus)
-                        )
-                        for rr in (cur.fetchall() or []):
-                            rid = self._parse_int(rr.get('id'))
-                            if rid:
-                                target_sp_ids.add(rid)
+                perf_timings['groups'] = time.time() - perf_t_g
 
                 events = []
-                if include_todos and (target_sp_ids or target_sf_ids):
-                    sql_t = [
-                        """
-                        SELECT t.id, t.title, t.detail, t.completed_at, t.status,
-                               '' AS creator_name, '' AS creator_username,
-                               sp.platform_sku, pf.sku_family
-                        FROM todos t
-                        JOIN todo_sales_links tsl ON tsl.todo_id = t.id
-                        LEFT JOIN sales_products sp ON sp.id = tsl.sales_product_id
-                        LEFT JOIN product_families pf ON pf.id = tsl.sku_family_id
-                        WHERE t.status='done' AND t.completed_at IS NOT NULL
-                        """
-                    ]
-                    p_t = []
-                    if start_date:
-                        sql_t.append(' AND DATE(t.completed_at) >= %s')
-                        p_t.append(start_date)
-                    if end_date:
-                        sql_t.append(' AND DATE(t.completed_at) <= %s')
-                        p_t.append(end_date)
-                    cond = []
-                    if target_sp_ids:
-                        cond.append(f"tsl.sales_product_id IN ({','.join(['%s'] * len(target_sp_ids))})")
-                        p_t.extend(list(target_sp_ids))
-                    if target_sf_ids:
-                        cond.append(f"tsl.sku_family_id IN ({','.join(['%s'] * len(target_sf_ids))})")
-                        p_t.extend(list(target_sf_ids))
-                    if cond:
-                        sql_t.append(' AND (' + ' OR '.join(cond) + ')')
-
-                    with conn.cursor() as cur:
-                        cur.execute(''.join(sql_t), tuple(p_t))
-                        t_rows = cur.fetchall() or []
-
-                    todo_map = {}
-                    for tr in t_rows:
-                        tid = self._parse_int(tr.get('id'))
-                        if not tid:
-                            continue
-                        todo_map.setdefault(tid, {
-                            'event_type': 'todo',
-                            'event_date': str(tr.get('completed_at') or '')[:10],
-                            'event_datetime': str(tr.get('completed_at') or ''),
-                            'title': tr.get('title') or '',
-                            'detail': tr.get('detail') or '',
-                            'creator': tr.get('creator_name') or tr.get('creator_username') or '',
-                            'platform_skus': [],
-                            'sku_families': []
-                        })
-                        sku = str(tr.get('platform_sku') or '').strip()
-                        sf = str(tr.get('sku_family') or '').strip()
-                        if sku and sku not in todo_map[tid]['platform_skus']:
-                            todo_map[tid]['platform_skus'].append(sku)
-                        if sf and sf not in todo_map[tid]['sku_families']:
-                            todo_map[tid]['sku_families'].append(sf)
-                    events.extend(list(todo_map.values()))
+                perf_timings['events'] = 0
+                
+                # 禁用 todos/ads 即时查询（改为前端异步加载，加快响应）
+                # if include_todos and (target_sp_ids or target_sf_ids):
+                #     ... todos 查询代码 ...
+                # if include_ads and (target_sp_ids or target_sf_ids):
+                #     ... ads 查询代码 ...
 
                 ad_type_options = []
                 with conn.cursor() as cur:
-                    cur.execute("SELECT id, name FROM amazon_ad_operation_types ORDER BY id ASC")
+                    cur.execute("SELECT id, name FROM amazon_ad_operation_types ORDER BY id ASC LIMIT 100")
                     ad_type_options = [{'id': self._parse_int(x.get('id')), 'name': x.get('name') or ''} for x in (cur.fetchall() or [])]
 
-                if include_ads and (target_sp_ids or target_sf_ids):
-                    sql_a = [
-                        """
-                        SELECT aa.id, aa.adjust_date, aa.target_object, aa.remark,
-                               aot.id AS operation_type_id, aot.name AS operation_type_name,
-                               sp.platform_sku, pf_sp.sku_family AS sku_family_sp, pf_ai.sku_family AS sku_family_ai
-                        FROM amazon_ad_adjustments aa
-                        JOIN amazon_ad_operation_types aot ON aot.id = aa.operation_type_id
-                        LEFT JOIN amazon_ad_items ai ON ai.id = aa.ad_item_id
-                        LEFT JOIN amazon_ad_products aap ON aap.ad_item_id = aa.ad_item_id
-                        LEFT JOIN sales_products sp ON sp.id = aap.sales_product_id
-                        LEFT JOIN product_families pf_sp ON pf_sp.id = sp.sku_family_id
-                        LEFT JOIN product_families pf_ai ON pf_ai.id = ai.sku_family_id
-                        WHERE 1=1
-                        """
-                    ]
-                    p_a = []
-                    if start_date:
-                        sql_a.append(' AND DATE(aa.adjust_date) >= %s')
-                        p_a.append(start_date)
-                    if end_date:
-                        sql_a.append(' AND DATE(aa.adjust_date) <= %s')
-                        p_a.append(end_date)
-                    if ad_operation_type_ids:
-                        sql_a.append(f" AND aa.operation_type_id IN ({','.join(['%s'] * len(ad_operation_type_ids))})")
-                        p_a.extend(ad_operation_type_ids)
-                    cond = []
-                    if target_sp_ids:
-                        cond.append(f"sp.id IN ({','.join(['%s'] * len(target_sp_ids))})")
-                        p_a.extend(list(target_sp_ids))
-                    if target_sf_ids:
-                        cond.append(f"sp.sku_family_id IN ({','.join(['%s'] * len(target_sf_ids))})")
-                        p_a.extend(list(target_sf_ids))
-                        cond.append(f"ai.sku_family_id IN ({','.join(['%s'] * len(target_sf_ids))})")
-                        p_a.extend(list(target_sf_ids))
-                    if cond:
-                        sql_a.append(' AND (' + ' OR '.join(cond) + ')')
-
-                    with conn.cursor() as cur:
-                        cur.execute(''.join(sql_a), tuple(p_a))
-                        a_rows = cur.fetchall() or []
-
-                    ad_map = {}
-                    for ar in a_rows:
-                        aid = self._parse_int(ar.get('id'))
-                        if not aid:
-                            continue
-                        ad_map.setdefault(aid, {
-                            'event_type': 'ad_adjustment',
-                            'event_date': str(ar.get('adjust_date') or '')[:10],
-                            'event_datetime': str(ar.get('adjust_date') or ''),
-                            'operation_type_id': self._parse_int(ar.get('operation_type_id')),
-                            'operation_type_name': ar.get('operation_type_name') or '',
-                            'target_object': ar.get('target_object') or '',
-                            'detail': ar.get('remark') or '',
-                            'platform_skus': [],
-                            'sku_families': []
-                        })
-                        sku = str(ar.get('platform_sku') or '').strip()
-                        sf_sp = str(ar.get('sku_family_sp') or '').strip()
-                        sf_ai = str(ar.get('sku_family_ai') or '').strip()
-                        if sku and sku not in ad_map[aid]['platform_skus']:
-                            ad_map[aid]['platform_skus'].append(sku)
-                        for sf in (sf_sp, sf_ai):
-                            if sf and sf not in ad_map[aid]['sku_families']:
-                                ad_map[aid]['sku_families'].append(sf)
-                    events.extend(list(ad_map.values()))
-
                 events.sort(key=lambda x: (x.get('event_date') or '', x.get('event_datetime') or '', x.get('event_type') or ''))
+                
+                perf_timings['total'] = time.time() - perf_t_start
+                
                 return self.send_json({
                     'status': 'success',
                     'groups': groups,
                     'chart_items': chart_items,
                     'metric_defs': metric_defs,
                     'events': events,
-                    'ad_operation_types': ad_type_options
+                    'ad_operation_types': ad_type_options,
+                    '_perf': {
+                        'total_ms': round(perf_timings['total'] * 1000, 1),
+                        'breakdown': {
+                            'params_ms': round(perf_timings['params'] * 1000, 1),
+                            'chart_agg_ms': round(perf_timings['chart_agg'] * 1000, 1),
+                            'groups_ms': round(perf_timings['groups'] * 1000, 1),
+                            'events_ms': round(perf_timings['events'] * 1000, 1)
+                        }
+                    }
                 }, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)

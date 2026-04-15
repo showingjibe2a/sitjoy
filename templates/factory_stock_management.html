@@ -56,6 +56,7 @@
           <span class="pm-divider"></span>
           <button class="btn-accent" onclick="openCreateModal()">新增</button>
           <button class="btn-secondary" onclick="downloadTemplate()">下载模板</button>
+          <button class="btn-secondary" onclick="downloadAllStockData()">下载所有库存数据</button>
           <button class="btn-secondary" onclick="triggerImport()">上传模板</button>
           <input id="importFileInput" type="file" accept=".xlsx,.xlsm" style="display:none;">
         </div>
@@ -243,6 +244,10 @@ function downloadTemplate(){
   window.location.href = `/api/factory-stock-template${query}`;
 }
 
+function downloadAllStockData(){
+  window.location.href = '/api/factory-stock?action=download_all_stock_data';
+}
+
 function bindRowSelectionEvents(){
   document.querySelectorAll('.stock-row-checkbox').forEach(el => {
     el.addEventListener('change', function(){
@@ -413,6 +418,7 @@ function renderFactoryStockTable(items){
     const draft = getStockDraft(item.id) || { quantity: Number(item.quantity || 0), notes: item.notes || '' };
     const isOnMarket = Number(item.is_on_market || 0) ? 1 : 0;
     const colorValue = safeColorValue(item.representative_color);
+    const colorText = String(item.representative_color || '').trim();
     const colorHtml = colorValue
       ? `<span class="sku-color-chip-wrap"><span class="sku-color-chip" style="background:${colorValue};"></span></span>`
       : '<span class="sku-color-empty">-</span>';
@@ -426,7 +432,7 @@ function renderFactoryStockTable(items){
           </div>
         </td>
         <td>${item.sku || ''}</td>
-        <td>${colorHtml}</td>
+        <td data-sort-value="${String(colorText || '-').replace(/"/g, '&quot;')}" data-export-value="${String(colorText || '-').replace(/"/g, '&quot;')}">${colorHtml}</td>
         <td>${item.factory_name || ''}</td>
         <td class="preview-edit-cell"><input type="number" min="0" step="1" class="inline-input preview-edit-input stock-edit-field" data-id="${item.id}" data-field="quantity" value="${Number(draft.quantity || 0)}"></td>
         <td class="preview-edit-cell"><input type="text" class="inline-input preview-edit-input stock-edit-field" data-id="${item.id}" data-field="notes" value="${String(draft.notes || '').replace(/"/g, '&quot;')}"></td>

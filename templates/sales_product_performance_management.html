@@ -595,6 +595,53 @@
         .perf-group-header-wrap .perf-table {
             min-width: 1180px;
         }
+        .perf-group-tree-wrap {
+            overflow: auto;
+            border: 1px solid rgba(207, 199, 189, 0.76);
+            border-radius: 8px;
+            background: #fff;
+            max-width: 100%;
+        }
+        .perf-group-parent-row {
+            background: #f7f4ef;
+            cursor: pointer;
+            font-weight: 700;
+        }
+        .perf-group-parent-row:hover {
+            background: #f1ece4;
+        }
+        .perf-group-toggle {
+            border: 1px solid var(--morandi-sand);
+            border-radius: 999px;
+            background: #fff;
+            color: var(--morandi-ink);
+            min-width: 28px;
+            height: 24px;
+            padding: 0 8px;
+            cursor: pointer;
+            font-size: 0.78rem;
+            line-height: 1;
+        }
+        .perf-group-child-row {
+            display: none;
+            background: #fff;
+        }
+        .perf-group-child-row.open {
+            display: table-row;
+        }
+        .perf-group-child-box {
+            padding: 0.45rem 0.5rem;
+            background: #fff;
+        }
+        .perf-group-child-title {
+            color: var(--morandi-slate);
+            font-size: 0.82rem;
+            margin-bottom: 0.35rem;
+        }
+        .perf-group-child-box .perf-table {
+            min-width: 1120px;
+            font-size: 0.86rem;
+        }
 
         .perf-table-wrap {
             overflow: auto;
@@ -989,6 +1036,8 @@
             chartDataByDate: {},
             selectedChartDate: '',
             selectedChartDateOpen: false,
+            lastDashboardPayload: null,
+            resizeRenderTimer: null,
             lastGroups: [],
             groupSkuRowLimit: 20,
             groupPaging: {},
@@ -1828,51 +1877,58 @@
             state.lastGroups = Array.isArray(groups) ? groups : [];
             const host = document.getElementById('groupContainer');
             const metricKeys = state.metricOrder.slice();
-            const headCols = ['货号', 'SKU', '面料', '规格', '日期范围', '记录数'].concat(metricKeys.map(k => (state.metricMap[k] && state.metricMap[k].label) || k));
             host.innerHTML = `
                 <div class="perf-panel-caption">货号分组明细</div>
-                <div class="perf-group-meta" style="margin-bottom:0.35rem;">按所选日期范围汇总到 SKU 维度</div>
+                <div class="perf-group-meta" style="margin-bottom:0.35rem;">货号行显示汇总，点击展开可查看平台SKU明细</div>
             `;
             if (!state.lastGroups.length) {
                 host.insertAdjacentHTML('beforeend', '<p class="status-tip">暂无符合筛选条件的数据</p>');
                 return;
             }
 
-            state.lastGroups.forEach(g => {
-                const groupKey = String(g.sku_family_id || g.sku_family || 'group').trim();
-                const details = document.createElement('details');
-                details.dataset.skuFamily = g.sku_family || '';
-                details.open = false;
-                const summary = document.createElement('summary');
+            const wrap = document.createElement('div');
+            wrap.className = 'perf-group-tree-wrap';
+            const table = document.createElement('table');
+            table.className = 'perf-table pm-table';
+            table.innerHTML = `
+                <thead>
+                    <tr>
+                        <th style="width:72px;">展开</th>
+                        <th>货号</th>
+                        <th style="width:100px;">SKU数</th>
+                        <th style="width:110px;">记录数</th>
+                        <th style="width:110px;">销量</th>
+                        <th style="width:130px;">净销售额</th>
+                        <th style="width:100px;">订单量</th>
+                        <th style="width:120px;">广告花费</th>
+                        <th style="width:130px;">广告销售额</th>
+                    </tr>
+                </thead>
+                <tbody id="perfGroupTreeBody"></tbody>
+            `;
+            const tbody = table.querySelector('#perfGroupTreeBody');
+
+            state.lastGroups.forEach((g, idx) => {
+                const groupKey = `grp_${idx}_${String(g.sku_family_id || '').trim()}`;
+                const skuMap = {};
                 const sum = {
                     record_count: 0,
                     sku_count: 0,
                     sales_qty: 0,
                     net_sales_amount: 0,
                     order_qty: 0,
-                    session_total: 0,
-                    ad_impressions: 0,
-                    ad_clicks: 0,
-                    ad_orders: 0,
                     ad_spend: 0,
-                    ad_sales_amount: 0,
-                    refund_amount: 0
+                    ad_sales_amount: 0
                 };
-                const skuMap = {};
                 (g.items || []).forEach(it => {
                     (it.records || []).forEach(rec => {
-                        const latest = rec || {};
+                        const row = rec || {};
                         sum.record_count += 1;
-                        sum.sales_qty += Number(latest.sales_qty || 0);
-                        sum.net_sales_amount += Number(latest.net_sales_amount || 0);
-                        sum.order_qty += Number(latest.order_qty || 0);
-                        sum.session_total += Number(latest.session_total || 0);
-                        sum.ad_impressions += Number(latest.ad_impressions || 0);
-                        sum.ad_clicks += Number(latest.ad_clicks || 0);
-                        sum.ad_orders += Number(latest.ad_orders || 0);
-                        sum.ad_spend += Number(latest.ad_spend || 0);
-                        sum.ad_sales_amount += Number(latest.ad_sales_amount || 0);
-                        sum.refund_amount += Number(latest.refund_amount || 0);
+                        sum.sales_qty += Number(row.sales_qty || 0);
+                        sum.net_sales_amount += Number(row.net_sales_amount || 0);
+                        sum.order_qty += Number(row.order_qty || 0);
+                        sum.ad_spend += Number(row.ad_spend || 0);
+                        sum.ad_sales_amount += Number(row.ad_sales_amount || 0);
 
                         const sku = String(it.platform_sku || '').trim() || '-';
                         const skuRow = skuMap[sku] || (skuMap[sku] = {
@@ -1892,77 +1948,122 @@
                             ad_spend: 0,
                             ad_sales_amount: 0,
                             refund_amount: 0,
+                            sub_category_rank_sum: 0,
+                            sub_category_rank_count: 0,
                             rows: 0
                         });
                         skuRow.rows += 1;
-                        skuRow.recordDates.add(String(latest.record_date || '').slice(0, 10));
-                        const dateText = String(latest.record_date || '').slice(0, 10);
+                        const dateText = String(row.record_date || '').slice(0, 10);
+                        if (dateText) skuRow.recordDates.add(dateText);
                         if (!skuRow.minDate || (dateText && dateText < skuRow.minDate)) skuRow.minDate = dateText;
                         if (!skuRow.maxDate || (dateText && dateText > skuRow.maxDate)) skuRow.maxDate = dateText;
-                        skuRow.sales_qty += Number(latest.sales_qty || 0);
-                        skuRow.net_sales_amount += Number(latest.net_sales_amount || 0);
-                        skuRow.order_qty += Number(latest.order_qty || 0);
-                        skuRow.session_total += Number(latest.session_total || 0);
-                        skuRow.ad_impressions += Number(latest.ad_impressions || 0);
-                        skuRow.ad_clicks += Number(latest.ad_clicks || 0);
-                        skuRow.ad_orders += Number(latest.ad_orders || 0);
-                        skuRow.ad_spend += Number(latest.ad_spend || 0);
-                        skuRow.ad_sales_amount += Number(latest.ad_sales_amount || 0);
-                        skuRow.refund_amount += Number(latest.refund_amount || 0);
+                        skuRow.sales_qty += Number(row.sales_qty || 0);
+                        skuRow.net_sales_amount += Number(row.net_sales_amount || 0);
+                        skuRow.order_qty += Number(row.order_qty || 0);
+                        skuRow.session_total += Number(row.session_total || 0);
+                        skuRow.ad_impressions += Number(row.ad_impressions || 0);
+                        skuRow.ad_clicks += Number(row.ad_clicks || 0);
+                        skuRow.ad_orders += Number(row.ad_orders || 0);
+                        skuRow.ad_spend += Number(row.ad_spend || 0);
+                        skuRow.ad_sales_amount += Number(row.ad_sales_amount || 0);
+                        skuRow.refund_amount += Number(row.refund_amount || 0);
+                        const rankNum = Number(row.sub_category_rank);
+                        if (Number.isFinite(rankNum) && rankNum > 0) {
+                            skuRow.sub_category_rank_sum += rankNum;
+                            skuRow.sub_category_rank_count += 1;
+                        }
                     });
                 });
-                const aggregatedRows = Object.values(skuMap).sort((a, b) => String(b.maxDate || '').localeCompare(String(a.maxDate || '')) || String(a.platform_sku || '').localeCompare(String(b.platform_sku || '')));
-                sum.sku_count = aggregatedRows.length;
-                summary.innerHTML = `
-                    <div class="perf-group-summary-grid">
-                        <div class="perf-group-summary-item"><span class="label">货号</span><span class="value">${g.sku_family || '未分组货号'}</span></div>
-                        <div class="perf-group-summary-item"><span class="label">SKU数 / 记录数</span><span class="value">${sum.sku_count} / ${sum.record_count}</span></div>
-                        <div class="perf-group-summary-item"><span class="label">销量</span><span class="value">${formatNumber(sum.sales_qty)}</span></div>
-                        <div class="perf-group-summary-item"><span class="label">净销售额</span><span class="value">${formatNumber(sum.net_sales_amount)}</span></div>
-                        <div class="perf-group-summary-item"><span class="label">订单</span><span class="value">${formatNumber(sum.order_qty)}</span></div>
-                        <div class="perf-group-summary-item"><span class="label">广告花费</span><span class="value">${formatNumber(sum.ad_spend)}</span></div>
-                        <div class="perf-group-summary-item"><span class="label">广告销售额</span><span class="value">${formatNumber(sum.ad_sales_amount)}</span></div>
-                    </div>
+                const childRows = Object.values(skuMap).map(row => {
+                    if (row.sub_category_rank_count > 0) {
+                        row.sub_category_rank = row.sub_category_rank_sum / row.sub_category_rank_count;
+                    }
+                    return row;
+                }).sort((a, b) => String(b.maxDate || '').localeCompare(String(a.maxDate || '')) || String(a.platform_sku || '').localeCompare(String(b.platform_sku || '')));
+                sum.sku_count = childRows.length;
+
+                const parentTr = document.createElement('tr');
+                parentTr.className = 'perf-group-parent-row';
+                parentTr.dataset.groupKey = groupKey;
+                parentTr.innerHTML = `
+                    <td><button type="button" class="perf-group-toggle" data-group-key="${groupKey}">展开</button></td>
+                    <td>${g.sku_family || '未分组货号'}</td>
+                    <td>${sum.sku_count}</td>
+                    <td>${sum.record_count}</td>
+                    <td>${formatNumber(sum.sales_qty)}</td>
+                    <td>${formatNumber(sum.net_sales_amount)}</td>
+                    <td>${formatNumber(sum.order_qty)}</td>
+                    <td>${formatNumber(sum.ad_spend)}</td>
+                    <td>${formatNumber(sum.ad_sales_amount)}</td>
                 `;
-                details.appendChild(summary);
+                tbody.appendChild(parentTr);
 
-                const wrap = document.createElement('div');
-                wrap.className = 'perf-group-content';
-                const tableWrap = document.createElement('div');
-                tableWrap.className = 'perf-table-wrap';
-                const table = document.createElement('table');
-                const safeGroupKey = String(groupKey || 'group').replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 56) || 'group';
-                table.id = `perfGroupTable_${safeGroupKey}`;
-                table.className = 'perf-table pm-table';
-                table.innerHTML = `<thead><tr>${headCols.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody></tbody>`;
-                const tbody = table.querySelector('tbody');
+                const childTr = document.createElement('tr');
+                childTr.className = 'perf-group-child-row';
+                childTr.dataset.groupKey = groupKey;
 
-                if (!aggregatedRows.length) {
-                    tbody.innerHTML = '<tr><td colspan="999" style="text-align:center; color:#888;">暂无明细</td></tr>';
-                } else {
-                    aggregatedRows.forEach(row => {
-                        const cells = [
-                            g.sku_family || '-',
+                const childHeadCols = ['平台SKU', '面料', '规格', '日期范围', '记录数'].concat(metricKeys.map(k => (state.metricMap[k] && state.metricMap[k].label) || k));
+                const childRowsHtml = childRows.length
+                    ? childRows.map(row => {
+                        const baseCells = [
                             row.platform_sku || '-',
                             row.fabric || '-',
                             row.spec_name || '-',
                             row.minDate && row.maxDate ? `${row.minDate} ~ ${row.maxDate}` : (row.maxDate || row.minDate || '-'),
                             row.rows || 0
-                        ].concat(metricKeys.map(k => formatMetricValue(resolveMetricValue(row, k), k)));
-                        const tr = document.createElement('tr');
-                        tr.dataset.platformSku = row.platform_sku || '';
-                        tr.dataset.skuFamily = g.sku_family || '';
-                        tr.dataset.recordDates = Array.from(row.recordDates || []).join('|');
-                        tr.innerHTML = cells.map(x => `<td>${x}</td>`).join('');
-                        tbody.appendChild(tr);
-                    });
-                }
+                        ];
+                        const metricCells = metricKeys.map(k => formatMetricValue(resolveMetricValue(row, k), k));
+                        return `<tr>${baseCells.concat(metricCells).map(v => `<td>${v}</td>`).join('')}</tr>`;
+                    }).join('')
+                    : '<tr><td colspan="999" style="text-align:center;color:#888;">暂无平台明细</td></tr>';
 
-                tableWrap.appendChild(table);
-                wrap.appendChild(tableWrap);
-                details.appendChild(wrap);
-                host.appendChild(details);
+                childTr.innerHTML = `
+                    <td colspan="9">
+                        <div class="perf-group-child-box">
+                            <div class="perf-group-child-title">${g.sku_family || '未分组货号'} 的平台SKU明细</div>
+                            <div class="perf-table-wrap">
+                                <table class="perf-table pm-table">
+                                    <thead><tr>${childHeadCols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
+                                    <tbody>${childRowsHtml}</tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(childTr);
             });
+
+            wrap.appendChild(table);
+            host.appendChild(wrap);
+
+            host.querySelectorAll('.perf-group-toggle').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const key = this.getAttribute('data-group-key') || '';
+                    if (!key) return;
+                    const row = host.querySelector(`.perf-group-child-row[data-group-key="${key}"]`);
+                    if (!row) return;
+                    const willOpen = !row.classList.contains('open');
+                    row.classList.toggle('open', willOpen);
+                    this.textContent = willOpen ? '收起' : '展开';
+                });
+            });
+        }
+
+        function renderDashboardPayload(data) {
+            const payload = data || {};
+            state.lastDashboardPayload = {
+                chart_items: payload.chart_items || [],
+                events: payload.events || [],
+                groups: payload.groups || []
+            };
+            const transformed = aggregateChartByGranularity(state.lastDashboardPayload.chart_items, state.lastDashboardPayload.events, state.chartGranularity);
+            const titleEl = document.getElementById('chartTitle');
+            if (titleEl) titleEl.textContent = getChartTitleByGranularity(state.chartGranularity);
+            renderLegend();
+            renderChart(transformed.items || [], transformed.events || []);
+            renderGroups(state.lastDashboardPayload.groups || []);
+            const status = document.getElementById('dataStatus');
+            if (status) status.textContent = `货号组: ${(state.lastDashboardPayload.groups || []).length}，事件: ${(state.lastDashboardPayload.events || []).length}`;
         }
 
         async function loadDashboard() {
@@ -1976,13 +2077,7 @@
                 if (!resp.ok || data.status !== 'success') {
                     throw new Error(data.message || '加载看板失败');
                 }
-                const transformed = aggregateChartByGranularity(data.chart_items || [], data.events || [], state.chartGranularity);
-                const titleEl = document.getElementById('chartTitle');
-                if (titleEl) titleEl.textContent = getChartTitleByGranularity(state.chartGranularity);
-                renderLegend();
-                renderChart(transformed.items || [], transformed.events || []);
-                renderGroups(data.groups || []);
-                status.textContent = `货号组: ${(data.groups || []).length}，事件: ${(data.events || []).length}`;
+                renderDashboardPayload(data);
             } catch (err) {
                 status.textContent = err.message || '加载失败';
                 document.getElementById('groupContainer').innerHTML = '<div class="perf-panel-caption">货号分组明细</div><p class="status-tip">加载失败，请稍后重试</p>';
@@ -2684,7 +2779,19 @@
         window.deleteSalesProductPerformance = deleteSalesProductPerformance;
 
         window.addEventListener('resize', () => {
-            if (state.dashboardQueried) loadDashboard();
+            if (!state.dashboardQueried || !state.lastDashboardPayload) return;
+            if (state.resizeRenderTimer) {
+                clearTimeout(state.resizeRenderTimer);
+            }
+            state.resizeRenderTimer = setTimeout(() => {
+                const transformed = aggregateChartByGranularity(
+                    state.lastDashboardPayload.chart_items || [],
+                    state.lastDashboardPayload.events || [],
+                    state.chartGranularity
+                );
+                renderChart(transformed.items || [], transformed.events || []);
+                renderGroups(state.lastDashboardPayload.groups || []);
+            }, 120);
         });
         window.addEventListener('load', initPage);
     </script>

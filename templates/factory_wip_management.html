@@ -27,6 +27,7 @@
           <span class="pm-divider"></span>
           <button class="btn-accent" onclick="openCreateModal()">新增</button>
           <button class="btn-secondary" onclick="downloadTemplate()">下载模板</button>
+          <button class="btn-secondary" onclick="downloadAllUnfinishedWipData()">下载所有未完工数据</button>
           <button class="btn-secondary" onclick="triggerImport()">上传模板</button>
           <input id="importFileInput" type="file" accept=".xlsx,.xlsm" style="display:none;">
         </div>
@@ -38,12 +39,12 @@
         <thead>
           <tr>
             <th style="width:54px; text-align:center;"><input type="checkbox" id="wipSelectAll"></th>
-            <th style="width:150px;">在市状态</th>
-            <th>SKU</th>
-            <th style="width:120px;">颜色</th>
             <th>工厂</th>
             <th style="width:160px;">订单号</th>
             <th style="width:160px;">合同编号</th>
+            <th style="width:120px;">颜色</th>
+            <th>SKU</th>
+            <th style="width:150px;">在市状态</th>
             <th style="width:120px;">数量</th>
             <th style="width:140px;">预计完工日期</th>
             <th style="width:170px;">最初预计完工日期</th>
@@ -176,18 +177,14 @@ let selectedWipIds = new Set();
 let factoryWipEditDraft = {};
 let modalInitialExpectedLocked = '';
 let factoryWipColumnFilters = {};
-let activeWipFilterColumn = null;
-let factoryWipFilterOptionCache = new Map();
-let factoryWipFilterOptionRequest = 0;
-let factoryWipFilterOptionTimer = null;
 
 const WIP_FILTER_COLUMNS = {
-  1: { key: 'is_on_market', label: '在市状态', finite: true },
-  2: { key: 'sku', label: 'SKU' },
-  3: { key: 'representative_color', label: '颜色' },
-  4: { key: 'factory_name', label: '工厂', finite: true },
-  5: { key: 'order_no', label: '订单号' },
-  6: { key: 'contract_no', label: '合同编号' },
+  1: { key: 'factory_name', label: '工厂', finite: true },
+  2: { key: 'order_no', label: '订单号' },
+  3: { key: 'contract_no', label: '合同编号' },
+  4: { key: 'representative_color', label: '颜色' },
+  5: { key: 'sku', label: 'SKU' },
+  6: { key: 'is_on_market', label: '在市状态', finite: true },
   7: { key: 'quantity', label: '数量' },
   8: { key: 'expected_completion_date', label: '预计完工日期' },
   9: { key: 'initial_expected_completion_date', label: '最初预计完工日期' },
@@ -202,8 +199,8 @@ const $ = (s) => document.querySelector(s);
 
 function getWipFilterText(item, colIndex){
   if(!item) return '';
-  if(colIndex === 1) return Number(item.is_on_market || 0) ? '在市' : '下市';
-  if(colIndex === 3) return String(item.representative_color || '').trim() || '-';
+  if(colIndex === 6) return Number(item.is_on_market || 0) ? '在市' : '下市';
+  if(colIndex === 4) return String(item.representative_color || '').trim() || '-';
   if(colIndex === 10) return Number(item.is_completed || 0) ? '是' : '否';
   if(colIndex === 13) return formatDateTime(item.created_at || '');
   if(colIndex === 14) return formatDateTime(item.update_time || item.updated_at || '');
@@ -251,220 +248,7 @@ function applyWipColumnFilters(rows){
 }
 
 function clearWipFilterOptionCache(){
-  factoryWipFilterOptionCache = new Map();
-}
-
-function getWipFilterOptionCacheKey(colIndex, query, exact){
-  return `${Number(colIndex) || 0}|${String(query || '').trim().toLowerCase()}|${exact ? 1 : 0}`;
-}
-
-function normalizeWipFilterOptionItem(item, colIndex){
-  if(!item) return null;
-  const rawValue = String(item.value == null ? '' : item.value).trim();
-  if(!rawValue) return null;
-  const label = String(item.label == null || item.label === '' ? rawValue : item.label).trim() || rawValue;
-  const count = Number(item.count || 0) || 0;
-  const column = Number(colIndex) || 0;
-  return { value: rawValue, label, count, column };
-}
-
-function setWipFilterOptionsLoading(message){
-  const optionsEl = document.getElementById('wipFilterOptions');
-  const statusEl = document.getElementById('wipFilterStatus');
-  if(statusEl) statusEl.textContent = message || '';
-  if(optionsEl){
-    optionsEl.innerHTML = '<div class="wip-col-filter-option" style="opacity:.72;">加载中...</div>';
-  }
-}
-
-function renderWipFilterOptions(colIndex, items){
-  const optionsEl = document.getElementById('wipFilterOptions');
-  const statusEl = document.getElementById('wipFilterStatus');
-  if(!optionsEl) return;
-  const state = getWipFilterState(colIndex);
-  const selectedSet = new Set(Array.isArray(state.selected) ? state.selected.map(v => String(v)) : []);
-  const normalized = [];
-  const seen = new Set();
-  (Array.isArray(items) ? items : []).forEach(item => {
-    const normalizedItem = normalizeWipFilterOptionItem(item, colIndex);
-    if(!normalizedItem) return;
-    if(seen.has(normalizedItem.value)) return;
-    seen.add(normalizedItem.value);
-    normalized.push(normalizedItem);
-  });
-  selectedSet.forEach(value => {
-    if(seen.has(value)) return;
-    seen.add(value);
-    normalized.unshift({ value, label: value, count: 0, column: Number(colIndex) || 0, pinned: true });
-  });
-  const total = normalized.length;
-  if(statusEl){
-    statusEl.textContent = total ? `显示 ${total} 项${total >= 100 ? '，可继续输入缩小范围' : ''}` : '暂无匹配项';
-  }
-  optionsEl.innerHTML = total
-    ? normalized.map(item => {
-        const checked = selectedSet.has(item.value) ? 'checked' : '';
-        const countText = item.count > 0 ? ` <span style="color:var(--morandi-slate);">(${item.count})</span>` : '';
-        const label = String(item.label || item.value || '-').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        const value = String(item.value).replace(/"/g, '&quot;');
-        return `<label class="wip-col-filter-option"><input type="checkbox" data-value="${value}" ${checked}>${label}${countText}</label>`;
-      }).join('')
-    : '<div class="wip-col-filter-option" style="opacity:.7;">暂无可选项</div>';
-}
-
-function scheduleWipFilterOptionsLoad(colIndex, force = false){
-  if(colIndex == null) return;
-  const popup = document.getElementById('wipColFilterPopup');
-  if(!popup || !popup.classList.contains('open')) return;
-  if(factoryWipFilterOptionTimer){
-    clearTimeout(factoryWipFilterOptionTimer);
-    factoryWipFilterOptionTimer = null;
-  }
-  factoryWipFilterOptionTimer = setTimeout(() => {
-    loadWipFilterOptions(colIndex, force);
-  }, 160);
-}
-
-function loadWipFilterOptions(colIndex, force = false){
-  if(!WIP_FILTER_COLUMNS[colIndex]) return Promise.resolve([]);
-  const state = getWipFilterState(colIndex);
-  const query = String(state.query || '').trim();
-  const exact = !!state.exact;
-  const cacheKey = getWipFilterOptionCacheKey(colIndex, query, exact);
-  if(!force && factoryWipFilterOptionCache.has(cacheKey)){
-    renderWipFilterOptions(colIndex, factoryWipFilterOptionCache.get(cacheKey));
-    return Promise.resolve(factoryWipFilterOptionCache.get(cacheKey));
-  }
-  const requestId = ++factoryWipFilterOptionRequest;
-  setWipFilterOptionsLoading('加载筛选项...');
-  const params = new URLSearchParams({ action: 'filter_options', column: String(colIndex), q: query, exact: exact ? '1' : '0', limit: '120' });
-  return fetch(`/api/factory-wip?${params.toString()}`)
-    .then(r => r.json())
-    .then(d => {
-      if(requestId !== factoryWipFilterOptionRequest) return [];
-      if(d.status !== 'success') throw new Error(d.message || '加载筛选项失败');
-      const values = Array.isArray(d.values) ? d.values : [];
-      factoryWipFilterOptionCache.set(cacheKey, values);
-      renderWipFilterOptions(colIndex, values);
-      return values;
-    })
-    .catch(err => {
-      if(requestId !== factoryWipFilterOptionRequest) return [];
-      const statusEl = document.getElementById('wipFilterStatus');
-      if(statusEl) statusEl.textContent = err.message || '加载筛选项失败';
-      const optionsEl = document.getElementById('wipFilterOptions');
-      if(optionsEl){
-        optionsEl.innerHTML = '<div class="wip-col-filter-option" style="opacity:.7;">加载失败</div>';
-      }
-      return [];
-    });
-}
-
-function ensureWipColumnFilterPopup(){
-  let popup = document.getElementById('wipColFilterPopup');
-  if(popup) return popup;
-  popup = document.createElement('div');
-  popup.id = 'wipColFilterPopup';
-  popup.className = 'wip-col-filter-pop';
-  popup.innerHTML = `
-    <div class="wip-col-filter-title" id="wipFilterTitle">列筛选</div>
-    <div class="wip-col-filter-row">
-      <input id="wipFilterQuery" type="text" class="inline-input" placeholder="输入筛选关键词（模糊匹配）">
-    </div>
-    <div class="wip-col-filter-row">
-      <label class="wip-col-filter-option" style="padding:0;">
-        <input id="wipFilterExact" type="checkbox">精确匹配
-      </label>
-    </div>
-    <div class="wip-col-filter-status" id="wipFilterStatus"></div>
-    <div class="wip-col-filter-options" id="wipFilterOptions"></div>
-    <div class="wip-col-filter-actions">
-      <button type="button" class="btn-secondary" id="wipFilterResetBtn">重置</button>
-      <button type="button" class="btn-primary" id="wipFilterApplyBtn">应用</button>
-    </div>
-  `;
-  document.body.appendChild(popup);
-
-  const apply = () => {
-    if(activeWipFilterColumn == null) return;
-    const queryEl = document.getElementById('wipFilterQuery');
-    const exactEl = document.getElementById('wipFilterExact');
-    const optionsEl = document.getElementById('wipFilterOptions');
-    const selected = Array.from(optionsEl.querySelectorAll('input[type="checkbox"][data-value]:checked')).map(cb => String(cb.dataset.value || ''));
-    const state = getWipFilterState(activeWipFilterColumn);
-    state.query = String(queryEl ? queryEl.value : '').trim();
-    state.exact = !!(exactEl && exactEl.checked);
-    state.selected = selected;
-    popup.classList.remove('open');
-    activeWipFilterColumn = null;
-    refreshWipFilterButtons();
-    renderFactoryWipTable(applyWipColumnFilters(listCache));
-    syncFactoryWipSaveBar();
-  };
-
-  const reset = () => {
-    if(activeWipFilterColumn == null) return;
-    const state = getWipFilterState(activeWipFilterColumn);
-    state.query = '';
-    state.exact = false;
-    state.selected = [];
-    popup.classList.remove('open');
-    activeWipFilterColumn = null;
-    refreshWipFilterButtons();
-    renderFactoryWipTable(applyWipColumnFilters(listCache));
-    syncFactoryWipSaveBar();
-  };
-
-  popup.querySelector('#wipFilterApplyBtn').addEventListener('click', apply);
-  popup.querySelector('#wipFilterResetBtn').addEventListener('click', reset);
-  const queryInput = popup.querySelector('#wipFilterQuery');
-  const exactInput = popup.querySelector('#wipFilterExact');
-  if(queryInput){
-    queryInput.addEventListener('input', () => {
-      if(activeWipFilterColumn == null) return;
-      const state = getWipFilterState(activeWipFilterColumn);
-      state.query = String(queryInput.value || '').trim();
-      scheduleWipFilterOptionsLoad(activeWipFilterColumn, false);
-    });
-  }
-  if(exactInput){
-    exactInput.addEventListener('change', () => {
-      if(activeWipFilterColumn == null) return;
-      const state = getWipFilterState(activeWipFilterColumn);
-      state.exact = !!exactInput.checked;
-      scheduleWipFilterOptionsLoad(activeWipFilterColumn, false);
-    });
-  }
-  return popup;
-}
-
-function openWipFilterPopup(btn, colIndex){
-  if(!WIP_FILTER_COLUMNS[colIndex]) return;
-  const popup = ensureWipColumnFilterPopup();
-  activeWipFilterColumn = colIndex;
-  const state = getWipFilterState(colIndex);
-  const title = document.getElementById('wipFilterTitle');
-  const queryEl = document.getElementById('wipFilterQuery');
-  const exactEl = document.getElementById('wipFilterExact');
-  if(title) title.textContent = `${WIP_FILTER_COLUMNS[colIndex].label || '列'}筛选`;
-  if(queryEl) queryEl.value = String(state.query || '');
-  if(exactEl) exactEl.checked = !!state.exact;
-  popup.classList.add('open');
-  setWipFilterOptionsLoading('加载筛选项...');
-
-  const rect = btn.getBoundingClientRect();
-  const top = rect.bottom + 6;
-  const popupWidth = Math.max(220, popup.offsetWidth || 0);
-  const left = Math.min(window.innerWidth - popupWidth - 10, Math.max(10, rect.left));
-  popup.style.top = `${Math.max(10, top)}px`;
-  popup.style.left = `${Math.max(10, left)}px`;
-  loadWipFilterOptions(colIndex, false);
-}
-
-function closeWipFilterPopup(){
-  const popup = document.getElementById('wipColFilterPopup');
-  if(popup) popup.classList.remove('open');
-  activeWipFilterColumn = null;
+  // 统一筛选组件由 window.SitjoyColumnFilter 管理，此处保留空实现用于兼容调用点。
 }
 
 function refreshWipFilterButtons(){
@@ -480,13 +264,11 @@ function installWipColumnFilterButtons(){
   if(!table) return;
   table.querySelectorAll('.wip-col-filter-btn').forEach(btn => btn.remove());
   document.querySelectorAll('.pm-managed-head-table .wip-col-filter-btn').forEach(btn => btn.remove());
-  if(!window.__factoryWipColumnFilterHandle){
-    const existingHandle = window.SitjoyColumnFilter.get(table);
-    if(existingHandle && typeof existingHandle.destroy === 'function'){
-      existingHandle.destroy();
-    }
+  const oldHandle = window.__factoryWipColumnFilterHandle || window.SitjoyColumnFilter.get(table);
+  if(oldHandle && typeof oldHandle.destroy === 'function'){
+    oldHandle.destroy();
   }
-  const handle = window.__factoryWipColumnFilterHandle || window.SitjoyColumnFilter.attach(table, {
+  const handle = window.SitjoyColumnFilter.attach(table, {
     columns: Object.keys(WIP_FILTER_COLUMNS).map(key => {
       const index = Number(key);
       const config = WIP_FILTER_COLUMNS[index] || {};
@@ -738,6 +520,10 @@ function downloadTemplate(){
   const ids = Array.from(selectedWipIds).map(v => Number(v)).filter(v => v > 0);
   const query = ids.length ? `?ids=${encodeURIComponent(ids.join(','))}` : '';
   window.location.href = `/api/factory-wip-template${query}`;
+}
+
+function downloadAllUnfinishedWipData(){
+  window.location.href = '/api/factory-wip?action=download_unfinished_data';
 }
 
 function triggerImport(){
@@ -1298,17 +1084,17 @@ function renderFactoryWipTable(items){
     html.push(`
       <tr>
         <td style="text-align:center;"><input type="checkbox" class="wip-row-checkbox" data-id="${item.id}" ${selectedWipIds.has(Number(item.id)) ? 'checked' : ''}></td>
+        <td>${item.factory_name || ''}</td>
+        <td class="preview-edit-cell"><input type="text" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="order_no" value="${String(item.order_no || '').replace(/"/g, '&quot;')}" placeholder="可选"></td>
+        <td class="preview-edit-cell"><input type="text" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="contract_no" value="${String(item.contract_no || '').replace(/"/g, '&quot;')}" placeholder="可选"></td>
+        <td>${colorHtml}</td>
+        <td>${item.sku || ''}</td>
         <td>
           <div class="status-segment status-segment--inline readonly-segment market-status-segment" data-value="${isOnMarket ? '1' : '0'}">
             <button type="button" class="status-pill status-pill--yes ${isOnMarket ? 'is-active' : ''}" data-value="1">在市</button>
             <button type="button" class="status-pill status-pill--no ${isOnMarket ? '' : 'is-active'}" data-value="0">下市</button>
           </div>
         </td>
-        <td>${item.sku || ''}</td>
-        <td>${colorHtml}</td>
-        <td>${item.factory_name || ''}</td>
-        <td class="preview-edit-cell"><input type="text" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="order_no" value="${String(item.order_no || '').replace(/"/g, '&quot;')}" placeholder="可选"></td>
-        <td class="preview-edit-cell"><input type="text" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="contract_no" value="${String(item.contract_no || '').replace(/"/g, '&quot;')}" placeholder="可选"></td>
         <td class="preview-edit-cell"><input type="number" min="0" step="1" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="quantity" value="${Number(quantity || 0)}"></td>
         <td class="preview-edit-cell"><input type="date" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="expected_completion_date" value="${expectedCompletionDate || ''}"></td>
         <td><div class="history-text">${initialExpectedCompletionDate || '-'}</div></td>
