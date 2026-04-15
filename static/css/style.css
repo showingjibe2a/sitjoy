@@ -441,12 +441,14 @@ input[type="month"] {
     color: var(--morandi-slate) !important;
     border-color: var(--morandi-sand) !important;
     background: #fff !important;
+    font-size: 0;
 }
 
 .help-dot::before {
     content: '?';
     font-weight: 700;
     color: var(--morandi-slate);
+    font-size: 11px;
 }
 
 .help-dot::after {

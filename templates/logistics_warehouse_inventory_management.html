@@ -38,6 +38,7 @@
                         </div>
                         <span class="pm-divider" aria-hidden="true"></span>
                         <button class="btn-secondary" onclick="downloadTemplate()">下载模板</button>
+                        <button class="btn-secondary" onclick="downloadStockSummaryBySku()">导出在库数据</button>
                         <button class="btn-secondary" onclick="triggerUpload('replace_all')">批量上传-覆盖全部</button>
                         <button class="btn-secondary" onclick="triggerUpload('partial')">批量上传-部分更新</button>
                         <span class="help-dot" data-tip="覆盖全部：先将全部库存可用量清零，再按模板写入；部分更新：仅更新模板中出现的SKU+仓库组合。">?</span>
@@ -52,6 +53,7 @@
                 <table class="pm-table" id="mainTable">
                     <thead>
                         <tr>
+                            <th style="width:54px; text-align:center;"><input type="checkbox" id="inventorySelectAll"></th>
                             <th>仓库</th>
                             <th>SKU</th>
                             <th>在库数量</th>
@@ -59,7 +61,7 @@
                             <th style="width:160px;">操作</th>
                         </tr>
                     </thead>
-                    <tbody><tr><td colspan="5" style="text-align:center;">加载中...</td></tr></tbody>
+                    <tbody><tr><td colspan="6" style="text-align:center;">加载中...</td></tr></tbody>
                 </table>
             </div>
         </section>
@@ -97,10 +99,49 @@
         let warehouses = [];
         let orderProducts = [];
         let currentUploadMode = 'partial';
+        let selectedInventoryIds = new Set();
         function showStatus(msg, err){ const el=document.getElementById('modalStatus'); el.style.display='block'; el.style.background=err?'#ffecec':'#f0fff0'; el.style.color=err?'#a33':'#2f6f2f'; el.innerText=msg; }
         function resetStatus(){ const el=document.getElementById('modalStatus'); el.style.display='none'; el.innerText=''; }
         function showImportStatus(msg, err){ const el=document.getElementById('importStatus'); el.textContent=msg||''; el.classList.add('show'); el.style.color=err?'#9b2226':'var(--morandi-ink)'; }
         function resetSearch(){ document.getElementById('searchInput').value=''; loadList(); }
+        function getInventorySelectAllCheckboxes(){ return Array.from(document.querySelectorAll('input#inventorySelectAll')); }
+        function syncInventorySelectAll(){
+            const masters = getInventorySelectAllCheckboxes();
+            const rows = Array.from(document.querySelectorAll('.inventory-row-checkbox'));
+            if(!masters.length) return;
+            if(!rows.length){
+                masters.forEach(master => { master.checked = false; master.indeterminate = false; });
+                return;
+            }
+            const checkedCount = rows.filter(r => r.checked).length;
+            const allChecked = checkedCount === rows.length;
+            const partial = checkedCount > 0 && checkedCount < rows.length;
+            masters.forEach(master => {
+                master.checked = allChecked;
+                master.indeterminate = partial;
+            });
+        }
+        function toggleInventorySelectAll(checked){
+            document.querySelectorAll('.inventory-row-checkbox').forEach(el => {
+                const id = Number(el.getAttribute('data-id') || 0);
+                el.checked = !!checked;
+                if(!id) return;
+                if(checked) selectedInventoryIds.add(id);
+                else selectedInventoryIds.delete(id);
+            });
+            syncInventorySelectAll();
+        }
+        function bindInventoryRowSelectionEvents(){
+            document.querySelectorAll('.inventory-row-checkbox').forEach(el => {
+                el.addEventListener('change', function(){
+                    const id = Number(this.getAttribute('data-id') || 0);
+                    if(!id) return;
+                    if(this.checked) selectedInventoryIds.add(id);
+                    else selectedInventoryIds.delete(id);
+                    syncInventorySelectAll();
+                });
+            });
+        }
         function renderOptions(){
             const wh = document.getElementById('warehouseId');
             const op = document.getElementById('orderProductId');
@@ -165,13 +206,18 @@
             const url = q ? `/api/logistics-warehouse-inventory?q=${encodeURIComponent(q)}` : '/api/logistics-warehouse-inventory';
             fetch(url).then(r=>r.json()).then(data=>{
                 const tbody = document.querySelector('#mainTable tbody');
-                if(data.status!=='success'){ tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#a33;">${data.message||'加载失败'}</td></tr>`; return; }
+                if(data.status!=='success'){ tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">${data.message||'加载失败'}</td></tr>`; return; }
                 const items = data.items || [];
-                if(!items.length){ tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">暂无数据</td></tr>'; return; }
-                tbody.innerHTML = items.map(item => `<tr><td>${item.warehouse_name||''}</td><td>${item.sku||''}</td><td>${item.available_qty??0}</td><td>${item.updated_at?new Date(item.updated_at).toLocaleString('zh-CN'):''}</td><td><div class="pm-actions"><button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button><button class="btn-danger" onclick='removeItem(${item.id})'>删除</button></div></td></tr>`).join('');
-            }).catch(err=>{ document.querySelector('#mainTable tbody').innerHTML = `<tr><td colspan="5" style="text-align:center;color:#a33;">加载失败: ${err}</td></tr>`; });
+                const availableIds = new Set(items.map(item => Number(item.id || 0)).filter(v => v > 0));
+                selectedInventoryIds = new Set(Array.from(selectedInventoryIds).filter(id => availableIds.has(id)));
+                if(!items.length){ tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无数据</td></tr>'; syncInventorySelectAll(); return; }
+                tbody.innerHTML = items.map(item => `<tr><td style="text-align:center;"><input type="checkbox" class="inventory-row-checkbox row-check" data-id="${item.id}" ${selectedInventoryIds.has(Number(item.id)) ? 'checked' : ''}></td><td>${item.warehouse_name||''}</td><td>${item.sku||''}</td><td>${item.available_qty??0}</td><td>${item.updated_at?new Date(item.updated_at).toLocaleString('zh-CN'):''}</td><td><div class="pm-actions"><button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button><button class="btn-danger" onclick='removeItem(${item.id})'>删除</button></div></td></tr>`).join('');
+                bindInventoryRowSelectionEvents();
+                syncInventorySelectAll();
+            }).catch(err=>{ document.querySelector('#mainTable tbody').innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">加载失败: ${err}</td></tr>`; syncInventorySelectAll(); });
         }
         function downloadTemplate(){ window.location.href = '/api/logistics-warehouse-inventory-template'; }
+        function downloadStockSummaryBySku(){ window.location.href = '/api/logistics-warehouse-inventory?action=download_stock_summary'; }
         function triggerUpload(mode){
             currentUploadMode = mode === 'replace_all' ? 'replace_all' : 'partial';
             const input = document.getElementById('uploadInput');
@@ -219,6 +265,12 @@
         document.getElementById('uploadInput').addEventListener('change', function(e){
             const file=e.target.files&&e.target.files[0];
             if(file) uploadTemplate(file, currentUploadMode);
+        });
+        document.addEventListener('change', function(e){
+            const target = e.target;
+            if(target && target.id === 'inventorySelectAll'){
+                toggleInventorySelectAll(!!target.checked);
+            }
         });
         window.addEventListener('load', function(){ loadOptions().then(loadList); });
     </script>

@@ -2504,6 +2504,49 @@ class LogisticsWarehouseMixin:
                     payload = self._get_cached_template_options(cache_key, _load_options_payload, ttl_seconds=1800)
                     return self.send_json(payload, start_response)
 
+                if action == 'download_stock_summary':
+                    keyword = (query_params.get('q', [''])[0] or '').strip()
+                    warehouse_id = self._parse_int(query_params.get('warehouse_id', [''])[0])
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            sql = """
+                                SELECT op.sku, SUM(COALESCE(i.available_qty, 0)) AS total_available_qty
+                                FROM logistics_overseas_inventory i
+                                JOIN logistics_overseas_warehouses w ON w.id = i.warehouse_id
+                                JOIN order_products op ON op.id = i.order_product_id
+                            """
+                            filters = ["COALESCE(w.is_enabled,1)=1"]
+                            params = []
+                            if warehouse_id:
+                                filters.append("i.warehouse_id=%s")
+                                params.append(warehouse_id)
+                            if keyword:
+                                filters.append("(op.sku LIKE %s OR w.warehouse_name LIKE %s)")
+                                like = f"%{keyword}%"
+                                params.extend([like, like])
+                            where_sql = (' WHERE ' + ' AND '.join(filters)) if filters else ''
+                            cur.execute(sql + where_sql + " GROUP BY op.sku ORDER BY op.sku ASC", params)
+                            rows = cur.fetchall() or []
+
+                    output = io.StringIO(newline='')
+                    writer = csv.writer(output)
+                    writer.writerow(['SKU', '在库数量'])
+                    for row in rows:
+                        writer.writerow([
+                            row.get('sku') or '',
+                            self._parse_int(row.get('total_available_qty')) or 0,
+                        ])
+
+                    content = output.getvalue().encode('utf-8-sig')
+                    filename = f"海外仓在库SKU汇总_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                    headers = [
+                        ('Content-Type', 'text/csv; charset=utf-8'),
+                        ('Content-Disposition', f"attachment; filename*=UTF-8''{quote(filename)}"),
+                        ('Content-Length', str(len(content))),
+                    ]
+                    start_response('200 OK', headers)
+                    return [content]
+
                 keyword = (query_params.get('q', [''])[0] or '').strip()
                 warehouse_id = self._parse_int(query_params.get('warehouse_id', [''])[0])
                 with self._get_db_connection() as conn:
