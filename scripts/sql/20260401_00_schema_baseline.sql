@@ -461,6 +461,7 @@ CREATE TABLE IF NOT EXISTS logistics_in_transit (
             clearance_docs_provided TINYINT(1) NOT NULL DEFAULT 0,
             qty_verified TINYINT(1) NOT NULL DEFAULT 0,
             qty_consistent TINYINT(1) NOT NULL DEFAULT 0,
+            financial_verified TINYINT(1) NOT NULL DEFAULT 0,
             port_of_loading VARCHAR(128) NULL,
             port_of_destination VARCHAR(128) NULL,
             destination_region_id INT UNSIGNED NULL,

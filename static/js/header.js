@@ -1388,6 +1388,13 @@
         const srcRow = srcHead.rows[0];
         if(!srcRow) return;
 
+        // Keep detached header width model identical to source table (especially when colgroup is used).
+        state.headerTable.querySelectorAll('colgroup').forEach(node => node.remove());
+        const srcColgroup = state.table.querySelector('colgroup');
+        if(srcColgroup){
+            state.headerTable.insertBefore(srcColgroup.cloneNode(true), state.headerTable.firstChild || null);
+        }
+
         let dstHead = state.headerTable.tHead;
         if(!dstHead){
             dstHead = document.createElement('thead');
@@ -2957,7 +2964,7 @@
                     <span class="pm-table-info"></span>
                 </div>
                 <div class="pm-table-toolbar-right">
-                    <button type="button" class="pm-table-columns-reset btn-secondary" title="恢复默认列宽">重置列宽</button>
+                    <button type="button" class="pm-table-columns-reset btn-secondary" title="恢复默认列宽和字段排序">重置列宽+字段排序</button>
                     <div class="pm-table-columns">
                         <button type="button" class="pm-table-columns-trigger btn-secondary" aria-expanded="false">字段显示</button>
                         <div class="pm-table-columns-panel"></div>
@@ -3063,10 +3070,22 @@
 
             state.resetBtn.addEventListener('click', () => {
                 try { localStorage.removeItem(makeStorageKey(state.table, 'column-widths')); } catch (_) {}
+                try { localStorage.removeItem(makeStorageKey(state.table, 'column-order')); } catch (_) {}
                 state.columnWidths = Object.assign({}, state.defaultColumnWidths || {});
+                state.columnOrder = (state.headers || []).map(h => Number(h.origin));
+                persistColumnOrder(state);
+                applyColumnOrder(state);
+                applyColumnVisibility(state);
+                syncDetachedHeader(state);
                 persistColumnWidths(state);
                 applyColumnWidths(state);
+                ensureSortableHeaders(state);
+                ensureResizeHandles(state);
+                refreshSortHeaderUi(state);
+                applySort(state);
+                applyPagination(state);
                 syncTopScroll(state);
+                renderColumnPanel(state);
             });
 
             state.wrap.addEventListener('scroll', () => {

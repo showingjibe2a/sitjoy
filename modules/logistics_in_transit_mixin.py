@@ -215,6 +215,7 @@ class LogisticsInTransitMixin:
                         'sku': ('下单SKU', lambda r: r.get('sku') or ''),
                         'shipped_qty': ('发货数量', lambda r: r.get('shipped_qty') if r.get('shipped_qty') is not None else ''),
                         'listed_qty': ('上架数量', lambda r: r.get('listed_qty') if r.get('listed_qty') is not None else ''),
+                        'financial_verified': ('财务已核验', lambda r: '是' if self._parse_int(r.get('financial_verified')) else '否'),
                     }
 
                     requested_fields = []
@@ -241,6 +242,7 @@ class LogisticsInTransitMixin:
                             t.listed_date,
                             t.qty_verified,
                             t.qty_consistent,
+                            t.financial_verified,
                             t.remark,
                             f.factory_name,
                             fw.forwarder_name,
@@ -326,7 +328,7 @@ class LogisticsInTransitMixin:
                                    t.arrival_port_date, t.expected_warehouse_date, t.expected_listed_date_initial, t.expected_listed_date_latest, t.listed_date,
                                    t.shipping_company, t.vessel_voyage, t.bill_of_lading_no,
                                           t.remark,
-                                t.declaration_docs_provided, t.inventory_registered, t.clearance_docs_provided, t.qty_verified, t.qty_consistent,
+                                t.declaration_docs_provided, t.inventory_registered, t.clearance_docs_provided, t.qty_verified, t.qty_consistent, t.financial_verified,
                                               t.port_of_loading, t.port_of_destination, t.destination_region_id, t.destination_warehouse_id,
                                               t.confirmed_boxed_qty, t.inbound_order_no,
                                    t.created_at, t.updated_at
@@ -517,7 +519,8 @@ class LogisticsInTransitMixin:
                     'clearance_docs_provided',
                     'inventory_registered',
                     'qty_verified',
-                    'confirmed_boxed_qty'
+                    'confirmed_boxed_qty',
+                    'financial_verified'
                 }
                 if field not in allowed_fields:
                     return self.send_json({'status': 'error', 'message': 'Invalid field'}, start_response)
@@ -603,6 +606,9 @@ class LogisticsInTransitMixin:
                     if 'listed_date' in raw:
                         payload['listed_date'] = _normalize_date(raw.get('listed_date'))
 
+                    if 'factory_ship_date_latest' in raw:
+                        payload['factory_ship_date_latest'] = _normalize_date(raw.get('factory_ship_date_latest'))
+
                     if 'etd_latest' in raw:
                         payload['etd_latest'] = _normalize_date(raw.get('etd_latest'))
 
@@ -611,6 +617,44 @@ class LogisticsInTransitMixin:
 
                     if 'remark' in raw:
                         payload['remark'] = (raw.get('remark') or '').strip() or None
+
+                    if 'bill_of_lading_no' in raw:
+                        payload['bill_of_lading_no'] = (raw.get('bill_of_lading_no') or '').strip() or None
+
+                    if 'forwarder_id' in raw:
+                        fw_id = self._parse_int(raw.get('forwarder_id'))
+                        if fw_id:
+                            payload['forwarder_id'] = fw_id
+                        elif 'forwarder_id' in raw:
+                            payload['forwarder_id'] = None
+
+                    if 'shipping_company' in raw:
+                        payload['shipping_company'] = (raw.get('shipping_company') or '').strip() or None
+
+                    if 'vessel_voyage' in raw:
+                        payload['vessel_voyage'] = (raw.get('vessel_voyage') or '').strip() or None
+
+                    if 'port_of_loading' in raw:
+                        payload['port_of_loading'] = (raw.get('port_of_loading') or '').strip() or None
+
+                    if 'port_of_destination' in raw:
+                        payload['port_of_destination'] = (raw.get('port_of_destination') or '').strip() or None
+
+                    if 'arrival_port_date' in raw:
+                        payload['arrival_port_date'] = _normalize_date(raw.get('arrival_port_date'))
+
+                    if 'expected_warehouse_date' in raw:
+                        payload['expected_warehouse_date'] = _normalize_date(raw.get('expected_warehouse_date'))
+
+                    if 'inbound_order_no' in raw:
+                        payload['inbound_order_no'] = (raw.get('inbound_order_no') or '').strip() or None
+
+                    if 'destination_warehouse_id' in raw:
+                        wh_id = self._parse_int(raw.get('destination_warehouse_id'))
+                        if wh_id:
+                            payload['destination_warehouse_id'] = wh_id
+                        elif 'destination_warehouse_id' in raw:
+                            payload['destination_warehouse_id'] = None
 
                     if len(payload.keys()) > 1:
                         normalized_updates.append(payload)
@@ -624,7 +668,7 @@ class LogisticsInTransitMixin:
                         for payload in normalized_updates:
                             item_id = payload['id']
                             cur.execute(
-                                "SELECT id, qty_verified, etd_initial, etd_previous, etd_latest, eta_initial, eta_previous, eta_latest FROM logistics_in_transit WHERE id=%s LIMIT 1",
+                                "SELECT id, qty_verified, factory_ship_date_initial, factory_ship_date_previous, factory_ship_date_latest, etd_initial, etd_previous, etd_latest, eta_initial, eta_previous, eta_latest FROM logistics_in_transit WHERE id=%s LIMIT 1",
                                 (item_id,)
                             )
                             existing = cur.fetchone() or {}
@@ -646,6 +690,18 @@ class LogisticsInTransitMixin:
                                 params.append(listed_date)
                                 sets.append('inventory_registered=%s')
                                 params.append(1 if listed_date else 0)
+
+                            if 'factory_ship_date_latest' in payload:
+                                factory_ship_latest = payload.get('factory_ship_date_latest')
+                                old_factory_ship_latest = existing.get('factory_ship_date_latest')
+                                sets.append('factory_ship_date_latest=%s')
+                                params.append(factory_ship_latest)
+                                if factory_ship_latest and not existing.get('factory_ship_date_initial'):
+                                    sets.append('factory_ship_date_initial=%s')
+                                    params.append(factory_ship_latest)
+                                if factory_ship_latest and old_factory_ship_latest and str(old_factory_ship_latest) != str(factory_ship_latest):
+                                    sets.append('factory_ship_date_previous=%s')
+                                    params.append(old_factory_ship_latest)
 
                             if 'etd_latest' in payload:
                                 etd_latest = payload.get('etd_latest')
@@ -674,6 +730,46 @@ class LogisticsInTransitMixin:
                             if 'remark' in payload:
                                 sets.append('remark=%s')
                                 params.append(payload.get('remark'))
+
+                            if 'bill_of_lading_no' in payload:
+                                sets.append('bill_of_lading_no=%s')
+                                params.append(payload.get('bill_of_lading_no'))
+
+                            if 'forwarder_id' in payload:
+                                sets.append('forwarder_id=%s')
+                                params.append(payload.get('forwarder_id'))
+
+                            if 'shipping_company' in payload:
+                                sets.append('shipping_company=%s')
+                                params.append(payload.get('shipping_company'))
+
+                            if 'vessel_voyage' in payload:
+                                sets.append('vessel_voyage=%s')
+                                params.append(payload.get('vessel_voyage'))
+
+                            if 'port_of_loading' in payload:
+                                sets.append('port_of_loading=%s')
+                                params.append(payload.get('port_of_loading'))
+
+                            if 'port_of_destination' in payload:
+                                sets.append('port_of_destination=%s')
+                                params.append(payload.get('port_of_destination'))
+
+                            if 'arrival_port_date' in payload:
+                                sets.append('arrival_port_date=%s')
+                                params.append(payload.get('arrival_port_date'))
+
+                            if 'expected_warehouse_date' in payload:
+                                sets.append('expected_warehouse_date=%s')
+                                params.append(payload.get('expected_warehouse_date'))
+
+                            if 'inbound_order_no' in payload:
+                                sets.append('inbound_order_no=%s')
+                                params.append(payload.get('inbound_order_no'))
+
+                            if 'destination_warehouse_id' in payload:
+                                sets.append('destination_warehouse_id=%s')
+                                params.append(payload.get('destination_warehouse_id'))
 
                             if not sets:
                                 continue
@@ -715,6 +811,7 @@ class LogisticsInTransitMixin:
                     'inventory_registered': _to_bool_flag(data.get('inventory_registered')),
                     'clearance_docs_provided': _to_bool_flag(data.get('clearance_docs_provided')),
                     'qty_verified': _to_bool_flag(data.get('qty_verified')),
+                    'financial_verified': _to_bool_flag(data.get('financial_verified')),
                     'qty_consistent': 0,
                     'port_of_loading': (data.get('port_of_loading') or '').strip() or None,
                     'port_of_destination': (data.get('port_of_destination') or '').strip() or None,
@@ -808,7 +905,7 @@ class LogisticsInTransitMixin:
                                     eta_initial, eta_previous, eta_latest,
                                     arrival_port_date, expected_warehouse_date, expected_listed_date_initial, expected_listed_date_latest, listed_date,
                                     shipping_company, vessel_voyage, bill_of_lading_no,
-                                    declaration_docs_provided, inventory_registered, clearance_docs_provided, qty_verified, qty_consistent,
+                                    declaration_docs_provided, inventory_registered, clearance_docs_provided, qty_verified, financial_verified, qty_consistent,
                                     port_of_loading, port_of_destination, destination_region_id, destination_warehouse_id,
                                     confirmed_boxed_qty, inbound_order_no, remark
                                 ) VALUES (
@@ -818,7 +915,7 @@ class LogisticsInTransitMixin:
                                     %(eta_initial)s, %(eta_previous)s, %(eta_latest)s,
                                     %(arrival_port_date)s, %(expected_warehouse_date)s, %(expected_listed_date_initial)s, %(expected_listed_date_latest)s, %(listed_date)s,
                                     %(shipping_company)s, %(vessel_voyage)s, %(bill_of_lading_no)s,
-                                    %(declaration_docs_provided)s, %(inventory_registered)s, %(clearance_docs_provided)s, %(qty_verified)s, %(qty_consistent)s,
+                                    %(declaration_docs_provided)s, %(inventory_registered)s, %(clearance_docs_provided)s, %(qty_verified)s, %(financial_verified)s, %(qty_consistent)s,
                                     %(port_of_loading)s, %(port_of_destination)s, %(destination_region_id)s, %(destination_warehouse_id)s,
                                     %(confirmed_boxed_qty)s, %(inbound_order_no)s, %(remark)s
                                 )
@@ -855,6 +952,7 @@ class LogisticsInTransitMixin:
                                     inventory_registered=%(inventory_registered)s,
                                     clearance_docs_provided=%(clearance_docs_provided)s,
                                     qty_verified=%(qty_verified)s,
+                                    financial_verified=%(financial_verified)s,
                                     qty_consistent=%(qty_consistent)s,
                                     port_of_loading=%(port_of_loading)s,
                                     port_of_destination=%(port_of_destination)s,
@@ -961,7 +1059,7 @@ class LogisticsInTransitMixin:
                 '工厂*', '目的区域*', '目的仓库', '工厂发货日期（预估）',
                 '货代', '船公司', '船名航次', '提单号', '起运港', '目的港', 'ETD', 'ETA', '提供清关资料', '提供报关资料',
                 '已确认装箱量', '箱号',
-                '到港日期', '预计送仓日期', '实际上架日期', '入库单号', '已登记上架', '已核对上架数量'
+                '到港日期', '预计送仓日期', '实际上架日期', '入库单号', '已登记上架', '已核对上架数量', '财务已核验'
             ]
             item_headers = ['箱号或临时索引', '下单SKU*', '发货数量*', '上架数量（上架后才能维护）']
 
@@ -987,7 +1085,7 @@ class LogisticsInTransitMixin:
                 ('装货需求', 3, 6),
                 ('货代发货', 7, 16),
                 ('确认装箱', 17, 18),
-                ('到港、送仓、上架', 19, 24),
+                ('到港、送仓、上架', 19, 25),
             ]
             header_fill_by_col = ['D3D3D3'] * len(info_headers)
             for idx, (title, start_col, end_col) in enumerate(groups):
@@ -1065,7 +1163,7 @@ class LogisticsInTransitMixin:
                                 t.listed_date, t.shipping_company, t.vessel_voyage,
                                 t.bill_of_lading_no, t.port_of_loading, t.port_of_destination,
                                 t.inbound_order_no, t.declaration_docs_provided, t.clearance_docs_provided,
-                                t.qty_verified, t.qty_consistent, t.inventory_registered, t.confirmed_boxed_qty
+                                t.qty_verified, t.qty_consistent, t.inventory_registered, t.confirmed_boxed_qty, t.financial_verified
                             FROM logistics_in_transit t
                             LEFT JOIN logistics_factories f ON f.id = t.factory_id
                             LEFT JOIN logistics_forwarders fw ON fw.id = t.forwarder_id
@@ -1118,7 +1216,7 @@ class LogisticsInTransitMixin:
                 '示例货代', '示例船公司', '示例船名航次', '示例提单号', '示例起运港', '示例目的港', '2026-03-18', '2026-03-26',
                 '否', '否',
                 '否', '示例箱号（可留空，但需填写无箱号时临时索引用于和 SKU明细sheet 关联）',
-                '2026-03-25', '2026-03-28', '2026-03-30', '示例入库单号', '否', '否'
+                '2026-03-25', '2026-03-28', '2026-03-30', '示例入库单号', '否', '否', '否'
             ]
             for col, val in enumerate(sample_info_row, start=1):
                 cell = ws_info.cell(row=3, column=col, value=val)
@@ -1148,7 +1246,7 @@ class LogisticsInTransitMixin:
                 letter = _col_letter(col)
                 for row in range(3, max_validation_row + 1):
                     ws_info[f'{letter}{row}'].number_format = 'yyyy-mm-dd'
-            for col in (15, 16, 17, 23, 24):
+            for col in (15, 16, 17, 23, 24, 25):
                 letter = _col_letter(col)
                 for row in range(4, max_validation_row + 1):
                     bool_validation.add(f'{letter}{row}')
@@ -1212,6 +1310,7 @@ class LogisticsInTransitMixin:
                     row.get('inbound_order_no') or '',
                     '是' if str(row.get('inventory_registered') or '0') in ('1', 'True', 'true') else '否',
                     '是' if str(row.get('qty_verified') or '0') in ('1', 'True', 'true') else '否',
+                    '是' if str(row.get('financial_verified') or '0') in ('1', 'True', 'true') else '否',
                 ]
                 for col, val in enumerate(values, start=1):
                     cell = ws_info.cell(row=out_row, column=col, value=val)
@@ -1454,6 +1553,10 @@ class LogisticsInTransitMixin:
                                 _get('已核对上架数量') if '已核对上架数量' in idx_info
                                 else (_get('是否已核对上架数量') if '是否已核对上架数量' in idx_info else _get('是否已核对数量'))
                             ),
+                            'financial_verified': _norm_bool(
+                                _get('财务已核验') if '财务已核验' in idx_info
+                                else (_get('是否财务已核验') if '是否财务已核验' in idx_info else _get('财务核验'))
+                            ),
                             'confirmed_boxed_qty': _norm_bool(_get('已确认装箱量') if '已确认装箱量' in idx_info else None),
                             'qty_consistent': 0,
                             'inventory_registered': _norm_bool(
@@ -1558,6 +1661,7 @@ class LogisticsInTransitMixin:
                             'inventory_registered': row['inventory_registered'],
                             'clearance_docs_provided': row['clearance_docs_provided'],
                             'qty_verified': row['qty_verified'],
+                            'financial_verified': row.get('financial_verified') or 0,
                             'confirmed_boxed_qty': row.get('confirmed_boxed_qty') or 0,
                             'qty_consistent': 0,
                             'port_of_loading': row['port_of_loading'],
@@ -1612,6 +1716,7 @@ class LogisticsInTransitMixin:
                                         inventory_registered=%(inventory_registered)s,
                                         clearance_docs_provided=%(clearance_docs_provided)s,
                                         qty_verified=%(qty_verified)s,
+                                        financial_verified=%(financial_verified)s,
                                         qty_consistent=%(qty_consistent)s,
                                         port_of_loading=%(port_of_loading)s,
                                         port_of_destination=%(port_of_destination)s,
@@ -1646,7 +1751,7 @@ class LogisticsInTransitMixin:
                                         eta_initial, eta_previous, eta_latest,
                                         arrival_port_date, expected_warehouse_date, expected_listed_date_initial, expected_listed_date_latest, listed_date,
                                         shipping_company, vessel_voyage, bill_of_lading_no,
-                                        declaration_docs_provided, inventory_registered, clearance_docs_provided, qty_verified, qty_consistent,
+                                        declaration_docs_provided, inventory_registered, clearance_docs_provided, qty_verified, financial_verified, qty_consistent,
                                         port_of_loading, port_of_destination, destination_region_id, destination_warehouse_id, confirmed_boxed_qty, inbound_order_no
                                     ) VALUES (
                                         %(factory_id)s, %(factory_ship_date_initial)s, %(factory_ship_date_previous)s, %(factory_ship_date_latest)s,
@@ -1655,7 +1760,7 @@ class LogisticsInTransitMixin:
                                         %(eta_initial)s, %(eta_previous)s, %(eta_latest)s,
                                         %(arrival_port_date)s, %(expected_warehouse_date)s, %(expected_listed_date_initial)s, %(expected_listed_date_latest)s, %(listed_date)s,
                                         %(shipping_company)s, %(vessel_voyage)s, %(bill_of_lading_no)s,
-                                        %(declaration_docs_provided)s, %(inventory_registered)s, %(clearance_docs_provided)s, %(qty_verified)s, %(qty_consistent)s,
+                                        %(declaration_docs_provided)s, %(inventory_registered)s, %(clearance_docs_provided)s, %(qty_verified)s, %(financial_verified)s, %(qty_consistent)s,
                                         %(port_of_loading)s, %(port_of_destination)s, %(destination_region_id)s, %(destination_warehouse_id)s, %(confirmed_boxed_qty)s, %(inbound_order_no)s
                                     )
                                     """,
