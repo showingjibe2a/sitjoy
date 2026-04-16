@@ -713,6 +713,8 @@ input.optional-field[type="datetime-local"]:focus {
 
 .pm-table {
     width: 100%;
+    min-width: max-content;
+    table-layout: auto;
     border-collapse: collapse;
     background: var(--morandi-cream);
     color: var(--morandi-ink);
@@ -729,8 +731,9 @@ input.optional-field[type="datetime-local"]:focus {
     text-align: left;
     white-space: nowrap;
     line-height: 1.25;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    min-width: max-content;
+    overflow: visible;
+    text-overflow: clip;
 }
 
 .pm-table tbody tr {

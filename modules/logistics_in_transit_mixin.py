@@ -603,6 +603,12 @@ class LogisticsInTransitMixin:
                     if 'listed_date' in raw:
                         payload['listed_date'] = _normalize_date(raw.get('listed_date'))
 
+                    if 'etd_latest' in raw:
+                        payload['etd_latest'] = _normalize_date(raw.get('etd_latest'))
+
+                    if 'eta_latest' in raw:
+                        payload['eta_latest'] = _normalize_date(raw.get('eta_latest'))
+
                     if 'remark' in raw:
                         payload['remark'] = (raw.get('remark') or '').strip() or None
 
@@ -618,7 +624,7 @@ class LogisticsInTransitMixin:
                         for payload in normalized_updates:
                             item_id = payload['id']
                             cur.execute(
-                                "SELECT id, qty_verified FROM logistics_in_transit WHERE id=%s LIMIT 1",
+                                "SELECT id, qty_verified, etd_initial, etd_previous, etd_latest, eta_initial, eta_previous, eta_latest FROM logistics_in_transit WHERE id=%s LIMIT 1",
                                 (item_id,)
                             )
                             existing = cur.fetchone() or {}
@@ -640,6 +646,30 @@ class LogisticsInTransitMixin:
                                 params.append(listed_date)
                                 sets.append('inventory_registered=%s')
                                 params.append(1 if listed_date else 0)
+
+                            if 'etd_latest' in payload:
+                                etd_latest = payload.get('etd_latest')
+                                old_etd_latest = existing.get('etd_latest')
+                                sets.append('etd_latest=%s')
+                                params.append(etd_latest)
+                                if etd_latest and not existing.get('etd_initial'):
+                                    sets.append('etd_initial=%s')
+                                    params.append(etd_latest)
+                                if etd_latest and old_etd_latest and str(old_etd_latest) != str(etd_latest):
+                                    sets.append('etd_previous=%s')
+                                    params.append(old_etd_latest)
+
+                            if 'eta_latest' in payload:
+                                eta_latest = payload.get('eta_latest')
+                                old_eta_latest = existing.get('eta_latest')
+                                sets.append('eta_latest=%s')
+                                params.append(eta_latest)
+                                if eta_latest and not existing.get('eta_initial'):
+                                    sets.append('eta_initial=%s')
+                                    params.append(eta_latest)
+                                if eta_latest and old_eta_latest and str(old_eta_latest) != str(eta_latest):
+                                    sets.append('eta_previous=%s')
+                                    params.append(old_eta_latest)
 
                             if 'remark' in payload:
                                 sets.append('remark=%s')
