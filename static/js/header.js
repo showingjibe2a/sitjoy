@@ -728,30 +728,46 @@
         return Math.max(64, Math.min(520, Math.max(headerWidth, Math.ceil(maxLen * 13 + 26))));
     }
 
-    function readPersistedColumns(table, validOrigins){
+    function readPersistedColumns(table, headerMeta){
+        const validKeys = (Array.isArray(headerMeta) ? headerMeta : []).map(meta => String(meta.key || '').trim()).filter(Boolean);
+        const legacyKeyMap = new Map((Array.isArray(headerMeta) ? headerMeta : []).map(meta => [String(meta.origin), String(meta.key || '').trim()]));
         try {
             const raw = localStorage.getItem(makeStorageKey(table, 'visible-columns'));
-            if(!raw) return new Set(validOrigins);
+            if(!raw) return new Set(validKeys);
             const arr = JSON.parse(raw);
-            const valid = Array.isArray(arr) ? arr.map(v => Number(v)).filter(v => validOrigins.includes(v)) : [];
-            return new Set(valid.length ? valid : validOrigins);
+            const valid = Array.isArray(arr)
+                ? arr.map(v => {
+                    const key = String(v || '').trim();
+                    if(validKeys.includes(key)) return key;
+                    return legacyKeyMap.get(key) || '';
+                }).filter(key => !!key && validKeys.includes(key))
+                : [];
+            return new Set(valid.length ? valid : validKeys);
         } catch (_) {
-            return new Set(validOrigins);
+            return new Set(validKeys);
         }
     }
 
-    function readPersistedOrder(table, validOrigins){
+    function readPersistedOrder(table, headerMeta){
+        const validKeys = (Array.isArray(headerMeta) ? headerMeta : []).map(meta => String(meta.key || '').trim()).filter(Boolean);
+        const legacyKeyMap = new Map((Array.isArray(headerMeta) ? headerMeta : []).map(meta => [String(meta.origin), String(meta.key || '').trim()]));
         try {
             const raw = localStorage.getItem(makeStorageKey(table, 'column-order'));
-            if(!raw) return validOrigins.slice();
+            if(!raw) return validKeys.slice();
             const arr = JSON.parse(raw);
-            const inOrder = Array.isArray(arr) ? arr.map(v => Number(v)).filter(v => validOrigins.includes(v)) : [];
-            validOrigins.forEach(v => {
+            const inOrder = Array.isArray(arr)
+                ? arr.map(v => {
+                    const key = String(v || '').trim();
+                    if(validKeys.includes(key)) return key;
+                    return legacyKeyMap.get(key) || '';
+                }).filter(key => !!key && validKeys.includes(key))
+                : [];
+            validKeys.forEach(v => {
                 if(!inOrder.includes(v)) inOrder.push(v);
             });
             return inOrder;
         } catch (_) {
-            return validOrigins.slice();
+            return validKeys.slice();
         }
     }
 
@@ -1393,21 +1409,35 @@
 
     function ensureManagedColumnKeys(state, headerMeta){
         if(!state || !state.table || !Array.isArray(headerMeta) || !headerMeta.length) return;
+        const originToKey = new Map();
+        headerMeta.forEach((meta, idx) => {
+            const origin = Number(meta && meta.origin);
+            const key = String(meta && meta.key || '').trim() || `字段${idx + 1}`;
+            if(Number.isFinite(origin)) originToKey.set(origin, key);
+        });
+
+        const resolveKeyByCell = (cell, idx) => {
+            if(!cell.dataset.manageColOrigin) cell.dataset.manageColOrigin = String(idx);
+            const origin = Number(cell.dataset.manageColOrigin);
+            if(Number.isFinite(origin) && originToKey.has(origin)) return originToKey.get(origin);
+            const fallbackMeta = headerMeta[idx];
+            if(fallbackMeta && String(fallbackMeta.key || '').trim()) return String(fallbackMeta.key || '').trim();
+            return `字段${idx + 1}`;
+        };
+
         const headerRow = getPrimaryHeaderRow(state);
         if(headerRow && headerRow.cells){
             Array.from(headerRow.cells || []).forEach((cell, idx) => {
-                const meta = headerMeta[idx];
-                if(!meta) return;
-                if(!cell.dataset.manageColKey) cell.dataset.manageColKey = meta.key;
+                const key = resolveKeyByCell(cell, idx);
+                if(String(cell.dataset.manageColKey || '').trim() !== key) cell.dataset.manageColKey = key;
             });
         }
 
         Array.from(state.table.rows || []).forEach(row => {
             if((row.cells || []).length !== state.headerCount) return;
             Array.from(row.cells || []).forEach((cell, idx) => {
-                const meta = headerMeta[idx];
-                if(!meta) return;
-                if(!cell.dataset.manageColKey) cell.dataset.manageColKey = meta.key;
+                const key = resolveKeyByCell(cell, idx);
+                if(String(cell.dataset.manageColKey || '').trim() !== key) cell.dataset.manageColKey = key;
             });
         });
     }
@@ -1451,19 +1481,70 @@
     }
 
     function applyColumnOrder(state){
+        syncManagedColgroupOrder(state);
         const expected = state.headerCount;
         Array.from(state.table.rows || []).forEach(row => {
             if((row.cells || []).length !== expected) return;
-            const currentOrder = Array.from(row.cells).map(cell => Number(cell.dataset.manageColOrigin || '-1'));
+            const currentOrder = Array.from(row.cells).map(cell => String(cell.dataset.manageColKey || '').trim());
             if(currentOrder.length === state.columnOrder.length && currentOrder.every((v, i) => v === state.columnOrder[i])) {
                 return;
             }
-            const byOrigin = mapRowByOrigin(row);
-            state.columnOrder.forEach(origin => {
-                const cell = byOrigin.get(origin);
+            const byKey = mapRowByKey(row);
+            state.columnOrder.forEach(key => {
+                const cell = byKey.get(String(key || '').trim());
                 if(cell) row.appendChild(cell);
             });
         });
+    }
+
+    function syncManagedColgroupOrder(state){
+        if(!state || !state.table || !state.table.tHead || !state.table.tHead.rows || !state.table.tHead.rows.length) return;
+        const colgroup = state.table.querySelector('colgroup');
+        if(!colgroup) return;
+        const cols = Array.from(colgroup.children || []).filter(node => node && String(node.tagName || '').toUpperCase() === 'COL');
+        if(!cols.length) return;
+
+        const headerRow = state.table.tHead.rows[0];
+        if(!headerRow || !headerRow.cells || !headerRow.cells.length) return;
+
+        const segments = [];
+        let cursor = 0;
+        Array.from(headerRow.cells || []).forEach((cell, idx) => {
+            const span = Math.max(1, Number(cell.colSpan || 1) || 1);
+            const key = String(cell.dataset.manageColKey || '').trim() || `字段${idx + 1}`;
+            const segmentCols = cols.slice(cursor, cursor + span);
+            if(segmentCols.length === span){
+                segmentCols.forEach(col => {
+                    col.dataset.manageColKey = key;
+                    col.dataset.manageColSpan = String(span);
+                });
+                segments.push({ key, cols: segmentCols });
+            }
+            cursor += span;
+        });
+
+        if(!segments.length) return;
+
+        const orderedCols = [];
+        const usedIndexes = new Set();
+        state.columnOrder.forEach((key) => {
+            const targetKey = String(key || '').trim();
+            if(!targetKey) return;
+            const segIdx = segments.findIndex((seg, idx) => !usedIndexes.has(idx) && seg.key === targetKey);
+            if(segIdx < 0) return;
+            usedIndexes.add(segIdx);
+            orderedCols.push(...segments[segIdx].cols);
+        });
+
+        segments.forEach((seg, idx) => {
+            if(usedIndexes.has(idx)) return;
+            orderedCols.push(...seg.cols);
+        });
+
+        if(orderedCols.length !== cols.length) return;
+        const sameOrder = cols.every((col, idx) => col === orderedCols[idx]);
+        if(sameOrder) return;
+        orderedCols.forEach(col => colgroup.appendChild(col));
     }
 
     function applyColumnVisibility(state){
@@ -1471,8 +1552,8 @@
         Array.from(state.table.rows || []).forEach(row => {
             if((row.cells || []).length !== state.headerCount) return;
             Array.from(row.cells).forEach(cell => {
-                const origin = Number(cell.dataset.manageColOrigin || '-1');
-                cell.classList.toggle('pm-table-hide-col', !visible.has(origin));
+                const key = String(cell.dataset.manageColKey || '').trim();
+                cell.classList.toggle('pm-table-hide-col', !visible.has(key));
             });
         });
     }
@@ -1482,6 +1563,17 @@
         const columnKey = String(key || '').trim();
         if(!columnKey) return;
         state.columnWidths[columnKey] = width;
+
+        const colgroup = state.table && state.table.querySelector ? state.table.querySelector('colgroup') : null;
+        if(colgroup){
+            Array.from(colgroup.children || []).forEach(node => {
+                if(!node || String(node.tagName || '').toUpperCase() !== 'COL') return;
+                if(String(node.dataset.manageColKey || '').trim() !== columnKey) return;
+                node.style.width = `${width}px`;
+                node.style.minWidth = `${width}px`;
+                node.style.maxWidth = `${width}px`;
+            });
+        }
 
         Array.from(state.table.rows || []).forEach(row => {
             if((row.cells || []).length !== state.headerCount) return;
@@ -1604,19 +1696,19 @@
         state.dragPlacementNode = item;
     }
 
-    function commitColumnPanelDrag(state, targetOrigin, before){
-        const fromOrigin = Number(state.dragOrigin);
-        const origin = Number(targetOrigin);
-        if(!Number.isFinite(fromOrigin) || !Number.isFinite(origin) || fromOrigin === origin) return;
-        const fromIdx = state.columnOrder.indexOf(fromOrigin);
-        let toIdx = state.columnOrder.indexOf(origin);
+    function commitColumnPanelDrag(state, targetKey, before){
+        const fromKey = String(state.dragOrigin || '').trim();
+        const key = String(targetKey || '').trim();
+        if(!fromKey || !key || fromKey === key) return;
+        const fromIdx = state.columnOrder.indexOf(fromKey);
+        let toIdx = state.columnOrder.indexOf(key);
         if(fromIdx < 0 || toIdx < 0) return;
         toIdx += before ? 0 : 1;
         if(fromIdx < toIdx) toIdx -= 1;
         if(fromIdx === toIdx) return;
 
         state.columnOrder.splice(fromIdx, 1);
-        state.columnOrder.splice(toIdx, 0, fromOrigin);
+        state.columnOrder.splice(toIdx, 0, fromKey);
         persistColumnOrder(state);
 
         window.requestAnimationFrame(() => {
@@ -1638,22 +1730,22 @@
         const panel = state.columnPanel;
         panel.innerHTML = '';
 
-        state.columnOrder.forEach((origin, orderIdx) => {
-            const header = state.headers.find(h => h.origin === origin);
+        state.columnOrder.forEach((key, orderIdx) => {
+            const header = state.headers.find(h => String(h.key || '').trim() === String(key || '').trim());
             if(!header) return;
 
             const item = document.createElement('label');
             item.className = 'pm-table-columns-item';
             item.draggable = true;
-            item.dataset.origin = String(origin);
+            item.dataset.columnKey = String(key || '').trim();
 
             const main = document.createElement('span');
             main.className = 'pm-table-columns-item-main';
 
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
-            const isLocked = state.lockedColumns.has(origin);
-            checkbox.checked = isLocked ? true : state.visibleColumns.has(origin);
+            const isLocked = state.lockedColumns.has(String(key || '').trim());
+            checkbox.checked = isLocked ? true : state.visibleColumns.has(String(key || '').trim());
             checkbox.disabled = isLocked;
             checkbox.addEventListener('change', () => {
                 if(!checkbox.checked && state.visibleColumns.size <= 1){
@@ -1664,8 +1756,8 @@
                     checkbox.checked = true;
                     return;
                 }
-                if(checkbox.checked) state.visibleColumns.add(origin);
-                else state.visibleColumns.delete(origin);
+                if(checkbox.checked) state.visibleColumns.add(String(key || '').trim());
+                else state.visibleColumns.delete(String(key || '').trim());
                 persistColumns(state);
                 applyColumnVisibility(state);
                 syncDetachedHeader(state);
@@ -1692,7 +1784,7 @@
             item.appendChild(drag);
 
             item.addEventListener('dragstart', () => {
-                state.dragOrigin = origin;
+                state.dragOrigin = String(key || '').trim();
                 state.dragPlacement = null;
                 state.dragPlacementNode = null;
                 item.classList.add('is-dragging');
@@ -1708,13 +1800,13 @@
                 if(event.dataTransfer) event.dataTransfer.dropEffect = 'move';
                 const rect = item.getBoundingClientRect();
                 const before = event.clientY < (rect.top + rect.height / 2);
-                state.dragPlacement = { origin, before };
+                state.dragPlacement = { key: String(key || '').trim(), before };
                 setColumnDragIndicator(state, item, before);
             });
             item.addEventListener('drop', (event) => {
                 event.preventDefault();
-                const placement = state.dragPlacement && state.dragPlacement.origin === origin ? state.dragPlacement : { origin, before: false };
-                commitColumnPanelDrag(state, origin, placement.before);
+                const placement = state.dragPlacement && state.dragPlacement.key === String(key || '').trim() ? state.dragPlacement : { key: String(key || '').trim(), before: false };
+                commitColumnPanelDrag(state, String(key || '').trim(), placement.before);
             });
 
             panel.appendChild(item);
@@ -2337,7 +2429,8 @@
                 const headerRow = host.tHead && host.tHead.rows ? host.tHead.rows[0] : null;
                 if(!headerRow) return;
                 Array.from(headerRow.cells || []).forEach((cell, idx) => {
-                    const columnConfig = getColumnConfig(idx);
+                    const headerKey = String(cell.dataset.manageColKey || '').trim() || String(idx);
+                    const columnConfig = getColumnConfig(headerKey);
                     if(!columnConfig) return;
                     cell.classList.add('pm-column-filter-th');
                     let btn = cell.querySelector('.pm-column-filter-btn');
@@ -2346,11 +2439,12 @@
                         btn.type = 'button';
                         btn.className = 'pm-column-filter-btn';
                         btn.dataset.columnIndex = String(idx);
-                        btn.dataset.columnKey = String(columnConfig.key || '').trim() || String(cell.dataset.manageColKey || '').trim() || String(idx);
+                        btn.dataset.columnKey = String(columnConfig.key || '').trim() || headerKey;
                         btn.title = '列筛选';
                         cell.appendChild(btn);
                     }
-                    if(!btn.dataset.columnKey) btn.dataset.columnKey = String(columnConfig.key || '').trim() || String(cell.dataset.manageColKey || '').trim() || String(idx);
+                    btn.dataset.columnIndex = String(idx);
+                    btn.dataset.columnKey = String(columnConfig.key || '').trim() || headerKey;
                     btn.classList.toggle('has-filter', isColumnFilterActive(state.filters.get(String(btn.dataset.columnKey || '').trim())));
                 });
             });
@@ -2523,9 +2617,9 @@
 
         if(state.lockedColumns && state.lockedColumns.size){
             rows.forEach(row => {
-                const byOrigin = mapRowByOrigin(row);
-                state.lockedColumns.forEach(origin => {
-                    const cell = byOrigin.get(origin);
+                const byKey = mapRowByKey(row);
+                state.lockedColumns.forEach(key => {
+                    const cell = byKey.get(String(key || '').trim());
                     if(!cell) return;
                     const cb = cell.querySelector('input[type="checkbox"]');
                     if(cb && !fromLockedColumns.includes(cb)) fromLockedColumns.push(cb);
@@ -2579,20 +2673,21 @@
 
     function exportManagedRowsToCsv(state, rows){
         if(!state || !state.table || !Array.isArray(rows) || !rows.length) return false;
-        const exportOrigins = (state.columnOrder || []).filter(origin => {
-            if(state.lockedColumns && state.lockedColumns.has(origin)) return false;
-            return state.visibleColumns ? state.visibleColumns.has(origin) : true;
+        const exportKeys = (state.columnOrder || []).filter(key => {
+            const columnKey = String(key || '').trim();
+            if(state.lockedColumns && state.lockedColumns.has(columnKey)) return false;
+            return state.visibleColumns ? state.visibleColumns.has(columnKey) : true;
         });
-        if(!exportOrigins.length) return false;
+        if(!exportKeys.length) return false;
 
-        const headerMap = new Map((state.headers || []).map(h => [Number(h.origin), String(h.label || '').trim()]));
+        const headerMap = new Map((state.headers || []).map(h => [String(h.key || '').trim(), String(h.label || '').trim()]));
         const lines = [];
-        lines.push(exportOrigins.map(origin => csvEscape(headerMap.get(Number(origin)) || `字段${Number(origin) + 1}`)).join(','));
+        lines.push(exportKeys.map(key => csvEscape(headerMap.get(String(key || '').trim()) || String(key || '字段'))).join(','));
 
         rows.forEach(row => {
-            const byOrigin = mapRowByOrigin(row);
-            const line = exportOrigins.map(origin => {
-                const cell = byOrigin.get(Number(origin));
+            const byKey = mapRowByKey(row);
+            const line = exportKeys.map(key => {
+                const cell = byKey.get(String(key || '').trim());
                 const raw = cell ? String(readCellExportText(cell) || '').replace(/[↕↑↓▲▼▴▾]/g, ' ').replace(/\s+/g, ' ').trim() : '';
                 return csvEscape(raw);
             }).join(',');
@@ -2891,12 +2986,12 @@
     }
 
     function applySort(state){
-        const sortOrigin = state.sortOrigin;
+        const sortOrigin = String(state.sortOrigin || '').trim();
         const sortDir = state.sortDir;
         const rows = getDataRows(state);
         if(!rows.length) return;
 
-        if((sortOrigin === null || sortOrigin === undefined) || !sortDir){
+        if(!sortOrigin || !sortDir){
             if(!state.sortApplied) return;
             rows.sort((a, b) => Number(a.dataset.sortOrigin || '0') - Number(b.dataset.sortOrigin || '0'));
             const sortedOrigins = rows.map(r => Number(r.dataset.sortOrigin || '0'));
@@ -2907,8 +3002,8 @@
         }
 
         rows.sort((a, b) => {
-            const aCell = mapRowByOrigin(a).get(sortOrigin);
-            const bCell = mapRowByOrigin(b).get(sortOrigin);
+            const aCell = mapRowByKey(a).get(sortOrigin);
+            const bCell = mapRowByKey(b).get(sortOrigin);
             const av = readCellComparableValue(aCell);
             const bv = readCellComparableValue(bCell);
             if(typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? (av - bv) : (bv - av);
@@ -2927,7 +3022,7 @@
         if(!headerRow) return;
         Array.from(headerRow.cells || []).forEach(cell => {
             if(cell.dataset.disableSort === '1') return;
-            const origin = Number(cell.dataset.manageColOrigin || '-1');
+            const origin = String(cell.dataset.manageColKey || '').trim();
             cell.classList.remove('pm-sortable', 'pm-sort-asc', 'pm-sort-desc');
             if(state.lockedColumns.has(origin)) return;
             cell.classList.add('pm-sortable');
@@ -2949,7 +3044,7 @@
                 if(event.target.closest('.pm-col-resizer')) return;
                 if(event.target.closest('input, button, select, textarea, label, a')) return;
                 if(cell.querySelector('input[type="checkbox"]')) return;
-                const origin = Number(cell.dataset.manageColOrigin || '-1');
+                const origin = String(cell.dataset.manageColKey || '').trim();
                 if(state.lockedColumns.has(origin)) return;
                 if(state.sortOrigin !== origin){
                     state.sortOrigin = origin;
@@ -3013,19 +3108,19 @@
         state.headerCount = headerCount;
         ensureManagedColumnKeys(state, headerMeta);
 
-        const validOrigins = headerMeta.map(meta => meta.origin);
+        const validKeys = headerMeta.map(meta => String(meta.key || '').trim()).filter(Boolean);
         const headerSignature = headerMeta
             .slice()
-            .sort((a, b) => a.origin - b.origin)
-            .map(meta => `${meta.origin}:${meta.label}`)
+            .sort((a, b) => String(a.key || '').localeCompare(String(b.key || ''), 'zh-Hans-CN', { sensitivity: 'base' }))
+            .map(meta => `${meta.key}:${meta.label}`)
             .join('|');
 
         if(headerSignature !== state.headerSignature){
             state.headerSignature = headerSignature;
             state.headerCount = headerCount;
             state.headers = headerMeta.map(meta => ({ origin: meta.origin, key: meta.key, label: meta.label }));
-            state.visibleColumns = readPersistedColumns(state.table, validOrigins);
-            state.columnOrder = readPersistedOrder(state.table, validOrigins);
+            state.visibleColumns = readPersistedColumns(state.table, headerMeta);
+            state.columnOrder = readPersistedOrder(state.table, headerMeta);
             const persistedWidths = readPersistedColumnWidths(state.table);
             state.defaultColumnWidths = {};
             headerMeta.forEach(meta => {
@@ -3051,9 +3146,12 @@
             state.lockedColumns = new Set(
                 headerMeta
                     .filter(meta => isMultiSelectColumn(meta.cell, meta.label))
-                    .map(meta => meta.origin)
+                    .map(meta => String(meta.key || '').trim())
             );
-            state.lockedColumns.forEach(origin => state.visibleColumns.add(origin));
+            state.lockedColumns.forEach(key => state.visibleColumns.add(String(key || '').trim()));
+            validKeys.forEach(key => {
+                if(!state.columnOrder.includes(key)) state.columnOrder.push(key);
+            });
             if(!state.light){
                 state.columnsWrap.style.display = headerCount >= 2 ? '' : 'none';
                 renderColumnPanel(state);
@@ -3291,7 +3389,7 @@
 
                 if(mode === 'order'){
                     try { localStorage.removeItem(makeStorageKey(state.table, 'column-order')); } catch (_) {}
-                    state.columnOrder = (state.headers || []).map(h => Number(h.origin));
+                    state.columnOrder = (state.headers || []).map(h => String(h.key || '').trim()).filter(Boolean);
                     persistColumnOrder(state);
                     refreshLayout();
                     showAppToast('字段排序已重置', false, 1200);
@@ -3300,8 +3398,8 @@
                 }
 
                 if(mode === 'visibility'){
-                    const allVisible = new Set((state.headers || []).map(h => Number(h.origin)));
-                    state.lockedColumns.forEach(origin => allVisible.add(Number(origin)));
+                    const allVisible = new Set((state.headers || []).map(h => String(h.key || '').trim()).filter(Boolean));
+                    state.lockedColumns.forEach(key => allVisible.add(String(key || '').trim()));
                     state.visibleColumns = allVisible;
                     persistColumns(state);
                     applyColumnVisibility(state);

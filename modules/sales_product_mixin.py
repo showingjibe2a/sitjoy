@@ -197,12 +197,14 @@ class SalesProductMixin:
                         parent_codes_local = [row['parent_code'] for row in cur.fetchall()]
                         cur.execute("SELECT sku_family FROM product_families ORDER BY sku_family")
                         sku_family_local = [str(row['sku_family']).strip() for row in (cur.fetchall() or []) if row.get('sku_family')]
+                        cur.execute("SELECT DISTINCT spec_name FROM sales_products WHERE spec_name IS NOT NULL AND TRIM(spec_name) <> '' ORDER BY spec_name")
+                        spec_name_local = [str(row.get('spec_name') or '').strip() for row in (cur.fetchall() or []) if str(row.get('spec_name') or '').strip()]
                         cur.execute("SELECT fabric_name_en FROM fabric_materials ORDER BY fabric_name_en")
                         fabric_local = [str(row['fabric_name_en']).strip() for row in (cur.fetchall() or []) if row.get('fabric_name_en')]
-                    return (shop_options_local, parent_codes_local, sku_family_local, fabric_local)
+                    return (shop_options_local, parent_codes_local, sku_family_local, spec_name_local, fabric_local)
 
-                shop_options, parent_codes, sku_family_options, fabric_options = self._get_cached_template_options(
-                    'sales_product_template_options_v1',
+                shop_options, parent_codes, sku_family_options, spec_name_options, fabric_options = self._get_cached_template_options(
+                    'sales_product_template_options_v2',
                     _load_sales_template_options,
                     ttl_seconds=180
                 )
@@ -384,6 +386,12 @@ class SalesProductMixin:
                 ws.add_data_validation(sku_validation)
                 for row in range(4, max_validation_row + 1):
                     sku_validation.add(f'H{row}')
+
+            if spec_name_options:
+                spec_validation = DataValidation(type='list', formula1=f'"{",".join(spec_name_options[:100])}"', allow_blank=True)
+                ws.add_data_validation(spec_validation)
+                for row in range(4, max_validation_row + 1):
+                    spec_validation.add(f'I{row}')
 
             if fabric_options:
                 fabric_validation = DataValidation(type='list', formula1=f'"{",".join(fabric_options[:100])}"', allow_blank=True)
@@ -1442,14 +1450,82 @@ class SalesProductMixin:
             return '.webp'
         return '.jpg'
 
+    def handle_sales_image_type_api(self, environ, method, start_response):
+        """销售主图类型 API：允许新增，不允许编辑和删除。"""
+        try:
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+
+            if method == 'GET':
+                keyword = (query_params.get('q', [''])[0] or '').strip()
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        if keyword:
+                            cur.execute(
+                                """
+                                SELECT id, name, is_enabled, created_at
+                                FROM image_types
+                                WHERE is_enabled=1 AND name LIKE %s
+                                ORDER BY id ASC
+                                """,
+                                (f"%{keyword}%",)
+                            )
+                        else:
+                            cur.execute(
+                                """
+                                SELECT id, name, is_enabled, created_at
+                                FROM image_types
+                                WHERE is_enabled=1
+                                ORDER BY id ASC
+                                """
+                            )
+                        rows = cur.fetchall() or []
+                return self.send_json({'status': 'success', 'items': rows}, start_response)
+
+            if method == 'POST':
+                data = self._read_json_body(environ)
+                name = str(data.get('name') or '').strip()
+                if not name:
+                    return self.send_json({'status': 'error', 'message': 'Missing name'}, start_response)
+                if len(name) > 64:
+                    return self.send_json({'status': 'error', 'message': '类型名称长度不能超过64个字符'}, start_response)
+
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT id, is_enabled FROM image_types WHERE name=%s LIMIT 1", (name,))
+                        exists = cur.fetchone() or {}
+                        if exists.get('id'):
+                            if str(exists.get('is_enabled') or '1') in ('0', 'false', 'False'):
+                                cur.execute("UPDATE image_types SET is_enabled=1 WHERE id=%s", (exists.get('id'),))
+                            return self.send_json({'status': 'success', 'id': exists.get('id'), 'reused': True}, start_response)
+
+                        cur.execute(
+                            "INSERT INTO image_types (name, is_enabled) VALUES (%s, 1)",
+                            (name,)
+                        )
+                        new_id = cur.lastrowid
+                return self.send_json({'status': 'success', 'id': new_id}, start_response)
+
+            if method in ('PUT', 'PATCH', 'DELETE'):
+                return self.send_json({'status': 'error', 'message': '图片类型仅支持新增，不支持编辑或删除'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except Exception as e:
+            if pymysql and isinstance(e, pymysql.err.IntegrityError):
+                return self.send_json({'status': 'error', 'message': '图片类型已存在'}, start_response)
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
     def _get_image_type_id_by_name(self, conn, type_name):
         name = (type_name or '').strip()
         if not name:
-            name = '图文卖点'
+            name = '文字卖点图'
         with conn.cursor() as cur:
             cur.execute("SELECT id FROM image_types WHERE name=%s AND is_enabled=1 LIMIT 1", (name,))
             row = cur.fetchone() or {}
-        return self._parse_int(row.get('id'))
+            if row.get('id'):
+                return self._parse_int(row.get('id'))
+            cur.execute("SELECT id FROM image_types WHERE is_enabled=1 ORDER BY id ASC LIMIT 1")
+            fallback = cur.fetchone() or {}
+        return self._parse_int(fallback.get('id'))
 
     def _get_sales_product_image_sort_start(self, conn, sales_product_id):
         with conn.cursor() as cur:
@@ -1703,7 +1779,7 @@ class SalesProductMixin:
             if not sales_product_id:
                 return self.send_json({'status': 'error', 'message': 'Missing sales_product_id'}, start_response)
 
-            image_type_name = (form.getfirst('image_type_name', '') or '').strip() or '图文卖点'
+            image_type_name = (form.getfirst('image_type_name', '') or '').strip() or '文字卖点图'
 
             uploads = []
             for p in getattr(form, 'list', []) or []:

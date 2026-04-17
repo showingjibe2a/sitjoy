@@ -1736,7 +1736,8 @@ class OrderManagementMixin:
                         pf.sku_family,
                         pf.category,
                         fm.fabric_code,
-                        fm.fabric_name_en
+                        fm.fabric_name_en,
+                        fm.representative_color
                     FROM order_products op
                     LEFT JOIN product_families pf ON pf.id = op.sku_family_id
                     LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
@@ -1754,7 +1755,8 @@ class OrderManagementMixin:
                         pf.sku_family,
                         pf.category,
                         fm.fabric_code,
-                        fm.fabric_name_en
+                        fm.fabric_name_en,
+                        fm.representative_color
                     FROM order_products op
                     LEFT JOIN product_families pf ON pf.id = op.sku_family_id
                     LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
@@ -1776,7 +1778,8 @@ class OrderManagementMixin:
                         pf.sku_family,
                         pf.category,
                         fm.fabric_code,
-                        fm.fabric_name_en
+                        fm.fabric_name_en,
+                        fm.representative_color
                     FROM order_products op
                     LEFT JOIN product_families pf ON pf.id = op.sku_family_id
                     LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id

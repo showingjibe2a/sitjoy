@@ -267,6 +267,49 @@
             flex-wrap: wrap;
             align-items: center;
         }
+        .image-type-bar {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            flex-wrap: wrap;
+            padding: 0.3rem 0.35rem;
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.08);
+        }
+        .image-type-add {
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
+            border: 1px solid rgba(155, 74, 74, 0.24);
+            background: #9b4a4a;
+            color: #fff;
+            font-size: 18px;
+            line-height: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .image-type-add:hover { filter: brightness(0.95); }
+        .image-type-radio { margin: 0; }
+        .image-type-radio input { display: none; }
+        .image-type-radio span {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.42rem 0.7rem;
+            border-radius: 8px;
+            background: var(--morandi-mist);
+            color: var(--morandi-ink);
+            border: 1px solid var(--morandi-sand);
+            cursor: pointer;
+            font-size: 0.86rem;
+            user-select: none;
+        }
+        .image-type-radio input:checked + span {
+            background: #9b4a4a;
+            border-color: #9b4a4a;
+            color: #fff;
+        }
         .main-images-folder-tip {
             color: var(--morandi-slate);
             font-size: 0.86rem;
@@ -482,13 +525,10 @@
                             <label>规格-面料主图</label>
                             <div class="main-images-manager">
                                 <div class="main-images-toolbar">
-                                            <select id="modalMainImageType" class="optional-field" style="max-width: 180px;">
-                                                <option value="图文卖点">图文卖点</option>
-                                                <option value="场景图">场景图</option>
-                                                <option value="白底图">白底图</option>
-                                                <option value="细节图">细节图</option>
-                                            </select>
-                                            <button type="button" class="btn-accent" onclick="triggerMainImageUpload()">新增主图</button>
+                                    <div class="image-type-bar" id="modalMainImageTypeBar">
+                                        <button type="button" class="image-type-add" aria-label="新增图片类型" onclick="openSalesImageTypeCreateModal()">+</button>
+                                    </div>
+                                    <button type="button" class="btn-accent" onclick="triggerMainImageUpload()">新增主图</button>
                                     <button type="button" class="btn-secondary" onclick="refreshMainImageList()">刷新</button>
                                     <input type="file" id="modalMainImageUpload" accept="image/*" multiple style="display:none;">
                                 </div>
@@ -592,6 +632,23 @@
         </div>
     </div>
 
+    <div class="pm-modal" id="sales-image-type-modal">
+        <div class="pm-modal-content" style="max-width: 460px;">
+            <h3 style="margin-top:0;">新增主图类型</h3>
+            <div class="pm-form">
+                <div class="form-group pm-form-full">
+                    <label for="salesImageTypeName">类型名称<span class="required-asterisk">*</span></label>
+                    <input type="text" id="salesImageTypeName" class="required-field" placeholder="例如：场景纯图">
+                </div>
+            </div>
+            <div id="salesImageTypeStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" type="button" onclick="closeSalesImageTypeCreateModal()">取消</button>
+                <button class="btn-primary" type="button" onclick="saveSalesImageTypeFromModal()">保存</button>
+            </div>
+        </div>
+    </div>
+
     <footer>
         <p>&copy; 2026 SITJOY | 内部使用</p>
     </footer>
@@ -647,6 +704,8 @@
         let currentProductStatus = 'enabled';
         let mainImageItems = [];
         let currentEditingMainImageName = '';
+        let salesImageTypeOptions = [];
+        let selectedMainImageType = '文字卖点图';
 
         function escapeHtml(value) {
             return String(value == null ? '' : value)
@@ -1261,6 +1320,113 @@
             }).join('');
         }
 
+        function normalizeMainImageTypeName(value) {
+            const text = String(value || '').trim();
+            return text || '文字卖点图';
+        }
+
+        function renderSalesImageTypeBar() {
+            const bar = document.getElementById('modalMainImageTypeBar');
+            if (!bar) return;
+            const addBtn = '<button type="button" class="image-type-add" aria-label="新增图片类型" onclick="openSalesImageTypeCreateModal()">+</button>';
+            const list = (salesImageTypeOptions || []).filter(x => String(x.name || '').trim());
+            if (!list.length) {
+                bar.innerHTML = addBtn + '<span class="pm-select-empty" style="padding:0 .4rem;">暂无类型</span>';
+                return;
+            }
+            if (!list.some(x => String(x.name || '').trim() === selectedMainImageType)) {
+                selectedMainImageType = String(list[0].name || '').trim() || '文字卖点图';
+            }
+            const radios = list.map(item => {
+                const name = String(item.name || '').trim();
+                const checked = name === selectedMainImageType ? 'checked' : '';
+                return `
+                    <label class="image-type-radio">
+                        <input type="radio" name="mainImageType" value="${escapeHtml(name)}" ${checked}>
+                        <span>${escapeHtml(name)}</span>
+                    </label>
+                `;
+            }).join('');
+            bar.innerHTML = addBtn + radios;
+            bar.querySelectorAll('input[name="mainImageType"]').forEach(el => {
+                el.addEventListener('change', function() {
+                    if (this.checked) selectedMainImageType = normalizeMainImageTypeName(this.value);
+                });
+            });
+        }
+
+        function loadSalesImageTypeOptions() {
+            return fetch('/api/sales-image-type').then(r => r.json()).then(data => {
+                if (data.status !== 'success') {
+                    salesImageTypeOptions = [];
+                    renderSalesImageTypeBar();
+                    return;
+                }
+                salesImageTypeOptions = Array.isArray(data.items) ? data.items : [];
+                renderSalesImageTypeBar();
+            }).catch(() => {
+                salesImageTypeOptions = [];
+                renderSalesImageTypeBar();
+            });
+        }
+
+        function openSalesImageTypeCreateModal() {
+            const status = document.getElementById('salesImageTypeStatus');
+            if (status) {
+                status.style.display = 'none';
+                status.textContent = '';
+            }
+            const input = document.getElementById('salesImageTypeName');
+            if (input) input.value = '';
+            document.getElementById('sales-image-type-modal').classList.add('active');
+            if (input) input.focus();
+        }
+
+        function closeSalesImageTypeCreateModal() {
+            document.getElementById('sales-image-type-modal').classList.remove('active');
+        }
+
+        function saveSalesImageTypeFromModal() {
+            const input = document.getElementById('salesImageTypeName');
+            const status = document.getElementById('salesImageTypeStatus');
+            const name = String(input?.value || '').trim();
+            if (!name) {
+                if (status) {
+                    status.style.display = 'block';
+                    status.style.background = '#ffecec';
+                    status.style.color = '#a33';
+                    status.textContent = '请输入类型名称';
+                }
+                return;
+            }
+            fetch('/api/sales-image-type', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            }).then(r => r.json()).then(data => {
+                if (data.status !== 'success') {
+                    if (status) {
+                        status.style.display = 'block';
+                        status.style.background = '#ffecec';
+                        status.style.color = '#a33';
+                        status.textContent = data.message || '保存失败';
+                    }
+                    return;
+                }
+                selectedMainImageType = normalizeMainImageTypeName(name);
+                loadSalesImageTypeOptions().finally(() => {
+                    closeSalesImageTypeCreateModal();
+                });
+            }).catch(err => {
+                if (status) {
+                    status.style.display = 'block';
+                    status.style.background = '#ffecec';
+                    status.style.color = '#a33';
+                    status.textContent = '保存失败: ' + err;
+                }
+            });
+        }
+
         function refreshMainImageList() {
             if (!editId) {
                 renderMainImageGrid();
@@ -1299,7 +1465,7 @@
             if (!editId || !files || !files.length) return Promise.resolve({ duplicate_count: 0, duplicates: [] });
             const formData = new FormData();
             formData.append('sales_product_id', String(editId));
-            formData.append('image_type_name', document.getElementById('modalMainImageType').value || '图文卖点');
+            formData.append('image_type_name', normalizeMainImageTypeName(selectedMainImageType));
             Array.from(files).forEach(file => formData.append('file', file));
             return fetch('/api/sales-product-main-images-upload?check_only=1', {
                 method: 'POST',
@@ -1311,7 +1477,7 @@
             if (!editId || !files || !files.length) return;
             const formData = new FormData();
             formData.append('sales_product_id', String(editId));
-            formData.append('image_type_name', document.getElementById('modalMainImageType').value || '图文卖点');
+            formData.append('image_type_name', normalizeMainImageTypeName(selectedMainImageType));
             Array.from(files).forEach(file => {
                 formData.append('file', file);
             });
@@ -1522,8 +1688,8 @@
             document.getElementById('modalPackageHeight').value = '';
             document.getElementById('modalNetWeight').value = '';
             document.getElementById('modalGrossWeight').value = '';
-            const mainImageType = document.getElementById('modalMainImageType');
-            if (mainImageType) mainImageType.value = '图文卖点';
+            selectedMainImageType = '文字卖点图';
+            renderSalesImageTypeBar();
             selectedOrderSkus = [];
             renderSelectedOrderSkuRows();
             mainImageItems = [];
@@ -1991,7 +2157,8 @@
             Promise.all([
                 loadShopOptions(),
                 loadSkuFamilyOptions(),
-                loadParentOptions()
+                loadParentOptions(),
+                loadSalesImageTypeOptions()
             ]);
         }
 
@@ -2058,6 +2225,9 @@
         });
         document.getElementById('main-image-desc-modal').addEventListener('click', function(e) {
             if (e.target === this) closeMainImageDescModal();
+        });
+        document.getElementById('sales-image-type-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeSalesImageTypeCreateModal();
         });
         function fallbackCopyText(text) {
             const ta = document.createElement('textarea');
