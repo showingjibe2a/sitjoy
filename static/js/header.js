@@ -1535,6 +1535,14 @@
         repositionColumnsPanel(state);
     }
 
+    function closeAllResetMenus(exceptWrap){
+        const keep = exceptWrap && exceptWrap.classList ? exceptWrap : null;
+        document.querySelectorAll('.pm-table-reset-group.is-open').forEach((wrap) => {
+            if(keep && keep === wrap) return;
+            wrap.classList.remove('is-open');
+        });
+    }
+
     function clearColumnDragIndicator(state){
         if(!state || !state.columnPanel) return;
         state.columnPanel.querySelectorAll('.pm-table-columns-item').forEach(node => {
@@ -2079,12 +2087,31 @@
             normalized.unshift({ value, label: value, count: 0 });
         });
 
-        statusEl.textContent = normalized.length ? `显示 ${normalized.length} 项` : '暂无可选项';
+        const selectAllId = `pmColumnFilterSelectAll_${String(columnIndex || 0)}`;
+        const allSelected = normalized.length > 0 && normalized.every(item => selectedSet.has(item.value));
+        const someSelected = normalized.some(item => selectedSet.has(item.value));
+        statusEl.innerHTML = normalized.length ? `
+            <label class="pm-column-filter-selectall" for="${selectAllId}">
+                <input type="checkbox" id="${selectAllId}" data-role="select-all" ${allSelected ? 'checked' : ''} ${normalized.length ? '' : 'disabled'}>
+                <span>显示 ${normalized.length} 项</span>
+            </label>
+        ` : '<span>暂无可选项</span>';
+        const selectAllEl = statusEl.querySelector('[data-role="select-all"]');
+        if(selectAllEl){
+            selectAllEl.indeterminate = !allSelected && someSelected;
+            selectAllEl.disabled = !normalized.length;
+        }
         optionsEl.innerHTML = normalized.length ? normalized.map(item => {
             const checked = selectedSet.has(item.value) ? 'checked' : '';
             const countText = item.count > 0 ? ` <span style="color:var(--morandi-slate);">(${item.count})</span>` : '';
-            return `<label class="pm-column-filter-option"><input type="checkbox" data-value="${String(item.value).replace(/"/g, '&quot;')}" ${checked}>${String(item.label || item.value || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}${countText}</label>`;
+            const escapedValue = String(item.value).replace(/"/g, '&quot;');
+            return `<label class="pm-column-filter-option" data-option-value="${escapedValue}"><span class="pm-column-filter-option-main"><input type="checkbox" data-value="${escapedValue}" ${checked}><span class="pm-column-filter-option-text">${String(item.label || item.value || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}${countText}</span></span><button type="button" class="pm-column-filter-only-btn" data-action="only" data-value="${escapedValue}">仅筛选此项</button></label>`;
         }).join('') : '<div class="pm-column-filter-option" style="opacity:.7;">暂无可选项</div>';
+
+        if(selectAllEl){
+            selectAllEl.checked = allSelected;
+            selectAllEl.indeterminate = !allSelected && someSelected;
+        }
     }
 
     function getColumnFilterFetchKey(columnIndex, query, exact, limit){
@@ -2170,6 +2197,18 @@
             syncColumnFilterButtons(state);
         }
 
+        function syncSelectAllState(){
+            const statusEl = popup.querySelector('[data-role="status"]');
+            const selectAllEl = statusEl ? statusEl.querySelector('[data-role="select-all"]') : null;
+            if(!selectAllEl) return;
+            const optionCheckboxes = Array.from(popup.querySelectorAll('.pm-column-filter-options input[type="checkbox"][data-value]'));
+            const checkedCount = optionCheckboxes.filter(input => !!input.checked).length;
+            const total = optionCheckboxes.length;
+            selectAllEl.checked = total > 0 && checkedCount === total;
+            selectAllEl.indeterminate = checkedCount > 0 && checkedCount < total;
+            selectAllEl.disabled = total === 0;
+        }
+
         function resetFilter(columnIndex){
             state.filters.set(columnIndex, { query: '', exact: false, selected: [] });
             if(typeof state.config.onReset === 'function'){
@@ -2202,6 +2241,12 @@
             const left = Math.min(window.innerWidth - popupWidth - 10, Math.max(10, rect.left));
             popup.style.top = `${Math.max(10, rect.bottom + 6)}px`;
             popup.style.left = `${Math.max(10, left)}px`;
+
+            // Show current selected values immediately so reopening always reflects checked state.
+            const selectedPreview = Array.isArray(filterState.selected)
+                ? filterState.selected.map(v => ({ value: String(v || ''), label: String(v || ''), count: 0 })).filter(x => x.value)
+                : [];
+            renderColumnFilterOptions(state, columnIndex, selectedPreview);
 
             loadOptions(columnIndex, false);
         }
@@ -2264,6 +2309,30 @@
             if(target.checked) selected.add(value); else selected.delete(value);
             filterState.selected = Array.from(selected.values());
             state.filters.set(state.activeColumn, filterState);
+            syncSelectAllState();
+        });
+        popup.querySelector('[data-role="options"]').addEventListener('click', (event) => {
+            const button = event.target && event.target.closest ? event.target.closest('.pm-column-filter-only-btn[data-action="only"]') : null;
+            if(!button) return;
+            if(state.activeColumn == null) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const value = String(button.dataset.value || '');
+            const filterState = state.filters.get(state.activeColumn) || { query: '', exact: false, selected: [] };
+            filterState.selected = value ? [value] : [];
+            state.filters.set(state.activeColumn, filterState);
+            applyFilters();
+        });
+        popup.querySelector('[data-role="status"]').addEventListener('change', (event) => {
+            const target = event.target;
+            if(!target || !target.matches('[data-role="select-all"]')) return;
+            if(state.activeColumn == null) return;
+            const filterState = state.filters.get(state.activeColumn) || { query: '', exact: false, selected: [] };
+            const options = Array.from(popup.querySelectorAll('.pm-column-filter-options input[type="checkbox"][data-value]'));
+            options.forEach(input => { input.checked = !!target.checked; });
+            filterState.selected = target.checked ? Array.from(new Set(options.map(input => String(input.dataset.value || '')).filter(Boolean))) : [];
+            state.filters.set(state.activeColumn, filterState);
+            syncSelectAllState();
         });
 
         const clickHandler = (event) => {
@@ -2964,7 +3033,14 @@
                     <span class="pm-table-info"></span>
                 </div>
                 <div class="pm-table-toolbar-right">
-                    <button type="button" class="pm-table-columns-reset btn-secondary" title="恢复默认列宽和字段排序">重置列宽+字段排序</button>
+                    <div class="pm-table-reset-group">
+                        <button type="button" class="pm-table-columns-reset btn-secondary" title="重置列宽、字段排序、字段显示">重置</button>
+                        <div class="pm-table-reset-menu" aria-label="重置菜单">
+                            <button type="button" class="pm-table-reset-item btn-secondary" data-reset-mode="width">重置列宽</button>
+                            <button type="button" class="pm-table-reset-item btn-secondary" data-reset-mode="order">重置字段排序</button>
+                            <button type="button" class="pm-table-reset-item btn-secondary" data-reset-mode="visibility">重置字段显示</button>
+                        </div>
+                    </div>
                     <div class="pm-table-columns">
                         <button type="button" class="pm-table-columns-trigger btn-secondary" aria-expanded="false">字段显示</button>
                         <div class="pm-table-columns-panel"></div>
@@ -3006,6 +3082,8 @@
             columnsTrigger: toolbar ? toolbar.querySelector('.pm-table-columns-trigger') : null,
             columnPanel: toolbar ? toolbar.querySelector('.pm-table-columns-panel') : null,
             resetBtn: toolbar ? toolbar.querySelector('.pm-table-columns-reset') : null,
+            resetWrap: toolbar ? toolbar.querySelector('.pm-table-reset-group') : null,
+            resetMenu: toolbar ? toolbar.querySelector('.pm-table-reset-menu') : null,
             pageSize: readPersistedPageSize(table),
             currentPage: 1,
             headerSignature: '',
@@ -3068,24 +3146,80 @@
                 else openColumnsPanel(state);
             });
 
-            state.resetBtn.addEventListener('click', () => {
-                try { localStorage.removeItem(makeStorageKey(state.table, 'column-widths')); } catch (_) {}
-                try { localStorage.removeItem(makeStorageKey(state.table, 'column-order')); } catch (_) {}
-                state.columnWidths = Object.assign({}, state.defaultColumnWidths || {});
-                state.columnOrder = (state.headers || []).map(h => Number(h.origin));
-                persistColumnOrder(state);
-                applyColumnOrder(state);
-                applyColumnVisibility(state);
-                syncDetachedHeader(state);
-                persistColumnWidths(state);
-                applyColumnWidths(state);
-                ensureSortableHeaders(state);
-                ensureResizeHandles(state);
-                refreshSortHeaderUi(state);
-                applySort(state);
-                applyPagination(state);
-                syncTopScroll(state);
-                renderColumnPanel(state);
+            if(state.resetBtn && state.resetWrap){
+                state.resetBtn.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const nextOpen = !state.resetWrap.classList.contains('is-open');
+                    closeAllResetMenus(nextOpen ? state.resetWrap : null);
+                    state.resetWrap.classList.toggle('is-open', nextOpen);
+                });
+            }
+
+            state.toolbar.addEventListener('click', (event) => {
+                const target = event.target && event.target.closest ? event.target.closest('.pm-table-reset-item[data-reset-mode]') : null;
+                if(!target) return;
+                event.preventDefault();
+                const mode = String(target.dataset.resetMode || '').trim();
+                if(!mode) return;
+
+                const refreshLayout = () => {
+                    applyColumnOrder(state);
+                    applyColumnVisibility(state);
+                    syncDetachedHeader(state);
+                    applyColumnWidths(state);
+                    ensureSortableHeaders(state);
+                    ensureResizeHandles(state);
+                    refreshSortHeaderUi(state);
+                    applySort(state);
+                    applyPagination(state);
+                    syncTopScroll(state);
+                    renderColumnPanel(state);
+                };
+
+                if(mode === 'width'){
+                    try { localStorage.removeItem(makeStorageKey(state.table, 'column-widths')); } catch (_) {}
+                    state.columnWidths = Object.assign({}, state.defaultColumnWidths || {});
+                    persistColumnWidths(state);
+                    applyColumnWidths(state);
+                    ensureSortableHeaders(state);
+                    ensureResizeHandles(state);
+                    refreshSortHeaderUi(state);
+                    applySort(state);
+                    applyPagination(state);
+                    syncTopScroll(state);
+                    showAppToast('列宽已重置', false, 1200);
+                    if(state.resetWrap) state.resetWrap.classList.remove('is-open');
+                    return;
+                }
+
+                if(mode === 'order'){
+                    try { localStorage.removeItem(makeStorageKey(state.table, 'column-order')); } catch (_) {}
+                    state.columnOrder = (state.headers || []).map(h => Number(h.origin));
+                    persistColumnOrder(state);
+                    refreshLayout();
+                    showAppToast('字段排序已重置', false, 1200);
+                    if(state.resetWrap) state.resetWrap.classList.remove('is-open');
+                    return;
+                }
+
+                if(mode === 'visibility'){
+                    const allVisible = new Set((state.headers || []).map(h => Number(h.origin)));
+                    state.lockedColumns.forEach(origin => allVisible.add(Number(origin)));
+                    state.visibleColumns = allVisible;
+                    persistColumns(state);
+                    applyColumnVisibility(state);
+                    syncDetachedHeader(state);
+                    ensureSortableHeaders(state);
+                    ensureResizeHandles(state);
+                    refreshSortHeaderUi(state);
+                    applySort(state);
+                    applyPagination(state);
+                    syncTopScroll(state);
+                    renderColumnPanel(state);
+                    showAppToast('字段显示已重置', false, 1200);
+                    if(state.resetWrap) state.resetWrap.classList.remove('is-open');
+                }
             });
 
             state.wrap.addEventListener('scroll', () => {
@@ -3208,6 +3342,16 @@
                     try { input.showPicker(); } catch(_) {}
                 }
             });
+        });
+    }
+
+    function normalizeResetButtons(root){
+        const scope = root && root.querySelectorAll ? root : document;
+        scope.querySelectorAll('.pm-table-columns-reset').forEach((btn) => {
+            if(String(btn.textContent || '').trim() !== '重置'){
+                btn.textContent = '重置';
+            }
+            btn.setAttribute('title', '重置列宽、字段排序、字段显示');
         });
     }
 
@@ -3584,11 +3728,17 @@
         if(!e.target.closest('.pm-table-columns') && !e.target.closest('.pm-table-columns-panel')) {
             closeColumnsPanel(activeColumnsPanelState);
         }
+        if(!e.target.closest('.pm-table-reset-group')) {
+            closeAllResetMenus();
+        }
     });
 
     document.addEventListener('mousedown', (e) => {
         if(!e.target.closest('.pm-table-columns') && !e.target.closest('.pm-table-columns-panel')) {
             closeColumnsPanel(activeColumnsPanelState);
+        }
+        if(!e.target.closest('.pm-table-reset-group')) {
+            closeAllResetMenus();
         }
         if(activeGridSelection && !e.target.closest('.is-managed-table')) {
             clearGridSelection();
@@ -3606,6 +3756,7 @@
         }
         if(e.key === 'Escape'){
             closeColumnsPanel(activeColumnsPanelState);
+            closeAllResetMenus();
             closeAllDropdowns();
             closeDatePicker();
             closeBatchConfirmModal();
@@ -3734,6 +3885,7 @@
         initUniversalSingleSelects(document);
         enhanceCustomDateInputs(document);
         initOptionalDateInputs(document);
+        normalizeResetButtons(document);
         enhanceHeroSections(document);
         enhanceManagedTables(document);
         bindFloatingHelpDots(document);
@@ -3771,6 +3923,7 @@
                 bindFloatingHelpDots(document);
                 enhanceCustomDateInputs(document);
                 initOptionalDateInputs(document);
+                normalizeResetButtons(document);
                 bridgeLegacyResponseToToast(document);
                 syncModalScrollLock();
                 repositionManagedBatchBars();
