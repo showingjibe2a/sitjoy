@@ -678,9 +678,12 @@
             if(!cell.dataset.manageColOrigin) cell.dataset.manageColOrigin = String(idx);
             const origin = Number(cell.dataset.manageColOrigin);
             const rawLabel = extractHeaderLabelText(cell);
+            const key = String(cell.dataset.manageColKey || rawLabel || `字段${origin + 1}`).trim();
+            if(!cell.dataset.manageColKey) cell.dataset.manageColKey = key;
             const fallback = cell.querySelector('input[type="checkbox"]') ? '多选框' : `字段${origin + 1}`;
             return {
                 origin,
+                key,
                 label: rawLabel || fallback,
                 cell
             };
@@ -713,7 +716,7 @@
         for(let i = 0; i < sampleCount; i += 1){
             const row = rows[i];
             if(!row) continue;
-            const cell = mapRowByOrigin(row).get(meta.origin);
+            const cell = mapRowByKey(row).get(meta.key);
             if(!cell) continue;
             let len = String(cell.textContent || '').trim().length;
             if(cell.querySelector('img')) len = Math.max(len, 4);
@@ -806,6 +809,12 @@
         const rows = Array.from(state.tbody.rows || []);
         if(rows.length === 1 && isPlaceholderRow(rows[0], state.headerCount)) return [];
         return rows;
+    }
+
+    function resolveManagedColumnKey(label, fallbackIndex){
+        const text = String(label || '').trim();
+        if(text) return text;
+        return `字段${Number(fallbackIndex) + 1}`;
     }
 
     function isEditableDomTarget(target){
@@ -1372,6 +1381,37 @@
         return map;
     }
 
+    function mapRowByKey(row){
+        const map = new Map();
+        Array.from(row.cells || []).forEach((cell, idx) => {
+            const key = String(cell.dataset.manageColKey || '').trim() || `字段${idx + 1}`;
+            if(!cell.dataset.manageColKey) cell.dataset.manageColKey = key;
+            map.set(key, cell);
+        });
+        return map;
+    }
+
+    function ensureManagedColumnKeys(state, headerMeta){
+        if(!state || !state.table || !Array.isArray(headerMeta) || !headerMeta.length) return;
+        const headerRow = getPrimaryHeaderRow(state);
+        if(headerRow && headerRow.cells){
+            Array.from(headerRow.cells || []).forEach((cell, idx) => {
+                const meta = headerMeta[idx];
+                if(!meta) return;
+                if(!cell.dataset.manageColKey) cell.dataset.manageColKey = meta.key;
+            });
+        }
+
+        Array.from(state.table.rows || []).forEach(row => {
+            if((row.cells || []).length !== state.headerCount) return;
+            Array.from(row.cells || []).forEach((cell, idx) => {
+                const meta = headerMeta[idx];
+                if(!meta) return;
+                if(!cell.dataset.manageColKey) cell.dataset.manageColKey = meta.key;
+            });
+        });
+    }
+
     function getPrimaryHeaderRow(state){
         if(state && state.headerTable && state.headerTable.tHead && state.headerTable.tHead.rows && state.headerTable.tHead.rows[0]){
             return state.headerTable.tHead.rows[0];
@@ -1437,14 +1477,16 @@
         });
     }
 
-    function setColumnWidthByOrigin(state, origin, widthPx){
+    function setColumnWidthByKey(state, key, widthPx){
         const width = Math.max(36, Math.round(Number(widthPx) || 0));
-        state.columnWidths[String(origin)] = width;
+        const columnKey = String(key || '').trim();
+        if(!columnKey) return;
+        state.columnWidths[columnKey] = width;
 
         Array.from(state.table.rows || []).forEach(row => {
             if((row.cells || []).length !== state.headerCount) return;
             Array.from(row.cells).forEach(cell => {
-                if(Number(cell.dataset.manageColOrigin || '-1') !== Number(origin)) return;
+                if(String(cell.dataset.manageColKey || '').trim() !== columnKey) return;
                 cell.style.width = `${width}px`;
                 cell.style.minWidth = `${width}px`;
                 cell.style.maxWidth = `${width}px`;
@@ -1454,7 +1496,7 @@
         if(state.headerTable && state.headerTable.tHead && state.headerTable.tHead.rows.length){
             const headerRow = state.headerTable.tHead.rows[0];
             Array.from(headerRow.cells || []).forEach(cell => {
-                if(Number(cell.dataset.manageColOrigin || '-1') !== Number(origin)) return;
+                if(String(cell.dataset.manageColKey || '').trim() !== columnKey) return;
                 cell.style.width = `${width}px`;
                 cell.style.minWidth = `${width}px`;
                 cell.style.maxWidth = `${width}px`;
@@ -1464,7 +1506,7 @@
 
     function applyColumnWidths(state){
         const widths = state.columnWidths || {};
-        Object.keys(widths).forEach(origin => setColumnWidthByOrigin(state, Number(origin), Number(widths[origin])));
+        Object.keys(widths).forEach(key => setColumnWidthByKey(state, key, Number(widths[key])));
     }
 
     function ensureResizeHandles(state){
@@ -1478,10 +1520,10 @@
             handle.addEventListener('mousedown', (event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                const origin = Number(cell.dataset.manageColOrigin || '0');
+                const key = String(cell.dataset.manageColKey || '').trim();
                 activeResizeState = {
                     state,
-                    origin,
+                    key,
                     startX: event.clientX,
                     startWidth: cell.getBoundingClientRect().width,
                     handle,
@@ -1752,40 +1794,75 @@
         return /多选|选择|勾选/.test(t);
     }
 
-    function readCellFilterText(cell){
+    function readManagedCellDisplayText(cell){
         if(!cell) return '';
+
+        const explicitDisplay = String(
+            cell.getAttribute('data-display-value')
+            || cell.dataset.displayValue
+            || cell.getAttribute('data-display-text')
+            || cell.dataset.displayText
+            || ''
+        ).trim();
+        if(explicitDisplay) return explicitDisplay;
+
         const input = cell.querySelector('input:not([type="hidden"])');
         if(input){
             const type = String(input.type || '').toLowerCase();
-            if(type === 'checkbox' || type === 'radio') return input.checked ? '1' : '0';
+            if(type === 'checkbox' || type === 'radio') return input.checked ? '是' : '否';
             return String(input.value || '').trim();
         }
+
         const select = cell.querySelector('select');
         if(select){
             const option = select.options && select.selectedIndex >= 0 ? select.options[select.selectedIndex] : null;
             return String(option ? (option.textContent || option.value || '') : (select.value || '')).trim();
         }
+
         const textarea = cell.querySelector('textarea');
         if(textarea) return String(textarea.value || '').trim();
+
         const activePill = cell.querySelector('.status-pill.is-active');
         if(activePill){
-            return String(activePill.getAttribute('data-value') || activePill.textContent || '').trim();
+            return String(activePill.textContent || activePill.getAttribute('data-value') || '').trim();
         }
+
+        const segment = cell.querySelector('.status-segment');
+        if(segment){
+            const value = String(segment.getAttribute('data-value') || segment.dataset.value || '').trim();
+            if(value){
+                const matched = Array.from(segment.querySelectorAll('.status-pill')).find(btn => String(btn.getAttribute('data-value') || btn.dataset.value || '') === value);
+                if(matched) return String(matched.textContent || '').trim();
+                return value;
+            }
+        }
+
+        const pressedButton = cell.querySelector('button[aria-pressed="true"]');
+        if(pressedButton){
+            return String(pressedButton.textContent || pressedButton.getAttribute('data-value') || '').trim();
+        }
+
         return String(cell.textContent || '').replace(/[↕↑↓▲▼▴▾]/g, ' ').replace(/\s+/g, ' ').trim();
     }
 
-    function getRowCellByIndex(row, columnIndex){
-        if(!row || !row.cells || columnIndex < 0) return null;
-        return row.cells[columnIndex] || null;
+    function readCellFilterText(cell){
+        return readManagedCellDisplayText(cell);
     }
 
-    function collectManagedColumnFilterOptions(state, columnIndex, query, exact, limit){
+    function getRowCellByKey(row, columnKey){
+        if(!row || !row.cells) return null;
+        const key = String(columnKey || '').trim();
+        if(!key) return null;
+        return mapRowByKey(row).get(key) || null;
+    }
+
+    function collectManagedColumnFilterOptions(state, columnKey, query, exact, limit){
         const rows = getDataRows(state);
         const q = String(query || '').trim().toLowerCase();
         const isExact = !!exact;
         const counts = new Map();
         rows.forEach(row => {
-            const cell = getRowCellByIndex(row, columnIndex);
+            const cell = getRowCellByKey(row, columnKey);
             const value = readCellFilterText(cell);
             if(!value) return;
             const text = String(value).trim();
@@ -1814,14 +1891,12 @@
         rows.forEach(row => {
             let pass = true;
             for(const key of Object.keys(filters)){
-                const columnIndex = Number(key);
-                if(columnIndex < 0) continue;
                 const filter = filters[key] || {};
                 const query = String(filter.query || '').trim();
                 const exact = !!filter.exact;
                 const selected = Array.isArray(filter.selected) ? filter.selected.map(v => String(v)) : [];
                 if(!query && !selected.length) continue;
-                const cell = getRowCellByIndex(row, columnIndex);
+                const cell = getRowCellByKey(row, key);
                 const value = String(readCellFilterText(cell) || '');
                 if(selected.length && !selected.includes(value)){
                     pass = false;
@@ -1851,7 +1926,8 @@
         const headerCells = Array.from(state.table.tHead.rows[0].cells || []);
         const columns = headerCells.map((cell, index) => {
             const label = extractHeaderLabelText(cell);
-            return { index, label: label || `字段${index + 1}` };
+            const key = String(cell.dataset.manageColKey || label || `字段${index + 1}`).trim();
+            return { index, key, label: label || `字段${index + 1}` };
         }).filter(item => {
             const label = String(item.label || '').trim();
             if(!label) return false;
@@ -1868,7 +1944,7 @@
         state.columnFilterHandle = window.SitjoyColumnFilter.attach(state.table, {
             columns,
             limit: 120,
-            fetchOptions: ({ columnIndex, query, exact, limit }) => collectManagedColumnFilterOptions(state, columnIndex, query, exact, limit),
+            fetchOptions: ({ columnKey, query, exact, limit }) => collectManagedColumnFilterOptions(state, columnKey, query, exact, limit),
             onApply: (filters) => applyManagedColumnFilters(state, filters),
             onReset: (filters) => applyManagedColumnFilters(state, filters)
         });
@@ -2057,18 +2133,18 @@
         const hostTables = [handle.table];
         if(state && state.headerTable) hostTables.push(state.headerTable);
         hostTables.forEach(host => {
-            host.querySelectorAll('.pm-column-filter-btn[data-column-index]').forEach(btn => {
-                const idx = Number(btn.dataset.columnIndex || 0);
-                btn.classList.toggle('has-filter', isColumnFilterActive(handle.filters.get(idx)));
+            host.querySelectorAll('.pm-column-filter-btn[data-column-key]').forEach(btn => {
+                const key = String(btn.dataset.columnKey || '').trim();
+                btn.classList.toggle('has-filter', isColumnFilterActive(handle.filters.get(key)));
             });
         });
     }
 
-    function renderColumnFilterOptions(handle, columnIndex, items){
+    function renderColumnFilterOptions(handle, columnKey, items){
         const popup = handle.popup || createColumnFilterPopup();
         const optionsEl = popup.querySelector('[data-role="options"]');
         const statusEl = popup.querySelector('[data-role="status"]');
-        const state = handle.filters.get(columnIndex) || { query: '', exact: false, selected: [] };
+        const state = handle.filters.get(columnKey) || { query: '', exact: false, selected: [] };
         const selectedSet = new Set(Array.isArray(state.selected) ? state.selected.map(v => String(v)) : []);
         const normalized = [];
         const seen = new Set();
@@ -2087,7 +2163,7 @@
             normalized.unshift({ value, label: value, count: 0 });
         });
 
-        const selectAllId = `pmColumnFilterSelectAll_${String(columnIndex || 0)}`;
+        const selectAllId = `pmColumnFilterSelectAll_${String(columnKey || '').replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, '_')}`;
         const allSelected = normalized.length > 0 && normalized.every(item => selectedSet.has(item.value));
         const someSelected = normalized.some(item => selectedSet.has(item.value));
         statusEl.innerHTML = normalized.length ? `
@@ -2114,8 +2190,8 @@
         }
     }
 
-    function getColumnFilterFetchKey(columnIndex, query, exact, limit){
-        return `${Number(columnIndex) || 0}|${String(query || '').trim().toLowerCase()}|${exact ? 1 : 0}|${Number(limit) || 0}`;
+    function getColumnFilterFetchKey(columnKey, query, exact, limit){
+        return `${String(columnKey || '').trim().toLowerCase()}|${String(query || '').trim().toLowerCase()}|${exact ? 1 : 0}|${Number(limit) || 0}`;
     }
 
     function attachColumnFilter(tableOrSelector, config){
@@ -2140,21 +2216,22 @@
             timer: null,
         };
 
-        function getColumnConfig(columnIndex){
+        function getColumnConfig(columnKey){
             const columns = Array.isArray(state.config.columns) ? state.config.columns : [];
-            return columns.find(item => Number(item.index) === Number(columnIndex)) || null;
+            const key = String(columnKey || '').trim();
+            return columns.find(item => String(item.key || item.index || '').trim() === key || Number(item.index) === Number(key)) || null;
         }
 
-        function loadOptions(columnIndex, force){
-            const columnConfig = getColumnConfig(columnIndex);
+        function loadOptions(columnKey, force){
+            const columnConfig = getColumnConfig(columnKey);
             if(!columnConfig || typeof state.config.fetchOptions !== 'function') return Promise.resolve([]);
-            const filterState = state.filters.get(columnIndex) || { query: '', exact: false, selected: [] };
+            const filterState = state.filters.get(columnKey) || { query: '', exact: false, selected: [] };
             const query = String(filterState.query || '').trim();
             const exact = !!filterState.exact;
             const limit = Number(columnConfig.limit || state.config.limit || 120) || 120;
-            const cacheKey = getColumnFilterFetchKey(columnIndex, query, exact, limit);
+            const cacheKey = getColumnFilterFetchKey(columnKey, query, exact, limit);
             if(!force && state.optionCache.has(cacheKey)){
-                renderColumnFilterOptions(state, columnIndex, state.optionCache.get(cacheKey));
+                renderColumnFilterOptions(state, columnKey, state.optionCache.get(cacheKey));
                 return Promise.resolve(state.optionCache.get(cacheKey));
             }
 
@@ -2168,7 +2245,8 @@
             return Promise.resolve(state.config.fetchOptions({
                 table,
                 column: columnConfig,
-                columnIndex,
+                columnKey,
+                columnIndex: columnConfig.index,
                 query,
                 exact,
                 limit,
@@ -2177,7 +2255,7 @@
                 if(requestId !== state.requestId) return [];
                 const values = Array.isArray(result) ? result : (result && Array.isArray(result.values) ? result.values : []);
                 state.optionCache.set(cacheKey, values);
-                renderColumnFilterOptions(state, columnIndex, values);
+                renderColumnFilterOptions(state, columnKey, values);
                 return values;
             }).catch(err => {
                 if(requestId !== state.requestId) return [];
@@ -2209,8 +2287,8 @@
             selectAllEl.disabled = total === 0;
         }
 
-        function resetFilter(columnIndex){
-            state.filters.set(columnIndex, { query: '', exact: false, selected: [] });
+        function resetFilter(columnKey){
+            state.filters.set(columnKey, { query: '', exact: false, selected: [] });
             if(typeof state.config.onReset === 'function'){
                 state.config.onReset(columnFilterStateSnapshot(state), state);
             } else if(typeof state.config.onApply === 'function'){
@@ -2222,12 +2300,12 @@
             syncColumnFilterButtons(state);
         }
 
-        function open(columnIndex, button){
-            const columnConfig = getColumnConfig(columnIndex);
+        function open(columnKey, button){
+            const columnConfig = getColumnConfig(columnKey);
             if(!columnConfig) return;
-            const filterState = state.filters.get(columnIndex) || { query: '', exact: false, selected: [] };
-            state.filters.set(columnIndex, filterState);
-            state.activeColumn = columnIndex;
+            const filterState = state.filters.get(columnKey) || { query: '', exact: false, selected: [] };
+            state.filters.set(columnKey, filterState);
+            state.activeColumn = columnKey;
             activeColumnFilterState = state;
 
             const popup = state.popup;
@@ -2246,9 +2324,9 @@
             const selectedPreview = Array.isArray(filterState.selected)
                 ? filterState.selected.map(v => ({ value: String(v || ''), label: String(v || ''), count: 0 })).filter(x => x.value)
                 : [];
-            renderColumnFilterOptions(state, columnIndex, selectedPreview);
+            renderColumnFilterOptions(state, columnKey, selectedPreview);
 
-            loadOptions(columnIndex, false);
+            loadOptions(columnKey, false);
         }
 
         function refreshButtons(){
@@ -2268,10 +2346,12 @@
                         btn.type = 'button';
                         btn.className = 'pm-column-filter-btn';
                         btn.dataset.columnIndex = String(idx);
+                        btn.dataset.columnKey = String(columnConfig.key || '').trim() || String(cell.dataset.manageColKey || '').trim() || String(idx);
                         btn.title = '列筛选';
                         cell.appendChild(btn);
                     }
-                    btn.classList.toggle('has-filter', isColumnFilterActive(state.filters.get(idx)));
+                    if(!btn.dataset.columnKey) btn.dataset.columnKey = String(columnConfig.key || '').trim() || String(cell.dataset.manageColKey || '').trim() || String(idx);
+                    btn.classList.toggle('has-filter', isColumnFilterActive(state.filters.get(String(btn.dataset.columnKey || '').trim())));
                 });
             });
         }
@@ -2336,19 +2416,19 @@
         });
 
         const clickHandler = (event) => {
-            const button = event.target && event.target.closest ? event.target.closest('.pm-column-filter-btn[data-column-index]') : null;
+            const button = event.target && event.target.closest ? event.target.closest('.pm-column-filter-btn[data-column-key]') : null;
             const managed = managedTableState.get(table) || null;
             const inMainTable = !!(button && table.contains(button));
             const inHeadClone = !!(button && managed && managed.headerTable && managed.headerTable.contains(button));
             if(button && (inMainTable || inHeadClone)){
                 event.preventDefault();
                 event.stopPropagation();
-                const columnIndex = Number(button.dataset.columnIndex || 0);
-                if(activeColumnFilterState === state && state.activeColumn === columnIndex && popup.classList.contains('open')){
+                const columnKey = String(button.dataset.columnKey || '').trim() || String(button.dataset.columnIndex || 0);
+                if(activeColumnFilterState === state && state.activeColumn === columnKey && popup.classList.contains('open')){
                     closeColumnFilterPopup();
                     return;
                 }
-                open(columnIndex, button);
+                open(columnKey, button);
                 return;
             }
             const eventInsideManagedHead = !!(managed && managed.headerTable && managed.headerTable.contains(event.target));
@@ -2930,6 +3010,9 @@
             return;
         }
 
+        state.headerCount = headerCount;
+        ensureManagedColumnKeys(state, headerMeta);
+
         const validOrigins = headerMeta.map(meta => meta.origin);
         const headerSignature = headerMeta
             .slice()
@@ -2940,18 +3023,31 @@
         if(headerSignature !== state.headerSignature){
             state.headerSignature = headerSignature;
             state.headerCount = headerCount;
-            state.headers = headerMeta.map(meta => ({ origin: meta.origin, label: meta.label }));
+            state.headers = headerMeta.map(meta => ({ origin: meta.origin, key: meta.key, label: meta.label }));
             state.visibleColumns = readPersistedColumns(state.table, validOrigins);
             state.columnOrder = readPersistedOrder(state.table, validOrigins);
-            state.columnWidths = readPersistedColumnWidths(state.table);
+            const persistedWidths = readPersistedColumnWidths(state.table);
             state.defaultColumnWidths = {};
             headerMeta.forEach(meta => {
-                const key = String(meta.origin);
+                const key = String(meta.key || '').trim();
                 const compact = computeDefaultColumnWidth(state, meta);
                 state.defaultColumnWidths[key] = compact;
-                if(state.columnWidths[key]) return;
-                state.columnWidths[key] = compact;
             });
+            const resolvedWidths = {};
+            headerMeta.forEach(meta => {
+                const key = String(meta.key || '').trim();
+                const legacyKey = String(meta.origin);
+                const compact = state.defaultColumnWidths[key] || computeDefaultColumnWidth(state, meta);
+                const stored = persistedWidths[key];
+                const legacy = persistedWidths[legacyKey];
+                const width = Number(stored ?? legacy ?? compact);
+                resolvedWidths[key] = Number.isFinite(width) && width > 0 ? width : compact;
+            });
+            state.columnWidths = resolvedWidths;
+            try {
+                localStorage.setItem(makeStorageKey(state.table, 'column-widths'), JSON.stringify(state.columnWidths || {}));
+            } catch (_) {
+            }
             state.lockedColumns = new Set(
                 headerMeta
                     .filter(meta => isMultiSelectColumn(meta.cell, meta.label))
@@ -3800,7 +3896,7 @@
             const delta = event.clientX - activeResizeState.startX;
             if(Math.abs(delta) > 2) activeResizeState.hasMoved = true;
             const width = activeResizeState.startWidth + delta;
-            setColumnWidthByOrigin(activeResizeState.state, activeResizeState.origin, width);
+            setColumnWidthByKey(activeResizeState.state, activeResizeState.key, width);
         }
 
         if(activeGridSelection && activeGridSelection.detailDragging && activeGridSelection.state){
