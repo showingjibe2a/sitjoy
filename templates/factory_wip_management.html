@@ -519,7 +519,11 @@ function loadOptions(){
 
 function downloadTemplate(){
   const ids = Array.from(selectedWipIds).map(v => Number(v)).filter(v => v > 0);
-  const query = ids.length ? `?ids=${encodeURIComponent(ids.join(','))}` : '';
+  if (typeof window.downloadTemplateWithIds === 'function') {
+    window.downloadTemplateWithIds('/api/factory-wip-template', ids, 'factory_wip_template.xlsx');
+    return;
+  }
+  const query = ids.length ? `?ids=${ids.join(',')}` : '';
   window.location.href = `/api/factory-wip-template${query}`;
 }
 

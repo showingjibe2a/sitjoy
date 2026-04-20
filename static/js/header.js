@@ -383,6 +383,77 @@
         window.setTimeout(removeToast, Math.max(800, timeout));
     }
 
+    function parseDownloadFilename(contentDisposition, fallbackName){
+        const fallback = String(fallbackName || 'template.xlsx');
+        const header = String(contentDisposition || '');
+        if(!header) return fallback;
+        const starMatch = header.match(/filename\*=UTF-8''([^;]+)/i);
+        if(starMatch && starMatch[1]){
+            try {
+                return decodeURIComponent(starMatch[1]).replace(/[\\/:*?"<>|]/g, '_') || fallback;
+            } catch(_e){
+                return starMatch[1].replace(/[\\/:*?"<>|]/g, '_') || fallback;
+            }
+        }
+        const basicMatch = header.match(/filename="?([^";]+)"?/i);
+        if(basicMatch && basicMatch[1]){
+            return String(basicMatch[1]).replace(/[\\/:*?"<>|]/g, '_') || fallback;
+        }
+        return fallback;
+    }
+
+    async function downloadTemplateWithIds(endpoint, ids, fallbackName){
+        const path = String(endpoint || '').trim();
+        if(!path) return;
+
+        const uniqueIds = [];
+        (Array.isArray(ids) ? ids : []).forEach(v => {
+            const n = Number(v);
+            if(!Number.isFinite(n) || n <= 0) return;
+            const val = Math.trunc(n);
+            if(!uniqueIds.includes(val)) uniqueIds.push(val);
+        });
+
+        const query = uniqueIds.length ? `?ids=${uniqueIds.join(',')}` : '';
+        const getUrl = `${path}${query}`;
+
+        const shouldUsePost = uniqueIds.length > 80 || getUrl.length > 900;
+        if(!shouldUsePost){
+            window.location.href = getUrl;
+            return;
+        }
+
+        const resp = await fetch(path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: uniqueIds })
+        });
+
+        const contentType = String(resp.headers.get('content-type') || '').toLowerCase();
+        if(contentType.includes('application/json')){
+            let msg = `下载失败（HTTP ${resp.status}）`;
+            try {
+                const data = await resp.json();
+                msg = data && data.message ? data.message : msg;
+            } catch(_e){ }
+            throw new Error(msg);
+        }
+        if(!resp.ok){
+            throw new Error(`下载失败（HTTP ${resp.status}）`);
+        }
+
+        const blob = await resp.blob();
+        const filename = parseDownloadFilename(resp.headers.get('content-disposition'), fallbackName || 'template.xlsx');
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        if(a.parentNode) a.parentNode.removeChild(a);
+        window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+    }
+
     function ensureAppConfirmModal(){
         let modal = document.getElementById('app-confirm-modal');
         if(modal && document.body.contains(modal)) return modal;
@@ -4151,6 +4222,12 @@
 
         window.showAppToast = function(message, isError, duration){
             showAppToast(message, !!isError, duration);
+        };
+        window.downloadTemplateWithIds = function(endpoint, ids, fallbackName){
+            downloadTemplateWithIds(endpoint, ids, fallbackName).catch(err => {
+                const msg = err && err.message ? err.message : '下载失败';
+                showAppToast(msg, true, 4200);
+            });
         };
         window.showAppConfirm = showAppConfirm;
         window.showAppConfirmAsync = showAppConfirmAsync;

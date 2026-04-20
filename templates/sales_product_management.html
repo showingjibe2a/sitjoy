@@ -1842,8 +1842,43 @@
 
         function downloadSalesProductTemplate() {
             const ids = Array.from(selectedSalesProductIds);
-            const query = ids.length ? `?ids=${encodeURIComponent(ids.join(','))}` : '';
-            window.location.href = `/api/sales-product-template${query}`;
+            if (typeof window.downloadTemplateWithIds === 'function') {
+                window.downloadTemplateWithIds('/api/sales-product-template', ids, 'sales_product_template.xlsx');
+                return;
+            }
+            const safeIds = ids.map(v => Number(v)).filter(v => Number.isFinite(v) && v > 0);
+            const query = safeIds.length ? `?ids=${safeIds.join(',')}` : '';
+            const getUrl = `/api/sales-product-template${query}`;
+            if (safeIds.length > 80 || getUrl.length > 900) {
+                fetch('/api/sales-product-template', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: safeIds })
+                })
+                .then(async (resp) => {
+                    const ct = String(resp.headers.get('content-type') || '').toLowerCase();
+                    if (ct.includes('application/json')) {
+                        let msg = `下载失败（HTTP ${resp.status}）`;
+                        try { const j = await resp.json(); msg = (j && j.message) ? j.message : msg; } catch (_e) {}
+                        throw new Error(msg);
+                    }
+                    if (!resp.ok) throw new Error(`下载失败（HTTP ${resp.status}）`);
+                    const blob = await resp.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'sales_product_template.xlsx';
+                    document.body.appendChild(a);
+                    a.click();
+                    if (a.parentNode) a.parentNode.removeChild(a);
+                    window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+                })
+                .catch((err) => {
+                    if (window.showAppToast) window.showAppToast((err && err.message) || '下载失败', true, 4200);
+                });
+                return;
+            }
+            window.location.href = getUrl;
         }
 
         function triggerSalesProductUpload() {

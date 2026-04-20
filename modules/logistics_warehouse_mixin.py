@@ -1141,14 +1141,27 @@ class LogisticsWarehouseMixin:
             user_id = self._get_session_user(environ)
             scope_ids = self._get_user_factory_scope_ids(user_id)
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
-            raw_ids = query_params.get('ids', [''])[0]
+
+            def _append_ids_from_value(container, value):
+                if isinstance(value, list):
+                    for v in value:
+                        _append_ids_from_value(container, v)
+                    return
+                text = str(value or '').strip()
+                if not text:
+                    return
+                for token in re.split(r'[\s,，;；]+', text):
+                    item_id = self._parse_int(token)
+                    if item_id and item_id not in container:
+                        container.append(item_id)
+
             selected_ids = []
-            for token in re.split(r'[\s,，;；]+', str(raw_ids or '')):
-                item_id = self._parse_int(token)
-                if not item_id or item_id in selected_ids:
-                    continue
-                selected_ids.append(item_id)
-            if method != 'GET':
+            _append_ids_from_value(selected_ids, query_params.get('ids', [''])[0])
+            if method == 'POST':
+                body = self._read_json_body(environ) or {}
+                _append_ids_from_value(selected_ids, body.get('ids'))
+
+            if method not in ('GET', 'POST'):
                 return self.send_error(405, 'Method not allowed', start_response)
             if Workbook is None:
                 return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
@@ -1418,14 +1431,27 @@ class LogisticsWarehouseMixin:
             user_id = self._get_session_user(environ)
             scope_ids = self._get_user_factory_scope_ids(user_id)
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
-            raw_ids = query_params.get('ids', [''])[0]
+
+            def _append_ids_from_value(container, value):
+                if isinstance(value, list):
+                    for v in value:
+                        _append_ids_from_value(container, v)
+                    return
+                text = str(value or '').strip()
+                if not text:
+                    return
+                for token in re.split(r'[\s,，;；]+', text):
+                    item_id = self._parse_int(token)
+                    if item_id and item_id not in container:
+                        container.append(item_id)
+
             selected_ids = []
-            for token in re.split(r'[\s,，;；]+', str(raw_ids or '')):
-                item_id = self._parse_int(token)
-                if not item_id or item_id in selected_ids:
-                    continue
-                selected_ids.append(item_id)
-            if method != 'GET':
+            _append_ids_from_value(selected_ids, query_params.get('ids', [''])[0])
+            if method == 'POST':
+                body = self._read_json_body(environ) or {}
+                _append_ids_from_value(selected_ids, body.get('ids'))
+
+            if method not in ('GET', 'POST'):
                 return self.send_error(405, 'Method not allowed', start_response)
             if Workbook is None:
                 return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)

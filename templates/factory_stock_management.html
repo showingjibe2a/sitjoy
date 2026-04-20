@@ -241,7 +241,11 @@ function loadOptions(){
 
 function downloadTemplate(){
   const ids = Array.from(selectedStockIds).map(v => Number(v)).filter(v => v > 0);
-  const query = ids.length ? `?ids=${encodeURIComponent(ids.join(','))}` : '';
+  if (typeof window.downloadTemplateWithIds === 'function') {
+    window.downloadTemplateWithIds('/api/factory-stock-template', ids, 'factory_stock_template.xlsx');
+    return;
+  }
+  const query = ids.length ? `?ids=${ids.join(',')}` : '';
   window.location.href = `/api/factory-stock-template${query}`;
 }
 

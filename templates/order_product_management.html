@@ -2621,7 +2621,11 @@
 
         function downloadOrderProductTemplate() {
             const ids = Array.from(selectedOrderProductIds);
-            const query = ids.length ? `?ids=${encodeURIComponent(ids.join(','))}` : '';
+            if (typeof window.downloadTemplateWithIds === 'function') {
+                window.downloadTemplateWithIds('/api/order-product-template', ids, 'order_product_template.xlsx');
+                return;
+            }
+            const query = ids.length ? `?ids=${ids.join(',')}` : '';
             window.location.href = `/api/order-product-template${query}`;
         }
 

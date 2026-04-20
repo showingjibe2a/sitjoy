@@ -309,7 +309,7 @@ function downloadTransitDetailExport(){
   window.location.href=`/api/logistics-in-transit?${query.toString()}`;
   closeTransitDetailExportModal();
 }
-function downloadTransitTemplate(){const ids=Array.from(selectedTransitIds);const query=ids.length?`?ids=${encodeURIComponent(ids.join(','))}`:'';window.location.href=`/api/logistics-in-transit-template${query}`}
+function downloadTransitTemplate(){const ids=Array.from(selectedTransitIds);if(typeof window.downloadTemplateWithIds==='function'){window.downloadTemplateWithIds('/api/logistics-in-transit-template',ids,'logistics_in_transit_template.xlsx');return;}const query=ids.length?`?ids=${ids.join(',')}`:'';window.location.href=`/api/logistics-in-transit-template${query}`}
 function triggerTransitUpload(){const input=$('#transitTemplateUploadInput');if(input)input.click()}
 function showUploadProgress(text,percent){const box=$('#uploadProgress');const textEl=$('#uploadProgressText');const fillEl=$('#uploadProgressFill');box.style.display='block';textEl.textContent=text||'上传中...';const safe=Math.max(0,Math.min(100,Number(percent)||0));fillEl.style.width=`${safe}%`}
 function hideUploadProgress(){const box=$('#uploadProgress');box.style.display='none'}

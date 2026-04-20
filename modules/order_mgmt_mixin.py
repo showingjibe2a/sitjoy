@@ -489,7 +489,7 @@ class OrderManagementMixin:
     def handle_order_product_template_api(self, environ, method, start_response):
         """下单产品模板下载"""
         try:
-            if method != 'GET':
+            if method not in ('GET', 'POST'):
                 return self.send_error(405, 'Method not allowed', start_response)
             if Workbook is None:
                 return self.send_json({'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'}, start_response)
@@ -497,15 +497,29 @@ class OrderManagementMixin:
             from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
             from openpyxl.worksheet.datavalidation import DataValidation
 
-            query_params = parse_qs(environ.get('QUERY_STRING', ''))
-            selected_ids = []
-            for raw in query_params.get('ids', []):
-                for token in re.split(r'[,，;；\s]+', str(raw or '').strip()):
+            def _append_ids_from_value(container, value):
+                if isinstance(value, list):
+                    for v in value:
+                        _append_ids_from_value(container, v)
+                    return
+                text = str(value or '').strip()
+                if not text:
+                    return
+                for token in re.split(r'[,，;；\s]+', text):
                     if not token:
                         continue
                     item_id = self._parse_int(token)
-                    if item_id and item_id not in selected_ids:
-                        selected_ids.append(item_id)
+                    if item_id and item_id not in container:
+                        container.append(item_id)
+
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            selected_ids = []
+            for raw in query_params.get('ids', []):
+                _append_ids_from_value(selected_ids, raw)
+
+            if method == 'POST':
+                body = self._read_json_body(environ) or {}
+                _append_ids_from_value(selected_ids, body.get('ids'))
 
             wb = Workbook()
             ws = wb.active
