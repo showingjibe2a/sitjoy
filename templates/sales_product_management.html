@@ -393,7 +393,7 @@
                     <div class="pm-toolbar-actions">
                         <div class="form-group pm-search" style="margin: 0;">
                             <span class="pm-search-title">搜索</span>
-                            <input type="text" id="searchInput" placeholder="搜索平台SKU/子体/大健云仓编号/货号/父体">
+                            <input type="text" id="searchInput" placeholder="搜索平台SKU/子体/货号/父体/规格/面料">
                             <button class="btn-primary" onclick="loadSalesProductList()">搜索</button>
                             <button class="btn-secondary" onclick="resetSearch()">清空</button>
                         </div>
@@ -417,7 +417,6 @@
                             <th>规格名称</th>
                             <th>销售平台SKU</th>
                             <th>子体编号</th>
-                            <th>大健云仓编号</th>
                             <th>下单SKU</th>
                             <th>售价</th>
                             <th>创建时间</th>
@@ -425,7 +424,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="12" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="11" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -479,10 +478,6 @@
                         <div class="form-group">
                             <label for="modalChildCode" class="label-help">子体编号<span class="help-dot" data-tip="填写亚马逊产品的子ASIN"></span></label>
                             <input type="text" id="modalChildCode" class="optional-field">
-                        </div>
-                        <div class="form-group">
-                            <label for="modalDacheneNo" class="label-help">大健云仓编号<span class="help-dot" data-tip="选填，需先在下单产品管理页面维护子Item Code后再选择关联下单SKU及数量"></span></label>
-                            <input type="text" id="modalDacheneNo" class="optional-field" placeholder="选填">
                         </div>
                         <div class="form-group">
                             <label for="modalSkuFamily" class="label-help">货号<span class="help-dot" data-tip="用于关联图片文件夹，可搜索并从下拉建议选择；选中第一个下单SKU时会自动带出"></span></label>
@@ -1015,7 +1010,7 @@
         function renderSalesGroupedTable(items) {
             const tbody = document.querySelector('#salesProductTable tbody');
             if (!(items || []).length) {
-                tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">暂无数据</td></tr>';
                 syncSalesSelectAllCheckbox();
                 return;
             }
@@ -1046,7 +1041,6 @@
                     <td>${item.spec_name || ''}</td>
                     <td>${item.platform_sku || ''}</td>
                     <td>${item.child_code || ''}</td>
-                    <td>${item.dachene_yuncang_no || ''}</td>
                     <td class="sales-order-sku-cell">${orderSkuDisplay}</td>
                     <td class="${(Number(item.sale_price_usd || 0) > 0 && Number(item.warehouse_cost_usd || 0) + Number(item.last_mile_cost_usd || 0) > 0 && Number(item.sale_price_usd || 0) < (Number(item.warehouse_cost_usd || 0) + Number(item.last_mile_cost_usd || 0))) ? 'danger-note' : ''}">${item.sale_price_usd || ''}</td>
                     <td>${createdDateStr}</td>
@@ -1677,7 +1671,6 @@
             document.getElementById('modalParentSkuMarker').value = '';
             updateParentSkuMarkerVisibility();
             document.getElementById('modalChildCode').value = '';
-            document.getElementById('modalDacheneNo').value = '';
             document.getElementById('modalFabric').value = '';
             document.getElementById('modalSpecName').value = '';
             document.getElementById('modalSalePrice').value = '';
@@ -1722,7 +1715,6 @@
             document.getElementById('modalParentSkuMarker').value = '';
             updateParentSkuMarkerVisibility();
             document.getElementById('modalChildCode').value = item.child_code || '';
-            document.getElementById('modalDacheneNo').value = item.dachene_yuncang_no || '';
             document.getElementById('modalFabric').value = item.fabric || '';
             document.getElementById('modalSpecName').value = item.spec_name || '';
             originalFabric = item.fabric || '';
@@ -1767,7 +1759,6 @@
                 parent_code: document.getElementById('modalParentCode').value || null,
                 parent_sku_marker: document.getElementById('modalParentSkuMarker').value.trim(),
                 child_code: document.getElementById('modalChildCode').value.trim(),
-                dachene_yuncang_no: document.getElementById('modalDacheneNo').value.trim(),
                 fabric: document.getElementById('modalFabric').value.trim(),
                 spec_name: document.getElementById('modalSpecName').value.trim(),
                 sale_price_usd: document.getElementById('modalSalePrice').value,
@@ -2012,7 +2003,7 @@
             fetch(url).then(r => r.json()).then(data => {
                 const tbody = document.querySelector('#salesProductTable tbody');
                 if (data.status !== 'success') {
-                    tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                     return;
                 }
                 const items = data.items || [];
@@ -2021,7 +2012,7 @@
                 renderSalesGroupedTable(items);
             }).catch(err => {
                 const tbody = document.querySelector('#salesProductTable tbody');
-                tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
             });
         }
 
@@ -2091,7 +2082,6 @@
             document.getElementById('modalParentShop').value = item.shop_id ? String(item.shop_id) : '';
             currentProductStatus = normalizeProductStatus(item.product_status);
             renderModalProductStatus();
-            document.getElementById('modalDacheneNo').value = item.dachene_yuncang_no || '';
             renderSkuFamilySelect(item.sku_family_id || '');
             document.getElementById('modalParentCode').value = item.parent_code || '';
             updateParentSkuMarkerVisibility();

@@ -308,23 +308,79 @@
         return toastStack;
     }
 
+    function copyTextToClipboard(text){
+        const value = String(text || '');
+        if(!value) return Promise.resolve(false);
+        if(navigator.clipboard && navigator.clipboard.writeText){
+            return navigator.clipboard.writeText(value).then(() => true).catch(() => false);
+        }
+        const ta = document.createElement('textarea');
+        ta.value = value;
+        ta.setAttribute('readonly', 'readonly');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        ta.style.pointerEvents = 'none';
+        document.body.appendChild(ta);
+        ta.select();
+        let ok = false;
+        try {
+            ok = !!document.execCommand('copy');
+        } catch(_err){
+            ok = false;
+        }
+        if(ta.parentNode) ta.parentNode.removeChild(ta);
+        return Promise.resolve(ok);
+    }
+
     function showAppToast(message, isError, duration){
         const text = String(message || '').trim();
         if(!text) return;
         const stack = ensureToastStack();
         const toast = document.createElement('div');
-        toast.className = `app-toast ${isError ? 'error' : 'success'}`;
-        toast.textContent = text;
+        toast.className = `app-toast ${isError ? 'error persistent' : 'success'}`;
+
+        const messageEl = document.createElement('div');
+        messageEl.className = 'app-toast-message';
+        messageEl.textContent = text;
+        toast.appendChild(messageEl);
+
+        const actions = document.createElement('div');
+        actions.className = 'app-toast-actions';
+
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.className = 'app-toast-btn close';
+        closeBtn.setAttribute('aria-label', '关闭提示');
+        closeBtn.textContent = '×';
+        actions.appendChild(closeBtn);
+
+        const copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = 'app-toast-btn copy';
+        copyBtn.textContent = '复制';
+        actions.appendChild(copyBtn);
+
+        toast.appendChild(actions);
         stack.appendChild(toast);
         window.requestAnimationFrame(() => toast.classList.add('show'));
 
-        const timeout = Number(duration || 2600);
-        window.setTimeout(() => {
+        const removeToast = () => {
             toast.classList.remove('show');
             window.setTimeout(() => {
                 if(toast.parentNode) toast.parentNode.removeChild(toast);
             }, 180);
-        }, Math.max(800, timeout));
+        };
+
+        closeBtn.addEventListener('click', removeToast);
+        copyBtn.addEventListener('click', async () => {
+            const ok = await copyTextToClipboard(text);
+            copyBtn.textContent = ok ? '已复制' : '复制失败';
+            window.setTimeout(() => { copyBtn.textContent = '复制'; }, 1200);
+        });
+
+        if(isError) return;
+        const timeout = Number(duration || 2600);
+        window.setTimeout(removeToast, Math.max(800, timeout));
     }
 
     function ensureAppConfirmModal(){
@@ -589,6 +645,9 @@
         const style = String(el.getAttribute('style') || '').toLowerCase();
         if(cls.includes('error') || style.includes('ffecec') || style.includes('#a33') || style.includes('rgb(163')) return true;
         if(cls.includes('success') || style.includes('f0fff0') || style.includes('2f6f2f')) return false;
+        const text = String(el.textContent || '').toLowerCase();
+        if(/\(\d{4}\s*,\s*"unknown column|unknown column|sql|traceback|exception|error|missing|invalid|failed|denied/.test(text)) return true;
+        if(/success|成功|完成|已保存/.test(text)) return false;
         return false;
     }
 
@@ -603,7 +662,11 @@
             const flushToast = () => {
                 const text = String(el.textContent || '').trim();
                 if(!text) return;
-                showAppToast(text, inferErrorFromResponseEl(el));
+                const isError = inferErrorFromResponseEl(el);
+                const sig = `${isError ? 'e' : 's'}:${text}`;
+                if(sig === state.lastSig) return;
+                state.lastSig = sig;
+                showAppToast(text, isError);
             };
 
             const observer = new MutationObserver(() => {

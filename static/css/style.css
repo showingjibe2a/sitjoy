@@ -1884,8 +1884,9 @@ button:hover {
 }
 
 .app-toast {
+    position: relative;
     border-radius: 11px;
-    padding: 0.72rem 0.9rem;
+    padding: 0.72rem 0.9rem 0.72rem 0.85rem;
     color: #fff;
     font-size: 0.88rem;
     line-height: 1.35;
@@ -1893,6 +1894,9 @@ button:hover {
     transform: translateY(8px);
     opacity: 0;
     transition: transform 0.18s ease, opacity 0.18s ease;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.6rem;
 }
 
 .app-toast.show {
@@ -1905,7 +1909,43 @@ button:hover {
 }
 
 .app-toast.error {
-    background: linear-gradient(135deg, #bf3d3d, #a33);
+    background: linear-gradient(135deg, #d74b4b, #b13636);
+    border: 1px solid rgba(255, 225, 225, 0.5);
+}
+
+.app-toast-message {
+    min-width: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    user-select: text;
+}
+
+.app-toast-actions {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+}
+
+.app-toast-btn {
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 0.72rem;
+    line-height: 1;
+    padding: 0.28rem 0.5rem;
+}
+
+.app-toast-btn:hover {
+    background: rgba(255, 255, 255, 0.28);
+}
+
+.app-toast-btn.close {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    font-size: 0.95rem;
 }
 
 .app-result-panel {

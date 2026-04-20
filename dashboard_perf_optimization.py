@@ -74,12 +74,13 @@ def handle_sales_product_performance_dashboard_api_optimized(self, environ, meth
                 with conn.cursor() as cur:
                     cur.execute(
                         """
-                        SELECT sp.id, sp.platform_sku, sp.fabric, sp.spec_name,
-                               pf.id AS sku_family_id, pf.sku_family,
+                       SELECT sp.id, sp.platform_sku, v.fabric, v.spec_name,
+                           pf.id AS sku_family_id, pf.sku_family,
                                sh.id AS shop_id, sh.shop_name,
                                pt.id AS platform_type_id, pt.name AS platform_type_name
                         FROM sales_products sp
-                        LEFT JOIN product_families pf ON pf.id = sp.sku_family_id
+                       LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
+                       LEFT JOIN product_families pf ON pf.id = v.sku_family_id
                         LEFT JOIN shops sh ON sh.id = sp.shop_id
                         LEFT JOIN platform_types pt ON pt.id = sh.platform_type_id
                         ORDER BY pf.sku_family ASC, sp.platform_sku ASC
@@ -184,7 +185,8 @@ def handle_sales_product_performance_dashboard_api_optimized(self, environ, meth
             agg_sql_parts.append("""
                 FROM sales_product_performances spp
                 JOIN sales_products sp ON sp.id = spp.sales_product_id
-                LEFT JOIN product_families pf ON pf.id = sp.sku_family_id
+                LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
+                LEFT JOIN product_families pf ON pf.id = v.sku_family_id
                 LEFT JOIN shops sh ON sh.id = sp.shop_id
                 LEFT JOIN platform_types pt ON pt.id = sh.platform_type_id
                 WHERE 1=1
@@ -198,16 +200,16 @@ def handle_sales_product_performance_dashboard_api_optimized(self, environ, meth
                 agg_sql_parts.append(" AND spp.record_date <= %s")
                 params.append(end_date)
             if sku_family_ids:
-                agg_sql_parts.append(f" AND sp.sku_family_id IN ({','.join(['%s'] * len(sku_family_ids))})")
+                agg_sql_parts.append(f" AND v.sku_family_id IN ({','.join(['%s'] * len(sku_family_ids))})")
                 params.extend(sku_family_ids)
             if platform_skus:
                 agg_sql_parts.append(f" AND sp.platform_sku IN ({','.join(['%s'] * len(platform_skus))})")
                 params.extend(platform_skus)
             if fabrics:
-                agg_sql_parts.append(f" AND sp.fabric IN ({','.join(['%s'] * len(fabrics))})")
+                agg_sql_parts.append(f" AND v.fabric IN ({','.join(['%s'] * len(fabrics))})")
                 params.extend(fabrics)
             if spec_names:
-                agg_sql_parts.append(f" AND sp.spec_name IN ({','.join(['%s'] * len(spec_names))})")
+                agg_sql_parts.append(f" AND v.spec_name IN ({','.join(['%s'] * len(spec_names))})")
                 params.extend(spec_names)
             if shop_ids:
                 agg_sql_parts.append(f" AND sp.shop_id IN ({','.join(['%s'] * len(shop_ids))})")
@@ -244,12 +246,13 @@ def handle_sales_product_performance_dashboard_api_optimized(self, environ, meth
             
             group_sql = [
                 """
-                SELECT spp.*, sp.id as sp_id, sp.platform_sku, sp.fabric, sp.spec_name, sp.sku_family_id,
+                SELECT spp.*, sp.id as sp_id, sp.platform_sku, v.fabric, v.spec_name, v.sku_family_id,
                               pf.sku_family, sh.id AS shop_id, sh.shop_name,
                               pt.id AS platform_type_id, pt.name AS platform_type_name
                 FROM sales_product_performances spp
                 JOIN sales_products sp ON sp.id = spp.sales_product_id
-                LEFT JOIN product_families pf ON pf.id = sp.sku_family_id
+                LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
+                LEFT JOIN product_families pf ON pf.id = v.sku_family_id
                 LEFT JOIN shops sh ON sh.id = sp.shop_id
                 LEFT JOIN platform_types pt ON pt.id = sh.platform_type_id
                 WHERE 1=1
@@ -264,16 +267,16 @@ def handle_sales_product_performance_dashboard_api_optimized(self, environ, meth
                 group_sql.append(' AND spp.record_date <= %s')
                 group_params.append(end_date)
             if sku_family_ids:
-                group_sql.append(f" AND sp.sku_family_id IN ({','.join(['%s'] * len(sku_family_ids))})")
+                group_sql.append(f" AND v.sku_family_id IN ({','.join(['%s'] * len(sku_family_ids))})")
                 group_params.extend(sku_family_ids)
             if platform_skus:
                 group_sql.append(f" AND sp.platform_sku IN ({','.join(['%s'] * len(platform_skus))})")
                 group_params.extend(platform_skus)
             if fabrics:
-                group_sql.append(f" AND sp.fabric IN ({','.join(['%s'] * len(fabrics))})")
+                group_sql.append(f" AND v.fabric IN ({','.join(['%s'] * len(fabrics))})")
                 group_params.extend(fabrics)
             if spec_names:
-                group_sql.append(f" AND sp.spec_name IN ({','.join(['%s'] * len(spec_names))})")
+                group_sql.append(f" AND v.spec_name IN ({','.join(['%s'] * len(spec_names))})")
                 group_params.extend(spec_names)
             if shop_ids:
                 group_sql.append(f" AND sp.shop_id IN ({','.join(['%s'] * len(shop_ids))})")

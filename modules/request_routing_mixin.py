@@ -66,6 +66,7 @@ API_PERMISSION_MAP = {
     '/api/sales-product-import': 'sales_product_management',
     '/api/sales-product-main-images': 'sales_product_management',
     '/api/sales-product-main-images-upload': 'sales_product_management',
+    '/api/sales-product-main-images-import-by-path': 'sales_product_management',
     '/api/sales-image-type': 'sales_product_management',
     '/api/sales-product-performance': 'sales_product_performance_management',
     '/api/sales-product-performance-template': 'sales_product_performance_management',
@@ -175,6 +176,7 @@ API_ROUTE_MAP = {
     '/api/sales-product-import': ('method', 'handle_sales_product_import_api'),
     '/api/sales-product-main-images': ('method', 'handle_sales_product_main_images_api'),
     '/api/sales-product-main-images-upload': ('start', 'handle_sales_product_main_images_upload_api'),
+    '/api/sales-product-main-images-import-by-path': ('method', 'handle_sales_product_main_images_import_by_path_api'),
     '/api/sales-image-type': ('method', 'handle_sales_image_type_api'),
     '/api/sales-product-performance': ('method', 'handle_sales_product_performance_api'),
     '/api/sales-product-performance-template': ('method', 'handle_sales_product_performance_template_api'),
@@ -210,10 +212,14 @@ class RequestRoutingMixin:
         mode, handler_name = route
         handler = getattr(self, handler_name, None)
         if handler is None:
-            return self.send_error(500, f'Handler not found: {handler_name}', start_response)
-        if mode == 'start':
-            return handler(environ, start_response)
-        return handler(environ, method, start_response)
+            return self.send_json({'status': 'error', 'message': f'Handler not found: {handler_name}', 'path': path}, start_response)
+        try:
+            if mode == 'start':
+                return handler(environ, start_response)
+            return handler(environ, method, start_response)
+        except Exception as e:
+            # API 路由层兜底：避免未捕获异常直接冒泡成 Apache 500 页面
+            return self.send_json({'status': 'error', 'message': f'API内部错误: {str(e)}', 'path': path}, start_response)
 
     def _validate_api_permission(self, path, environ, start_response):
         """统一 API 权限校验：返回错误响应或 None。"""

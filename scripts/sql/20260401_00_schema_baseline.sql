@@ -874,7 +874,6 @@ CREATE TABLE IF NOT EXISTS sales_products (
             portfolio_id INT UNSIGNED NOT NULL,
             platform_sku VARCHAR(128) NOT NULL UNIQUE,
             product_status VARCHAR(16) NOT NULL DEFAULT 'enabled',
-            sku_family_id INT UNSIGNED NULL,
             parent_id INT UNSIGNED NULL,
             child_code VARCHAR(64) NULL,
             dachene_yuncang_no VARCHAR(128) NULL,
@@ -892,11 +891,9 @@ CREATE TABLE IF NOT EXISTS sales_products (
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             INDEX idx_sp_shop (shop_id),
-            INDEX idx_sp_sku_family (sku_family_id),
             INDEX idx_sp_parent (parent_id),
             INDEX idx_sp_portfolio (portfolio_id),
             CONSTRAINT fk_sp_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE SET NULL,
-            CONSTRAINT fk_sp_sku_family FOREIGN KEY (sku_family_id) REFERENCES product_families(id) ON DELETE SET NULL,
             CONSTRAINT fk_sp_parent FOREIGN KEY (parent_id) REFERENCES sales_parents(id) ON DELETE SET NULL,
             CONSTRAINT fk_sp_portfolio FOREIGN KEY (portfolio_id) REFERENCES amazon_ad_items(id) ON DELETE RESTRICT
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

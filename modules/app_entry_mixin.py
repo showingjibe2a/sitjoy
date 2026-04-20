@@ -31,6 +31,8 @@ class AppEntryMixin:
         except Exception as e:
             print(f"WSGI 错误: {str(e)}")
             traceback.print_exc()
+            if str(environ.get('PATH_INFO') or '').startswith('/api/'):
+                return self.send_json({'status': 'error', 'message': f'服务器错误: {str(e)}', 'path': environ.get('PATH_INFO', '')}, start_response)
             return self.send_error(500, f'服务器错误: {str(e)}', start_response)
 
     def handle_hello_api(self, environ, path, method, start_response):

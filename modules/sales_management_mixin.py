@@ -208,10 +208,11 @@ class SalesManagementMixin:
 
                 cur.execute(
                     """
-                    SELECT op.id AS order_product_id, op.sku, spol.quantity
-                    FROM sales_product_order_links spol
-                    JOIN order_products op ON op.id = spol.order_product_id
-                    WHERE spol.sales_product_id=%s
+                    SELECT op.id AS order_product_id, op.sku, svol.quantity
+                    FROM sales_products sp
+                    JOIN sales_variant_order_links svol ON svol.variant_id = sp.variant_id
+                    JOIN order_products op ON op.id = svol.order_product_id
+                    WHERE sp.id=%s
                     """,
                     (sales_product_id,)
                 )
