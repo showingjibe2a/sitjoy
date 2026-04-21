@@ -1700,13 +1700,26 @@
 
         const colgroup = state.table && state.table.querySelector ? state.table.querySelector('colgroup') : null;
         if(colgroup){
-            Array.from(colgroup.children || []).forEach(node => {
-                if(!node || String(node.tagName || '').toUpperCase() !== 'COL') return;
-                if(String(node.dataset.manageColKey || '').trim() !== columnKey) return;
-                node.style.width = `${width}px`;
-                node.style.minWidth = `${width}px`;
-                node.style.maxWidth = `${width}px`;
-            });
+            const matchedCols = Array.from(colgroup.children || [])
+                .filter(node => node && String(node.tagName || '').toUpperCase() === 'COL')
+                .filter(node => String(node.dataset.manageColKey || '').trim() === columnKey);
+
+            // When a header cell spans multiple <col> (colSpan > 1), we persist / resize using the
+            // "group width" but must distribute it into each underlying column width. Otherwise the
+            // group width is multiplied by the span and causes jumpy resizing + misalignment.
+            if(matchedCols.length){
+                const spanHint = Math.max(
+                    1,
+                    ...matchedCols.map(col => Math.max(1, Number(col.dataset.manageColSpan || 1) || 1))
+                );
+                const span = Math.max(1, Math.min(spanHint, matchedCols.length));
+                const perColWidth = Math.max(24, Math.round(width / span));
+                matchedCols.forEach(node => {
+                    node.style.width = `${perColWidth}px`;
+                    node.style.minWidth = `${perColWidth}px`;
+                    node.style.maxWidth = `${perColWidth}px`;
+                });
+            }
         }
 
         Array.from(state.table.rows || []).forEach(row => {
