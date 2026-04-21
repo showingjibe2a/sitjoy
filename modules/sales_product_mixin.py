@@ -1484,6 +1484,18 @@ class SalesProductMixin:
             row = cur.fetchone() or {}
             if row.get('id'):
                 return self._parse_int(row.get('id'))
+            cur.execute("SELECT id, is_enabled FROM image_types WHERE name=%s LIMIT 1", (name,))
+            existing = cur.fetchone() or {}
+            if existing.get('id'):
+                if self._parse_int(existing.get('is_enabled')) != 1:
+                    cur.execute("UPDATE image_types SET is_enabled=1 WHERE id=%s", (existing.get('id'),))
+                return self._parse_int(existing.get('id'))
+            cur.execute(
+                "INSERT INTO image_types (name, is_enabled) VALUES (%s, 1)",
+                (name,)
+            )
+            if cur.lastrowid:
+                return self._parse_int(cur.lastrowid)
             cur.execute("SELECT id FROM image_types WHERE is_enabled=1 ORDER BY id ASC LIMIT 1")
             fallback = cur.fetchone() or {}
         return self._parse_int(fallback.get('id'))
@@ -1720,15 +1732,35 @@ class SalesProductMixin:
 
     def handle_sales_product_main_images_upload_api(self, environ, start_response):
         try:
-            if environ['REQUEST_METHOD'] != 'POST':
+            method = environ['REQUEST_METHOD']
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            check_only = str((query_params.get('check_only', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
+
+            # Allow GET requests only when check_only is enabled (for duplicate checking without upload)
+            if method == 'GET':
+                if not check_only:
+                    return self.send_json({'status': 'error', 'message': 'Method not allowed. Use POST for uploads or GET with check_only=1 for duplicate checking.'}, start_response)
+                # For GET with check_only, we need parameters from query string
+                sales_product_id = self._parse_int((query_params.get('sales_product_id', [''])[0] or '').strip())
+                if not sales_product_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing sales_product_id'}, start_response)
+                image_type_name = (query_params.get('image_type_name', [''])[0] or '').strip() or '文字卖点图'
+                # GET with check_only but no files - just return success with empty results
+                return self.send_json({
+                    'status': 'success',
+                    'duplicate_count': 0,
+                    'duplicates': [],
+                    'file_count': 0,
+                    'message': 'No files provided. Use POST method with multipart/form-data to upload images.'
+                }, start_response)
+
+            if method != 'POST':
                 return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
 
             content_type = environ.get('CONTENT_TYPE', '')
             if 'multipart/form-data' not in content_type:
                 return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
 
-            query_params = parse_qs(environ.get('QUERY_STRING', ''))
-            check_only = str((query_params.get('check_only', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
             allow_duplicate = str((query_params.get('allow_duplicate', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
 
             content_length = int(environ.get('CONTENT_LENGTH', 0) or 0)
@@ -1761,10 +1793,18 @@ class SalesProductMixin:
 
                 duplicates = []
                 normalized = []
+                skipped_files = []
                 for item in uploads:
                     filename = os.path.basename(item.get('filename') or '')
                     content = item.get('content') or b''
-                    if not filename or not content or not self._is_image_name(filename):
+                    if not filename:
+                        skipped_files.append({'filename': '', 'reason': 'empty_name'})
+                        continue
+                    if not content:
+                        skipped_files.append({'filename': filename, 'reason': 'empty_file'})
+                        continue
+                    if not self._is_image_name(filename):
+                        skipped_files.append({'filename': filename, 'reason': 'unsupported_type'})
                         continue
                     sha256 = self._sha256_hex(content)
                     asset = self._find_image_asset_by_sha256(conn, sha256)
@@ -1782,6 +1822,14 @@ class SalesProductMixin:
                             'storage_path': asset.get('storage_path') or '',
                             'description': asset.get('description') or ''
                         })
+
+                if not normalized:
+                    return self.send_json({
+                        'status': 'error',
+                        'message': '未检测到可上传图片：仅支持 jpg/jpeg/png/gif/bmp/webp',
+                        'file_count': 0,
+                        'skipped_files': skipped_files,
+                    }, start_response)
 
                 if check_only:
                     return self.send_json({

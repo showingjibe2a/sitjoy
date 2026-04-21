@@ -288,6 +288,7 @@ class LogisticsInTransitMixin:
 
                 item_id = self._parse_int(query_params.get('id', [''])[0])
                 keyword = (query_params.get('q', [''])[0] or '').strip()
+                sku_keyword = (query_params.get('sku', [''])[0] or '').strip()
                 page = self._parse_int(query_params.get('page', ['1'])[0]) or 1
                 page_size = self._parse_int(query_params.get('page_size', ['50'])[0]) or 50
                 page = max(1, page)
@@ -366,6 +367,20 @@ class LogisticsInTransitMixin:
                                 params.extend(matched_region_ids)
 
                             filters.append('(' + ' OR '.join(search_clauses) + ')')
+                        if sku_keyword:
+                            like_sku = f"%{sku_keyword}%"
+                            filters.append(
+                                """
+                                EXISTS (
+                                    SELECT 1
+                                    FROM logistics_in_transit_items li2
+                                    JOIN order_products op2 ON op2.id = li2.order_product_id
+                                    WHERE li2.transit_id = t.id
+                                      AND op2.sku LIKE %s
+                                )
+                                """
+                            )
+                            params.append(like_sku)
                         where_sql = (' WHERE ' + ' AND '.join(filters)) if filters else ''
 
                         total = None

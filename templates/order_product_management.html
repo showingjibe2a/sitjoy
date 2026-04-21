@@ -460,6 +460,8 @@
                             <th>SKU</th>
                             <th>规格简称</th>
                             <th>内含物英文描述</th>
+                            <th style="width: 120px;">成品长宽高(in)</th>
+                            <th style="width: 120px;">包装长宽高(in)</th>
                             <th>面料</th>
                             <th style="width:72px; text-align:center;">颜色</th>
                             <th>版本号</th>
@@ -473,7 +475,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="18" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="20" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -483,6 +485,9 @@
     <div class="pm-modal" id="pm-modal">
         <div class="pm-modal-content pm-modal-content--wide">
             <h3 id="pm-modal-title" style="margin-top:0;">新增下单产品</h3>
+            <div style="margin:-0.35rem 0 0.85rem 0;">
+                <button type="button" class="btn-secondary" onclick="openCopyModal()">复制已有产品信息</button>
+            </div>
             <div class="pm-form">
                 <div class="pm-section">
                     <h4>迭代款</h4>
@@ -738,6 +743,19 @@
         </div>
     </div>
 
+    <div class="pm-modal" id="copy-modal">
+        <div class="pm-modal-content" style="max-width: 640px;">
+            <h3 style="margin-top:0;">复制已有下单产品信息</h3>
+            <div class="form-group" style="margin:0 0 0.65rem 0;">
+                <input type="text" id="copySearchInput" class="required-field" placeholder="搜索下单SKU/货号/面料/版本">
+            </div>
+            <div id="copyList" class="pm-select-list" style="max-height: 380px;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeCopyModal()">关闭</button>
+            </div>
+        </div>
+    </div>
+
     <footer>
         <p>&copy; 2026 SITJOY | 内部使用</p>
     </footer>
@@ -942,6 +960,92 @@
         function resetSearch() {
             document.getElementById('searchInput').value = '';
             loadOrderProductList();
+        }
+
+        function openCopyModal() {
+            renderCopyList();
+            const modal = document.getElementById('copy-modal');
+            if (modal) modal.classList.add('active');
+        }
+
+        function closeCopyModal() {
+            const modal = document.getElementById('copy-modal');
+            if (modal) modal.classList.remove('active');
+        }
+
+        function renderCopyList() {
+            const keyword = (document.getElementById('copySearchInput')?.value || '').trim().toLowerCase();
+            const list = document.getElementById('copyList');
+            if (!list) return;
+            const currentEditId = Number(editId || 0);
+            const items = (orderProductItemsCache || []).filter(item => {
+                if (!item || Number(item.id || 0) === currentEditId) return false;
+                const text = `${item.sku || ''} ${item.sku_family || ''} ${item.fabric_code || ''} ${item.fabric_name_en || ''} ${item.version_no || ''}`.toLowerCase();
+                return !keyword || text.includes(keyword);
+            });
+            if (!items.length) {
+                list.innerHTML = '<div class="pm-select-empty">暂无可复制记录</div>';
+                return;
+            }
+            list.innerHTML = items.map(item => {
+                const itemId = Number(item.id || 0);
+                const title = item.sku || '-';
+                const desc = `${item.sku_family || '-'} | ${item.fabric_code || item.fabric_name_en || '-'} | v${item.version_no || '-'}`;
+                return `<button type="button" class="pm-select-option" onclick="copyFromOrderProduct(${itemId})">${title} ｜ ${desc}</button>`;
+            }).join('');
+        }
+
+        function copyFromOrderProduct(id) {
+            const itemId = Number(id || 0);
+            if (!itemId) return;
+            fetch(`/api/order-product?id=${encodeURIComponent(String(itemId))}`)
+                .then(r => r.json())
+                .then(resp => {
+                    if (resp.status !== 'success' || !resp.item) {
+                        showUploadDialog({ title: '复制失败', message: resp.message || '未找到该SKU详情' });
+                        return;
+                    }
+                    const item = resp.item || {};
+                    setSelectValue('modalSkuFamily', item.sku_family_id || '');
+                    setInputValue('modalVersion', item.version_no || '');
+                    setInputValue('modalSkuFamilySearch', '');
+                    setSelectValue('modalFabric', item.fabric_id || '');
+                    setInputValue('modalFabricSearch', '');
+                    setInputValue('modalSpecQtyShort', item.spec_qty_short || '');
+                    setInputValue('modalContentsDescEn', item.contents_desc_en || '');
+                    setIterationMode(String(item.is_iteration || '0') === '1');
+                    setYesNoValue('modalIsOnMarket', String(item.is_on_market || '0') === '1' ? '1' : '0');
+                    setYesNoValue('modalIsDacheneProduct', String(item.is_dachene_product || '0') === '1' ? '1' : '0');
+                    setSelectValue('modalSourceSku', item.source_order_product_id || '');
+                    updateSourceSkuTrigger();
+                    setInputValue('modalFinishedLength', item.finished_length_in ?? '');
+                    setInputValue('modalFinishedWidth', item.finished_width_in ?? '');
+                    setInputValue('modalFinishedHeight', item.finished_height_in ?? '');
+                    setInputValue('modalNetWeight', item.net_weight_lbs ?? '');
+                    setInputValue('modalPackageLength', item.package_length_in ?? '');
+                    setInputValue('modalPackageWidth', item.package_width_in ?? '');
+                    setInputValue('modalPackageHeight', item.package_height_in ?? '');
+                    setInputValue('modalGrossWeight', item.gross_weight_lbs ?? '');
+                    setInputValue('modalCost', item.cost_usd ?? '');
+                    setInputValue('modalCartonQty', item.carton_qty ?? '');
+                    setInputValue('modalPackageClass', item.package_size_class || '');
+                    setInputValue('modalLastMile', item.last_mile_avg_freight_usd ?? '');
+                    setPickerSelected('filling', item.filling_material_ids || []);
+                    setPickerSelected('frame', item.frame_material_ids || []);
+                    setPickerSelected('feature', item.feature_ids || []);
+                    setPickerSelected('cert', item.certification_ids || []);
+                    setFactoryLinkSelected(item.factory_ids || []);
+                    const factorySearch = document.getElementById('factoryLinkSearch');
+                    if (factorySearch) factorySearch.value = '';
+
+                    // 复制时保留结构信息，但要求用户填写新的下单SKU，避免重复。
+                    setInputValue('modalSku', '');
+                    skuManuallyEdited = false;
+                    autoCalcCartonQtyFromPackage();
+                    closeCopyModal();
+                    showTimeoutToast('已复制产品信息，请填写新的下单SKU');
+                })
+                .catch(err => showUploadDialog({ title: '复制失败', message: '加载详情失败: ' + err }));
         }
 
         function openCreateModal() {
@@ -2472,7 +2576,7 @@
             });
             selectedOrderProductIds = new Set(Array.from(selectedOrderProductIds).filter(id => availableIdSet.has(String(id))));
             if (safeItems.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="18" style="text-align:center;">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="20" style="text-align:center;">暂无数据</td></tr>';
                 syncSelectAllCheckbox();
                 syncPreviewSaveBar();
                 return;
@@ -2487,6 +2591,8 @@
                         const cartonQtyText = getPreviewEffectiveValue(item, 'carton_qty');
                         const lastMileText = getPreviewEffectiveValue(item, 'last_mile_avg_freight_usd');
                         const onMarketText = Number(getPreviewEffectiveValue(item, 'is_on_market') || 0) === 1 ? '1' : '0';
+                        const finishedSizeText = `${item.finished_length_in ?? '-'}×${item.finished_width_in ?? '-'}×${item.finished_height_in ?? '-'}`;
+                        const packageSizeText = `${item.package_length_in ?? '-'}×${item.package_width_in ?? '-'}×${item.package_height_in ?? '-'}`;
                         const checked = selectedOrderProductIds.has(String(item.id)) ? 'checked' : '';
                         return `
                             <tr>
@@ -2498,6 +2604,8 @@
                                 <td>${item.sku || ''}</td>
                                 <td>${item.spec_qty_short || ''}</td>
                                 <td>${item.contents_desc_en || ''}</td>
+                                <td>${finishedSizeText}</td>
+                                <td>${packageSizeText}</td>
                                 <td>${fabricText || ''}</td>
                                 <td style="text-align:center;">${colorText}</td>
                                 <td>${item.version_no || ''}</td>
@@ -2531,7 +2639,7 @@
                 .then(data => {
                     const tbody = document.querySelector('#orderProductTable tbody');
                     if (data.status !== 'success') {
-                        tbody.innerHTML = `<tr><td colspan="18" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="20" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                         return;
                     }
                     orderProductItemsCache = data.items || [];
@@ -2539,7 +2647,7 @@
                 })
                 .catch(err => {
                     const tbody = document.querySelector('#orderProductTable tbody');
-                    tbody.innerHTML = `<tr><td colspan="18" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="20" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
                 });
         }
 
@@ -3189,6 +3297,9 @@
         document.getElementById('modalSourceSkuSearch').addEventListener('input', function() {
             renderSourceSkuList();
         });
+        document.getElementById('copySearchInput').addEventListener('input', function() {
+            renderCopyList();
+        });
         document.querySelectorAll('[data-target="modalIsIteration"]').forEach(btn => {
             btn.addEventListener('click', function() {
                 const nextValue = this.getAttribute('data-value') || '0';
@@ -3229,6 +3340,11 @@
         document.getElementById('shippingPlanEditorModal').addEventListener('click', function(e) {
             if (e.target === this) {
                 closeShippingPlanEditorModal();
+            }
+        });
+        document.getElementById('copy-modal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeCopyModal();
             }
         });
         document.getElementById('uploadDialogCopyBtn').addEventListener('click', function() {

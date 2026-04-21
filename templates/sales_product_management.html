@@ -2222,6 +2222,15 @@
             const files = this.files;
             if (files && files.length) {
                 preflightMainImageUpload(files).then(data => {
+                    if (!data || data.status !== 'success') {
+                        const msg = String((data && data.message) || '');
+                        if (msg.indexOf('Method not allowed') >= 0) {
+                            uploadMainImages(files, false);
+                            return;
+                        }
+                        showModalStatus((data && data.message) ? data.message : '主图预检失败', true);
+                        return;
+                    }
                     if ((data.duplicate_count || 0) > 0) {
                         const names = (data.duplicates || []).map(x => x.filename).join('、');
                         showUploadDialog({

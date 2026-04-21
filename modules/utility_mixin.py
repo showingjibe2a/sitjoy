@@ -24,6 +24,21 @@ class UtilityMixin:
                 continue
         return None
 
+    def _todo_column_exists(self, conn, column_name):
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT 1
+                FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'todos'
+                  AND COLUMN_NAME = %s
+                LIMIT 1
+                """,
+                (str(column_name or '').strip(),)
+            )
+            return bool(cur.fetchone())
+
     def _replace_todo_sales_links(self, conn, todo_id, sales_product_ids, sku_family_ids):
         with conn.cursor() as cur:
             cur.execute("DELETE FROM todo_sales_links WHERE todo_id=%s", (todo_id,))
@@ -173,15 +188,26 @@ class UtilityMixin:
                 related_sku_family_ids = data.get('related_sku_family_ids') or []
 
                 with self._get_db_connection() as conn:
+                    has_reminder_interval_days = self._todo_column_exists(conn, 'reminder_interval_days')
                     with conn.cursor() as cur:
-                        cur.execute(
-                            """
-                            INSERT INTO todos
-                            (title, detail, start_date, due_date, reminder_interval_days, is_recurring, status, priority, created_by)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                            """,
-                            (title, detail, start_date, due_date, reminder_interval_days, is_recurring, 'open', priority, user_id)
-                        )
+                        if has_reminder_interval_days:
+                            cur.execute(
+                                """
+                                INSERT INTO todos
+                                (title, detail, start_date, due_date, reminder_interval_days, is_recurring, status, priority, created_by)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                """,
+                                (title, detail, start_date, due_date, reminder_interval_days, is_recurring, 'open', priority, user_id)
+                            )
+                        else:
+                            cur.execute(
+                                """
+                                INSERT INTO todos
+                                (title, detail, start_date, due_date, is_recurring, status, priority, created_by)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                """,
+                                (title, detail, start_date, due_date, is_recurring, 'open', priority, user_id)
+                            )
                         new_id = cur.lastrowid
                     self._replace_todo_assignees(conn, new_id, assignee_ids)
                     self._replace_todo_sales_links(conn, new_id, related_sales_product_ids, related_sku_family_ids)

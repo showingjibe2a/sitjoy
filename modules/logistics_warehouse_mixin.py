@@ -2526,8 +2526,11 @@ class LogisticsWarehouseMixin:
                                     order_products = cur.fetchall() or []
                         return {'status': 'success', 'warehouses': warehouses, 'order_products': order_products}
 
-                    cache_key = f'logistics_wh_inventory_options_{1 if include_order_products else 0}_{option_limit}'
-                    payload = self._get_cached_template_options(cache_key, _load_options_payload, ttl_seconds=1800)
+                    # NOTE: warehouses list may change frequently (new warehouse / enabled toggles).
+                    # Long caching here makes the "新增库存" modal miss newly created warehouses.
+                    # Keep a short TTL to balance freshness and DB load.
+                    cache_key = f'logistics_wh_inventory_options_v2_{1 if include_order_products else 0}_{option_limit}'
+                    payload = self._get_cached_template_options(cache_key, _load_options_payload, ttl_seconds=60)
                     return self.send_json(payload, start_response)
 
                 if action == 'download_stock_summary':
