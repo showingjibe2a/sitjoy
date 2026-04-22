@@ -1732,6 +1732,27 @@ class SalesProductMixin:
             return '.webp'
         return '.jpg'
 
+    def _unc_share_key(self, path_text):
+        """
+        Return UNC share key like '\\\\server\\share' (case-insensitive).
+        If not UNC, return ''.
+        """
+        try:
+            p = str(path_text or '').strip()
+        except Exception:
+            return ''
+        if not p.startswith('\\\\'):
+            return ''
+        # \\server\share\rest...
+        parts = p.lstrip('\\').split('\\')
+        if len(parts) < 2:
+            return ''
+        server = parts[0].strip()
+        share = parts[1].strip()
+        if not (server and share):
+            return ''
+        return ('\\\\' + server + '\\' + share).lower()
+
 
 
     def handle_sales_product_main_images_import_by_path_api(self, environ, method, start_response):
@@ -1748,6 +1769,8 @@ class SalesProductMixin:
             sales_product_id = self._parse_int(data.get('sales_product_id'))
             source_path_text = str(data.get('source_path') or '').strip()
             image_type_name = str(data.get('image_type_name') or '').strip() or '文字卖点图'
+            delete_source = bool(data.get('delete_source'))  # optional: try delete source after successful commit (best-effort)
+            require_move = str(data.get('require_move') or '').strip().lower() in ('1', 'true', 'yes', 'on')
 
             if not sales_product_id:
                 return self.send_json({'status': 'error', 'message': 'Missing sales_product_id'}, start_response)
@@ -1782,6 +1805,7 @@ class SalesProductMixin:
                 start_sort = self._get_sales_product_image_sort_start(conn, sales_product_id)
                 created_assets = 0
                 moved_count = 0
+                copied_count = 0
                 linked_count = 0
                 items = []
                 folder_info = self._resolve_sales_product_variant_folder(sales_product_id, ensure_folder=True)
@@ -1802,6 +1826,9 @@ class SalesProductMixin:
                 staged_files = []   # [(final_abs, tmp_abs_or_none, src_or_none)] used for cleanup
                 db_new_assets = []  # [{sha256, storage_path, filename, ext, file_size}]
                 reuse_assets = []   # [{asset_id}]
+                move_failures = []  # [{src, reason}]
+
+                target_share = self._unc_share_key(target_folder_abs)
 
                 for idx, source_file in enumerate(source_files, start=1):
                     filename = os.path.basename(source_file)
@@ -1827,19 +1854,49 @@ class SalesProductMixin:
                         # Stage: try move to a temp file first so we can rollback on DB failure.
                         tmp_abs = abs_path + (f".__tmp__{int(time.time()*1000)}_{idx}")
                         wrote_final = False
+                        src_share = self._unc_share_key(source_file)
                         try:
-                            os.replace(source_file, tmp_abs)
+                            # Only expect server-side atomic move when in the same UNC share.
+                            if src_share and target_share and src_share == target_share:
+                                os.replace(source_file, tmp_abs)
+                            else:
+                                raise RuntimeError('not_same_unc_share')
                             staged_moves.append((source_file, tmp_abs))
                             moved_count += 1
-                        except Exception:
-                            # Fallback: write temp by bytes (keep source intact)
+                        except Exception as e_move1:
+                            # Fallback 1: try shutil.move (works across volumes/shares via copy+delete)
                             try:
-                                with open(tmp_abs, 'wb') as f:
-                                    f.write(content or b'')
-                            except Exception:
-                                # Can't persist => skip this file
+                                import shutil
+                                shutil.move(source_file, tmp_abs)
+                                staged_moves.append((source_file, tmp_abs))
+                                moved_count += 1
+                            except Exception as e_move2:
+                                # Fallback 2: write temp by bytes (keep source intact)
+                                try:
+                                    with open(tmp_abs, 'wb') as f:
+                                        f.write(content or b'')
+                                    copied_count += 1
+                                except Exception:
+                                    # Can't persist => skip this file
+                                    self._safe_unlink(tmp_abs)
+                                    continue
+                                move_failures.append({'src': str(source_file), 'reason': str(e_move2)[:120] or str(e_move1)[:120]})
+
+                        if require_move and copied_count > 0:
+                            # We copied at least one file in this batch; enforce "must move" semantics.
+                            # Clean up the tmp file we just created (best-effort) and abort.
+                            try:
                                 self._safe_unlink(tmp_abs)
-                                continue
+                            except Exception:
+                                pass
+                            return self.send_json({
+                                'status': 'error',
+                                'message': '要求移动(require_move=1)但当前路径无法移动（可能是不同 share 或无删除权限）。',
+                                'source_path': source_path,
+                                'target_folder': target_folder_abs,
+                                'target_share': target_share,
+                                'move_failures': move_failures[:5],
+                            }, start_response)
 
                         # Promote temp -> final path
                         try:
@@ -1942,6 +1999,27 @@ class SalesProductMixin:
                             pass
                     return self.send_json({'status': 'error', 'message': f'导入失败，已回滚：{str(e)}'}, start_response)
 
+                # Optional: after commit, delete source files for those that were copied (best-effort).
+                # We only attempt this when explicitly requested, to avoid accidental data loss.
+                deleted_source_count = 0
+                if delete_source:
+                    try:
+                        # Any source that wasn't moved into staged_moves is still at source_file.
+                        moved_sources = set()
+                        for src, _tmp in staged_moves:
+                            moved_sources.add(src)
+                        for source_file in source_files:
+                            if source_file in moved_sources:
+                                continue
+                            try:
+                                if os.path.exists(source_file):
+                                    os.remove(source_file)
+                                    deleted_source_count += 1
+                            except Exception:
+                                pass
+                    except Exception:
+                        deleted_source_count = deleted_source_count or 0
+
                 # After commit: apply rehome rules best-effort
                 try:
                     for aid, _ in created_asset_ids:
@@ -1956,6 +2034,8 @@ class SalesProductMixin:
                     'file_count': len(items),
                     'created_assets': created_assets,
                     'moved': moved_count,
+                    'copied': copied_count,
+                    'deleted_source': (deleted_source_count if delete_source else None),
                     'linked': linked_count
                 }, start_response)
         except Exception as e:
@@ -2194,16 +2274,27 @@ class SalesProductMixin:
         if not (has_ia_tid or has_sim_tid):
             return {}
 
+        # Prefer matching image type name; fallback to first image if none match
+        preferred_names = []
+        base_name = str(type_name or '').strip() or '白底图'
+        preferred_names.append(base_name)
+        # Common legacy / renamed variants
+        for cand in ('主图·白底图', '主图白底图', '白底', 'White'):
+            if cand not in preferred_names:
+                preferred_names.append(cand)
+
+        join_it = ""
         where_type = ""
         params = []
         if has_ia_tid:
-            where_type = "AND it.name=%s"
-            params.append(str(type_name or '').strip() or '白底图')
-            join_it = "JOIN image_types it ON it.id = ia.image_type_id"
+            # LEFT JOIN so assets with NULL image_type_id don't get excluded prematurely.
+            join_it = "LEFT JOIN image_types it ON it.id = ia.image_type_id"
+            where_type = "AND it.name IN ({})".format(",".join(["%s"] * len(preferred_names)))
+            params.extend(preferred_names)
         else:
-            where_type = "AND it.name=%s"
-            params.append(str(type_name or '').strip() or '白底图')
             join_it = "JOIN image_types it ON it.id = sim.image_type_id"
+            where_type = "AND it.name IN ({})".format(",".join(["%s"] * len(preferred_names)))
+            params.extend(preferred_names)
 
         placeholders = ",".join(["%s"] * len(vids))
         has_ia_ofn = self._table_has_column(conn, 'image_assets', 'original_filename')
@@ -2220,6 +2311,19 @@ class SalesProductMixin:
         with conn.cursor() as cur:
             cur.execute(sql, tuple(vids) + tuple(params))
             rows = cur.fetchall() or []
+
+        # If no rows match preferred white-background types, fallback to first image per variant
+        if not rows:
+            sql2 = f"""
+                SELECT sim.variant_id, ia.storage_path, {ofn_sel}, sim.sort_order, sim.id
+                FROM sku_image_mappings sim
+                JOIN image_assets ia ON ia.id = sim.image_asset_id
+                WHERE sim.variant_id IN ({placeholders})
+                ORDER BY sim.variant_id ASC, sim.sort_order ASC, sim.id ASC
+            """
+            with conn.cursor() as cur:
+                cur.execute(sql2, tuple(vids))
+                rows = cur.fetchall() or []
 
         out = {}
         for row in rows:
@@ -4289,18 +4393,29 @@ class SalesProductMixin:
         fid = self._parse_int(fabric_id) or None
         with conn.cursor() as cur:
             has_fid = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
+            has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
             if has_fid:
+                cols = ["sku_family_id", "spec_name", "fabric_id", "sale_price_usd"]
+                vals = [family_id, spec, fid, sale_price_usd]
+                if has_fabric_text:
+                    cols.insert(3, "fabric")
+                    vals.insert(3, fab)
+                ph = ", ".join(["%s"] * len(cols))
+                updates = [
+                    "sale_price_usd = COALESCE(VALUES(sale_price_usd), sale_price_usd)",
+                    "fabric_id = COALESCE(VALUES(fabric_id), fabric_id)",
+                    "updated_at = CURRENT_TIMESTAMP",
+                ]
+                if has_fabric_text:
+                    updates.insert(2, "fabric = COALESCE(NULLIF(VALUES(fabric), ''), fabric)")
                 cur.execute(
-                    """
-                    INSERT INTO sales_product_variants (sku_family_id, spec_name, fabric_id, fabric, sale_price_usd)
-                    VALUES (%s, %s, %s, %s, %s)
+                    f"""
+                    INSERT INTO sales_product_variants ({', '.join(cols)})
+                    VALUES ({ph})
                     ON DUPLICATE KEY UPDATE
-                        sale_price_usd = COALESCE(VALUES(sale_price_usd), sale_price_usd),
-                        fabric_id = COALESCE(VALUES(fabric_id), fabric_id),
-                        fabric = COALESCE(NULLIF(VALUES(fabric), ''), fabric),
-                        updated_at = CURRENT_TIMESTAMP
+                        {', '.join(updates)}
                     """,
-                    (family_id, spec, fid, fab, sale_price_usd)
+                    tuple(vals),
                 )
                 cur.execute(
                     """

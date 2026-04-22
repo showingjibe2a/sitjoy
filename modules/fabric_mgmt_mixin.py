@@ -730,12 +730,14 @@ class FabricManagementMixin:
                 continue
             rows.append((image_name, type_name, description, sort_order if sort_order is not None else idx))
 
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM fabric_image_mappings WHERE fabric_id=%s", (fid,))
-
+        # === Batch pipeline ===
         has_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
         has_dep = self._table_has_column(conn, 'image_assets', 'is_deprecated')
+        has_ofn = self._table_has_column(conn, 'image_assets', 'original_filename')
 
+        # Precompute files -> sha/storage/meta (avoid per-row DB trips)
+        prepared = []
+        sha_list = []
         for image_name, type_name, description, sort_order in rows:
             abs_path = self._resolve_fabric_image_abs_path(image_name)
             if not abs_path or not os.path.exists(abs_path):
@@ -756,59 +758,116 @@ class FabricManagementMixin:
                 storage_path = str(image_name).replace('\\', '/')
             orig_fn = os.path.basename(str(image_name).strip().replace('\\', '/')) or os.path.basename(storage_path)
             desc_v = (description or '')[:1000]
+            prepared.append({
+                'sha256': sha256,
+                'storage_path': storage_path,
+                'original_filename': orig_fn,
+                'type_name': type_name,
+                'description': desc_v,
+                'sort_order': int(sort_order),
+            })
+            sha_list.append(sha256)
 
-            tid = None
-            if type_name and has_tid:
-                try:
-                    tid = self._get_image_type_id_by_name(conn, type_name)
-                except Exception:
-                    tid = None
-            if not tid and has_tid:
-                try:
-                    tid = self._get_image_type_id_by_name(conn, '文字卖点图')
-                except Exception:
-                    tid = None
-
+        if not prepared:
             with conn.cursor() as cur:
-                cur.execute("SELECT id FROM image_assets WHERE sha256=%s LIMIT 1", (sha256,))
-                exist = cur.fetchone() or {}
-                aid = self._parse_int(exist.get('id'))
-                if aid:
-                    sets = ["description=%s"]
-                    vals = [desc_v or None]
-                    if has_tid and tid:
-                        sets.append("image_type_id=%s")
-                        vals.append(tid)
-                    vals.append(aid)
-                    cur.execute(f"UPDATE image_assets SET {', '.join(sets)} WHERE id=%s", tuple(vals))
-                else:
-                    cols = ["sha256", "storage_path", "description"]
-                    vals = [sha256, storage_path, desc_v or None]
-                    if has_tid:
-                        cols.append("image_type_id")
-                        vals.append(tid)
-                    if has_dep:
-                        cols.append("is_deprecated")
-                        vals.append(0)
-                    ph = ", ".join(["%s"] * len(cols))
-                    cur.execute(
-                        f"INSERT INTO image_assets ({', '.join(cols)}) VALUES ({ph})",
-                        tuple(vals),
-                    )
-                    aid = cur.lastrowid
+                cur.execute("DELETE FROM fabric_image_mappings WHERE fabric_id=%s", (fid,))
+            return
 
-                cur.execute(
+        # Resolve type ids once (name -> id)
+        type_id_by_name = {}
+        if has_tid:
+            for rec in prepared:
+                nm = (rec.get('type_name') or '').strip() or '文字卖点图'
+                if nm not in type_id_by_name:
+                    try:
+                        type_id_by_name[nm] = self._get_image_type_id_by_name(conn, nm)
+                    except Exception:
+                        type_id_by_name[nm] = None
+
+        # Load existing assets by sha256 in one query
+        existing_by_sha = {}
+        with conn.cursor() as cur:
+            placeholders = ",".join(["%s"] * len(set(sha_list)))
+            cur.execute(f"SELECT id, sha256 FROM image_assets WHERE sha256 IN ({placeholders})", tuple(sorted(set(sha_list))))
+            for r in (cur.fetchall() or []):
+                existing_by_sha[str(r.get('sha256') or '')] = self._parse_int(r.get('id')) or 0
+
+        # Insert missing assets in batch (fixed column set)
+        cols_base = ["sha256", "storage_path", "description"]
+        if has_ofn:
+            cols_base.append("original_filename")
+        if has_tid:
+            cols_base.append("image_type_id")
+        if has_dep:
+            cols_base.append("is_deprecated")
+        insert_sql = f"INSERT INTO image_assets ({', '.join(cols_base)}) VALUES ({', '.join(['%s'] * len(cols_base))})"
+        to_insert = []
+        for rec in prepared:
+            if existing_by_sha.get(rec['sha256']):
+                continue
+            vals = [
+                rec['sha256'],
+                rec['storage_path'],
+                rec.get('description') or None,
+            ]
+            if has_ofn:
+                vals.append(rec.get('original_filename') or '')
+            if has_tid:
+                vals.append(type_id_by_name.get((rec.get('type_name') or '').strip() or '文字卖点图'))
+            if has_dep:
+                vals.append(0)
+            to_insert.append(tuple(vals))
+        if to_insert:
+            with conn.cursor() as cur:
+                cur.executemany(insert_sql, to_insert)
+            # Reload ids for inserted
+            with conn.cursor() as cur:
+                placeholders = ",".join(["%s"] * len(set(sha_list)))
+                cur.execute(f"SELECT id, sha256 FROM image_assets WHERE sha256 IN ({placeholders})", tuple(sorted(set(sha_list))))
+                for r in (cur.fetchall() or []):
+                    existing_by_sha[str(r.get('sha256') or '')] = self._parse_int(r.get('id')) or 0
+
+        # Update descriptions/type for all involved assets in batch (executemany)
+        update_sets = ["description=%s"]
+        if has_tid:
+            update_sets.append("image_type_id=%s")
+        update_sql = f"UPDATE image_assets SET {', '.join(update_sets)} WHERE id=%s"
+        update_rows = []
+        for rec in prepared:
+            aid = existing_by_sha.get(rec['sha256']) or 0
+            if not aid:
+                continue
+            params = [rec.get('description') or None]
+            if has_tid:
+                params.append(type_id_by_name.get((rec.get('type_name') or '').strip() or '文字卖点图'))
+            params.append(int(aid))
+            update_rows.append(tuple(params))
+        if update_rows:
+            with conn.cursor() as cur:
+                cur.executemany(update_sql, update_rows)
+
+        # Replace mappings in one delete + executemany insert
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM fabric_image_mappings WHERE fabric_id=%s", (fid,))
+            map_rows = []
+            for rec in prepared:
+                aid = existing_by_sha.get(rec['sha256']) or 0
+                if aid:
+                    map_rows.append((fid, int(aid), int(rec.get('sort_order') or 0)))
+            if map_rows:
+                cur.executemany(
                     "INSERT INTO fabric_image_mappings (fabric_id, image_asset_id, sort_order) VALUES (%s,%s,%s)",
-                    (fid, int(aid), int(sort_order)),
+                    map_rows
                 )
 
     def _replace_fabric_sku_families(self, conn, fabric_id, sku_family_ids):
         with conn.cursor() as cur:
             cur.execute("DELETE FROM fabric_product_families WHERE fabric_id=%s", (fabric_id,))
-            for sku_family_id in sku_family_ids:
-                cur.execute(
+            rows = [(fabric_id, int(sku_family_id)) for sku_family_id in (sku_family_ids or []) if int(sku_family_id or 0) > 0]
+            if rows:
+                cur.executemany(
                     "INSERT IGNORE INTO fabric_product_families (fabric_id, sku_family_id) VALUES (%s, %s)",
-                    (fabric_id, sku_family_id)
+                    rows
                 )
 
     def handle_fabric_image_migrate_api(self, environ, method, start_response):
