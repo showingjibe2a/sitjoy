@@ -189,6 +189,7 @@ API_ROUTE_MAP = {
     '/api/fabric-attach': ('start', 'handle_fabric_attach_api'),
     '/api/fabric-upload': ('start', 'handle_fabric_upload_api'),
     '/api/fabric-image-delete': ('method', 'handle_fabric_image_delete_api'),
+    '/api/fabric-image-migrate': ('method', 'handle_fabric_image_migrate_api'),
     '/api/upload': ('start', 'handle_upload_api'),
     '/api/download-zip': ('method', 'handle_download_zip'),
 }

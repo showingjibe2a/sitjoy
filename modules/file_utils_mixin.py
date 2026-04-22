@@ -33,7 +33,8 @@ class FileUtilsMixin:
 
     def _ensure_fabric_folder(self):
         """获取或创建面料文件夹"""
-        folder = self._join_resources('面料库')
+        # Unified fabric folder
+        folder = self._join_resources('『面料』')
         if not os.path.exists(folder):
             os.makedirs(folder, exist_ok=True)
         return folder

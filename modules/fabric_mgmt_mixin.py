@@ -8,11 +8,38 @@ import time
 import cgi
 import io
 import re
+import hashlib
 import unicodedata
 from urllib.parse import parse_qs
 
 class FabricManagementMixin:
     """面料管理 API 处理器"""
+
+    def _fabric_folder_candidates(self):
+        # Historical folders used by different implementations
+        return [
+            self._join_resources('『面料』'),
+            self._join_resources('面料库'),
+        ]
+
+    def _resolve_fabric_image_abs_path(self, image_name):
+        name = os.path.basename(str(image_name or '').strip())
+        if not name:
+            return None
+        for folder in self._fabric_folder_candidates():
+            try:
+                p = os.path.join(folder, self._safe_fsencode(name))
+            except Exception:
+                p = os.path.join(folder, name.encode('utf-8', errors='surrogatepass'))
+            if os.path.exists(p):
+                return p
+        return None
+
+    def _is_fabric_assets_ready(self):
+        try:
+            return bool(self._is_schema_marker_ready('fabric_image_assets_ready'))
+        except Exception:
+            return False
 
     def _get_fabric_folder_bytes(self):
         return self._join_resources('『面料』')
@@ -438,24 +465,49 @@ class FabricManagementMixin:
 
                         if fabric_ids:
                             placeholders = ','.join(['%s'] * len(fabric_ids))
-                            cur.execute(
-                                f"""
-                                SELECT fabric_id, image_name, remark, sort_order
-                                FROM fabric_images
-                                WHERE fabric_id IN ({placeholders})
-                                ORDER BY fabric_id ASC, sort_order ASC, id ASC
-                                """,
-                                tuple(fabric_ids)
-                            )
-                            for img in (cur.fetchall() or []):
-                                fid = self._parse_int(img.get('fabric_id'))
-                                if not fid:
-                                    continue
-                                image_map.setdefault(fid, []).append({
-                                    'image_name': img.get('image_name') or '',
-                                    'remark': img.get('remark') or '',
-                                    'sort_order': self._parse_int(img.get('sort_order')) or 0,
-                                })
+                            if self._is_fabric_assets_ready() and self._has_required_tables(['fabric_image_mappings', 'image_assets']):
+                                cur.execute(
+                                    f"""
+                                    SELECT fim.fabric_id, ia.storage_path AS storage_path, ia.original_filename,
+                                           fim.remark, fim.sort_order, fim.is_deprecated
+                                    FROM fabric_image_mappings fim
+                                    JOIN image_assets ia ON ia.id = fim.image_asset_id
+                                    WHERE fim.fabric_id IN ({placeholders})
+                                    ORDER BY fim.fabric_id ASC, COALESCE(fim.is_deprecated,0) ASC, fim.sort_order ASC, fim.id ASC
+                                    """,
+                                    tuple(fabric_ids)
+                                )
+                                for img in (cur.fetchall() or []):
+                                    fid = self._parse_int(img.get('fabric_id'))
+                                    if not fid:
+                                        continue
+                                    storage_path = (img.get('storage_path') or '').strip()
+                                    display_name = os.path.basename(storage_path) if storage_path else (img.get('original_filename') or '')
+                                    image_map.setdefault(fid, []).append({
+                                        'image_name': display_name or '',
+                                        'remark': img.get('remark') or '',
+                                        'sort_order': self._parse_int(img.get('sort_order')) or 0,
+                                        'is_deprecated': int(img.get('is_deprecated') or 0),
+                                    })
+                            else:
+                                cur.execute(
+                                    f"""
+                                    SELECT fabric_id, image_name, remark, sort_order
+                                    FROM fabric_images
+                                    WHERE fabric_id IN ({placeholders})
+                                    ORDER BY fabric_id ASC, sort_order ASC, id ASC
+                                    """,
+                                    tuple(fabric_ids)
+                                )
+                                for img in (cur.fetchall() or []):
+                                    fid = self._parse_int(img.get('fabric_id'))
+                                    if not fid:
+                                        continue
+                                    image_map.setdefault(fid, []).append({
+                                        'image_name': img.get('image_name') or '',
+                                        'remark': img.get('remark') or '',
+                                        'sort_order': self._parse_int(img.get('sort_order')) or 0,
+                                    })
 
                             cur.execute(
                                 f"""
@@ -603,3 +655,138 @@ class FabricManagementMixin:
                     "INSERT IGNORE INTO fabric_product_families (fabric_id, sku_family_id) VALUES (%s, %s)",
                     (fabric_id, sku_family_id)
                 )
+
+    def handle_fabric_image_migrate_api(self, environ, method, start_response):
+        """
+        One-time migration helper:
+        - Read existing fabric_images rows
+        - Locate files in resources (面料库 / 『面料』)
+        - Compute sha256 and upsert image_assets
+        - Create fabric_image_mappings rows
+        - Mark schema switch ready: fabric_image_assets_ready
+        """
+        try:
+            if method == 'GET':
+                # Some reverse proxies block/redirect POST for custom endpoints. Provide a safe GET trigger
+                # behind login: /api/fabric-image-migrate?run=1&limit=50
+                query_params = parse_qs(environ.get('QUERY_STRING', '') or '')
+                run = str(query_params.get('run', ['0'])[0] or '0').strip().lower() in ('1', 'true', 'yes', 'on')
+                if not run:
+                    return self.send_json(
+                        {
+                            'status': 'info',
+                            'message': '该接口用于迁移面料图片到 image_assets。默认仅展示说明；要执行迁移请使用 POST，或在已登录状态下用 GET 带 run=1。',
+                            'examples': {
+                                'browser_get': '/api/fabric-image-migrate?run=1&limit=50',
+                                'powershell_post': "Invoke-RestMethod -Method Post -Uri 'http://<host>/api/fabric-image-migrate' -ContentType 'application/json' -Body '{\"limit\":0}'",
+                            },
+                        },
+                        start_response,
+                    )
+                # Convert GET run request into the same flow as POST, reading params from query string.
+                try:
+                    limit = int(str(query_params.get('limit', ['0'])[0] or '0').strip() or '0')
+                except Exception:
+                    limit = 0
+                data = {'limit': limit}
+            else:
+                data = self._read_json_body(environ)
+            if method != 'POST':
+                # GET run=1 is handled above
+                if method != 'GET':
+                    return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+            if not self._has_required_tables(['fabric_images', 'image_assets', 'fabric_image_mappings']):
+                return self.send_json({'status': 'error', 'message': 'Missing tables for migration'}, start_response)
+
+            try:
+                limit = int((data or {}).get('limit') or 0) or 0
+            except Exception:
+                limit = 0
+
+            migrated = 0
+            skipped = []
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    sql = (
+                        "SELECT id, fabric_id, image_name, remark, sort_order "
+                        "FROM fabric_images ORDER BY fabric_id ASC, sort_order ASC, id ASC"
+                    )
+                    if limit > 0:
+                        sql += " LIMIT %s"
+                        cur.execute(sql, (limit,))
+                    else:
+                        cur.execute(sql)
+                    rows = cur.fetchall() or []
+
+                for row in rows:
+                    image_name = (row.get('image_name') or '').strip()
+                    remark = (row.get('remark') or '').strip()
+                    # 用户要求：remark 为“原图”的记录直接删除，不迁移
+                    if remark == '原图':
+                        try:
+                            with conn.cursor() as cur:
+                                cur.execute("DELETE FROM fabric_images WHERE id=%s", (row.get('id'),))
+                        except Exception:
+                            pass
+                        continue
+                    abs_path = self._resolve_fabric_image_abs_path(image_name)
+                    if not abs_path or not os.path.exists(abs_path):
+                        skipped.append({'image_name': image_name, 'reason': 'file_not_found'})
+                        continue
+                    try:
+                        with open(abs_path, 'rb') as f:
+                            content = f.read() or b''
+                    except Exception:
+                        skipped.append({'image_name': image_name, 'reason': 'read_failed'})
+                        continue
+                    if not content:
+                        skipped.append({'image_name': image_name, 'reason': 'empty_file'})
+                        continue
+
+                    sha256 = hashlib.sha256(content).hexdigest()
+                    ext = os.path.splitext(os.path.basename(image_name))[1].lower() or '.jpg'
+                    try:
+                        res_root = self._join_resources('')
+                        rel_bytes = os.path.relpath(abs_path, res_root)
+                        storage_path = os.fsdecode(rel_bytes).replace('\\', '/')
+                    except Exception:
+                        storage_path = str(image_name).replace('\\', '/')
+
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT id FROM image_assets WHERE sha256=%s LIMIT 1", (sha256,))
+                        asset = cur.fetchone() or {}
+                        asset_id = asset.get('id')
+                        if not asset_id:
+                            cur.execute(
+                                """
+                                INSERT INTO image_assets
+                                (sha256, storage_path, original_filename, file_ext, mime_type, file_size, description)
+                                VALUES (%s,%s,%s,%s,%s,%s,%s)
+                                """,
+                                (sha256, storage_path, os.path.basename(image_name), ext, 'image/*', len(content), '')
+                            )
+                            asset_id = cur.lastrowid
+
+                        cur.execute(
+                            """
+                            INSERT INTO fabric_image_mappings (fabric_id, image_asset_id, remark, sort_order, is_deprecated)
+                            VALUES (%s,%s,%s,%s,0)
+                            ON DUPLICATE KEY UPDATE remark=VALUES(remark), sort_order=VALUES(sort_order)
+                            """,
+                            (
+                                int(row.get('fabric_id') or 0),
+                                int(asset_id),
+                                (row.get('remark') or None),
+                                int(row.get('sort_order') or 0),
+                            )
+                        )
+                    migrated += 1
+
+            try:
+                self._set_schema_marker_ready('fabric_image_assets_ready')
+            except Exception:
+                pass
+
+            return self.send_json({'status': 'success', 'migrated': migrated, 'skipped': skipped[:50]}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)

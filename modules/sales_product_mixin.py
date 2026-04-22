@@ -27,6 +27,233 @@ except Exception:
 
 
 class SalesProductMixin:
+    def _resources_root(self):
+        """Return absolute resources root as bytes path."""
+        return self._join_resources('')
+
+    def _storage_path_from_abs(self, abs_path):
+        """Compute image_assets.storage_path from an absolute resources path."""
+        try:
+            root = self._resources_root()
+            rel_bytes = os.path.relpath(abs_path, root)
+            return os.fsdecode(rel_bytes).replace('\\', '/')
+        except Exception:
+            try:
+                return os.fsdecode(abs_path).replace('\\', '/')
+            except Exception:
+                return str(abs_path)
+
+    def _abs_from_storage_path(self, storage_path):
+        return self._join_resources((storage_path or '').strip().replace('\\', '/'))
+
+    def _ensure_listing_sales_common_folder(self, sku_family):
+        """Ensure 货号/主图/通用 exists. Return absolute folder path (bytes)."""
+        sku_name = (sku_family or '').strip()
+        if not sku_name:
+            return None
+        self._ensure_listing_sku_folder(sku_name)
+        base_folder = self._ensure_listing_folder()
+        sku_folder = os.path.join(base_folder, self._safe_fsencode(sku_name))
+        main_folder = os.path.join(sku_folder, self._safe_fsencode('主图'))
+        if not os.path.exists(main_folder):
+            os.makedirs(main_folder, exist_ok=True)
+        common_folder = os.path.join(main_folder, self._safe_fsencode('通用'))
+        if not os.path.exists(common_folder):
+            os.makedirs(common_folder, exist_ok=True)
+        return common_folder
+
+    def _choose_rehome_target(self, conn, asset_id):
+        """
+        Decide where an asset should live based on references:
+        - If referenced by any fabric -> 『面料』/
+        - Else if referenced by multiple variants -> <货号>/主图/通用/
+        - Else keep as-is (usually in <货号>/主图/<规格-面料>/)
+        Returns absolute folder path (bytes) or None.
+        """
+        aid = int(asset_id or 0)
+        if aid <= 0:
+            return None
+
+        fabric_ref = 0
+        variant_ids = []
+        try:
+            with conn.cursor() as cur:
+                if self._has_required_tables(['fabric_image_mappings']):
+                    cur.execute("SELECT COUNT(*) AS cnt FROM fabric_image_mappings WHERE image_asset_id=%s", (aid,))
+                    fabric_ref = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
+        except Exception:
+            fabric_ref = 0
+
+        try:
+            with conn.cursor() as cur:
+                if self._table_has_column(conn, 'sku_image_mappings', 'variant_id'):
+                    cur.execute(
+                        "SELECT DISTINCT variant_id FROM sku_image_mappings WHERE image_asset_id=%s AND variant_id IS NOT NULL AND variant_id>0",
+                        (aid,),
+                    )
+                    variant_ids = [self._parse_int(r.get('variant_id')) for r in (cur.fetchall() or [])]
+                    variant_ids = [v for v in variant_ids if v]
+                else:
+                    variant_ids = []
+        except Exception:
+            variant_ids = []
+
+        if fabric_ref > 0:
+            return self._join_resources('『面料』')
+
+        if len(set(variant_ids)) > 1:
+            # Pick one sku_family from any referenced variant and use its 通用 folder
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT pf.sku_family
+                        FROM sales_product_variants v
+                        LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                        WHERE v.id=%s
+                        LIMIT 1
+                        """,
+                        (variant_ids[0],),
+                    )
+                    row = cur.fetchone() or {}
+                    sku_family = (row.get('sku_family') or '').strip()
+                    if sku_family:
+                        return self._ensure_listing_sales_common_folder(sku_family)
+            except Exception:
+                pass
+        return None
+
+    def _rehome_image_asset_if_needed(self, conn, asset_id):
+        """
+        Move the physical file to its target folder based on references, and update image_assets.storage_path.
+        Best-effort: if move fails, keep current path.
+        """
+        aid = int(asset_id or 0)
+        if aid <= 0:
+            return None
+
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, storage_path, original_filename, file_ext FROM image_assets WHERE id=%s LIMIT 1", (aid,))
+            asset = cur.fetchone() or {}
+        storage_path = (asset.get('storage_path') or '').strip()
+        if not storage_path:
+            return None
+        src_abs = self._abs_from_storage_path(storage_path)
+        if not os.path.exists(src_abs):
+            return None
+
+        target_folder = self._choose_rehome_target(conn, aid)
+        if not target_folder:
+            return None
+        try:
+            src_dir = os.path.dirname(src_abs)
+            # Already under target folder
+            if os.path.normcase(os.fsdecode(src_dir)) == os.path.normcase(os.fsdecode(target_folder)):
+                return None
+        except Exception:
+            pass
+
+        ext = (asset.get('file_ext') or '').strip()
+        if not ext:
+            ext = os.path.splitext(os.path.basename(storage_path))[1] or '.jpg'
+        orig = (asset.get('original_filename') or '').strip() or os.path.basename(storage_path)
+        base_part = self._sanitize_filename_component(os.path.splitext(orig)[0], 80) or f"image_{aid}"
+        filename = f"{base_part}{ext}"
+        final_name = self._next_available_filename(target_folder, filename)
+        dst_abs = os.path.join(target_folder, self._safe_fsencode(final_name))
+        try:
+            os.makedirs(os.path.dirname(dst_abs), exist_ok=True)
+        except Exception:
+            pass
+
+        # Prefer move when src is within resources root (same NAS) to reduce IO.
+        moved = False
+        try:
+            os.replace(src_abs, dst_abs)
+            moved = True
+        except Exception:
+            moved = False
+
+        if not moved:
+            # Fallback: copy + keep old
+            try:
+                with open(src_abs, 'rb') as fsrc:
+                    data = fsrc.read()
+                with open(dst_abs, 'wb') as fdst:
+                    fdst.write(data)
+            except Exception:
+                return None
+
+        new_storage_path = self._storage_path_from_abs(dst_abs)
+        with conn.cursor() as cur:
+            cur.execute("UPDATE image_assets SET storage_path=%s WHERE id=%s", (new_storage_path, aid))
+        return new_storage_path
+
+    def _sanitize_filename_component(self, text, max_len=80):
+        s = str(text or '').strip()
+        if not s:
+            return ''
+        # Keep it filesystem-safe across platforms
+        s = s.replace('\\', '-').replace('/', '-').replace('\x00', '')
+        for ch in ['<', '>', ':', '"', '|', '?', '*']:
+            s = s.replace(ch, '-')
+        # Collapse whitespace
+        s = re.sub(r'\s+', ' ', s).strip()
+        if max_len and len(s) > max_len:
+            s = s[:max_len].rstrip()
+        return s
+
+    def _next_available_filename(self, folder_abs, filename):
+        """
+        Ensure filename is unique inside folder_abs.
+        Returns a filename (string) without path.
+        """
+        base = os.path.basename(filename or '').strip()
+        if not base:
+            base = 'image.jpg'
+        name, ext = os.path.splitext(base)
+        ext = ext or '.jpg'
+        try_names = [base]
+        for i in range(2, 1000):
+            try_names.append(f"{name}_{i:02d}{ext}")
+        for cand in try_names:
+            try:
+                cand_path = os.path.join(folder_abs, self._safe_fsencode(cand))
+            except Exception:
+                cand_path = os.path.join(folder_abs, cand.encode('utf-8', errors='surrogatepass'))
+            if not os.path.exists(cand_path):
+                return cand
+        # Fallback
+        return f"{name}_{int(datetime.now().timestamp())}{ext}"
+
+    def _try_create_link(self, src_abs, dst_abs):
+        """
+        Best-effort: create a link/shortcut file in dst_abs pointing to src_abs.
+        Prefer hardlink when possible, else symlink. If both fail, do nothing.
+        """
+        try:
+            if os.path.exists(dst_abs):
+                return True
+        except Exception:
+            pass
+        # Try hardlink (same filesystem)
+        try:
+            os.link(src_abs, dst_abs)
+            return True
+        except Exception:
+            pass
+        # Try symlink
+        try:
+            # Make it relative when possible (more portable if folder moved)
+            try:
+                rel = os.path.relpath(src_abs, os.path.dirname(dst_abs))
+            except Exception:
+                rel = src_abs
+            os.symlink(rel, dst_abs)
+            return True
+        except Exception:
+            return False
+
     def _read_wsgi_request_body(self, environ):
         """Read request body bytes as reliably as possible for multipart uploads."""
         try:
@@ -1421,9 +1648,18 @@ class SalesProductMixin:
                 moved_count = 0
                 linked_count = 0
                 items = []
-                asset_folder = os.path.dirname(self._join_resources(os.path.join('『销售产品图片』', 'assets', 'dummy')))
-                if not os.path.exists(asset_folder):
-                    os.makedirs(asset_folder, exist_ok=True)
+                folder_info = self._resolve_sales_product_variant_folder(sales_product_id, ensure_folder=True)
+                target_folder_abs = folder_info.get('folder_path')
+                if not target_folder_abs or not os.path.exists(target_folder_abs):
+                    return self.send_json({'status': 'error', 'message': '无法定位主图文件夹，请确认货号/规格/面料信息完整'}, start_response)
+                variant_id = 0
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT variant_id FROM sales_products WHERE id=%s", (sales_product_id,))
+                        row = cur.fetchone() or {}
+                        variant_id = self._parse_int(row.get('variant_id')) or 0
+                except Exception:
+                    variant_id = 0
 
                 for idx, source_file in enumerate(source_files, start=1):
                     filename = os.path.basename(source_file)
@@ -1441,18 +1677,23 @@ class SalesProductMixin:
                         asset_id = asset.get('id')
                     else:
                         ext = self._guess_image_ext(filename, content)
-                        storage_name = f'{sha256}{ext}'
-                        storage_path = os.path.join('『销售产品图片』', 'assets', storage_name).replace('\\', '/')
-                        abs_path = self._join_resources(storage_path)
+                        type_part = self._sanitize_filename_component(image_type_name, 32) or '图片'
+                        base_part = self._sanitize_filename_component(os.path.splitext(filename)[0], 80) or sha256[:12]
+                        final_name = self._next_available_filename(target_folder_abs, f"{type_part}-{base_part}{ext}")
+                        abs_path = os.path.join(target_folder_abs, self._safe_fsencode(final_name))
 
                         if not os.path.exists(abs_path):
                             try:
-                                if os.path.normcase(source_file) != os.path.normcase(abs_path):
+                                # If source already on NAS under resources, prefer move. Otherwise write bytes.
+                                # We don't attempt path traversal; source_path is explicit.
+                                if os.path.exists(source_file) and os.path.getsize(source_file) > 0:
                                     os.replace(source_file, abs_path)
                                     moved_count += 1
                             except Exception:
                                 with open(abs_path, 'wb') as f:
                                     f.write(content)
+
+                        storage_path = self._storage_path_from_abs(abs_path)
 
                         with conn.cursor() as cur:
                             cur.execute(
@@ -1476,16 +1717,32 @@ class SalesProductMixin:
 
                     sort_order = start_sort + idx
                     with conn.cursor() as cur:
-                        cur.execute(
-                            """
-                            INSERT INTO sku_image_mappings
-                            (sales_product_id, image_asset_id, image_type_id, sort_order)
-                            VALUES (%s, %s, %s, %s)
-                            ON DUPLICATE KEY UPDATE sort_order=%s, image_type_id=%s
-                            """,
-                            (sales_product_id, asset_id, image_type_id, sort_order, sort_order, image_type_id)
-                        )
+                        if variant_id and self._table_has_column(conn, 'sku_image_mappings', 'variant_id'):
+                            cur.execute(
+                                """
+                                INSERT INTO sku_image_mappings
+                                (variant_id, image_asset_id, image_type_id, sort_order)
+                                VALUES (%s, %s, %s, %s)
+                                ON DUPLICATE KEY UPDATE sort_order=%s, image_type_id=%s
+                                """,
+                                (variant_id, asset_id, image_type_id, sort_order, sort_order, image_type_id)
+                            )
+                        else:
+                            cur.execute(
+                                """
+                                INSERT INTO sku_image_mappings
+                                (sales_product_id, image_asset_id, image_type_id, sort_order)
+                                VALUES (%s, %s, %s, %s)
+                                ON DUPLICATE KEY UPDATE sort_order=%s, image_type_id=%s
+                                """,
+                                (sales_product_id, asset_id, image_type_id, sort_order, sort_order, image_type_id)
+                            )
                     linked_count += 1
+                    try:
+                        # Apply rehome rules after linking (fabric refs / multi-variant refs may change).
+                        self._rehome_image_asset_if_needed(conn, asset_id)
+                    except Exception:
+                        pass
                     items.append({
                         'filename': filename,
                         'sha256': sha256[:12],
@@ -1620,28 +1877,56 @@ class SalesProductMixin:
             f.write(content or b'')
         return abs_path
 
-    def _read_sales_product_image_items(self, conn, sales_product_id):
+    def _read_sales_product_image_items(self, conn, sales_product_id=None, variant_id=None):
+        has_dep = self._table_has_column(conn, 'sku_image_mappings', 'is_deprecated')
+        has_group = self._table_has_column(conn, 'sku_image_mappings', 'group_sort')
+        has_variant = self._table_has_column(conn, 'sku_image_mappings', 'variant_id')
+        use_variant = bool(variant_id) and has_variant
+        where_col = "sim.variant_id" if use_variant else "sim.sales_product_id"
+        where_val = int(variant_id) if use_variant else int(sales_product_id or 0)
         with conn.cursor() as cur:
+            extra_cols = []
+            if has_dep:
+                extra_cols.append("sim.is_deprecated")
+            if has_group:
+                extra_cols.append("sim.group_sort")
+            extra_sql = (", " + ", ".join(extra_cols)) if extra_cols else ""
+            order_terms = []
+            if has_dep:
+                order_terms.append("COALESCE(sim.is_deprecated,0) ASC")
+            if has_group:
+                order_terms.append("COALESCE(sim.group_sort, sim.sort_order) ASC")
+            order_terms.append("sim.sort_order ASC")
+            order_terms.append("sim.id ASC")
+            order_sql = ", ".join(order_terms)
             cur.execute(
-                """
-                SELECT sim.id AS mapping_id, sim.sort_order, sim.image_type_id,
+                f"""
+                SELECT sim.id AS mapping_id, sim.sort_order, sim.image_type_id{extra_sql},
                        ia.id AS image_asset_id, ia.sha256, ia.storage_path, ia.original_filename,
                        ia.file_ext, ia.mime_type, ia.file_size, ia.description,
                        it.name AS image_type_name
                 FROM sku_image_mappings sim
                 JOIN image_assets ia ON ia.id = sim.image_asset_id
                 JOIN image_types it ON it.id = sim.image_type_id
-                WHERE sim.sales_product_id=%s
-                ORDER BY sim.sort_order ASC, sim.id ASC
+                WHERE {where_col}=%s
+                ORDER BY {order_sql}
                 """,
-                (sales_product_id,)
+                (where_val,)
             )
             rows = cur.fetchall() or []
         items = []
         for row in rows:
             storage_path = (row.get('storage_path') or '').strip()
             image_name = (row.get('original_filename') or '').strip() or os.path.basename(storage_path)
-            rel_bytes = os.fsencode(storage_path) if isinstance(storage_path, str) else storage_path
+            # On some Windows/Python setups, the filesystem encoding may effectively behave like ASCII.
+            # Avoid crashing JSON responses when storage_path contains Chinese or other non-ASCII chars.
+            if isinstance(storage_path, str):
+                try:
+                    rel_bytes = os.fsencode(storage_path)
+                except Exception:
+                    rel_bytes = storage_path.encode('utf-8', errors='surrogatepass')
+            else:
+                rel_bytes = storage_path
             image_b64 = base64.b64encode(rel_bytes).decode('ascii') if rel_bytes else ''
             items.append({
                 'mapping_id': row.get('mapping_id'),
@@ -1652,6 +1937,8 @@ class SalesProductMixin:
                 'image_type_id': row.get('image_type_id'),
                 'image_type_name': row.get('image_type_name') or '',
                 'sort_order': row.get('sort_order') or 0,
+                'group_sort': row.get('group_sort') if has_group else None,
+                'is_deprecated': row.get('is_deprecated') if has_dep else 0,
                 'sha256': row.get('sha256') or '',
                 'file_size': row.get('file_size') or 0,
             })
@@ -1711,7 +1998,18 @@ class SalesProductMixin:
                     return self.send_json({'status': 'error', 'message': 'Missing sales_product_id'}, start_response)
 
                 with self._get_db_connection() as conn:
-                    items = self._read_sales_product_image_items(conn, sales_product_id)
+                    variant_id = 0
+                    try:
+                        with conn.cursor() as cur:
+                            cur.execute("SELECT variant_id FROM sales_products WHERE id=%s", (sales_product_id,))
+                            row = cur.fetchone() or {}
+                            variant_id = self._parse_int(row.get('variant_id')) or 0
+                    except Exception:
+                        variant_id = 0
+                    if variant_id and self._table_has_column(conn, 'sku_image_mappings', 'variant_id'):
+                        items = self._read_sales_product_image_items(conn, sales_product_id=None, variant_id=variant_id)
+                    else:
+                        items = self._read_sales_product_image_items(conn, sales_product_id=sales_product_id)
                     folder_info = self._resolve_sales_product_variant_folder(sales_product_id, ensure_folder=True)
 
                 return self.send_json({
@@ -1734,17 +2032,25 @@ class SalesProductMixin:
                     return self.send_json({'status': 'error', 'message': 'Missing sales_product_id or image_name'}, start_response)
 
                 with self._get_db_connection() as conn:
+                    variant_id = 0
+                    try:
+                        with conn.cursor() as cur:
+                            cur.execute("SELECT variant_id FROM sales_products WHERE id=%s", (sales_product_id,))
+                            row = cur.fetchone() or {}
+                            variant_id = self._parse_int(row.get('variant_id')) or 0
+                    except Exception:
+                        variant_id = 0
                     with conn.cursor() as cur:
                         cur.execute(
                             """
                             SELECT sim.id, sim.image_asset_id, sim.sort_order, ia.storage_path, ia.original_filename
                             FROM sku_image_mappings sim
                             JOIN image_assets ia ON ia.id = sim.image_asset_id
-                            WHERE sim.sales_product_id=%s AND (ia.original_filename=%s OR ia.storage_path=%s OR ia.storage_path LIKE %s)
+                            WHERE {where_key}=%s AND (ia.original_filename=%s OR ia.storage_path=%s OR ia.storage_path LIKE %s)
                             ORDER BY sim.sort_order ASC, sim.id ASC
                             LIMIT 1
-                            """,
-                            (sales_product_id, image_name, image_name, f'%/{image_name}')
+                            """.format(where_key=("sim.variant_id" if (variant_id and self._table_has_column(conn, 'sku_image_mappings', 'variant_id')) else "sim.sales_product_id")),
+                            ((variant_id if (variant_id and self._table_has_column(conn, 'sku_image_mappings', 'variant_id')) else sales_product_id), image_name, image_name, f'%/{image_name}')
                         )
                         mapping = cur.fetchone() or {}
                         if not mapping.get('id'):
@@ -1785,17 +2091,25 @@ class SalesProductMixin:
                     return self.send_json({'status': 'error', 'message': 'Missing sales_product_id or image_name'}, start_response)
 
                 with self._get_db_connection() as conn:
+                    variant_id = 0
+                    try:
+                        with conn.cursor() as cur:
+                            cur.execute("SELECT variant_id FROM sales_products WHERE id=%s", (sales_product_id,))
+                            row = cur.fetchone() or {}
+                            variant_id = self._parse_int(row.get('variant_id')) or 0
+                    except Exception:
+                        variant_id = 0
                     with conn.cursor() as cur:
                         cur.execute(
                             """
                             SELECT sim.id, sim.image_asset_id, ia.storage_path
                             FROM sku_image_mappings sim
                             JOIN image_assets ia ON ia.id = sim.image_asset_id
-                            WHERE sim.sales_product_id=%s AND (ia.original_filename=%s OR ia.storage_path=%s OR ia.storage_path LIKE %s)
+                            WHERE {where_key}=%s AND (ia.original_filename=%s OR ia.storage_path=%s OR ia.storage_path LIKE %s)
                             ORDER BY sim.sort_order ASC, sim.id ASC
                             LIMIT 1
-                            """,
-                            (sales_product_id, image_name, image_name, f'%/{image_name}')
+                            """.format(where_key=("sim.variant_id" if (variant_id and self._table_has_column(conn, 'sku_image_mappings', 'variant_id')) else "sim.sales_product_id")),
+                            ((variant_id if (variant_id and self._table_has_column(conn, 'sku_image_mappings', 'variant_id')) else sales_product_id), image_name, image_name, f'%/{image_name}')
                         )
                         mapping = cur.fetchone() or {}
                         if not mapping.get('id'):
@@ -1829,6 +2143,26 @@ class SalesProductMixin:
             method = environ['REQUEST_METHOD']
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
             check_only = str((query_params.get('check_only', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
+
+            def _multipart_debug_payload(note, raw_body_len=None):
+                try:
+                    cl_hdr = int(environ.get('CONTENT_LENGTH', 0) or 0)
+                except Exception:
+                    cl_hdr = 0
+                ct_hdr = str(environ.get('CONTENT_TYPE', '') or '')
+                return {
+                    'status': 'error',
+                    'duplicate_count': 0,
+                    'duplicates': [],
+                    'file_count': 0,
+                    'message': note,
+                    'debug': {
+                        'wsgi_request_method': str(method or ''),
+                        'content_type': ct_hdr,
+                        'content_length_header': cl_hdr,
+                        'raw_body_bytes': raw_body_len,
+                    },
+                }
 
             # Allow GET requests only when check_only is enabled (for duplicate checking without upload)
             if method == 'GET':
@@ -1896,12 +2230,26 @@ class SalesProductMixin:
             if not uploads and raw_body:
                 uploads = self._parse_multipart_uploads_fallback(content_type, raw_body)
             if not uploads:
+                if check_only:
+                    return self.send_json(
+                        _multipart_debug_payload(
+                            '预检失败：未解析到任何图片文件字段。请确认请求体为 multipart/form-data 且字段名为 file；如经过 nginx 301/302 重定向，POST 可能被降级为 GET。',
+                            raw_body_len=len(raw_body) if raw_body is not None else 0,
+                        ),
+                        start_response,
+                    )
                 return self.send_json({'status': 'error', 'message': 'No valid images uploaded'}, start_response)
 
             with self._get_db_connection() as conn:
                 image_type_id = self._get_image_type_id_by_name(conn, image_type_name)
                 if not image_type_id:
                     return self.send_json({'status': 'error', 'message': f'未知图片类型: {image_type_name}'}, start_response)
+
+                user_id = None
+                try:
+                    user_id = self._get_session_user(environ)
+                except Exception:
+                    user_id = None
 
                 duplicates = []
                 normalized = []
@@ -1946,6 +2294,8 @@ class SalesProductMixin:
                 if check_only:
                     return self.send_json({
                         'status': 'success',
+                        'mode': 'preflight',
+                        'persisted': False,
                         'duplicate_count': len(duplicates),
                         'duplicates': duplicates,
                         'file_count': len(normalized)
@@ -1960,12 +2310,27 @@ class SalesProductMixin:
                         'file_count': len(normalized)
                     }, start_response)
 
+                # Target folder: 货号/主图/规格-面料
+                folder_info = self._resolve_sales_product_variant_folder(sales_product_id, ensure_folder=True)
+                target_folder_abs = folder_info.get('folder_path')
+                if not target_folder_abs or not os.path.exists(target_folder_abs):
+                    return self.send_json({'status': 'error', 'message': '无法定位主图文件夹，请确认货号/规格/面料信息完整'}, start_response)
+
+                # Resolve variant_id for variant-level mapping (preferred)
+                variant_id = 0
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT variant_id FROM sales_products WHERE id=%s", (sales_product_id,))
+                        row = cur.fetchone() or {}
+                        variant_id = self._parse_int(row.get('variant_id')) or 0
+                except Exception:
+                    variant_id = 0
+
                 start_sort = self._get_sales_product_image_sort_start(conn, sales_product_id)
                 created_assets = 0
                 reused_assets = 0
                 linked = 0
                 results = []
-                asset_folder = self._get_sales_product_image_assets_folder()
 
                 for idx, item in enumerate(normalized, start=1):
                     filename = item['filename']
@@ -1976,43 +2341,90 @@ class SalesProductMixin:
                     if asset:
                         asset_id = asset.get('id')
                         reused_assets += 1
+                        # Create a shortcut/link in the current variant folder for convenience (best-effort).
+                        try:
+                            src_abs = self._join_resources(asset.get('storage_path') or '')
+                            if src_abs and os.path.exists(src_abs):
+                                type_part = self._sanitize_filename_component(image_type_name, 32) or '图片'
+                                base_part = self._sanitize_filename_component(os.path.splitext(filename)[0], 80) or 'image'
+                                link_name = self._next_available_filename(target_folder_abs, f"{type_part}-{base_part}{ext}")
+                                dst_abs = os.path.join(target_folder_abs, self._safe_fsencode(link_name))
+                                self._try_create_link(src_abs, dst_abs)
+                        except Exception:
+                            pass
                     else:
-                        storage_name = f'{sha256}{ext}'
-                        storage_path = os.path.join('『销售产品图片』', 'assets', storage_name).replace('\\', '/')
-                        abs_path = self._join_resources(storage_path)
-                        if not os.path.exists(abs_path):
-                            self._save_image_asset_file(storage_path, content)
+                        # Save into: 货号/主图/规格-面料/ <类型>-<原文件名>[_xx].ext
+                        type_part = self._sanitize_filename_component(image_type_name, 32) or '图片'
+                        base_part = self._sanitize_filename_component(os.path.splitext(filename)[0], 80) or sha256[:12]
+                        final_name = self._next_available_filename(target_folder_abs, f"{type_part}-{base_part}{ext}")
+                        abs_path = os.path.join(target_folder_abs, self._safe_fsencode(final_name))
+                        with open(abs_path, 'wb') as f:
+                            f.write(content or b'')
+
+                        # Compute storage_path relative to RESOURCES root
+                        try:
+                            res_root = self._join_resources('')
+                            rel_bytes = os.path.relpath(abs_path, res_root)
+                            storage_path = os.fsdecode(rel_bytes).replace('\\', '/')
+                        except Exception:
+                            storage_path = ''
                         with conn.cursor() as cur:
+                            cols = ["sha256", "storage_path", "original_filename", "file_ext", "mime_type", "file_size", "description"]
+                            vals = [sha256, storage_path, filename, ext, 'image/*', len(content), '']
+                            if user_id and self._table_has_column(conn, 'image_assets', 'created_by'):
+                                cols.append("created_by")
+                                vals.append(int(user_id))
                             cur.execute(
-                                """
-                                INSERT INTO image_assets
-                                (sha256, storage_path, original_filename, file_ext, mime_type, file_size, description)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                                """,
-                                (
-                                    sha256,
-                                    storage_path,
-                                    filename,
-                                    ext,
-                                    'image/*',
-                                    len(content),
-                                    ''
-                                )
+                                f"INSERT INTO image_assets ({', '.join(cols)}) VALUES ({', '.join(['%s'] * len(cols))})",
+                                tuple(vals)
                             )
                             asset_id = cur.lastrowid
                         created_assets += 1
 
                     sort_order = start_sort + idx
                     with conn.cursor() as cur:
-                        cur.execute(
-                            """
-                            INSERT INTO sku_image_mappings
-                            (sales_product_id, image_asset_id, image_type_id, sort_order)
-                            VALUES (%s, %s, %s, %s)
-                            ON DUPLICATE KEY UPDATE sort_order=%s, image_type_id=%s
-                            """,
-                            (sales_product_id, asset_id, image_type_id, sort_order, sort_order, image_type_id)
-                        )
+                        if self._table_has_column(conn, 'sku_image_mappings', 'created_by'):
+                            if variant_id and self._table_has_column(conn, 'sku_image_mappings', 'variant_id'):
+                                cur.execute(
+                                    """
+                                    INSERT INTO sku_image_mappings
+                                    (variant_id, image_asset_id, image_type_id, sort_order, created_by)
+                                    VALUES (%s, %s, %s, %s, %s)
+                                    ON DUPLICATE KEY UPDATE sort_order=%s, image_type_id=%s
+                                    """,
+                                    (variant_id, asset_id, image_type_id, sort_order, int(user_id) if user_id else None, sort_order, image_type_id)
+                                )
+                            else:
+                                cur.execute(
+                                    """
+                                    INSERT INTO sku_image_mappings
+                                    (sales_product_id, image_asset_id, image_type_id, sort_order, created_by)
+                                    VALUES (%s, %s, %s, %s, %s)
+                                    ON DUPLICATE KEY UPDATE sort_order=%s, image_type_id=%s
+                                    """,
+                                    (sales_product_id, asset_id, image_type_id, sort_order, int(user_id) if user_id else None, sort_order, image_type_id)
+                                )
+                        else:
+                            if variant_id and self._table_has_column(conn, 'sku_image_mappings', 'variant_id'):
+                                cur.execute(
+                                    """
+                                    INSERT INTO sku_image_mappings
+                                    (variant_id, image_asset_id, image_type_id, sort_order)
+                                    VALUES (%s, %s, %s, %s)
+                                    ON DUPLICATE KEY UPDATE sort_order=%s, image_type_id=%s
+                                    """,
+                                    (variant_id, asset_id, image_type_id, sort_order, sort_order, image_type_id)
+                                )
+                            else:
+                                cur.execute(
+                                    """
+                                    INSERT INTO sku_image_mappings
+                                    (sales_product_id, image_asset_id, image_type_id, sort_order)
+                                    VALUES (%s, %s, %s, %s)
+                                    ON DUPLICATE KEY UPDATE sort_order=%s, image_type_id=%s
+                                    """,
+                                    (sales_product_id, asset_id, image_type_id, sort_order, sort_order, image_type_id)
+                                )
                     linked += 1
                     results.append({
                         'filename': filename,
@@ -2023,6 +2435,8 @@ class SalesProductMixin:
 
                 return self.send_json({
                     'status': 'success',
+                    'mode': 'upload',
+                    'persisted': True,
                     'files': [x['filename'] for x in results],
                     'created_assets': created_assets,
                     'reused_assets': reused_assets,

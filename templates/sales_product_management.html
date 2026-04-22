@@ -155,6 +155,16 @@
             z-index: 70;
             display: none;
         }
+        .pm-grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.9rem;
+            align-items: start;
+        }
+        .pm-grid-3 .form-group { margin: 0; }
+        .pm-grid-3 .pm-span-1 { grid-column: span 1; }
+        .pm-grid-3 .pm-span-2 { grid-column: span 2; }
+        .pm-grid-3 .pm-span-3 { grid-column: 1 / -1; }
         .sales-order-sku-cell {
             white-space: normal !important;
             line-height: 1.35;
@@ -441,17 +451,17 @@
             <div class="pm-form">
                 <div class="pm-section pm-form-full">
                     <h4>父体关联</h4>
-                    <div class="pm-section-body pm-form">
-                        <div class="form-group">
+                    <div class="pm-section-body pm-form pm-grid-3">
+                        <div class="form-group pm-span-1">
                             <label for="modalParentShop">店铺<span class="required-asterisk">*</span></label>
                             <select id="modalParentShop" class="required-field"></select>
                         </div>
-                        <div class="form-group">
+                        <div class="form-group pm-span-1">
                             <label for="modalParentCode" class="label-help">父体编号（可选）<span class="help-dot" data-tip="支持搜索和选择，留空则不关联父体"></span></label>
                             <input type="text" id="modalParentCode" class="optional-field" list="parentCodeSuggestions" placeholder="可手动输入新编号或选已有父体">
                             <datalist id="parentCodeSuggestions"></datalist>
                         </div>
-                        <div class="form-group" id="modalParentSkuMarkerWrap" style="display:none;">
+                        <div class="form-group pm-span-1" id="modalParentSkuMarkerWrap" style="display:none;">
                             <label for="modalParentSkuMarker">新父体SKU标识</label>
                             <input type="text" id="modalParentSkuMarker" class="optional-field" maxlength="128" placeholder="本次会创建新父体">
                         </div>
@@ -479,24 +489,26 @@
                             <label for="modalChildCode" class="label-help">子体编号<span class="help-dot" data-tip="填写亚马逊产品的子ASIN"></span></label>
                             <input type="text" id="modalChildCode" class="optional-field">
                         </div>
-                        <div class="form-group">
-                            <label for="modalSkuFamily" class="label-help">货号<span class="help-dot" data-tip="用于关联图片文件夹，可搜索并从下拉建议选择；选中第一个下单SKU时会自动带出"></span></label>
-                            <div class="pm-select" id="modalSkuFamilySelect">
-                                <button type="button" class="universal-select-trigger" id="modalSkuFamilyTrigger">请选择货号</button>
-                                <div class="pm-select-panel" id="modalSkuFamilyPanel">
-                                    <input type="text" class="pm-select-search" id="modalSkuFamilySearch" placeholder="搜索货号">
-                                    <div class="pm-select-list" id="modalSkuFamilyList"></div>
+                        <div class="pm-grid-3 pm-form-full" style="margin-top:0.15rem;">
+                            <div class="form-group pm-span-1">
+                                <label for="modalSkuFamily" class="label-help">货号<span class="help-dot" data-tip="用于关联图片文件夹，可搜索并从下拉建议选择；选中第一个下单SKU时会自动带出"></span></label>
+                                <div class="pm-select" id="modalSkuFamilySelect">
+                                    <button type="button" class="universal-select-trigger" id="modalSkuFamilyTrigger">请选择货号</button>
+                                    <div class="pm-select-panel" id="modalSkuFamilyPanel">
+                                        <input type="text" class="pm-select-search" id="modalSkuFamilySearch" placeholder="搜索货号">
+                                        <div class="pm-select-list" id="modalSkuFamilyList"></div>
+                                    </div>
                                 </div>
+                                <select id="modalSkuFamily" class="optional-field" style="display:none;"></select>
                             </div>
-                            <select id="modalSkuFamily" class="optional-field" style="display:none;"></select>
-                        </div>
-                        <div class="form-group">
-                            <label for="modalSpecName">规格名称</label>
-                            <input type="text" id="modalSpecName" class="optional-field" placeholder="自动计算，可编辑">
-                        </div>
-                        <div class="form-group">
-                            <label for="modalFabric">面料</label>
-                            <input type="text" id="modalFabric" class="optional-field" placeholder="自动计算，可编辑">
+                            <div class="form-group pm-span-1">
+                                <label for="modalSpecName">规格名称</label>
+                                <input type="text" id="modalSpecName" class="optional-field" placeholder="自动计算，可编辑">
+                            </div>
+                            <div class="form-group pm-span-1">
+                                <label for="modalFabric">面料</label>
+                                <input type="text" id="modalFabric" class="optional-field" placeholder="自动计算，可编辑">
+                            </div>
                         </div>
                         <div class="form-group pm-form-full">
                             <label>关联下单SKU及数量<span class="required-asterisk">*</span></label>
@@ -843,9 +855,14 @@
         function showModalStatus(message, isError) {
             const el = document.getElementById('modalStatus');
             el.style.display = 'block';
-            el.style.background = isError ? '#ffecec' : '#f0fff0';
-            el.style.color = isError ? '#a33' : '#2f6f2f';
-            el.innerText = message;
+            const msg = String(message || '');
+            const autoDetectError = (isError === undefined || isError === null)
+                ? /失败|错误|异常|error|exception|traceback|codec|encode|decode/i.test(msg)
+                : false;
+            const finalIsError = (isError === true) || autoDetectError;
+            el.style.background = finalIsError ? '#ffecec' : '#f0fff0';
+            el.style.color = finalIsError ? '#a33' : '#2f6f2f';
+            el.innerText = msg;
         }
 
         function resetModalStatus() {
@@ -1316,7 +1333,10 @@
 
         function normalizeMainImageTypeName(value) {
             const text = String(value || '').trim();
-            return text || '文字卖点图';
+            if (!text) return '文字卖点图';
+            if (text === '主图·Swatch') return 'Swatch';
+            if (text === '主图·卖点') return '文字卖点图';
+            return text;
         }
 
         function renderSalesImageTypeBar() {
@@ -1426,7 +1446,8 @@
                 renderMainImageGrid();
                 return;
             }
-            fetch(`/api/sales-product-main-images?sales_product_id=${encodeURIComponent(editId)}`)
+            const bust = `t=${Date.now()}`;
+            fetch(`/api/sales-product-main-images?sales_product_id=${encodeURIComponent(editId)}&${bust}`, { cache: 'no-store' })
                 .then(r => r.json())
                 .then(data => {
                     if (data.status !== 'success') {
@@ -1444,6 +1465,19 @@
                 .catch(err => {
                     showModalStatus('主图加载失败: ' + err, true);
                 });
+        }
+
+        async function parseJsonResponseSafe(resp, label) {
+            const text = await resp.text();
+            try {
+                return text ? JSON.parse(text) : {};
+            } catch (e) {
+                const snippet = String(text || '').slice(0, 240);
+                return {
+                    status: 'error',
+                    message: `${label}：服务器返回非 JSON（HTTP ${resp.status}）。${snippet ? `片段：${snippet}` : ''}`
+                };
+            }
         }
 
         function triggerMainImageUpload() {
@@ -1468,8 +1502,21 @@
             qs.set('image_type_name', imageType);
             return fetch(`/api/sales-product-main-images-upload?${qs.toString()}`, {
                 method: 'POST',
-                body: formData
-            }).then(r => r.json());
+                body: formData,
+                redirect: 'manual'
+            }).then(async (r) => {
+                if (r.type === 'opaqueredirect' || (r.status >= 300 && r.status <= 399)) {
+                    return {
+                        status: 'error',
+                        message: `上传预检被重定向（HTTP ${r.status}）。请检查 nginx 是否把该 API 301/302 到了另一个 URL；这类重定向可能导致 POST 被降级为 GET，从而无法携带文件。Location: ${r.headers.get('Location') || ''}`.trim()
+                    };
+                }
+                if (!r.ok) {
+                    const data = await parseJsonResponseSafe(r, '上传预检');
+                    return Object.assign({ status: 'error' }, data || {}, { http_status: r.status });
+                }
+                return parseJsonResponseSafe(r, '上传预检');
+            });
         }
 
         function uploadMainImages(files, allowDuplicate = false) {
@@ -1488,8 +1535,21 @@
             const url = `/api/sales-product-main-images-upload?${qs.toString()}`;
             fetch(url, {
                 method: 'POST',
-                body: formData
-            }).then(r => r.json()).then(data => {
+                body: formData,
+                redirect: 'manual'
+            }).then(async (r) => {
+                if (r.type === 'opaqueredirect' || (r.status >= 300 && r.status <= 399)) {
+                    return {
+                        status: 'error',
+                        message: `上传被重定向（HTTP ${r.status}）。请检查 nginx 是否把该 API 301/302 到了另一个 URL；这类重定向可能导致 POST 被降级为 GET，从而无法携带文件。Location: ${r.headers.get('Location') || ''}`.trim()
+                    };
+                }
+                if (!r.ok) {
+                    const data = await parseJsonResponseSafe(r, '主图上传');
+                    return Object.assign({ status: 'error' }, data || {}, { http_status: r.status });
+                }
+                return parseJsonResponseSafe(r, '主图上传');
+            }).then(data => {
                 if (data.status === 'duplicate') {
                     const names = (data.duplicates || []).map(x => x.filename).join('、');
                     showUploadDialog({
@@ -1507,10 +1567,19 @@
                     showModalStatus(data.message || '主图上传失败', true);
                     return;
                 }
+                if (data.persisted === false || data.mode === 'preflight') {
+                    showModalStatus('这次响应看起来是“预检/解析探测”结果（不会写入数据库）。请确认 Network 里是否发起了不带 check_only=1 的 POST 上传请求。', true);
+                    return;
+                }
                 const uploadedCount = (data.files || []).length;
                 const reusedCount = Number(data.reused_assets || 0);
                 const createdCount = Number(data.created_assets || 0);
-                showModalStatus(`主图上传成功：${uploadedCount} 张（新建 ${createdCount}，复用 ${reusedCount}）`, false);
+                const linkedCount = Number(data.linked || 0);
+                if (!uploadedCount && !linkedCount) {
+                    showModalStatus('主图上传返回 success，但未返回任何已关联文件（files 为空且 linked=0）。请把 Network 里该 POST 的响应体贴出来排查。', true);
+                    return;
+                }
+                showModalStatus(`主图上传成功：${uploadedCount} 张（新建 ${createdCount}，复用 ${reusedCount}，关联 ${linkedCount}）`, false);
                 refreshMainImageList();
             }).catch(err => {
                 showModalStatus('主图上传失败: ' + err, true);
@@ -2229,42 +2298,46 @@
             this.value = '';
         });
         document.getElementById('modalMainImageUpload').addEventListener('change', function() {
-            const files = this.files;
-            if (files && files.length) {
-                preflightMainImageUpload(files).then(data => {
-                    if (!data || data.status !== 'success') {
-                        const msg = String((data && data.message) || '');
-                        if (msg.indexOf('Method not allowed') >= 0) {
-                            uploadMainImages(files, false);
-                            return;
-                        }
-                        showModalStatus((data && data.message) ? data.message : '主图预检失败', true);
-                        return;
-                    }
-                    // If the server couldn't see any file parts during preflight (proxy/parsing edge cases),
-                    // skip preflight and proceed with the real upload path.
-                    const fc = Number(data.file_count || 0);
-                    if (!Number.isFinite(fc) || fc <= 0) {
-                        uploadMainImages(files, false);
-                        return;
-                    }
-                    if ((data.duplicate_count || 0) > 0) {
-                        const names = (data.duplicates || []).map(x => x.filename).join('、');
-                        showUploadDialog({
-                            title: '检测到重复图片',
-                            message: names ? `以下图片已存在：\n${names}\n\n是否复用已有图片继续上传？` : '检测到重复图片，是否复用已有图片继续上传？',
-                            confirmText: '复用并上传',
-                            cancelText: '取消',
-                            onConfirm: function() {
-                                uploadMainImages(files, true);
-                            }
-                        });
-                    } else {
-                        uploadMainImages(files, false);
-                    }
-                }).catch(err => showModalStatus('主图预检失败: ' + err, true));
-            }
+            const raw = this.files;
+            // Snapshot File objects immediately: clearing `this.value` empties the live FileList in many
+            // browsers, which would otherwise make the async upload step see `files.length === 0` and skip
+            // the real POST (no second request in Network).
+            const files = raw && raw.length ? Array.from(raw) : [];
             this.value = '';
+            if (!files.length) return;
+            preflightMainImageUpload(files).then(data => {
+                const st = String((data && data.status) || '');
+                if (!data || (st !== 'success' && st !== 'info')) {
+                    const msg = String((data && data.message) || '');
+                    if (msg.indexOf('Method not allowed') >= 0) {
+                        uploadMainImages(files, false);
+                        return;
+                    }
+                    showModalStatus((data && data.message) ? data.message : '主图预检失败', true);
+                    return;
+                }
+                // If the server couldn't see any file parts during preflight (proxy/parsing edge cases),
+                // skip preflight and proceed with the real upload path.
+                const fc = Number(data.file_count || 0);
+                if (!Number.isFinite(fc) || fc <= 0) {
+                    uploadMainImages(files, false);
+                    return;
+                }
+                if ((data.duplicate_count || 0) > 0) {
+                    const names = (data.duplicates || []).map(x => x.filename).join('、');
+                    showUploadDialog({
+                        title: '检测到重复图片',
+                        message: names ? `以下图片已存在：\n${names}\n\n是否复用已有图片继续上传？` : '检测到重复图片，是否复用已有图片继续上传？',
+                        confirmText: '复用并上传',
+                        cancelText: '取消',
+                        onConfirm: function() {
+                            uploadMainImages(files, true);
+                        }
+                    });
+                } else {
+                    uploadMainImages(files, false);
+                }
+            }).catch(err => showModalStatus('主图预检失败: ' + err, true));
         });
         document.getElementById('uploadDialogModal').addEventListener('click', function(e) {
             if (e.target === this) {
