@@ -166,6 +166,12 @@ class OrderManagementMixin:
                         if not item_id:
                             continue
                         updates.append((
+                            self._parse_float(item.get('finished_length_in')),
+                            self._parse_float(item.get('finished_width_in')),
+                            self._parse_float(item.get('finished_height_in')),
+                            self._parse_float(item.get('package_length_in')),
+                            self._parse_float(item.get('package_width_in')),
+                            self._parse_float(item.get('package_height_in')),
                             self._parse_float(item.get('cost_usd')),
                             (item.get('package_size_class') or '').strip() or None,
                             self._parse_int(item.get('carton_qty')),
@@ -180,8 +186,14 @@ class OrderManagementMixin:
                     with self._get_db_connection() as conn:
                         with conn.cursor() as cur:
                             row_map = {}
-                            for cost_usd, package_size_class, carton_qty, last_mile_avg_freight_usd, is_on_market, item_id in updates:
+                            for finished_length_in, finished_width_in, finished_height_in, package_length_in, package_width_in, package_height_in, cost_usd, package_size_class, carton_qty, last_mile_avg_freight_usd, is_on_market, item_id in updates:
                                 row_map[int(item_id)] = {
+                                    'finished_length_in': finished_length_in,
+                                    'finished_width_in': finished_width_in,
+                                    'finished_height_in': finished_height_in,
+                                    'package_length_in': package_length_in,
+                                    'package_width_in': package_width_in,
+                                    'package_height_in': package_height_in,
                                     'cost_usd': cost_usd,
                                     'package_size_class': package_size_class,
                                     'carton_qty': carton_qty,
@@ -200,6 +212,12 @@ class OrderManagementMixin:
                                 return f"CASE id {' '.join(parts)} ELSE {field_name} END"
 
                             set_clause = [
+                                f"finished_length_in = {build_case('finished_length_in')}",
+                                f"finished_width_in = {build_case('finished_width_in')}",
+                                f"finished_height_in = {build_case('finished_height_in')}",
+                                f"package_length_in = {build_case('package_length_in')}",
+                                f"package_width_in = {build_case('package_width_in')}",
+                                f"package_height_in = {build_case('package_height_in')}",
                                 f"cost_usd = {build_case('cost_usd')}",
                                 f"package_size_class = {build_case('package_size_class')}",
                                 f"carton_qty = {build_case('carton_qty')}",

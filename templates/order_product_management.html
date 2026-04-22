@@ -460,13 +460,17 @@
                             <th>SKU</th>
                             <th>规格简称</th>
                             <th>内含物英文描述</th>
-                            <th style="width: 120px;">成品长宽高(in)</th>
-                            <th style="width: 120px;">包装长宽高(in)</th>
                             <th>面料</th>
                             <th style="width:72px; text-align:center;">颜色</th>
                             <th>版本号</th>
                             <th>关联工厂</th>
                             <th style="width: 80px;">成本价($)</th>
+                            <th style="width: 72px;">成品长(in)</th>
+                            <th style="width: 72px;">成品宽(in)</th>
+                            <th style="width: 72px;">成品高(in)</th>
+                            <th style="width: 72px;">包裹长(in)</th>
+                            <th style="width: 72px;">包裹宽(in)</th>
+                            <th style="width: 72px;">包裹高(in)</th>
                             <th>包裹归类</th>
                             <th>装箱量</th>
                             <th>尾程平均运费($)</th>
@@ -475,7 +479,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="20" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="24" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -934,6 +938,10 @@
         }
 
         function showTimeoutToast(message) {
+            if (window.showAppToast) {
+                window.showAppToast(message || '', false, 2600);
+                return;
+            }
             const toast = document.getElementById('timeoutToast');
             toast.textContent = message || '';
             toast.style.display = 'block';
@@ -1295,6 +1303,19 @@
             return num === null ? null : num;
         }
 
+        function syncPreviewCartonQtyFromPackage(itemId) {
+            const item = orderProductItemsCache.find(x => String(x.id) === String(itemId));
+            if (!item) return;
+            const l = getPreviewEffectiveValue(item, 'package_length_in');
+            const w = getPreviewEffectiveValue(item, 'package_width_in');
+            const h = getPreviewEffectiveValue(item, 'package_height_in');
+            const qty = calcCartonQtyBy40HQ(l, w, h);
+            if (qty === null) return;
+            const cartonEl = document.querySelector(`.preview-edit-field[data-id="${String(itemId)}"][data-field="carton_qty"]`);
+            if (cartonEl) cartonEl.value = String(qty);
+            updatePreviewDraft(itemId, 'carton_qty', qty);
+        }
+
         function getPreviewEffectiveValue(item, field) {
             const id = String(item.id);
             if (previewEditDraft[id] && Object.prototype.hasOwnProperty.call(previewEditDraft[id], field)) {
@@ -1325,6 +1346,12 @@
                 previewEditDraft[id] = {
                     is_on_market: item.is_on_market,
                     cost_usd: item.cost_usd,
+                    finished_length_in: item.finished_length_in,
+                    finished_width_in: item.finished_width_in,
+                    finished_height_in: item.finished_height_in,
+                    package_length_in: item.package_length_in,
+                    package_width_in: item.package_width_in,
+                    package_height_in: item.package_height_in,
                     package_size_class: item.package_size_class || '',
                     carton_qty: item.carton_qty,
                     last_mile_avg_freight_usd: item.last_mile_avg_freight_usd
@@ -1337,6 +1364,12 @@
                 normalizePreviewFieldValue('is_on_market', draft.is_on_market) === normalizePreviewFieldValue('is_on_market', item.is_on_market)
                 &&
                 normalizePreviewFieldValue('cost_usd', draft.cost_usd) === normalizePreviewFieldValue('cost_usd', item.cost_usd)
+                && normalizePreviewFieldValue('finished_length_in', draft.finished_length_in) === normalizePreviewFieldValue('finished_length_in', item.finished_length_in)
+                && normalizePreviewFieldValue('finished_width_in', draft.finished_width_in) === normalizePreviewFieldValue('finished_width_in', item.finished_width_in)
+                && normalizePreviewFieldValue('finished_height_in', draft.finished_height_in) === normalizePreviewFieldValue('finished_height_in', item.finished_height_in)
+                && normalizePreviewFieldValue('package_length_in', draft.package_length_in) === normalizePreviewFieldValue('package_length_in', item.package_length_in)
+                && normalizePreviewFieldValue('package_width_in', draft.package_width_in) === normalizePreviewFieldValue('package_width_in', item.package_width_in)
+                && normalizePreviewFieldValue('package_height_in', draft.package_height_in) === normalizePreviewFieldValue('package_height_in', item.package_height_in)
                 && normalizePreviewFieldValue('package_size_class', draft.package_size_class) === normalizePreviewFieldValue('package_size_class', item.package_size_class)
                 && normalizePreviewFieldValue('carton_qty', draft.carton_qty) === normalizePreviewFieldValue('carton_qty', item.carton_qty)
                 && normalizePreviewFieldValue('last_mile_avg_freight_usd', draft.last_mile_avg_freight_usd) === normalizePreviewFieldValue('last_mile_avg_freight_usd', item.last_mile_avg_freight_usd);
@@ -1348,11 +1381,19 @@
 
         function bindPreviewEditEvents() {
             document.querySelectorAll('.preview-edit-field').forEach(el => {
-                el.addEventListener('change', function() {
+                const handler = function() {
                     const itemId = this.getAttribute('data-id');
                     const field = this.getAttribute('data-field');
                     updatePreviewDraft(itemId, field, this.value);
-                });
+                    if (field === 'package_length_in' || field === 'package_width_in' || field === 'package_height_in') {
+                        syncPreviewCartonQtyFromPackage(itemId);
+                    }
+                };
+                el.addEventListener('change', handler);
+                const field = String(el.getAttribute('data-field') || '');
+                if (field === 'package_length_in' || field === 'package_width_in' || field === 'package_height_in') {
+                    el.addEventListener('input', handler);
+                }
             });
 
             document.querySelectorAll('.preview-yesno-btn').forEach(btn => {
@@ -1391,6 +1432,12 @@
                 id: Number(id),
                 is_on_market: normalizePreviewFieldValue('is_on_market', previewEditDraft[id].is_on_market),
                 cost_usd: normalizePreviewFieldValue('cost_usd', previewEditDraft[id].cost_usd),
+                finished_length_in: normalizePreviewFieldValue('finished_length_in', previewEditDraft[id].finished_length_in),
+                finished_width_in: normalizePreviewFieldValue('finished_width_in', previewEditDraft[id].finished_width_in),
+                finished_height_in: normalizePreviewFieldValue('finished_height_in', previewEditDraft[id].finished_height_in),
+                package_length_in: normalizePreviewFieldValue('package_length_in', previewEditDraft[id].package_length_in),
+                package_width_in: normalizePreviewFieldValue('package_width_in', previewEditDraft[id].package_width_in),
+                package_height_in: normalizePreviewFieldValue('package_height_in', previewEditDraft[id].package_height_in),
                 package_size_class: normalizePreviewFieldValue('package_size_class', previewEditDraft[id].package_size_class),
                 carton_qty: normalizePreviewFieldValue('carton_qty', previewEditDraft[id].carton_qty),
                 last_mile_avg_freight_usd: normalizePreviewFieldValue('last_mile_avg_freight_usd', previewEditDraft[id].last_mile_avg_freight_usd)
@@ -1405,7 +1452,11 @@
             .then(r => r.json())
             .then(data => {
                 if (data.status !== 'success') {
-                    showUploadDialog({ title: '保存失败', message: data.message || '批量保存失败' });
+                    if (window.showAppToast) {
+                        window.showAppToast(data.message || '批量保存失败', true, 3200);
+                    } else {
+                        showUploadDialog({ title: '保存失败', message: data.message || '批量保存失败' });
+                    }
                     return;
                 }
                 items.forEach(update => {
@@ -1413,6 +1464,12 @@
                     if (!item) return;
                     item.is_on_market = update.is_on_market;
                     item.cost_usd = update.cost_usd;
+                    item.finished_length_in = update.finished_length_in;
+                    item.finished_width_in = update.finished_width_in;
+                    item.finished_height_in = update.finished_height_in;
+                    item.package_length_in = update.package_length_in;
+                    item.package_width_in = update.package_width_in;
+                    item.package_height_in = update.package_height_in;
                     item.package_size_class = update.package_size_class;
                     item.carton_qty = update.carton_qty;
                     item.last_mile_avg_freight_usd = update.last_mile_avg_freight_usd;
@@ -1424,7 +1481,13 @@
                     window.showAppToast('预览修改已保存', false, 2200);
                 }
             })
-            .catch(err => showUploadDialog({ title: '请求失败', message: '请求失败: ' + err }));
+            .catch(err => {
+                if (window.showAppToast) {
+                    window.showAppToast('请求失败: ' + err, true, 3200);
+                } else {
+                    showUploadDialog({ title: '请求失败', message: '请求失败: ' + err });
+                }
+            });
         }
 
         function calcCartonQtyBy40HQ(lengthIn, widthIn, heightIn) {
@@ -2576,7 +2639,7 @@
             });
             selectedOrderProductIds = new Set(Array.from(selectedOrderProductIds).filter(id => availableIdSet.has(String(id))));
             if (safeItems.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="20" style="text-align:center;">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="24" style="text-align:center;">暂无数据</td></tr>';
                 syncSelectAllCheckbox();
                 syncPreviewSaveBar();
                 return;
@@ -2587,12 +2650,16 @@
                         const factoryText = Array.isArray(item.factory_names) ? item.factory_names.filter(Boolean).join('、') : '';
                         const colorText = renderRepresentativeColorDot(item.representative_color);
                         const costText = getPreviewEffectiveValue(item, 'cost_usd');
+                        const finishedLenText = getPreviewEffectiveValue(item, 'finished_length_in');
+                        const finishedWidText = getPreviewEffectiveValue(item, 'finished_width_in');
+                        const finishedHeiText = getPreviewEffectiveValue(item, 'finished_height_in');
+                        const packageLenText = getPreviewEffectiveValue(item, 'package_length_in');
+                        const packageWidText = getPreviewEffectiveValue(item, 'package_width_in');
+                        const packageHeiText = getPreviewEffectiveValue(item, 'package_height_in');
                         const packageClassText = getPreviewEffectiveValue(item, 'package_size_class') || '';
                         const cartonQtyText = getPreviewEffectiveValue(item, 'carton_qty');
                         const lastMileText = getPreviewEffectiveValue(item, 'last_mile_avg_freight_usd');
                         const onMarketText = Number(getPreviewEffectiveValue(item, 'is_on_market') || 0) === 1 ? '1' : '0';
-                        const finishedSizeText = `${item.finished_length_in ?? '-'}×${item.finished_width_in ?? '-'}×${item.finished_height_in ?? '-'}`;
-                        const packageSizeText = `${item.package_length_in ?? '-'}×${item.package_width_in ?? '-'}×${item.package_height_in ?? '-'}`;
                         const checked = selectedOrderProductIds.has(String(item.id)) ? 'checked' : '';
                         return `
                             <tr>
@@ -2604,13 +2671,17 @@
                                 <td>${item.sku || ''}</td>
                                 <td>${item.spec_qty_short || ''}</td>
                                 <td>${item.contents_desc_en || ''}</td>
-                                <td>${finishedSizeText}</td>
-                                <td>${packageSizeText}</td>
                                 <td>${fabricText || ''}</td>
                                 <td style="text-align:center;">${colorText}</td>
                                 <td>${item.version_no || ''}</td>
                                 <td>${factoryText || ''}</td>
                                 <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="cost_usd" type="number" step="0.01" value="${costText ?? ''}"></td>
+                                <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="finished_length_in" type="number" step="0.01" min="0" value="${finishedLenText ?? ''}"></td>
+                                <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="finished_width_in" type="number" step="0.01" min="0" value="${finishedWidText ?? ''}"></td>
+                                <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="finished_height_in" type="number" step="0.01" min="0" value="${finishedHeiText ?? ''}"></td>
+                                <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="package_length_in" type="number" step="0.01" min="0" value="${packageLenText ?? ''}"></td>
+                                <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="package_width_in" type="number" step="0.01" min="0" value="${packageWidText ?? ''}"></td>
+                                <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="package_height_in" type="number" step="0.01" min="0" value="${packageHeiText ?? ''}"></td>
                                 <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="package_size_class" type="text" value="${String(packageClassText || '').replace(/"/g, '&quot;')}"></td>
                                 <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="carton_qty" type="number" step="1" min="0" value="${cartonQtyText ?? ''}"></td>
                                 <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="last_mile_avg_freight_usd" type="number" step="0.01" value="${lastMileText ?? ''}"></td>
@@ -2639,7 +2710,7 @@
                 .then(data => {
                     const tbody = document.querySelector('#orderProductTable tbody');
                     if (data.status !== 'success') {
-                        tbody.innerHTML = `<tr><td colspan="20" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="24" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                         return;
                     }
                     orderProductItemsCache = data.items || [];
@@ -2647,7 +2718,7 @@
                 })
                 .catch(err => {
                     const tbody = document.querySelector('#orderProductTable tbody');
-                    tbody.innerHTML = `<tr><td colspan="20" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="24" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
                 });
         }
 
@@ -2694,36 +2765,70 @@
         function updateSelectedCartonQty() {
             const ids = Array.from(selectedOrderProductIds);
             if (!ids.length) {
-                showUploadDialog({ title: '提示', message: '请先勾选需要更新装箱量的SKU' });
+                if (window.showAppToast) {
+                    window.showAppToast('请先勾选需要更新装箱量的SKU', true, 2600);
+                } else {
+                    showUploadDialog({ title: '提示', message: '请先勾选需要更新装箱量的SKU' });
+                }
                 return;
             }
-            showUploadDialog({
-                title: '确认更新',
-                message: `将按 40HQ=69m³ 自动计算并更新已勾选 ${ids.length} 条SKU的装箱量，确认继续？`,
-                confirmText: '确认更新',
-                cancelText: '取消',
-                onConfirm: function() {
-                    fetch('/api/order-product-carton-calc', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ ids })
-                    })
-                    .then(r => r.json())
-                    .then(data => {
-                        if (data.status !== 'success') {
-                            showUploadDialog({ title: '更新失败', message: data.message || '更新失败' });
-                            return;
-                        }
-                        const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
+            const doUpdate = () => {
+                fetch('/api/order-product-carton-calc', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        if (window.showAppToast) window.showAppToast(data.message || '更新失败', true, 3200);
+                        else showUploadDialog({ title: '更新失败', message: data.message || '更新失败' });
+                        return;
+                    }
+                    const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
+                    if (window.showAppResultPanel) {
+                        const details = (data.errors || []).map(err => {
+                            const rowText = (err && err.sku) ? String(err.sku) : (err && err.id ? `ID ${err.id}` : '未知记录');
+                            return `${rowText}：${err && err.error ? err.error : '更新异常'}`;
+                        });
+                        window.showAppResultPanel({
+                            title: '装箱量更新完成',
+                            summary: `已更新 ${data.updated || 0} 条，跳过 ${data.skipped || 0} 条${errCount ? `，异常 ${errCount} 条` : ''}`,
+                            details,
+                            isError: errCount > 0
+                        });
+                    } else if (window.showAppToast) {
+                        window.showAppToast(`已更新 ${data.updated || 0} 条，跳过 ${data.skipped || 0} 条${errCount ? `，异常 ${errCount} 条` : ''}`, errCount > 0, 3600);
+                    } else {
                         showUploadDialog({
                             title: '更新完成',
                             message: `已更新 ${data.updated || 0} 条，跳过 ${data.skipped || 0} 条${errCount ? `，异常 ${errCount} 条` : ''}`,
                             errors: data.errors || []
                         });
-                        loadOrderProductList();
-                    })
-                    .catch(err => showUploadDialog({ title: '请求失败', message: '请求失败: ' + err }));
-                }
+                    }
+                    loadOrderProductList();
+                })
+                .catch(err => {
+                    if (window.showAppToast) window.showAppToast('请求失败: ' + err, true, 3200);
+                    else showUploadDialog({ title: '请求失败', message: '请求失败: ' + err });
+                });
+            };
+
+            if (window.showAppConfirmAsync) {
+                window.showAppConfirmAsync({
+                    title: '确认更新',
+                    message: `将按 40HQ=69m³ 自动计算并更新已勾选 ${ids.length} 条SKU的装箱量，确认继续？`,
+                    confirmText: '确认更新'
+                }).then(ok => { if (ok) doUpdate(); });
+                return;
+            }
+
+            showUploadDialog({
+                title: '确认更新',
+                message: `将按 40HQ=69m³ 自动计算并更新已勾选 ${ids.length} 条SKU的装箱量，确认继续？`,
+                confirmText: '确认更新',
+                cancelText: '取消',
+                onConfirm: doUpdate
             });
         }
 

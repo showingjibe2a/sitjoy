@@ -159,6 +159,23 @@
     .transit-inline-remark { width: 180px; min-width: 180px; }
     .transit-detail-row td { background: rgba(255,255,255,.62); border-top: none !important; }
     .transit-detail-wrap { padding: 0; width: 100%; min-width: 0; }
+
+    .preview-savebar {
+      position: fixed;
+      left: 50%;
+      bottom: 20px;
+      transform: translateX(-50%);
+      z-index: 55;
+      display: none;
+      align-items: center;
+      gap: 0.7rem;
+      padding: 0.65rem 0.95rem;
+      border: 1px solid var(--morandi-sand);
+      border-radius: 12px;
+      background: #fff;
+      box-shadow: 0 10px 26px rgba(15, 23, 42, 0.14);
+    }
+    .preview-savebar.active { display: inline-flex; }
     @media (max-width: 980px) {
       .pm-modal .pm-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
@@ -174,7 +191,7 @@
 <div class="container">
   <section class="hero" style="margin-bottom:1.5rem;"><h2>在途物流库存管理</h2><p>管理在途物流节点、提单信息与SKU到货上架数量</p></section>
   <section class="pm-layout">
-    <div class="card pm-card"><div class="pm-toolbar"><div class="pm-toolbar-actions"><div class="form-group pm-search" style="margin:0;"><span class="pm-search-title">搜索</span><input id="searchInput" type="text" placeholder="搜索箱号/提单号/工厂/货代"><button class="btn-primary" onclick="loadList()">搜索</button><button class="btn-secondary" onclick="resetSearch()">清空</button><button class="btn-secondary" onclick="saveTransitInlineBatch()">批量保存编辑项</button></div><span class="pm-divider"></span><button class="btn-secondary" onclick="resetColumnWidthAndSort()">重置列宽+字段排序</button><button class="btn-secondary" onclick="downloadTransitTemplate()">下载模板</button><button class="btn-secondary" onclick="triggerTransitUpload()">批量上传</button><button class="btn-secondary" onclick="openTransitDetailExportModal()">导出明细</button><input type="file" id="transitTemplateUploadInput" accept=".xlsx" style="display:none;"><span class="pm-divider"></span><button class="btn-accent" onclick="openCreateModal()">新增</button></div></div></div>
+    <div class="card pm-card"><div class="pm-toolbar"><div class="pm-toolbar-actions"><div class="form-group pm-search" style="margin:0;"><span class="pm-search-title">搜索</span><input id="searchInput" type="text" placeholder="搜索箱号/提单号/工厂/货代"><button class="btn-primary" onclick="loadList()">搜索</button><button class="btn-secondary" onclick="resetSearch()">清空</button></div><span class="pm-divider"></span><button class="btn-secondary" onclick="resetColumnWidthAndSort()">重置列宽+字段排序</button><button class="btn-secondary" onclick="downloadTransitTemplate()">下载模板</button><button class="btn-secondary" onclick="triggerTransitUpload()">批量上传</button><button class="btn-secondary" onclick="openTransitDetailExportModal()">导出明细</button><input type="file" id="transitTemplateUploadInput" accept=".xlsx" style="display:none;"><span class="pm-divider"></span><button class="btn-accent" onclick="openCreateModal()">新增</button></div></div></div>
     <div><table class="pm-table" id="mainTable"><colgroup><col style="width:54px"><col style="width:72px"><col style="width:96px"><col style="width:96px"><col style="width:160px"><col style="width:110px"><col style="width:48px"><col style="width:140px"><col style="width:66px"><col style="width:66px"><col style="width:110px"><col style="width:96px"><col style="width:160px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:110px"><col style="width:110px"><col style="width:110px"><col style="width:110px"><col style="width:150px"><col style="width:96px"><col style="width:110px"><col style="width:140px"><col style="width:96px"><col style="width:110px"><col style="width:180px"><col style="width:160px"></colgroup><thead><tr class="transit-head-main"><th rowspan="2" style="width:54px; text-align:center;"><input type="checkbox" id="transitSelectAll" onclick="toggleTransitSelectAll(this.checked)"></th><th rowspan="2" class="transit-col-box">箱号</th><th rowspan="2" class="transit-col-factory">工厂</th><th rowspan="2" class="transit-col-region">目的区域</th><th rowspan="2" class="transit-col-warehouse">目的仓库</th><th rowspan="2" class="transit-col-expected">预计上架时间</th><th class="transit-group-head transit-col-detail" colspan="4" data-disable-sort="1"><div class="transit-head-main-group"><div class="transit-head-maincell"><span>SKU详情</span><button type="button" class="transit-head-main-btn transit-head-sort-btn" data-sort-field="sku" onclick="toggleTransitDetailSort('sku')" aria-label="SKU详情排序"><span class="sort-indicator" data-sort-indicator-for="sku">↕</span></button></div><div class="transit-head-sub"><button type="button" class="transit-head-sort-btn" data-sort-field="representative_color" onclick="toggleTransitDetailSort('representative_color')"><span class="transit-sub-head-content"><span class="transit-sub-head-label">颜色</span><span class="sort-indicator" data-sort-indicator-for="representative_color">↕</span></span></button><button type="button" class="transit-head-sort-btn" data-sort-field="sku" onclick="toggleTransitDetailSort('sku')"><span class="transit-sub-head-content"><span class="transit-sub-head-label">SKU</span><span class="sort-indicator" data-sort-indicator-for="sku">↕</span></span></button><button type="button" class="transit-head-sort-btn" data-sort-field="shipped_qty" onclick="toggleTransitDetailSort('shipped_qty')"><span class="transit-sub-head-content"><span class="transit-sub-head-label">发货数量</span><span class="sort-indicator" data-sort-indicator-for="shipped_qty">↕</span></span></button><button type="button" class="transit-head-sort-btn" data-sort-field="listed_qty" onclick="toggleTransitDetailSort('listed_qty')"><span class="transit-sub-head-content"><span class="transit-sub-head-label">上架数量</span><span class="sort-indicator" data-sort-indicator-for="listed_qty">↕</span></span></button></div></div></th><th rowspan="2" class="transit-col-factory-ship">工厂发货日期</th><th rowspan="2" class="transit-col-status">已确认装箱量</th><th rowspan="2" class="transit-col-forwarder">货代</th><th rowspan="2" class="transit-col-bill">提单号</th><th rowspan="2" class="transit-col-shipping">船公司</th><th rowspan="2" class="transit-col-vessel">船名航次</th><th rowspan="2" class="transit-col-port-load">起运港</th><th rowspan="2" class="transit-col-port-dest">目的港</th><th rowspan="2" class="transit-col-doc">提供报关资料</th><th rowspan="2" class="transit-col-doc">提供清关资料</th><th rowspan="2" class="transit-col-date">ETD</th><th rowspan="2" class="transit-col-date">ETA</th><th rowspan="2" class="transit-col-arrival">到港日期</th><th rowspan="2" class="transit-col-warehouse-exp">预计送仓日期</th><th rowspan="2" class="transit-col-inbound">入库单号</th><th rowspan="2" class="transit-col-status">已登记上架</th><th rowspan="2" class="transit-col-date">实际上架日期</th><th rowspan="2" class="transit-col-qty-checked">已核对上架数量</th><th rowspan="2" class="transit-col-qty-consistent">数量一致</th><th rowspan="2" class="transit-col-financial">财务已核验</th><th rowspan="2" class="transit-col-remark">备注</th><th rowspan="2" class="transit-col-edit">编辑</th></tr></thead><tbody><tr><td colspan="32" style="text-align:center;">加载中...</td></tr></tbody></table></div>
   </section>
 </div>
@@ -198,6 +215,11 @@
 <div class="pm-modal" id="transit-export-modal"><div class="pm-modal-content" style="max-width:760px;"><h3 style="margin-top:0;">导出在途物流明细</h3><div class="pm-form" style="display:grid;gap:.65rem;"><div class="form-group pm-form-full"><label>当前选中记录</label><div id="transitExportSelectedInfo" class="history-text">0 条</div></div><div class="form-group pm-form-full"><label>导出字段（多选）</label><div id="transitExportFieldBox" class="item-box" style="max-height:42vh;overflow:auto;"></div></div></div><div class="pm-modal-actions"><button class="btn-secondary" type="button" onclick="closeTransitDetailExportModal()">取消</button><button class="btn-primary" type="button" onclick="downloadTransitDetailExport()">下载</button></div></div></div>
 <input type="file" id="transitDocUploadInput" style="display:none;" multiple>
 <div id="uploadProgress" class="upload-progress"><div id="uploadProgressText" class="upload-progress-title">准备上传...</div><div class="upload-progress-bar"><span id="uploadProgressFill"></span></div></div>
+<div id="transitPreviewSaveBar" class="preview-savebar" aria-live="polite">
+  <span id="transitPreviewSaveText">已修改 0 条编辑项</span>
+  <button type="button" class="btn-secondary" onclick="cancelTransitInlineEdits()">取消修改</button>
+  <button type="button" class="btn-primary" onclick="saveTransitInlineBatch()">统一保存</button>
+</div>
 <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
 
 <script>
@@ -325,8 +347,50 @@ function saveFromModal(){const p={factory_id:$('#factoryId').value,forwarder_id:
 function removeItem(id){showDialog({title:'确认删除',message:'确认删除该在途物流库存记录？',okText:'删除',cancelText:'取消',variant:'danger'}).then(x=>{if(!x.ok)return;fetch('/api/logistics-in-transit',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}).then(r=>r.json()).then(d=>{if(d.status==='success')loadList();else showDialog({title:'删除失败',message:d.message||'删除失败',showCancel:false})})})}
 
 const pendingTransitInlineEdits=new Map();
-function markTransitInlineEdit(id,field,value){const rowId=Number(id||0);if(!rowId||!field)return;const prev=pendingTransitInlineEdits.get(rowId)||{};prev[field]=value;pendingTransitInlineEdits.set(rowId,prev)}
-function saveTransitInlineBatch(){const updates=Array.from(pendingTransitInlineEdits.entries()).map(([id,data])=>Object.assign({id},data||{})).filter(x=>x&&x.id&&Object.keys(x).length>1);if(!updates.length){window.showAppToast&&window.showAppToast('暂无待保存的预览编辑项',false,1800);return}window.showAppToast&&window.showAppToast('正在批量保存...',false,1200);fetch('/api/logistics-in-transit?action=quick_batch_fields',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({updates})}).then(r=>r.json()).then(d=>{if(d.status!=='success'){window.showAppToast&&window.showAppToast(d.message||'批量保存失败',true);return}pendingTransitInlineEdits.clear();window.showAppToast&&window.showAppToast(`批量保存成功（${Number(d.updated_count||0)}条）`,false,1600);loadList()}).catch(()=>window.showAppToast&&window.showAppToast('批量保存失败',true))}
+function syncTransitPreviewSaveBar(){
+  const bar=document.querySelector('#transitPreviewSaveBar');
+  const text=document.querySelector('#transitPreviewSaveText');
+  if(!bar||!text) return;
+  const count=pendingTransitInlineEdits.size;
+  text.textContent=`已修改 ${count} 条编辑项`;
+  bar.classList.toggle('active',count>0);
+}
+function markTransitInlineEdit(id,field,value){
+  const rowId=Number(id||0);
+  if(!rowId||!field) return;
+  const prev=pendingTransitInlineEdits.get(rowId)||{};
+  prev[field]=value;
+  pendingTransitInlineEdits.set(rowId,prev);
+  syncTransitPreviewSaveBar();
+}
+function cancelTransitInlineEdits(){
+  pendingTransitInlineEdits.clear();
+  syncTransitPreviewSaveBar();
+  loadList();
+  window.showAppToast&&window.showAppToast('已取消修改',false,1400);
+}
+function saveTransitInlineBatch(){
+  const updates=Array.from(pendingTransitInlineEdits.entries()).map(([id,data])=>Object.assign({id},data||{})).filter(x=>x&&x.id&&Object.keys(x).length>1);
+  if(!updates.length){
+    window.showAppToast&&window.showAppToast('暂无待保存的预览编辑项',false,1800);
+    syncTransitPreviewSaveBar();
+    return;
+  }
+  window.showAppToast&&window.showAppToast('正在批量保存...',false,1200);
+  fetch('/api/logistics-in-transit?action=quick_batch_fields',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({updates})})
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.status!=='success'){
+        window.showAppToast&&window.showAppToast(d.message||'批量保存失败',true);
+        return;
+      }
+      pendingTransitInlineEdits.clear();
+      syncTransitPreviewSaveBar();
+      window.showAppToast&&window.showAppToast(`批量保存成功（${Number(d.updated_count||0)}条）`,false,1600);
+      loadList();
+    })
+    .catch(()=>window.showAppToast&&window.showAppToast('批量保存失败',true));
+}
 
 const rowStatus=(field,v,id)=>`<div class="status-segment status-segment--inline preview-status" data-id="${id}" data-field="${field}" data-value="${String(v)==='1'?'1':'0'}"><button type="button" class="status-pill status-pill--yes ${String(v)==='1'?'is-active':''}" data-value="1">是</button><button type="button" class="status-pill status-pill--no ${String(v)==='1'?'':'is-active'}" data-value="0">否</button></div>`;
 const rowDisplayStatus=v=>`<div class="status-segment status-segment--inline readonly-segment" data-value="${String(v)==='1'?'1':'0'}"><button type="button" class="status-pill status-pill--yes ${String(v)==='1'?'is-active':''}" data-value="1">是</button><button type="button" class="status-pill status-pill--no ${String(v)==='1'?'':'is-active'}" data-value="0">否</button></div>`;
@@ -423,6 +487,7 @@ $('#destinationRegionId').addEventListener('change',onDestinationRegionChange);
 $('#destinationWarehouseId').addEventListener('change',onDestinationWarehouseChange);
 $('#factoryId').addEventListener('change',syncTransitItemSkuOptions);
 window.addEventListener('focus',refreshDocCounts);window.addEventListener('load',loadList);
+window.addEventListener('load',syncTransitPreviewSaveBar);
 </script>
 </body>
 <script src="/static/js/header.js"></script>

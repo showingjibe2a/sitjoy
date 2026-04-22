@@ -1461,7 +1461,12 @@
             formData.append('sales_product_id', String(editId));
             formData.append('image_type_name', normalizeMainImageTypeName(selectedMainImageType));
             Array.from(files).forEach(file => formData.append('file', file));
-            return fetch('/api/sales-product-main-images-upload?check_only=1', {
+            const imageType = normalizeMainImageTypeName(selectedMainImageType);
+            const qs = new URLSearchParams();
+            qs.set('check_only', '1');
+            qs.set('sales_product_id', String(editId));
+            qs.set('image_type_name', imageType);
+            return fetch(`/api/sales-product-main-images-upload?${qs.toString()}`, {
                 method: 'POST',
                 body: formData
             }).then(r => r.json());
@@ -1475,7 +1480,12 @@
             Array.from(files).forEach(file => {
                 formData.append('file', file);
             });
-            const url = allowDuplicate ? '/api/sales-product-main-images-upload?allow_duplicate=1' : '/api/sales-product-main-images-upload';
+            const imageType = normalizeMainImageTypeName(selectedMainImageType);
+            const qs = new URLSearchParams();
+            qs.set('sales_product_id', String(editId));
+            qs.set('image_type_name', imageType);
+            if (allowDuplicate) qs.set('allow_duplicate', '1');
+            const url = `/api/sales-product-main-images-upload?${qs.toString()}`;
             fetch(url, {
                 method: 'POST',
                 body: formData
@@ -2229,6 +2239,13 @@
                             return;
                         }
                         showModalStatus((data && data.message) ? data.message : '主图预检失败', true);
+                        return;
+                    }
+                    // If the server couldn't see any file parts during preflight (proxy/parsing edge cases),
+                    // skip preflight and proceed with the real upload path.
+                    const fc = Number(data.file_count || 0);
+                    if (!Number.isFinite(fc) || fc <= 0) {
+                        uploadMainImages(files, false);
                         return;
                     }
                     if ((data.duplicate_count || 0) > 0) {

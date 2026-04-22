@@ -7,6 +7,8 @@ import json
 import base64
 import hashlib
 import threading
+from email import policy
+from email.parser import BytesParser
 from datetime import datetime
 from urllib.parse import parse_qs
 
@@ -25,6 +27,98 @@ except Exception:
 
 
 class SalesProductMixin:
+    def _read_wsgi_request_body(self, environ):
+        """Read request body bytes as reliably as possible for multipart uploads."""
+        try:
+            length = int(environ.get('CONTENT_LENGTH', 0) or 0)
+        except Exception:
+            length = 0
+        stream = environ.get('wsgi.input')
+        if not stream:
+            return b''
+        if length > 0:
+            try:
+                return stream.read(length) or b''
+            except Exception:
+                return b''
+        # Chunked / missing CONTENT_LENGTH: read until EOF (best-effort).
+        try:
+            chunks = []
+            while True:
+                chunk = stream.read(1024 * 1024)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            return b''.join(chunks)
+        except Exception:
+            return b''
+
+    def _parse_multipart_uploads_fallback(self, content_type, raw_body):
+        """
+        Fallback multipart parser when cgi.FieldStorage fails to enumerate file parts.
+        Returns list of dicts: {filename, content}
+        """
+        uploads = []
+        if not raw_body:
+            return uploads
+        ct = (content_type or '').lower()
+        if 'multipart/form-data' not in ct:
+            return uploads
+        boundary = None
+        for part in (content_type or '').split(';'):
+            part = part.strip()
+            if part.lower().startswith('boundary='):
+                boundary = part.split('=', 1)[1].strip().strip('"')
+                break
+        if not boundary:
+            return uploads
+
+        # RFC2046: boundary lines are prefixed with "--"
+        delim = (b'--' + boundary.encode('utf-8', errors='ignore'))
+        segments = raw_body.split(delim)
+        for seg in segments:
+            seg = seg.strip(b'\r\n')
+            if not seg:
+                continue
+            if seg == b'--':
+                continue
+            header_blob, _, body_blob = seg.partition(b'\r\n\r\n')
+            if not header_blob or body_blob is None:
+                continue
+            try:
+                msg = BytesParser(policy=policy.default).parsebytes(header_blob + b'\r\n\r\n')
+            except Exception:
+                continue
+            disp = (msg.get('Content-Disposition') or '').lower()
+            if 'form-data' not in disp or 'filename=' not in disp:
+                continue
+            filename = ''
+            m = re.search(r'filename\*=UTF-8\'\'([^;]+)', disp)
+            if m:
+                try:
+                    from urllib.parse import unquote
+                    filename = unquote(m.group(1).strip().strip('"'))
+                except Exception:
+                    filename = m.group(1).strip().strip('"')
+            if not filename:
+                m2 = re.search(r'filename="([^"]+)"', disp)
+                if m2:
+                    filename = m2.group(1)
+                else:
+                    m3 = re.search(r'filename=([^;]+)', disp)
+                    if m3:
+                        filename = m3.group(1).strip().strip('"')
+            filename = (filename or '').strip()
+            if not filename:
+                continue
+            content = body_blob
+            if content.endswith(b'\r\n'):
+                content = content[:-2]
+            elif content.endswith(b'\n'):
+                content = content[:-1]
+            uploads.append({'filename': filename, 'content': content or b''})
+        return uploads
+
     def _table_has_column(self, conn, table_name, column_name):
         cache = getattr(self, '_schema_column_exists_cache', None)
         if cache is None:
@@ -1745,14 +1839,20 @@ class SalesProductMixin:
                 if not sales_product_id:
                     return self.send_json({'status': 'error', 'message': 'Missing sales_product_id'}, start_response)
                 image_type_name = (query_params.get('image_type_name', [''])[0] or '').strip() or '文字卖点图'
-                # GET with check_only but no files - just return success with empty results
-                return self.send_json({
-                    'status': 'success',
-                    'duplicate_count': 0,
-                    'duplicates': [],
-                    'file_count': 0,
-                    'message': 'No files provided. Use POST method with multipart/form-data to upload images.'
-                }, start_response)
+                # GET cannot carry multipart file bodies; treat this as a client misuse instead of a "successful" empty upload.
+                # NOTE: Browsers will issue GET when opening a URL in the address bar.
+                # This endpoint cannot perform duplicate checks without file bytes, so return a non-fatal "info"
+                # payload (HTTP 200) to avoid looking like a broken API while still guiding correct usage.
+                return self.send_json(
+                    {
+                        'status': 'info',
+                        'duplicate_count': 0,
+                        'duplicates': [],
+                        'file_count': 0,
+                        'message': 'check_only 预检需要 POST + multipart/form-data 携带图片文件；在地址栏 GET 打开该 URL 不会上传/不会预检文件内容。',
+                    },
+                    start_response,
+                )
 
             if method != 'POST':
                 return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
@@ -1763,17 +1863,27 @@ class SalesProductMixin:
 
             allow_duplicate = str((query_params.get('allow_duplicate', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
 
-            content_length = int(environ.get('CONTENT_LENGTH', 0) or 0)
-            raw_body = environ['wsgi.input'].read(content_length) if content_length > 0 else b''
-            env_copy = dict(environ)
-            env_copy['CONTENT_LENGTH'] = str(len(raw_body))
-            form = cgi.FieldStorage(fp=io.BytesIO(raw_body), environ=env_copy, keep_blank_values=True)
+            raw_body = self._read_wsgi_request_body(environ)
+            form = None
+            if raw_body:
+                env_copy = dict(environ)
+                env_copy['CONTENT_LENGTH'] = str(len(raw_body))
+                form = cgi.FieldStorage(fp=io.BytesIO(raw_body), environ=env_copy, keep_blank_values=True)
+            else:
+                # Some servers/proxies may omit CONTENT_LENGTH (e.g., chunked transfer).
+                # Fall back to streaming parse; cgi.FieldStorage will read from wsgi.input.
+                form = cgi.FieldStorage(fp=environ.get('wsgi.input'), environ=environ, keep_blank_values=True)
 
-            sales_product_id = self._parse_int((form.getfirst('sales_product_id', '') or '').strip())
+            sales_product_id = self._parse_int((form.getfirst('sales_product_id', '') or '').strip()) if form else 0
+            if not sales_product_id:
+                sales_product_id = self._parse_int((query_params.get('sales_product_id', [''])[0] or '').strip())
             if not sales_product_id:
                 return self.send_json({'status': 'error', 'message': 'Missing sales_product_id'}, start_response)
 
-            image_type_name = (form.getfirst('image_type_name', '') or '').strip() or '文字卖点图'
+            image_type_name = ((form.getfirst('image_type_name', '') if form else '') or '').strip()
+            if not image_type_name:
+                image_type_name = (query_params.get('image_type_name', [''])[0] or '').strip()
+            image_type_name = image_type_name or '文字卖点图'
 
             uploads = []
             for p in getattr(form, 'list', []) or []:
@@ -1783,6 +1893,8 @@ class SalesProductMixin:
                     except Exception:
                         content = b''
                     uploads.append({'filename': p.filename, 'content': content})
+            if not uploads and raw_body:
+                uploads = self._parse_multipart_uploads_fallback(content_type, raw_body)
             if not uploads:
                 return self.send_json({'status': 'error', 'message': 'No valid images uploaded'}, start_response)
 
