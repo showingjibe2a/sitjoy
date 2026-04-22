@@ -298,6 +298,7 @@ class FabricManagementMixin:
             data = self._read_json_body(environ)
             image_name = (data.get('image_name') or '').strip()
             raw_b64 = (data.get('image_name_raw_b64') or '').strip()
+            fabric_id = self._parse_int(data.get('fabric_id'))
 
             if not image_name and not raw_b64:
                 return self.send_json({'status': 'error', 'message': 'Missing image_name'}, start_response)
@@ -325,15 +326,92 @@ class FabricManagementMixin:
                     file_path = candidate
                     break
 
+            asset_id = 0
+            storage_name = os.path.basename(image_name) if image_name else ''
+            file_sha256 = ''
+            if file_path is not None:
+                try:
+                    with open(file_path, 'rb') as f:
+                        file_sha256 = hashlib.sha256(f.read() or b'').hexdigest()
+                except Exception:
+                    file_sha256 = ''
+
+            if self._has_required_tables(['image_assets']):
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        if file_sha256:
+                            cur.execute("SELECT id FROM image_assets WHERE sha256=%s LIMIT 1", (file_sha256,))
+                            row = cur.fetchone() or {}
+                            asset_id = self._parse_int(row.get('id')) or 0
+                        if not asset_id and storage_name:
+                            cur.execute(
+                                """
+                                SELECT id FROM image_assets
+                                WHERE storage_path=%s OR storage_path LIKE %s
+                                ORDER BY id DESC
+                                LIMIT 1
+                                """,
+                                (storage_name, f'%/{storage_name}')
+                            )
+                            row = cur.fetchone() or {}
+                            asset_id = self._parse_int(row.get('id')) or 0
+
+                        deleted_mapping = 0
+                        if asset_id and fabric_id and self._has_required_tables(['fabric_image_mappings']):
+                            cur.execute(
+                                "DELETE FROM fabric_image_mappings WHERE fabric_id=%s AND image_asset_id=%s",
+                                (fabric_id, asset_id),
+                            )
+                            deleted_mapping = int(cur.rowcount or 0)
+
+                        if asset_id:
+                            remain_fabric = 0
+                            remain_sku = 0
+                            if self._has_required_tables(['fabric_image_mappings']):
+                                cur.execute("SELECT COUNT(*) AS cnt FROM fabric_image_mappings WHERE image_asset_id=%s", (asset_id,))
+                                remain_fabric = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
+                            if self._has_required_tables(['sku_image_mappings']):
+                                cur.execute("SELECT COUNT(*) AS cnt FROM sku_image_mappings WHERE image_asset_id=%s", (asset_id,))
+                                remain_sku = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
+                            remain_total = remain_fabric + remain_sku
+
+                            if remain_total <= 0:
+                                if file_path is not None:
+                                    try:
+                                        os.remove(file_path)
+                                    except Exception as remove_err:
+                                        return self.send_json({'status': 'error', 'message': f'删除文件失败: {remove_err}'}, start_response)
+                                cur.execute("DELETE FROM image_assets WHERE id=%s", (asset_id,))
+                                return self.send_json(
+                                    {
+                                        'status': 'success',
+                                        'mapping_deleted': deleted_mapping,
+                                        'asset_deleted': True,
+                                        'remaining_refs': 0,
+                                        'message': '图片已完全删除（无面料/规格关联）',
+                                    },
+                                    start_response,
+                                )
+
+                            return self.send_json(
+                                {
+                                    'status': 'success',
+                                    'mapping_deleted': deleted_mapping,
+                                    'asset_deleted': False,
+                                    'remaining_refs': int(remain_total),
+                                    'message': '图片已从当前面料解绑，但仍被其他面料/规格引用，未做物理删除',
+                                },
+                                start_response,
+                            )
+
+            # Fallback: no asset row found, treat as orphan physical file.
             if file_path is None:
                 return self.send_json({'status': 'error', 'message': '图片文件不存在'}, start_response)
-
             try:
                 os.remove(file_path)
             except Exception as remove_err:
                 return self.send_json({'status': 'error', 'message': f'删除文件失败: {remove_err}'}, start_response)
-
-            return self.send_json({'status': 'success'}, start_response)
+            return self.send_json({'status': 'success', 'asset_deleted': True, 'remaining_refs': 0, 'message': '孤立图片文件已删除'}, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 

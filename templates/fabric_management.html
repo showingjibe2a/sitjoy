@@ -1211,7 +1211,7 @@
                         return;
                     }
                     doLocalRemove();
-                    showModalStatus('图片已永久删除', false);
+                    showModalStatus(data.message || '图片删除完成', false);
                     loadFabricImages();
                 })
                 .catch(err => showModalStatus('删除图片失败: ' + err, true));
@@ -1219,45 +1219,16 @@
         }
 
         function showImageDeleteConfirm(message) {
-            return new Promise((resolve) => {
-                const modal = document.getElementById('imageDeleteConfirmModal');
-                const textEl = document.getElementById('imageDeleteConfirmText');
-                const btnOk = document.getElementById('imageDeleteOkBtn');
-                const btnCancel = document.getElementById('imageDeleteCancelBtn');
-                if (!modal || !textEl || !btnOk || !btnCancel) {
-                    if (window.showAppConfirmAsync) {
-                        window.showAppConfirmAsync({ title: '删除确认', message: (message || '确认删除？'), confirmText: '确认删除' }).then(resolve);
-                    } else {
-                        resolve(false);
-                    }
-                    return;
-                }
-
-                textEl.textContent = message || '确认删除？';
-                modal.classList.add('active');
-
-                let done = false;
-                const cleanup = (result) => {
-                    if (done) return;
-                    done = true;
-                    modal.classList.remove('active');
-                    btnOk.removeEventListener('click', onOk);
-                    btnCancel.removeEventListener('click', onCancel);
-                    modal.removeEventListener('click', onBackdrop);
-                    document.removeEventListener('keydown', onEsc);
-                    resolve(result);
-                };
-
-                const onOk = () => cleanup(true);
-                const onCancel = () => cleanup(false);
-                const onBackdrop = (e) => { if (e.target === modal) cleanup(false); };
-                const onEsc = (e) => { if (e.key === 'Escape') cleanup(false); };
-
-                btnOk.addEventListener('click', onOk);
-                btnCancel.addEventListener('click', onCancel);
-                modal.addEventListener('click', onBackdrop);
-                document.addEventListener('keydown', onEsc);
-            });
+            if (window.showAppConfirmAsync) {
+                return window.showAppConfirmAsync({
+                    title: '删除确认',
+                    message: (message || '确认删除？') + '\n若图片仍被其他面料或规格引用，本次仅解除当前关联。',
+                    confirmText: '确认删除',
+                    requireConfirmCheck: true,
+                    confirmCheckText: '我已知晓：仅在无任何面料/规格关联时，图片才会被彻底删除且不可恢复'
+                });
+            }
+            return Promise.resolve(false);
         }
 
         function handleDragStartImage(e) {

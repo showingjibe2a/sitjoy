@@ -1757,6 +1757,28 @@ body.has-active-modal {
     margin-top: 1rem;
 }
 
+.app-confirm-check-row {
+    margin-top: 0.75rem;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid rgba(155, 74, 74, 0.22);
+    border-radius: 8px;
+    background: rgba(155, 74, 74, 0.08);
+}
+
+.app-confirm-check-label {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    color: #6f2f2f;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    cursor: pointer;
+}
+
+.app-confirm-check-input {
+    margin-top: 0.1rem;
+}
+
 .btn-danger {
     background: #9b4a4a;
     color: #fff;

@@ -2287,8 +2287,13 @@ class SalesProductMixin:
                         image_asset_id = mapping.get('image_asset_id')
                         cur.execute("DELETE FROM sku_image_mappings WHERE id=%s", (mapping.get('id'),))
                         cur.execute("SELECT COUNT(*) AS cnt FROM sku_image_mappings WHERE image_asset_id=%s", (image_asset_id,))
-                        remain = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
-                        if remain <= 0:
+                        remain_sku = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
+                        remain_fabric = 0
+                        if self._has_required_tables(['fabric_image_mappings']):
+                            cur.execute("SELECT COUNT(*) AS cnt FROM fabric_image_mappings WHERE image_asset_id=%s", (image_asset_id,))
+                            remain_fabric = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
+                        remain_total = remain_sku + remain_fabric
+                        if remain_total <= 0:
                             cur.execute("SELECT storage_path FROM image_assets WHERE id=%s", (image_asset_id,))
                             asset_row = cur.fetchone() or {}
                             storage_path = (asset_row.get('storage_path') or '').strip()
@@ -2300,7 +2305,24 @@ class SalesProductMixin:
                                 except Exception:
                                     pass
                             cur.execute("DELETE FROM image_assets WHERE id=%s", (image_asset_id,))
-                return self.send_json({'status': 'success'}, start_response)
+                            return self.send_json(
+                                {
+                                    'status': 'success',
+                                    'asset_deleted': True,
+                                    'remaining_refs': 0,
+                                    'message': '图片已完全删除（无面料/规格关联）',
+                                },
+                                start_response,
+                            )
+                return self.send_json(
+                    {
+                        'status': 'success',
+                        'asset_deleted': False,
+                        'remaining_refs': int(remain_total),
+                        'message': '图片已从当前规格解绑，但仍被其他面料/规格引用，未做物理删除',
+                    },
+                    start_response,
+                )
 
             return self.send_error(405, 'Method not allowed', start_response)
         except RuntimeError as e:

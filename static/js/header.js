@@ -464,6 +464,12 @@
             '<div class="pm-modal-content" style="max-width:520px;">',
             '  <h3 class="app-confirm-title" style="margin-top:0;">确认操作</h3>',
             '  <p class="app-confirm-message" style="margin:.5rem 0 0;color:var(--morandi-ink);line-height:1.6;white-space:pre-line;"></p>',
+            '  <div class="app-confirm-check-row" style="display:none;">',
+            '    <label class="app-confirm-check-label">',
+            '      <input type="checkbox" class="app-confirm-check-input">',
+            '      <span class="app-confirm-check-text">我已知晓此操作不可恢复，确认继续删除</span>',
+            '    </label>',
+            '  </div>',
             '  <div class="pm-modal-actions" style="margin-top:1rem;">',
             '    <button type="button" class="btn-secondary" data-action="cancel">取消</button>',
             '    <button type="button" class="btn-danger" data-action="confirm">确认</button>',
@@ -480,27 +486,49 @@
         const message = String(opt.message || '确认继续执行该操作？').trim() || '确认继续执行该操作？';
         const confirmText = String(opt.confirmText || '确认').trim() || '确认';
         const cancelText = String(opt.cancelText || '取消').trim() || '取消';
+        const checkText = String(opt.confirmCheckText || '我已知晓此操作不可恢复，确认继续删除').trim() || '我已知晓此操作不可恢复，确认继续删除';
+        const explicitRequireCheck = (typeof opt.requireConfirmCheck === 'boolean') ? opt.requireConfirmCheck : null;
+        const autoDanger = /删除|移除|清空|永久|不可恢复|彻底/.test(`${title} ${message} ${confirmText}`);
+        const requireCheck = explicitRequireCheck === null ? autoDanger : explicitRequireCheck;
 
         const modal = ensureAppConfirmModal();
         const titleEl = modal.querySelector('.app-confirm-title');
         const msgEl = modal.querySelector('.app-confirm-message');
         const confirmBtn = modal.querySelector('[data-action="confirm"]');
         const cancelBtn = modal.querySelector('[data-action="cancel"]');
+        const checkRow = modal.querySelector('.app-confirm-check-row');
+        const checkInput = modal.querySelector('.app-confirm-check-input');
+        const checkTextEl = modal.querySelector('.app-confirm-check-text');
         if(titleEl) titleEl.textContent = title;
         if(msgEl) msgEl.textContent = message;
         if(confirmBtn) confirmBtn.textContent = confirmText;
         if(cancelBtn) cancelBtn.textContent = cancelText;
+        if(checkTextEl) checkTextEl.textContent = checkText;
+        if(checkRow) checkRow.style.display = requireCheck ? '' : 'none';
+        if(checkInput) checkInput.checked = false;
+
+        const updateConfirmState = () => {
+            if(!confirmBtn) return;
+            if(!requireCheck) {
+                confirmBtn.disabled = false;
+                return;
+            }
+            confirmBtn.disabled = !(checkInput && checkInput.checked);
+        };
+        updateConfirmState();
 
         const cleanup = () => {
             modal.classList.remove('active');
             if(confirmBtn) confirmBtn.removeEventListener('click', onConfirm);
             if(cancelBtn) cancelBtn.removeEventListener('click', onCancel);
+            if(checkInput) checkInput.removeEventListener('change', updateConfirmState);
             modal.removeEventListener('click', onBackdrop);
             document.removeEventListener('keydown', onEsc);
             syncModalScrollLock();
         };
 
         const onConfirm = () => {
+            if(requireCheck && checkInput && !checkInput.checked) return;
             cleanup();
             if(typeof opt.onConfirm === 'function') opt.onConfirm();
             if(typeof opt.onClose === 'function') opt.onClose(true);
@@ -522,6 +550,7 @@
 
         if(confirmBtn) confirmBtn.addEventListener('click', onConfirm);
         if(cancelBtn) cancelBtn.addEventListener('click', onCancel);
+        if(checkInput) checkInput.addEventListener('change', updateConfirmState);
         modal.addEventListener('click', onBackdrop);
         document.addEventListener('keydown', onEsc);
 

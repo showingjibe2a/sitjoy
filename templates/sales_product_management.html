@@ -1491,28 +1491,32 @@
             });
         }
 
-        function deleteMainImage(imageName) {
+        async function deleteMainImage(imageName) {
             if (!editId || !imageName) return;
-            showUploadDialog({
-                title: '删除确认',
-                message: `确认删除图片：${imageName}？`,
-                confirmText: '确认删除',
-                cancelText: '取消',
-                onConfirm: function() {
-                    fetch('/api/sales-product-main-images', {
-                        method: 'DELETE',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ sales_product_id: editId, image_name: imageName })
-                    }).then(r => r.json()).then(data => {
-                        if (data.status !== 'success') {
-                            showModalStatus(data.message || '删除失败', true);
-                            return;
-                        }
-                        showModalStatus('图片已删除', false);
-                        refreshMainImageList();
-                    }).catch(err => showModalStatus('删除失败: ' + err, true));
+            const ok = window.showAppConfirmAsync
+                ? await window.showAppConfirmAsync({
+                    title: '删除确认',
+                    message: `确认删除图片：${imageName}？\n若该图片仍被其他面料或规格引用，将仅解除当前关联，不会彻底删除文件。`,
+                    confirmText: '确认删除',
+                    requireConfirmCheck: true,
+                    confirmCheckText: '我已知晓：仅在无任何面料/规格关联时，图片才会被彻底删除且不可恢复'
+                })
+                : false;
+            if (!ok) return;
+
+            fetch('/api/sales-product-main-images', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sales_product_id: editId, image_name: imageName })
+            }).then(r => r.json()).then(data => {
+                if (data.status !== 'success') {
+                    showModalStatus(data.message || '删除失败', true);
+                    return;
                 }
-            });
+                const msg = data.message || (data.asset_deleted ? '图片已完全删除' : '图片已解除当前关联');
+                showModalStatus(msg, false);
+                refreshMainImageList();
+            }).catch(err => showModalStatus('删除失败: ' + err, true));
         }
 
         function openMainImageDescModal(imageName) {
