@@ -1275,7 +1275,7 @@
         }
 
         function loadSalesImageTypeOptions() {
-            return fetch('/api/sales-image-type').then(r => r.json()).then(data => {
+            return fetch('/api/sales-image-type?usage=sales').then(r => r.json()).then(data => {
                 if (data.status !== 'success') {
                     salesImageTypeOptions = [];
                     renderSalesImageTypeBar();
@@ -1321,7 +1321,12 @@
             fetch('/api/sales-image-type', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name })
+                body: JSON.stringify({
+                    name,
+                    applies_sales: true,
+                    applies_fabric: false,
+                    applies_aplus: false,
+                })
             }).then(r => r.json()).then(data => {
                 if (data.status !== 'success') {
                     if (status) {

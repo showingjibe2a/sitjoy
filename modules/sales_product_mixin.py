@@ -1862,34 +1862,69 @@ class SalesProductMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
-    def handle_sales_image_type_api(self, environ, method, start_response):
-        """销售主图类型 API：允许新增，不允许编辑和删除。"""
+    def _ensure_image_type_scope_columns(self, conn):
+        """Ensure image_types scope columns exist for filtering by target modules."""
+        cols = [
+            ('applies_fabric', 'TINYINT(1) NOT NULL DEFAULT 1'),
+            ('applies_sales', 'TINYINT(1) NOT NULL DEFAULT 1'),
+            ('applies_aplus', 'TINYINT(1) NOT NULL DEFAULT 1'),
+        ]
+        for col, ddl in cols:
+            if not self._table_has_column(conn, 'image_types', col):
+                with conn.cursor() as cur:
+                    cur.execute(f"ALTER TABLE image_types ADD COLUMN {col} {ddl}")
+
+    def _parse_bool_flag(self, value, default=False):
+        if value is None:
+            return bool(default)
+        if isinstance(value, bool):
+            return value
+        text = str(value).strip().lower()
+        if text in ('1', 'true', 'yes', 'on', 'y'):
+            return True
+        if text in ('0', 'false', 'no', 'off', 'n'):
+            return False
+        return bool(default)
+
+    def _handle_image_type_api_core(self, environ, method, start_response):
         try:
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            usage = (query_params.get('usage', [''])[0] or '').strip().lower()
+            keyword = (query_params.get('q', [''])[0] or '').strip()
+            include_disabled = self._parse_bool_flag((query_params.get('include_disabled', ['0'])[0] or '0'), default=False)
 
             if method == 'GET':
-                keyword = (query_params.get('q', [''])[0] or '').strip()
                 with self._get_db_connection() as conn:
+                    self._ensure_image_type_scope_columns(conn)
                     with conn.cursor() as cur:
+                        where_parts = []
+                        params = []
+                        if not include_disabled:
+                            where_parts.append('is_enabled=1')
                         if keyword:
-                            cur.execute(
-                                """
-                                SELECT id, name, is_enabled, created_at
-                                FROM image_types
-                                WHERE is_enabled=1 AND name LIKE %s
-                                ORDER BY id ASC
-                                """,
-                                (f"%{keyword}%",)
-                            )
-                        else:
-                            cur.execute(
-                                """
-                                SELECT id, name, is_enabled, created_at
-                                FROM image_types
-                                WHERE is_enabled=1
-                                ORDER BY id ASC
-                                """
-                            )
+                            where_parts.append('name LIKE %s')
+                            params.append(f"%{keyword}%")
+
+                        usage_col = {
+                            'sales': 'applies_sales',
+                            'fabric': 'applies_fabric',
+                            'aplus': 'applies_aplus',
+                        }.get(usage)
+                        if usage_col:
+                            where_parts.append(f"{usage_col}=1")
+
+                        where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ''
+                        cur.execute(
+                            f"""
+                            SELECT id, name, is_enabled,
+                                   applies_fabric, applies_sales, applies_aplus,
+                                   created_at, updated_at
+                            FROM image_types
+                            {where_sql}
+                            ORDER BY sort_order ASC, id ASC
+                            """,
+                            tuple(params),
+                        )
                         rows = cur.fetchall() or []
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
@@ -1901,24 +1936,69 @@ class SalesProductMixin:
                 if len(name) > 64:
                     return self.send_json({'status': 'error', 'message': '类型名称长度不能超过64个字符'}, start_response)
 
+                applies_fabric = int(self._parse_bool_flag(data.get('applies_fabric'), default=True))
+                applies_sales = int(self._parse_bool_flag(data.get('applies_sales'), default=True))
+                applies_aplus = int(self._parse_bool_flag(data.get('applies_aplus'), default=True))
+
                 with self._get_db_connection() as conn:
+                    self._ensure_image_type_scope_columns(conn)
                     with conn.cursor() as cur:
                         cur.execute("SELECT id, is_enabled FROM image_types WHERE name=%s LIMIT 1", (name,))
                         exists = cur.fetchone() or {}
                         if exists.get('id'):
-                            if str(exists.get('is_enabled') or '1') in ('0', 'false', 'False'):
-                                cur.execute("UPDATE image_types SET is_enabled=1 WHERE id=%s", (exists.get('id'),))
+                            cur.execute(
+                                """
+                                UPDATE image_types
+                                SET is_enabled=1,
+                                    applies_fabric=%s,
+                                    applies_sales=%s,
+                                    applies_aplus=%s
+                                WHERE id=%s
+                                """,
+                                (applies_fabric, applies_sales, applies_aplus, exists.get('id')),
+                            )
                             return self.send_json({'status': 'success', 'id': exists.get('id'), 'reused': True}, start_response)
 
                         cur.execute(
-                            "INSERT INTO image_types (name, is_enabled) VALUES (%s, 1)",
-                            (name,)
+                            """
+                            INSERT INTO image_types (name, is_enabled, applies_fabric, applies_sales, applies_aplus)
+                            VALUES (%s, 1, %s, %s, %s)
+                            """,
+                            (name, applies_fabric, applies_sales, applies_aplus),
                         )
                         new_id = cur.lastrowid
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
-            if method in ('PUT', 'PATCH', 'DELETE'):
-                return self.send_json({'status': 'error', 'message': '图片类型仅支持新增，不支持编辑或删除'}, start_response)
+            if method in ('PUT', 'PATCH'):
+                data = self._read_json_body(environ)
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                sets = []
+                vals = []
+                for key in ('is_enabled', 'applies_fabric', 'applies_sales', 'applies_aplus'):
+                    if key in data:
+                        sets.append(f"{key}=%s")
+                        vals.append(int(self._parse_bool_flag(data.get(key), default=False)))
+                if 'name' in data:
+                    name = str(data.get('name') or '').strip()
+                    if not name:
+                        return self.send_json({'status': 'error', 'message': '类型名称不能为空'}, start_response)
+                    if len(name) > 64:
+                        return self.send_json({'status': 'error', 'message': '类型名称长度不能超过64个字符'}, start_response)
+                    sets.append('name=%s')
+                    vals.append(name)
+                if not sets:
+                    return self.send_json({'status': 'error', 'message': 'No updatable fields'}, start_response)
+
+                with self._get_db_connection() as conn:
+                    self._ensure_image_type_scope_columns(conn)
+                    with conn.cursor() as cur:
+                        cur.execute(f"UPDATE image_types SET {', '.join(sets)} WHERE id=%s", tuple(vals + [item_id]))
+                return self.send_json({'status': 'success', 'id': item_id}, start_response)
+
+            if method == 'DELETE':
+                return self.send_json({'status': 'error', 'message': '图片类型不支持删除，请改为禁用'}, start_response)
 
             return self.send_error(405, 'Method not allowed', start_response)
         except Exception as e:
@@ -1926,10 +2006,19 @@ class SalesProductMixin:
                 return self.send_json({'status': 'error', 'message': '图片类型已存在'}, start_response)
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def handle_image_type_api(self, environ, method, start_response):
+        """通用图片类型 API：支持按 usage 过滤和适用范围开关管理。"""
+        return self._handle_image_type_api_core(environ, method, start_response)
+
+    def handle_sales_image_type_api(self, environ, method, start_response):
+        """兼容旧路由 /api/sales-image-type，内部复用通用图片类型 API。"""
+        return self._handle_image_type_api_core(environ, method, start_response)
+
     def _get_image_type_id_by_name(self, conn, type_name):
         name = (type_name or '').strip()
         if not name:
             name = '文字卖点图'
+        self._ensure_image_type_scope_columns(conn)
         with conn.cursor() as cur:
             cur.execute("SELECT id FROM image_types WHERE name=%s AND is_enabled=1 LIMIT 1", (name,))
             row = cur.fetchone() or {}
@@ -1942,8 +2031,11 @@ class SalesProductMixin:
                     cur.execute("UPDATE image_types SET is_enabled=1 WHERE id=%s", (existing.get('id'),))
                 return self._parse_int(existing.get('id'))
             cur.execute(
-                "INSERT INTO image_types (name, is_enabled) VALUES (%s, 1)",
-                (name,)
+                """
+                INSERT INTO image_types (name, is_enabled, applies_fabric, applies_sales, applies_aplus)
+                VALUES (%s, 1, 1, 1, 1)
+                """,
+                (name,),
             )
             if cur.lastrowid:
                 return self._parse_int(cur.lastrowid)

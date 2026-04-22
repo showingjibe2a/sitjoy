@@ -382,7 +382,7 @@
         }
 
         function loadFabricImageTypes() {
-            return fetch('/api/sales-image-type').then(r => r.json()).then(data => {
+            return fetch('/api/sales-image-type?usage=fabric').then(r => r.json()).then(data => {
                 if (data.status !== 'success') {
                     fabricImageTypeOptions = [];
                     return;

@@ -11,6 +11,7 @@ API_PERMISSION_MAP = {
     '/api/move': 'gallery',
     '/api/upload': 'gallery',
     '/api/download-zip': 'gallery',
+    '/api/image-type': 'image_type_management',
     '/api/sku': 'product_management',
     '/api/category': 'product_management',
     '/api/fabric': 'fabric_management',
@@ -82,6 +83,7 @@ PAGE_TEMPLATE_MAP = {
     '/about': ('templates/about.html', 'about'),
     '/about.html': ('templates/about.html', 'about'),
     '/gallery': ('templates/gallery.html', 'gallery'),
+    '/image-type-management': ('templates/image_type_management.html', 'image_type_management'),
     '/product-management': ('templates/product_management.html', 'product_management'),
     '/fabric-management': ('templates/fabric_management.html', 'fabric_management'),
     '/feature-management': ('templates/feature_management.html', 'feature_management'),
@@ -192,6 +194,7 @@ API_ROUTE_MAP = {
     '/api/fabric-image-migrate': ('method', 'handle_fabric_image_migrate_api'),
     '/api/upload': ('start', 'handle_upload_api'),
     '/api/download-zip': ('method', 'handle_download_zip'),
+    '/api/image-type': ('method', 'handle_image_type_api'),
 }
 
 

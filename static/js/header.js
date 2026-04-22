@@ -4068,7 +4068,7 @@
                     const elHome = document.querySelector('.nav-home'); if(elHome) elHome.classList.add('active');
                 } else if(path.startsWith('/shop-brand-management') || path.startsWith('/amazon-account-health-management')){
                     const elShop = document.querySelector('.nav-shop'); if(elShop) elShop.classList.add('active');
-                } else if(path.startsWith('/gallery')){
+                } else if(path.startsWith('/gallery') || path.startsWith('/image-type-management')){
                     const elG = document.querySelector('.nav-gallery'); if(elG) elG.classList.add('active');
                 } else if(path.startsWith('/amazon-ad-management') || path.startsWith('/amazon-ad-subtype-management') || path.startsWith('/amazon-ad-delivery-management') || path.startsWith('/amazon-ad-product-management') || path.startsWith('/amazon-ad-adjustment-management') || path.startsWith('/amazon-ad-keyword-management')){
                     const elAd = document.querySelector('.nav-amazon-ad'); if(elAd) elAd.classList.add('active');

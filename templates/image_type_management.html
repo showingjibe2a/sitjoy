@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图片类型管理</title>
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .switch-wrap {
+            position: relative;
+            display: inline-flex;
+            width: 44px;
+            height: 24px;
+            vertical-align: middle;
+        }
+        .switch-wrap input { opacity: 0; width: 0; height: 0; }
+        .switch-slider {
+            position: absolute;
+            inset: 0;
+            background: #d9d2c8;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: .2s;
+        }
+        .switch-slider:before {
+            content: '';
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            left: 3px;
+            top: 3px;
+            background: #fff;
+            border-radius: 50%;
+            transition: .2s;
+            box-shadow: 0 1px 3px rgba(0,0,0,.2);
+        }
+        .switch-wrap input:checked + .switch-slider { background: #6ba86b; }
+        .switch-wrap input:checked + .switch-slider:before { transform: translateX(20px); }
+        .switch-cell {
+            text-align: center;
+        }
+        .switch-cell .switch-wrap { margin: 0 auto; }
+        .required-field, .optional-field {
+            padding: 0.65rem 0.8rem !important;
+            border-radius: 6px !important;
+            border: 2px solid var(--morandi-sand) !important;
+            font-size: 0.95rem !important;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .required-field { background: #fff !important; }
+        .optional-field { background: transparent !important; }
+        .required-field:focus, .optional-field:focus {
+            outline: none !important;
+            border-color: var(--morandi-ink) !important;
+            box-shadow: 0 0 0 3px rgba(42, 36, 32, 0.1) !important;
+        }
+    </style>
+</head>
+<body>
+    <div id="site-header"></div>
+
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1.5rem;">
+            <h2>图片类型管理</h2>
+            <p>维护图片类型，并设置适用范围（面料/销售产品/A+）</p>
+        </section>
+
+        <section class="pm-layout">
+            <div class="card pm-card">
+                <div class="pm-toolbar">
+                    <div class="pm-toolbar-actions">
+                        <div class="form-group pm-search" style="margin: 0;">
+                            <span class="pm-search-title">搜索</span>
+                            <input type="text" id="searchInput" placeholder="搜索图片类型名称">
+                            <button class="btn-primary" onclick="loadImageTypeList()">搜索</button>
+                            <button class="btn-secondary" onclick="resetSearch()">清空</button>
+                        </div>
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <button class="btn-accent" onclick="openCreateModal()">新增</button>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <table class="pm-table" id="imageTypeTable">
+                    <thead>
+                        <tr>
+                            <th>类型名称</th>
+                            <th style="width:120px;" class="switch-cell">适用面料</th>
+                            <th style="width:140px;" class="switch-cell">适用销售产品</th>
+                            <th style="width:120px;" class="switch-cell">适用A+</th>
+                            <th style="width:100px;" class="switch-cell">启用</th>
+                            <th style="width:180px;">最后修改时间</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div class="pm-modal" id="create-modal">
+        <div class="pm-modal-content" style="max-width: 620px;">
+            <h3 style="margin-top:0;">新增图片类型</h3>
+            <div class="pm-section-body pm-form">
+                <div class="form-group pm-form-full" style="margin:0;">
+                    <label for="modalTypeName">类型名称<span class="required-asterisk">*</span></label>
+                    <input type="text" id="modalTypeName" class="required-field" maxlength="64" placeholder="例如：白底图 / 场景图 / A+电脑端">
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label>适用面料</label>
+                    <label class="switch-wrap" aria-label="适用面料">
+                        <input type="checkbox" id="modalApplyFabric" checked>
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label>适用销售产品</label>
+                    <label class="switch-wrap" aria-label="适用销售产品">
+                        <input type="checkbox" id="modalApplySales" checked>
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label>适用A+</label>
+                    <label class="switch-wrap" aria-label="适用A+">
+                        <input type="checkbox" id="modalApplyAplus" checked>
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" type="button" onclick="closeCreateModal()">取消</button>
+                <button class="btn-primary" type="button" onclick="saveImageType()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 SITJOY | 内部使用</p>
+    </footer>
+
+    <script src="/static/js/header.js"></script>
+    <script>
+        function escapeHtml(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function showStatus(message, isError) {
+            const el = document.getElementById('modalStatus');
+            el.style.display = 'block';
+            el.style.background = isError ? '#ffecec' : '#f0fff0';
+            el.style.color = isError ? '#a33' : '#2f6f2f';
+            el.textContent = String(message || '');
+        }
+
+        function resetStatus() {
+            const el = document.getElementById('modalStatus');
+            el.style.display = 'none';
+            el.textContent = '';
+        }
+
+        function formatTime(value) {
+            const text = String(value || '').trim();
+            if (!text) return '-';
+            return text.replace('T', ' ').slice(0, 19);
+        }
+
+        function resetSearch() {
+            document.getElementById('searchInput').value = '';
+            loadImageTypeList();
+        }
+
+        function buildSwitchCell(item, field, label) {
+            const checked = Number(item[field] || 0) === 1 ? 'checked' : '';
+            return `
+                <label class="switch-wrap" aria-label="${escapeHtml(label)}">
+                    <input type="checkbox" ${checked} onchange="updateFlag(${Number(item.id || 0)}, '${field}', this.checked)">
+                    <span class="switch-slider"></span>
+                </label>
+            `;
+        }
+
+        function renderImageTypeList(items) {
+            const tbody = document.querySelector('#imageTypeTable tbody');
+            const list = Array.isArray(items) ? items : [];
+            if (!list.length) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无数据</td></tr>';
+                return;
+            }
+            tbody.innerHTML = list.map(item => `
+                <tr>
+                    <td>${escapeHtml(item.name || '')}</td>
+                    <td class="switch-cell">${buildSwitchCell(item, 'applies_fabric', '适用面料')}</td>
+                    <td class="switch-cell">${buildSwitchCell(item, 'applies_sales', '适用销售产品')}</td>
+                    <td class="switch-cell">${buildSwitchCell(item, 'applies_aplus', '适用A+')}</td>
+                    <td class="switch-cell">${buildSwitchCell(item, 'is_enabled', '启用')}</td>
+                    <td>${escapeHtml(formatTime(item.updated_at || item.created_at))}</td>
+                </tr>
+            `).join('');
+        }
+
+        function loadImageTypeList() {
+            const q = encodeURIComponent(String(document.getElementById('searchInput').value || '').trim());
+            const url = `/api/image-type?include_disabled=1&q=${q}`;
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        const tbody = document.querySelector('#imageTypeTable tbody');
+                        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">${escapeHtml(data.message || '加载失败')}</td></tr>`;
+                        return;
+                    }
+                    renderImageTypeList(data.items || []);
+                })
+                .catch(err => {
+                    const tbody = document.querySelector('#imageTypeTable tbody');
+                    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">加载失败: ${escapeHtml(String(err || ''))}</td></tr>`;
+                });
+        }
+
+        function updateFlag(id, field, checked) {
+            fetch('/api/image-type', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, [field]: !!checked })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    if (window.showAppToast) window.showAppToast(data.message || '保存失败', true);
+                    loadImageTypeList();
+                    return;
+                }
+                if (window.showAppToast) window.showAppToast('已保存', false, 1000);
+            })
+            .catch(err => {
+                if (window.showAppToast) window.showAppToast('保存失败: ' + err, true);
+                loadImageTypeList();
+            });
+        }
+
+        function openCreateModal() {
+            document.getElementById('modalTypeName').value = '';
+            document.getElementById('modalApplyFabric').checked = true;
+            document.getElementById('modalApplySales').checked = true;
+            document.getElementById('modalApplyAplus').checked = true;
+            resetStatus();
+            document.getElementById('create-modal').classList.add('active');
+            document.getElementById('modalTypeName').focus();
+        }
+
+        function closeCreateModal() {
+            document.getElementById('create-modal').classList.remove('active');
+        }
+
+        function saveImageType() {
+            const name = String(document.getElementById('modalTypeName').value || '').trim();
+            if (!name) {
+                showStatus('请输入类型名称', true);
+                return;
+            }
+            fetch('/api/image-type', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name,
+                    applies_fabric: document.getElementById('modalApplyFabric').checked,
+                    applies_sales: document.getElementById('modalApplySales').checked,
+                    applies_aplus: document.getElementById('modalApplyAplus').checked
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    showStatus(data.message || '保存失败', true);
+                    return;
+                }
+                closeCreateModal();
+                loadImageTypeList();
+                if (window.showAppToast) window.showAppToast('图片类型已保存', false);
+            })
+            .catch(err => showStatus('保存失败: ' + err, true));
+        }
+
+        document.getElementById('searchInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') loadImageTypeList();
+        });
+
+        document.getElementById('create-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeCreateModal();
+        });
+
+        window.addEventListener('load', loadImageTypeList);
+    </script>
+</body>
+</html>
