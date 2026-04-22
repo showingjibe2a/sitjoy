@@ -277,115 +277,10 @@
             flex-wrap: wrap;
             align-items: center;
         }
-        .image-type-bar {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.45rem;
-            flex-wrap: wrap;
-            padding: 0.3rem 0.35rem;
-            border-radius: 8px;
-            background: rgba(0, 0, 0, 0.08);
-        }
-        .image-type-add {
-            width: 30px;
-            height: 30px;
-            border-radius: 8px;
-            border: 1px solid rgba(155, 74, 74, 0.24);
-            background: #9b4a4a;
-            color: #fff;
-            font-size: 18px;
-            line-height: 1;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-        }
-        .image-type-add:hover { filter: brightness(0.95); }
-        .image-type-radio { margin: 0; }
-        .image-type-radio input { display: none; }
-        .image-type-radio span {
-            display: inline-flex;
-            align-items: center;
-            padding: 0.42rem 0.7rem;
-            border-radius: 8px;
-            background: var(--morandi-mist);
-            color: var(--morandi-ink);
-            border: 1px solid var(--morandi-sand);
-            cursor: pointer;
-            font-size: 0.86rem;
-            user-select: none;
-        }
-        .image-type-radio input:checked + span {
-            background: #9b4a4a;
-            border-color: #9b4a4a;
-            color: #fff;
-        }
         .main-images-folder-tip {
             color: var(--morandi-slate);
             font-size: 0.86rem;
         }
-        .main-images-grid {
-            min-height: 160px;
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-            gap: 0.7rem;
-        }
-        .main-images-empty {
-            grid-column: 1 / -1;
-            text-align: center;
-            color: var(--morandi-slate);
-            padding: 1.2rem 0.6rem;
-        }
-        .main-image-card {
-            position: relative;
-            border: 2px solid var(--morandi-sand);
-            border-radius: 10px;
-            overflow: hidden;
-            background: #fff;
-            cursor: pointer;
-        }
-        .main-image-card img {
-            width: 100%;
-            aspect-ratio: 1 / 1;
-            object-fit: contain;
-            background: #fff;
-            display: block;
-        }
-        .main-image-info {
-            padding: 0.35rem 0.45rem;
-            display: grid;
-            gap: 0.2rem;
-        }
-        .main-image-name {
-            color: var(--morandi-slate);
-            font-size: 0.72rem;
-            word-break: break-all;
-        }
-        .main-image-desc {
-            color: var(--morandi-ink);
-            font-size: 0.8rem;
-            min-height: 1.2rem;
-            line-height: 1.4;
-        }
-        .main-image-remove {
-            position: absolute;
-            top: 8px;
-            right: 8px;
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            border: 2px solid #fff;
-            background: #8b2c2c;
-            color: #fff;
-            font-size: 1.05rem;
-            font-weight: 700;
-            line-height: 1;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-        }
-        .main-image-remove:hover { background: #6b1f1f; }
     </style>
 </head>
 <body>
@@ -540,8 +435,8 @@
                                     <input type="file" id="modalMainImageUpload" accept="image/*" multiple style="display:none;">
                                 </div>
                                 <div id="mainImageFolderTip" class="main-images-folder-tip">保存后自动绑定到货号/主图/规格-面料 子文件夹。双击图片可编辑卖点描述。</div>
-                                <div id="mainImagesGrid" class="main-images-grid">
-                                    <div class="main-images-empty">新增状态下暂无主图，保存后即可上传和管理</div>
+                                <div id="mainImagesGrid" class="sj-media-image-grid sj-media-image-grid--tight">
+                                    <div class="sj-media-image-empty">新增状态下暂无主图，保存后即可上传和管理</div>
                                 </div>
                             </div>
                         </div>
@@ -628,9 +523,16 @@
 
     <div class="pm-modal" id="main-image-desc-modal">
         <div class="pm-modal-content" style="max-width: 620px;">
-            <h3 style="margin-top:0;">编辑图片卖点描述</h3>
+            <h3 style="margin-top:0;">编辑图片类型/备注</h3>
             <div class="form-group pm-form-full" style="margin-top:0.55rem;">
-                <textarea id="mainImageDescInput" class="optional-field" placeholder="请输入自定义卖点描述" style="min-height: 160px;"></textarea>
+                <label>图片类型（双击图片可快速编辑）</label>
+                <div class="image-type-bar" id="mainImageEditTypeBar" style="gap:0.35rem; flex-wrap:wrap;">
+                    <!-- options injected -->
+                </div>
+            </div>
+            <div class="form-group pm-form-full" style="margin-top:0.55rem;">
+                <label for="mainImageDescInput">图片备注</label>
+                <textarea id="mainImageDescInput" class="optional-field" placeholder="请输入图片备注（可为空）" style="min-height: 160px;"></textarea>
             </div>
             <div class="pm-modal-actions">
                 <button class="btn-secondary" type="button" onclick="closeMainImageDescModal()">取消</button>
@@ -1303,12 +1205,12 @@
 
             if (!editId) {
                 tip.textContent = '保存后自动绑定到货号/主图/规格-面料 子文件夹。双击图片可编辑卖点描述。';
-                grid.innerHTML = '<div class="main-images-empty">新增状态下暂无主图，保存后即可上传和管理</div>';
+                grid.innerHTML = '<div class="sj-media-image-empty">新增状态下暂无主图，保存后即可上传和管理</div>';
                 return;
             }
 
             if (!mainImageItems.length) {
-                grid.innerHTML = '<div class="main-images-empty">当前规格-面料子文件夹暂无图片，可点击“新增主图”上传</div>';
+                grid.innerHTML = '<div class="sj-media-image-empty">当前规格-面料子文件夹暂无图片，可点击“新增主图”上传</div>';
                 return;
             }
 
@@ -1317,14 +1219,17 @@
                 const safeName = rawName.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 const safeDesc = String(item.description || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 const encodedName = encodeURIComponent(rawName);
+                const safeType = String(item.image_type_name || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 return `
-                    <div class="main-image-card" ondblclick="openMainImageDescModal(decodeURIComponent('${encodedName}'))">
-                        <button type="button" class="main-image-remove" onclick="deleteMainImage(decodeURIComponent('${encodedName}')); event.stopPropagation();">×</button>
-                        <img src="/api/image-preview?id=${encodeURIComponent(item.image_b64 || '')}&mode=thumb&w=540&q=72" alt="${safeName}" loading="lazy">
-                        <div class="main-image-info">
-                            <div class="main-image-name">${String(item.image_type_name || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
-                            <div class="main-image-desc">${safeDesc || '双击添加卖点描述'}</div>
-                            <div class="main-image-name">${safeName}</div>
+                    <div class="sj-media-image-card" ondblclick="openMainImageDescModal(decodeURIComponent('${encodedName}'))">
+                        <div class="sj-media-image-remove-badge" onclick="deleteMainImage(decodeURIComponent('${encodedName}')); event.stopPropagation();"><span class="sj-media-image-remove-icon">×</span></div>
+                        <div class="sj-media-image-preview-wrap">
+                            <img src="/api/image-preview?id=${encodeURIComponent(item.image_b64 || '')}&mode=thumb&w=540&q=72" alt="${safeName}" class="sj-media-image-preview" loading="lazy">
+                        </div>
+                        <div class="sj-media-image-info">
+                            <div class="sj-media-image-type">类型：${safeType}</div>
+                            <div class="sj-media-image-desc">${safeDesc || '双击添加卖点描述'}</div>
+                            <div class="sj-media-image-name">${safeName}</div>
                         </div>
                     </div>
                 `;
@@ -1615,6 +1520,26 @@
             currentEditingMainImageName = imageName;
             const current = (mainImageItems || []).find(x => String(x.image_name || '') === String(imageName));
             document.getElementById('mainImageDescInput').value = current ? (current.description || '') : '';
+            // Render type bar in modal (same options as main bar, without "+")
+            const bar = document.getElementById('mainImageEditTypeBar');
+            if (bar) {
+                const list = (salesImageTypeOptions || []).filter(x => String(x.name || '').trim());
+                const currentType = normalizeMainImageTypeName(current ? (current.image_type_name || '') : selectedMainImageType);
+                if (!list.length) {
+                    bar.innerHTML = '<span class="pm-select-empty" style="padding:0 .4rem;">暂无类型</span>';
+                } else {
+                    bar.innerHTML = list.map(item => {
+                        const name = String(item.name || '').trim();
+                        const checked = name === currentType ? 'checked' : '';
+                        return `
+                            <label class="image-type-radio" style="transform:scale(0.96); transform-origin:left;">
+                                <input type="radio" name="mainImageEditType" value="${escapeHtml(name)}" ${checked}>
+                                <span>${escapeHtml(name)}</span>
+                            </label>
+                        `;
+                    }).join('');
+                }
+            }
             document.getElementById('main-image-desc-modal').classList.add('active');
             document.getElementById('mainImageDescInput').focus();
         }
@@ -1627,13 +1552,19 @@
         function saveMainImageDescription() {
             if (!editId || !currentEditingMainImageName) return;
             const description = document.getElementById('mainImageDescInput').value.trim();
+            let image_type_name = '';
+            try {
+                const checked = document.querySelector('input[name="mainImageEditType"]:checked');
+                image_type_name = checked ? normalizeMainImageTypeName(checked.value) : '';
+            } catch (e) {}
             fetch('/api/sales-product-main-images', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     sales_product_id: editId,
                     image_name: currentEditingMainImageName,
-                    description
+                    description,
+                    image_type_name
                 })
             }).then(r => r.json()).then(data => {
                 if (data.status !== 'success') {

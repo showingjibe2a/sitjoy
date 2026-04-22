@@ -133,7 +133,7 @@ class SalesProductMixin:
             return None
 
         with conn.cursor() as cur:
-            cur.execute("SELECT id, storage_path, original_filename, file_ext FROM image_assets WHERE id=%s LIMIT 1", (aid,))
+            cur.execute("SELECT id, storage_path, original_filename FROM image_assets WHERE id=%s LIMIT 1", (aid,))
             asset = cur.fetchone() or {}
         storage_path = (asset.get('storage_path') or '').strip()
         if not storage_path:
@@ -153,9 +153,7 @@ class SalesProductMixin:
         except Exception:
             pass
 
-        ext = (asset.get('file_ext') or '').strip()
-        if not ext:
-            ext = os.path.splitext(os.path.basename(storage_path))[1] or '.jpg'
+        ext = os.path.splitext(os.path.basename(storage_path))[1] or '.jpg'
         orig = (asset.get('original_filename') or '').strip() or os.path.basename(storage_path)
         base_part = self._sanitize_filename_component(os.path.splitext(orig)[0], 80) or f"image_{aid}"
         filename = f"{base_part}{ext}"
@@ -253,6 +251,45 @@ class SalesProductMixin:
             return True
         except Exception:
             return False
+
+    def _tx_begin(self, conn):
+        """Begin a transaction even though default is autocommit=True."""
+        try:
+            conn.autocommit(False)
+        except Exception:
+            pass
+        try:
+            conn.begin()
+        except Exception:
+            # Some drivers start implicitly when autocommit=False
+            pass
+
+    def _tx_commit(self, conn):
+        try:
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.autocommit(True)
+        except Exception:
+            pass
+
+    def _tx_rollback(self, conn):
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        try:
+            conn.autocommit(True)
+        except Exception:
+            pass
+
+    def _safe_unlink(self, path_abs):
+        try:
+            if path_abs and os.path.exists(path_abs):
+                os.remove(path_abs)
+        except Exception:
+            pass
 
     def _read_wsgi_request_body(self, environ):
         """Read request body bytes as reliably as possible for multipart uploads."""
@@ -1661,6 +1698,12 @@ class SalesProductMixin:
                 except Exception:
                     variant_id = 0
 
+                # ---- Stage files first (atomic batch) ----
+                staged_moves = []   # [(src, tmp)] source moved to tmp; rollback moves back
+                staged_files = []   # [(final_abs, tmp_abs_or_none, src_or_none)] used for cleanup
+                db_new_assets = []  # [{sha256, storage_path, filename, ext, file_size}]
+                reuse_assets = []   # [{asset_id}]
+
                 for idx, source_file in enumerate(source_files, start=1):
                     filename = os.path.basename(source_file)
                     try:
@@ -1674,7 +1717,7 @@ class SalesProductMixin:
 
                     asset = self._find_image_asset_by_sha256(conn, sha256)
                     if asset:
-                        asset_id = asset.get('id')
+                        reuse_assets.append({'asset_id': asset.get('id'), 'idx': idx})
                     else:
                         ext = self._guess_image_ext(filename, content)
                         type_part = self._sanitize_filename_component(image_type_name, 32) or '图片'
@@ -1682,73 +1725,130 @@ class SalesProductMixin:
                         final_name = self._next_available_filename(target_folder_abs, f"{type_part}-{base_part}{ext}")
                         abs_path = os.path.join(target_folder_abs, self._safe_fsencode(final_name))
 
-                        if not os.path.exists(abs_path):
+                        # Stage: try move to a temp file first so we can rollback on DB failure.
+                        tmp_abs = abs_path + (f".__tmp__{int(time.time()*1000)}_{idx}")
+                        wrote_final = False
+                        try:
+                            os.replace(source_file, tmp_abs)
+                            staged_moves.append((source_file, tmp_abs))
+                            moved_count += 1
+                        except Exception:
+                            # Fallback: write temp by bytes (keep source intact)
                             try:
-                                # If source already on NAS under resources, prefer move. Otherwise write bytes.
-                                # We don't attempt path traversal; source_path is explicit.
-                                if os.path.exists(source_file) and os.path.getsize(source_file) > 0:
-                                    os.replace(source_file, abs_path)
-                                    moved_count += 1
+                                with open(tmp_abs, 'wb') as f:
+                                    f.write(content or b'')
                             except Exception:
-                                with open(abs_path, 'wb') as f:
-                                    f.write(content)
+                                # Can't persist => skip this file
+                                self._safe_unlink(tmp_abs)
+                                continue
+
+                        # Promote temp -> final path
+                        try:
+                            os.replace(tmp_abs, abs_path)
+                            wrote_final = True
+                        except Exception:
+                            # Rollback staging for this file immediately
+                            self._safe_unlink(tmp_abs)
+                            # If we moved source to tmp_abs earlier, try move back
+                            for src, tmp in list(staged_moves):
+                                if tmp == tmp_abs:
+                                    try:
+                                        if os.path.exists(tmp):
+                                            os.replace(tmp, src)
+                                    except Exception:
+                                        pass
+                                    try:
+                                        staged_moves.remove((src, tmp))
+                                    except Exception:
+                                        pass
+                            continue
+
+                        if not wrote_final or not os.path.exists(abs_path):
+                            continue
 
                         storage_path = self._storage_path_from_abs(abs_path)
-
-                        with conn.cursor() as cur:
-                            cur.execute(
-                                """
-                                INSERT INTO image_assets
-                                (sha256, storage_path, original_filename, file_ext, mime_type, file_size, description)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                                """,
-                                (
-                                    sha256,
-                                    storage_path,
-                                    filename,
-                                    ext,
-                                    'image/*',
-                                    len(content),
-                                    ''
-                                )
-                            )
-                            asset_id = cur.lastrowid
-                        created_assets += 1
+                        staged_files.append((abs_path, None, source_file))
+                        db_new_assets.append({
+                            'sha256': sha256,
+                            'storage_path': storage_path,
+                            'filename': filename,
+                            'ext': ext,
+                            'file_size': len(content or b''),
+                            'idx': idx,
+                        })
 
                     sort_order = start_sort + idx
-                    with conn.cursor() as cur:
-                        if variant_id and self._table_has_column(conn, 'sku_image_mappings', 'variant_id'):
-                            cur.execute(
-                                """
-                                INSERT INTO sku_image_mappings
-                                (variant_id, image_asset_id, image_type_id, sort_order)
-                                VALUES (%s, %s, %s, %s)
-                                ON DUPLICATE KEY UPDATE sort_order=%s, image_type_id=%s
-                                """,
-                                (variant_id, asset_id, image_type_id, sort_order, sort_order, image_type_id)
+                    # Defer DB mapping inserts until after all files staged successfully (atomic batch)
+                    items.append({'filename': filename, 'sha256': sha256[:12], 'sort_order': sort_order, 'idx': idx, 'sha256_full': sha256})
+
+                # If nothing to process, exit early
+                if not db_new_assets and not reuse_assets:
+                    return self.send_json({'status': 'error', 'message': '未检测到可导入的图片（可能均为空/不支持）'}, start_response)
+
+                # ---- Transaction: write DB for the whole batch ----
+                created_asset_ids = []
+                try:
+                    self._tx_begin(conn)
+
+                    # Insert new assets
+                    sha_to_id = {}
+                    for rec in db_new_assets:
+                        with conn.cursor() as cur:
+                            aid = self._insert_image_asset_dynamic(
+                                conn,
+                                cur,
+                                {
+                                    'sha256': rec['sha256'],
+                                    'storage_path': rec['storage_path'],
+                                    'filename': rec['filename'],
+                                    'ext': rec['ext'],
+                                    'file_size': rec['file_size'],
+                                    'image_type_id': image_type_id,
+                                },
                             )
-                        else:
-                            cur.execute(
-                                """
-                                INSERT INTO sku_image_mappings
-                                (sales_product_id, image_asset_id, image_type_id, sort_order)
-                                VALUES (%s, %s, %s, %s)
-                                ON DUPLICATE KEY UPDATE sort_order=%s, image_type_id=%s
-                                """,
-                                (sales_product_id, asset_id, image_type_id, sort_order, sort_order, image_type_id)
+                        sha_to_id[rec['sha256']] = aid
+                        created_asset_ids.append((aid, rec['storage_path']))
+                        created_assets += 1
+
+                    # Map reuse asset ids (already existed)
+                    for r in reuse_assets:
+                        sha_to_id.setdefault(f"reuse:{r['asset_id']}", int(r['asset_id'] or 0))
+
+                    # Insert mappings
+                    for row in items:
+                        sort_order = row.get('sort_order')
+                        sha = row.get('sha256_full')
+                        asset_id = sha_to_id.get(sha)
+                        if not asset_id:
+                            # It may be a reused asset (we didn't keep sha); skip mapping for unknown
+                            continue
+                        with conn.cursor() as cur:
+                            self._execute_sku_mapping_upsert(
+                                conn, cur, asset_id, sort_order, image_type_id, variant_id, sales_product_id, None
                             )
-                    linked_count += 1
-                    try:
-                        # Apply rehome rules after linking (fabric refs / multi-variant refs may change).
-                        self._rehome_image_asset_if_needed(conn, asset_id)
-                    except Exception:
-                        pass
-                    items.append({
-                        'filename': filename,
-                        'sha256': sha256[:12],
-                        'image_asset_id': asset_id,
-                        'sort_order': sort_order
-                    })
+                        linked_count += 1
+
+                    self._tx_commit(conn)
+                except Exception as e:
+                    self._tx_rollback(conn)
+                    # Cleanup files created in this batch (do not touch existing assets)
+                    for abs_path, _, _ in staged_files:
+                        self._safe_unlink(abs_path)
+                    # Restore moved sources when possible (best-effort)
+                    for src, tmp in reversed(staged_moves):
+                        try:
+                            if os.path.exists(tmp):
+                                os.replace(tmp, src)
+                        except Exception:
+                            pass
+                    return self.send_json({'status': 'error', 'message': f'导入失败，已回滚：{str(e)}'}, start_response)
+
+                # After commit: apply rehome rules best-effort
+                try:
+                    for aid, _ in created_asset_ids:
+                        self._rehome_image_asset_if_needed(conn, aid)
+                except Exception:
+                    pass
 
                 return self.send_json({
                     'status': 'success',
@@ -1877,39 +1977,106 @@ class SalesProductMixin:
             f.write(content or b'')
         return abs_path
 
+    def _insert_image_asset_dynamic(self, conn, cur, rec):
+        """Insert image_assets; optional legacy columns if still present post-migration."""
+        cols = ['sha256', 'storage_path', 'original_filename']
+        vals = [
+            rec.get('sha256'),
+            rec.get('storage_path'),
+            (rec.get('original_filename') or rec.get('filename') or ''),
+        ]
+        if self._table_has_column(conn, 'image_assets', 'description'):
+            cols.append('description')
+            vals.append(rec.get('description', '') or '')
+        tid = rec.get('image_type_id')
+        if tid and self._table_has_column(conn, 'image_assets', 'image_type_id'):
+            cols.append('image_type_id')
+            vals.append(int(tid))
+        if self._table_has_column(conn, 'image_assets', 'is_deprecated'):
+            cols.append('is_deprecated')
+            vals.append(int(rec.get('is_deprecated') or 0))
+        ext = rec.get('ext')
+        fs = rec.get('file_size')
+        for c, v in (('file_ext', ext or ''), ('mime_type', 'image/*'), ('file_size', fs)):
+            if self._table_has_column(conn, 'image_assets', c):
+                cols.append(c)
+                vals.append(int(v or 0) if c == 'file_size' else v)
+        uid = rec.get('created_by')
+        if uid and self._table_has_column(conn, 'image_assets', 'created_by'):
+            cols.append('created_by')
+            vals.append(int(uid))
+        ph = ', '.join(['%s'] * len(cols))
+        cur.execute(f"INSERT INTO image_assets ({', '.join(cols)}) VALUES ({ph})", tuple(vals))
+        return cur.lastrowid
+
+    def _execute_sku_mapping_upsert(self, conn, cur, aid, sort_order, image_type_id, variant_id, sales_product_id, user_id):
+        """Upsert sku_image_mappings; image_type_id only included if column still exists (pre-migration)."""
+        has_var = bool(variant_id) and self._table_has_column(conn, 'sku_image_mappings', 'variant_id')
+        key_col = 'variant_id' if has_var else 'sales_product_id'
+        key_val = int(variant_id if has_var else (sales_product_id or 0))
+        cols = [key_col, 'image_asset_id']
+        vals = [key_val, int(aid)]
+        has_sim_tid = self._table_has_column(conn, 'sku_image_mappings', 'image_type_id')
+        if has_sim_tid:
+            cols.append('image_type_id')
+            vals.append(int(image_type_id or 0))
+        cols.append('sort_order')
+        vals.append(sort_order)
+        if self._table_has_column(conn, 'sku_image_mappings', 'created_by'):
+            cols.append('created_by')
+            vals.append(int(user_id) if user_id else None)
+        dup_parts = ['sort_order=%s']
+        dup_vals = [sort_order]
+        if has_sim_tid:
+            dup_parts.append('image_type_id=%s')
+            dup_vals.append(int(image_type_id or 0))
+        ph = ', '.join(['%s'] * len(vals))
+        sql = (
+            f"INSERT INTO sku_image_mappings ({', '.join(cols)}) VALUES ({ph}) "
+            f"ON DUPLICATE KEY UPDATE {', '.join(dup_parts)}"
+        )
+        cur.execute(sql, tuple(vals + dup_vals))
+        if self._table_has_column(conn, 'image_assets', 'image_type_id') and image_type_id:
+            cur.execute(
+                "UPDATE image_assets SET image_type_id=%s WHERE id=%s",
+                (int(image_type_id), int(aid)),
+            )
+
     def _read_sales_product_image_items(self, conn, sales_product_id=None, variant_id=None):
-        has_dep = self._table_has_column(conn, 'sku_image_mappings', 'is_deprecated')
-        has_group = self._table_has_column(conn, 'sku_image_mappings', 'group_sort')
         has_variant = self._table_has_column(conn, 'sku_image_mappings', 'variant_id')
+        has_sim_tid = self._table_has_column(conn, 'sku_image_mappings', 'image_type_id')
+        has_ia_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
+        has_ia_dep = self._table_has_column(conn, 'image_assets', 'is_deprecated')
         use_variant = bool(variant_id) and has_variant
         where_col = "sim.variant_id" if use_variant else "sim.sales_product_id"
         where_val = int(variant_id) if use_variant else int(sales_product_id or 0)
+        dep_expr = "COALESCE(ia.is_deprecated,0)" if has_ia_dep else "0"
+        if has_ia_tid:
+            join_types = "LEFT JOIN image_types it ON it.id = ia.image_type_id"
+            type_name_expr = "it.name"
+            type_id_expr = "ia.image_type_id"
+        elif has_sim_tid:
+            join_types = "LEFT JOIN image_types it ON it.id = sim.image_type_id"
+            type_name_expr = "it.name"
+            type_id_expr = "sim.image_type_id"
+        else:
+            join_types = ""
+            type_name_expr = "NULL"
+            type_id_expr = "NULL"
         with conn.cursor() as cur:
-            extra_cols = []
-            if has_dep:
-                extra_cols.append("sim.is_deprecated")
-            if has_group:
-                extra_cols.append("sim.group_sort")
-            extra_sql = (", " + ", ".join(extra_cols)) if extra_cols else ""
-            order_terms = []
-            if has_dep:
-                order_terms.append("COALESCE(sim.is_deprecated,0) ASC")
-            if has_group:
-                order_terms.append("COALESCE(sim.group_sort, sim.sort_order) ASC")
-            order_terms.append("sim.sort_order ASC")
-            order_terms.append("sim.id ASC")
-            order_sql = ", ".join(order_terms)
             cur.execute(
                 f"""
-                SELECT sim.id AS mapping_id, sim.sort_order, sim.image_type_id{extra_sql},
+                SELECT sim.id AS mapping_id, sim.sort_order,
                        ia.id AS image_asset_id, ia.sha256, ia.storage_path, ia.original_filename,
-                       ia.file_ext, ia.mime_type, ia.file_size, ia.description,
-                       it.name AS image_type_name
+                       ia.description,
+                       {type_id_expr} AS image_type_id,
+                       {type_name_expr} AS image_type_name,
+                       {dep_expr} AS is_deprecated
                 FROM sku_image_mappings sim
                 JOIN image_assets ia ON ia.id = sim.image_asset_id
-                JOIN image_types it ON it.id = sim.image_type_id
+                {join_types}
                 WHERE {where_col}=%s
-                ORDER BY {order_sql}
+                ORDER BY {dep_expr} ASC, sim.sort_order ASC, sim.id ASC
                 """,
                 (where_val,)
             )
@@ -1937,10 +2104,10 @@ class SalesProductMixin:
                 'image_type_id': row.get('image_type_id'),
                 'image_type_name': row.get('image_type_name') or '',
                 'sort_order': row.get('sort_order') or 0,
-                'group_sort': row.get('group_sort') if has_group else None,
-                'is_deprecated': row.get('is_deprecated') if has_dep else 0,
+                'group_sort': None,
+                'is_deprecated': int(row.get('is_deprecated') or 0),
                 'sha256': row.get('sha256') or '',
-                'file_size': row.get('file_size') or 0,
+                'file_size': 0,
             })
         return items
 
@@ -2056,31 +2223,27 @@ class SalesProductMixin:
                         if not mapping.get('id'):
                             return self.send_json({'status': 'error', 'message': '图片不存在'}, start_response)
 
-                        updates = []
-                        params = []
+                        aid = mapping.get('image_asset_id')
+                        ia_sets = []
+                        ia_params = []
                         if description is not None:
-                            updates.append('description=%s')
-                            params.append(description)
-                        if image_type_name:
-                            image_type_id = self._get_image_type_id_by_name(conn, image_type_name)
-                            if image_type_id:
-                                updates.append('image_type_id=%s')
-                                params.append(image_type_id)
+                            ia_sets.append('description=%s')
+                            ia_params.append(description)
+                        if image_type_name and self._table_has_column(conn, 'image_assets', 'image_type_id'):
+                            tid = self._get_image_type_id_by_name(conn, image_type_name)
+                            if tid:
+                                ia_sets.append('image_type_id=%s')
+                                ia_params.append(tid)
+                        if ia_sets:
+                            cur.execute(
+                                f"UPDATE image_assets SET {', '.join(ia_sets)} WHERE id=%s",
+                                tuple(ia_params + [aid]),
+                            )
                         if sort_order is not None:
-                            updates.append('sort_order=%s')
-                            params.append(max(1, sort_order))
-
-                        if updates:
-                            if description != '':
-                                cur.execute(
-                                    f"UPDATE image_assets SET description=%s WHERE id=%s",
-                                    (description, mapping.get('image_asset_id'))
-                                )
-                            if len(updates) > 1 or (updates and updates[0] != 'description=%s'):
-                                cur.execute(
-                                    f"UPDATE sku_image_mappings SET {', '.join(updates)} WHERE id=%s",
-                                    tuple(params + [mapping.get('id')])
-                                )
+                            cur.execute(
+                                "UPDATE sku_image_mappings SET sort_order=%s WHERE id=%s",
+                                (max(1, sort_order), mapping.get('id')),
+                            )
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':
@@ -2331,6 +2494,9 @@ class SalesProductMixin:
                 reused_assets = 0
                 linked = 0
                 results = []
+                created_files = []   # abs paths to delete on rollback
+                deferred_links = []  # (src_abs, dst_abs)
+                to_insert_assets = []  # dicts for new assets: {sha256, storage_path, filename, ext, file_size, abs_path}
 
                 for idx, item in enumerate(normalized, start=1):
                     filename = item['filename']
@@ -2341,7 +2507,7 @@ class SalesProductMixin:
                     if asset:
                         asset_id = asset.get('id')
                         reused_assets += 1
-                        # Create a shortcut/link in the current variant folder for convenience (best-effort).
+                        # Defer link creation until after DB commit (atomic batch)
                         try:
                             src_abs = self._join_resources(asset.get('storage_path') or '')
                             if src_abs and os.path.exists(src_abs):
@@ -2349,7 +2515,7 @@ class SalesProductMixin:
                                 base_part = self._sanitize_filename_component(os.path.splitext(filename)[0], 80) or 'image'
                                 link_name = self._next_available_filename(target_folder_abs, f"{type_part}-{base_part}{ext}")
                                 dst_abs = os.path.join(target_folder_abs, self._safe_fsencode(link_name))
-                                self._try_create_link(src_abs, dst_abs)
+                                deferred_links.append((src_abs, dst_abs))
                         except Exception:
                             pass
                     else:
@@ -2358,8 +2524,13 @@ class SalesProductMixin:
                         base_part = self._sanitize_filename_component(os.path.splitext(filename)[0], 80) or sha256[:12]
                         final_name = self._next_available_filename(target_folder_abs, f"{type_part}-{base_part}{ext}")
                         abs_path = os.path.join(target_folder_abs, self._safe_fsencode(final_name))
-                        with open(abs_path, 'wb') as f:
-                            f.write(content or b'')
+                        try:
+                            with open(abs_path, 'wb') as f:
+                                f.write(content or b'')
+                        except Exception:
+                            # If we cannot persist the file, do not write DB rows.
+                            raise RuntimeError(f'写入图片文件失败: {filename}')
+                        created_files.append(abs_path)
 
                         # Compute storage_path relative to RESOURCES root
                         try:
@@ -2368,70 +2539,87 @@ class SalesProductMixin:
                             storage_path = os.fsdecode(rel_bytes).replace('\\', '/')
                         except Exception:
                             storage_path = ''
-                        with conn.cursor() as cur:
-                            cols = ["sha256", "storage_path", "original_filename", "file_ext", "mime_type", "file_size", "description"]
-                            vals = [sha256, storage_path, filename, ext, 'image/*', len(content), '']
-                            if user_id and self._table_has_column(conn, 'image_assets', 'created_by'):
-                                cols.append("created_by")
-                                vals.append(int(user_id))
-                            cur.execute(
-                                f"INSERT INTO image_assets ({', '.join(cols)}) VALUES ({', '.join(['%s'] * len(cols))})",
-                                tuple(vals)
-                            )
-                            asset_id = cur.lastrowid
-                        created_assets += 1
+                        to_insert_assets.append({
+                            'sha256': sha256,
+                            'storage_path': storage_path,
+                            'filename': filename,
+                            'ext': ext,
+                            'file_size': len(content or b''),
+                            'abs_path': abs_path,
+                        })
+                        asset_id = None
 
                     sort_order = start_sort + idx
-                    with conn.cursor() as cur:
-                        if self._table_has_column(conn, 'sku_image_mappings', 'created_by'):
-                            if variant_id and self._table_has_column(conn, 'sku_image_mappings', 'variant_id'):
-                                cur.execute(
-                                    """
-                                    INSERT INTO sku_image_mappings
-                                    (variant_id, image_asset_id, image_type_id, sort_order, created_by)
-                                    VALUES (%s, %s, %s, %s, %s)
-                                    ON DUPLICATE KEY UPDATE sort_order=%s, image_type_id=%s
-                                    """,
-                                    (variant_id, asset_id, image_type_id, sort_order, int(user_id) if user_id else None, sort_order, image_type_id)
-                                )
-                            else:
-                                cur.execute(
-                                    """
-                                    INSERT INTO sku_image_mappings
-                                    (sales_product_id, image_asset_id, image_type_id, sort_order, created_by)
-                                    VALUES (%s, %s, %s, %s, %s)
-                                    ON DUPLICATE KEY UPDATE sort_order=%s, image_type_id=%s
-                                    """,
-                                    (sales_product_id, asset_id, image_type_id, sort_order, int(user_id) if user_id else None, sort_order, image_type_id)
-                                )
-                        else:
-                            if variant_id and self._table_has_column(conn, 'sku_image_mappings', 'variant_id'):
-                                cur.execute(
-                                    """
-                                    INSERT INTO sku_image_mappings
-                                    (variant_id, image_asset_id, image_type_id, sort_order)
-                                    VALUES (%s, %s, %s, %s)
-                                    ON DUPLICATE KEY UPDATE sort_order=%s, image_type_id=%s
-                                    """,
-                                    (variant_id, asset_id, image_type_id, sort_order, sort_order, image_type_id)
-                                )
-                            else:
-                                cur.execute(
-                                    """
-                                    INSERT INTO sku_image_mappings
-                                    (sales_product_id, image_asset_id, image_type_id, sort_order)
-                                    VALUES (%s, %s, %s, %s)
-                                    ON DUPLICATE KEY UPDATE sort_order=%s, image_type_id=%s
-                                    """,
-                                    (sales_product_id, asset_id, image_type_id, sort_order, sort_order, image_type_id)
-                                )
-                    linked += 1
                     results.append({
                         'filename': filename,
                         'sha256': sha256,
                         'image_asset_id': asset_id,
                         'sort_order': sort_order,
                     })
+
+                # ---- Transaction: write DB for the whole batch ----
+                try:
+                    self._tx_begin(conn)
+
+                    sha_to_asset_id = {}
+                    for rec in to_insert_assets:
+                        with conn.cursor() as cur:
+                            aid = self._insert_image_asset_dynamic(
+                                conn,
+                                cur,
+                                {
+                                    'sha256': rec['sha256'],
+                                    'storage_path': rec['storage_path'],
+                                    'filename': rec['filename'],
+                                    'ext': rec['ext'],
+                                    'file_size': rec['file_size'],
+                                    'image_type_id': image_type_id,
+                                    'created_by': user_id,
+                                },
+                            )
+                        sha_to_asset_id[rec['sha256']] = aid
+                        created_assets += 1
+
+                    # Resolve reused assets again inside tx (stable)
+                    for item in normalized:
+                        if item.get('asset') and item.get('sha256'):
+                            sha_to_asset_id.setdefault(item['sha256'], int(item['asset'].get('id') or 0))
+
+                    # Insert mappings (variant preferred)
+                    for idx, row in enumerate(results, start=1):
+                        sha = row.get('sha256')
+                        aid = sha_to_asset_id.get(sha) or 0
+                        if not aid:
+                            raise RuntimeError('无法解析 image_asset_id')
+                        row['image_asset_id'] = aid
+                        sort_order = row.get('sort_order')
+                        with conn.cursor() as cur:
+                            self._execute_sku_mapping_upsert(
+                                conn, cur, aid, sort_order, image_type_id, variant_id, sales_product_id, user_id
+                            )
+                        linked += 1
+
+                    self._tx_commit(conn)
+                except Exception as e:
+                    self._tx_rollback(conn)
+                    # Cleanup any newly written files
+                    for p in created_files:
+                        self._safe_unlink(p)
+                    # Also cleanup any links we may have created (we deferred, so none here)
+                    return self.send_json({'status': 'error', 'message': f'上传失败，已回滚：{str(e)}'}, start_response)
+
+                # After commit: create deferred links best-effort
+                for src_abs, dst_abs in deferred_links:
+                    try:
+                        self._try_create_link(src_abs, dst_abs)
+                    except Exception:
+                        pass
+                # After commit: apply rehome best-effort
+                try:
+                    for row in results:
+                        self._rehome_image_asset_if_needed(conn, row.get('image_asset_id'))
+                except Exception:
+                    pass
 
                 return self.send_json({
                     'status': 'success',

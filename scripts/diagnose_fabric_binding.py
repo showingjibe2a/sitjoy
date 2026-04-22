@@ -44,7 +44,29 @@ def main():
     try:
         with app._get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT id, fabric_id, image_name, remark FROM fabric_images ORDER BY fabric_id, id")
+                try:
+                    cur.execute(
+                        """
+                        SELECT fim.id AS id, fim.fabric_id AS fabric_id,
+                               SUBSTRING_INDEX(ia.storage_path, '/', -1) AS image_name,
+                               it.name AS remark
+                        FROM fabric_image_mappings fim
+                        INNER JOIN image_assets ia ON ia.id = fim.image_asset_id
+                        LEFT JOIN image_types it ON it.id = ia.image_type_id
+                        ORDER BY fim.fabric_id, fim.id
+                        """
+                    )
+                except Exception:
+                    cur.execute(
+                        """
+                        SELECT fim.id AS id, fim.fabric_id AS fabric_id,
+                               SUBSTRING_INDEX(ia.storage_path, '/', -1) AS image_name,
+                               NULL AS remark
+                        FROM fabric_image_mappings fim
+                        INNER JOIN image_assets ia ON ia.id = fim.image_asset_id
+                        ORDER BY fim.fabric_id, fim.id
+                        """
+                    )
                 db_rows = cur.fetchall() or []
     except Exception as e:
         print(f"错误: 无法连接数据库 - {e}")

@@ -79,10 +79,22 @@ class FabricManagementMixin:
             if unbound_only:
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("SELECT fabric_id, image_name FROM fabric_images")
+                        if self._has_required_tables(['fabric_image_mappings', 'image_assets']):
+                            cur.execute(
+                                """
+                                SELECT fim.fabric_id AS fabric_id, ia.storage_path AS storage_path, ia.original_filename AS original_filename
+                                FROM fabric_image_mappings fim
+                                INNER JOIN image_assets ia ON ia.id = fim.image_asset_id
+                                """
+                            )
+                            db_rows = cur.fetchall() or []
+                        else:
+                            db_rows = []
                         db_count = 0
-                        for row in (cur.fetchall() or []):
-                            image_name = (row.get('image_name') or '').strip().replace('\\', '/')
+                        for row in db_rows:
+                            sp = (row.get('storage_path') or '').strip()
+                            display = os.path.basename(sp) if sp else (row.get('original_filename') or '')
+                            image_name = str(display or '').strip().replace('\\', '/')
                             if not image_name:
                                 continue
                             fid = row.get('fabric_id')
@@ -465,15 +477,24 @@ class FabricManagementMixin:
 
                         if fabric_ids:
                             placeholders = ','.join(['%s'] * len(fabric_ids))
-                            if self._is_fabric_assets_ready() and self._has_required_tables(['fabric_image_mappings', 'image_assets']):
+                            if self._has_required_tables(['fabric_image_mappings', 'image_assets']):
+                                has_ia_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
+                                has_ia_dep = self._table_has_column(conn, 'image_assets', 'is_deprecated')
+                                dep_expr = "COALESCE(ia.is_deprecated,0)" if has_ia_dep else "0"
+                                join_it = "LEFT JOIN image_types it ON it.id = ia.image_type_id" if has_ia_tid else ""
+                                tid_sel = "ia.image_type_id AS image_type_id" if has_ia_tid else "NULL AS image_type_id"
+                                tname_sel = "it.name AS type_name" if has_ia_tid else "NULL AS type_name"
                                 cur.execute(
                                     f"""
                                     SELECT fim.fabric_id, ia.storage_path AS storage_path, ia.original_filename,
-                                           fim.remark, fim.sort_order, fim.is_deprecated
+                                           fim.sort_order, ia.description AS description,
+                                           {dep_expr} AS is_deprecated,
+                                           {tname_sel}, {tid_sel}
                                     FROM fabric_image_mappings fim
                                     JOIN image_assets ia ON ia.id = fim.image_asset_id
+                                    {join_it}
                                     WHERE fim.fabric_id IN ({placeholders})
-                                    ORDER BY fim.fabric_id ASC, COALESCE(fim.is_deprecated,0) ASC, fim.sort_order ASC, fim.id ASC
+                                    ORDER BY fim.fabric_id ASC, {dep_expr} ASC, fim.sort_order ASC, fim.id ASC
                                     """,
                                     tuple(fabric_ids)
                                 )
@@ -483,30 +504,13 @@ class FabricManagementMixin:
                                         continue
                                     storage_path = (img.get('storage_path') or '').strip()
                                     display_name = os.path.basename(storage_path) if storage_path else (img.get('original_filename') or '')
+                                    tname = (img.get('type_name') or '').strip()
                                     image_map.setdefault(fid, []).append({
                                         'image_name': display_name or '',
-                                        'remark': img.get('remark') or '',
+                                        'remark': tname,
+                                        'description': (img.get('description') or '').strip(),
                                         'sort_order': self._parse_int(img.get('sort_order')) or 0,
                                         'is_deprecated': int(img.get('is_deprecated') or 0),
-                                    })
-                            else:
-                                cur.execute(
-                                    f"""
-                                    SELECT fabric_id, image_name, remark, sort_order
-                                    FROM fabric_images
-                                    WHERE fabric_id IN ({placeholders})
-                                    ORDER BY fabric_id ASC, sort_order ASC, id ASC
-                                    """,
-                                    tuple(fabric_ids)
-                                )
-                                for img in (cur.fetchall() or []):
-                                    fid = self._parse_int(img.get('fabric_id'))
-                                    if not fid:
-                                        continue
-                                    image_map.setdefault(fid, []).append({
-                                        'image_name': img.get('image_name') or '',
-                                        'remark': img.get('remark') or '',
-                                        'sort_order': self._parse_int(img.get('sort_order')) or 0,
                                     })
 
                             cur.execute(
@@ -561,7 +565,7 @@ class FabricManagementMixin:
                             (fabric_code, fabric_name_en, representative_color, material_id)
                         )
                         new_id = cur.lastrowid
-                    self._replace_fabric_images(conn, new_id, images)
+                    self._replace_fabric_image_mappings(conn, new_id, images)
                     self._replace_fabric_sku_families(conn, new_id, sku_family_ids)
 
                 self._template_options_cache.pop('fabric_list_all', None)
@@ -592,7 +596,7 @@ class FabricManagementMixin:
                             """,
                             (fabric_code, fabric_name_en, representative_color, material_id, item_id)
                         )
-                    self._replace_fabric_images(conn, item_id, images)
+                    self._replace_fabric_image_mappings(conn, item_id, images)
                     self._replace_fabric_sku_families(conn, item_id, sku_family_ids)
 
                 self._template_options_cache.pop('fabric_list_all', None)
@@ -621,30 +625,103 @@ class FabricManagementMixin:
             print("Fabric API error: " + str(e))
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
-    def _replace_fabric_images(self, conn, fabric_id, images):
-        valid_images = []
+    def _replace_fabric_image_mappings(self, conn, fabric_id, images):
+        """
+        Persist fabric image order + per-asset description/type on image_assets.
+        Requires fabric_image_mappings + image_assets (legacy fabric_images removed).
+        """
+        if not self._has_required_tables(['fabric_image_mappings', 'image_assets']):
+            raise RuntimeError('缺少 fabric_image_mappings / image_assets，请先执行 scripts/sql/20260422_04_image_asset_center.sql 并完成面料图迁移')
+        fid = int(fabric_id or 0)
+        if not fid:
+            return
+
+        rows = []
         for idx, item in enumerate(images or []):
             if isinstance(item, dict):
                 image_name = str(item.get('image_name') or '').strip()
-                remark = str(item.get('remark') or '').strip()
+                type_name = str(item.get('remark') or '').strip()
+                description = str(item.get('description') or '').strip()
                 sort_order = self._parse_int(item.get('sort_order'))
             else:
                 image_name = str(item or '').strip()
-                remark = ''
+                type_name = ''
+                description = ''
                 sort_order = None
             if not image_name:
                 continue
-            valid_images.append((image_name, remark, sort_order if sort_order is not None else idx))
+            rows.append((image_name, type_name, description, sort_order if sort_order is not None else idx))
 
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM fabric_images WHERE fabric_id=%s", (fabric_id,))
-            for image_name, remark, sort_order in valid_images:
+            cur.execute("DELETE FROM fabric_image_mappings WHERE fabric_id=%s", (fid,))
+
+        has_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
+        has_dep = self._table_has_column(conn, 'image_assets', 'is_deprecated')
+
+        for image_name, type_name, description, sort_order in rows:
+            abs_path = self._resolve_fabric_image_abs_path(image_name)
+            if not abs_path or not os.path.exists(abs_path):
+                continue
+            try:
+                with open(abs_path, 'rb') as f:
+                    content = f.read() or b''
+            except Exception:
+                continue
+            if not content:
+                continue
+            sha256 = hashlib.sha256(content).hexdigest()
+            try:
+                res_root = self._join_resources('')
+                rel_bytes = os.path.relpath(abs_path, res_root)
+                storage_path = os.fsdecode(rel_bytes).replace('\\', '/')
+            except Exception:
+                storage_path = str(image_name).replace('\\', '/')
+            orig_fn = os.path.basename(str(image_name).strip().replace('\\', '/')) or os.path.basename(storage_path)
+            desc_v = (description or '')[:1000]
+
+            tid = None
+            if type_name and has_tid:
+                try:
+                    tid = self._get_image_type_id_by_name(conn, type_name)
+                except Exception:
+                    tid = None
+            if not tid and has_tid:
+                try:
+                    tid = self._get_image_type_id_by_name(conn, '文字卖点图')
+                except Exception:
+                    tid = None
+
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM image_assets WHERE sha256=%s LIMIT 1", (sha256,))
+                exist = cur.fetchone() or {}
+                aid = self._parse_int(exist.get('id'))
+                if aid:
+                    sets = ["description=%s"]
+                    vals = [desc_v or None]
+                    if has_tid and tid:
+                        sets.append("image_type_id=%s")
+                        vals.append(tid)
+                    vals.append(aid)
+                    cur.execute(f"UPDATE image_assets SET {', '.join(sets)} WHERE id=%s", tuple(vals))
+                else:
+                    cols = ["sha256", "storage_path", "original_filename", "description"]
+                    vals = [sha256, storage_path, orig_fn, desc_v or None]
+                    if has_tid:
+                        cols.append("image_type_id")
+                        vals.append(tid)
+                    if has_dep:
+                        cols.append("is_deprecated")
+                        vals.append(0)
+                    ph = ", ".join(["%s"] * len(cols))
+                    cur.execute(
+                        f"INSERT INTO image_assets ({', '.join(cols)}) VALUES ({ph})",
+                        tuple(vals),
+                    )
+                    aid = cur.lastrowid
+
                 cur.execute(
-                    """
-                    INSERT INTO fabric_images (fabric_id, image_name, remark, sort_order)
-                    VALUES (%s, %s, %s, %s)
-                    """,
-                    (fabric_id, image_name, remark or None, sort_order)
+                    "INSERT INTO fabric_image_mappings (fabric_id, image_asset_id, sort_order) VALUES (%s,%s,%s)",
+                    (fid, int(aid), int(sort_order)),
                 )
 
     def _replace_fabric_sku_families(self, conn, fabric_id, sku_family_ids):
@@ -695,8 +772,18 @@ class FabricManagementMixin:
                 # GET run=1 is handled above
                 if method != 'GET':
                     return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
-            if not self._has_required_tables(['fabric_images', 'image_assets', 'fabric_image_mappings']):
-                return self.send_json({'status': 'error', 'message': 'Missing tables for migration'}, start_response)
+            if not self._has_required_tables(['image_assets', 'fabric_image_mappings']):
+                return self.send_json({'status': 'error', 'message': 'Missing image_assets / fabric_image_mappings'}, start_response)
+            if not self._has_required_tables(['fabric_images']):
+                return self.send_json(
+                    {
+                        'status': 'success',
+                        'migrated': 0,
+                        'skipped': [],
+                        'message': 'fabric_images 表不存在，跳过迁移（若已执行 20260422_04 清理脚本则属正常）。',
+                    },
+                    start_response,
+                )
 
             try:
                 limit = int((data or {}).get('limit') or 0) or 0
@@ -706,6 +793,48 @@ class FabricManagementMixin:
             migrated = 0
             skipped = []
             with self._get_db_connection() as conn:
+
+                def _insert_image_asset_row(cur, sha256_val, storage_path_val, orig_fn, content_len, remark_text):
+                    has = lambda col: self._table_has_column(conn, 'image_assets', col)
+                    cols = ['sha256', 'storage_path', 'original_filename']
+                    vals = [sha256_val, storage_path_val, orig_fn]
+                    if has('description'):
+                        cols.append('description')
+                        vals.append('')
+                    if has('file_ext'):
+                        ext = os.path.splitext(orig_fn)[1].lower() or '.jpg'
+                        cols.append('file_ext')
+                        vals.append(ext)
+                    if has('mime_type'):
+                        cols.append('mime_type')
+                        vals.append('image/*')
+                    if has('file_size'):
+                        cols.append('file_size')
+                        vals.append(int(content_len or 0))
+                    if has('image_type_id'):
+                        tid = None
+                        if remark_text:
+                            try:
+                                tid = self._get_image_type_id_by_name(conn, str(remark_text).strip())
+                            except Exception:
+                                tid = None
+                        if not tid:
+                            try:
+                                tid = self._get_image_type_id_by_name(conn, '文字卖点图')
+                            except Exception:
+                                tid = None
+                        cols.append('image_type_id')
+                        vals.append(tid)
+                    if has('is_deprecated'):
+                        cols.append('is_deprecated')
+                        vals.append(0)
+                    ph = ', '.join(['%s'] * len(cols))
+                    cur.execute(
+                        f"INSERT INTO image_assets ({', '.join(cols)}) VALUES ({ph})",
+                        tuple(vals),
+                    )
+                    return cur.lastrowid
+
                 with conn.cursor() as cur:
                     sql = (
                         "SELECT id, fabric_id, image_name, remark, sort_order "
@@ -718,10 +847,12 @@ class FabricManagementMixin:
                         cur.execute(sql)
                     rows = cur.fetchall() or []
 
+                fim_has_remark = self._table_has_column(conn, 'fabric_image_mappings', 'remark')
+                fim_has_dep = self._table_has_column(conn, 'fabric_image_mappings', 'is_deprecated')
+
                 for row in rows:
                     image_name = (row.get('image_name') or '').strip()
                     remark = (row.get('remark') or '').strip()
-                    # 用户要求：remark 为“原图”的记录直接删除，不迁移
                     if remark == '原图':
                         try:
                             with conn.cursor() as cur:
@@ -744,42 +875,60 @@ class FabricManagementMixin:
                         continue
 
                     sha256 = hashlib.sha256(content).hexdigest()
-                    ext = os.path.splitext(os.path.basename(image_name))[1].lower() or '.jpg'
                     try:
                         res_root = self._join_resources('')
                         rel_bytes = os.path.relpath(abs_path, res_root)
                         storage_path = os.fsdecode(rel_bytes).replace('\\', '/')
                     except Exception:
                         storage_path = str(image_name).replace('\\', '/')
+                    orig_fn = os.path.basename(image_name)
 
                     with conn.cursor() as cur:
                         cur.execute("SELECT id FROM image_assets WHERE sha256=%s LIMIT 1", (sha256,))
                         asset = cur.fetchone() or {}
                         asset_id = asset.get('id')
                         if not asset_id:
+                            asset_id = _insert_image_asset_row(cur, sha256, storage_path, orig_fn, len(content), remark)
+                        elif self._table_has_column(conn, 'image_assets', 'image_type_id') and remark:
+                            try:
+                                tid = self._get_image_type_id_by_name(conn, remark)
+                                if tid:
+                                    cur.execute(
+                                        "UPDATE image_assets SET image_type_id=COALESCE(image_type_id, %s) WHERE id=%s",
+                                        (tid, int(asset_id)),
+                                    )
+                            except Exception:
+                                pass
+
+                        if fim_has_remark or fim_has_dep:
+                            cols = ['fabric_id', 'image_asset_id', 'sort_order']
+                            vals = [int(row.get('fabric_id') or 0), int(asset_id), int(row.get('sort_order') or 0)]
+                            if fim_has_remark:
+                                cols.insert(2, 'remark')
+                                vals.insert(2, remark or None)
+                            if fim_has_dep:
+                                cols.append('is_deprecated')
+                                vals.append(0)
+                            dup_sql = ''
+                            if fim_has_remark:
+                                dup_sql = ', remark=VALUES(remark)'
+                            cur.execute(
+                                f"""
+                                INSERT INTO fabric_image_mappings ({', '.join(cols)})
+                                VALUES ({', '.join(['%s'] * len(vals))})
+                                ON DUPLICATE KEY UPDATE sort_order=VALUES(sort_order){dup_sql}
+                                """,
+                                tuple(vals),
+                            )
+                        else:
                             cur.execute(
                                 """
-                                INSERT INTO image_assets
-                                (sha256, storage_path, original_filename, file_ext, mime_type, file_size, description)
-                                VALUES (%s,%s,%s,%s,%s,%s,%s)
+                                INSERT INTO fabric_image_mappings (fabric_id, image_asset_id, sort_order)
+                                VALUES (%s,%s,%s)
+                                ON DUPLICATE KEY UPDATE sort_order=VALUES(sort_order)
                                 """,
-                                (sha256, storage_path, os.path.basename(image_name), ext, 'image/*', len(content), '')
+                                (int(row.get('fabric_id') or 0), int(asset_id), int(row.get('sort_order') or 0)),
                             )
-                            asset_id = cur.lastrowid
-
-                        cur.execute(
-                            """
-                            INSERT INTO fabric_image_mappings (fabric_id, image_asset_id, remark, sort_order, is_deprecated)
-                            VALUES (%s,%s,%s,%s,0)
-                            ON DUPLICATE KEY UPDATE remark=VALUES(remark), sort_order=VALUES(sort_order)
-                            """,
-                            (
-                                int(row.get('fabric_id') or 0),
-                                int(asset_id),
-                                (row.get('remark') or None),
-                                int(row.get('sort_order') or 0),
-                            )
-                        )
                     migrated += 1
 
             try:

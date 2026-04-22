@@ -4022,3 +4022,198 @@ button:not(.shop-type-add):not(.material-type-add):not(.feature-category-add):no
     font-size: 12px;
     font-weight: 500;
 }
+
+/* =========================
+   Shared media image grid (sales + fabric)
+   Keep one visual language; pages can add a thin modifier for accent borders.
+   ========================= */
+.sj-media-image-grid {
+    min-height: 200px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.75rem;
+    padding: 0.5rem;
+}
+
+.sj-media-image-grid--tight {
+    min-height: 160px;
+    gap: 0.7rem;
+    padding: 0;
+}
+
+.sj-media-image-empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 2rem;
+    color: var(--morandi-slate);
+    font-size: 0.9rem;
+}
+
+.sj-media-image-card {
+    position: relative;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #fff;
+    cursor: pointer;
+    border: 2px solid var(--morandi-sand);
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.sj-media-image-card--fabric {
+    border-width: 3px;
+}
+
+.sj-media-image-card.dragging {
+    opacity: 0.55;
+    transform: scale(0.96);
+}
+
+.sj-media-image-card.drag-over {
+    transform: scale(1.03);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
+}
+
+.sj-media-image-card.remark-original { border-color: #93b5dd; }
+.sj-media-image-card.remark-main { border-color: #e5ba8c; }
+.sj-media-image-card.remark-aplus { border-color: #8fbfa3; }
+
+.sj-media-image-preview-wrap {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.sj-media-image-preview {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.sj-media-image-info {
+    padding: 0.35rem 0.45rem;
+    display: grid;
+    gap: 0.2rem;
+}
+
+.sj-media-image-type {
+    color: var(--morandi-slate);
+    font-size: 0.72rem;
+    font-weight: 600;
+    word-break: break-all;
+}
+
+.sj-media-image-desc {
+    color: var(--morandi-ink);
+    font-size: 0.8rem;
+    min-height: 1.2rem;
+    line-height: 1.4;
+}
+
+.sj-media-image-name {
+    color: var(--morandi-slate);
+    font-size: 0.66rem;
+    word-break: break-all;
+}
+
+.sj-media-image-remove {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    background: #8b2c2c;
+    color: #fff;
+    font-size: 1.05rem;
+    font-weight: 700;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 10;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+
+.sj-media-image-remove:hover { background: #6b1f1f; }
+
+.sj-media-image-remove-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #8b2c2c;
+    color: #fff;
+    border: 2px solid #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 1.1rem;
+    font-weight: 700;
+    line-height: 1;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    transition: background 0.2s, transform 0.1s;
+    z-index: 10;
+}
+
+.sj-media-image-remove-badge:hover {
+    background: #6b1f1f;
+    transform: scale(1.06);
+}
+
+.sj-media-image-remove-icon { position: relative; top: -1px; }
+
+/* Image type selector (shared) */
+.image-type-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    align-items: center;
+}
+
+.image-type-add {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    border: 1px solid var(--morandi-sand);
+    background: #fff;
+    color: var(--morandi-ink);
+    font-size: 1.05rem;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.image-type-add:hover { filter: brightness(0.95); }
+
+.image-type-radio { margin: 0; }
+.image-type-radio input { display: none; }
+.image-type-radio span {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.42rem 0.7rem;
+    border-radius: 8px;
+    background: var(--morandi-mist);
+    color: var(--morandi-ink);
+    border: 1px solid var(--morandi-sand);
+    cursor: pointer;
+    font-size: 0.86rem;
+    user-select: none;
+}
+
+.image-type-radio input:checked + span {
+    background: #9b4a4a;
+    border-color: #9b4a4a;
+    color: #fff;
+}

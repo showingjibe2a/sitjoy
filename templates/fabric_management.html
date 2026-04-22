@@ -123,162 +123,7 @@
             word-break: break-all;
             background: rgba(255,255,255,0.9);
         }
-        .fabric-images-grid {
-            min-height: 200px;
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-            gap: 0.75rem;
-            padding: 0.5rem;
-        }
-        .fabric-images-empty {
-            grid-column: 1 / -1;
-            text-align: center;
-            padding: 2rem;
-            color: var(--morandi-slate);
-            font-size: 0.9rem;
-        }
-        .fabric-image-card {
-            position: relative;
-            border-radius: 10px;
-            overflow: visible;
-            cursor: move;
-            transition: transform 0.15s, box-shadow 0.15s;
-        }
-        .fabric-image-card.dragging {
-            opacity: 0.5;
-            transform: scale(0.95);
-        }
-        .fabric-image-card.drag-over {
-            transform: scale(1.05);
-            box-shadow: 0 8px 20px rgba(0,0,0,0.2);
-        }
-        .fabric-image-card {
-            border: 3px solid var(--morandi-sand);
-            background: #fff;
-        }
-        .fabric-image-card.remark-original {
-            border-color: #93b5dd;
-        }
-        .fabric-image-card.remark-main {
-            border-color: #e5ba8c;
-        }
-        .fabric-image-card.remark-aplus {
-            border-color: #8fbfa3;
-        }
-        .fabric-image-preview-wrap {
-            width: 100%;
-            aspect-ratio: 1 / 1;
-            background: #fff;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 7px 7px 0 0;
-            overflow: hidden;
-        }
-        .fabric-image-preview {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            display: block;
-        }
-        .fabric-image-info {
-            padding: 0.35rem 0.45rem;
-            background: #fff;
-            border-radius: 0 0 7px 7px;
-        }
-        .fabric-image-remark {
-            margin-bottom: 0.15rem;
-            font-size: 0.78rem;
-            font-weight: 600;
-            color: #4b5563;
-        }
-        .fabric-image-remove-badge {
-            position: absolute;
-            top: 8px;
-            right: 8px;
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            background: #8b2c2c;
-            color: #fff;
-            border: 2px solid #fff;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            font-size: 1.1rem;
-            font-weight: 700;
-            line-height: 1;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-            transition: background 0.2s, transform 0.1s;
-            z-index: 10;
-        }
-        .fabric-image-remove-icon {
-            position: relative;
-            top: -1px;
-        }
-        .fabric-image-remove-badge:hover {
-            background: #6b1f1f;
-            transform: scale(1.1);
-        }
-        .fabric-image-name {
-            font-size: 0.66rem;
-            color: var(--morandi-slate);
-            word-break: break-all;
-            margin-top: 0.1rem;
-        }
-        .fabric-type-modal {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.5);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-        }
-        .fabric-type-modal.active {
-            display: flex;
-        }
-        .fabric-type-modal-content {
-            background: #fff;
-            border-radius: 12px;
-            padding: 1.5rem;
-            max-width: 400px;
-            width: 90%;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-        }
-        .fabric-type-modal-title {
-            font-size: 1.1rem;
-            font-weight: 700;
-            margin-bottom: 1rem;
-            color: var(--morandi-ink);
-        }
-        .fabric-type-options {
-            display: flex;
-            flex-direction: column;
-            gap: 0.6rem;
-        }
-        .fabric-type-option {
-            padding: 0.75rem;
-            border: 2px solid var(--morandi-sand);
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.2s;
-            font-size: 0.98rem;
-            font-weight: 600;
-            color: #4b5563;
-        }
-        .fabric-type-option:hover {
-            border-color: var(--morandi-ink);
-            background: var(--morandi-mist);
-        }
-        .fabric-type-option.active {
-            border-color: var(--morandi-ink);
-            background: var(--morandi-mist);
-        }
+        /* Shared image grid/card styles live in /static/css/style.css (sj-media-*) */
         .pm-modal-content {
             max-height: 88vh;
             display: flex;
@@ -290,7 +135,7 @@
             padding-right: 0.25rem;
             margin-right: -0.25rem;
         }
-        .fabric-image-card.placeholder {
+        .sj-media-image-card.placeholder {
             border-style: dashed !important;
             border-color: var(--morandi-ink) !important;
             background: rgba(255, 255, 255, 0.75);
@@ -438,8 +283,8 @@
                                 <!-- legacy select and tag container removed; using new grid instead -->
                                 <div class="fabric-existing-list" id="modalImageList"></div>
                             </div>
-                            <div class="fabric-images-grid" id="selectedImagesGrid">
-                                <div class="fabric-images-empty">未选择图片（可为空），可点击上方按钮选择或导入图片</div>
+                            <div class="sj-media-image-grid" id="selectedImagesGrid">
+                                <div class="sj-media-image-empty">未选择图片（可为空），可点击上方按钮选择或导入图片</div>
                             </div>
                         </div>
                     </div>
@@ -453,29 +298,20 @@
         </div>
     </div>
 
-    <!-- 图片类型选择模态框 -->
-    <div class="fabric-type-modal" id="fabricTypeModal">
-        <div class="fabric-type-modal-content">
-            <div class="fabric-type-modal-title">选择图片类型</div>
-            <div class="fabric-type-options">
-                <div class="fabric-type-option" onclick="selectImageType('原图')">
-                    原图
-                </div>
-                <div class="fabric-type-option" onclick="selectImageType('主图·Swatch')">
-                    主图·Swatch
-                </div>
-                <div class="fabric-type-option" onclick="selectImageType('主图·卖点')">
-                    主图·卖点
-                </div>
-                <div class="fabric-type-option" onclick="selectImageType('A+·电脑端')">
-                    A+·电脑端
-                </div>
-                <div class="fabric-type-option" onclick="selectImageType('A+·手机端')">
-                    A+·手机端
-                </div>
-                <div class="fabric-type-option" onclick="selectImageType('A+·通用')">
-                    A+·通用
-                </div>
+    <div class="pm-modal" id="fabric-image-edit-modal">
+        <div class="pm-modal-content" style="max-width: 620px;">
+            <h3 style="margin-top:0;">编辑图片类型/备注</h3>
+            <div class="form-group pm-form-full" style="margin-top:0.55rem;">
+                <label>图片类型（双击图片可快速编辑）</label>
+                <div class="image-type-bar" id="fabricImageEditTypeBar" style="gap:0.35rem; flex-wrap:wrap;"></div>
+            </div>
+            <div class="form-group pm-form-full" style="margin-top:0.55rem;">
+                <label for="fabricImageRemarkInput">图片备注</label>
+                <textarea id="fabricImageRemarkInput" class="optional-field" placeholder="请输入图片备注（可为空）" style="min-height: 160px;"></textarea>
+            </div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" type="button" onclick="closeFabricImageEditModal()">取消</button>
+                <button class="btn-primary" type="button" onclick="saveFabricImageEditFromModal()">保存</button>
             </div>
         </div>
     </div>
@@ -504,24 +340,57 @@
         let skuFamilyOptions = [];
         let usedFabricImages = new Set();
         let excludeUsedImages = false;
-        let selectedImageObjects = []; // 新格式：[{image_name, remark, sort_order}]
+        let selectedImageObjects = []; // [{image_name, remark(类型), description(备注), sort_order}]
         let selectedSkuFamilyIds = [];
         let draggedIndex = null;
         let draggedInsertIndex = null;
         let currentEditingImageIndex = null;
-        const FABRIC_TYPE_OPTIONS = ['原图', '主图·Swatch', '主图·卖点', 'A+·电脑端', 'A+·手机端', 'A+·通用'];
+        let fabricImageTypeOptions = [];
+
+        function escapeHtml(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function normalizeFabricImageTypeName(value) {
+            const text = String(value || '').trim();
+            if (!text) return '文字卖点图';
+            if (text === '主图·Swatch') return 'Swatch';
+            if (text === '主图·卖点') return '文字卖点图';
+            return text;
+        }
 
         function normalizeImageRemark(value) {
             const text = String(value || '').trim();
-            if (FABRIC_TYPE_OPTIONS.includes(text)) return text;
-            if (text === '卖点图' || text.includes('卖点')) return '主图·卖点';
-            if (text.toLowerCase().includes('swatch')) return '主图·Swatch';
+            const names = (fabricImageTypeOptions || []).map(x => String(x.name || '').trim()).filter(Boolean);
+            if (text && names.includes(text)) return text;
+            // legacy mappings
+            if (text === '卖点图' || text.includes('卖点')) return '文字卖点图';
+            if (text.toLowerCase().includes('swatch')) return 'Swatch';
             if (text.includes('A+')) {
                 if (text.includes('电脑')) return 'A+·电脑端';
                 if (text.includes('手机')) return 'A+·手机端';
                 return 'A+·通用';
             }
-            return '原图';
+            // default: prefer first enabled type if available
+            if (names.length) return names[0];
+            return '文字卖点图';
+        }
+
+        function loadFabricImageTypes() {
+            return fetch('/api/sales-image-type').then(r => r.json()).then(data => {
+                if (data.status !== 'success') {
+                    fabricImageTypeOptions = [];
+                    return;
+                }
+                fabricImageTypeOptions = Array.isArray(data.items) ? data.items : [];
+            }).catch(() => {
+                fabricImageTypeOptions = [];
+            });
         }
 
         function getRemarkCategoryClass(remark) {
@@ -645,6 +514,7 @@
                 selectedImageObjects = item.images.map(img => ({
                     image_name: img.image_name,
                     remark: normalizeImageRemark(img.remark),
+                    description: String(img.description != null ? img.description : '').trim(),
                     sort_order: img.sort_order || 0
                 }));
             } else {
@@ -652,6 +522,7 @@
                 selectedImageObjects = (item.image_names || []).map((name, idx) => ({
                     image_name: name,
                     remark: '原图',
+                    description: '',
                     sort_order: idx
                 }));
             }
@@ -1010,6 +881,7 @@
                 images: selectedImageObjects.map((img, idx) => ({
                     image_name: img.image_name,
                     remark: img.remark || '',
+                    description: String(img.description != null ? img.description : '').trim(),
                     sort_order: idx
                 })),
                 sku_family_ids: selectedSkuFamilyIds
@@ -1206,6 +1078,7 @@
                             image_name: displayText,
                             image_name_raw_b64: item.rawB64 || '',
                             remark: '原图',
+                            description: '',
                             sort_order: selectedImageObjects.length
                         });
                     }
@@ -1221,7 +1094,7 @@
             const grid = document.getElementById('selectedImagesGrid');
 
             if (!selectedImageObjects.length) {
-                grid.innerHTML = '<div class="fabric-images-empty">未选择图片（可为空），可点击上方按钮选择或导入图片</div>';
+                grid.innerHTML = '<div class="sj-media-image-empty">未选择图片（可为空），可点击上方按钮选择或导入图片</div>';
                 return;
             }
 
@@ -1229,7 +1102,7 @@
             grid.innerHTML = '';
 
             const placeholder = document.createElement('div');
-            placeholder.className = 'fabric-image-card placeholder';
+            placeholder.className = 'sj-media-image-card placeholder';
             placeholder.style.minHeight = '80px';
             placeholder.style.borderStyle = 'dashed';
             placeholder.style.opacity = '0.6';
@@ -1239,21 +1112,24 @@
                 const card = document.createElement('div');
                 const normalizedRemark = normalizeImageRemark(img.remark);
                 img.remark = normalizedRemark;
+                if (img.description == null) img.description = '';
                 const categoryClass = getRemarkCategoryClass(normalizedRemark);
-                card.className = `fabric-image-card ${categoryClass}`;
+                const typeLabel = normalizeFabricImageTypeName(normalizedRemark);
+                const descText = String(img.description || '').trim();
+                card.className = `sj-media-image-card sj-media-image-card--fabric ${categoryClass}`;
+                card.style.cursor = 'move';
                 card.setAttribute('draggable', 'true');
                 card.dataset.index = index;
 
                 card.innerHTML = `
-                    <div class="fabric-image-remove-badge" onclick="removeImageCard(${index}); event.stopPropagation();"><span class="fabric-image-remove-icon">×</span></div>
-                    <div class="fabric-image-preview-wrap">
-                        <img src="${getSelectedImagePreviewSrc(img, 520, 72)}" alt="${img.image_name}" class="fabric-image-preview" loading="lazy">
+                    <div class="sj-media-image-remove-badge" onclick="removeImageCard(${index}); event.stopPropagation();"><span class="sj-media-image-remove-icon">×</span></div>
+                    <div class="sj-media-image-preview-wrap">
+                        <img src="${getSelectedImagePreviewSrc(img, 520, 72)}" alt="${escapeHtml(img.image_name)}" class="sj-media-image-preview" loading="lazy">
                     </div>
-                    <div class="fabric-image-info">
-                        <div class="fabric-image-remark">
-                            类型：${normalizedRemark}
-                        </div>
-                        <div class="fabric-image-name">${img.image_name}</div>
+                    <div class="sj-media-image-info">
+                        <div class="sj-media-image-type">类型：${escapeHtml(typeLabel)}</div>
+                        <div class="sj-media-image-desc">${descText ? escapeHtml(descText) : '（空，双击编辑）'}</div>
+                        <div class="sj-media-image-name">${escapeHtml(img.image_name)}</div>
                     </div>
                 `;
 
@@ -1267,7 +1143,7 @@
 
                 // allow dragging when starting on inner image or text
                 try {
-                    const inners = card.querySelectorAll('img, .fabric-image-name');
+                    const inners = card.querySelectorAll('img, .sj-media-image-name');
                     inners.forEach(n => {
                         n.setAttribute('draggable', 'true');
                         n.addEventListener('dragstart', handleDragStartImage);
@@ -1279,7 +1155,7 @@
                     });
                 } catch (e) {}
 
-                card.addEventListener('dblclick', () => { openTypeModal(index); });
+                card.addEventListener('dblclick', () => { openFabricImageEditModal(index); });
 
                 grid.appendChild(card);
             });
@@ -1386,7 +1262,7 @@
 
         function handleDragStartImage(e) {
             const src = e.currentTarget || e.target;
-            const card = src.closest ? src.closest('.fabric-image-card') : (e.target.closest('.fabric-image-card'));
+            const card = src.closest ? src.closest('.sj-media-image-card') : (e.target.closest('.sj-media-image-card'));
             if (!card) return;
             draggedIndex = parseInt(card.dataset.index);
             draggedInsertIndex = draggedIndex;
@@ -1402,7 +1278,7 @@
         function handleDragEnterImage(e) {
             e.preventDefault();
             const src = e.currentTarget || e.target;
-            const card = src.closest ? src.closest('.fabric-image-card') : (e.target.closest('.fabric-image-card'));
+            const card = src.closest ? src.closest('.sj-media-image-card') : (e.target.closest('.sj-media-image-card'));
             if (!card) return;
             card.classList.add('drag-over');
         }
@@ -1419,7 +1295,7 @@
 
         function handleDragLeaveImage(e) {
             const src = e.currentTarget || e.target;
-            const card = src.closest ? src.closest('.fabric-image-card') : (e.target.closest('.fabric-image-card'));
+            const card = src.closest ? src.closest('.sj-media-image-card') : (e.target.closest('.sj-media-image-card'));
             if (card) card.classList.remove('drag-over');
         }
 
@@ -1427,7 +1303,7 @@
             e.preventDefault();
             const grid = document.getElementById('selectedImagesGrid');
             if (!grid) return;
-            const children = Array.from(grid.children).filter(n => !n.classList.contains('placeholder'));
+            const children = Array.from(grid.children).filter(n => !(n.classList.contains('sj-media-image-card') && n.classList.contains('placeholder')));
             let insertIndex = (draggedInsertIndex === null || draggedInsertIndex === undefined) ? children.length : draggedInsertIndex;
             if (insertIndex < 0) insertIndex = 0;
             if (insertIndex > children.length) insertIndex = children.length;
@@ -1456,16 +1332,16 @@
             const grid = document.getElementById('selectedImagesGrid');
             if (!grid) return;
             if (e.relatedTarget && grid.contains(e.relatedTarget)) return;
-            const placeholder = grid.querySelector('.fabric-image-card.placeholder');
+            const placeholder = grid.querySelector('.sj-media-image-card.placeholder');
             if (placeholder) placeholder.style.display = 'none';
         }
 
         function updateDragPlaceholder(clientX, clientY) {
             const grid = document.getElementById('selectedImagesGrid');
-            const placeholder = grid && grid.querySelector('.fabric-image-card.placeholder');
+            const placeholder = grid && grid.querySelector('.sj-media-image-card.placeholder');
             if (!grid || !placeholder) return;
 
-            const children = Array.from(grid.children).filter(n => !n.classList.contains('placeholder'));
+            const children = Array.from(grid.children).filter(n => !(n.classList.contains('sj-media-image-card') && n.classList.contains('placeholder')));
             if (!children.length) {
                 draggedInsertIndex = 0;
                 placeholder.style.display = '';
@@ -1475,7 +1351,7 @@
 
             let insertIndex = children.length;
             const pointed = document.elementFromPoint(clientX, clientY);
-            const pointedCard = pointed && pointed.closest ? pointed.closest('.fabric-image-card') : null;
+            const pointedCard = pointed && pointed.closest ? pointed.closest('.sj-media-image-card') : null;
             if (pointedCard && !pointedCard.classList.contains('placeholder') && grid.contains(pointedCard)) {
                 const targetIndex = parseInt(pointedCard.dataset.index);
                 const rect = pointedCard.getBoundingClientRect();
@@ -1506,11 +1382,11 @@
         }
 
         function handleDragEndImage(e) {
-            document.querySelectorAll('.fabric-image-card').forEach(c => c.classList.remove('dragging', 'drag-over'));
+            document.querySelectorAll('.sj-media-image-card').forEach(c => c.classList.remove('dragging', 'drag-over'));
             draggedIndex = null;
             draggedInsertIndex = null;
             const grid = document.getElementById('selectedImagesGrid');
-            const placeholder = grid && grid.querySelector('.fabric-image-card.placeholder');
+            const placeholder = grid && grid.querySelector('.sj-media-image-card.placeholder');
             if (placeholder) placeholder.style.display = 'none';
             resetModalStatus();
         }
@@ -1521,7 +1397,12 @@
             showModalStatus('正在保存图片顺序...', false);
             const payload = {
                 id: editId,
-                images: selectedImageObjects.map((img, idx) => ({ image_name: img.image_name, remark: img.remark || '', sort_order: idx }))
+                images: selectedImageObjects.map((img, idx) => ({
+                    image_name: img.image_name,
+                    remark: img.remark || '',
+                    description: String(img.description != null ? img.description : '').trim(),
+                    sort_order: idx
+                }))
             };
             fetch('/api/fabric', {
                 method: 'PUT',
@@ -1540,30 +1421,55 @@
             .catch(err => showModalStatus('保存失败: ' + err, true));
         }
         
-        function openTypeModal(index) {
+        function openFabricImageEditModal(index) {
             currentEditingImageIndex = index;
             const img = selectedImageObjects[index];
-            const modal = document.getElementById('fabricTypeModal');
-            const normalizedRemark = normalizeImageRemark(img && img.remark);
-            const options = modal.querySelectorAll('.fabric-type-option');
-            options.forEach(option => {
-                const optionText = (option.textContent || '').trim();
-                option.classList.toggle('active', optionText === normalizedRemark);
-            });
-            
-            modal.classList.add('active');
+            if (!img) return;
+            document.getElementById('fabricImageRemarkInput').value = String(img.description != null ? img.description : '');
+            const bar = document.getElementById('fabricImageEditTypeBar');
+            if (bar) {
+                const list = (fabricImageTypeOptions || []).filter(x => String(x.name || '').trim());
+                const currentType = normalizeFabricImageTypeName(normalizeImageRemark(img.remark || ''));
+                if (!list.length) {
+                    bar.innerHTML = '<span class="pm-select-empty" style="padding:0 .4rem;">暂无类型</span>';
+                } else {
+                    bar.innerHTML = list.map(item => {
+                        const name = String(item.name || '').trim();
+                        const checked = name === currentType ? 'checked' : '';
+                        return `
+                            <label class="image-type-radio" style="transform:scale(0.96); transform-origin:left;">
+                                <input type="radio" name="fabricImageEditType" value="${escapeHtml(name)}" ${checked}>
+                                <span>${escapeHtml(name)}</span>
+                            </label>
+                        `;
+                    }).join('');
+                }
+            }
+            document.getElementById('fabric-image-edit-modal').classList.add('active');
+            document.getElementById('fabricImageRemarkInput').focus();
         }
-        
-        function closeTypeModal() {
-            document.getElementById('fabricTypeModal').classList.remove('active');
+
+        function closeFabricImageEditModal() {
+            document.getElementById('fabric-image-edit-modal').classList.remove('active');
             currentEditingImageIndex = null;
         }
-        
-        function selectImageType(type) {
-            if (currentEditingImageIndex === null) return;
-            selectedImageObjects[currentEditingImageIndex].remark = normalizeImageRemark(type);
+
+        function saveFabricImageEditFromModal() {
+            if (currentEditingImageIndex === null || currentEditingImageIndex === undefined) return;
+            const idx = currentEditingImageIndex;
+            const img = selectedImageObjects[idx];
+            if (!img) return;
+            let image_type_name = '';
+            try {
+                const checked = document.querySelector('input[name="fabricImageEditType"]:checked');
+                image_type_name = checked ? normalizeFabricImageTypeName(checked.value) : '';
+            } catch (e) {}
+            if (image_type_name) {
+                img.remark = normalizeImageRemark(image_type_name);
+            }
+            img.description = document.getElementById('fabricImageRemarkInput').value.trim();
             renderSelectedImagesGrid();
-            closeTypeModal();
+            closeFabricImageEditModal();
         }
 
         // ========== 修改原有函数以支持新格式 ==========
@@ -1572,6 +1478,7 @@
         window.addEventListener('load', loadFabricImages);
         window.addEventListener('load', loadFabricMaterials);
         window.addEventListener('load', loadSkuFamilies);
+        window.addEventListener('load', () => { loadFabricImageTypes(); });
         window.addEventListener('load', function() {
             const params = new URLSearchParams(window.location.search || '');
             if (params.get('openCreate') === '1') {
@@ -1592,9 +1499,9 @@
         document.getElementById('modalImageUpload').addEventListener('change', handleImageUpload);
         document.getElementById('modalSkuFilter').addEventListener('input', renderSkuFamilyPicker);
         document.getElementById('skuAdd').addEventListener('click', toggleSkuMenu);
-        document.getElementById('fabricTypeModal').addEventListener('click', function(e) {
+        document.getElementById('fabric-image-edit-modal').addEventListener('click', function(e) {
             if (e.target === this) {
-                closeTypeModal();
+                closeFabricImageEditModal();
             }
         });
         
@@ -1607,6 +1514,7 @@
                 selectedImageObjects.push({
                     image_name: file.name,
                     remark: '原图',
+                    description: '',
                     sort_order: selectedImageObjects.length,
                     _isNewUpload: true,
                     _fileObject: file
