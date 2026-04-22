@@ -316,6 +316,7 @@
                     <thead>
                         <tr>
                             <th style="width:54px; text-align:center;"><input type="checkbox" id="salesSelectAll"></th>
+                            <th style="width:76px;">图片</th>
                             <th>状态</th>
                             <th>货号</th>
                             <th>面料</th>
@@ -329,7 +330,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="11" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="12" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -401,8 +402,9 @@
                                 <input type="text" id="modalSpecName" class="optional-field" placeholder="自动计算，可编辑">
                             </div>
                             <div class="form-group pm-span-1">
-                                <label for="modalFabric">面料</label>
-                                <input type="text" id="modalFabric" class="optional-field" placeholder="自动计算，可编辑">
+                                <label for="modalFabricId" class="label-help">面料<span class="help-dot" data-tip="先选择货号后，这里只显示该货号允许的面料；选择单个下单SKU时会自动带出"></span></label>
+                                <select id="modalFabricId" class="optional-field"></select>
+                                <input type="hidden" id="modalFabric" value="">
                             </div>
                         </div>
                         <div class="form-group pm-form-full">
@@ -424,15 +426,16 @@
                     <h4>主图管理</h4>
                     <div class="pm-section-body pm-form">
                         <div class="form-group pm-form-full">
-                            <label>规格-面料主图</label>
-                            <div class="main-images-manager">
-                                <div class="main-images-toolbar">
-                                    <div class="image-type-bar" id="modalMainImageTypeBar">
-                                        <button type="button" class="image-type-add" aria-label="新增图片类型" onclick="openSalesImageTypeCreateModal()">+</button>
-                                    </div>
+                            <div style="display:flex; align-items:center; justify-content:space-between; gap:0.6rem;">
+                                <label style="margin:0;">规格-面料主图</label>
+                                <div style="display:flex; align-items:center; gap:0.45rem;">
                                     <button type="button" class="btn-accent" onclick="triggerMainImageUpload()">新增主图</button>
-                                    <button type="button" class="btn-secondary" onclick="refreshMainImageList()">刷新</button>
-                                    <input type="file" id="modalMainImageUpload" accept="image/*" multiple style="display:none;">
+                                </div>
+                            </div>
+                            <input type="file" id="modalMainImageUpload" accept="image/*" multiple style="display:none;">
+                            <div class="main-images-manager" style="margin-top:0.55rem;">
+                                <div class="main-images-toolbar">
+                                    <div class="image-type-bar" id="modalMainImageTypeBar"></div>
                                 </div>
                                 <div id="mainImageFolderTip" class="main-images-folder-tip">保存后自动绑定到货号/主图/规格-面料 子文件夹。双击图片可编辑卖点描述。</div>
                                 <div id="mainImagesGrid" class="sj-media-image-grid sj-media-image-grid--tight">
@@ -596,6 +599,9 @@
         let skuFamilyOptions = [];
         let parentItems = [];
         let orderSkuOptions = [];
+        let fabricOptions = [];
+        let fabricOptionsLoaded = false;
+        let fabricOptionsLoadingPromise = null;
         let salesProductItems = [];
         let selectedOrderSkus = [];
         let manualFabric = false;
@@ -612,9 +618,13 @@
         let selectedSalesProductIds = new Set();
         let currentProductStatus = 'enabled';
         let mainImageItems = [];
+        let fabricImageItems = [];
         let currentEditingMainImageName = '';
         let salesImageTypeOptions = [];
         let selectedMainImageType = '文字卖点图';
+        let selectedMainImageFilterType = '全部';
+        let mainImageDraggedIndex = null;
+        let mainImageDraggedInsertIndex = null;
 
         function escapeHtml(value) {
             return String(value == null ? '' : value)
@@ -831,7 +841,9 @@
                 btn.addEventListener('click', () => {
                     document.getElementById('modalSkuFamily').value = btn.getAttribute('data-id') || '';
                     updateSkuFamilyTrigger();
+                    renderFabricSelectBySkuFamily(document.getElementById('modalFabricId')?.value || '');
                     closeSelectPanel('sku');
+                    autoComputeFabricSpec();
                 });
             });
         }
@@ -929,7 +941,7 @@
         function renderSalesGroupedTable(items) {
             const tbody = document.querySelector('#salesProductTable tbody');
             if (!(items || []).length) {
-                tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;">暂无数据</td></tr>';
                 syncSalesSelectAllCheckbox();
                 return;
             }
@@ -950,10 +962,15 @@
                     if (!lines.length) return '-';
                     return `<div class="sales-order-sku-lines">${lines.join('')}</div>`;
                 })();
+                const previewB64 = String(item.preview_image_b64 || '').trim();
+                const previewCell = previewB64
+                    ? `<img src="/api/image-preview?id=${encodeURIComponent(previewB64)}&mode=thumb&w=120&q=60" alt="预览" loading="lazy" style="width:56px;height:56px;object-fit:contain;background:#fff;border:1px solid var(--morandi-sand);border-radius:8px;display:block;margin:0 auto;">`
+                    : `<div style="width:56px;height:56px;border:1px dashed var(--morandi-sand);border-radius:8px;background:rgba(0,0,0,0.02);margin:0 auto;"></div>`;
                 const createdDateStr = item.created_at ? new Date(item.created_at).toLocaleDateString('zh-CN') : '-';
                 return `
                 <tr>
                     <td style="text-align:center;"><input type="checkbox" class="sales-row-checkbox" data-id="${item.id}" ${selectedSalesProductIds.has(String(item.id)) ? 'checked' : ''}></td>
+                    <td style="text-align:center;">${previewCell}</td>
                     <td>${renderInlineProductStatus(item)}</td>
                     <td>${item.sku_family || ''}</td>
                     <td>${item.fabric || ''}</td>
@@ -1004,6 +1021,9 @@
 
         function toggleSelectAllSalesRows(checked) {
             document.querySelectorAll('.sales-row-checkbox').forEach(el => {
+                const tr = el.closest('tr');
+                if (tr && String(tr.dataset.pmFilterHidden || '0') === '1') return;
+                if (tr && tr.style && tr.style.display === 'none') return;
                 const id = String(el.getAttribute('data-id') || '');
                 el.checked = !!checked;
                 if (!id) return;
@@ -1074,6 +1094,20 @@
                     const skuFamilySelect = document.getElementById('modalSkuFamily');
                     if (selectedItem && !skuFamilySelect.value && selectedItem.sku_family_id) {
                         renderSkuFamilySelect(selectedItem.sku_family_id);
+                        renderFabricSelectBySkuFamily(document.getElementById('modalFabricId')?.value || '');
+                    }
+                    // If only one order sku linked, prefer its sku_family + fabric by default
+                    const validLinks = (selectedOrderSkus || []).filter(x => x && x.order_product_id);
+                    if (selectedItem && validLinks.length === 1) {
+                        if (selectedItem.sku_family_id) {
+                            renderSkuFamilySelect(selectedItem.sku_family_id);
+                            renderFabricSelectBySkuFamily(String(selectedItem.fabric_id || ''));
+                        }
+                        if (selectedItem.fabric_id) {
+                            document.getElementById('modalFabricId').value = String(selectedItem.fabric_id);
+                            syncFabricHiddenText();
+                            manualFabric = false;
+                        }
                     }
                     autoComputeFabricSpec();
                 });
@@ -1209,31 +1243,228 @@
                 return;
             }
 
-            if (!mainImageItems.length) {
+            const hasFabricCards = Array.isArray(fabricImageItems) && fabricImageItems.length;
+            if (!mainImageItems.length && !hasFabricCards) {
                 grid.innerHTML = '<div class="sj-media-image-empty">当前规格-面料子文件夹暂无图片，可点击“新增主图”上传</div>';
                 return;
             }
 
-            grid.innerHTML = mainImageItems.map(item => {
+            const filterType = String(selectedMainImageFilterType || '全部').trim() || '全部';
+            const list = (mainImageItems || []).slice()
+                .filter(x => filterType === '全部' || String(x.image_type_name || '').trim() === filterType)
+                .sort((a, b) => {
+                    const ta = String(a.image_type_name || '').trim();
+                    const tb = String(b.image_type_name || '').trim();
+                    if (ta !== tb) return ta.localeCompare(tb, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+                    const sa = Number(a.sort_order || 0);
+                    const sb = Number(b.sort_order || 0);
+                    if (sa !== sb) return sa - sb;
+                    return String(a.image_name || '').localeCompare(String(b.image_name || ''), 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+                });
+
+            grid.innerHTML = '';
+
+            const placeholder = document.createElement('div');
+            placeholder.className = 'sj-media-image-card placeholder';
+            placeholder.style.minHeight = '80px';
+            placeholder.style.borderStyle = 'dashed';
+            placeholder.style.opacity = '0.6';
+            placeholder.style.display = 'none';
+
+            list.forEach((item, index) => {
                 const rawName = String(item.image_name || '');
                 const safeName = rawName.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 const safeDesc = String(item.description || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 const encodedName = encodeURIComponent(rawName);
                 const safeType = String(item.image_type_name || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                return `
-                    <div class="sj-media-image-card" ondblclick="openMainImageDescModal(decodeURIComponent('${encodedName}'))">
-                        <div class="sj-media-image-remove-badge" onclick="deleteMainImage(decodeURIComponent('${encodedName}')); event.stopPropagation();"><span class="sj-media-image-remove-icon">×</span></div>
+                const card = document.createElement('div');
+                card.className = 'sj-media-image-card';
+                card.style.cursor = 'move';
+                card.setAttribute('draggable', 'true');
+                card.dataset.imageName = rawName;
+                card.dataset.index = String(index);
+                card.innerHTML = `
+                    <div class="sj-media-image-remove-badge" onclick="deleteMainImage(decodeURIComponent('${encodedName}')); event.stopPropagation();"><span class="sj-media-image-remove-icon">×</span></div>
+                    <div class="sj-media-image-preview-wrap">
+                        <img src="/api/image-preview?id=${encodeURIComponent(item.image_b64 || '')}&mode=thumb&w=540&q=72" alt="${safeName}" class="sj-media-image-preview" loading="lazy">
+                    </div>
+                    <div class="sj-media-image-info">
+                        <div class="sj-media-image-type">类型：${safeType}</div>
+                        <div class="sj-media-image-desc">${safeDesc || '双击添加卖点描述'}</div>
+                        <div class="sj-media-image-name">${safeName}</div>
+                    </div>
+                `;
+                card.addEventListener('dblclick', () => openMainImageDescModal(rawName));
+                card.addEventListener('dragstart', handleMainImageDragStart);
+                card.addEventListener('dragenter', handleMainImageDragEnter);
+                card.addEventListener('dragover', handleMainImageDragOver);
+                card.addEventListener('dragleave', handleMainImageDragLeave);
+                card.addEventListener('drop', handleMainImageDrop);
+                card.addEventListener('dragend', handleMainImageDragEnd);
+                grid.appendChild(card);
+            });
+
+            // Append fabric-linked images into the same grid (readonly, no delete)
+            if (Array.isArray(fabricImageItems) && fabricImageItems.length) {
+                const badgeStyle = 'display:inline-flex;align-items:center;gap:.25rem;padding:.15rem .45rem;border-radius:999px;background:rgba(73,110,92,0.12);color:#3d6a52;font-weight:700;font-size:.72rem;';
+                const fabricList = (fabricImageItems || []).slice().sort((a, b) => {
+                    const ta = String(a.image_type_name || '').trim();
+                    const tb = String(b.image_type_name || '').trim();
+                    if (ta !== tb) return ta.localeCompare(tb, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+                    const sa = Number(a.sort_order || 0);
+                    const sb = Number(b.sort_order || 0);
+                    if (sa !== sb) return sa - sb;
+                    return String(a.image_name || '').localeCompare(String(b.image_name || ''), 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+                });
+                fabricList.forEach(item => {
+                    const rawName = String(item.image_name || '');
+                    const safeName = rawName.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    const safeDesc = String(item.description || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    const safeType = String(item.image_type_name || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    const card = document.createElement('div');
+                    card.className = 'sj-media-image-card';
+                    card.style.cursor = 'default';
+                    card.setAttribute('draggable', 'false');
+                    card.innerHTML = `
+                        <div style="position:absolute;left:8px;top:8px;z-index:11;"><span style="${badgeStyle}">面料</span></div>
                         <div class="sj-media-image-preview-wrap">
                             <img src="/api/image-preview?id=${encodeURIComponent(item.image_b64 || '')}&mode=thumb&w=540&q=72" alt="${safeName}" class="sj-media-image-preview" loading="lazy">
                         </div>
                         <div class="sj-media-image-info">
                             <div class="sj-media-image-type">类型：${safeType}</div>
-                            <div class="sj-media-image-desc">${safeDesc || '双击添加卖点描述'}</div>
+                            <div class="sj-media-image-desc">${safeDesc || '（空）'}</div>
                             <div class="sj-media-image-name">${safeName}</div>
                         </div>
-                    </div>
-                `;
-            }).join('');
+                    `;
+                    grid.appendChild(card);
+                });
+            }
+            grid.appendChild(placeholder);
+
+            grid.ondragover = handleMainImageDragOverGrid;
+            grid.ondrop = handleMainImageDrop;
+            grid.ondragleave = handleMainImageDragLeaveGrid;
+        }
+
+        function handleMainImageDragStart(e) {
+            const card = (e.currentTarget || e.target).closest ? (e.currentTarget || e.target).closest('.sj-media-image-card') : null;
+            if (!card) return;
+            mainImageDraggedIndex = parseInt(card.dataset.index || '0', 10);
+            mainImageDraggedInsertIndex = mainImageDraggedIndex;
+            if (e.dataTransfer) {
+                e.dataTransfer.effectAllowed = 'move';
+                try { e.dataTransfer.setData('text/plain', String(mainImageDraggedIndex)); } catch (_) {}
+            }
+            card.classList.add('dragging');
+        }
+        function handleMainImageDragEnter(e) {
+            e.preventDefault();
+            const card = (e.currentTarget || e.target).closest ? (e.currentTarget || e.target).closest('.sj-media-image-card') : null;
+            if (!card || card.classList.contains('placeholder')) return;
+            card.classList.add('drag-over');
+        }
+        function handleMainImageDragOver(e) { e.preventDefault(); updateMainImageDragPlaceholder(e.clientX, e.clientY); }
+        function handleMainImageDragOverGrid(e) { e.preventDefault(); updateMainImageDragPlaceholder(e.clientX, e.clientY); }
+        function handleMainImageDragLeave(e) {
+            const card = (e.currentTarget || e.target).closest ? (e.currentTarget || e.target).closest('.sj-media-image-card') : null;
+            if (card) card.classList.remove('drag-over');
+        }
+        function handleMainImageDragLeaveGrid(e) {
+            const grid = document.getElementById('mainImagesGrid');
+            if (!grid) return;
+            if (e.relatedTarget && grid.contains(e.relatedTarget)) return;
+            const placeholder = grid.querySelector('.sj-media-image-card.placeholder');
+            if (placeholder) placeholder.style.display = 'none';
+        }
+        function updateMainImageDragPlaceholder(clientX, clientY) {
+            const grid = document.getElementById('mainImagesGrid');
+            const placeholder = grid && grid.querySelector('.sj-media-image-card.placeholder');
+            if (!grid || !placeholder) return;
+            const cards = Array.from(grid.children).filter(n => n.classList && n.classList.contains('sj-media-image-card') && !n.classList.contains('placeholder'));
+            if (!cards.length) {
+                mainImageDraggedInsertIndex = 0;
+                placeholder.style.display = '';
+                grid.appendChild(placeholder);
+                return;
+            }
+            let insertIndex = cards.length;
+            const pointed = document.elementFromPoint(clientX, clientY);
+            const pointedCard = pointed && pointed.closest ? pointed.closest('.sj-media-image-card') : null;
+            if (pointedCard && !pointedCard.classList.contains('placeholder') && grid.contains(pointedCard)) {
+                const targetIndex = parseInt(pointedCard.dataset.index || '0', 10);
+                const rect = pointedCard.getBoundingClientRect();
+                const before = clientY < (rect.top + rect.height / 2);
+                insertIndex = before ? targetIndex : targetIndex + 1;
+            }
+            insertIndex = Math.max(0, Math.min(cards.length, insertIndex));
+            mainImageDraggedInsertIndex = insertIndex;
+            placeholder.style.display = '';
+            if (insertIndex >= cards.length) grid.appendChild(placeholder);
+            else grid.insertBefore(placeholder, cards[insertIndex]);
+        }
+        function handleMainImageDrop(e) {
+            e.preventDefault();
+            const grid = document.getElementById('mainImagesGrid');
+            const placeholder = grid && grid.querySelector('.sj-media-image-card.placeholder');
+            if (placeholder) placeholder.style.display = 'none';
+
+            const filterType = String(selectedMainImageFilterType || '全部').trim() || '全部';
+            const viewList = (mainImageItems || []).slice()
+                .filter(x => filterType === '全部' || String(x.image_type_name || '').trim() === filterType)
+                .sort((a, b) => {
+                    const ta = String(a.image_type_name || '').trim();
+                    const tb = String(b.image_type_name || '').trim();
+                    if (ta !== tb) return ta.localeCompare(tb, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+                    const sa = Number(a.sort_order || 0);
+                    const sb = Number(b.sort_order || 0);
+                    if (sa !== sb) return sa - sb;
+                    return String(a.image_name || '').localeCompare(String(b.image_name || ''), 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+                });
+
+            if (mainImageDraggedIndex === null || mainImageDraggedIndex === undefined) return;
+            if (mainImageDraggedIndex < 0 || mainImageDraggedIndex >= viewList.length) return;
+            let insertIndex = (mainImageDraggedInsertIndex === null || mainImageDraggedInsertIndex === undefined) ? viewList.length : mainImageDraggedInsertIndex;
+            insertIndex = Math.max(0, Math.min(viewList.length, insertIndex));
+            const moved = viewList.splice(mainImageDraggedIndex, 1)[0];
+            if (insertIndex > mainImageDraggedIndex) insertIndex = insertIndex - 1;
+            viewList.splice(insertIndex, 0, moved);
+
+            const nameToIdx = new Map();
+            (mainImageItems || []).forEach((it, idx) => nameToIdx.set(String(it.image_name || ''), idx));
+            viewList.forEach((it, idx) => {
+                const origIdx = nameToIdx.get(String(it.image_name || ''));
+                if (origIdx !== undefined) mainImageItems[origIdx].sort_order = idx + 1;
+            });
+            renderMainImageGrid();
+            autosaveMainImageOrder();
+            mainImageDraggedIndex = null;
+            mainImageDraggedInsertIndex = null;
+        }
+        function handleMainImageDragEnd(e) {
+            document.querySelectorAll('#mainImagesGrid .sj-media-image-card').forEach(c => c.classList.remove('dragging', 'drag-over'));
+            mainImageDraggedIndex = null;
+            mainImageDraggedInsertIndex = null;
+            const grid = document.getElementById('mainImagesGrid');
+            const placeholder = grid && grid.querySelector('.sj-media-image-card.placeholder');
+            if (placeholder) placeholder.style.display = 'none';
+        }
+        function autosaveMainImageOrder() {
+            if (!editId) return;
+            const filterType = String(selectedMainImageFilterType || '全部').trim() || '全部';
+            const viewList = (mainImageItems || []).slice()
+                .filter(x => filterType === '全部' || String(x.image_type_name || '').trim() === filterType)
+                .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
+            if (!viewList.length) return;
+            let p = Promise.resolve();
+            viewList.forEach((it, idx) => {
+                const name = String(it.image_name || '').trim();
+                if (!name) return;
+                p = p.then(() => fetch('/api/sales-product-main-images', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sales_product_id: editId, image_name: name, sort_order: idx + 1 })
+                }).then(r => r.json()).then(_ => {}).catch(_ => {}));
+            });
         }
 
         function normalizeMainImageTypeName(value) {
@@ -1247,18 +1478,18 @@
         function renderSalesImageTypeBar() {
             const bar = document.getElementById('modalMainImageTypeBar');
             if (!bar) return;
-            const addBtn = '<button type="button" class="image-type-add" aria-label="新增图片类型" onclick="openSalesImageTypeCreateModal()">+</button>';
             const list = (salesImageTypeOptions || []).filter(x => String(x.name || '').trim());
             if (!list.length) {
-                bar.innerHTML = addBtn + '<span class="pm-select-empty" style="padding:0 .4rem;">暂无类型</span>';
+                bar.innerHTML = '<span class="pm-select-empty" style="padding:0 .4rem;">暂无类型</span>';
                 return;
             }
+            if (!selectedMainImageFilterType) selectedMainImageFilterType = '全部';
             if (!list.some(x => String(x.name || '').trim() === selectedMainImageType)) {
                 selectedMainImageType = String(list[0].name || '').trim() || '文字卖点图';
             }
-            const radios = list.map(item => {
+            const radios = [{ name: '全部' }].concat(list).map(item => {
                 const name = String(item.name || '').trim();
-                const checked = name === selectedMainImageType ? 'checked' : '';
+                const checked = (name === '全部' ? selectedMainImageFilterType === '全部' : name === selectedMainImageFilterType) ? 'checked' : '';
                 return `
                     <label class="image-type-radio">
                         <input type="radio" name="mainImageType" value="${escapeHtml(name)}" ${checked}>
@@ -1266,10 +1497,18 @@
                     </label>
                 `;
             }).join('');
-            bar.innerHTML = addBtn + radios;
+            bar.innerHTML = radios;
             bar.querySelectorAll('input[name="mainImageType"]').forEach(el => {
                 el.addEventListener('change', function() {
-                    if (this.checked) selectedMainImageType = normalizeMainImageTypeName(this.value);
+                    if (!this.checked) return;
+                    const v = normalizeMainImageTypeName(this.value);
+                    if (v === '全部') {
+                        selectedMainImageFilterType = '全部';
+                    } else {
+                        selectedMainImageFilterType = v;
+                        selectedMainImageType = v;
+                    }
+                    renderMainImageGrid();
                 });
             });
         }
@@ -1365,6 +1604,8 @@
                         return;
                     }
                     mainImageItems = Array.isArray(data.items) ? data.items : [];
+                    fabricImageItems = Array.isArray(data.fabric_items) ? data.fabric_items : [];
+                    if (!selectedMainImageFilterType) selectedMainImageFilterType = '全部';
                     const folder = data.folder || {};
                     const tip = document.getElementById('mainImageFolderTip');
                     if (tip) {
@@ -1607,6 +1848,7 @@
 
             const fabrics = [];
             const fabricCodes = [];
+            const fabricIds = [];
             const specEntries = [];
             let warehouseCost = 0;
             let lastMileCost = 0;
@@ -1620,6 +1862,8 @@
                 if (fabricName && !fabrics.includes(fabricName)) fabrics.push(fabricName);
                 const fabricCode = normalizeCodePrefix(item.source.fabric_code || item.source.fabric_name_en || '');
                 if (fabricCode && !fabricCodes.includes(fabricCode)) fabricCodes.push(fabricCode);
+                const fid = String(item.source.fabric_id || '').trim();
+                if (fid && !fabricIds.includes(fid)) fabricIds.push(fid);
                 const spec = (item.source.spec_qty_short || '').trim();
                 if (spec) {
                     specEntries.push({
@@ -1640,6 +1884,14 @@
 
             if (!manualFabric) {
                 document.getElementById('modalFabric').value = fabrics.join(' / ');
+                // If only one fabric_id inferred, auto-select it
+                if (fabricIds.length === 1) {
+                    document.getElementById('modalFabricId').value = fabricIds[0];
+                    syncFabricHiddenText();
+                } else if (!fabricIds.length) {
+                    document.getElementById('modalFabricId').value = '';
+                    syncFabricHiddenText();
+                }
             }
             specEntries.sort((a, b) => String(a.key || '').localeCompare(String(b.key || ''), 'en', { numeric: true, sensitivity: 'base' }));
             const specName = specEntries.map(x => x.text).join('');
@@ -1668,6 +1920,40 @@
             updateCostWarning();
         }
 
+        function renderFabricSelectBySkuFamily(selectedFabricId) {
+            const select = document.getElementById('modalFabricId');
+            if (!select) return;
+            const skuFamilyId = String(document.getElementById('modalSkuFamily').value || '').trim();
+            const skuItem = (skuFamilyOptions || []).find(x => String(x.id) === skuFamilyId) || null;
+            const allowedIds = skuItem && Array.isArray(skuItem.fabric_ids) ? skuItem.fabric_ids.map(v => String(v)) : [];
+            const previous = selectedFabricId !== undefined && selectedFabricId !== null ? String(selectedFabricId) : String(select.value || '');
+            const options = ['<option value="">（自动/未选择）</option>'].concat(
+                (fabricOptions || [])
+                    .filter(f => !allowedIds.length || allowedIds.includes(String(f.id)))
+                    .map(f => `<option value="${f.id}">${escapeHtml(f.fabric_code || '')}${f.fabric_name_en ? `（${escapeHtml(f.fabric_name_en)}）` : ''}</option>`)
+            );
+            select.innerHTML = options.join('');
+            select.value = previous;
+            if (previous && !select.value) select.value = '';
+        }
+
+        function syncFabricHiddenText() {
+            const sel = document.getElementById('modalFabricId');
+            const hidden = document.getElementById('modalFabric');
+            if (!sel || !hidden) return;
+            const id = String(sel.value || '').trim();
+            if (!id) {
+                hidden.value = '';
+                return;
+            }
+            const opt = sel.selectedOptions && sel.selectedOptions[0];
+            const text = opt ? String(opt.textContent || '').trim() : '';
+            // store as fabric_code (before any bracket text)
+            hidden.value = text.split('（')[0].trim();
+        }
+
+        // fabric images will be merged into main image grid (readonly, non-deletable)
+
         async function openCreateModal() {
             editId = null;
             manualFabric = false;
@@ -1677,7 +1963,7 @@
             originalFabric = '';
             document.getElementById('pm-modal-title').innerText = '新增销售产品';
 
-            await ensureOrderSkuOptionsLoaded();
+            await Promise.all([ensureOrderSkuOptionsLoaded(), ensureFabricOptionsLoaded()]);
 
             document.getElementById('modalParentShop').value = '';
             currentProductStatus = 'enabled';
@@ -1691,6 +1977,7 @@
             updateParentSkuMarkerVisibility();
             document.getElementById('modalChildCode').value = '';
             document.getElementById('modalFabric').value = '';
+            renderFabricSelectBySkuFamily('');
             document.getElementById('modalSpecName').value = '';
             document.getElementById('modalSalePrice').value = '';
             document.getElementById('modalWarehouseCost').value = '';
@@ -1706,13 +1993,19 @@
             renderSelectedOrderSkuRows();
             mainImageItems = [];
             renderMainImageGrid();
+            fabricImageItems = [];
             updateCostWarning();
             resetModalStatus();
             document.getElementById('pm-modal').classList.add('active');
+            // Ensure main image list is always requested when modal opens.
+            // This also fetches fabric_items (merged into main grid) in the same response.
+            setTimeout(() => {
+                try { refreshMainImageList(); } catch (e) {}
+            }, 0);
         }
 
         async function openEditModal(id) {
-            await ensureOrderSkuOptionsLoaded();
+            await Promise.all([ensureOrderSkuOptionsLoaded(), ensureFabricOptionsLoaded()]);
             const item = await fetchSalesProductDetail(id);
             if (!item) {
                 showUploadDialog({ title: '加载失败', message: '未找到销售产品详情' });
@@ -1735,6 +2028,9 @@
             updateParentSkuMarkerVisibility();
             document.getElementById('modalChildCode').value = item.child_code || '';
             document.getElementById('modalFabric').value = item.fabric || '';
+            renderFabricSelectBySkuFamily(item.fabric_id || '');
+            if (item.fabric_id) document.getElementById('modalFabricId').value = String(item.fabric_id);
+            syncFabricHiddenText();
             document.getElementById('modalSpecName').value = item.spec_name || '';
             originalFabric = item.fabric || '';
             originalSpecName = item.spec_name || '';
@@ -1751,10 +2047,14 @@
                 quantity: link.quantity || 1
             }));
             renderSelectedOrderSkuRows();
-            refreshMainImageList();
             updateCostWarning();
             resetModalStatus();
             document.getElementById('pm-modal').classList.add('active');
+            // Request main images (and fabric_items) after the modal becomes active,
+            // so we don't miss the fetch due to any synchronous UI errors.
+            setTimeout(() => {
+                try { refreshMainImageList(); } catch (e) {}
+            }, 0);
         }
 
         function closeModal() {
@@ -1779,6 +2079,7 @@
                 parent_sku_marker: document.getElementById('modalParentSkuMarker').value.trim(),
                 child_code: document.getElementById('modalChildCode').value.trim(),
                 fabric: document.getElementById('modalFabric').value.trim(),
+                fabric_id: document.getElementById('modalFabricId').value || null,
                 spec_name: document.getElementById('modalSpecName').value.trim(),
                 sale_price_usd: document.getElementById('modalSalePrice').value,
                 product_status: currentProductStatus,
@@ -2057,7 +2358,7 @@
             fetch(url).then(r => r.json()).then(data => {
                 const tbody = document.querySelector('#salesProductTable tbody');
                 if (data.status !== 'success') {
-                    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                     return;
                 }
                 const items = data.items || [];
@@ -2066,7 +2367,7 @@
                 renderSalesGroupedTable(items);
             }).catch(err => {
                 const tbody = document.querySelector('#salesProductTable tbody');
-                tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
             });
         }
 
@@ -2171,10 +2472,33 @@
             return fetch('/api/sku').then(r => r.json()).then(data => {
                 skuFamilyOptions = data.status === 'success' ? (data.items || []) : [];
                 renderSkuFamilySelect(document.getElementById('modalSkuFamily')?.value || '');
+                renderFabricSelectBySkuFamily(document.getElementById('modalFabricId')?.value || '');
             }).catch(() => {
                 skuFamilyOptions = [];
                 renderSkuFamilySelect('');
+                renderFabricSelectBySkuFamily('');
             });
+        }
+
+        function loadFabricOptions() {
+            return fetch('/api/fabric').then(r => r.json()).then(data => {
+                fabricOptions = (data && data.status === 'success' && Array.isArray(data.items)) ? data.items : [];
+                fabricOptionsLoaded = true;
+                renderFabricSelectBySkuFamily(document.getElementById('modalFabricId')?.value || '');
+            }).catch(() => {
+                fabricOptions = [];
+                fabricOptionsLoaded = false;
+                renderFabricSelectBySkuFamily('');
+            });
+        }
+
+        function ensureFabricOptionsLoaded() {
+            if (fabricOptionsLoaded) return Promise.resolve();
+            if (fabricOptionsLoadingPromise) return fabricOptionsLoadingPromise;
+            fabricOptionsLoadingPromise = loadFabricOptions().finally(() => {
+                fabricOptionsLoadingPromise = null;
+            });
+            return fabricOptionsLoadingPromise;
         }
 
         function loadParentOptions() {
@@ -2201,6 +2525,7 @@
             Promise.all([
                 loadShopOptions(),
                 loadSkuFamilyOptions(),
+                loadFabricOptions(),
                 loadParentOptions(),
                 loadSalesImageTypeOptions()
             ]);
@@ -2227,7 +2552,11 @@
         });
         document.getElementById('modalParentCode').addEventListener('input', updateParentSkuMarkerVisibility);
         document.getElementById('modalSalePrice').addEventListener('input', updateCostWarning);
-        document.getElementById('modalFabric').addEventListener('input', function() { manualFabric = this.value.trim() !== ''; });
+        document.getElementById('modalFabricId').addEventListener('change', function() {
+            manualFabric = !!String(this.value || '').trim();
+            syncFabricHiddenText();
+            autoComputeFabricSpec();
+        });
         document.getElementById('modalSpecName').addEventListener('input', function() { manualSpecName = this.value.trim() !== ''; });
         document.getElementById('modalPlatformSku').addEventListener('input', function() { manualPlatformSku = this.value.trim() !== ''; });
         document.getElementById('salesProductUploadInput').addEventListener('change', function() {

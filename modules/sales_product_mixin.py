@@ -604,8 +604,11 @@ class SalesProductMixin:
                         sku_family_local = [str(row['sku_family']).strip() for row in (cur.fetchall() or []) if row.get('sku_family')]
                         cur.execute("SELECT DISTINCT spec_name FROM sales_product_variants WHERE spec_name IS NOT NULL AND TRIM(spec_name) <> '' ORDER BY spec_name")
                         spec_name_local = [str(row.get('spec_name') or '').strip() for row in (cur.fetchall() or []) if str(row.get('spec_name') or '').strip()]
-                        cur.execute("SELECT DISTINCT fabric FROM sales_product_variants WHERE fabric IS NOT NULL AND TRIM(fabric) <> '' ORDER BY fabric")
-                        fabric_local = [str(row['fabric']).strip() for row in (cur.fetchall() or []) if row.get('fabric')]
+                        if self._table_has_column(conn, 'sales_product_variants', 'fabric'):
+                            cur.execute("SELECT DISTINCT fabric FROM sales_product_variants WHERE fabric IS NOT NULL AND TRIM(fabric) <> '' ORDER BY fabric")
+                            fabric_local = [str(row['fabric']).strip() for row in (cur.fetchall() or []) if row.get('fabric')]
+                        else:
+                            fabric_local = []
                     return (shop_options_local, parent_codes_local, sku_family_local, spec_name_local, fabric_local)
 
                 shop_options, parent_codes, sku_family_options, spec_name_options, fabric_options = self._get_cached_template_options(
@@ -622,13 +625,14 @@ class SalesProductMixin:
                             f"""
                             SELECT sp.id, sp.product_status, sh.shop_name, pa.parent_code, pa.sku_marker,
                                 sp.platform_sku, sp.child_code,
-                                pf.sku_family, v.spec_name, v.fabric,
+                                pf.sku_family, v.spec_name, {('COALESCE(fm.fabric_code, v.fabric)' if (self._table_has_column(conn,'sales_product_variants','fabric_id') and self._table_has_column(conn,'sales_product_variants','fabric')) else ('fm.fabric_code' if self._table_has_column(conn,'sales_product_variants','fabric_id') else ('v.fabric' if self._table_has_column(conn,'sales_product_variants','fabric') else "''")))} AS fabric,
                                 v.sale_price_usd
                             FROM sales_products sp
                             LEFT JOIN sales_parents pa ON pa.id = sp.parent_id
                             LEFT JOIN shops sh ON sh.id = {shop_expr}
                             LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
                             LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                            {("LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id" if self._table_has_column(conn,'sales_product_variants','fabric_id') else "")}
                             WHERE sp.id IN ({placeholders})
                             ORDER BY sp.id DESC
                             """,
@@ -1282,6 +1286,15 @@ class SalesProductMixin:
                     sp_has_shop_col = self._table_has_column(conn, 'sales_products', 'shop_id')
                     shop_expr = self._sales_product_shop_expr(sp_has_shop_col)
                     with conn.cursor() as cur:
+                        has_fabric_id = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
+                        has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+                        fabric_join = "LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id" if has_fabric_id else ""
+                        if has_fabric_id and has_fabric_text:
+                            fabric_select = "COALESCE(fm.fabric_code, v.fabric)"
+                        elif has_fabric_id:
+                            fabric_select = "fm.fabric_code"
+                        else:
+                            fabric_select = "v.fabric" if has_fabric_text else "''"
                         base_sql = """
                             SELECT
                                 sp.id,
@@ -1294,7 +1307,8 @@ class SalesProductMixin:
                                 v.sku_family_id,
                                 pf.sku_family,
                                 v.spec_name,
-                                v.fabric,
+                                {fabric_select} AS fabric,
+                                {fabric_id_select} AS fabric_id,
                                 v.sale_price_usd,
                                 sp.created_at,
                                 sp.updated_at,
@@ -1306,18 +1320,36 @@ class SalesProductMixin:
                             LEFT JOIN sales_parents p ON p.id = sp.parent_id
                             LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
                             LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                            {fabric_join}
                             LEFT JOIN shops s ON s.id = {shop_expr}
                             LEFT JOIN platform_types pt ON pt.id = s.platform_type_id
                             LEFT JOIN brands b ON b.id = s.brand_id
-                        """.format(shop_expr=shop_expr)
+                        """.format(
+                            shop_expr=shop_expr,
+                            fabric_join=fabric_join,
+                            fabric_select=fabric_select,
+                            fabric_id_select=("v.fabric_id" if has_fabric_id else "NULL"),
+                        )
                         filters = []
                         params = []
                         if item_id:
                             filters.append("sp.id = %s")
                             params.append(item_id)
                         if keyword:
-                            filters.append("(sp.platform_sku LIKE %s OR s.shop_name LIKE %s OR p.parent_code LIKE %s OR sp.child_code LIKE %s OR pf.sku_family LIKE %s OR v.spec_name LIKE %s OR v.fabric LIKE %s)")
-                            params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%", f"%{keyword}%", f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
+                            text_filters = [
+                                "sp.platform_sku LIKE %s",
+                                "s.shop_name LIKE %s",
+                                "p.parent_code LIKE %s",
+                                "sp.child_code LIKE %s",
+                                "pf.sku_family LIKE %s",
+                                "v.spec_name LIKE %s",
+                                f"{fabric_select} LIKE %s",
+                            ]
+                            params.extend([f"%{keyword}%"] * 7)
+                            if has_fabric_text:
+                                text_filters.append("v.fabric LIKE %s")
+                                params.append(f"%{keyword}%")
+                            filters.append("(" + " OR ".join(text_filters) + ")")
                         where_sql = (" WHERE " + " AND ".join(filters)) if filters else ""
                         cur.execute(base_sql + where_sql + " ORDER BY sp.id DESC", params)
                         rows = cur.fetchall() or []
@@ -1342,6 +1374,21 @@ class SalesProductMixin:
                     elif item_id:
                         row['order_sku_links'] = []
 
+                # Variant preview image (first 白底图) for table list
+                if not item_id:
+                    try:
+                        vid_list = [int(r.get('variant_id') or 0) for r in rows if int(r.get('variant_id') or 0) > 0]
+                        preview_map = {}
+                        if vid_list:
+                            with self._get_db_connection() as conn:
+                                preview_map = self._load_variant_first_image_preview(conn, vid_list, type_name='白底图')
+                        for r in rows:
+                            vid = int(r.get('variant_id') or 0)
+                            r['preview_image_b64'] = preview_map.get(vid, '') if vid else ''
+                    except Exception:
+                        for r in rows:
+                            r['preview_image_b64'] = ''
+
                 if item_id:
                     return self.send_json({'status': 'success', 'item': rows[0] if rows else None}, start_response)
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
@@ -1358,6 +1405,7 @@ class SalesProductMixin:
                 parent_sku_marker = (data.get('parent_sku_marker') or '').strip() or None
                 child_code = (data.get('child_code') or '').strip() or None
                 sale_price_usd = self._parse_float(data.get('sale_price_usd'))
+                fabric_id_input = self._parse_int(data.get('fabric_id'))
                 links = self._normalize_sales_order_links(data.get('order_sku_links'))
                 
                 # 检查是否手动编辑了platform_sku
@@ -1409,7 +1457,17 @@ class SalesProductMixin:
                     auto_fabric, auto_spec_name, auto_platform_sku = self._derive_sales_fields(conn, sku_family_id, links)
                     final_fabric = (data.get('fabric') or '').strip() or auto_fabric
                     final_spec_name = (data.get('spec_name') or '').strip() or auto_spec_name
-                    variant_id = self._get_or_create_sales_variant(conn, sku_family_id, final_spec_name, final_fabric, sale_price_usd)
+                    # Prefer fabric_id when provided; fallback to derived first fabric by code lookup
+                    resolved_fabric_id = fabric_id_input or None
+                    if not resolved_fabric_id and final_fabric:
+                        try:
+                            with conn.cursor() as fcur:
+                                fcur.execute("SELECT id FROM fabric_materials WHERE fabric_code=%s LIMIT 1", (self._code_before_dash(final_fabric),))
+                                frow = fcur.fetchone() or {}
+                                resolved_fabric_id = self._parse_int(frow.get('id')) or None
+                        except Exception:
+                            resolved_fabric_id = None
+                    variant_id = self._get_or_create_sales_variant(conn, sku_family_id, final_spec_name, final_fabric, sale_price_usd, fabric_id=resolved_fabric_id)
                     
                     # 如果没有手动编辑，使用自动生成的platform_sku；否则使用手动输入的
                     if manual_platform_sku:
@@ -1437,7 +1495,8 @@ class SalesProductMixin:
                         )
                         new_id = cur.lastrowid
                     self._replace_sales_variant_order_links(conn, variant_id, links)
-                    self._ensure_listing_sales_variant_folder(sku_family_code, final_spec_name, final_fabric)
+                    fabric_folder_part = self._resolve_fabric_folder_part(conn, resolved_fabric_id, final_fabric)
+                    self._ensure_listing_sales_variant_folder(sku_family_code, final_spec_name, fabric_folder_part)
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
             if method == 'PUT':
@@ -1453,6 +1512,7 @@ class SalesProductMixin:
                 parent_sku_marker = (data.get('parent_sku_marker') or '').strip() or None
                 child_code = (data.get('child_code') or '').strip() or None
                 sale_price_usd = self._parse_float(data.get('sale_price_usd'))
+                fabric_id_input = self._parse_int(data.get('fabric_id'))
                 confirm_new_variant_folder = bool(data.get('confirm_new_variant_folder'))
                 links = self._normalize_sales_order_links(data.get('order_sku_links'))
                 
@@ -1507,7 +1567,16 @@ class SalesProductMixin:
                     auto_fabric, auto_spec_name, auto_platform_sku = self._derive_sales_fields(conn, sku_family_id, links)
                     final_fabric = (data.get('fabric') or '').strip() or auto_fabric
                     final_spec_name = (data.get('spec_name') or '').strip() or auto_spec_name
-                    variant_id = self._get_or_create_sales_variant(conn, sku_family_id, final_spec_name, final_fabric, sale_price_usd)
+                    resolved_fabric_id = fabric_id_input or None
+                    if not resolved_fabric_id and final_fabric:
+                        try:
+                            with conn.cursor() as fcur:
+                                fcur.execute("SELECT id FROM fabric_materials WHERE fabric_code=%s LIMIT 1", (self._code_before_dash(final_fabric),))
+                                frow = fcur.fetchone() or {}
+                                resolved_fabric_id = self._parse_int(frow.get('id')) or None
+                        except Exception:
+                            resolved_fabric_id = None
+                    variant_id = self._get_or_create_sales_variant(conn, sku_family_id, final_spec_name, final_fabric, sale_price_usd, fabric_id=resolved_fabric_id)
                     
                     # 如果没有手动编辑，使用自动生成的platform_sku；否则使用手动输入的
                     if manual_platform_sku:
@@ -1519,11 +1588,21 @@ class SalesProductMixin:
                         return self.send_json({'status': 'error', 'message': '无法生成销售平台SKU，请手动输入'}, start_response)
 
                     with conn.cursor() as cur:
+                        has_fabric_id = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
+                        has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+                        fabric_join = "LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id" if has_fabric_id else ""
+                        if has_fabric_id and has_fabric_text:
+                            fabric_select = "COALESCE(fm.fabric_code, v.fabric) AS fabric"
+                        elif has_fabric_id:
+                            fabric_select = "fm.fabric_code AS fabric"
+                        else:
+                            fabric_select = ("v.fabric AS fabric" if has_fabric_text else "'' AS fabric")
                         cur.execute(
-                            """
-                            SELECT v.spec_name, v.fabric
+                            f"""
+                            SELECT v.spec_name, {fabric_select}
                             FROM sales_products sp
                             LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
+                            {fabric_join}
                             WHERE sp.id=%s
                             """,
                             (item_id,)
@@ -1554,7 +1633,8 @@ class SalesProductMixin:
                         )
                     self._replace_sales_variant_order_links(conn, variant_id, links)
                     if spec_or_fabric_changed:
-                        self._ensure_listing_sales_variant_folder(sku_family_code, final_spec_name, final_fabric)
+                        fabric_folder_part = self._resolve_fabric_folder_part(conn, resolved_fabric_id, final_fabric)
+                        self._ensure_listing_sales_variant_folder(sku_family_code, final_spec_name, fabric_folder_part)
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'PATCH':
@@ -1602,13 +1682,32 @@ class SalesProductMixin:
             os.makedirs(main_folder, exist_ok=True)
 
         spec_part = (spec_name or '').strip().replace('/', '-').replace('\\', '-')
-        fabric_part = self._code_before_dash(fabric_code).replace('/', '-').replace('\\', '-')
+        # Folder naming rule: 规格名称-面料英文名称（fallback to legacy fabric code/text if name_en missing）
+        fabric_part = (fabric_code or '').strip().replace('/', '-').replace('\\', '-')
+        if not fabric_part:
+            fabric_part = self._code_before_dash(fabric_code).replace('/', '-').replace('\\', '-')
         if not (spec_part and fabric_part):
             return
         variant_folder_name = f"{spec_part}-{fabric_part}"
         variant_folder = os.path.join(main_folder, self._safe_fsencode(variant_folder_name))
         if not os.path.exists(variant_folder):
             os.makedirs(variant_folder, exist_ok=True)
+
+    def _resolve_fabric_folder_part(self, conn, fabric_id=None, fabric_text=''):
+        """Return folder-safe fabric part; prefer fabric_name_en, fallback to legacy fabric code/text."""
+        name_en = ''
+        fid = self._parse_int(fabric_id) or 0
+        if fid:
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT fabric_name_en FROM fabric_materials WHERE id=%s LIMIT 1", (fid,))
+                    row = cur.fetchone() or {}
+                    name_en = str(row.get('fabric_name_en') or '').strip()
+            except Exception:
+                name_en = ''
+        if name_en:
+            return name_en.replace('/', '-').replace('\\', '-').strip()
+        return self._code_before_dash(fabric_text).replace('/', '-').replace('\\', '-').strip()
 
     def _get_sales_product_image_assets_folder(self):
         folder = self._join_resources('『销售产品图片』/assets')
@@ -2052,6 +2151,115 @@ class SalesProductMixin:
             row = cur.fetchone() or {}
         return max(0, self._parse_int(row.get('max_sort')) or 0)
 
+    def _load_variant_first_image_preview(self, conn, variant_ids, type_name='白底图'):
+        """
+        Return {variant_id: image_b64} for the first image (by sort_order) of a given type.
+        Uses image_assets.image_type_id if available; falls back to sku_image_mappings.image_type_id.
+        """
+        vids = [int(v or 0) for v in (variant_ids or []) if int(v or 0) > 0]
+        if not vids:
+            return {}
+
+        has_variant = self._table_has_column(conn, 'sku_image_mappings', 'variant_id')
+        if not has_variant:
+            return {}
+
+        has_ia_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
+        has_sim_tid = self._table_has_column(conn, 'sku_image_mappings', 'image_type_id')
+        if not (has_ia_tid or has_sim_tid):
+            return {}
+
+        where_type = ""
+        params = []
+        if has_ia_tid:
+            where_type = "AND it.name=%s"
+            params.append(str(type_name or '').strip() or '白底图')
+            join_it = "JOIN image_types it ON it.id = ia.image_type_id"
+        else:
+            where_type = "AND it.name=%s"
+            params.append(str(type_name or '').strip() or '白底图')
+            join_it = "JOIN image_types it ON it.id = sim.image_type_id"
+
+        placeholders = ",".join(["%s"] * len(vids))
+        sql = f"""
+            SELECT sim.variant_id, ia.storage_path, ia.original_filename, sim.sort_order, sim.id
+            FROM sku_image_mappings sim
+            JOIN image_assets ia ON ia.id = sim.image_asset_id
+            {join_it}
+            WHERE sim.variant_id IN ({placeholders})
+              {where_type}
+            ORDER BY sim.variant_id ASC, sim.sort_order ASC, sim.id ASC
+        """
+        with conn.cursor() as cur:
+            cur.execute(sql, tuple(vids) + tuple(params))
+            rows = cur.fetchall() or []
+
+        out = {}
+        for row in rows:
+            vid = int(row.get('variant_id') or 0)
+            if not vid or vid in out:
+                continue
+            storage_path = (row.get('storage_path') or '').strip()
+            if not storage_path:
+                continue
+            if isinstance(storage_path, str):
+                try:
+                    rel_bytes = os.fsencode(storage_path)
+                except Exception:
+                    rel_bytes = storage_path.encode('utf-8', errors='surrogatepass')
+            else:
+                rel_bytes = storage_path
+            out[vid] = base64.b64encode(rel_bytes).decode('ascii') if rel_bytes else ''
+        return out
+
+    def _read_fabric_image_items(self, conn, fabric_id):
+        """Read fabric-related images (readonly) for UI preview grids."""
+        fid = int(fabric_id or 0)
+        if not fid or not self._has_required_tables(['fabric_image_mappings', 'image_assets']):
+            return []
+
+        has_ia_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
+        join_it = "LEFT JOIN image_types it ON it.id = ia.image_type_id" if has_ia_tid else ""
+        tname_sel = "it.name AS image_type_name" if has_ia_tid else "'' AS image_type_name"
+        dep_expr = "COALESCE(ia.is_deprecated,0)" if self._table_has_column(conn, 'image_assets', 'is_deprecated') else "0"
+        has_ia_ofn = self._table_has_column(conn, 'image_assets', 'original_filename')
+        ofn_sel = "ia.original_filename AS original_filename" if has_ia_ofn else "'' AS original_filename"
+
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT fim.sort_order, ia.storage_path, {ofn_sel}, ia.description, {tname_sel}
+                FROM fabric_image_mappings fim
+                JOIN image_assets ia ON ia.id = fim.image_asset_id
+                {join_it}
+                WHERE fim.fabric_id=%s
+                ORDER BY {dep_expr} ASC, fim.sort_order ASC, fim.id ASC
+                """,
+                (fid,),
+            )
+            rows = cur.fetchall() or []
+
+        items = []
+        for row in rows:
+            storage_path = (row.get('storage_path') or '').strip()
+            image_name = (row.get('original_filename') or '').strip() or os.path.basename(storage_path)
+            if isinstance(storage_path, str):
+                try:
+                    rel_bytes = os.fsencode(storage_path)
+                except Exception:
+                    rel_bytes = storage_path.encode('utf-8', errors='surrogatepass')
+            else:
+                rel_bytes = storage_path
+            image_b64 = base64.b64encode(rel_bytes).decode('ascii') if rel_bytes else ''
+            items.append({
+                'image_name': image_name,
+                'image_b64': image_b64,
+                'description': row.get('description') or '',
+                'image_type_name': row.get('image_type_name') or '',
+                'sort_order': self._parse_int(row.get('sort_order')) or 0,
+            })
+        return items
+
     def _find_image_asset_by_sha256(self, conn, sha256):
         with conn.cursor() as cur:
             cur.execute(
@@ -2215,45 +2423,59 @@ class SalesProductMixin:
             raise RuntimeError('Missing sales_product_id')
         with self._get_db_connection() as conn:
             with conn.cursor() as cur:
+                has_fabric_id = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
+                has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+                fabric_join = "LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id" if has_fabric_id else ""
+                if has_fabric_id and has_fabric_text:
+                    fabric_select = "COALESCE(fm.fabric_code, v.fabric) AS fabric"
+                elif has_fabric_id:
+                    fabric_select = "fm.fabric_code AS fabric"
+                else:
+                    fabric_select = ("v.fabric AS fabric" if has_fabric_text else "'' AS fabric")
                 cur.execute(
-                    """
-                    SELECT sp.id, v.spec_name, v.fabric, pf.sku_family
+                    f"""
+                    SELECT sp.id, v.spec_name, {fabric_select}, pf.sku_family,
+                           {("fm.fabric_name_en AS fabric_name_en, v.fabric_id AS fabric_id" if has_fabric_id else "'' AS fabric_name_en, 0 AS fabric_id")}
                     FROM sales_products sp
                     LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
                     LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                    {fabric_join}
                     WHERE sp.id=%s
                     """,
                     (sales_product_id,)
                 )
                 row = cur.fetchone() or {}
+            if not row.get('id'):
+                raise RuntimeError('销售产品不存在')
 
-        if not row.get('id'):
-            raise RuntimeError('销售产品不存在')
+            sku_name = (row.get('sku_family') or '').strip()
+            spec_part = (row.get('spec_name') or '').strip().replace('/', '-').replace('\\', '-')
+            fabric_part = str(row.get('fabric_name_en') or '').strip().replace('/', '-').replace('\\', '-')
+            if not fabric_part:
+                fabric_part = self._resolve_fabric_folder_part(conn, row.get('fabric_id'), row.get('fabric'))
+            if not (sku_name and spec_part and fabric_part):
+                raise RuntimeError('当前销售产品缺少货号/规格/面料，无法定位主图文件夹')
 
-        sku_name = (row.get('sku_family') or '').strip()
-        spec_part = (row.get('spec_name') or '').strip().replace('/', '-').replace('\\', '-')
-        fabric_part = self._code_before_dash(row.get('fabric')).replace('/', '-').replace('\\', '-')
-        if not (sku_name and spec_part and fabric_part):
-            raise RuntimeError('当前销售产品缺少货号/规格/面料，无法定位主图文件夹')
-
-        if ensure_folder:
-            self._ensure_listing_sales_variant_folder(sku_name, spec_part, fabric_part)
-        base_folder = self._ensure_listing_folder()
-        variant_folder_name = f"{spec_part}-{fabric_part}"
-        folder_path = os.path.join(
-            base_folder,
-            self._safe_fsencode(sku_name),
-            self._safe_fsencode('主图'),
-            self._safe_fsencode(variant_folder_name)
-        )
-        return {
-            'sales_product_id': int(row.get('id')),
-            'sku_family': sku_name,
-            'spec_name': spec_part,
-            'fabric_code': fabric_part,
-            'variant_folder': variant_folder_name,
-            'folder_path': folder_path,
-        }
+            if ensure_folder:
+                self._ensure_listing_sales_variant_folder(sku_name, spec_part, fabric_part)
+            base_folder = self._ensure_listing_folder()
+            variant_folder_name = f"{spec_part}-{fabric_part}"
+            folder_path = os.path.join(
+                base_folder,
+                self._safe_fsencode(sku_name),
+                self._safe_fsencode('主图'),
+                self._safe_fsencode(variant_folder_name)
+            )
+            return {
+                'sales_product_id': int(row.get('id')),
+                'sku_family': sku_name,
+                'spec_name': spec_part,
+                'fabric_folder_part': fabric_part,
+                'fabric_id': self._parse_int(row.get('fabric_id')) or 0,
+                'fabric_name_en': str(row.get('fabric_name_en') or '').strip(),
+                'variant_folder': variant_folder_name,
+                'folder_path': folder_path,
+            }
 
     def handle_sales_product_main_images_api(self, environ, method, start_response):
         try:
@@ -2265,6 +2487,7 @@ class SalesProductMixin:
 
                 with self._get_db_connection() as conn:
                     variant_id = 0
+                    fabric_id = 0
                     try:
                         with conn.cursor() as cur:
                             cur.execute("SELECT variant_id FROM sales_products WHERE id=%s", (sales_product_id,))
@@ -2277,10 +2500,52 @@ class SalesProductMixin:
                     else:
                         items = self._read_sales_product_image_items(conn, sales_product_id=sales_product_id)
                     folder_info = self._resolve_sales_product_variant_folder(sales_product_id, ensure_folder=True)
+                    # Prefer fabric_id obtained while resolving folder (same variant join),
+                    # fallback to direct query only if missing.
+                    fabric_id = self._parse_int(folder_info.get('fabric_id')) or 0
+                    if not fabric_id:
+                        try:
+                            with conn.cursor() as cur:
+                                if self._table_has_column(conn, 'sales_product_variants', 'fabric_id'):
+                                    cur.execute("SELECT fabric_id FROM sales_product_variants WHERE id=%s", (variant_id,))
+                                    frow = cur.fetchone() or {}
+                                    fabric_id = self._parse_int(frow.get('fabric_id')) or 0
+                        except Exception:
+                            fabric_id = 0
+                    # Final fallback: resolve fabric_id from fabric_name_en / folder part
+                    if not fabric_id:
+                        try:
+                            name_en = str(folder_info.get('fabric_name_en') or '').strip()
+                            folder_part = str(folder_info.get('fabric_folder_part') or '').strip()
+                            probe = name_en or folder_part
+                            if probe:
+                                with conn.cursor() as cur:
+                                    cur.execute(
+                                        "SELECT id FROM fabric_materials WHERE fabric_name_en=%s LIMIT 1",
+                                        (probe,),
+                                    )
+                                    prow = cur.fetchone() or {}
+                                    fabric_id = self._parse_int(prow.get('id')) or 0
+                                    if not fabric_id:
+                                        cur.execute(
+                                            "SELECT id FROM fabric_materials WHERE fabric_code=%s LIMIT 1",
+                                            (self._code_before_dash(probe),),
+                                        )
+                                        prow = cur.fetchone() or {}
+                                        fabric_id = self._parse_int(prow.get('id')) or 0
+                        except Exception:
+                            fabric_id = fabric_id or 0
+                    fabric_items = []
+                    if fabric_id and self._has_required_tables(['fabric_image_mappings', 'image_assets']):
+                        try:
+                            fabric_items = self._read_fabric_image_items(conn, fabric_id)
+                        except Exception:
+                            fabric_items = []
 
                 return self.send_json({
                     'status': 'success',
                     'items': items,
+                    'fabric_items': fabric_items,
                     'folder': {
                         'sku_family': folder_info.get('sku_family') or '',
                         'variant_folder': folder_info.get('variant_folder') or ''
@@ -3621,10 +3886,19 @@ class SalesProductMixin:
 
             with self._get_db_connection() as conn:
                 if mode == 'filters':
+                    has_fabric_id = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
+                    has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+                    fabric_join = "LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id" if has_fabric_id else ""
+                    if has_fabric_id and has_fabric_text:
+                        fabric_expr = "COALESCE(fm.fabric_code, v.fabric)"
+                    elif has_fabric_id:
+                        fabric_expr = "fm.fabric_code"
+                    else:
+                        fabric_expr = ("v.fabric" if has_fabric_text else "''")
                     with conn.cursor() as cur:
                         cur.execute(
-                            """
-                            SELECT sp.id, sp.platform_sku, v.fabric, v.spec_name,
+                            f"""
+                            SELECT sp.id, sp.platform_sku, {fabric_expr} AS fabric, v.spec_name,
                                 pf.id AS sku_family_id, pf.sku_family,
                                    sh.id AS shop_id, sh.shop_name,
                                    pt.id AS platform_type_id, pt.name AS platform_type_name
@@ -3633,6 +3907,7 @@ class SalesProductMixin:
                             LEFT JOIN product_families pf ON pf.id = v.sku_family_id
                             LEFT JOIN shops sh ON sh.id = sp.shop_id
                             LEFT JOIN platform_types pt ON pt.id = sh.platform_type_id
+                            {fabric_join}
                             ORDER BY pf.sku_family ASC, sp.platform_sku ASC
                             """
                         )
@@ -3742,6 +4017,7 @@ class SalesProductMixin:
                     """
                 ]
                 agg_params = []
+                has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
                 if start_date:
                     agg_sql.append(' AND spp.record_date >= %s')
                     agg_params.append(start_date)
@@ -3755,8 +4031,9 @@ class SalesProductMixin:
                     agg_sql.append(f" AND sp.platform_sku IN ({','.join(['%s'] * len(platform_skus))})")
                     agg_params.extend(platform_skus)
                 if fabrics:
-                    agg_sql.append(f" AND v.fabric IN ({','.join(['%s'] * len(fabrics))})")
-                    agg_params.extend(fabrics)
+                    if has_fabric_text:
+                        agg_sql.append(f" AND v.fabric IN ({','.join(['%s'] * len(fabrics))})")
+                        agg_params.extend(fabrics)
                 if spec_names:
                     agg_sql.append(f" AND v.spec_name IN ({','.join(['%s'] * len(spec_names))})")
                     agg_params.extend(spec_names)
@@ -3783,9 +4060,18 @@ class SalesProductMixin:
 
                 # === 优化2：获取货号分组数据有 LIMIT 限制 ===
                 perf_t_g = time.time()
+                has_fabric_id = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
+                has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+                fabric_join = "LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id" if has_fabric_id else ""
+                if has_fabric_id and has_fabric_text:
+                    fabric_expr = "COALESCE(fm.fabric_code, v.fabric)"
+                elif has_fabric_id:
+                    fabric_expr = "fm.fabric_code"
+                else:
+                    fabric_expr = ("v.fabric" if has_fabric_text else "''")
                 sql = [
-                    """
-                    SELECT spp.*, sp.id as sp_id, sp.platform_sku, v.fabric, v.spec_name, v.sku_family_id,
+                    f"""
+                    SELECT spp.*, sp.id as sp_id, sp.platform_sku, {fabric_expr} AS fabric, v.spec_name, v.sku_family_id,
                               pf.sku_family, sh.id AS shop_id, sh.shop_name,
                               pt.id AS platform_type_id, pt.name AS platform_type_name
                     FROM sales_product_performances spp
@@ -3794,10 +4080,12 @@ class SalesProductMixin:
                     LEFT JOIN product_families pf ON pf.id = v.sku_family_id
                     LEFT JOIN shops sh ON sh.id = sp.shop_id
                     LEFT JOIN platform_types pt ON pt.id = sh.platform_type_id
+                    {fabric_join}
                     WHERE 1=1
                     """
                 ]
                 params = []
+                # has_fabric_text already computed above
                 if start_date:
                     sql.append(' AND spp.record_date >= %s')
                     params.append(start_date)
@@ -3811,8 +4099,9 @@ class SalesProductMixin:
                     sql.append(f" AND sp.platform_sku IN ({','.join(['%s'] * len(platform_skus))})")
                     params.extend(platform_skus)
                 if fabrics:
-                    sql.append(f" AND v.fabric IN ({','.join(['%s'] * len(fabrics))})")
-                    params.extend(fabrics)
+                    if has_fabric_text:
+                        sql.append(f" AND v.fabric IN ({','.join(['%s'] * len(fabrics))})")
+                        params.extend(fabrics)
                 if spec_names:
                     sql.append(f" AND v.spec_name IN ({','.join(['%s'] * len(spec_names))})")
                     params.extend(spec_names)
@@ -3936,31 +4225,55 @@ class SalesProductMixin:
             items.append({'order_product_id': order_product_id, 'quantity': max(1, quantity)})
         return items
 
-    def _get_or_create_sales_variant(self, conn, sku_family_id, spec_name, fabric, sale_price_usd=None):
+    def _get_or_create_sales_variant(self, conn, sku_family_id, spec_name, fabric, sale_price_usd=None, fabric_id=None):
         family_id = self._parse_int(sku_family_id)
         if not family_id:
             raise ValueError('Missing sku_family_id')
         spec = str(spec_name or '').strip()
         fab = str(fabric or '').strip()
+        fid = self._parse_int(fabric_id) or None
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO sales_product_variants (sku_family_id, spec_name, fabric, sale_price_usd)
-                VALUES (%s, %s, %s, %s)
-                ON DUPLICATE KEY UPDATE
-                    sale_price_usd = COALESCE(VALUES(sale_price_usd), sale_price_usd),
-                    updated_at = CURRENT_TIMESTAMP
-                """,
-                (family_id, spec, fab, sale_price_usd)
-            )
-            cur.execute(
-                """
-                SELECT id FROM sales_product_variants
-                WHERE sku_family_id=%s AND spec_name=%s AND fabric=%s
-                LIMIT 1
-                """,
-                (family_id, spec, fab)
-            )
+            has_fid = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
+            if has_fid:
+                cur.execute(
+                    """
+                    INSERT INTO sales_product_variants (sku_family_id, spec_name, fabric_id, fabric, sale_price_usd)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        sale_price_usd = COALESCE(VALUES(sale_price_usd), sale_price_usd),
+                        fabric_id = COALESCE(VALUES(fabric_id), fabric_id),
+                        fabric = COALESCE(NULLIF(VALUES(fabric), ''), fabric),
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (family_id, spec, fid, fab, sale_price_usd)
+                )
+                cur.execute(
+                    """
+                    SELECT id FROM sales_product_variants
+                    WHERE sku_family_id=%s AND spec_name=%s AND COALESCE(fabric_id,0)=COALESCE(%s,0)
+                    LIMIT 1
+                    """,
+                    (family_id, spec, fid)
+                )
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO sales_product_variants (sku_family_id, spec_name, fabric, sale_price_usd)
+                    VALUES (%s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        sale_price_usd = COALESCE(VALUES(sale_price_usd), sale_price_usd),
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (family_id, spec, fab, sale_price_usd)
+                )
+                cur.execute(
+                    """
+                    SELECT id FROM sales_product_variants
+                    WHERE sku_family_id=%s AND spec_name=%s AND fabric=%s
+                    LIMIT 1
+                    """,
+                    (family_id, spec, fab)
+                )
             row = cur.fetchone() or {}
         variant_id = self._parse_int(row.get('id'))
         if not variant_id:

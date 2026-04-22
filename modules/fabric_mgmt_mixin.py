@@ -167,9 +167,9 @@ class FabricManagementMixin:
                                 except Exception:
                                     pass
 
+                            # unbound=1 should mean: only show images not bound to ANY fabric
                             if check_ids:
-                                if current_fabric_id is None or current_fabric_id not in check_ids:
-                                    continue
+                                continue
 
                         try:
                             folder_bytes = os.fsencode('『面料』')

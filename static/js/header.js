@@ -2132,9 +2132,7 @@
         rows.forEach(row => {
             const cell = getRowCellByKey(row, columnKey);
             const value = readCellFilterText(cell);
-            if(!value) return;
-            const text = String(value).trim();
-            if(!text) return;
+            const text = String(value === null || value === undefined ? '' : value).trim();
             if(q){
                 if(isExact){
                     if(text !== String(query || '').trim()) return;
@@ -2145,7 +2143,7 @@
             counts.set(text, (counts.get(text) || 0) + 1);
         });
         return Array.from(counts.entries())
-            .map(([value, count]) => ({ value, label: value, count }))
+            .map(([value, count]) => ({ value, label: value === '' ? '[空]' : value, count }))
             .sort((a, b) => {
                 if((b.count || 0) !== (a.count || 0)) return (b.count || 0) - (a.count || 0);
                 return String(a.label || '').localeCompare(String(b.label || ''), 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
@@ -2335,12 +2333,12 @@
         if(item === null || item === undefined) return null;
         if(typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean'){
             const text = String(item).trim();
-            if(!text) return null;
+            if(text === '') return { value: '', label: '[空]', count: 0 };
             return { value: text, label: text, count: 0 };
         }
-        const value = String(item.value ?? item.id ?? item.key ?? '').trim();
-        if(!value) return null;
-        const label = String(item.label ?? item.text ?? item.name ?? item.title ?? value).trim() || value;
+        const rawValue = (item.value ?? item.id ?? item.key);
+        const value = String(rawValue === null || rawValue === undefined ? '' : rawValue).trim();
+        const label = String(item.label ?? item.text ?? item.name ?? item.title ?? (value === '' ? '[空]' : value)).trim() || (value === '' ? '[空]' : value);
         const count = Number(item.count ?? item.total ?? 0) || 0;
         return { value, label, count };
     }
@@ -2590,7 +2588,11 @@
 
             // Show current selected values immediately so reopening always reflects checked state.
             const selectedPreview = Array.isArray(filterState.selected)
-                ? filterState.selected.map(v => ({ value: String(v || ''), label: String(v || ''), count: 0 })).filter(x => x.value)
+                ? filterState.selected.map(v => {
+                    const raw = (v === null || v === undefined) ? '' : String(v);
+                    const text = String(raw).trim();
+                    return { value: text, label: text === '' ? '[空]' : text, count: 0 };
+                })
                 : [];
             renderColumnFilterOptions(state, columnKey, selectedPreview);
 
