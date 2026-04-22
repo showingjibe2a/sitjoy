@@ -201,7 +201,10 @@ class CoreAppMixin:
         return cnt == len(names)
 
     def send_json(self, data, start_response, status='200 OK'):
-        payload = json.dumps(data, ensure_ascii=False, default=str).encode('utf-8')
+        # Some filesystem-derived strings can contain Unicode surrogates (from surrogateescape),
+        # especially when listing or moving files with non-UTF8 bytes in names on NAS.
+        # Encode JSON using surrogatepass to avoid crashing the whole response.
+        payload = json.dumps(data, ensure_ascii=False, default=str).encode('utf-8', errors='surrogatepass')
         start_response(status, [
             ('Content-Type', 'application/json; charset=utf-8'),
             ('Content-Length', str(len(payload)))

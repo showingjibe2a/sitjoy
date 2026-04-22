@@ -7,6 +7,7 @@ import json
 import base64
 import hashlib
 import threading
+import time
 from email import policy
 from email.parser import BytesParser
 from datetime import datetime
@@ -35,8 +36,13 @@ class SalesProductMixin:
         """Compute image_assets.storage_path from an absolute resources path."""
         try:
             root = self._resources_root()
-            rel_bytes = os.path.relpath(abs_path, root)
-            return os.fsdecode(rel_bytes).replace('\\', '/')
+            # Prevent "Can't mix strings and bytes in path components"
+            if isinstance(root, (bytes, bytearray)) and isinstance(abs_path, str):
+                abs_path = self._safe_fsencode(abs_path)
+            elif isinstance(root, str) and isinstance(abs_path, (bytes, bytearray)):
+                abs_path = os.fsdecode(abs_path)
+            rel_path = os.path.relpath(abs_path, root)
+            return os.fsdecode(rel_path).replace('\\', '/')
         except Exception:
             try:
                 return os.fsdecode(abs_path).replace('\\', '/')
@@ -1738,9 +1744,23 @@ class SalesProductMixin:
         If not UNC, return ''.
         """
         try:
-            p = str(path_text or '').strip()
+            # IMPORTANT: many paths in this project are bytes (RESOURCES_PATH_BYTES).
+            # Convert bytes -> str first; never use str(b'...') which breaks UNC parsing.
+            if isinstance(path_text, (bytes, bytearray)):
+                p = os.fsdecode(path_text)
+            else:
+                p = str(path_text or '')
+            p = p.strip()
         except Exception:
             return ''
+        if not p:
+            return ''
+        # Normalize separators and UNC prefix variants
+        p = p.replace('/', '\\')
+        if p.startswith('\\\\?\\UNC\\'):
+            p = '\\\\' + p[len('\\\\?\\UNC\\'):]
+        if p.startswith('//'):
+            p = '\\\\' + p.lstrip('/').replace('/', '\\')
         if not p.startswith('\\\\'):
             return ''
         # \\server\share\rest...
@@ -1752,6 +1772,304 @@ class SalesProductMixin:
         if not (server and share):
             return ''
         return ('\\\\' + server + '\\' + share).lower()
+
+    def _normalize_nas_abs_path(self, input_path):
+        """
+        Normalize user-provided paths (Windows UNC or POSIX) into NAS-local absolute paths.
+        The backend runs on NAS Linux, so Windows UNC like:
+          \\DiskStation\公共文件SITJOY\『上架资源』\...
+        must be mapped to the local RESOURCES_PATH:
+          /volumeX/公共文件SITJOY/『上架资源』/...
+        """
+        # IMPORTANT: use bytes paths internally to avoid lossy unicode replacement (�)
+        # when filenames contain non-UTF8 bytes. This matches the gallery/file-management approach.
+        try:
+            raw = str(input_path or '').strip()
+        except Exception:
+            raw = ''
+        if not raw:
+            return b''
+
+        # If it's already a local absolute path on NAS, keep it (as bytes).
+        if raw.startswith('/volume') or raw.startswith('/'):
+            return self._safe_fsencode(os.path.normpath(raw))
+
+        try:
+            from app import RESOURCES_PATH_BYTES  # bytes: /volumeX/公共文件SITJOY/『上架资源』
+        except Exception:
+            RESOURCES_PATH_BYTES = b''
+
+        # Normalize for matching
+        norm = raw.replace('/', '\\')
+        lower_norm = norm.lower()
+
+        # Extract the part after 『上架资源』 (works even if server/share differs)
+        marker = '『上架资源』'
+        idx = norm.find(marker)
+        rest = ''
+        if idx >= 0:
+            rest = norm[idx + len(marker):].lstrip('\\/')
+        else:
+            # If marker not found, treat as relative to resources root (best-effort)
+            rest = norm.lstrip('\\/')
+
+        # Join with RESOURCES_PATH_BYTES safely
+        rest_posix = rest.replace('\\', '/')
+        rest_bytes = self._safe_fsencode(rest_posix)
+        base = RESOURCES_PATH_BYTES.rstrip(b'/').rstrip(b'\\')
+        if base:
+            def _join(b):
+                try:
+                    return os.path.normpath(b + b'/' + rest_bytes.lstrip(b'/'))
+                except Exception:
+                    try:
+                        return os.path.join(b, rest_bytes.lstrip(b'/'))
+                    except Exception:
+                        return b
+
+            # First try the primary resources base
+            candidate = _join(base)
+            if os.path.exists(candidate):
+                return candidate
+
+            # If primary base doesn't contain the file, try other /volumeN bases.
+            try:
+                import re
+                m = re.match(br'^/volume(\d+)/(.*)$', base)
+            except Exception:
+                m = None
+            suffix = None
+            if m:
+                suffix = m.group(2)  # bytes after /volumeN/
+            else:
+                # fallback: keep everything after first slash
+                try:
+                    suffix = base.lstrip(b'/')
+                except Exception:
+                    suffix = None
+
+            volumes = []
+            try:
+                for name in os.listdir('/'):
+                    if str(name).startswith('volume'):
+                        volumes.append(str(name))
+                volumes.sort()
+            except Exception:
+                volumes = ['volume3', 'volume1']
+
+            for vol in volumes:
+                try:
+                    vol_b = self._safe_fsencode('/' + vol + '/')
+                    alt_base = vol_b.rstrip(b'/') + b'/' + (suffix or b'')
+                    alt_base = alt_base.rstrip(b'/')
+                    alt_candidate = _join(alt_base)
+                    if os.path.exists(alt_candidate):
+                        return alt_candidate
+                except Exception:
+                    continue
+
+            # As last resort return the primary candidate (even if missing) for error reporting.
+            return candidate
+
+        # Absolute fallback: try interpreting UNC as plain path text
+        return self._safe_fsencode(os.path.normpath(raw))
+
+    def _normalize_nas_abs_path_bytes(self, raw_bytes):
+        """
+        Bytes-first variant of _normalize_nas_abs_path.
+        Accepts original bytes (e.g. from base64) to avoid JSON/unicode corruption.
+        Returns NAS-local absolute path in bytes.
+        """
+        if not raw_bytes:
+            return b''
+        if not isinstance(raw_bytes, (bytes, bytearray)):
+            try:
+                raw_bytes = self._safe_fsencode(raw_bytes)
+            except Exception:
+                raw_bytes = b''
+        raw_bytes = bytes(raw_bytes)
+
+        # If it's already a local absolute path on NAS, keep it.
+        if raw_bytes.startswith(b'/'):
+            try:
+                return os.path.normpath(raw_bytes)
+            except Exception:
+                return raw_bytes
+
+        try:
+            from app import RESOURCES_PATH_BYTES  # bytes
+        except Exception:
+            RESOURCES_PATH_BYTES = b''
+
+        # Normalize separators (UNC) and find marker bytes of 『上架资源』
+        try:
+            norm = raw_bytes.replace(b'/', b'\\')
+        except Exception:
+            norm = raw_bytes
+
+        marker = '『上架资源』'.encode('utf-8', errors='surrogatepass')
+        idx = norm.find(marker)
+        if idx >= 0:
+            rest = norm[idx + len(marker):].lstrip(b'\\/')
+        else:
+            rest = norm.lstrip(b'\\/')
+        rest = rest.replace(b'\\', b'/')
+        base = (RESOURCES_PATH_BYTES or b'').rstrip(b'/').rstrip(b'\\')
+        if base:
+            try:
+                candidate = os.path.normpath(base + b'/' + rest.lstrip(b'/'))
+            except Exception:
+                candidate = os.path.join(base, rest.lstrip(b'/'))
+            # Reuse the multi-volume probing from _normalize_nas_abs_path by calling it with decoded text
+            # only as a fallback (candidate is bytes and safe).
+            if os.path.exists(candidate):
+                return candidate
+            # If missing, try other volumes
+            try:
+                import re
+                m = re.match(br'^/volume(\d+)/(.*)$', base)
+                suffix = m.group(2) if m else base.lstrip(b'/')
+            except Exception:
+                suffix = base.lstrip(b'/')
+            try:
+                vols = [str(n) for n in os.listdir('/') if str(n).startswith('volume')]
+                vols.sort()
+            except Exception:
+                vols = ['volume3', 'volume1']
+            for vol in vols:
+                try:
+                    alt_base = b'/' + vol.encode('ascii', errors='ignore') + b'/' + (suffix or b'')
+                    alt_base = alt_base.rstrip(b'/')
+                    try:
+                        alt_candidate = os.path.normpath(alt_base + b'/' + rest.lstrip(b'/'))
+                    except Exception:
+                        alt_candidate = os.path.join(alt_base, rest.lstrip(b'/'))
+                    if os.path.exists(alt_candidate):
+                        return alt_candidate
+                except Exception:
+                    continue
+            return candidate
+        return raw_bytes
+
+    def _chunk_text(self, text, chunk_size=120):
+        try:
+            s = str(text or '')
+        except Exception:
+            s = ''
+        if not s:
+            return []
+        try:
+            n = int(chunk_size or 120)
+        except Exception:
+            n = 120
+        n = max(40, min(400, n))
+        return [s[i:i+n] for i in range(0, len(s), n)]
+
+    def _iter_resources_volume_bases(self):
+        """
+        Return possible RESOURCES_PATH_BYTES bases across /volumeN.
+        """
+        try:
+            from app import RESOURCES_PATH_BYTES
+        except Exception:
+            RESOURCES_PATH_BYTES = b''
+        base = bytes(RESOURCES_PATH_BYTES or b'')
+        if not base:
+            return []
+        bases = []
+        # include current base first
+        bases.append(base.rstrip(b'/'))
+        # derive suffix after /volumeN/
+        try:
+            import re
+            m = re.match(br'^/volume(\d+)/(.*)$', base)
+            suffix = m.group(2) if m else base.lstrip(b'/')
+        except Exception:
+            suffix = base.lstrip(b'/')
+        # enumerate /volumeN folders
+        try:
+            vols = [str(n) for n in os.listdir('/') if str(n).startswith('volume')]
+            vols.sort()
+        except Exception:
+            vols = []
+        for v in vols:
+            try:
+                v_b = v.encode('ascii', errors='ignore')
+                b = (b'/' + v_b + b'/' + (suffix or b'')).rstrip(b'/')
+                if b not in bases:
+                    bases.append(b)
+            except Exception:
+                continue
+        return bases
+
+    def _extract_resources_relative_bytes(self, source_path_text):
+        """
+        Convert user provided source_path (UNC/relative) into bytes relative to 『上架资源』 root.
+        """
+        try:
+            raw = str(source_path_text or '').strip()
+        except Exception:
+            raw = ''
+        if not raw:
+            return b''
+        norm = raw.replace('/', '\\')
+        marker = '『上架资源』'
+        idx = norm.find(marker)
+        if idx >= 0:
+            rest = norm[idx + len(marker):].lstrip('\\/')
+        else:
+            rest = norm.lstrip('\\/')
+        rest_posix = rest.replace('\\', '/').lstrip('/')
+        return self._safe_fsencode(rest_posix)
+
+    def _try_find_file_by_basename_under_sku(self, rel_path_text):
+        """
+        Fallback search:
+        If the user-provided relative path doesn't match due to encoding/dir-name mismatch,
+        try locating the file by its basename under 『上架资源』/<sku_family>/ recursively.
+        Returns (found_abs_bytes, debug_list).
+        """
+        debug = []
+        try:
+            raw = str(rel_path_text or '').strip().replace('\\', '/')
+        except Exception:
+            return (b'', debug)
+        if not raw:
+            return (b'', debug)
+        parts = [p for p in raw.split('/') if p]
+        if len(parts) < 2:
+            return (b'', debug)
+        sku_family = parts[0]
+        filename = parts[-1]
+        if not filename or '.' not in filename:
+            return (b'', debug)
+        try:
+            from app import RESOURCES_PATH_BYTES
+        except Exception:
+            RESOURCES_PATH_BYTES = b''
+        if not RESOURCES_PATH_BYTES:
+            return (b'', debug)
+
+        sku_root = os.path.normpath(RESOURCES_PATH_BYTES.rstrip(b'/') + b'/' + self._safe_fsencode(sku_family))
+        if not os.path.exists(sku_root):
+            debug.append({'sku_root': self._safe_fsdecode(sku_root), 'exists': False})
+            return (b'', debug)
+        debug.append({'sku_root': self._safe_fsdecode(sku_root), 'exists': True})
+        target_name = self._safe_fsencode(filename)
+        try:
+            for root, _dirs, files in os.walk(sku_root):
+                # root/files are bytes when sku_root is bytes
+                for f in files or []:
+                    try:
+                        if f == target_name:
+                            found = os.path.join(root, f)
+                            debug.append({'found': self._safe_fsdecode(found)})
+                            return (found, debug)
+                    except Exception:
+                        continue
+        except Exception as e:
+            debug.append({'walk_error': str(e)[:160]})
+        return (b'', debug)
 
 
 
@@ -1768,28 +2086,88 @@ class SalesProductMixin:
             data = self._read_json_body(environ)
             sales_product_id = self._parse_int(data.get('sales_product_id'))
             source_path_text = str(data.get('source_path') or '').strip()
+            source_path_b64 = str(data.get('source_path_b64') or '').strip()
             image_type_name = str(data.get('image_type_name') or '').strip() or '文字卖点图'
             delete_source = bool(data.get('delete_source'))  # optional: try delete source after successful commit (best-effort)
             require_move = str(data.get('require_move') or '').strip().lower() in ('1', 'true', 'yes', 'on')
+            debug_move = str(data.get('debug_move') or '').strip().lower() in ('1', 'true', 'yes', 'on')
 
             if not sales_product_id:
                 return self.send_json({'status': 'error', 'message': 'Missing sales_product_id'}, start_response)
-            if not source_path_text:
+            if (not source_path_text) and (not source_path_b64):
                 return self.send_json({'status': 'error', 'message': 'Missing source_path'}, start_response)
 
-            source_path = os.path.normpath(os.path.abspath(source_path_text))
-            if not os.path.exists(source_path):
-                return self.send_json({'status': 'error', 'message': '源路径不存在', 'source_path': source_path}, start_response)
+            # Backend runs on NAS (Linux). If user passes Windows UNC path, map it to NAS-local path.
+            # Prefer bytes-safe base64 path if provided (avoids unicode corruption in JSON)
+            source_path_b = b''
+            if source_path_b64:
+                try:
+                    raw_bytes = base64.b64decode(source_path_b64)
+                    source_path_b = self._normalize_nas_abs_path_bytes(raw_bytes)
+                except Exception:
+                    return self.send_json({
+                        'status': 'error',
+                        'message': 'Invalid source_path_b64（不是合法Base64）',
+                        'source_path_b64_input': source_path_b64[:1200],
+                        'source_path_b64_input_chunks': self._chunk_text(source_path_b64, 120),
+                    }, start_response)
+            if not source_path_b:
+                source_path_b = self._normalize_nas_abs_path(source_path_text)
+            # If missing, try to locate the file under other /volumeN resources bases.
+            probe = []
+            if source_path_b and (not os.path.exists(source_path_b)):
+                try:
+                    rel_b = self._extract_resources_relative_bytes(source_path_text)
+                    if rel_b:
+                        for base_b in self._iter_resources_volume_bases():
+                            try:
+                                cand = os.path.normpath(base_b.rstrip(b'/') + b'/' + rel_b.lstrip(b'/'))
+                            except Exception:
+                                cand = os.path.join(base_b, rel_b.lstrip(b'/'))
+                            exists = bool(os.path.exists(cand))
+                            probe.append({'candidate': self._safe_fsdecode(cand), 'exists': exists})
+                            if exists:
+                                source_path_b = cand
+                                break
+                except Exception:
+                    probe = probe or []
+
+            # Extra fallback: search by basename under sku folder (avoids directory-name encoding mismatches)
+            search_debug = []
+            if source_path_b and (not os.path.exists(source_path_b)) and source_path_text:
+                try:
+                    found_b, search_debug = self._try_find_file_by_basename_under_sku(source_path_text)
+                    if found_b and os.path.exists(found_b):
+                        source_path_b = found_b
+                        probe.append({'candidate': self._safe_fsdecode(found_b), 'exists': True, 'mode': 'basename_search'})
+                except Exception:
+                    search_debug = search_debug or []
+
+            if (not source_path_b) or (not os.path.exists(source_path_b)):
+                return self.send_json({
+                    'status': 'error',
+                    'message': '源路径不存在',
+                    'source_path': self._safe_fsdecode(source_path_b) if source_path_b else '',
+                    'source_path_b64': (self._b64_from_fs(source_path_b) if source_path_b else ''),
+                    'source_path_b64_input': (source_path_b64[:1200] if source_path_b64 else ''),
+                    'source_path_b64_input_chunks': (self._chunk_text(source_path_b64, 120) if source_path_b64 else []),
+                    'probe_candidates': probe,
+                    'basename_search_debug': search_debug,
+                }, start_response)
 
             source_files = []
-            if os.path.isfile(source_path):
+            source_path = self._safe_fsdecode(source_path_b)
+            if os.path.isfile(source_path_b):
                 if self._is_image_name(os.path.basename(source_path)):
                     source_files = [source_path]
             else:
                 try:
-                    for name in os.listdir(source_path):
-                        abs_file = os.path.join(source_path, name)
-                        if os.path.isfile(abs_file) and self._is_image_name(name):
+                    for name in os.listdir(source_path_b):
+                        # os.listdir(bytes_dir) returns bytes names; keep bytes-safe then decode for later IO
+                        abs_file_b = os.path.join(source_path_b, name)
+                        name_text = self._safe_fsdecode(name)
+                        abs_file = self._safe_fsdecode(abs_file_b)
+                        if os.path.isfile(abs_file_b) and self._is_image_name(name_text):
                             source_files.append(abs_file)
                 except Exception:
                     source_files = []
@@ -1809,8 +2187,13 @@ class SalesProductMixin:
                 linked_count = 0
                 items = []
                 folder_info = self._resolve_sales_product_variant_folder(sales_product_id, ensure_folder=True)
+                # NAS backend: use bytes paths end-to-end to avoid str/bytes mixing.
                 target_folder_abs = folder_info.get('folder_path')
-                if not target_folder_abs or not os.path.exists(target_folder_abs):
+                if not target_folder_abs:
+                    return self.send_json({'status': 'error', 'message': '无法定位主图文件夹，请确认货号/规格/面料信息完整'}, start_response)
+                if isinstance(target_folder_abs, str):
+                    target_folder_abs = self._safe_fsencode(target_folder_abs)
+                if not os.path.exists(target_folder_abs):
                     return self.send_json({'status': 'error', 'message': '无法定位主图文件夹，请确认货号/规格/面料信息完整'}, start_response)
                 variant_id = 0
                 try:
@@ -1825,15 +2208,15 @@ class SalesProductMixin:
                 staged_moves = []   # [(src, tmp)] source moved to tmp; rollback moves back
                 staged_files = []   # [(final_abs, tmp_abs_or_none, src_or_none)] used for cleanup
                 db_new_assets = []  # [{sha256, storage_path, filename, ext, file_size}]
-                reuse_assets = []   # [{asset_id}]
+                reuse_assets = []   # [{asset_id, sha256, idx, source_file}]
                 move_failures = []  # [{src, reason}]
 
-                target_share = self._unc_share_key(target_folder_abs)
-
                 for idx, source_file in enumerate(source_files, start=1):
+                    # Keep bytes path for filesystem operations
+                    source_file_b = self._safe_fsencode(source_file)
                     filename = os.path.basename(source_file)
                     try:
-                        with open(source_file, 'rb') as f:
+                        with open(source_file_b, 'rb') as f:
                             content = f.read()
                         if not content:
                             continue
@@ -1843,7 +2226,7 @@ class SalesProductMixin:
 
                     asset = self._find_image_asset_by_sha256(conn, sha256)
                     if asset:
-                        reuse_assets.append({'asset_id': asset.get('id'), 'idx': idx})
+                        reuse_assets.append({'asset_id': asset.get('id'), 'sha256': sha256, 'idx': idx, 'source_file': source_file})
                     else:
                         ext = self._guess_image_ext(filename, content)
                         type_part = self._sanitize_filename_component(image_type_name, 32) or '图片'
@@ -1852,23 +2235,18 @@ class SalesProductMixin:
                         abs_path = os.path.join(target_folder_abs, self._safe_fsencode(final_name))
 
                         # Stage: try move to a temp file first so we can rollback on DB failure.
-                        tmp_abs = abs_path + (f".__tmp__{int(time.time()*1000)}_{idx}")
+                        tmp_abs = abs_path + self._safe_fsencode(f".__tmp__{int(time.time()*1000)}_{idx}")
                         wrote_final = False
-                        src_share = self._unc_share_key(source_file)
                         try:
-                            # Only expect server-side atomic move when in the same UNC share.
-                            if src_share and target_share and src_share == target_share:
-                                os.replace(source_file, tmp_abs)
-                            else:
-                                raise RuntimeError('not_same_unc_share')
-                            staged_moves.append((source_file, tmp_abs))
+                            os.replace(source_file_b, tmp_abs)
+                            staged_moves.append((source_file_b, tmp_abs))
                             moved_count += 1
                         except Exception as e_move1:
-                            # Fallback 1: try shutil.move (works across volumes/shares via copy+delete)
+                            # Fallback 1: try shutil.move (copy+delete)
                             try:
                                 import shutil
-                                shutil.move(source_file, tmp_abs)
-                                staged_moves.append((source_file, tmp_abs))
+                                shutil.move(source_file_b, tmp_abs)
+                                staged_moves.append((source_file_b, tmp_abs))
                                 moved_count += 1
                             except Exception as e_move2:
                                 # Fallback 2: write temp by bytes (keep source intact)
@@ -1880,7 +2258,10 @@ class SalesProductMixin:
                                     # Can't persist => skip this file
                                     self._safe_unlink(tmp_abs)
                                     continue
-                                move_failures.append({'src': str(source_file), 'reason': str(e_move2)[:120] or str(e_move1)[:120]})
+                                move_failures.append({
+                                    'src': str(source_file),
+                                    'reason': (str(e_move2)[:160] or str(e_move1)[:160]),
+                                })
 
                         if require_move and copied_count > 0:
                             # We copied at least one file in this batch; enforce "must move" semantics.
@@ -1894,7 +2275,6 @@ class SalesProductMixin:
                                 'message': '要求移动(require_move=1)但当前路径无法移动（可能是不同 share 或无删除权限）。',
                                 'source_path': source_path,
                                 'target_folder': target_folder_abs,
-                                'target_share': target_share,
                                 'move_failures': move_failures[:5],
                             }, start_response)
 
@@ -1922,8 +2302,10 @@ class SalesProductMixin:
                         if not wrote_final or not os.path.exists(abs_path):
                             continue
 
+                        # _storage_path_from_abs expects a resources-absolute path in the same type
+                        # as resources root (bytes). abs_path here is str, so encode safely first.
                         storage_path = self._storage_path_from_abs(abs_path)
-                        staged_files.append((abs_path, None, source_file))
+                        staged_files.append((abs_path, None, source_file_b))
                         db_new_assets.append({
                             'sha256': sha256,
                             'storage_path': storage_path,
@@ -1968,7 +2350,10 @@ class SalesProductMixin:
 
                     # Map reuse asset ids (already existed)
                     for r in reuse_assets:
-                        sha_to_id.setdefault(f"reuse:{r['asset_id']}", int(r['asset_id'] or 0))
+                        aid = int(r.get('asset_id') or 0)
+                        sha = str(r.get('sha256') or '').strip()
+                        if aid and sha:
+                            sha_to_id.setdefault(sha, aid)
 
                     # Insert mappings
                     for row in items:
@@ -1976,7 +2361,6 @@ class SalesProductMixin:
                         sha = row.get('sha256_full')
                         asset_id = sha_to_id.get(sha)
                         if not asset_id:
-                            # It may be a reused asset (we didn't keep sha); skip mapping for unknown
                             continue
                         with conn.cursor() as cur:
                             self._execute_sku_mapping_upsert(
@@ -2009,11 +2393,12 @@ class SalesProductMixin:
                         for src, _tmp in staged_moves:
                             moved_sources.add(src)
                         for source_file in source_files:
-                            if source_file in moved_sources:
+                            source_file_b = self._safe_fsencode(source_file)
+                            if source_file_b in moved_sources:
                                 continue
                             try:
-                                if os.path.exists(source_file):
-                                    os.remove(source_file)
+                                if os.path.exists(source_file_b):
+                                    os.remove(source_file_b)
                                     deleted_source_count += 1
                             except Exception:
                                 pass
@@ -2036,7 +2421,10 @@ class SalesProductMixin:
                     'moved': moved_count,
                     'copied': copied_count,
                     'deleted_source': (deleted_source_count if delete_source else None),
-                    'linked': linked_count
+                    'linked': linked_count,
+                    'source_share': (self._unc_share_key(source_path) if debug_move else None),
+                    'target_share': (None if debug_move else None),
+                    'move_failures': (move_failures[:10] if debug_move else None),
                 }, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
@@ -2693,6 +3081,7 @@ class SalesProductMixin:
                 image_name = str(data.get('image_name') or '').strip()
                 description = str(data.get('description') or '').strip()
                 image_type_name = str(data.get('image_type_name') or '').strip()
+                is_deprecated = self._parse_int(data.get('is_deprecated'))
                 sort_order = self._parse_int(data.get('sort_order'))
                 if not sales_product_id or not image_name:
                     return self.send_json({'status': 'error', 'message': 'Missing sales_product_id or image_name'}, start_response)
@@ -2707,6 +3096,8 @@ class SalesProductMixin:
                     except Exception:
                         variant_id = 0
                     with conn.cursor() as cur:
+                        has_ia_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
+                        has_ia_dep = self._table_has_column(conn, 'image_assets', 'is_deprecated')
                         has_sim_vid = self._table_has_column(conn, 'sku_image_mappings', 'variant_id')
                         has_sim_spid = self._table_has_column(conn, 'sku_image_mappings', 'sales_product_id')
                         if not has_sim_vid and not has_sim_spid:
@@ -2719,11 +3110,14 @@ class SalesProductMixin:
                             where_val = sales_product_id
                         else:
                             return self.send_json({'status': 'error', 'message': '当前销售产品缺少 variant_id，无法定位图片'}, start_response)
+                        join_it = "LEFT JOIN image_types it ON it.id = ia.image_type_id" if has_ia_tid else ""
+                        old_type_sel = "it.name AS old_type_name" if has_ia_tid else "'' AS old_type_name"
                         cur.execute(
-                            """
-                            SELECT sim.id, sim.image_asset_id, sim.sort_order, ia.storage_path
+                            f"""
+                            SELECT sim.id, sim.image_asset_id, sim.sort_order, ia.storage_path, {old_type_sel}
                             FROM sku_image_mappings sim
                             JOIN image_assets ia ON ia.id = sim.image_asset_id
+                            {join_it}
                             WHERE {where_key}=%s AND (ia.storage_path=%s OR ia.storage_path LIKE %s)
                             ORDER BY sim.sort_order ASC, sim.id ASC
                             LIMIT 1
@@ -2735,21 +3129,51 @@ class SalesProductMixin:
                             return self.send_json({'status': 'error', 'message': '图片不存在'}, start_response)
 
                         aid = mapping.get('image_asset_id')
+                        old_storage_path = str(mapping.get('storage_path') or '').strip()
+                        old_type_name = str(mapping.get('old_type_name') or '').strip()
                         ia_sets = []
                         ia_params = []
                         if description is not None:
                             ia_sets.append('description=%s')
                             ia_params.append(description)
-                        if image_type_name and self._table_has_column(conn, 'image_assets', 'image_type_id'):
+                        if image_type_name and has_ia_tid:
                             tid = self._get_image_type_id_by_name(conn, image_type_name)
                             if tid:
                                 ia_sets.append('image_type_id=%s')
                                 ia_params.append(tid)
+                        if has_ia_dep and is_deprecated is not None:
+                            ia_sets.append('is_deprecated=%s')
+                            ia_params.append(1 if int(is_deprecated or 0) else 0)
                         if ia_sets:
                             cur.execute(
                                 f"UPDATE image_assets SET {', '.join(ia_sets)} WHERE id=%s",
                                 tuple(ia_params + [aid]),
                             )
+                        # Rename file if type changed and filename follows "类型-原名称.ext"
+                        try:
+                            if image_type_name and old_storage_path:
+                                old_base = os.path.basename(old_storage_path)
+                                new_prefix = self._sanitize_filename_component(image_type_name, 32)
+                                old_prefix = self._sanitize_filename_component(old_type_name, 32) if old_type_name else ''
+                                if new_prefix and old_base:
+                                    rest = old_base
+                                    if old_prefix and rest.startswith(old_prefix + '-'):
+                                        rest = rest[len(old_prefix) + 1:]
+                                    if rest.startswith(new_prefix + '-'):
+                                        new_base = rest
+                                    else:
+                                        new_base = f"{new_prefix}-{rest}"
+                                    if new_base != old_base:
+                                        new_storage_path = old_storage_path[:-len(old_base)] + new_base
+                                        old_abs = self._join_resources(old_storage_path)
+                                        new_abs = self._join_resources(new_storage_path)
+                                        os.replace(old_abs, new_abs)
+                                        cur.execute(
+                                            "UPDATE image_assets SET storage_path=%s WHERE id=%s",
+                                            (new_storage_path, aid),
+                                        )
+                        except Exception:
+                            pass
                         if sort_order is not None:
                             cur.execute(
                                 "UPDATE sku_image_mappings SET sort_order=%s WHERE id=%s",

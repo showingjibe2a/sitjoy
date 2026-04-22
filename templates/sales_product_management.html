@@ -534,6 +534,13 @@
                 </div>
             </div>
             <div class="form-group pm-form-full" style="margin-top:0.55rem;">
+                <label>是否弃用</label>
+                <div style="display:flex; gap:0.45rem; flex-wrap:wrap;">
+                    <button id="mainImageDeprecatedNo" class="status-pill status-pill--no" type="button" onclick="setMainImageDeprecated(false)">否</button>
+                    <button id="mainImageDeprecatedYes" class="status-pill status-pill--yes" type="button" onclick="setMainImageDeprecated(true)">是</button>
+                </div>
+            </div>
+            <div class="form-group pm-form-full" style="margin-top:0.55rem;">
                 <label for="mainImageDescInput">图片备注</label>
                 <textarea id="mainImageDescInput" class="optional-field" placeholder="请输入图片备注（可为空）" style="min-height: 160px;"></textarea>
             </div>
@@ -619,6 +626,7 @@
         let currentProductStatus = 'enabled';
         let mainImageItems = [];
         let fabricImageItems = [];
+        let currentEditingMainImageDeprecated = false;
         let currentEditingMainImageName = '';
         let salesImageTypeOptions = [];
         let selectedMainImageType = '文字卖点图';
@@ -1307,7 +1315,9 @@
             // Append fabric-linked images into the same grid (readonly, no delete)
             if (Array.isArray(fabricImageItems) && fabricImageItems.length) {
                 const badgeStyle = 'display:inline-flex;align-items:center;gap:.25rem;padding:.15rem .45rem;border-radius:999px;background:rgba(73,110,92,0.12);color:#3d6a52;font-weight:700;font-size:.72rem;';
-                const fabricList = (fabricImageItems || []).slice().sort((a, b) => {
+                const fabricList = (fabricImageItems || []).slice()
+                    .filter(x => filterType === '全部' || String(x.image_type_name || '').trim() === filterType)
+                    .sort((a, b) => {
                     const ta = String(a.image_type_name || '').trim();
                     const tb = String(b.image_type_name || '').trim();
                     if (ta !== tb) return ta.localeCompare(tb, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
@@ -1636,6 +1646,10 @@
                 showModalStatus('请先保存当前子体，再上传主图', true);
                 return;
             }
+            if (String(selectedMainImageFilterType || '').trim() === '全部') {
+                showModalStatus('当前筛选为“全部图片”，为避免图片类型错误，请先选择一个具体图片类型后再上传。', true);
+                return;
+            }
             const input = document.getElementById('modalMainImageUpload');
             if (input) input.click();
         }
@@ -1770,6 +1784,7 @@
             currentEditingMainImageName = imageName;
             const current = (mainImageItems || []).find(x => String(x.image_name || '') === String(imageName));
             document.getElementById('mainImageDescInput').value = current ? (current.description || '') : '';
+            setMainImageDeprecated(Boolean(current && Number(current.is_deprecated || 0) === 1));
             // Render type bar in modal (same options as main bar, without "+")
             const bar = document.getElementById('mainImageEditTypeBar');
             if (bar) {
@@ -1794,6 +1809,14 @@
             document.getElementById('mainImageDescInput').focus();
         }
 
+        function setMainImageDeprecated(isDeprecated) {
+            currentEditingMainImageDeprecated = Boolean(isDeprecated);
+            const yesBtn = document.getElementById('mainImageDeprecatedYes');
+            const noBtn = document.getElementById('mainImageDeprecatedNo');
+            if (yesBtn) yesBtn.classList.toggle('is-active', currentEditingMainImageDeprecated);
+            if (noBtn) noBtn.classList.toggle('is-active', !currentEditingMainImageDeprecated);
+        }
+
         function closeMainImageDescModal() {
             document.getElementById('main-image-desc-modal').classList.remove('active');
             currentEditingMainImageName = '';
@@ -1814,7 +1837,8 @@
                     sales_product_id: editId,
                     image_name: currentEditingMainImageName,
                     description,
-                    image_type_name
+                    image_type_name,
+                    is_deprecated: currentEditingMainImageDeprecated ? 1 : 0
                 })
             }).then(r => r.json()).then(data => {
                 if (data.status !== 'success') {
