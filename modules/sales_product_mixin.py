@@ -2143,13 +2143,38 @@ class SalesProductMixin:
         return self._parse_int(fallback.get('id'))
 
     def _get_sales_product_image_sort_start(self, conn, sales_product_id):
+        """
+        Return the current max sort_order for the target sales product.
+        Compatible with both schemas:
+        - legacy: sku_image_mappings.sales_product_id
+        - new:    sku_image_mappings.variant_id (sales_products.variant_id)
+        """
+        spid = int(sales_product_id or 0)
+        if not spid:
+            return 0
+        has_sim_spid = self._table_has_column(conn, 'sku_image_mappings', 'sales_product_id')
+        has_sim_vid = self._table_has_column(conn, 'sku_image_mappings', 'variant_id')
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT COALESCE(MAX(sort_order), 0) AS max_sort FROM sku_image_mappings WHERE sales_product_id=%s",
-                (sales_product_id,)
-            )
-            row = cur.fetchone() or {}
-        return max(0, self._parse_int(row.get('max_sort')) or 0)
+            if has_sim_spid:
+                cur.execute(
+                    "SELECT COALESCE(MAX(sort_order), 0) AS max_sort FROM sku_image_mappings WHERE sales_product_id=%s",
+                    (spid,)
+                )
+                row = cur.fetchone() or {}
+                return max(0, self._parse_int(row.get('max_sort')) or 0)
+            if has_sim_vid:
+                cur.execute("SELECT variant_id FROM sales_products WHERE id=%s", (spid,))
+                r = cur.fetchone() or {}
+                vid = self._parse_int(r.get('variant_id')) or 0
+                if not vid:
+                    return 0
+                cur.execute(
+                    "SELECT COALESCE(MAX(sort_order), 0) AS max_sort FROM sku_image_mappings WHERE variant_id=%s",
+                    (vid,)
+                )
+                row = cur.fetchone() or {}
+                return max(0, self._parse_int(row.get('max_sort')) or 0)
+        return 0
 
     def _load_variant_first_image_preview(self, conn, variant_ids, type_name='白底图'):
         """
@@ -2181,8 +2206,10 @@ class SalesProductMixin:
             join_it = "JOIN image_types it ON it.id = sim.image_type_id"
 
         placeholders = ",".join(["%s"] * len(vids))
+        has_ia_ofn = self._table_has_column(conn, 'image_assets', 'original_filename')
+        ofn_sel = "ia.original_filename" if has_ia_ofn else "'' AS original_filename"
         sql = f"""
-            SELECT sim.variant_id, ia.storage_path, ia.original_filename, sim.sort_order, sim.id
+            SELECT sim.variant_id, ia.storage_path, {ofn_sel}, sim.sort_order, sim.id
             FROM sku_image_mappings sim
             JOIN image_assets ia ON ia.id = sim.image_asset_id
             {join_it}
@@ -2351,10 +2378,14 @@ class SalesProductMixin:
 
     def _read_sales_product_image_items(self, conn, sales_product_id=None, variant_id=None):
         has_variant = self._table_has_column(conn, 'sku_image_mappings', 'variant_id')
+        has_sales_product_id = self._table_has_column(conn, 'sku_image_mappings', 'sales_product_id')
         has_sim_tid = self._table_has_column(conn, 'sku_image_mappings', 'image_type_id')
         has_ia_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
         has_ia_dep = self._table_has_column(conn, 'image_assets', 'is_deprecated')
         use_variant = bool(variant_id) and has_variant
+        # If legacy sales_product_id column is gone, we must query by variant_id.
+        if not has_sales_product_id and not use_variant:
+            return []
         where_col = "sim.variant_id" if use_variant else "sim.sales_product_id"
         where_val = int(variant_id) if use_variant else int(sales_product_id or 0)
         dep_expr = "COALESCE(ia.is_deprecated,0)" if has_ia_dep else "0"
@@ -2572,6 +2603,18 @@ class SalesProductMixin:
                     except Exception:
                         variant_id = 0
                     with conn.cursor() as cur:
+                        has_sim_vid = self._table_has_column(conn, 'sku_image_mappings', 'variant_id')
+                        has_sim_spid = self._table_has_column(conn, 'sku_image_mappings', 'sales_product_id')
+                        if not has_sim_vid and not has_sim_spid:
+                            return self.send_json({'status': 'error', 'message': '图片映射表缺少 variant_id / sales_product_id 字段，无法定位图片'}, start_response)
+                        if has_sim_vid and variant_id:
+                            where_key = "sim.variant_id"
+                            where_val = variant_id
+                        elif has_sim_spid:
+                            where_key = "sim.sales_product_id"
+                            where_val = sales_product_id
+                        else:
+                            return self.send_json({'status': 'error', 'message': '当前销售产品缺少 variant_id，无法定位图片'}, start_response)
                         cur.execute(
                             """
                             SELECT sim.id, sim.image_asset_id, sim.sort_order, ia.storage_path
@@ -2580,8 +2623,8 @@ class SalesProductMixin:
                             WHERE {where_key}=%s AND (ia.storage_path=%s OR ia.storage_path LIKE %s)
                             ORDER BY sim.sort_order ASC, sim.id ASC
                             LIMIT 1
-                            """.format(where_key=("sim.variant_id" if (variant_id and self._table_has_column(conn, 'sku_image_mappings', 'variant_id')) else "sim.sales_product_id")),
-                            ((variant_id if (variant_id and self._table_has_column(conn, 'sku_image_mappings', 'variant_id')) else sales_product_id), image_name, f'%/{image_name}')
+                            """.format(where_key=where_key),
+                            (where_val, image_name, f'%/{image_name}')
                         )
                         mapping = cur.fetchone() or {}
                         if not mapping.get('id'):
@@ -2627,6 +2670,18 @@ class SalesProductMixin:
                     except Exception:
                         variant_id = 0
                     with conn.cursor() as cur:
+                        has_sim_vid = self._table_has_column(conn, 'sku_image_mappings', 'variant_id')
+                        has_sim_spid = self._table_has_column(conn, 'sku_image_mappings', 'sales_product_id')
+                        if not has_sim_vid and not has_sim_spid:
+                            return self.send_json({'status': 'error', 'message': '图片映射表缺少 variant_id / sales_product_id 字段，无法定位图片'}, start_response)
+                        if has_sim_vid and variant_id:
+                            where_key = "sim.variant_id"
+                            where_val = variant_id
+                        elif has_sim_spid:
+                            where_key = "sim.sales_product_id"
+                            where_val = sales_product_id
+                        else:
+                            return self.send_json({'status': 'error', 'message': '当前销售产品缺少 variant_id，无法定位图片'}, start_response)
                         cur.execute(
                             """
                             SELECT sim.id, sim.image_asset_id, ia.storage_path
@@ -2635,8 +2690,8 @@ class SalesProductMixin:
                             WHERE {where_key}=%s AND (ia.storage_path=%s OR ia.storage_path LIKE %s)
                             ORDER BY sim.sort_order ASC, sim.id ASC
                             LIMIT 1
-                            """.format(where_key=("sim.variant_id" if (variant_id and self._table_has_column(conn, 'sku_image_mappings', 'variant_id')) else "sim.sales_product_id")),
-                            ((variant_id if (variant_id and self._table_has_column(conn, 'sku_image_mappings', 'variant_id')) else sales_product_id), image_name, f'%/{image_name}')
+                            """.format(where_key=where_key),
+                            (where_val, image_name, f'%/{image_name}')
                         )
                         mapping = cur.fetchone() or {}
                         if not mapping.get('id'):
