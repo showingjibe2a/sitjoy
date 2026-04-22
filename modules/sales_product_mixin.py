@@ -133,7 +133,7 @@ class SalesProductMixin:
             return None
 
         with conn.cursor() as cur:
-            cur.execute("SELECT id, storage_path, original_filename FROM image_assets WHERE id=%s LIMIT 1", (aid,))
+            cur.execute("SELECT id, storage_path FROM image_assets WHERE id=%s LIMIT 1", (aid,))
             asset = cur.fetchone() or {}
         storage_path = (asset.get('storage_path') or '').strip()
         if not storage_path:
@@ -154,7 +154,7 @@ class SalesProductMixin:
             pass
 
         ext = os.path.splitext(os.path.basename(storage_path))[1] or '.jpg'
-        orig = (asset.get('original_filename') or '').strip() or os.path.basename(storage_path)
+        orig = os.path.basename(storage_path)
         base_part = self._sanitize_filename_component(os.path.splitext(orig)[0], 80) or f"image_{aid}"
         filename = f"{base_part}{ext}"
         final_name = self._next_available_filename(target_folder, filename)
@@ -1979,12 +1979,15 @@ class SalesProductMixin:
 
     def _insert_image_asset_dynamic(self, conn, cur, rec):
         """Insert image_assets; optional legacy columns if still present post-migration."""
-        cols = ['sha256', 'storage_path', 'original_filename']
+        cols = ['sha256', 'storage_path']
         vals = [
             rec.get('sha256'),
             rec.get('storage_path'),
-            (rec.get('original_filename') or rec.get('filename') or ''),
         ]
+        # Include original_filename only if column still exists (pre-migration)
+        if self._table_has_column(conn, 'image_assets', 'original_filename'):
+            cols.append('original_filename')
+            vals.append((rec.get('original_filename') or rec.get('filename') or ''))
         if self._table_has_column(conn, 'image_assets', 'description'):
             cols.append('description')
             vals.append(rec.get('description', '') or '')
@@ -2001,10 +2004,14 @@ class SalesProductMixin:
             if self._table_has_column(conn, 'image_assets', c):
                 cols.append(c)
                 vals.append(int(v or 0) if c == 'file_size' else v)
+        # Ensure created_by is written if user_id is provided and column exists
         uid = rec.get('created_by')
-        if uid and self._table_has_column(conn, 'image_assets', 'created_by'):
-            cols.append('created_by')
-            vals.append(int(uid))
+        if self._table_has_column(conn, 'image_assets', 'created_by'):
+            if uid:
+                cols.append('created_by')
+                vals.append(int(uid))
+            # If uid is None/empty and column exists, default to current user if available
+            # Otherwise let the column remain NULL (default behavior)
         ph = ', '.join(['%s'] * len(cols))
         cur.execute(f"INSERT INTO image_assets ({', '.join(cols)}) VALUES ({ph})", tuple(vals))
         return cur.lastrowid
@@ -2067,7 +2074,7 @@ class SalesProductMixin:
             cur.execute(
                 f"""
                 SELECT sim.id AS mapping_id, sim.sort_order,
-                       ia.id AS image_asset_id, ia.sha256, ia.storage_path, ia.original_filename,
+                       ia.id AS image_asset_id, ia.sha256, ia.storage_path,
                        ia.description,
                        {type_id_expr} AS image_type_id,
                        {type_name_expr} AS image_type_name,
@@ -2084,7 +2091,7 @@ class SalesProductMixin:
         items = []
         for row in rows:
             storage_path = (row.get('storage_path') or '').strip()
-            image_name = (row.get('original_filename') or '').strip() or os.path.basename(storage_path)
+            image_name = os.path.basename(storage_path) if storage_path else ''
             # On some Windows/Python setups, the filesystem encoding may effectively behave like ASCII.
             # Avoid crashing JSON responses when storage_path contains Chinese or other non-ASCII chars.
             if isinstance(storage_path, str):
@@ -2210,14 +2217,14 @@ class SalesProductMixin:
                     with conn.cursor() as cur:
                         cur.execute(
                             """
-                            SELECT sim.id, sim.image_asset_id, sim.sort_order, ia.storage_path, ia.original_filename
+                            SELECT sim.id, sim.image_asset_id, sim.sort_order, ia.storage_path
                             FROM sku_image_mappings sim
                             JOIN image_assets ia ON ia.id = sim.image_asset_id
-                            WHERE {where_key}=%s AND (ia.original_filename=%s OR ia.storage_path=%s OR ia.storage_path LIKE %s)
+                            WHERE {where_key}=%s AND (ia.storage_path=%s OR ia.storage_path LIKE %s)
                             ORDER BY sim.sort_order ASC, sim.id ASC
                             LIMIT 1
                             """.format(where_key=("sim.variant_id" if (variant_id and self._table_has_column(conn, 'sku_image_mappings', 'variant_id')) else "sim.sales_product_id")),
-                            ((variant_id if (variant_id and self._table_has_column(conn, 'sku_image_mappings', 'variant_id')) else sales_product_id), image_name, image_name, f'%/{image_name}')
+                            ((variant_id if (variant_id and self._table_has_column(conn, 'sku_image_mappings', 'variant_id')) else sales_product_id), image_name, f'%/{image_name}')
                         )
                         mapping = cur.fetchone() or {}
                         if not mapping.get('id'):
@@ -2268,11 +2275,11 @@ class SalesProductMixin:
                             SELECT sim.id, sim.image_asset_id, ia.storage_path
                             FROM sku_image_mappings sim
                             JOIN image_assets ia ON ia.id = sim.image_asset_id
-                            WHERE {where_key}=%s AND (ia.original_filename=%s OR ia.storage_path=%s OR ia.storage_path LIKE %s)
+                            WHERE {where_key}=%s AND (ia.storage_path=%s OR ia.storage_path LIKE %s)
                             ORDER BY sim.sort_order ASC, sim.id ASC
                             LIMIT 1
                             """.format(where_key=("sim.variant_id" if (variant_id and self._table_has_column(conn, 'sku_image_mappings', 'variant_id')) else "sim.sales_product_id")),
-                            ((variant_id if (variant_id and self._table_has_column(conn, 'sku_image_mappings', 'variant_id')) else sales_product_id), image_name, image_name, f'%/{image_name}')
+                            ((variant_id if (variant_id and self._table_has_column(conn, 'sku_image_mappings', 'variant_id')) else sales_product_id), image_name, f'%/{image_name}')
                         )
                         mapping = cur.fetchone() or {}
                         if not mapping.get('id'):
@@ -2411,8 +2418,12 @@ class SalesProductMixin:
                 user_id = None
                 try:
                     user_id = self._get_session_user(environ)
-                except Exception:
-                    user_id = None
+                except Exception as e:
+                    # Failed to get session user
+                    return self.send_json({'status': 'error', 'message': f'无法验证用户身份，请确保已登录。错误：{str(e)}'}, start_response)
+                
+                if not user_id:
+                    return self.send_json({'status': 'error', 'message': '必须登录才能上传图片'}, start_response)
 
                 duplicates = []
                 normalized = []

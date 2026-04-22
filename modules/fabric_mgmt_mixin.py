@@ -82,7 +82,7 @@ class FabricManagementMixin:
                         if self._has_required_tables(['fabric_image_mappings', 'image_assets']):
                             cur.execute(
                                 """
-                                SELECT fim.fabric_id AS fabric_id, ia.storage_path AS storage_path, ia.original_filename AS original_filename
+                                SELECT fim.fabric_id AS fabric_id, ia.storage_path AS storage_path
                                 FROM fabric_image_mappings fim
                                 INNER JOIN image_assets ia ON ia.id = fim.image_asset_id
                                 """
@@ -93,7 +93,7 @@ class FabricManagementMixin:
                         db_count = 0
                         for row in db_rows:
                             sp = (row.get('storage_path') or '').strip()
-                            display = os.path.basename(sp) if sp else (row.get('original_filename') or '')
+                            display = os.path.basename(sp) if sp else ''
                             image_name = str(display or '').strip().replace('\\', '/')
                             if not image_name:
                                 continue
@@ -486,7 +486,7 @@ class FabricManagementMixin:
                                 tname_sel = "it.name AS type_name" if has_ia_tid else "NULL AS type_name"
                                 cur.execute(
                                     f"""
-                                    SELECT fim.fabric_id, ia.storage_path AS storage_path, ia.original_filename,
+                                    SELECT fim.fabric_id, ia.storage_path AS storage_path,
                                            fim.sort_order, ia.description AS description,
                                            {dep_expr} AS is_deprecated,
                                            {tname_sel}, {tid_sel}
@@ -503,7 +503,7 @@ class FabricManagementMixin:
                                     if not fid:
                                         continue
                                     storage_path = (img.get('storage_path') or '').strip()
-                                    display_name = os.path.basename(storage_path) if storage_path else (img.get('original_filename') or '')
+                                    display_name = os.path.basename(storage_path) if storage_path else ''
                                     tname = (img.get('type_name') or '').strip()
                                     image_map.setdefault(fid, []).append({
                                         'image_name': display_name or '',
@@ -704,8 +704,8 @@ class FabricManagementMixin:
                     vals.append(aid)
                     cur.execute(f"UPDATE image_assets SET {', '.join(sets)} WHERE id=%s", tuple(vals))
                 else:
-                    cols = ["sha256", "storage_path", "original_filename", "description"]
-                    vals = [sha256, storage_path, orig_fn, desc_v or None]
+                    cols = ["sha256", "storage_path", "description"]
+                    vals = [sha256, storage_path, desc_v or None]
                     if has_tid:
                         cols.append("image_type_id")
                         vals.append(tid)
@@ -796,8 +796,8 @@ class FabricManagementMixin:
 
                 def _insert_image_asset_row(cur, sha256_val, storage_path_val, orig_fn, content_len, remark_text):
                     has = lambda col: self._table_has_column(conn, 'image_assets', col)
-                    cols = ['sha256', 'storage_path', 'original_filename']
-                    vals = [sha256_val, storage_path_val, orig_fn]
+                    cols = ['sha256', 'storage_path']
+                    vals = [sha256_val, storage_path_val]
                     if has('description'):
                         cols.append('description')
                         vals.append('')

@@ -4172,34 +4172,65 @@ button:not(.shop-type-add):not(.material-type-add):not(.feature-category-add):no
 
 .sj-media-image-remove-icon { position: relative; top: -1px; }
 
-/* Image type selector (shared) */
-.image-type-bar {
+/* Universal option bar and button styles (shared across all management pages) */
+.option-bar,
+.image-type-bar,
+.material-type-bar,
+.supplier-manage-bar {
     display: flex;
     flex-wrap: wrap;
     gap: 0.45rem;
     align-items: center;
+    padding: 0.5rem 0.7rem;
+    border-radius: 8px;
+    background-color: rgba(115, 115, 120, 0.5);
+    background-image: radial-gradient(circle at 15% 15%, rgba(255,255,255,0.02) 0%, transparent 35%);
 }
 
-.image-type-add {
-    width: 34px;
-    height: 34px;
-    border-radius: 10px;
-    border: 1px solid var(--morandi-sand);
-    background: #fff;
-    color: var(--morandi-ink);
-    font-size: 1.05rem;
+/* Add button styles - green for "add", white for "image-type-add" */
+.option-add,
+.material-type-add,
+.image-type-add,
+.supplier-add {
+    padding: 0.42rem 0.7rem;
+    border-radius: 8px;
+    border: 1px solid #5a9b5a;
+    background: #6ba86b;
+    color: #fff;
+    font-size: 1rem;
     line-height: 1;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
+    min-width: 2rem;
+    transition: all 0.15s ease;
 }
 
-.image-type-add:hover { filter: brightness(0.95); }
+.option-add:hover,
+.material-type-add:hover,
+.image-type-add:hover,
+.supplier-add:hover {
+    background: #5a9b5a;
+    border-color: #4a8b4a;
+}
 
-.image-type-radio { margin: 0; }
-.image-type-radio input { display: none; }
-.image-type-radio span {
+/* Radio/option selectors */
+.option-radio,
+.image-type-radio,
+.material-type-radio {
+    margin: 0;
+}
+
+.option-radio input,
+.image-type-radio input,
+.material-type-radio input {
+    display: none;
+}
+
+.option-radio span,
+.image-type-radio span,
+.material-type-radio span {
     display: inline-flex;
     align-items: center;
     padding: 0.42rem 0.7rem;
@@ -4210,9 +4241,12 @@ button:not(.shop-type-add):not(.material-type-add):not(.feature-category-add):no
     cursor: pointer;
     font-size: 0.86rem;
     user-select: none;
+    transition: all 0.15s ease;
 }
 
-.image-type-radio input:checked + span {
+.option-radio input:checked + span,
+.image-type-radio input:checked + span,
+.material-type-radio input:checked + span {
     background: #9b4a4a;
     border-color: #9b4a4a;
     color: #fff;
