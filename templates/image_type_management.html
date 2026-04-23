@@ -209,11 +209,41 @@
                         <span class="switch-slider"></span>
                     </label>
                 </div>
+
+                <div class="form-group pm-form-full" style="margin:0;">
+                    <label>A+布局JSON（手机端）</label>
+                    <textarea id="editAplusLayoutMobile" class="optional-field" style="min-height:140px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:0.88rem; padding:0.65rem 0.8rem;"></textarea>
+                    <div style="display:flex; gap:0.5rem; margin-top:0.5rem; flex-wrap:wrap;">
+                        <button class="btn-secondary" type="button" onclick="formatAplusJson('mobile')">格式化</button>
+                        <button class="btn-secondary" type="button" onclick="previewAplusJson('mobile')">预览</button>
+                    </div>
+                </div>
+                <div class="form-group pm-form-full" style="margin:0;">
+                    <label>A+布局JSON（电脑端）</label>
+                    <textarea id="editAplusLayoutDesktop" class="optional-field" style="min-height:140px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:0.88rem; padding:0.65rem 0.8rem;"></textarea>
+                    <div style="display:flex; gap:0.5rem; margin-top:0.5rem; flex-wrap:wrap;">
+                        <button class="btn-secondary" type="button" onclick="formatAplusJson('desktop')">格式化</button>
+                        <button class="btn-secondary" type="button" onclick="previewAplusJson('desktop')">预览</button>
+                    </div>
+                </div>
             </div>
             <div id="editStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
             <div class="pm-modal-actions">
                 <button class="btn-secondary" type="button" onclick="closeEditModal()">取消</button>
                 <button class="btn-primary" type="button" onclick="saveEditImageType()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="pm-modal" id="aplus-json-preview-modal">
+        <div class="pm-modal-content" style="max-width: 760px;">
+            <h3 style="margin-top:0;">A+布局预览（结构）</h3>
+            <div class="pm-section-body">
+                <div id="aplusJsonPreviewMeta" style="color:rgba(42,36,32,0.72); font-size:0.9rem; margin-bottom:0.55rem;"></div>
+                <div id="aplusJsonPreviewBox" style="border:1px solid var(--morandi-sand); border-radius:12px; background:#fff; padding:0.75rem; max-height:520px; overflow:auto;"></div>
+            </div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" type="button" onclick="closeAplusJsonPreview()">关闭</button>
             </div>
         </div>
     </div>
@@ -445,6 +475,8 @@
             document.getElementById('editApplySales').checked = Number(item.applies_sales || 0) === 1;
             document.getElementById('editApplyAplus').checked = Number(item.applies_aplus || 0) === 1;
             document.getElementById('editEnabled').checked = Number(item.is_enabled || 0) === 1;
+            document.getElementById('editAplusLayoutMobile').value = String(item.aplus_layout_json_mobile || '');
+            document.getElementById('editAplusLayoutDesktop').value = String(item.aplus_layout_json_desktop || '');
             renderPlatformTypeCheckboxes(document.getElementById('editPlatformTypeList'), item.platform_type_ids || []);
             document.getElementById('editStatus').style.display = 'none';
             document.getElementById('editStatus').textContent = '';
@@ -471,6 +503,8 @@
             const required_width_px = document.getElementById('editRequiredWidth').value === '' ? null : Number(document.getElementById('editRequiredWidth').value || 0);
             const required_height_px = document.getElementById('editRequiredHeight').value === '' ? null : Number(document.getElementById('editRequiredHeight').value || 0);
             const platform_type_ids = readPlatformTypeIds(document.getElementById('editPlatformTypeList'));
+            const aplus_layout_json_mobile = String(document.getElementById('editAplusLayoutMobile').value || '');
+            const aplus_layout_json_desktop = String(document.getElementById('editAplusLayoutDesktop').value || '');
             fetch('/api/image-type', {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
@@ -480,6 +514,8 @@
                     required_width_px,
                     required_height_px,
                     platform_type_ids,
+                    aplus_layout_json_mobile,
+                    aplus_layout_json_desktop,
                     applies_fabric: document.getElementById('editApplyFabric').checked,
                     applies_sales: document.getElementById('editApplySales').checked,
                     applies_aplus: document.getElementById('editApplyAplus').checked,
@@ -512,6 +548,72 @@
         document.getElementById('edit-modal').addEventListener('click', function(e) {
             if (e.target === this) closeEditModal();
         });
+
+        document.getElementById('aplus-json-preview-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeAplusJsonPreview();
+        });
+
+        function closeAplusJsonPreview() {
+            document.getElementById('aplus-json-preview-modal').classList.remove('active');
+            document.getElementById('aplusJsonPreviewBox').innerHTML = '';
+            document.getElementById('aplusJsonPreviewMeta').textContent = '';
+        }
+
+        function formatAplusJson(device) {
+            const key = device === 'mobile' ? 'editAplusLayoutMobile' : 'editAplusLayoutDesktop';
+            const box = document.getElementById(key);
+            const text = String(box.value || '').trim();
+            if (!text) return;
+            try {
+                const obj = JSON.parse(text);
+                box.value = JSON.stringify(obj, null, 2);
+            } catch (e) {
+                const el = document.getElementById('editStatus');
+                el.style.display = 'block';
+                el.style.background = '#ffecec';
+                el.style.color = '#a33';
+                el.textContent = 'JSON格式错误：' + e;
+            }
+        }
+
+        function previewAplusJson(device) {
+            const key = device === 'mobile' ? 'editAplusLayoutMobile' : 'editAplusLayoutDesktop';
+            const text = String((document.getElementById(key).value || '')).trim();
+            const meta = document.getElementById('aplusJsonPreviewMeta');
+            const box = document.getElementById('aplusJsonPreviewBox');
+            meta.textContent = `${device === 'mobile' ? '手机端' : '电脑端'} · ${String(document.getElementById('editTypeName').value || '').trim() || '-'}`;
+            box.innerHTML = '';
+            if (!text) {
+                box.innerHTML = '<div style="color:rgba(42,36,32,0.72);">空</div>';
+                document.getElementById('aplus-json-preview-modal').classList.add('active');
+                return;
+            }
+            try {
+                const obj = JSON.parse(text);
+                // 结构预览：列出 modules[] 的 type + 关键字段（不做真实渲染，避免绑定业务过深）
+                const modules = (obj && obj.modules && Array.isArray(obj.modules)) ? obj.modules : [];
+                if (!modules.length) {
+                    box.innerHTML = '<div style="color:rgba(42,36,32,0.72);">未检测到 modules[]</div>';
+                } else {
+                    box.innerHTML = modules.map((m, idx) => {
+                        const type = escapeHtml((m && m.type) ? String(m.type) : '');
+                        const props = m && typeof m.props === 'object' ? m.props : {};
+                        const propsText = escapeHtml(JSON.stringify(props, null, 2));
+                        return `<div style="border:1px solid var(--morandi-sand); border-radius:12px; padding:0.65rem; margin-bottom:0.6rem;">
+                            <div style="font-weight:700; margin-bottom:0.35rem;">模块 ${idx+1}: ${type || '-'}</div>
+                            <pre style="margin:0; white-space:pre-wrap; color:rgba(42,36,32,0.78); font-size:0.88rem;">${propsText}</pre>
+                        </div>`;
+                    }).join('');
+                }
+                document.getElementById('aplus-json-preview-modal').classList.add('active');
+            } catch (e) {
+                const el = document.getElementById('editStatus');
+                el.style.display = 'block';
+                el.style.background = '#ffecec';
+                el.style.color = '#a33';
+                el.textContent = 'JSON格式错误：' + e;
+            }
+        }
 
         window.addEventListener('load', function() {
             loadPlatformTypes().finally(() => loadImageTypeList());

@@ -340,11 +340,12 @@
 
     <div class="pm-modal" id="pm-modal">
         <div class="pm-modal-content pm-modal-content--wide">
-            <div class="pm-section-header" style="margin-bottom: 12px;">
-                <h3 id="pm-modal-title" style="margin:0;">新增销售产品</h3>
-                <button type="button" class="btn-helper-pill" onclick="openCopyModal()">复制已有产品信息</button>
-            </div>
-            <div class="pm-form">
+            <div class="pm-modal-scroll">
+                <div class="pm-section-header" style="margin-bottom: 12px;">
+                    <h3 id="pm-modal-title" style="margin:0;">新增销售产品</h3>
+                    <button type="button" class="btn-helper-pill" onclick="openCopyModal()">复制已有产品信息</button>
+                </div>
+                <div class="pm-form">
                 <div class="pm-section pm-form-full">
                     <h4>父体关联</h4>
                     <div class="pm-section-body pm-form pm-grid-3">
@@ -498,8 +499,9 @@
                         </div>
                     </div>
                 </div>
+                </div>
+                <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
             </div>
-            <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
             <div class="pm-modal-actions">
                 <button class="btn-secondary" onclick="closeModal()">取消</button>
                 <button class="btn-primary" onclick="saveSalesProductFromModal()">保存</button>

@@ -1375,8 +1375,28 @@ input.optional-field[type="datetime-local"]:focus {
 
 .pm-modal-content--wide {
     max-width: 980px;
-    max-height: none;
-    overflow: visible;
+    /* Scroll only the body area, keep actions fixed */
+    min-height: min(720px, calc(100vh - 140px));
+    max-height: calc(100vh - 64px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Scroll container inside wide modals */
+.pm-modal-content--wide .pm-modal-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+/* Fixed bottom actions within wide modals */
+.pm-modal-content--wide .pm-modal-actions {
+    flex: 0 0 auto;
+    margin-top: 0.75rem;
+    padding-top: 0.9rem;
+    background: var(--morandi-cream);
+    border-top: 1px solid rgba(207, 199, 189, 0.6);
 }
 
 html.has-active-modal,
