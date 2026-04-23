@@ -2642,16 +2642,60 @@ class SalesProductMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def _ensure_image_type_scope_columns(self, conn):
-        """Ensure image_types scope columns exist for filtering by target modules."""
-        cols = [
-            ('applies_fabric', 'TINYINT(1) NOT NULL DEFAULT 1'),
-            ('applies_sales', 'TINYINT(1) NOT NULL DEFAULT 1'),
-            ('applies_aplus', 'TINYINT(1) NOT NULL DEFAULT 1'),
-        ]
-        for col, ddl in cols:
-            if not self._table_has_column(conn, 'image_types', col):
-                with conn.cursor() as cur:
-                    cur.execute(f"ALTER TABLE image_types ADD COLUMN {col} {ddl}")
+        """
+        Intentionally NO-OP.
+        Database schema must be managed via scripts/sql/*.sql only.
+        Do not create/alter/check schema at runtime.
+        """
+        return
+
+    def _image_type_platform_table_exists(self, conn):
+        # Intentionally avoid runtime schema checks.
+        return True
+
+    def _get_image_type_platform_ids_map(self, conn, image_type_ids):
+        ids = [self._parse_int(x) for x in (image_type_ids or []) if self._parse_int(x)]
+        if not ids:
+            return {}
+        placeholders = ','.join(['%s'] * len(ids))
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT image_type_id, platform_type_id
+                    FROM image_type_platform_types
+                    WHERE image_type_id IN ({placeholders})
+                    ORDER BY image_type_id ASC, platform_type_id ASC
+                    """,
+                    tuple(ids),
+                )
+                rows = cur.fetchall() or []
+        except Exception:
+            rows = []
+        out = {}
+        for r in rows:
+            tid = self._parse_int(r.get('image_type_id'))
+            pid = self._parse_int(r.get('platform_type_id'))
+            if not tid or not pid:
+                continue
+            out.setdefault(tid, []).append(pid)
+        return out
+
+    def _set_image_type_platform_ids(self, conn, image_type_id, platform_type_ids):
+        tid = self._parse_int(image_type_id)
+        if not tid:
+            return
+        ids = sorted(set([self._parse_int(x) for x in (platform_type_ids or []) if self._parse_int(x)]))
+        try:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM image_type_platform_types WHERE image_type_id=%s", (tid,))
+                for pid in ids:
+                    cur.execute(
+                        "INSERT IGNORE INTO image_type_platform_types (image_type_id, platform_type_id) VALUES (%s, %s)",
+                        (tid, int(pid)),
+                    )
+        except Exception:
+            return
 
     def _parse_bool_flag(self, value, default=False):
         if value is None:
@@ -2671,10 +2715,11 @@ class SalesProductMixin:
             usage = (query_params.get('usage', [''])[0] or '').strip().lower()
             keyword = (query_params.get('q', [''])[0] or '').strip()
             include_disabled = self._parse_bool_flag((query_params.get('include_disabled', ['0'])[0] or '0'), default=False)
+            include_platforms = self._parse_bool_flag((query_params.get('include_platforms', ['0'])[0] or '0'), default=False)
+            platform_type_id = self._parse_int((query_params.get('platform_type_id', [''])[0] or '').strip())
 
             if method == 'GET':
                 with self._get_db_connection() as conn:
-                    self._ensure_image_type_scope_columns(conn)
                     with conn.cursor() as cur:
                         where_parts = []
                         params = []
@@ -2692,11 +2737,23 @@ class SalesProductMixin:
                         if usage_col:
                             where_parts.append(f"{usage_col}=1")
 
+                        # platform filter:
+                        # - if no mapping rows -> 通用 (always included)
+                        # - else must have an explicit mapping row for requested platform_type_id
+                        if platform_type_id and self._image_type_platform_table_exists(conn):
+                            where_parts.append(
+                                "(NOT EXISTS (SELECT 1 FROM image_type_platform_types itpt WHERE itpt.image_type_id=image_types.id)"
+                                " OR EXISTS (SELECT 1 FROM image_type_platform_types itpt2 WHERE itpt2.image_type_id=image_types.id AND itpt2.platform_type_id=%s))"
+                            )
+                            params.append(int(platform_type_id))
+
                         where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ''
                         cur.execute(
                             f"""
                             SELECT id, name, is_enabled,
                                    applies_fabric, applies_sales, applies_aplus,
+                                   required_width_px, required_height_px,
+                                   aplus_layout_json_mobile, aplus_layout_json_desktop,
                                    created_at, updated_at
                             FROM image_types
                             {where_sql}
@@ -2705,6 +2762,12 @@ class SalesProductMixin:
                             tuple(params),
                         )
                         rows = cur.fetchall() or []
+                    if include_platforms and rows:
+                        id_list = [self._parse_int(r.get('id')) for r in rows if self._parse_int(r.get('id'))]
+                        mp = self._get_image_type_platform_ids_map(conn, id_list)
+                        for r in rows:
+                            rid = self._parse_int(r.get('id'))
+                            r['platform_type_ids'] = mp.get(rid, [])
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             if method == 'POST':
@@ -2718,9 +2781,21 @@ class SalesProductMixin:
                 applies_fabric = int(self._parse_bool_flag(data.get('applies_fabric'), default=True))
                 applies_sales = int(self._parse_bool_flag(data.get('applies_sales'), default=True))
                 applies_aplus = int(self._parse_bool_flag(data.get('applies_aplus'), default=True))
+                required_width_px = data.get('required_width_px', None)
+                required_height_px = data.get('required_height_px', None)
+                platform_type_ids = data.get('platform_type_ids', [])
+                aplus_layout_json_mobile = data.get('aplus_layout_json_mobile', None)
+                aplus_layout_json_desktop = data.get('aplus_layout_json_desktop', None)
+                try:
+                    required_width_px = None if required_width_px is None or required_width_px == '' else int(required_width_px)
+                except Exception:
+                    required_width_px = None
+                try:
+                    required_height_px = None if required_height_px is None or required_height_px == '' else int(required_height_px)
+                except Exception:
+                    required_height_px = None
 
                 with self._get_db_connection() as conn:
-                    self._ensure_image_type_scope_columns(conn)
                     with conn.cursor() as cur:
                         cur.execute("SELECT id, is_enabled FROM image_types WHERE name=%s LIMIT 1", (name,))
                         exists = cur.fetchone() or {}
@@ -2731,21 +2806,31 @@ class SalesProductMixin:
                                 SET is_enabled=1,
                                     applies_fabric=%s,
                                     applies_sales=%s,
-                                    applies_aplus=%s
+                                    applies_aplus=%s,
+                                    required_width_px=%s,
+                                    required_height_px=%s,
+                                    aplus_layout_json_mobile=%s,
+                                    aplus_layout_json_desktop=%s
                                 WHERE id=%s
                                 """,
-                                (applies_fabric, applies_sales, applies_aplus, exists.get('id')),
+                                (applies_fabric, applies_sales, applies_aplus, required_width_px, required_height_px, aplus_layout_json_mobile, aplus_layout_json_desktop, exists.get('id')),
                             )
+                            self._set_image_type_platform_ids(conn, exists.get('id'), platform_type_ids)
                             return self.send_json({'status': 'success', 'id': exists.get('id'), 'reused': True}, start_response)
 
                         cur.execute(
                             """
-                            INSERT INTO image_types (name, is_enabled, applies_fabric, applies_sales, applies_aplus)
-                            VALUES (%s, 1, %s, %s, %s)
+                            INSERT INTO image_types (
+                                name, is_enabled, applies_fabric, applies_sales, applies_aplus,
+                                required_width_px, required_height_px,
+                                aplus_layout_json_mobile, aplus_layout_json_desktop
+                            )
+                            VALUES (%s, 1, %s, %s, %s, %s, %s, %s, %s)
                             """,
-                            (name, applies_fabric, applies_sales, applies_aplus),
+                            (name, applies_fabric, applies_sales, applies_aplus, required_width_px, required_height_px, aplus_layout_json_mobile, aplus_layout_json_desktop),
                         )
                         new_id = cur.lastrowid
+                    self._set_image_type_platform_ids(conn, new_id, platform_type_ids)
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
             if method in ('PUT', 'PATCH'):
@@ -2759,6 +2844,25 @@ class SalesProductMixin:
                     if key in data:
                         sets.append(f"{key}=%s")
                         vals.append(int(self._parse_bool_flag(data.get(key), default=False)))
+                for key in ('required_width_px', 'required_height_px'):
+                    if key in data:
+                        v = data.get(key)
+                        if v is None or v == '':
+                            sets.append(f"{key}=NULL")
+                        else:
+                            try:
+                                sets.append(f"{key}=%s")
+                                vals.append(int(v))
+                            except Exception:
+                                sets.append(f"{key}=NULL")
+                for key in ('aplus_layout_json_mobile', 'aplus_layout_json_desktop'):
+                    if key in data:
+                        v = data.get(key)
+                        if v is None:
+                            sets.append(f"{key}=NULL")
+                        else:
+                            sets.append(f"{key}=%s")
+                            vals.append(str(v))
                 if 'name' in data:
                     name = str(data.get('name') or '').strip()
                     if not name:
@@ -2767,13 +2871,16 @@ class SalesProductMixin:
                         return self.send_json({'status': 'error', 'message': '类型名称长度不能超过64个字符'}, start_response)
                     sets.append('name=%s')
                     vals.append(name)
-                if not sets:
+                has_platform_ids = 'platform_type_ids' in data
+                if (not sets) and (not has_platform_ids):
                     return self.send_json({'status': 'error', 'message': 'No updatable fields'}, start_response)
 
                 with self._get_db_connection() as conn:
-                    self._ensure_image_type_scope_columns(conn)
                     with conn.cursor() as cur:
-                        cur.execute(f"UPDATE image_types SET {', '.join(sets)} WHERE id=%s", tuple(vals + [item_id]))
+                        if sets:
+                            cur.execute(f"UPDATE image_types SET {', '.join(sets)} WHERE id=%s", tuple(vals + [item_id]))
+                    if has_platform_ids:
+                        self._set_image_type_platform_ids(conn, item_id, data.get('platform_type_ids', []))
                 return self.send_json({'status': 'success', 'id': item_id}, start_response)
 
             if method == 'DELETE':

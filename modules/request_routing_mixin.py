@@ -9,6 +9,7 @@ API_PERMISSION_MAP = {
     '/api/image-preview': 'gallery',
     '/api/rename': 'gallery',
     '/api/move': 'gallery',
+    '/api/replace': 'gallery',
     '/api/upload': 'gallery',
     '/api/download-zip': 'gallery',
     '/api/image-type': 'image_type_management',
@@ -78,6 +79,10 @@ API_PERMISSION_MAP = {
     '/api/sales-order-registration-template': 'sales_order_registration_management',
     '/api/sales-order-registration-import': 'sales_order_registration_management',
     '/api/parent': 'parent_management',
+    '/api/aplus-version': 'aplus_management',
+    '/api/aplus-version-assets': 'aplus_management',
+    '/api/aplus-version-layout': 'aplus_management',
+    '/api/aplus-upload': 'aplus_management',
 }
 
 PAGE_TEMPLATE_MAP = {
@@ -112,6 +117,7 @@ PAGE_TEMPLATE_MAP = {
     '/amazon-ad-keyword-management': ('templates/amazon_ad_keyword_management.html', 'amazon_ad_keyword_management'),
     '/factory-stock-management': ('templates/factory_stock_management.html', 'factory_stock_management'),
     '/factory-wip-management': ('templates/factory_wip_management.html', 'factory_wip_management'),
+    '/aplus-management': ('templates/aplus_management.html', 'aplus_management'),
 }
 
 API_ROUTE_MAP = {
@@ -123,6 +129,7 @@ API_ROUTE_MAP = {
     '/api/image-preview': ('start', 'handle_image_preview'),
     '/api/rename': ('start', 'handle_rename_api'),
     '/api/move': ('start', 'handle_move_api'),
+    '/api/replace': ('start', 'handle_replace_api'),
     '/api/sku': ('method', 'handle_sku_api'),
     '/api/category': ('method', 'handle_category_api'),
     '/api/fabric': ('method', 'handle_fabric_api'),
@@ -197,6 +204,10 @@ API_ROUTE_MAP = {
     '/api/upload': ('start', 'handle_upload_api'),
     '/api/download-zip': ('method', 'handle_download_zip'),
     '/api/image-type': ('method', 'handle_image_type_api'),
+    '/api/aplus-version': ('method', 'handle_aplus_version_api'),
+    '/api/aplus-version-assets': ('method', 'handle_aplus_version_assets_api'),
+    '/api/aplus-version-layout': ('method', 'handle_aplus_version_layout_api'),
+    '/api/aplus-upload': ('start', 'handle_aplus_upload_api'),
 }
 
 

@@ -88,15 +88,19 @@
                     <thead>
                         <tr>
                             <th>类型名称</th>
+                            <th style="width:120px;">需求宽(px)</th>
+                            <th style="width:120px;">需求高(px)</th>
+                            <th style="min-width:160px;">适用平台</th>
                             <th style="width:120px;" class="switch-cell">适用面料</th>
                             <th style="width:140px;" class="switch-cell">适用销售产品</th>
                             <th style="width:120px;" class="switch-cell">适用A+</th>
                             <th style="width:100px;" class="switch-cell">启用</th>
                             <th style="width:180px;">最后修改时间</th>
+                            <th style="width:120px;">操作</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="10" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -110,6 +114,20 @@
                 <div class="form-group pm-form-full" style="margin:0;">
                     <label for="modalTypeName">类型名称<span class="required-asterisk">*</span></label>
                     <input type="text" id="modalTypeName" class="required-field" maxlength="64" placeholder="例如：白底图 / 场景图 / A+电脑端">
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label for="modalRequiredWidth">需求宽(px)</label>
+                    <input type="number" id="modalRequiredWidth" class="optional-field" min="0" step="1" placeholder="可为空">
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label for="modalRequiredHeight">需求高(px)</label>
+                    <input type="number" id="modalRequiredHeight" class="optional-field" min="0" step="1" placeholder="可为空">
+                </div>
+                <div class="form-group pm-form-full" style="margin:0;">
+                    <label>关联平台（不选=通用）</label>
+                    <div id="modalPlatformTypeWrap" class="pm-inline-panel" style="padding:0.55rem 0.65rem;">
+                        <div id="modalPlatformTypeList" class="pm-select-empty">加载中...</div>
+                    </div>
                 </div>
                 <div class="form-group" style="margin:0;">
                     <label>适用面料</label>
@@ -141,12 +159,74 @@
         </div>
     </div>
 
+    <div class="pm-modal" id="edit-modal">
+        <div class="pm-modal-content" style="max-width: 720px;">
+            <h3 style="margin-top:0;">编辑图片类型</h3>
+            <div class="pm-section-body pm-form">
+                <div class="form-group pm-form-full" style="margin:0;">
+                    <label for="editTypeName">类型名称<span class="required-asterisk">*</span></label>
+                    <input type="text" id="editTypeName" class="required-field" maxlength="64">
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label for="editRequiredWidth">需求宽(px)</label>
+                    <input type="number" id="editRequiredWidth" class="optional-field" min="0" step="1" placeholder="可为空">
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label for="editRequiredHeight">需求高(px)</label>
+                    <input type="number" id="editRequiredHeight" class="optional-field" min="0" step="1" placeholder="可为空">
+                </div>
+                <div class="form-group pm-form-full" style="margin:0;">
+                    <label>关联平台（不选=通用）</label>
+                    <div class="pm-inline-panel" style="padding:0.55rem 0.65rem;">
+                        <div id="editPlatformTypeList" class="pm-select-empty">加载中...</div>
+                    </div>
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label>适用面料</label>
+                    <label class="switch-wrap" aria-label="适用面料">
+                        <input type="checkbox" id="editApplyFabric">
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label>适用销售产品</label>
+                    <label class="switch-wrap" aria-label="适用销售产品">
+                        <input type="checkbox" id="editApplySales">
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label>适用A+</label>
+                    <label class="switch-wrap" aria-label="适用A+">
+                        <input type="checkbox" id="editApplyAplus">
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label>启用</label>
+                    <label class="switch-wrap" aria-label="启用">
+                        <input type="checkbox" id="editEnabled">
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div id="editStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" type="button" onclick="closeEditModal()">取消</button>
+                <button class="btn-primary" type="button" onclick="saveEditImageType()">保存</button>
+            </div>
+        </div>
+    </div>
+
     <footer>
         <p>&copy; 2026 SITJOY | 内部使用</p>
     </footer>
 
     <script src="/static/js/header.js"></script>
     <script>
+        let platformTypeOptions = [];
+        let currentEditItem = null;
+
         function escapeHtml(value) {
             return String(value == null ? '' : value)
                 .replace(/&/g, '&amp;')
@@ -195,37 +275,83 @@
             const tbody = document.querySelector('#imageTypeTable tbody');
             const list = Array.isArray(items) ? items : [];
             if (!list.length) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">暂无数据</td></tr>';
                 return;
             }
             tbody.innerHTML = list.map(item => `
                 <tr>
                     <td>${escapeHtml(item.name || '')}</td>
+                    <td>${item.required_width_px == null ? '-' : Number(item.required_width_px || 0)}</td>
+                    <td>${item.required_height_px == null ? '-' : Number(item.required_height_px || 0)}</td>
+                    <td>${escapeHtml(formatPlatformLabel(item.platform_type_ids || []))}</td>
                     <td class="switch-cell">${buildSwitchCell(item, 'applies_fabric', '适用面料')}</td>
                     <td class="switch-cell">${buildSwitchCell(item, 'applies_sales', '适用销售产品')}</td>
                     <td class="switch-cell">${buildSwitchCell(item, 'applies_aplus', '适用A+')}</td>
                     <td class="switch-cell">${buildSwitchCell(item, 'is_enabled', '启用')}</td>
                     <td>${escapeHtml(formatTime(item.updated_at || item.created_at))}</td>
+                    <td><button class="btn-secondary" type="button" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button></td>
                 </tr>
             `).join('');
         }
 
+        function formatPlatformLabel(platformTypeIds) {
+            const ids = Array.isArray(platformTypeIds) ? platformTypeIds.map(x => Number(x)).filter(x => x) : [];
+            if (!ids.length) return '通用';
+            const names = ids.map(id => {
+                const it = (platformTypeOptions || []).find(x => Number(x.id) === Number(id));
+                return it ? (it.name || '') : String(id);
+            }).filter(Boolean);
+            return names.length ? names.join('、') : '通用';
+        }
+
+        function renderPlatformTypeCheckboxes(containerEl, selectedIds) {
+            if (!containerEl) return;
+            const ids = new Set((Array.isArray(selectedIds) ? selectedIds : []).map(x => Number(x)).filter(x => x));
+            const list = Array.isArray(platformTypeOptions) ? platformTypeOptions : [];
+            if (!list.length) {
+                containerEl.innerHTML = '<div class="pm-select-empty">暂无平台类型</div>';
+                return;
+            }
+            containerEl.innerHTML = list.map(p => {
+                const checked = ids.has(Number(p.id)) ? 'checked' : '';
+                return `<label style="display:inline-flex; align-items:center; gap:0.45rem; margin-right:0.85rem; margin-bottom:0.35rem; user-select:none;">
+                    <input type="checkbox" data-platform-type-id="${Number(p.id)}" ${checked}>
+                    <span>${escapeHtml(p.name || '')}</span>
+                </label>`;
+            }).join('');
+        }
+
+        function readPlatformTypeIds(containerEl) {
+            if (!containerEl) return [];
+            const boxes = Array.from(containerEl.querySelectorAll('input[type="checkbox"][data-platform-type-id]'));
+            return boxes.filter(b => b.checked).map(b => Number(b.getAttribute('data-platform-type-id') || 0)).filter(x => x);
+        }
+
+        function loadPlatformTypes() {
+            return fetch('/api/platform-type')
+                .then(r => r.json())
+                .then(data => {
+                    platformTypeOptions = (data && data.status === 'success' && Array.isArray(data.items)) ? data.items : [];
+                })
+                .catch(() => { platformTypeOptions = []; });
+        }
+
         function loadImageTypeList() {
             const q = encodeURIComponent(String(document.getElementById('searchInput').value || '').trim());
-            const url = `/api/image-type?include_disabled=1&q=${q}`;
+            const url = `/api/image-type?include_disabled=1&include_platforms=1&q=${q}`;
             fetch(url)
                 .then(r => r.json())
                 .then(data => {
                     if (data.status !== 'success') {
                         const tbody = document.querySelector('#imageTypeTable tbody');
-                        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">${escapeHtml(data.message || '加载失败')}</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:#a33;">${escapeHtml(data.message || '加载失败')}</td></tr>`;
                         return;
                     }
                     renderImageTypeList(data.items || []);
                 })
                 .catch(err => {
                     const tbody = document.querySelector('#imageTypeTable tbody');
-                    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">加载失败: ${escapeHtml(String(err || ''))}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:#a33;">加载失败: ${escapeHtml(String(err || ''))}</td></tr>`;
                 });
         }
 
@@ -255,6 +381,9 @@
             document.getElementById('modalApplyFabric').checked = true;
             document.getElementById('modalApplySales').checked = true;
             document.getElementById('modalApplyAplus').checked = true;
+            document.getElementById('modalRequiredWidth').value = '';
+            document.getElementById('modalRequiredHeight').value = '';
+            renderPlatformTypeCheckboxes(document.getElementById('modalPlatformTypeList'), []);
             resetStatus();
             document.getElementById('create-modal').classList.add('active');
             document.getElementById('modalTypeName').focus();
@@ -270,11 +399,17 @@
                 showStatus('请输入类型名称', true);
                 return;
             }
+            const required_width_px = document.getElementById('modalRequiredWidth').value === '' ? null : Number(document.getElementById('modalRequiredWidth').value || 0);
+            const required_height_px = document.getElementById('modalRequiredHeight').value === '' ? null : Number(document.getElementById('modalRequiredHeight').value || 0);
+            const platform_type_ids = readPlatformTypeIds(document.getElementById('modalPlatformTypeList'));
             fetch('/api/image-type', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     name,
+                    required_width_px,
+                    required_height_px,
+                    platform_type_ids,
                     applies_fabric: document.getElementById('modalApplyFabric').checked,
                     applies_sales: document.getElementById('modalApplySales').checked,
                     applies_aplus: document.getElementById('modalApplyAplus').checked
@@ -301,7 +436,86 @@
             if (e.target === this) closeCreateModal();
         });
 
-        window.addEventListener('load', loadImageTypeList);
+        function openEditModal(item) {
+            currentEditItem = item || null;
+            document.getElementById('editTypeName').value = String(item.name || '');
+            document.getElementById('editRequiredWidth').value = item.required_width_px == null ? '' : String(item.required_width_px);
+            document.getElementById('editRequiredHeight').value = item.required_height_px == null ? '' : String(item.required_height_px);
+            document.getElementById('editApplyFabric').checked = Number(item.applies_fabric || 0) === 1;
+            document.getElementById('editApplySales').checked = Number(item.applies_sales || 0) === 1;
+            document.getElementById('editApplyAplus').checked = Number(item.applies_aplus || 0) === 1;
+            document.getElementById('editEnabled').checked = Number(item.is_enabled || 0) === 1;
+            renderPlatformTypeCheckboxes(document.getElementById('editPlatformTypeList'), item.platform_type_ids || []);
+            document.getElementById('editStatus').style.display = 'none';
+            document.getElementById('editStatus').textContent = '';
+            document.getElementById('edit-modal').classList.add('active');
+        }
+
+        function closeEditModal() {
+            document.getElementById('edit-modal').classList.remove('active');
+            currentEditItem = null;
+        }
+
+        function saveEditImageType() {
+            if (!currentEditItem || !currentEditItem.id) return;
+            const id = Number(currentEditItem.id || 0);
+            const name = String(document.getElementById('editTypeName').value || '').trim();
+            if (!name) {
+                const el = document.getElementById('editStatus');
+                el.style.display = 'block';
+                el.style.background = '#ffecec';
+                el.style.color = '#a33';
+                el.textContent = '请输入类型名称';
+                return;
+            }
+            const required_width_px = document.getElementById('editRequiredWidth').value === '' ? null : Number(document.getElementById('editRequiredWidth').value || 0);
+            const required_height_px = document.getElementById('editRequiredHeight').value === '' ? null : Number(document.getElementById('editRequiredHeight').value || 0);
+            const platform_type_ids = readPlatformTypeIds(document.getElementById('editPlatformTypeList'));
+            fetch('/api/image-type', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id,
+                    name,
+                    required_width_px,
+                    required_height_px,
+                    platform_type_ids,
+                    applies_fabric: document.getElementById('editApplyFabric').checked,
+                    applies_sales: document.getElementById('editApplySales').checked,
+                    applies_aplus: document.getElementById('editApplyAplus').checked,
+                    is_enabled: document.getElementById('editEnabled').checked
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                const el = document.getElementById('editStatus');
+                if (data.status !== 'success') {
+                    el.style.display = 'block';
+                    el.style.background = '#ffecec';
+                    el.style.color = '#a33';
+                    el.textContent = data.message || '保存失败';
+                    return;
+                }
+                closeEditModal();
+                loadImageTypeList();
+                if (window.showAppToast) window.showAppToast('已保存', false);
+            })
+            .catch(err => {
+                const el = document.getElementById('editStatus');
+                el.style.display = 'block';
+                el.style.background = '#ffecec';
+                el.style.color = '#a33';
+                el.textContent = '保存失败: ' + err;
+            });
+        }
+
+        document.getElementById('edit-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeEditModal();
+        });
+
+        window.addEventListener('load', function() {
+            loadPlatformTypes().finally(() => loadImageTypeList());
+        });
     </script>
 </body>
 </html>

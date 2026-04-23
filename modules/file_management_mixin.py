@@ -538,6 +538,80 @@ class FileManagementMixin:
             print("Move error: " + str(e))
             return self.send_error(500, str(e), start_response)
 
+    def handle_replace_api(self, environ, start_response):
+        """替换单张图片：旧图移入回收站，新图覆盖原路径。"""
+        try:
+            if environ.get('REQUEST_METHOD') != 'POST':
+                return self.send_error(405, 'Method not allowed', start_response)
+
+            content_type = environ.get('CONTENT_TYPE', '')
+            if 'multipart/form-data' not in content_type:
+                return self.send_error(400, 'Invalid content type', start_response)
+
+            form = cgi.FieldStorage(fp=environ.get('wsgi.input'), environ=environ, keep_blank_values=True)
+            path_b64 = (form.getfirst('id', '') or '').strip()
+            if not path_b64:
+                return self.send_error(400, 'Missing id', start_response)
+            if 'file' not in form:
+                return self.send_error(400, 'Missing file', start_response)
+
+            file_item = form['file']
+            if isinstance(file_item, list):
+                file_item = file_item[0] if file_item else None
+            if not file_item or not getattr(file_item, 'file', None):
+                return self.send_error(400, 'Missing file', start_response)
+
+            try:
+                old_path = self._fs_from_b64(path_b64)
+            except Exception:
+                return self.send_error(400, 'Invalid id', start_response)
+            if '..' in old_path:
+                return self.send_error(403, 'Invalid path', start_response)
+
+            full_old_path = self._join_resources(old_path)
+            abs_old = os.path.abspath(full_old_path)
+            abs_resources = os.path.abspath(RESOURCES_PATH_BYTES)
+            if not abs_old.startswith(abs_resources):
+                return self.send_error(403, 'Access denied', start_response)
+            if not os.path.exists(full_old_path):
+                return self.send_error(404, 'File not found', start_response)
+
+            old_base = os.path.basename(full_old_path)
+            if not self._is_image_name(old_base):
+                return self.send_error(400, 'Not an image', start_response)
+
+            try:
+                new_bytes = file_item.file.read() or b''
+            except Exception:
+                new_bytes = b''
+            if not new_bytes:
+                return self.send_error(400, 'Empty file', start_response)
+
+            # Move old to recycle bin (best-effort)
+            moved_ok = False
+            try:
+                if hasattr(self, '_move_file_to_listing_recycle_bin'):
+                    moved_ok, _dst, _err = self._move_file_to_listing_recycle_bin(full_old_path)
+            except Exception:
+                moved_ok = False
+            if not moved_ok:
+                return self.send_error(500, 'Cannot move old file', start_response)
+
+            # Write new bytes back to original path
+            try:
+                parent = os.path.dirname(full_old_path)
+                if parent and not os.path.exists(parent):
+                    os.makedirs(parent, exist_ok=True)
+                with open(full_old_path, 'wb') as f:
+                    f.write(new_bytes)
+            except Exception as e:
+                return self.send_error(500, f'Write failed: {e}', start_response)
+
+            return self.send_json({'status': 'success'}, start_response)
+        except Exception as e:
+            print("Replace error: " + str(e))
+            return self.send_error(500, str(e), start_response)
+
 
     def handle_upload_api(self, environ, start_response):
         """处理图片上传（multipart/form-data）"""

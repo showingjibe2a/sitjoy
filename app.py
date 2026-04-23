@@ -28,6 +28,7 @@ from modules.order_mgmt_mixin import OrderManagementMixin
 from modules.page_permission_mixin import PagePermissionMixin
 from modules.product_mgmt_mixin import ProductManagementMixin
 from modules.request_routing_mixin import API_PERMISSION_MAP, PAGE_TEMPLATE_MAP, RequestRoutingMixin
+from modules.aplus_mixin import AplusMixin
 from modules.sales_management_mixin import SalesManagementMixin
 from modules.sales_product_mixin import SalesProductMixin
 from modules.support_domain_mixin import SupportDomainMixin
@@ -61,6 +62,7 @@ class WSGIApp(
     AmazonAccountHealthMixin,
     AmazonAdMixin,
     SalesProductMixin,
+    AplusMixin,
     SalesManagementMixin,
 ):
     _schema_ready_cache = {}
@@ -103,7 +105,8 @@ class WSGIApp(
             'sales_order_registration_management': '订单登记管理',
             'parent_management': '父体管理',
             'gallery': '图片管理',
-            'image_type_management': '图片类型管理'
+            'image_type_management': '图片类型管理',
+            'aplus_management': 'A+管理',
         }
         self.PAGE_PERMISSION_LABELS = {
             key: label_map.get(key, key.replace('_', ' '))
@@ -114,7 +117,7 @@ class WSGIApp(
             {'key': 'shop_brand_management', 'title': '店铺管理', 'page_keys': ['shop_brand_management', 'amazon_account_health_management']},
             {'key': 'product_management', 'title': '产品管理', 'page_keys': ['product_management', 'fabric_management', 'feature_management', 'material_management', 'certification_management', 'order_product_management']},
             {'key': 'logistics_factory_management', 'title': '物流仓储管理', 'page_keys': ['logistics_factory_management', 'logistics_forwarder_management', 'logistics_warehouse_management', 'logistics_warehouse_inventory_management', 'logistics_in_transit_management', 'factory_stock_management', 'factory_wip_management', 'logistics_warehouse_dashboard']},
-            {'key': 'gallery', 'title': '图片管理', 'page_keys': ['gallery', 'image_type_management']},
+            {'key': 'gallery', 'title': '图片管理', 'page_keys': ['gallery', 'image_type_management', 'aplus_management']},
             {'key': 'sales_product_management', 'title': '销售管理', 'page_keys': ['sales_product_management', 'sales_product_performance_management', 'sales_order_registration_management', 'parent_management']},
             {'key': 'amazon_ad_adjustment_management', 'title': 'Amazon广告管理', 'page_keys': ['amazon_ad_adjustment_management', 'amazon_ad_keyword_management', 'amazon_ad_management', 'amazon_ad_subtype_management', 'amazon_ad_delivery_management', 'amazon_ad_product_management']},
             {'key': 'about', 'title': '关于', 'page_keys': ['about']}

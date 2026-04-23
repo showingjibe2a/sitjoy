@@ -51,35 +51,29 @@
         <div class="debug-container" id="debug-container"></div>
     </div>
 
-    <!-- 重命名对话框 -->
-    <div class="rename-dialog" id="rename-dialog">
-        <div class="rename-content">
+    <!-- 重命名对话框（统一 pm-modal 风格） -->
+    <div class="pm-modal" id="rename-dialog">
+        <div class="pm-modal-content pm-modal-content--wide gallery-rename-modal">
             <h3 style="margin-top: 0;">✏️ 编辑图片信息</h3>
-            
-            <div class="rename-preview">
+
+            <div class="gallery-rename-preview">
                 <img id="rename-preview-img" src="" alt="预览">
-                <button class="preview-zoom" type="button" onclick="openPreviewZoom()" title="放大查看">🔍</button>
+                <button class="btn-secondary gallery-preview-zoom" type="button" onclick="openPreviewZoom()" title="放大查看">🔍</button>
             </div>
-            
-            <div class="rename-form">
-                <div class="form-group">
+
+            <div class="pm-form" style="grid-template-columns: 1fr;">
+                <div class="form-group pm-form-full">
                     <label>文件名（无需扩展名）</label>
                     <input type="text" id="new-name" placeholder="输入新文件名">
                 </div>
+            </div>
 
-                <div class="form-group">
-                    <label>文件夹</label>
-                    <div class="folder-picker">
-                        <div class="folder-picker-levels" id="target-levels"></div>
-                    </div>
-                </div>
-                
-                <div class="button-group">
-                    <button class="btn btn-secondary" onclick="closeRenameDialog()">取消</button>
-                    <button class="btn btn-primary" onclick="confirmRename()">提交修改</button>
-                </div>
-                
-                <div id="rename-status" class="status-message" style="display: none;"></div>
+            <div id="rename-status" class="status-message" style="display: none; margin-top: 0.65rem;"></div>
+
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" type="button" onclick="closeRenameDialog()">取消</button>
+                <button class="btn-secondary" type="button" onclick="triggerReplaceImage()">替换图片</button>
+                <button class="btn-primary" type="button" onclick="confirmRename()">提交修改</button>
             </div>
         </div>
     </div>
@@ -418,14 +412,21 @@
             const previewImg = document.getElementById('rename-preview-img');
             previewImg.src = `/api/image-preview?id=${encodeURIComponent(imagePath)}`;
 
-            // 加载层级目录选择器（从根目录开始逐层选择）
-            targetFolderPath = '';
-            loadFolderLevels('');
-
-            // 显示对话框
-            document.getElementById('rename-dialog').classList.add('active');
+        // 显示对话框
+        document.getElementById('rename-dialog').classList.add('active');
             document.getElementById('new-name').focus();
             document.getElementById('rename-status').style.display = 'none';
+        }
+
+        function closeRenameDialog() {
+            const dialog = document.getElementById('rename-dialog');
+            if (dialog) dialog.classList.remove('active');
+            const statusDiv = document.getElementById('rename-status');
+            if (statusDiv) {
+                statusDiv.style.display = 'none';
+                statusDiv.textContent = '';
+            }
+            currentRenameImage = null;
         }
 
         function utf8ToB64(text) {
@@ -442,148 +443,68 @@
             }
         }
 
-        function updateTargetPathLabel() {
-            return;
-        }
-
-        function fetchFolders(pathB64) {
-            const url = pathB64 ? `/api/browse?path=${encodeURIComponent(pathB64)}` : '/api/browse';
-            return fetch(url)
-                .then(r => r.json())
-                .then(data => (data.status === 'success' ? (data.folders || []) : []))
-                .catch(() => []);
-        }
-
-        async function loadFolderLevels(initialPath, autoExpandNext = false) {
-            const levels = document.getElementById('target-levels');
-            levels.innerHTML = '';
-            const parts = initialPath ? initialPath.split('/') : [];
-            let currentPathB64 = '';
-            let currentPathStr = '';
-
-            for (let level = 0; level <= parts.length; level++) {
-                const folders = await fetchFolders(currentPathB64);
-                if (folders.length === 0) break;
-
-                const select = document.createElement('select');
-                select.dataset.level = String(level);
-
-                const optStay = document.createElement('option');
-                optStay.value = '';
-                optStay.textContent = '此层(不再深入)';
-                select.appendChild(optStay);
-
-                folders.forEach(folder => {
-                    const name = decodeB64Utf8(folder.name);
-                    const pathStr = decodeB64Utf8(folder.path);
-                    const option = document.createElement('option');
-                    option.value = folder.path;
-                    option.textContent = name;
-                    option.dataset.path = pathStr;
-                    select.appendChild(option);
-                });
-
-                select.addEventListener('change', () => handleFolderLevelChange(level));
-                levels.appendChild(select);
-
-                if (level < parts.length) {
-                    const targetPathStr = parts.slice(0, level + 1).join('/');
-                    const match = Array.from(select.options).find(o => o.dataset.path === targetPathStr);
-                    if (match) {
-                        select.value = match.value;
-                        currentPathB64 = match.value;
-                        currentPathStr = match.dataset.path || '';
-                        continue;
-                    }
-                }
-                break;
-            }
-
-            targetFolderPath = currentPathStr || '';
-            updateTargetPathLabel();
-
-            if (autoExpandNext) {
-                const nextFolders = await fetchFolders(currentPathB64);
-                if (nextFolders.length > 0) {
-                    const nextLevel = parts.length + 1;
-                    const nextSelect = document.createElement('select');
-                    nextSelect.dataset.level = String(nextLevel);
-                    const optStay = document.createElement('option');
-                    optStay.value = '';
-                    optStay.textContent = '此层(不再深入)';
-                    nextSelect.appendChild(optStay);
-                    nextFolders.forEach(folder => {
-                        const name = decodeB64Utf8(folder.name);
-                        const pathStr = decodeB64Utf8(folder.path);
-                        const option = document.createElement('option');
-                        option.value = folder.path;
-                        option.textContent = name;
-                        option.dataset.path = pathStr;
-                        nextSelect.appendChild(option);
-                    });
-                    nextSelect.addEventListener('change', () => handleFolderLevelChange(nextLevel));
-                    levels.appendChild(nextSelect);
-                }
-            }
-        }
-
-        function handleFolderLevelChange(level) {
-            const levels = document.getElementById('target-levels');
-            const selects = Array.from(levels.querySelectorAll('select'));
-            selects.forEach(sel => {
-                if (parseInt(sel.dataset.level, 10) > level) {
-                    sel.remove();
-                }
-            });
-
-            const current = levels.querySelector(`select[data-level="${level}"]`);
-            const selectedOption = current ? current.selectedOptions[0] : null;
-            if (!selectedOption || !selectedOption.value) {
-                targetFolderPath = getSelectedPathFromLevels(levels);
-                updateTargetPathLabel();
-                return;
-            }
-
-            targetFolderPath = selectedOption.dataset.path || '';
-            updateTargetPathLabel();
-
-            fetchFolders(selectedOption.value).then(folders => {
-                if (folders.length === 0) return;
-                const nextLevel = level + 1;
-                const nextSelect = document.createElement('select');
-                nextSelect.dataset.level = String(nextLevel);
-                const optStay = document.createElement('option');
-                optStay.value = '';
-                optStay.textContent = '此层(不再深入)';
-                nextSelect.appendChild(optStay);
-                folders.forEach(folder => {
-                    const name = decodeB64Utf8(folder.name);
-                    const pathStr = decodeB64Utf8(folder.path);
-                    const option = document.createElement('option');
-                    option.value = folder.path;
-                    option.textContent = name;
-                    option.dataset.path = pathStr;
-                    nextSelect.appendChild(option);
-                });
-                nextSelect.addEventListener('change', () => handleFolderLevelChange(nextLevel));
-                levels.appendChild(nextSelect);
-            });
-        }
-
-        function getSelectedPathFromLevels(levels) {
-            let path = '';
-            const selects = Array.from(levels.querySelectorAll('select'));
-            for (const sel of selects) {
-                const opt = sel.selectedOptions[0];
-                if (!opt || !opt.dataset.path) break;
-                path = opt.dataset.path;
-            }
-            return path;
-        }
-
         function openPreviewZoom() {
             if (!currentRenameImage) return;
             window.open(`/api/image-preview?id=${encodeURIComponent(currentRenameImage.path)}`, '_blank');
+        }
+
+        function ensureReplaceInput() {
+            let input = document.getElementById('replace-image-input');
+            if (input) return input;
+            input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*';
+            input.id = 'replace-image-input';
+            input.style.display = 'none';
+            input.addEventListener('change', function() {
+                const file = this.files && this.files[0] ? this.files[0] : null;
+                if (!file) return;
+                replaceCurrentImageFile(file);
+            });
+            document.body.appendChild(input);
+            return input;
+        }
+
+        function triggerReplaceImage() {
+            if (!currentRenameImage) return;
+            const input = ensureReplaceInput();
+            input.value = '';
+            input.click();
+        }
+
+        function replaceCurrentImageFile(file) {
+            if (!currentRenameImage || !file) return;
+            const statusDiv = document.getElementById('rename-status');
+            statusDiv.textContent = '替换中...';
+            statusDiv.className = 'status-message info';
+            statusDiv.style.display = 'block';
+
+            const fd = new FormData();
+            fd.append('id', currentRenameImage.path);
+            fd.append('file', file);
+
+            fetch('/api/replace', { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        statusDiv.textContent = '✓ 替换成功！';
+                        statusDiv.className = 'status-message success';
+                        // refresh preview & current folder list
+                        const previewImg = document.getElementById('rename-preview-img');
+                        if (previewImg) {
+                            const bust = Date.now();
+                            previewImg.src = `/api/image-preview?id=${encodeURIComponent(currentRenameImage.path)}&bust=${bust}`;
+                        }
+                        browse(currentPath);
+                    } else {
+                        statusDiv.textContent = '✗ 替换失败: ' + (data.message || '未知错误');
+                        statusDiv.className = 'status-message error';
+                    }
+                })
+                .catch(err => {
+                    statusDiv.textContent = '✗ 替换失败: ' + err;
+                    statusDiv.className = 'status-message error';
+                });
         }
 
         // 确认重命名
@@ -595,12 +516,7 @@
 
             const oldNameWithoutExt = currentRenameImage.name.substring(0, currentRenameImage.name.lastIndexOf('.')) || currentRenameImage.name;
             if (!newName) newName = oldNameWithoutExt;
-
-            const decodedPath = decodeB64Utf8(currentRenameImage.path) || '';
-            const lastSlash = decodedPath.lastIndexOf('/');
-            const currentFolderPath = lastSlash >= 0 ? decodedPath.slice(0, lastSlash) : '';
-
-            if (newName === oldNameWithoutExt && targetFolderPath === currentFolderPath) {
+            if (newName === oldNameWithoutExt) {
                 statusDiv.textContent = '未做任何修改';
                 statusDiv.className = 'status-message error';
                 statusDiv.style.display = 'block';
@@ -613,17 +529,14 @@
 
             // Base64编码新文件名
             const newNameB64 = utf8ToB64(newName);
-            const targetFolderB64 = targetFolderPath ? utf8ToB64(targetFolderPath) : '';
-
-            fetch('/api/move', {
+            fetch('/api/rename', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     id: currentRenameImage.path,
-                    new_name_b64: newNameB64,
-                    target_folder_b64: targetFolderB64
+                    new_name_b64: newNameB64
                 })
             })
             .then(response => response.json())
@@ -653,12 +566,22 @@
             }
         });
 
-        // 点击对话框外部关闭
-        document.getElementById('rename-dialog').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeRenameDialog();
-            }
-        });
+        // 点击弹窗外部关闭：必须同时满足 mousedown + mouseup 都发生在遮罩层本体
+        (function() {
+            const overlay = document.getElementById('rename-dialog');
+            if (!overlay) return;
+            let downOnOverlay = false;
+            overlay.addEventListener('mousedown', function(e) {
+                downOnOverlay = (e.target === overlay);
+            });
+            overlay.addEventListener('mouseup', function(e) {
+                const upOnOverlay = (e.target === overlay);
+                if (downOnOverlay && upOnOverlay) {
+                    closeRenameDialog();
+                }
+                downOnOverlay = false;
+            });
+        })();
 
         // ESC键关闭对话框
         document.addEventListener('keydown', function(e) {

@@ -537,17 +537,23 @@
         <div class="pm-modal-content" style="max-width: 720px;">
             <h3 style="margin-top:0;">编辑主图</h3>
 
+            <div class="gallery-rename-preview" style="margin-top:0.65rem;">
+                <img id="mainImageEditPreviewImg" src="" alt="预览">
+                <button class="btn-secondary gallery-preview-zoom" type="button" onclick="openMainImagePreviewZoom()" title="放大查看">🔍</button>
+                <button class="btn-secondary gallery-preview-zoom" type="button" onclick="triggerMainImageReplace()" title="替换图片" style="right: 54px;">⟳</button>
+            </div>
+
             <div class="pm-section pm-form-full" style="margin-top:0.45rem;">
                 <h4>基础信息</h4>
                 <div class="pm-section-body pm-form">
                     <div class="form-group pm-form-full">
-                        <label for="mainImageRenameInput">文件名（可重命名，勿含路径）</label>
-                        <input type="text" id="mainImageRenameInput" class="required-field" autocomplete="off" placeholder="例如：文字卖点图-场景A.jpg">
+                        <label for="mainImageRenameInput">文件名（无需扩展名）</label>
+                        <input type="text" id="mainImageRenameInput" class="required-field" autocomplete="off" placeholder="例如：文字卖点图-场景A">
                         <div class="auto-note" style="margin-top:0.35rem;">保存时会同步重命名磁盘文件；扩展名需与当前文件一致。</div>
                     </div>
                     <div class="form-group pm-form-full">
                         <label for="mainImageReplaceInput">替换图片</label>
-                        <input type="file" id="mainImageReplaceInput" accept="image/*" class="optional-field">
+                        <input type="file" id="mainImageReplaceInput" accept="image/*" class="optional-field" style="display:none;">
                         <div class="auto-note" style="margin-top:0.35rem;">选择新文件后立即上传替换：会更新 sha256；旧文件会进入『上架资源』/回收站。</div>
                     </div>
                 </div>
@@ -570,7 +576,7 @@
                         </div>
                     </div>
                     <div class="form-group pm-form-full">
-                        <label for="mainImageDescInput">图片备注</label>
+                        <label for="mainImageDescInput">图片备注<span class="help-dot" data-tip="用于标注卖点/场景等信息；可为空。"></span></label>
                         <textarea id="mainImageDescInput" class="optional-field" placeholder="请输入图片备注（可为空）" style="min-height: 140px;"></textarea>
                     </div>
                 </div>
@@ -609,28 +615,22 @@
                 </div>
                 <div class="nas-main-image-header-actions">
                     <div class="nas-header-control">
-                        <span class="nas-header-control-label">执行</span>
+                        <span class="nas-header-control-label">新增方式</span>
                         <div class="status-segment status-segment--inline" id="nasActionModeSegment" data-value="multi">
-                            <button type="button" class="status-pill status-pill--nas-action-double" data-value="double" title="双击图片立即导入">双击</button>
-                            <button type="button" class="status-pill status-pill--nas-action-multi" data-value="multi" title="多选后点击批量导入">多选</button>
+                            <button type="button" class="status-pill" data-value="double" title="双击图片立即导入">双击</button>
+                            <button type="button" class="status-pill" data-value="multi" title="多选后点击批量导入">多选</button>
                         </div>
                     </div>
                     <div class="nas-header-control">
-                        <span class="nas-header-control-label">大小</span>
+                        <span class="nas-header-control-label">图标尺寸</span>
                         <div class="status-segment status-segment--inline nas-thumb-segment" id="nasThumbSizeSegment" data-value="lg">
-                            <button type="button" class="status-pill status-pill--nas-thumb-lg" data-value="lg" title="大图标">大</button>
-                            <button type="button" class="status-pill status-pill--nas-thumb-sm" data-value="sm" title="更小缩略图">小</button>
+                            <button type="button" class="status-pill status-pill--shipped" data-value="lg" title="大图标">大</button>
+                            <button type="button" class="status-pill status-pill--pending" data-value="sm" title="更小缩略图">小</button>
                         </div>
                     </div>
                 </div>
             </div>
             <div class="pm-form">
-                <div class="form-group pm-form-full">
-                    <label>当前位置</label>
-                    <div class="pm-inline-panel">
-                        <nav id="nasMainImageBreadcrumbs" class="nas-main-image-breadcrumb" aria-label="NAS 路径"></nav>
-                    </div>
-                </div>
                 <div class="form-group pm-form-full">
                     <label>图片类型</label>
                     <div class="pm-inline-panel">
@@ -638,11 +638,18 @@
                     </div>
                 </div>
                 <div class="form-group pm-form-full">
-                    <div class="pm-table-toolbar nas-main-image-toolbar">
-                        <div class="pm-table-toolbar-left nas-main-image-toolbar-left">
-                            <button type="button" class="btn-small" onclick="nasMainImageToggleAll()">全选</button>
-                            <button type="button" class="btn-small" onclick="nasMainImageReload()" title="刷新当前目录">刷新</button>
-                        </div>
+                    <label>当前位置</label>
+                    <div class="pm-inline-panel">
+                        <nav id="nasMainImageBreadcrumbs" class="nas-main-image-breadcrumb" aria-label="NAS 路径"></nav>
+                    </div>
+                </div>
+                <div class="form-group pm-form-full">
+                    <div class="nas-main-image-grid-meta" id="nasMainImageGridMeta">
+                        <label class="nas-grid-select-all" id="nasMainImageSelectAllLabel">
+                            <input type="checkbox" id="nasMainImageSelectAllBox">
+                            <span>全选</span>
+                        </label>
+                        <div class="nas-grid-count" id="nasMainImageCountText">共 0 张图片</div>
                     </div>
                 </div>
                 <div class="form-group pm-form-full">
@@ -2082,7 +2089,17 @@
             const current = (mainImageItems || []).find(x => String(x.image_name || '') === String(imageName));
             document.getElementById('mainImageDescInput').value = current ? (current.description || '') : '';
             const renameEl = document.getElementById('mainImageRenameInput');
-            if (renameEl) renameEl.value = imageName;
+            if (renameEl) {
+                const base = String(imageName || '');
+                renameEl.value = base.includes('.') ? base.slice(0, base.lastIndexOf('.')) : base;
+            }
+            const prevEl = document.getElementById('mainImageEditPreviewImg');
+            if (prevEl) {
+                const rec = current || {};
+                const src = rec.storage_path ? `/api/image-preview?id=${encodeURIComponent(rec.image_b64 || rec.storage_path || '')}` : '';
+                // Fallback: list grid uses image_b64 for preview; keep consistent by using that when available
+                prevEl.src = `/api/image-preview?id=${encodeURIComponent((current && (current.image_b64 || current.storage_path)) ? (current.image_b64 || current.storage_path) : '')}&mode=thumb&w=900&q=85`;
+            }
             const repEl = document.getElementById('mainImageReplaceInput');
             if (repEl) repEl.value = '';
             setMainImageDeprecated(Boolean(current && Number(current.is_deprecated || 0) === 1));
@@ -2110,6 +2127,20 @@
             document.getElementById('mainImageDescInput').focus();
         }
 
+        function openMainImagePreviewZoom() {
+            const current = (mainImageItems || []).find(x => String(x.image_name || '') === String(currentEditingMainImageName));
+            const id = current ? (current.image_b64 || current.storage_path || '') : '';
+            if (!id) return;
+            window.open(`/api/image-preview?id=${encodeURIComponent(id)}`, '_blank');
+        }
+
+        function triggerMainImageReplace() {
+            const repEl = document.getElementById('mainImageReplaceInput');
+            if (!repEl) return;
+            repEl.value = '';
+            repEl.click();
+        }
+
         function setMainImageDeprecated(isDeprecated) {
             currentEditingMainImageDeprecated = Boolean(isDeprecated);
             const yesBtn = document.getElementById('mainImageDeprecatedYes');
@@ -2135,9 +2166,11 @@
                 image_type_name = checked ? normalizeMainImageTypeName(checked.value) : '';
             } catch (e) {}
             const renameEl = document.getElementById('mainImageRenameInput');
-            const desiredName = renameEl ? String(renameEl.value || '').trim() : '';
+            const desiredBase = renameEl ? String(renameEl.value || '').trim() : '';
+            const desiredName = desiredBase.replace(/\.[^/.]+$/, ''); // forbid changing ext
             const origName = String(currentEditingMainImageOriginalName || currentEditingMainImageName || '').trim();
-            const new_filename = (desiredName && origName && desiredName !== origName) ? desiredName : '';
+            const origBase = origName.includes('.') ? origName.slice(0, origName.lastIndexOf('.')) : origName;
+            const new_filename = (desiredName && origBase && desiredName !== origBase) ? desiredName : '';
             fetch('/api/sales-product-main-images', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -2178,7 +2211,7 @@
                     currentEditingMainImageName = newName;
                     currentEditingMainImageOriginalName = newName;
                     const renameEl = document.getElementById('mainImageRenameInput');
-                    if (renameEl) renameEl.value = newName;
+                    if (renameEl) renameEl.value = newName.includes('.') ? newName.slice(0, newName.lastIndexOf('.')) : newName;
                 }
                 showModalStatus(data.message || '替换成功', false);
                 refreshMainImageList();
@@ -2229,6 +2262,7 @@
                 const seg = document.getElementById('nasThumbSizeSegment');
                 const mode = seg ? String(seg.getAttribute('data-value') || 'lg') : 'lg';
                 list.classList.toggle('is-thumb-sm', mode === 'sm');
+                updateNasMainImageMeta(images.length);
                 if (!folders.length && !images.length) {
                     const empty = document.createElement('div');
                     empty.className = 'pm-select-empty nas-main-image-grid-empty';
@@ -2309,6 +2343,7 @@
                         }
                         nasMainImageToggle(fullPathB64, true, e.target.checked);
                         card.classList.toggle('item-card--selected', !!e.target.checked);
+                        updateNasMainImageMeta(images.length);
                     });
                     selectWrap.appendChild(cb);
 
@@ -2339,6 +2374,7 @@
                 err.textContent = '加载失败';
                 list.appendChild(err);
                 showNasMainImageStatus('浏览失败: ' + e, true);
+                updateNasMainImageMeta(0);
             }
         }
 
@@ -2365,6 +2401,7 @@
             }
             document.getElementById('nas-main-image-import-modal').classList.add('active');
             nasMainImageSelected = new Set();
+            initNasMainImageSelectAllBox();
             // Validate restore path; if invalid, fall back to root
             (async () => {
                 try {
@@ -2552,6 +2589,45 @@
             const allChecked = boxes.every(b => !!b.checked);
             if (allChecked) nasMainImageClearSelection();
             else nasMainImageSelectAll();
+        }
+
+        function updateNasMainImageMeta(totalImages) {
+            const countEl = document.getElementById('nasMainImageCountText');
+            if (countEl) countEl.textContent = `共 ${Math.max(0, Number(totalImages || 0))} 张图片`;
+            const seg = document.getElementById('nasActionModeSegment');
+            const mode = seg ? String(seg.getAttribute('data-value') || 'multi') : 'multi';
+            const meta = document.getElementById('nasMainImageGridMeta');
+            if (meta) meta.classList.toggle('is-mode-double', mode === 'double');
+            const box = document.getElementById('nasMainImageSelectAllBox');
+            if (box) {
+                if (mode === 'double') {
+                    box.checked = false;
+                    box.indeterminate = false;
+                } else {
+                    const list = document.getElementById('nasMainImageList');
+                    const boxes = list ? Array.from(list.querySelectorAll('input[type="checkbox"][data-path]')) : [];
+                    const checkedCount = boxes.filter(b => !!b.checked).length;
+                    box.checked = boxes.length > 0 && checkedCount === boxes.length;
+                    box.indeterminate = checkedCount > 0 && checkedCount < boxes.length;
+                }
+            }
+        }
+
+        function initNasMainImageSelectAllBox() {
+            const box = document.getElementById('nasMainImageSelectAllBox');
+            if (!box) return;
+            box.addEventListener('change', function() {
+                const seg = document.getElementById('nasActionModeSegment');
+                const mode = seg ? String(seg.getAttribute('data-value') || 'multi') : 'multi';
+                if (mode === 'double') {
+                    this.checked = false;
+                    this.indeterminate = false;
+                    return;
+                }
+                if (this.checked) nasMainImageSelectAll();
+                else nasMainImageClearSelection();
+                updateNasMainImageMeta((document.getElementById('nasMainImageList')?.querySelectorAll('.item-card:not(.item-card--folder)')?.length) || 0);
+            });
         }
 
         async function nasMainImageImportSelected() {
