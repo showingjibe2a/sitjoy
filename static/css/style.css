@@ -1797,6 +1797,29 @@ body.has-active-modal {
     background: linear-gradient(90deg, #3e6f70, #5f7f64);
 }
 
+/* Semantic button aliases (keep old names for compatibility) */
+.btn-accent,
+.btn-add {
+    background: linear-gradient(90deg, #4f8a8b, #6b8f71);
+    color: #fff;
+}
+.btn-accent:hover,
+.btn-add:hover {
+    background: linear-gradient(90deg, #3e6f70, #5f7f64);
+}
+
+.btn-secondary,
+.btn-small {
+    background: var(--morandi-mist);
+    border: 1px solid var(--morandi-sand);
+    color: var(--morandi-ink);
+}
+.btn-secondary:hover,
+.btn-small:hover {
+    color: var(--morandi-ink);
+    background: rgba(207, 199, 189, 0.55);
+}
+
 .form-group {
     display: flex;
     gap: 0.5rem;
@@ -2904,6 +2927,148 @@ body {
 
 .browser-grid > .item-card {
     width: 220px;
+}
+
+/* NAS 主图导入弹窗：与 gallery 同网格卡片尺寸，避免文件夹/图片混排冲突 */
+.nas-main-image-browser-grid {
+    max-height: 460px;
+    overflow: auto;
+    padding: 0.25rem 0.1rem 0.6rem;
+    align-content: start;
+    justify-content: start;
+    --nas-card-size: 220px;
+    grid-template-columns: repeat(auto-fill, var(--nas-card-size));
+}
+
+.nas-main-image-browser-grid.is-thumb-sm {
+    --nas-card-size: 150px;
+}
+
+.nas-main-image-browser-grid > .item-card {
+    width: var(--nas-card-size);
+}
+
+.nas-main-image-browser-grid.is-thumb-sm .item-name { font-size: 0.86rem; }
+.nas-main-image-browser-grid.is-thumb-sm .item-info { padding: 0.55rem 0.75rem; }
+
+.nas-main-image-browser-grid.is-mode-double .item-select {
+    display: none;
+}
+
+.nas-main-image-browser-grid.is-mode-double .item-card--selected {
+    outline: none;
+    box-shadow: 0 8px 22px rgba(0,0,0,0.12);
+}
+
+.nas-main-image-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 0;
+}
+
+.nas-main-image-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
+}
+
+.nas-main-image-header-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 0 0 auto;
+}
+
+.nas-header-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.45rem;
+    border-radius: 12px;
+    border: 1px solid rgba(207, 199, 189, 0.55);
+    background: rgba(255, 255, 255, 0.45);
+}
+
+.nas-header-control-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--morandi-slate);
+    padding: 0 0.15rem;
+    user-select: none;
+}
+
+.status-pill.is-active { color: var(--morandi-ink); }
+
+/* NAS modal: light gray-toned option fills */
+.status-pill--nas-action-double.is-active { background: rgba(123, 128, 136, 0.40); }
+.status-pill--nas-action-multi.is-active { background: rgba(207, 199, 189, 0.58); }
+.status-pill--nas-thumb-lg.is-active { background: rgba(154, 155, 143, 0.46); }
+.status-pill--nas-thumb-sm.is-active { background: rgba(147, 181, 221, 0.32); }
+
+.pm-inline-panel {
+    border: 1px solid rgba(207, 199, 189, 0.55);
+    background: rgba(255, 255, 255, 0.55);
+    border-radius: 12px;
+    padding: 0.5rem 0.65rem;
+}
+
+#nas-main-image-import-modal .pm-form label {
+    margin-bottom: 4px;
+}
+
+#nas-main-image-import-modal .pm-form {
+    gap: 0.6rem;
+}
+
+.nas-main-image-browser-grid > .nas-main-image-grid-loading,
+.nas-main-image-browser-grid > .nas-main-image-grid-empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 1.1rem 0.75rem;
+}
+
+.nas-main-image-breadcrumb {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    row-gap: 0.25rem;
+    padding: 0.15rem 0;
+    color: var(--morandi-slate);
+    font-size: 0.92rem;
+    line-height: 1.35;
+}
+
+a.nas-main-image-crumb {
+    color: var(--morandi-bluegray);
+    text-decoration: none;
+    border-bottom: 1px dashed rgba(123, 128, 136, 0.55);
+    padding-bottom: 1px;
+    font-weight: 600;
+}
+
+a.nas-main-image-crumb:hover {
+    color: var(--morandi-olive);
+    border-bottom-color: rgba(123, 128, 136, 0.85);
+}
+
+.nas-main-image-crumb-sep {
+    opacity: 0.55;
+    user-select: none;
+    padding: 0 0.05rem;
+}
+
+.nas-main-image-toolbar {
+    margin-top: 0.15rem;
+}
+
+.pm-modal-actions.nas-main-image-modal-actions {
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
 }
 
 /* 文件/图片卡片（亮色，和深色背景分离） */

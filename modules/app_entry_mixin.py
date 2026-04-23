@@ -40,7 +40,11 @@ class AppEntryMixin:
             if method == 'POST':
                 content_length = int(environ.get('CONTENT_LENGTH', 0))
                 body = environ['wsgi.input'].read(content_length)
-                data = json.loads(body.decode('utf-8'))
+                try:
+                    text = body.decode('utf-8', errors='surrogateescape')
+                except Exception:
+                    text = body.decode('utf-8', errors='replace')
+                data = json.loads(text)
                 name = data.get('name', '访客')
             else:
                 query_string = environ.get('QUERY_STRING', '')

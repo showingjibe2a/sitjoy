@@ -942,11 +942,19 @@
                 window.showAppToast(message || '', false, 2600);
                 return;
             }
-            const toast = document.getElementById('timeoutToast');
+            let toast = document.getElementById('timeoutToast');
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.id = 'timeoutToast';
+                toast.className = 'toast-notice';
+                document.body.appendChild(toast);
+            }
             toast.textContent = message || '';
             toast.style.display = 'block';
-            if (toastTimer) clearTimeout(toastTimer);
-            toastTimer = setTimeout(() => {
+            try {
+                if (window.__globalTimeoutToastTimer) clearTimeout(window.__globalTimeoutToastTimer);
+            } catch (e) {}
+            window.__globalTimeoutToastTimer = setTimeout(() => {
                 toast.style.display = 'none';
             }, 6000);
         }

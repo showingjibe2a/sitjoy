@@ -427,7 +427,14 @@ class FabricManagementMixin:
 
             content_length = int(environ.get('CONTENT_LENGTH', 0))
             body = environ['wsgi.input'].read(content_length)
-            data = json.loads(body.decode('utf-8')) if body else {}
+            if not body:
+                data = {}
+            else:
+                try:
+                    text = body.decode('utf-8', errors='surrogateescape')
+                except Exception:
+                    text = body.decode('utf-8', errors='replace')
+                data = json.loads(text) if text else {}
             
             fabric_code = (data.get('fabric_code') or '').strip()
             items = data.get('items') or []

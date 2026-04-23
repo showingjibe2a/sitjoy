@@ -264,7 +264,12 @@ class CoreAppMixin:
         body = environ['wsgi.input'].read(content_length)
         if not body:
             return {}
-        return json.loads(body.decode('utf-8'))
+        # Be tolerant to non-UTF8 bytes (e.g. filesystem-derived surrogates roundtripped by clients)
+        try:
+            text = body.decode('utf-8', errors='surrogateescape')
+        except Exception:
+            text = body.decode('utf-8', errors='replace')
+        return json.loads(text)
 
     def _get_db_config(self):
         config = {

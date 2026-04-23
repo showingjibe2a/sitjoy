@@ -408,6 +408,25 @@ class SalesProductMixin:
         Fallback multipart parser when cgi.FieldStorage fails to enumerate file parts.
         Returns list of dicts: {filename, content}
         """
+        def _decode_filename_bytes(b):
+            if b is None:
+                return ''
+            if isinstance(b, str):
+                return b.strip()
+            if not isinstance(b, (bytes, bytearray)):
+                b = str(b).encode('utf-8', errors='surrogatepass')
+            b = bytes(b)
+            # Prefer UTF-8 (browser standard), then GB18030 (Windows legacy), then latin-1 as last resort.
+            for enc in ('utf-8', 'gb18030', 'latin-1'):
+                try:
+                    return b.decode(enc, errors='surrogateescape').strip()
+                except Exception:
+                    continue
+            try:
+                return b.decode('utf-8', errors='replace').strip()
+            except Exception:
+                return ''
+
         uploads = []
         if not raw_body:
             return uploads
@@ -435,30 +454,51 @@ class SalesProductMixin:
             header_blob, _, body_blob = seg.partition(b'\r\n\r\n')
             if not header_blob or body_blob is None:
                 continue
-            try:
-                msg = BytesParser(policy=policy.default).parsebytes(header_blob + b'\r\n\r\n')
-            except Exception:
-                continue
-            disp = (msg.get('Content-Disposition') or '').lower()
-            if 'form-data' not in disp or 'filename=' not in disp:
-                continue
+            # Parse Content-Disposition from raw header bytes to avoid lossy decode ('���')
             filename = ''
-            m = re.search(r'filename\*=UTF-8\'\'([^;]+)', disp)
-            if m:
+            try:
+                header_lower = header_blob.lower()
+            except Exception:
+                header_lower = header_blob
+
+            if b'content-disposition:' not in header_lower or b'form-data' not in header_lower:
+                continue
+
+            # Prefer RFC 5987 / RFC 2231 filename*=UTF-8''...
+            from urllib.parse import unquote_to_bytes
+            fn_bytes = b''
+            try:
+                idx = header_lower.find(b'filename*=')
+                if idx >= 0:
+                    tail = header_blob[idx + len(b'filename*='):]
+                    tail = tail.split(b'\r', 1)[0]
+                    tail = tail.split(b'\n', 1)[0]
+                    tail = tail.split(b';', 1)[0].strip()
+                    tail = tail.strip().strip(b'"')
+                    if tail.lower().startswith(b"utf-8''"):
+                        pct = tail[7:]
+                        fn_bytes = unquote_to_bytes(pct)
+            except Exception:
+                fn_bytes = b''
+
+            # Fallback: filename="..."
+            if not fn_bytes:
                 try:
-                    from urllib.parse import unquote
-                    filename = unquote(m.group(1).strip().strip('"'))
+                    idx2 = header_lower.find(b'filename=')
+                    if idx2 >= 0:
+                        tail2 = header_blob[idx2 + len(b'filename='):]
+                        tail2 = tail2.split(b'\r', 1)[0]
+                        tail2 = tail2.split(b'\n', 1)[0]
+                        tail2 = tail2.split(b';', 1)[0].strip()
+                        tail2 = tail2.strip()
+                        if tail2.startswith(b'"') and b'"' in tail2[1:]:
+                            fn_bytes = tail2[1:].split(b'"', 1)[0]
+                        else:
+                            fn_bytes = tail2.strip().strip(b'"')
                 except Exception:
-                    filename = m.group(1).strip().strip('"')
-            if not filename:
-                m2 = re.search(r'filename="([^"]+)"', disp)
-                if m2:
-                    filename = m2.group(1)
-                else:
-                    m3 = re.search(r'filename=([^;]+)', disp)
-                    if m3:
-                        filename = m3.group(1).strip().strip('"')
-            filename = (filename or '').strip()
+                    fn_bytes = b''
+
+            filename = _decode_filename_bytes(fn_bytes)
             if not filename:
                 continue
             content = body_blob
@@ -1439,41 +1479,41 @@ class SalesProductMixin:
                         where_sql = (" WHERE " + " AND ".join(filters)) if filters else ""
                         cur.execute(base_sql + where_sql + " ORDER BY sp.id DESC", params)
                         rows = cur.fetchall() or []
-                variant_ids = [int(r.get('variant_id') or 0) for r in rows if int(r.get('variant_id') or 0) > 0]
-                metrics_map = {}
-                if variant_ids:
-                    with self._get_db_connection() as conn:
+                    variant_ids = [int(r.get('variant_id') or 0) for r in rows if int(r.get('variant_id') or 0) > 0]
+                    metrics_map = {}
+                    if variant_ids:
+                        # Reuse same DB connection for performance (must be inside conn context)
                         metrics_map = self._load_sales_variant_metrics(conn, variant_ids, include_links=include_links)
 
-                for row in rows:
-                    variant_id = int(row.get('variant_id') or 0)
-                    metrics = metrics_map.get(variant_id, {}) if variant_id else {}
-                    row['warehouse_cost_usd'] = metrics.get('warehouse_cost_usd', 0.0)
-                    row['last_mile_cost_usd'] = metrics.get('last_mile_cost_usd', 0.0)
-                    row['package_length_in'] = metrics.get('package_length_in', 0.0)
-                    row['package_width_in'] = metrics.get('package_width_in', 0.0)
-                    row['package_height_in'] = metrics.get('package_height_in', 0.0)
-                    row['net_weight_lbs'] = metrics.get('net_weight_lbs', 0.0)
-                    row['gross_weight_lbs'] = metrics.get('gross_weight_lbs', 0.0)
-                    if include_links:
-                        row['order_sku_links'] = metrics.get('order_sku_links', [])
-                    elif item_id:
-                        row['order_sku_links'] = []
+                    for row in rows:
+                        variant_id = int(row.get('variant_id') or 0)
+                        metrics = metrics_map.get(variant_id, {}) if variant_id else {}
+                        row['warehouse_cost_usd'] = metrics.get('warehouse_cost_usd', 0.0)
+                        row['last_mile_cost_usd'] = metrics.get('last_mile_cost_usd', 0.0)
+                        row['package_length_in'] = metrics.get('package_length_in', 0.0)
+                        row['package_width_in'] = metrics.get('package_width_in', 0.0)
+                        row['package_height_in'] = metrics.get('package_height_in', 0.0)
+                        row['net_weight_lbs'] = metrics.get('net_weight_lbs', 0.0)
+                        row['gross_weight_lbs'] = metrics.get('gross_weight_lbs', 0.0)
+                        if include_links:
+                            row['order_sku_links'] = metrics.get('order_sku_links', [])
+                        elif item_id:
+                            row['order_sku_links'] = []
 
-                # Variant preview image (first 白底图) for table list
-                if not item_id:
-                    try:
-                        vid_list = [int(r.get('variant_id') or 0) for r in rows if int(r.get('variant_id') or 0) > 0]
-                        preview_map = {}
-                        if vid_list:
-                            with self._get_db_connection() as conn:
-                                preview_map = self._load_variant_first_image_preview(conn, vid_list, type_name='白底图')
-                        for r in rows:
-                            vid = int(r.get('variant_id') or 0)
-                            r['preview_image_b64'] = preview_map.get(vid, '') if vid else ''
-                    except Exception:
-                        for r in rows:
-                            r['preview_image_b64'] = ''
+                    # Variant preview image (first 白底图) for table list
+                    if not item_id:
+                        try:
+                            vid_list = [int(r.get('variant_id') or 0) for r in rows if int(r.get('variant_id') or 0) > 0]
+                            preview_map = {}
+                            if vid_list:
+                                with self._get_db_connection() as conn2:
+                                    preview_map = self._load_variant_first_image_preview(conn2, vid_list, type_name='白底图')
+                            for r in rows:
+                                vid = int(r.get('variant_id') or 0)
+                                r['preview_image_b64'] = preview_map.get(vid, '') if vid else ''
+                        except Exception:
+                            for r in rows:
+                                r['preview_image_b64'] = ''
 
                 if item_id:
                     return self.send_json({'status': 'success', 'item': rows[0] if rows else None}, start_response)
@@ -1570,6 +1610,8 @@ class SalesProductMixin:
                                 resolved_fabric_id = self._parse_int(frow.get('id')) or None
                         except Exception:
                             resolved_fabric_id = None
+                    if not resolved_fabric_id:
+                        return self.send_json({'status': 'error', 'message': '面料不能为空：请在“面料”下拉中选择面料（fabric_id 必填）'}, start_response)
                     variant_id = self._get_or_create_sales_variant(conn, sku_family_id, final_spec_name, final_fabric, sale_price_usd, fabric_id=resolved_fabric_id)
                     
                     # 如果没有手动编辑，使用自动生成的platform_sku；否则使用手动输入的
@@ -1682,6 +1724,8 @@ class SalesProductMixin:
                                 resolved_fabric_id = self._parse_int(frow.get('id')) or None
                         except Exception:
                             resolved_fabric_id = None
+                    if not resolved_fabric_id:
+                        return self.send_json({'status': 'error', 'message': '面料不能为空：请在“面料”下拉中选择面料（fabric_id 必填）'}, start_response)
                     variant_id = self._get_or_create_sales_variant(conn, sku_family_id, final_spec_name, final_fabric, sale_price_usd, fabric_id=resolved_fabric_id)
                     
                     # 如果没有手动编辑，使用自动生成的platform_sku；否则使用手动输入的
@@ -3848,15 +3892,18 @@ class SalesProductMixin:
             image_type_name = image_type_name or '文字卖点图'
 
             uploads = []
-            for p in getattr(form, 'list', []) or []:
-                if getattr(p, 'filename', None):
-                    try:
-                        content = p.file.read() or b''
-                    except Exception:
-                        content = b''
-                    uploads.append({'filename': p.filename, 'content': content})
-            if not uploads and raw_body:
+            # Prefer raw-body multipart parsing for correct non-ASCII filenames (avoid '���')
+            if raw_body:
                 uploads = self._parse_multipart_uploads_fallback(content_type, raw_body)
+            # Fallback to cgi.FieldStorage (may lose filename encoding)
+            if not uploads:
+                for p in getattr(form, 'list', []) or []:
+                    if getattr(p, 'filename', None):
+                        try:
+                            content = p.file.read() or b''
+                        except Exception:
+                            content = b''
+                        uploads.append({'filename': p.filename, 'content': content})
             if not uploads:
                 if check_only:
                     return self.send_json(
@@ -5314,58 +5361,68 @@ class SalesProductMixin:
         with conn.cursor() as cur:
             has_fid = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
             has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+
+            # 1) Prefer selecting existing row first (prevents duplicates even if UNIQUE index is missing).
             if has_fid:
-                cols = ["sku_family_id", "spec_name", "fabric_id", "sale_price_usd"]
-                vals = [family_id, spec, fid, sale_price_usd]
-                if has_fabric_text:
-                    cols.insert(3, "fabric")
-                    vals.insert(3, fab)
-                ph = ", ".join(["%s"] * len(cols))
-                updates = [
-                    "sale_price_usd = COALESCE(VALUES(sale_price_usd), sale_price_usd)",
-                    "fabric_id = COALESCE(VALUES(fabric_id), fabric_id)",
-                    "updated_at = CURRENT_TIMESTAMP",
-                ]
-                if has_fabric_text:
-                    updates.insert(2, "fabric = COALESCE(NULLIF(VALUES(fabric), ''), fabric)")
-                cur.execute(
-                    f"""
-                    INSERT INTO sales_product_variants ({', '.join(cols)})
-                    VALUES ({ph})
-                    ON DUPLICATE KEY UPDATE
-                        {', '.join(updates)}
-                    """,
-                    tuple(vals),
-                )
                 cur.execute(
                     """
                     SELECT id FROM sales_product_variants
                     WHERE sku_family_id=%s AND spec_name=%s AND COALESCE(fabric_id,0)=COALESCE(%s,0)
+                    ORDER BY id ASC
                     LIMIT 1
                     """,
-                    (family_id, spec, fid)
+                    (family_id, spec, fid),
                 )
             else:
                 cur.execute(
                     """
-                    INSERT INTO sales_product_variants (sku_family_id, spec_name, fabric, sale_price_usd)
-                    VALUES (%s, %s, %s, %s)
-                    ON DUPLICATE KEY UPDATE
-                        sale_price_usd = COALESCE(VALUES(sale_price_usd), sale_price_usd),
-                        updated_at = CURRENT_TIMESTAMP
-                    """,
-                    (family_id, spec, fab, sale_price_usd)
-                )
-                cur.execute(
-                    """
                     SELECT id FROM sales_product_variants
                     WHERE sku_family_id=%s AND spec_name=%s AND fabric=%s
+                    ORDER BY id ASC
                     LIMIT 1
                     """,
-                    (family_id, spec, fab)
+                    (family_id, spec, fab),
                 )
             row = cur.fetchone() or {}
-        variant_id = self._parse_int(row.get('id'))
+            existing_id = self._parse_int(row.get('id')) or 0
+            if existing_id:
+                sets = []
+                params = []
+                if sale_price_usd is not None and self._table_has_column(conn, 'sales_product_variants', 'sale_price_usd'):
+                    sets.append("sale_price_usd=COALESCE(%s, sale_price_usd)")
+                    params.append(sale_price_usd)
+                # fabric_id identity is fixed for a variant; never mutate it here.
+                if has_fabric_text and fab:
+                    sets.append("fabric=COALESCE(NULLIF(%s,''), fabric)")
+                    params.append(fab)
+                if self._table_has_column(conn, 'sales_product_variants', 'updated_at'):
+                    sets.append("updated_at=CURRENT_TIMESTAMP")
+                if sets:
+                    cur.execute(
+                        f"UPDATE sales_product_variants SET {', '.join(sets)} WHERE id=%s",
+                        tuple(params + [existing_id]),
+                    )
+                variant_id = existing_id
+            else:
+                # 2) Insert when truly missing.
+                if has_fid:
+                    cols = ["sku_family_id", "spec_name", "fabric_id", "sale_price_usd"]
+                    vals = [family_id, spec, fid, sale_price_usd]
+                    if has_fabric_text:
+                        cols.insert(3, "fabric")
+                        vals.insert(3, fab)
+                    ph = ", ".join(["%s"] * len(cols))
+                    cur.execute(
+                        f"INSERT INTO sales_product_variants ({', '.join(cols)}) VALUES ({ph})",
+                        tuple(vals),
+                    )
+                else:
+                    cur.execute(
+                        "INSERT INTO sales_product_variants (sku_family_id, spec_name, fabric, sale_price_usd) VALUES (%s, %s, %s, %s)",
+                        (family_id, spec, fab, sale_price_usd),
+                    )
+                variant_id = cur.lastrowid
+
         if not variant_id:
             raise RuntimeError('创建或读取销售变体失败')
         return variant_id

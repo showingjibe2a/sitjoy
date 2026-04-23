@@ -601,32 +601,58 @@
     </div>
 
     <div class="pm-modal" id="nas-main-image-import-modal">
-        <div class="pm-modal-content" style="max-width: 820px;">
-            <div style="display:flex; align-items:center; justify-content:space-between; gap:0.6rem; margin-top:0;">
-                <h3 style="margin:0;">从NAS选择主图（移动绑定）</h3>
-                <span class="help-dot" data-tip="提示：这是“服务器侧NAS浏览”，可真正移动/删除 NAS 上的源文件；浏览器本地“选择文件夹上传”只能复制文件，无法删除原文件（浏览器安全限制）。" style="flex:0 0 auto;"></span>
+        <div class="pm-modal-content pm-modal-content--wide">
+            <div class="nas-main-image-header">
+                <div class="nas-main-image-title">
+                    <h3 style="margin:0;">从NAS选择主图（移动绑定）</h3>
+                    <span class="help-dot" data-tip="提示：这是“服务器侧NAS浏览”，可真正移动/删除 NAS 上的源文件；浏览器本地“选择文件夹上传”只能复制文件，无法删除原文件（浏览器安全限制）。"></span>
+                </div>
+                <div class="nas-main-image-header-actions">
+                    <div class="nas-header-control">
+                        <span class="nas-header-control-label">执行</span>
+                        <div class="status-segment status-segment--inline" id="nasActionModeSegment" data-value="multi">
+                            <button type="button" class="status-pill status-pill--nas-action-double" data-value="double" title="双击图片立即导入">双击</button>
+                            <button type="button" class="status-pill status-pill--nas-action-multi" data-value="multi" title="多选后点击批量导入">多选</button>
+                        </div>
+                    </div>
+                    <div class="nas-header-control">
+                        <span class="nas-header-control-label">大小</span>
+                        <div class="status-segment status-segment--inline nas-thumb-segment" id="nasThumbSizeSegment" data-value="lg">
+                            <button type="button" class="status-pill status-pill--nas-thumb-lg" data-value="lg" title="大图标">大</button>
+                            <button type="button" class="status-pill status-pill--nas-thumb-sm" data-value="sm" title="更小缩略图">小</button>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="pm-form">
                 <div class="form-group pm-form-full">
                     <label>当前位置</label>
-                    <div id="nasMainImageBreadcrumbs" style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;"></div>
-                    <div id="nasMainImagePath" class="optional-field" style="padding:0.55rem 0.7rem; border-radius:8px; border:1px solid rgba(0,0,0,0.16); background:rgba(255,255,255,0.75); font-family:monospace; margin-top:0.45rem;"></div>
-                </div>
-                <div class="form-group pm-form-full">
-                    <div style="display:flex; gap:0.45rem; flex-wrap:wrap; align-items:center;">
-                        <button type="button" class="btn-secondary" onclick="nasMainImageToggleSelectAll()">全选/取消</button>
-                        <button type="button" class="btn-primary" onclick="nasMainImageImportSelected()">导入所选</button>
-                        <button type="button" class="btn-secondary" onclick="nasMainImageGoUp()">上一级</button>
-                        <button type="button" class="btn-secondary" onclick="nasMainImageReload()">刷新</button>
+                    <div class="pm-inline-panel">
+                        <nav id="nasMainImageBreadcrumbs" class="nas-main-image-breadcrumb" aria-label="NAS 路径"></nav>
                     </div>
                 </div>
                 <div class="form-group pm-form-full">
-                    <div id="nasMainImageList" class="pm-select-list" style="max-height: 460px;"></div>
+                    <label>图片类型</label>
+                    <div class="pm-inline-panel">
+                        <div id="nasMainImageTypeBar" class="status-segment status-segment--inline"></div>
+                    </div>
+                </div>
+                <div class="form-group pm-form-full">
+                    <div class="pm-table-toolbar nas-main-image-toolbar">
+                        <div class="pm-table-toolbar-left nas-main-image-toolbar-left">
+                            <button type="button" class="btn-small" onclick="nasMainImageToggleAll()">全选</button>
+                            <button type="button" class="btn-small" onclick="nasMainImageReload()" title="刷新当前目录">刷新</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group pm-form-full">
+                    <div id="nasMainImageList" class="browser-grid nas-main-image-browser-grid"></div>
                 </div>
             </div>
             <div id="nasMainImageStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
-            <div class="pm-modal-actions">
-                <button class="btn-secondary" type="button" onclick="closeNasMainImageImportModal()">关闭</button>
+            <div class="pm-modal-actions nas-main-image-modal-actions">
+                <button class="btn-small" type="button" onclick="closeNasMainImageImportModal()">关闭</button>
+                <button class="btn-accent" type="button" onclick="nasMainImageImportSelected()">批量导入所选</button>
             </div>
         </div>
     </div>
@@ -701,6 +727,8 @@
         let nasMainImageNavStack = [];
         const NAS_MAIN_IMAGE_LAST_PATH_KEY = 'sj.nasMainImage.lastPathB64.v1';
         const NAS_MAIN_IMAGE_LAST_STACK_KEY = 'sj.nasMainImage.navStack.v1';
+        const NAS_MAIN_IMAGE_ACTION_MODE_KEY = 'sj.nasMainImage.actionMode.v1';
+        const NAS_MAIN_IMAGE_THUMB_SIZE_KEY = 'sj.nasMainImage.thumbSize.v1';
         const MAIN_IMAGE_PROMPT_DUP_KEY = 'sj.salesMainImage.promptDuplicate.v1';
         const MAIN_IMAGE_SHOW_FABRIC_KEY = 'sj.salesMainImage.showFabric.v1';
         let mainImagePromptDuplicate = true;
@@ -786,19 +814,117 @@
         }
 
         function buildNasBreadcrumbsHtml() {
-            const parts = [{ label: '根目录', idx: -1 }];
-            (nasMainImageNavStack || []).forEach((seg, idx) => parts.push({ label: seg && seg.name ? seg.name : `目录${idx + 1}`, idx }));
-            return parts.map(p => {
-                const cls = 'btn-secondary';
-                const label = escapeHtml(String(p.label || ''));
-                return `<button type="button" class="${cls}" style="padding:0.34rem 0.55rem;" onclick="nasMainImageJumpTo(${p.idx})">${label}</button>`;
-            }).join('<span class="auto-note" style="opacity:0.65;">/</span>');
+            const segs = Array.isArray(nasMainImageNavStack) ? nasMainImageNavStack : [];
+            const crumbs = [];
+            crumbs.push(`<a href="#" class="nas-main-image-crumb" data-crumb-idx="-1">根目录</a>`);
+            segs.forEach((seg, idx) => {
+                const label = escapeHtml(String((seg && seg.name) ? seg.name : `目录${idx + 1}`));
+                crumbs.push(`<span class="nas-main-image-crumb-sep" aria-hidden="true">›</span>`);
+                crumbs.push(`<a href="#" class="nas-main-image-crumb" data-crumb-idx="${idx}">${label}</a>`);
+            });
+            return crumbs.join('');
         }
 
         function renderNasBreadcrumbs() {
             const el = document.getElementById('nasMainImageBreadcrumbs');
             if (!el) return;
             el.innerHTML = buildNasBreadcrumbsHtml();
+            el.querySelectorAll('a.nas-main-image-crumb[data-crumb-idx]').forEach(a => {
+                a.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const raw = String(this.getAttribute('data-crumb-idx') || '');
+                    const idx = raw === '-1' ? -1 : Number(raw);
+                    nasMainImageJumpTo(idx);
+                });
+            });
+        }
+
+        function renderNasMainImageTypeBar() {
+            const bar = document.getElementById('nasMainImageTypeBar');
+            if (!bar) return;
+            const list = (salesImageTypeOptions || []).filter(x => String(x.name || '').trim());
+            if (!list.length) {
+                bar.innerHTML = '<span class="pm-select-empty" style="padding:0 .4rem;">暂无可用类型（请先在图片类型中启用“销售”适用范围）</span>';
+                return;
+            }
+            if (!list.some(x => String(x.name || '').trim() === selectedMainImageType)) {
+                selectedMainImageType = String(list[0].name || '').trim() || '文字卖点图';
+            }
+
+            bar.innerHTML = list.map(item => {
+                const name = String(item.name || '').trim();
+                const active = name === selectedMainImageType ? 'is-active' : '';
+                return `<button type="button" class="status-pill ${active}" data-value="${escapeHtml(name)}">${escapeHtml(name)}</button>`;
+            }).join('');
+            bar.querySelectorAll('button.status-pill[data-value]').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const v = normalizeMainImageTypeName(this.getAttribute('data-value'));
+                    selectedMainImageType = v;
+                    bar.querySelectorAll('button.status-pill[data-value]').forEach(b => {
+                        b.classList.toggle('is-active', normalizeMainImageTypeName(b.getAttribute('data-value')) === v);
+                    });
+                });
+            });
+        }
+
+        function getNasImportImageTypeName() {
+            return normalizeMainImageTypeName(selectedMainImageType);
+        }
+
+        function applyNasActionMode(mode) {
+            const m = (mode === 'double') ? 'double' : 'multi';
+            const seg = document.getElementById('nasActionModeSegment');
+            if (seg) seg.setAttribute('data-value', m);
+            if (seg) {
+                seg.querySelectorAll('button.status-pill[data-value]').forEach(btn => {
+                    btn.classList.toggle('is-active', String(btn.getAttribute('data-value')) === m);
+                });
+            }
+            const grid = document.getElementById('nasMainImageList');
+            if (grid) grid.classList.toggle('is-mode-double', m === 'double');
+            if (m === 'double') {
+                nasMainImageSelected = new Set();
+            }
+            safeSetLocalStorage(NAS_MAIN_IMAGE_ACTION_MODE_KEY, m);
+        }
+
+        function initNasActionModeSegment() {
+            const seg = document.getElementById('nasActionModeSegment');
+            if (!seg) return;
+            seg.querySelectorAll('button.status-pill[data-value]').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    applyNasActionMode(String(this.getAttribute('data-value') || 'multi'));
+                    renderNasMainImageList();
+                });
+            });
+            const initial = String(safeGetLocalStorage(NAS_MAIN_IMAGE_ACTION_MODE_KEY) || seg.getAttribute('data-value') || 'multi');
+            applyNasActionMode(initial);
+        }
+
+        function applyNasThumbSize(mode) {
+            const m = (mode === 'sm') ? 'sm' : 'lg';
+            const seg = document.getElementById('nasThumbSizeSegment');
+            if (seg) seg.setAttribute('data-value', m);
+            if (seg) {
+                seg.querySelectorAll('button.status-pill[data-value]').forEach(btn => {
+                    btn.classList.toggle('is-active', String(btn.getAttribute('data-value')) === m);
+                });
+            }
+            const grid = document.getElementById('nasMainImageList');
+            if (grid) grid.classList.toggle('is-thumb-sm', m === 'sm');
+            safeSetLocalStorage(NAS_MAIN_IMAGE_THUMB_SIZE_KEY, m);
+        }
+
+        function initNasThumbSizeSegment() {
+            const seg = document.getElementById('nasThumbSizeSegment');
+            if (!seg) return;
+            seg.querySelectorAll('button.status-pill[data-value]').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    applyNasThumbSize(String(this.getAttribute('data-value') || 'lg'));
+                });
+            });
+            const initial = String(safeGetLocalStorage(NAS_MAIN_IMAGE_THUMB_SIZE_KEY) || seg.getAttribute('data-value') || 'lg');
+            applyNasThumbSize(initial);
         }
 
         function productStatusLabel(value) {
@@ -916,11 +1042,19 @@
         }
 
         function showTimeoutToast(message) {
-            const toast = document.getElementById('timeoutToast');
+            let toast = document.getElementById('timeoutToast');
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.id = 'timeoutToast';
+                toast.className = 'toast-notice';
+                document.body.appendChild(toast);
+            }
             toast.textContent = message || '';
             toast.style.display = 'block';
-            if (toastTimer) clearTimeout(toastTimer);
-            toastTimer = setTimeout(() => {
+            try {
+                if (window.__globalTimeoutToastTimer) clearTimeout(window.__globalTimeoutToastTimer);
+            } catch (e) {}
+            window.__globalTimeoutToastTimer = setTimeout(() => {
                 toast.style.display = 'none';
             }, 6000);
         }
@@ -1681,13 +1815,22 @@
                 if (data.status !== 'success') {
                     salesImageTypeOptions = [];
                     renderSalesImageTypeBar();
+                    if (document.getElementById('nas-main-image-import-modal')?.classList.contains('active')) {
+                        renderNasMainImageTypeBar();
+                    }
                     return;
                 }
                 salesImageTypeOptions = Array.isArray(data.items) ? data.items : [];
                 renderSalesImageTypeBar();
+                if (document.getElementById('nas-main-image-import-modal')?.classList.contains('active')) {
+                    renderNasMainImageTypeBar();
+                }
             }).catch(() => {
                 salesImageTypeOptions = [];
                 renderSalesImageTypeBar();
+                if (document.getElementById('nas-main-image-import-modal')?.classList.contains('active')) {
+                    renderNasMainImageTypeBar();
+                }
             });
         }
 
@@ -2067,47 +2210,134 @@
         }
 
         async function renderNasMainImageList() {
-            const pathLabel = document.getElementById('nasMainImagePath');
             const list = document.getElementById('nasMainImageList');
             if (!list) return;
-            list.innerHTML = '<div class="pm-select-empty">加载中...</div>';
+            list.innerHTML = '';
+            const loading = document.createElement('div');
+            loading.className = 'pm-select-empty nas-main-image-grid-loading';
+            loading.textContent = '加载中...';
+            list.appendChild(loading);
             showNasMainImageStatus('', false);
             try {
                 const data = await nasMainImageBrowse(nasMainImagePathB64);
                 const folders = Array.isArray(data.folders) ? data.folders : [];
                 const images = Array.isArray(data.images) ? data.images : [];
-                const currentPathStr = nasMainImagePathB64 ? decodeB64Utf8(nasMainImagePathB64) : '';
-                if (pathLabel) pathLabel.textContent = currentPathStr || '（根目录）';
                 renderNasBreadcrumbs();
 
-                const rows = [];
-                if (nasMainImagePathB64) {
-                    rows.push(`<div class="pm-select-item" style="cursor:pointer;" onclick="nasMainImageGoUp()">..（上一级）</div>`);
+                list.innerHTML = '';
+                // Ensure thumb size class remains after re-render
+                const seg = document.getElementById('nasThumbSizeSegment');
+                const mode = seg ? String(seg.getAttribute('data-value') || 'lg') : 'lg';
+                list.classList.toggle('is-thumb-sm', mode === 'sm');
+                if (!folders.length && !images.length) {
+                    const empty = document.createElement('div');
+                    empty.className = 'pm-select-empty nas-main-image-grid-empty';
+                    empty.textContent = '此目录为空';
+                    list.appendChild(empty);
+                    return;
                 }
+
                 folders.forEach(f => {
-                    const name = escapeHtml(decodeB64Utf8(f.name) || '');
-                    rows.push(`<div class="pm-select-item" style="cursor:pointer;" onclick="nasMainImageEnterFolder('${escapeHtml(f.path)}', '${name}')">📁 ${name}</div>`);
+                    const pathB64 = String(f.path || '');
+                    const displayName = decodeB64Utf8(f.name) || '';
+                    const card = document.createElement('div');
+                    card.className = 'item-card item-card--folder item-card--nas-browse';
+                    card.setAttribute('role', 'button');
+                    card.tabIndex = 0;
+                    card.addEventListener('click', () => nasMainImageEnterFolder(pathB64, displayName));
+                    card.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            nasMainImageEnterFolder(pathB64, displayName);
+                        }
+                    });
+
+                    const thumb = document.createElement('div');
+                    thumb.className = 'item-thumbnail folder';
+                    const icon = document.createElement('div');
+                    icon.className = 'folder-icon';
+                    icon.textContent = '📁';
+                    thumb.appendChild(icon);
+
+                    const info = document.createElement('div');
+                    info.className = 'item-info';
+                    const title = document.createElement('div');
+                    title.className = 'item-name';
+                    title.textContent = displayName;
+                    info.appendChild(title);
+
+                    card.appendChild(thumb);
+                    card.appendChild(info);
+                    list.appendChild(card);
                 });
+
                 images.forEach(img => {
-                    const name = escapeHtml(decodeB64Utf8(img.name) || '');
-                    const fullPathB64 = img.path;
+                    const fullPathB64 = String(img.path || '');
+                    const displayName = decodeB64Utf8(img.name) || '';
                     const thumbUrl = `/api/image-preview?id=${encodeURIComponent(fullPathB64)}`;
-                    const checked = nasMainImageSelected && nasMainImageSelected.has(fullPathB64) ? 'checked' : '';
-                    rows.push(
-                        `<div class="pm-select-item" style="cursor:pointer; display:flex; gap:0.55rem; align-items:center; padding:0.5rem 0.55rem;" onclick="nasMainImageToggle('${escapeHtml(fullPathB64)}')">` +
-                        `<div style="flex:0 0 auto;" onclick="event.stopPropagation();"><input type="checkbox" data-path="${escapeHtml(fullPathB64)}" ${checked} onchange="nasMainImageToggle('${escapeHtml(fullPathB64)}', true)"></div>` +
-                        `<div style="width:84px; height:84px; border-radius:12px; overflow:hidden; border:1px solid rgba(0,0,0,0.14); background:rgba(255,255,255,0.65); flex:0 0 auto;">` +
-                        `<img src="${thumbUrl}" alt="${name}" style="width:100%; height:100%; object-fit:cover; display:block;" loading="lazy">` +
-                        `</div>` +
-                        `<div style="min-width:0; flex:1 1 auto;">` +
-                        `<div style="font-weight:600; font-size:0.88rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${name}</div>` +
-                        `</div>` +
-                        `</div>`
-                    );
+                    const isSelected = !!(nasMainImageSelected && nasMainImageSelected.has(fullPathB64));
+
+                    const card = document.createElement('div');
+                    card.className = 'item-card item-card--nas-browse' + (isSelected ? ' item-card--selected' : '');
+                    const modeSeg = document.getElementById('nasActionModeSegment');
+                    const actionMode = modeSeg ? String(modeSeg.getAttribute('data-value') || 'multi') : 'multi';
+                    if (actionMode === 'double') {
+                        card.addEventListener('dblclick', () => nasMainImageImport(fullPathB64));
+                        card.addEventListener('click', (e) => {
+                            // avoid confusing selection in double-click mode
+                            e.preventDefault();
+                        });
+                    } else {
+                        card.addEventListener('click', () => nasMainImageToggle(fullPathB64));
+                    }
+
+                    const selectWrap = document.createElement('div');
+                    selectWrap.className = 'item-select';
+                    selectWrap.addEventListener('click', (e) => e.stopPropagation());
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.dataset.path = fullPathB64;
+                    cb.checked = isSelected;
+                    cb.addEventListener('click', (e) => e.stopPropagation());
+                    cb.addEventListener('change', (e) => {
+                        const seg = document.getElementById('nasActionModeSegment');
+                        const m = seg ? String(seg.getAttribute('data-value') || 'multi') : 'multi';
+                        if (m === 'double') {
+                            // multi-select disabled in double-click mode
+                            e.target.checked = false;
+                            return;
+                        }
+                        nasMainImageToggle(fullPathB64, true, e.target.checked);
+                        card.classList.toggle('item-card--selected', !!e.target.checked);
+                    });
+                    selectWrap.appendChild(cb);
+
+                    const thumb = document.createElement('div');
+                    thumb.className = 'item-thumbnail';
+                    const im = document.createElement('img');
+                    im.src = thumbUrl;
+                    im.alt = displayName;
+                    im.loading = 'lazy';
+                    thumb.appendChild(im);
+
+                    const info = document.createElement('div');
+                    info.className = 'item-info';
+                    const title = document.createElement('div');
+                    title.className = 'item-name';
+                    title.textContent = displayName;
+                    info.appendChild(title);
+
+                    card.appendChild(selectWrap);
+                    card.appendChild(thumb);
+                    card.appendChild(info);
+                    list.appendChild(card);
                 });
-                list.innerHTML = rows.length ? rows.join('') : '<div class="pm-select-empty">此目录为空</div>';
             } catch (e) {
-                list.innerHTML = '<div class="pm-select-empty">加载失败</div>';
+                list.innerHTML = '';
+                const err = document.createElement('div');
+                err.className = 'pm-select-empty nas-main-image-grid-empty';
+                err.textContent = '加载失败';
+                list.appendChild(err);
                 showNasMainImageStatus('浏览失败: ' + e, true);
             }
         }
@@ -2134,15 +2364,20 @@
                 nasMainImageNavStack = [];
             }
             document.getElementById('nas-main-image-import-modal').classList.add('active');
+            nasMainImageSelected = new Set();
             // Validate restore path; if invalid, fall back to root
             (async () => {
                 try {
+                    await loadSalesImageTypeOptions();
+                    renderNasMainImageTypeBar();
+                    initNasActionModeSegment();
+                    initNasThumbSizeSegment();
                     if (nasMainImagePathB64) await nasMainImageBrowse(nasMainImagePathB64);
                 } catch (e) {
                     nasMainImagePathB64 = '';
                     nasMainImageNavStack = [];
                 }
-                renderNasMainImageList();
+                await renderNasMainImageList();
             })();
         }
 
@@ -2152,13 +2387,15 @@
             safeSetLocalStorage(NAS_MAIN_IMAGE_LAST_STACK_KEY, JSON.stringify(nasMainImageNavStack || []));
             nasMainImagePathB64 = '';
             nasMainImageNavStack = [];
+            nasMainImageSelected = new Set();
             showNasMainImageStatus('', false);
         }
 
         async function nasMainImageEnterFolder(pathB64, folderName) {
             nasMainImagePathB64 = String(pathB64 || '');
             nasMainImageNavStack = Array.isArray(nasMainImageNavStack) ? nasMainImageNavStack : [];
-            nasMainImageNavStack.push({ name: decodeB64Utf8(pathB64) ? String(folderName || '').replace(/^📁\s*/,'') : String(folderName || ''), pathB64: nasMainImagePathB64 });
+            const label = String(folderName || '').replace(/^📁\s*/, '').trim() || decodeB64Utf8(pathB64).split('/').filter(Boolean).pop() || '文件夹';
+            nasMainImageNavStack.push({ name: label, pathB64: nasMainImagePathB64 });
             await renderNasMainImageList();
         }
 
@@ -2191,8 +2428,7 @@
 
         async function nasMainImageImport(filePathB64) {
             if (!editId) return;
-            const checked = document.querySelector('input[name="mainImageType"]:checked');
-            const imageType = checked ? normalizeMainImageTypeName(checked.value) : (selectedMainImageType || '文字卖点图');
+            const imageType = getNasImportImageTypeName();
             try {
                 showNasMainImageStatus('正在移动绑定...', false);
                 const resp = await fetch('/api/sales-product-main-images-import-by-path', {
@@ -2265,29 +2501,57 @@
             }
         }
 
-        function nasMainImageToggle(pathB64, fromCheckbox) {
+        function nasMainImageToggle(pathB64, fromCheckbox, forcedChecked) {
             const p = String(pathB64 || '');
             if (!p) return;
             if (!nasMainImageSelected) nasMainImageSelected = new Set();
+            if (fromCheckbox && (forcedChecked === true || forcedChecked === false)) {
+                if (forcedChecked) nasMainImageSelected.add(p);
+                else nasMainImageSelected.delete(p);
+                return;
+            }
             if (nasMainImageSelected.has(p)) nasMainImageSelected.delete(p);
             else nasMainImageSelected.add(p);
-            if (!fromCheckbox) renderNasMainImageList();
+            renderNasMainImageList();
         }
 
-        function nasMainImageToggleSelectAll() {
+        function nasMainImageSelectAll() {
             const list = document.getElementById('nasMainImageList');
             if (!list) return;
-            const boxes = Array.from(list.querySelectorAll('input[type="checkbox"]'));
+            const boxes = Array.from(list.querySelectorAll('input[type="checkbox"][data-path]'));
             if (!boxes.length) return;
-            const allChecked = boxes.every(b => b.checked);
             if (!nasMainImageSelected) nasMainImageSelected = new Set();
             boxes.forEach(b => {
                 const path = String(b.dataset.path || '');
                 if (!path) return;
-                if (allChecked) nasMainImageSelected.delete(path);
-                else nasMainImageSelected.add(path);
+                nasMainImageSelected.add(path);
+                b.checked = true;
+                const card = b.closest('.item-card');
+                if (card) card.classList.add('item-card--selected');
             });
-            renderNasMainImageList();
+        }
+
+        function nasMainImageClearSelection() {
+            const list = document.getElementById('nasMainImageList');
+            if (!list) return;
+            const boxes = Array.from(list.querySelectorAll('input[type="checkbox"][data-path]'));
+            if (!nasMainImageSelected) nasMainImageSelected = new Set();
+            nasMainImageSelected.clear();
+            boxes.forEach(b => {
+                b.checked = false;
+                const card = b.closest('.item-card');
+                if (card) card.classList.remove('item-card--selected');
+            });
+        }
+
+        function nasMainImageToggleAll() {
+            const list = document.getElementById('nasMainImageList');
+            if (!list) return;
+            const boxes = Array.from(list.querySelectorAll('input[type="checkbox"][data-path]'));
+            if (!boxes.length) return;
+            const allChecked = boxes.every(b => !!b.checked);
+            if (allChecked) nasMainImageClearSelection();
+            else nasMainImageSelectAll();
         }
 
         async function nasMainImageImportSelected() {
@@ -2297,8 +2561,7 @@
                 showNasMainImageStatus('请先勾选要导入的图片。', true);
                 return;
             }
-            const checked = document.querySelector('input[name="mainImageType"]:checked');
-            const imageType = checked ? normalizeMainImageTypeName(checked.value) : (selectedMainImageType || '文字卖点图');
+            const imageType = getNasImportImageTypeName();
             try {
                 showNasMainImageStatus(`正在导入 ${selected.length} 张...`, false);
                 const resp = await fetch('/api/sales-product-main-images-import-by-path', {
@@ -2911,7 +3174,8 @@
 
         function loadSalesProductList() {
             const q = document.getElementById('searchInput').value.trim();
-            const url = q ? `/api/sales-product?q=${encodeURIComponent(q)}&include_links=1` : '/api/sales-product?include_links=1';
+            // Performance: list view doesn't need order_sku_links payload; fetch links only in detail API calls.
+            const url = q ? `/api/sales-product?q=${encodeURIComponent(q)}&include_links=0` : '/api/sales-product?include_links=0';
             fetch(url).then(r => r.json()).then(data => {
                 const tbody = document.querySelector('#salesProductTable tbody');
                 if (data.status !== 'success') {

@@ -395,7 +395,11 @@ class FileManagementMixin:
 
             content_length = int(environ.get('CONTENT_LENGTH', 0))
             body = environ['wsgi.input'].read(content_length)
-            data = json.loads(body.decode('utf-8'))
+            try:
+                text = body.decode('utf-8', errors='surrogateescape')
+            except Exception:
+                text = body.decode('utf-8', errors='replace')
+            data = json.loads(text)
 
             path_b64 = data.get('id', '')
             new_name_b64 = data.get('new_name_b64', '')
@@ -457,7 +461,11 @@ class FileManagementMixin:
 
             content_length = int(environ.get('CONTENT_LENGTH', 0))
             body = environ['wsgi.input'].read(content_length)
-            data = json.loads(body.decode('utf-8'))
+            try:
+                text = body.decode('utf-8', errors='surrogateescape')
+            except Exception:
+                text = body.decode('utf-8', errors='replace')
+            data = json.loads(text)
 
             path_b64 = data.get('id', '')
             new_name_b64 = data.get('new_name_b64', '')
