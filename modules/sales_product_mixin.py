@@ -1507,6 +1507,23 @@ class SalesProductMixin:
                     if not sku_family_id:
                         return self.send_json({'status': 'error', 'message': '无法根据下单SKU推断归属货号'}, start_response)
 
+                    # Preserve current variant identity when possible to avoid accidentally "losing" image mappings
+                    current_variant_id = 0
+                    current_variant_fabric_id = 0
+                    try:
+                        with conn.cursor() as cur:
+                            cur.execute("SELECT variant_id FROM sales_products WHERE id=%s", (item_id,))
+                            vrow = cur.fetchone() or {}
+                            current_variant_id = self._parse_int(vrow.get('variant_id')) or 0
+                        if current_variant_id and self._table_has_column(conn, 'sales_product_variants', 'fabric_id'):
+                            with conn.cursor() as cur:
+                                cur.execute("SELECT fabric_id FROM sales_product_variants WHERE id=%s", (current_variant_id,))
+                                frow = cur.fetchone() or {}
+                                current_variant_fabric_id = self._parse_int(frow.get('fabric_id')) or 0
+                    except Exception:
+                        current_variant_id = current_variant_id or 0
+                        current_variant_fabric_id = current_variant_fabric_id or 0
+
                     sku_family_code = ''
                     with conn.cursor() as cur:
                         cur.execute("SELECT sku_family FROM product_families WHERE id=%s", (sku_family_id,))
@@ -1654,6 +1671,9 @@ class SalesProductMixin:
                     final_fabric = (data.get('fabric') or '').strip() or auto_fabric
                     final_spec_name = (data.get('spec_name') or '').strip() or auto_spec_name
                     resolved_fabric_id = fabric_id_input or None
+                    # If UI didn't provide fabric_id and lookup failed, fall back to current variant fabric_id
+                    if (not resolved_fabric_id) and current_variant_fabric_id:
+                        resolved_fabric_id = int(current_variant_fabric_id)
                     if not resolved_fabric_id and final_fabric:
                         try:
                             with conn.cursor() as fcur:
@@ -2167,20 +2187,41 @@ class SalesProductMixin:
             sales_product_id = self._parse_int(data.get('sales_product_id'))
             source_path_text = str(data.get('source_path') or '').strip()
             source_path_b64 = str(data.get('source_path_b64') or '').strip()
+            source_paths_b64 = data.get('source_paths_b64') or data.get('source_paths') or []
             image_type_name = str(data.get('image_type_name') or '').strip() or '文字卖点图'
             delete_source = bool(data.get('delete_source'))  # optional: try delete source after successful commit (best-effort)
             require_move = str(data.get('require_move') or '').strip().lower() in ('1', 'true', 'yes', 'on')
             debug_move = str(data.get('debug_move') or '').strip().lower() in ('1', 'true', 'yes', 'on')
+            prompt_duplicate = str(data.get('prompt_duplicate') or '').strip().lower() in ('1', 'true', 'yes', 'on')
+            allow_duplicate = str(data.get('allow_duplicate') or '').strip().lower() in ('1', 'true', 'yes', 'on')
 
             if not sales_product_id:
                 return self.send_json({'status': 'error', 'message': 'Missing sales_product_id'}, start_response)
-            if (not source_path_text) and (not source_path_b64):
+            if (not source_path_text) and (not source_path_b64) and (not source_paths_b64):
                 return self.send_json({'status': 'error', 'message': 'Missing source_path'}, start_response)
+
+            # Multi-select: explicit list of file paths (base64 of filesystem bytes)
+            source_files = []
+            if isinstance(source_paths_b64, (list, tuple)) and source_paths_b64:
+                for b64 in list(source_paths_b64)[:500]:
+                    try:
+                        raw = base64.b64decode(str(b64 or '').strip())
+                        p_b = self._normalize_nas_abs_path_bytes(raw)
+                    except Exception:
+                        continue
+                    try:
+                        if p_b and os.path.isfile(p_b):
+                            name = os.path.basename(self._safe_fsdecode(p_b))
+                            if self._is_image_name(name):
+                                source_files.append(self._safe_fsdecode(p_b))
+                    except Exception:
+                        continue
+                source_files = sorted(set(source_files))
 
             # Backend runs on NAS (Linux). If user passes Windows UNC path, map it to NAS-local path.
             # Prefer bytes-safe base64 path if provided (avoids unicode corruption in JSON)
             source_path_b = b''
-            if source_path_b64:
+            if (not source_files) and source_path_b64:
                 try:
                     raw_bytes = base64.b64decode(source_path_b64)
                     source_path_b = self._normalize_nas_abs_path_bytes(raw_bytes)
@@ -2191,11 +2232,11 @@ class SalesProductMixin:
                         'source_path_b64_input': source_path_b64[:1200],
                         'source_path_b64_input_chunks': self._chunk_text(source_path_b64, 120),
                     }, start_response)
-            if not source_path_b:
+            if (not source_files) and (not source_path_b):
                 source_path_b = self._normalize_nas_abs_path(source_path_text)
             # If missing, try to locate the file under other /volumeN resources bases.
             probe = []
-            if source_path_b and (not os.path.exists(source_path_b)):
+            if (not source_files) and source_path_b and (not os.path.exists(source_path_b)):
                 try:
                     rel_b = self._extract_resources_relative_bytes(source_path_text)
                     if rel_b:
@@ -2214,7 +2255,7 @@ class SalesProductMixin:
 
             # Extra fallback: search by basename under sku folder (avoids directory-name encoding mismatches)
             search_debug = []
-            if source_path_b and (not os.path.exists(source_path_b)) and source_path_text:
+            if (not source_files) and source_path_b and (not os.path.exists(source_path_b)) and source_path_text:
                 try:
                     found_b, search_debug = self._try_find_file_by_basename_under_sku(source_path_text)
                     if found_b and os.path.exists(found_b):
@@ -2223,7 +2264,7 @@ class SalesProductMixin:
                 except Exception:
                     search_debug = search_debug or []
 
-            if (not source_path_b) or (not os.path.exists(source_path_b)):
+            if (not source_files) and ((not source_path_b) or (not os.path.exists(source_path_b))):
                 return self.send_json({
                     'status': 'error',
                     'message': '源路径不存在',
@@ -2235,23 +2276,27 @@ class SalesProductMixin:
                     'basename_search_debug': search_debug,
                 }, start_response)
 
-            source_files = []
-            source_path = self._safe_fsdecode(source_path_b)
-            if os.path.isfile(source_path_b):
-                if self._is_image_name(os.path.basename(source_path)):
-                    source_files = [source_path]
-            else:
-                try:
-                    for name in os.listdir(source_path_b):
-                        # os.listdir(bytes_dir) returns bytes names; keep bytes-safe then decode for later IO
-                        abs_file_b = os.path.join(source_path_b, name)
-                        name_text = self._safe_fsdecode(name)
-                        abs_file = self._safe_fsdecode(abs_file_b)
-                        if os.path.isfile(abs_file_b) and self._is_image_name(name_text):
-                            source_files.append(abs_file)
-                except Exception:
-                    source_files = []
-            source_files = sorted(set(source_files))
+            source_path = ''
+            if not source_files:
+                source_files = []
+                source_path = self._safe_fsdecode(source_path_b)
+                if os.path.isfile(source_path_b):
+                    if self._is_image_name(os.path.basename(source_path)):
+                        source_files = [source_path]
+                else:
+                    try:
+                        for name in os.listdir(source_path_b):
+                            # os.listdir(bytes_dir) returns bytes names; keep bytes-safe then decode for later IO
+                            abs_file_b = os.path.join(source_path_b, name)
+                            name_text = self._safe_fsdecode(name)
+                            abs_file = self._safe_fsdecode(abs_file_b)
+                            if os.path.isfile(abs_file_b) and self._is_image_name(name_text):
+                                source_files.append(abs_file)
+                    except Exception:
+                        source_files = []
+                source_files = sorted(set(source_files))
+            if not source_path:
+                source_path = 'multi-select'
             if not source_files:
                 return self.send_json({'status': 'error', 'message': '源路径下无图片文件'}, start_response)
 
@@ -2400,6 +2445,30 @@ class SalesProductMixin:
                     bound_source_files.append(source_file)
                     # Defer DB mapping inserts until after all files staged successfully (atomic batch)
                     items.append({'filename': filename, 'sha256': sha256[:12], 'sort_order': sort_order, 'idx': idx, 'sha256_full': sha256})
+
+                if prompt_duplicate and reuse_assets and not allow_duplicate:
+                    dups = []
+                    for r in reuse_assets[:200]:
+                        try:
+                            aid = int(r.get('asset_id') or 0)
+                            with conn.cursor() as cur:
+                                cur.execute("SELECT storage_path FROM image_assets WHERE id=%s LIMIT 1", (aid,))
+                                row = cur.fetchone() or {}
+                            dups.append({
+                                'source_file': str(r.get('source_file') or ''),
+                                'sha256': str(r.get('sha256') or ''),
+                                'image_asset_id': aid,
+                                'storage_path': (row.get('storage_path') or '') if row else '',
+                            })
+                        except Exception:
+                            continue
+                    return self.send_json({
+                        'status': 'duplicate',
+                        'message': '检测到重复图片（sha256 已存在），是否确认复用已有图片并继续导入？',
+                        'duplicate_count': len(reuse_assets),
+                        'duplicates': dups,
+                        'file_count': len(items),
+                    }, start_response)
 
                 # If nothing to process, exit early
                 if not db_new_assets and not reuse_assets:
@@ -3117,10 +3186,17 @@ class SalesProductMixin:
                             variant_id = self._parse_int(row.get('variant_id')) or 0
                     except Exception:
                         variant_id = 0
-                    if variant_id and self._table_has_column(conn, 'sku_image_mappings', 'variant_id'):
-                        items = self._read_sales_product_image_items(conn, sales_product_id=None, variant_id=variant_id)
+                    has_variant_col = self._table_has_column(conn, 'sku_image_mappings', 'variant_id')
+                    has_spid_col = self._table_has_column(conn, 'sku_image_mappings', 'sales_product_id')
+                    items = []
+                    if variant_id and has_variant_col:
+                        items = self._read_sales_product_image_items(conn, sales_product_id=None, variant_id=variant_id) or []
+                        # Robust fallback: if variant changed unexpectedly but legacy sales_product_id mapping exists,
+                        # also show those mappings to avoid "images disappeared" after save.
+                        if (not items) and has_spid_col:
+                            items = self._read_sales_product_image_items(conn, sales_product_id=sales_product_id) or []
                     else:
-                        items = self._read_sales_product_image_items(conn, sales_product_id=sales_product_id)
+                        items = self._read_sales_product_image_items(conn, sales_product_id=sales_product_id) or []
                     folder_info = self._resolve_sales_product_variant_folder(sales_product_id, ensure_folder=True)
                     # Prefer fabric_id obtained while resolving folder (same variant join),
                     # fallback to direct query only if missing.

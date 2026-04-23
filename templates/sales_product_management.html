@@ -426,9 +426,17 @@
                     <h4>主图管理</h4>
                     <div class="pm-section-body pm-form">
                         <div class="form-group pm-form-full">
-                            <div style="display:flex; align-items:center; justify-content:space-between; gap:0.6rem;">
+                            <div style="display:flex; align-items:center; justify-content:space-between; gap:0.6rem; flex-wrap:wrap;">
                                 <label style="margin:0;">规格-面料主图</label>
-                                <div style="display:flex; align-items:center; gap:0.45rem;">
+                                <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+                                    <div class="status-segment status-segment--inline" style="margin-right:0.25rem;">
+                                        <button id="mainImagePromptDupOff" type="button" class="status-pill status-pill--no" onclick="setMainImagePromptDuplicate(false)">重复提示：关</button>
+                                        <button id="mainImagePromptDupOn" type="button" class="status-pill status-pill--yes" onclick="setMainImagePromptDuplicate(true)">重复提示：开</button>
+                                    </div>
+                                    <div class="status-segment status-segment--inline" style="margin-right:0.25rem;">
+                                        <button id="mainImageShowFabricOff" type="button" class="status-pill status-pill--no" onclick="setMainImageShowFabric(false)">面料图：关</button>
+                                        <button id="mainImageShowFabricOn" type="button" class="status-pill status-pill--yes" onclick="setMainImageShowFabric(true)">面料图：开</button>
+                                    </div>
                                     <button type="button" class="btn-accent" onclick="triggerMainImageUpload()">新增主图</button>
                                     <button type="button" class="btn-secondary" onclick="openNasMainImageImportModal()">从NAS选择并移动</button>
                                 </div>
@@ -606,6 +614,8 @@
                 </div>
                 <div class="form-group pm-form-full">
                     <div style="display:flex; gap:0.45rem; flex-wrap:wrap; align-items:center;">
+                        <button type="button" class="btn-secondary" onclick="nasMainImageToggleSelectAll()">全选/取消</button>
+                        <button type="button" class="btn-primary" onclick="nasMainImageImportSelected()">导入所选</button>
                         <button type="button" class="btn-secondary" onclick="nasMainImageGoUp()">上一级</button>
                         <button type="button" class="btn-secondary" onclick="nasMainImageReload()">刷新</button>
                     </div>
@@ -691,6 +701,11 @@
         let nasMainImageNavStack = [];
         const NAS_MAIN_IMAGE_LAST_PATH_KEY = 'sj.nasMainImage.lastPathB64.v1';
         const NAS_MAIN_IMAGE_LAST_STACK_KEY = 'sj.nasMainImage.navStack.v1';
+        const MAIN_IMAGE_PROMPT_DUP_KEY = 'sj.salesMainImage.promptDuplicate.v1';
+        const MAIN_IMAGE_SHOW_FABRIC_KEY = 'sj.salesMainImage.showFabric.v1';
+        let mainImagePromptDuplicate = true;
+        let mainImageShowFabric = true;
+        let nasMainImageSelected = new Set();
 
         function escapeHtml(value) {
             return String(value == null ? '' : value)
@@ -704,6 +719,47 @@
         function normalizeProductStatus(value) {
             const v = String(value || '').trim().toLowerCase();
             return ['enabled', 'retained', 'discarded'].includes(v) ? v : 'enabled';
+        }
+
+        function readBoolSetting(key, defaultValue) {
+            const raw = safeGetLocalStorage(key);
+            if (raw === null || raw === undefined || raw === '') return !!defaultValue;
+            const v = String(raw).trim().toLowerCase();
+            if (['1', 'true', 'yes', 'on', 'y'].includes(v)) return true;
+            if (['0', 'false', 'no', 'off', 'n'].includes(v)) return false;
+            return !!defaultValue;
+        }
+
+        function writeBoolSetting(key, value) {
+            safeSetLocalStorage(key, value ? '1' : '0');
+        }
+
+        function renderMainImageSettingsToggles() {
+            const dupOn = document.getElementById('mainImagePromptDupOn');
+            const dupOff = document.getElementById('mainImagePromptDupOff');
+            if (dupOn && dupOff) {
+                dupOn.classList.toggle('is-active', !!mainImagePromptDuplicate);
+                dupOff.classList.toggle('is-active', !mainImagePromptDuplicate);
+            }
+            const fabOn = document.getElementById('mainImageShowFabricOn');
+            const fabOff = document.getElementById('mainImageShowFabricOff');
+            if (fabOn && fabOff) {
+                fabOn.classList.toggle('is-active', !!mainImageShowFabric);
+                fabOff.classList.toggle('is-active', !mainImageShowFabric);
+            }
+        }
+
+        function setMainImagePromptDuplicate(enabled) {
+            mainImagePromptDuplicate = !!enabled;
+            writeBoolSetting(MAIN_IMAGE_PROMPT_DUP_KEY, mainImagePromptDuplicate);
+            renderMainImageSettingsToggles();
+        }
+
+        function setMainImageShowFabric(enabled) {
+            mainImageShowFabric = !!enabled;
+            writeBoolSetting(MAIN_IMAGE_SHOW_FABRIC_KEY, mainImageShowFabric);
+            renderMainImageSettingsToggles();
+            renderMainImageGrid();
         }
 
         function decodeB64Utf8(b64) {
@@ -1410,7 +1466,7 @@
             });
 
             // Append fabric-linked images into the same grid (readonly, no delete)
-            if (Array.isArray(fabricImageItems) && fabricImageItems.length) {
+            if (mainImageShowFabric && Array.isArray(fabricImageItems) && fabricImageItems.length) {
                 const badgeStyle = 'display:inline-flex;align-items:center;gap:.25rem;padding:.15rem .45rem;border-radius:999px;background:rgba(73,110,92,0.12);color:#3d6a52;font-weight:700;font-size:.72rem;';
                 const fabricList = (fabricImageItems || []).slice()
                     .filter(x => filterType === '全部' || String(x.image_type_name || '').trim() === filterType)
@@ -2036,14 +2092,15 @@
                     const name = escapeHtml(decodeB64Utf8(img.name) || '');
                     const fullPathB64 = img.path;
                     const thumbUrl = `/api/image-preview?id=${encodeURIComponent(fullPathB64)}`;
+                    const checked = nasMainImageSelected && nasMainImageSelected.has(fullPathB64) ? 'checked' : '';
                     rows.push(
-                        `<div class="pm-select-item" style="cursor:pointer; display:flex; gap:0.55rem; align-items:center;" ondblclick="nasMainImageImport('${escapeHtml(fullPathB64)}')">` +
-                        `<div style="width:54px; height:54px; border-radius:10px; overflow:hidden; border:1px solid rgba(0,0,0,0.14); background:rgba(255,255,255,0.65); flex:0 0 auto;">` +
+                        `<div class="pm-select-item" style="cursor:pointer; display:flex; gap:0.55rem; align-items:center; padding:0.5rem 0.55rem;" onclick="nasMainImageToggle('${escapeHtml(fullPathB64)}')">` +
+                        `<div style="flex:0 0 auto;" onclick="event.stopPropagation();"><input type="checkbox" data-path="${escapeHtml(fullPathB64)}" ${checked} onchange="nasMainImageToggle('${escapeHtml(fullPathB64)}', true)"></div>` +
+                        `<div style="width:84px; height:84px; border-radius:12px; overflow:hidden; border:1px solid rgba(0,0,0,0.14); background:rgba(255,255,255,0.65); flex:0 0 auto;">` +
                         `<img src="${thumbUrl}" alt="${name}" style="width:100%; height:100%; object-fit:cover; display:block;" loading="lazy">` +
                         `</div>` +
                         `<div style="min-width:0; flex:1 1 auto;">` +
-                        `<div style="font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${name}</div>` +
-                        `<div class="auto-note" style="margin-top:0.15rem;">双击：移动并绑定到当前销售产品</div>` +
+                        `<div style="font-weight:600; font-size:0.88rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${name}</div>` +
                         `</div>` +
                         `</div>`
                     );
@@ -2146,17 +2203,169 @@
                         source_path_b64: String(filePathB64 || ''),
                         image_type_name: imageType,
                         require_move: true,
+                        prompt_duplicate: !!mainImagePromptDuplicate,
+                        allow_duplicate: false,
                         debug_move: true
                     })
                 });
                 const data = await resp.json();
+                if (data && data.status === 'duplicate') {
+                    const list = Array.isArray(data.duplicates) ? data.duplicates : [];
+                    const names = list.slice(0, 12).map(d => {
+                        const p = String(d.source_file || '');
+                        const base = p.split('/').pop();
+                        return base || p;
+                    }).join('\n');
+                    const ok = window.showAppConfirmAsync
+                        ? await window.showAppConfirmAsync({
+                            title: '检测到重复图片',
+                            message: `以下图片已存在（将复用已有图片继续导入）：\n${names}${list.length > 12 ? `\n…等共 ${list.length} 张` : ''}\n\n注意：复用后若该图片被多个规格引用，系统可能会自动移动到“货号/主图/通用”，并将旧位置的重复文件移入“回收站”。`,
+                            confirmText: '确认复用并导入',
+                            requireConfirmCheck: true,
+                            confirmCheckText: '我已知晓：复用会影响图片归档位置（可能进入通用）'
+                        })
+                        : false;
+                    if (!ok) {
+                        showNasMainImageStatus('已取消导入。', true);
+                        return;
+                    }
+                    const resp2 = await fetch('/api/sales-product-main-images-import-by-path', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            sales_product_id: editId,
+                            source_path_b64: String(filePathB64 || ''),
+                            image_type_name: imageType,
+                            require_move: true,
+                            prompt_duplicate: false,
+                            allow_duplicate: true,
+                            debug_move: true
+                        })
+                    });
+                    const data2 = await resp2.json();
+                    if (!data2 || data2.status !== 'success') {
+                        showNasMainImageStatus((data2 && data2.message) ? data2.message : '导入失败', true);
+                        return;
+                    }
+                    showNasMainImageStatus(`导入成功：关联 ${Number(data2.linked || 0)}，移动 ${Number(data2.moved || 0)}，复制 ${Number(data2.copied || 0)}。`, false);
+                    refreshMainImageList();
+                    await renderNasMainImageList();
+                    return;
+                }
                 if (!data || data.status !== 'success') {
                     showNasMainImageStatus((data && data.message) ? data.message : '导入失败', true);
                     return;
                 }
-                showNasMainImageStatus(`导入成功：关联 ${Number(data.linked || 0)}，移动 ${Number(data.moved || 0)}，复制 ${Number(data.copied || 0)}。清理源文件：${JSON.stringify(data.import_source_cleanup || {})}`, false);
+                showNasMainImageStatus(`导入成功：关联 ${Number(data.linked || 0)}，移动 ${Number(data.moved || 0)}，复制 ${Number(data.copied || 0)}。`, false);
                 refreshMainImageList();
                 // refresh current folder list to reflect moved files
+                await renderNasMainImageList();
+            } catch (e) {
+                showNasMainImageStatus('导入失败: ' + e, true);
+            }
+        }
+
+        function nasMainImageToggle(pathB64, fromCheckbox) {
+            const p = String(pathB64 || '');
+            if (!p) return;
+            if (!nasMainImageSelected) nasMainImageSelected = new Set();
+            if (nasMainImageSelected.has(p)) nasMainImageSelected.delete(p);
+            else nasMainImageSelected.add(p);
+            if (!fromCheckbox) renderNasMainImageList();
+        }
+
+        function nasMainImageToggleSelectAll() {
+            const list = document.getElementById('nasMainImageList');
+            if (!list) return;
+            const boxes = Array.from(list.querySelectorAll('input[type="checkbox"]'));
+            if (!boxes.length) return;
+            const allChecked = boxes.every(b => b.checked);
+            if (!nasMainImageSelected) nasMainImageSelected = new Set();
+            boxes.forEach(b => {
+                const path = String(b.dataset.path || '');
+                if (!path) return;
+                if (allChecked) nasMainImageSelected.delete(path);
+                else nasMainImageSelected.add(path);
+            });
+            renderNasMainImageList();
+        }
+
+        async function nasMainImageImportSelected() {
+            if (!editId) return;
+            const selected = Array.from(nasMainImageSelected || []);
+            if (!selected.length) {
+                showNasMainImageStatus('请先勾选要导入的图片。', true);
+                return;
+            }
+            const checked = document.querySelector('input[name="mainImageType"]:checked');
+            const imageType = checked ? normalizeMainImageTypeName(checked.value) : (selectedMainImageType || '文字卖点图');
+            try {
+                showNasMainImageStatus(`正在导入 ${selected.length} 张...`, false);
+                const resp = await fetch('/api/sales-product-main-images-import-by-path', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sales_product_id: editId,
+                        source_paths_b64: selected,
+                        image_type_name: imageType,
+                        require_move: true,
+                        prompt_duplicate: !!mainImagePromptDuplicate,
+                        allow_duplicate: false,
+                        debug_move: true
+                    })
+                });
+                const data = await resp.json();
+                if (data && data.status === 'duplicate') {
+                    const list = Array.isArray(data.duplicates) ? data.duplicates : [];
+                    const names = list.slice(0, 12).map(d => {
+                        const p = String(d.source_file || '');
+                        const base = p.split('/').pop();
+                        return base || p;
+                    }).join('\n');
+                    const ok = window.showAppConfirmAsync
+                        ? await window.showAppConfirmAsync({
+                            title: '检测到重复图片',
+                            message: `以下图片已存在（将复用已有图片继续导入）：\n${names}${list.length > 12 ? `\n…等共 ${list.length} 张` : ''}\n\n注意：复用后若该图片被多个规格引用，系统可能会自动移动到“货号/主图/通用”，并将旧位置的重复文件移入“回收站”。`,
+                            confirmText: '确认复用并导入',
+                            requireConfirmCheck: true,
+                            confirmCheckText: '我已知晓：复用会影响图片归档位置（可能进入通用）'
+                        })
+                        : false;
+                    if (!ok) {
+                        showNasMainImageStatus('已取消导入。', true);
+                        return;
+                    }
+                    const resp2 = await fetch('/api/sales-product-main-images-import-by-path', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            sales_product_id: editId,
+                            source_paths_b64: selected,
+                            image_type_name: imageType,
+                            require_move: true,
+                            prompt_duplicate: false,
+                            allow_duplicate: true,
+                            debug_move: true
+                        })
+                    });
+                    const data2 = await resp2.json();
+                    if (!data2 || data2.status !== 'success') {
+                        showNasMainImageStatus((data2 && data2.message) ? data2.message : '导入失败', true);
+                        return;
+                    }
+                    showNasMainImageStatus(`导入成功：关联 ${Number(data2.linked || 0)}，移动 ${Number(data2.moved || 0)}，复制 ${Number(data2.copied || 0)}。`, false);
+                    nasMainImageSelected = new Set();
+                    refreshMainImageList();
+                    await renderNasMainImageList();
+                    return;
+                }
+                if (!data || data.status !== 'success') {
+                    showNasMainImageStatus((data && data.message) ? data.message : '导入失败', true);
+                    return;
+                }
+                showNasMainImageStatus(`导入成功：关联 ${Number(data.linked || 0)}，移动 ${Number(data.moved || 0)}，复制 ${Number(data.copied || 0)}。`, false);
+                nasMainImageSelected = new Set();
+                refreshMainImageList();
                 await renderNasMainImageList();
             } catch (e) {
                 showNasMainImageStatus('导入失败: ' + e, true);
@@ -2343,6 +2552,9 @@
 
         async function openEditModal(id) {
             await Promise.all([ensureOrderSkuOptionsLoaded(), ensureFabricOptionsLoaded()]);
+            mainImagePromptDuplicate = readBoolSetting(MAIN_IMAGE_PROMPT_DUP_KEY, true);
+            mainImageShowFabric = readBoolSetting(MAIN_IMAGE_SHOW_FABRIC_KEY, true);
+            renderMainImageSettingsToggles();
             const item = await fetchSalesProductDetail(id);
             if (!item) {
                 showUploadDialog({ title: '加载失败', message: '未找到销售产品详情' });
@@ -2440,18 +2652,26 @@
                 if (confirmNewFolder) {
                     payload.confirm_new_variant_folder = true;
                 }
+                const saveBtn = document.querySelector('#pm-modal .pm-modal-actions .btn-primary');
+                if (saveBtn) saveBtn.disabled = true;
+                showModalStatus('正在保存...', false);
                 fetch('/api/sales-product', {
                 method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             }).then(r => r.json()).then(data => {
                 if (data.status === 'success') {
+                    try { showTimeoutToast('保存成功'); } catch (e) {}
                     closeModal();
                     loadSalesProductList();
                 } else {
                     showModalStatus(data.message || '操作失败', true);
                 }
-            }).catch(err => showModalStatus('请求失败: ' + err, true));
+                if (saveBtn) saveBtn.disabled = false;
+            }).catch(err => {
+                showModalStatus('请求失败: ' + err, true);
+                if (saveBtn) saveBtn.disabled = false;
+            });
             };
 
             if (editId) {
@@ -2870,6 +3090,9 @@
                 loadParentOptions(),
                 loadSalesImageTypeOptions()
             ]);
+            mainImagePromptDuplicate = readBoolSetting(MAIN_IMAGE_PROMPT_DUP_KEY, true);
+            mainImageShowFabric = readBoolSetting(MAIN_IMAGE_SHOW_FABRIC_KEY, true);
+            renderMainImageSettingsToggles();
         }
 
         document.getElementById('searchInput').addEventListener('keydown', function(e) {
