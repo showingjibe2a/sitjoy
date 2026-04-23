@@ -430,6 +430,7 @@
                                 <label style="margin:0;">规格-面料主图</label>
                                 <div style="display:flex; align-items:center; gap:0.45rem;">
                                     <button type="button" class="btn-accent" onclick="triggerMainImageUpload()">新增主图</button>
+                                    <button type="button" class="btn-secondary" onclick="openNasMainImageImportModal()">从NAS选择并移动</button>
                                 </div>
                             </div>
                             <input type="file" id="modalMainImageUpload" accept="image/*" multiple style="display:none;">
@@ -525,25 +526,48 @@
     </div>
 
     <div class="pm-modal" id="main-image-desc-modal">
-        <div class="pm-modal-content" style="max-width: 620px;">
-            <h3 style="margin-top:0;">编辑图片类型/备注</h3>
-            <div class="form-group pm-form-full" style="margin-top:0.55rem;">
-                <label>图片类型（双击图片可快速编辑）</label>
-                <div class="image-type-bar" id="mainImageEditTypeBar" style="gap:0.35rem; flex-wrap:wrap;">
-                    <!-- options injected -->
+        <div class="pm-modal-content" style="max-width: 720px;">
+            <h3 style="margin-top:0;">编辑主图</h3>
+
+            <div class="pm-section pm-form-full" style="margin-top:0.45rem;">
+                <h4>基础信息</h4>
+                <div class="pm-section-body pm-form">
+                    <div class="form-group pm-form-full">
+                        <label for="mainImageRenameInput">文件名（可重命名，勿含路径）</label>
+                        <input type="text" id="mainImageRenameInput" class="required-field" autocomplete="off" placeholder="例如：文字卖点图-场景A.jpg">
+                        <div class="auto-note" style="margin-top:0.35rem;">保存时会同步重命名磁盘文件；扩展名需与当前文件一致。</div>
+                    </div>
+                    <div class="form-group pm-form-full">
+                        <label for="mainImageReplaceInput">替换图片</label>
+                        <input type="file" id="mainImageReplaceInput" accept="image/*" class="optional-field">
+                        <div class="auto-note" style="margin-top:0.35rem;">选择新文件后立即上传替换：会更新 sha256；旧文件会进入『上架资源』/回收站。</div>
+                    </div>
                 </div>
             </div>
-            <div class="form-group pm-form-full" style="margin-top:0.55rem;">
-                <label>是否弃用</label>
-                <div style="display:flex; gap:0.45rem; flex-wrap:wrap;">
-                    <button id="mainImageDeprecatedNo" class="status-pill status-pill--no" type="button" onclick="setMainImageDeprecated(false)">否</button>
-                    <button id="mainImageDeprecatedYes" class="status-pill status-pill--yes" type="button" onclick="setMainImageDeprecated(true)">是</button>
+
+            <div class="pm-section pm-form-full" style="margin-top:0.55rem;">
+                <h4>展示属性</h4>
+                <div class="pm-section-body pm-form">
+                    <div class="form-group pm-form-full">
+                        <label>图片类型</label>
+                        <div class="image-type-bar" id="mainImageEditTypeBar" style="gap:0.35rem; flex-wrap:wrap;">
+                            <!-- options injected -->
+                        </div>
+                    </div>
+                    <div class="form-group pm-form-full">
+                        <label>是否弃用</label>
+                        <div style="display:flex; gap:0.45rem; flex-wrap:wrap;">
+                            <button id="mainImageDeprecatedNo" class="status-pill status-pill--no" type="button" onclick="setMainImageDeprecated(false)">否</button>
+                            <button id="mainImageDeprecatedYes" class="status-pill status-pill--yes" type="button" onclick="setMainImageDeprecated(true)">是</button>
+                        </div>
+                    </div>
+                    <div class="form-group pm-form-full">
+                        <label for="mainImageDescInput">图片备注</label>
+                        <textarea id="mainImageDescInput" class="optional-field" placeholder="请输入图片备注（可为空）" style="min-height: 140px;"></textarea>
+                    </div>
                 </div>
             </div>
-            <div class="form-group pm-form-full" style="margin-top:0.55rem;">
-                <label for="mainImageDescInput">图片备注</label>
-                <textarea id="mainImageDescInput" class="optional-field" placeholder="请输入图片备注（可为空）" style="min-height: 160px;"></textarea>
-            </div>
+
             <div class="pm-modal-actions">
                 <button class="btn-secondary" type="button" onclick="closeMainImageDescModal()">取消</button>
                 <button class="btn-primary" type="button" onclick="saveMainImageDescription()">保存</button>
@@ -564,6 +588,35 @@
             <div class="pm-modal-actions">
                 <button class="btn-secondary" type="button" onclick="closeSalesImageTypeCreateModal()">取消</button>
                 <button class="btn-primary" type="button" onclick="saveSalesImageTypeFromModal()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="pm-modal" id="nas-main-image-import-modal">
+        <div class="pm-modal-content" style="max-width: 820px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:0.6rem; margin-top:0;">
+                <h3 style="margin:0;">从NAS选择主图（移动绑定）</h3>
+                <span class="help-dot" data-tip="提示：这是“服务器侧NAS浏览”，可真正移动/删除 NAS 上的源文件；浏览器本地“选择文件夹上传”只能复制文件，无法删除原文件（浏览器安全限制）。" style="flex:0 0 auto;"></span>
+            </div>
+            <div class="pm-form">
+                <div class="form-group pm-form-full">
+                    <label>当前位置</label>
+                    <div id="nasMainImageBreadcrumbs" style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;"></div>
+                    <div id="nasMainImagePath" class="optional-field" style="padding:0.55rem 0.7rem; border-radius:8px; border:1px solid rgba(0,0,0,0.16); background:rgba(255,255,255,0.75); font-family:monospace; margin-top:0.45rem;"></div>
+                </div>
+                <div class="form-group pm-form-full">
+                    <div style="display:flex; gap:0.45rem; flex-wrap:wrap; align-items:center;">
+                        <button type="button" class="btn-secondary" onclick="nasMainImageGoUp()">上一级</button>
+                        <button type="button" class="btn-secondary" onclick="nasMainImageReload()">刷新</button>
+                    </div>
+                </div>
+                <div class="form-group pm-form-full">
+                    <div id="nasMainImageList" class="pm-select-list" style="max-height: 460px;"></div>
+                </div>
+            </div>
+            <div id="nasMainImageStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" type="button" onclick="closeNasMainImageImportModal()">关闭</button>
             </div>
         </div>
     </div>
@@ -628,11 +681,16 @@
         let fabricImageItems = [];
         let currentEditingMainImageDeprecated = false;
         let currentEditingMainImageName = '';
+        let currentEditingMainImageOriginalName = '';
         let salesImageTypeOptions = [];
         let selectedMainImageType = '文字卖点图';
         let selectedMainImageFilterType = '全部';
         let mainImageDraggedIndex = null;
         let mainImageDraggedInsertIndex = null;
+        let nasMainImagePathB64 = '';
+        let nasMainImageNavStack = [];
+        const NAS_MAIN_IMAGE_LAST_PATH_KEY = 'sj.nasMainImage.lastPathB64.v1';
+        const NAS_MAIN_IMAGE_LAST_STACK_KEY = 'sj.nasMainImage.navStack.v1';
 
         function escapeHtml(value) {
             return String(value == null ? '' : value)
@@ -646,6 +704,45 @@
         function normalizeProductStatus(value) {
             const v = String(value || '').trim().toLowerCase();
             return ['enabled', 'retained', 'discarded'].includes(v) ? v : 'enabled';
+        }
+
+        function decodeB64Utf8(b64) {
+            try {
+                const binary = atob(String(b64 || ''));
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                if (typeof TextDecoder !== 'undefined') {
+                    return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+                }
+                // Fallback: may mangle non-ascii but better than crashing
+                return decodeURIComponent(escape(binary));
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function safeSetLocalStorage(key, value) {
+            try { window.localStorage && window.localStorage.setItem(key, value); } catch (e) {}
+        }
+
+        function safeGetLocalStorage(key) {
+            try { return window.localStorage ? window.localStorage.getItem(key) : null; } catch (e) { return null; }
+        }
+
+        function buildNasBreadcrumbsHtml() {
+            const parts = [{ label: '根目录', idx: -1 }];
+            (nasMainImageNavStack || []).forEach((seg, idx) => parts.push({ label: seg && seg.name ? seg.name : `目录${idx + 1}`, idx }));
+            return parts.map(p => {
+                const cls = 'btn-secondary';
+                const label = escapeHtml(String(p.label || ''));
+                return `<button type="button" class="${cls}" style="padding:0.34rem 0.55rem;" onclick="nasMainImageJumpTo(${p.idx})">${label}</button>`;
+            }).join('<span class="auto-note" style="opacity:0.65;">/</span>');
+        }
+
+        function renderNasBreadcrumbs() {
+            const el = document.getElementById('nasMainImageBreadcrumbs');
+            if (!el) return;
+            el.innerHTML = buildNasBreadcrumbsHtml();
         }
 
         function productStatusLabel(value) {
@@ -1756,10 +1853,10 @@
             const ok = window.showAppConfirmAsync
                 ? await window.showAppConfirmAsync({
                     title: '删除确认',
-                    message: `确认删除图片：${imageName}？\n若该图片仍被其他面料或规格引用，将仅解除当前关联，不会彻底删除文件。`,
+                    message: `确认删除图片：${imageName}？\n若该图片仍被其他面料或规格引用，将仅解除当前关联，不会移动/删除磁盘文件。`,
                     confirmText: '确认删除',
                     requireConfirmCheck: true,
-                    confirmCheckText: '我已知晓：仅在无任何面料/规格关联时，图片才会被彻底删除且不可恢复'
+                    confirmCheckText: '我已知晓：当图片不再被任何面料/规格引用时，系统会删除数据库记录，并将原文件移入『上架资源』/回收站（用于备份，不是应用内可访问路径）'
                 })
                 : false;
             if (!ok) return;
@@ -1773,7 +1870,7 @@
                     showModalStatus(data.message || '删除失败', true);
                     return;
                 }
-                const msg = data.message || (data.asset_deleted ? '图片已完全删除' : '图片已解除当前关联');
+                const msg = data.message || (data.asset_deleted ? '图片记录已删除（原文件已尝试移入回收站）' : '图片已解除当前关联');
                 showModalStatus(msg, false);
                 refreshMainImageList();
             }).catch(err => showModalStatus('删除失败: ' + err, true));
@@ -1782,8 +1879,13 @@
         function openMainImageDescModal(imageName) {
             if (!editId || !imageName) return;
             currentEditingMainImageName = imageName;
+            currentEditingMainImageOriginalName = imageName;
             const current = (mainImageItems || []).find(x => String(x.image_name || '') === String(imageName));
             document.getElementById('mainImageDescInput').value = current ? (current.description || '') : '';
+            const renameEl = document.getElementById('mainImageRenameInput');
+            if (renameEl) renameEl.value = imageName;
+            const repEl = document.getElementById('mainImageReplaceInput');
+            if (repEl) repEl.value = '';
             setMainImageDeprecated(Boolean(current && Number(current.is_deprecated || 0) === 1));
             // Render type bar in modal (same options as main bar, without "+")
             const bar = document.getElementById('mainImageEditTypeBar');
@@ -1820,6 +1922,9 @@
         function closeMainImageDescModal() {
             document.getElementById('main-image-desc-modal').classList.remove('active');
             currentEditingMainImageName = '';
+            currentEditingMainImageOriginalName = '';
+            const repEl = document.getElementById('mainImageReplaceInput');
+            if (repEl) repEl.value = '';
         }
 
         function saveMainImageDescription() {
@@ -1830,6 +1935,10 @@
                 const checked = document.querySelector('input[name="mainImageEditType"]:checked');
                 image_type_name = checked ? normalizeMainImageTypeName(checked.value) : '';
             } catch (e) {}
+            const renameEl = document.getElementById('mainImageRenameInput');
+            const desiredName = renameEl ? String(renameEl.value || '').trim() : '';
+            const origName = String(currentEditingMainImageOriginalName || currentEditingMainImageName || '').trim();
+            const new_filename = (desiredName && origName && desiredName !== origName) ? desiredName : '';
             fetch('/api/sales-product-main-images', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -1838,7 +1947,8 @@
                     image_name: currentEditingMainImageName,
                     description,
                     image_type_name,
-                    is_deprecated: currentEditingMainImageDeprecated ? 1 : 0
+                    is_deprecated: currentEditingMainImageDeprecated ? 1 : 0,
+                    new_filename
                 })
             }).then(r => r.json()).then(data => {
                 if (data.status !== 'success') {
@@ -1848,6 +1958,209 @@
                 closeMainImageDescModal();
                 refreshMainImageList();
             }).catch(err => showModalStatus('保存描述失败: ' + err, true));
+        }
+
+        async function uploadReplaceMainImage(file) {
+            if (!editId || !currentEditingMainImageName || !file) return;
+            const fd = new FormData();
+            fd.append('sales_product_id', String(editId));
+            fd.append('image_name', String(currentEditingMainImageName));
+            fd.append('file', file, file.name || 'image.bin');
+            try {
+                showModalStatus('正在替换图片…', false);
+                const resp = await fetch('/api/sales-product-main-images-replace', { method: 'POST', body: fd });
+                const data = await resp.json();
+                if (!data || data.status !== 'success') {
+                    showModalStatus((data && data.message) ? data.message : '替换失败', true);
+                    return;
+                }
+                const newName = String(data.image_name || '').trim();
+                if (newName) {
+                    currentEditingMainImageName = newName;
+                    currentEditingMainImageOriginalName = newName;
+                    const renameEl = document.getElementById('mainImageRenameInput');
+                    if (renameEl) renameEl.value = newName;
+                }
+                showModalStatus(data.message || '替换成功', false);
+                refreshMainImageList();
+            } catch (e) {
+                showModalStatus('替换失败: ' + e, true);
+            } finally {
+                const repEl = document.getElementById('mainImageReplaceInput');
+                if (repEl) repEl.value = '';
+            }
+        }
+
+        function showNasMainImageStatus(message, isError) {
+            const el = document.getElementById('nasMainImageStatus');
+            if (!el) return;
+            el.textContent = message || '';
+            el.style.display = message ? 'block' : 'none';
+            el.classList.toggle('error', !!isError);
+            el.classList.toggle('success', !isError);
+        }
+
+        async function nasMainImageBrowse(pathB64) {
+            const url = pathB64 ? `/api/browse?path=${encodeURIComponent(pathB64)}` : '/api/browse';
+            const resp = await fetch(url);
+            const data = await resp.json();
+            if (!data || data.status !== 'success') {
+                throw new Error((data && data.message) ? data.message : '浏览失败');
+            }
+            return data;
+        }
+
+        async function renderNasMainImageList() {
+            const pathLabel = document.getElementById('nasMainImagePath');
+            const list = document.getElementById('nasMainImageList');
+            if (!list) return;
+            list.innerHTML = '<div class="pm-select-empty">加载中...</div>';
+            showNasMainImageStatus('', false);
+            try {
+                const data = await nasMainImageBrowse(nasMainImagePathB64);
+                const folders = Array.isArray(data.folders) ? data.folders : [];
+                const images = Array.isArray(data.images) ? data.images : [];
+                const currentPathStr = nasMainImagePathB64 ? decodeB64Utf8(nasMainImagePathB64) : '';
+                if (pathLabel) pathLabel.textContent = currentPathStr || '（根目录）';
+                renderNasBreadcrumbs();
+
+                const rows = [];
+                if (nasMainImagePathB64) {
+                    rows.push(`<div class="pm-select-item" style="cursor:pointer;" onclick="nasMainImageGoUp()">..（上一级）</div>`);
+                }
+                folders.forEach(f => {
+                    const name = escapeHtml(decodeB64Utf8(f.name) || '');
+                    rows.push(`<div class="pm-select-item" style="cursor:pointer;" onclick="nasMainImageEnterFolder('${escapeHtml(f.path)}', '${name}')">📁 ${name}</div>`);
+                });
+                images.forEach(img => {
+                    const name = escapeHtml(decodeB64Utf8(img.name) || '');
+                    const fullPathB64 = img.path;
+                    const thumbUrl = `/api/image-preview?id=${encodeURIComponent(fullPathB64)}`;
+                    rows.push(
+                        `<div class="pm-select-item" style="cursor:pointer; display:flex; gap:0.55rem; align-items:center;" ondblclick="nasMainImageImport('${escapeHtml(fullPathB64)}')">` +
+                        `<div style="width:54px; height:54px; border-radius:10px; overflow:hidden; border:1px solid rgba(0,0,0,0.14); background:rgba(255,255,255,0.65); flex:0 0 auto;">` +
+                        `<img src="${thumbUrl}" alt="${name}" style="width:100%; height:100%; object-fit:cover; display:block;" loading="lazy">` +
+                        `</div>` +
+                        `<div style="min-width:0; flex:1 1 auto;">` +
+                        `<div style="font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${name}</div>` +
+                        `<div class="auto-note" style="margin-top:0.15rem;">双击：移动并绑定到当前销售产品</div>` +
+                        `</div>` +
+                        `</div>`
+                    );
+                });
+                list.innerHTML = rows.length ? rows.join('') : '<div class="pm-select-empty">此目录为空</div>';
+            } catch (e) {
+                list.innerHTML = '<div class="pm-select-empty">加载失败</div>';
+                showNasMainImageStatus('浏览失败: ' + e, true);
+            }
+        }
+
+        function openNasMainImageImportModal() {
+            if (!editId) {
+                showModalStatus('请先保存销售产品后再导入主图（需要 sales_product_id）', true);
+                return;
+            }
+            // Restore last location
+            nasMainImagePathB64 = safeGetLocalStorage(NAS_MAIN_IMAGE_LAST_PATH_KEY) || '';
+            nasMainImageNavStack = [];
+            try {
+                const raw = safeGetLocalStorage(NAS_MAIN_IMAGE_LAST_STACK_KEY) || '';
+                const parsed = raw ? JSON.parse(raw) : null;
+                if (Array.isArray(parsed)) {
+                    nasMainImageNavStack = parsed
+                        .filter(x => x && typeof x.pathB64 === 'string')
+                        .map(x => ({ name: String(x.name || ''), pathB64: String(x.pathB64 || '') }));
+                    const last = nasMainImageNavStack.length ? nasMainImageNavStack[nasMainImageNavStack.length - 1] : null;
+                    if (last && last.pathB64) nasMainImagePathB64 = last.pathB64;
+                }
+            } catch (e) {
+                nasMainImageNavStack = [];
+            }
+            document.getElementById('nas-main-image-import-modal').classList.add('active');
+            // Validate restore path; if invalid, fall back to root
+            (async () => {
+                try {
+                    if (nasMainImagePathB64) await nasMainImageBrowse(nasMainImagePathB64);
+                } catch (e) {
+                    nasMainImagePathB64 = '';
+                    nasMainImageNavStack = [];
+                }
+                renderNasMainImageList();
+            })();
+        }
+
+        function closeNasMainImageImportModal() {
+            document.getElementById('nas-main-image-import-modal').classList.remove('active');
+            safeSetLocalStorage(NAS_MAIN_IMAGE_LAST_PATH_KEY, nasMainImagePathB64 || '');
+            safeSetLocalStorage(NAS_MAIN_IMAGE_LAST_STACK_KEY, JSON.stringify(nasMainImageNavStack || []));
+            nasMainImagePathB64 = '';
+            nasMainImageNavStack = [];
+            showNasMainImageStatus('', false);
+        }
+
+        async function nasMainImageEnterFolder(pathB64, folderName) {
+            nasMainImagePathB64 = String(pathB64 || '');
+            nasMainImageNavStack = Array.isArray(nasMainImageNavStack) ? nasMainImageNavStack : [];
+            nasMainImageNavStack.push({ name: decodeB64Utf8(pathB64) ? String(folderName || '').replace(/^📁\s*/,'') : String(folderName || ''), pathB64: nasMainImagePathB64 });
+            await renderNasMainImageList();
+        }
+
+        async function nasMainImageGoUp() {
+            if (!nasMainImagePathB64) return;
+            nasMainImageNavStack = Array.isArray(nasMainImageNavStack) ? nasMainImageNavStack : [];
+            nasMainImageNavStack.pop();
+            const last = nasMainImageNavStack.length ? nasMainImageNavStack[nasMainImageNavStack.length - 1] : null;
+            nasMainImagePathB64 = last && last.pathB64 ? last.pathB64 : '';
+            await renderNasMainImageList();
+        }
+
+        async function nasMainImageJumpTo(stackIdx) {
+            const idx = Number(stackIdx);
+            if (!idx || idx < 0) {
+                nasMainImageNavStack = [];
+                nasMainImagePathB64 = '';
+                await renderNasMainImageList();
+                return;
+            }
+            nasMainImageNavStack = Array.isArray(nasMainImageNavStack) ? nasMainImageNavStack.slice(0, idx + 1) : [];
+            const last = nasMainImageNavStack.length ? nasMainImageNavStack[nasMainImageNavStack.length - 1] : null;
+            nasMainImagePathB64 = last && last.pathB64 ? last.pathB64 : '';
+            await renderNasMainImageList();
+        }
+
+        async function nasMainImageReload() {
+            await renderNasMainImageList();
+        }
+
+        async function nasMainImageImport(filePathB64) {
+            if (!editId) return;
+            const checked = document.querySelector('input[name="mainImageType"]:checked');
+            const imageType = checked ? normalizeMainImageTypeName(checked.value) : (selectedMainImageType || '文字卖点图');
+            try {
+                showNasMainImageStatus('正在移动绑定...', false);
+                const resp = await fetch('/api/sales-product-main-images-import-by-path', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sales_product_id: editId,
+                        source_path_b64: String(filePathB64 || ''),
+                        image_type_name: imageType,
+                        require_move: true,
+                        debug_move: true
+                    })
+                });
+                const data = await resp.json();
+                if (!data || data.status !== 'success') {
+                    showNasMainImageStatus((data && data.message) ? data.message : '导入失败', true);
+                    return;
+                }
+                showNasMainImageStatus(`导入成功：关联 ${Number(data.linked || 0)}，移动 ${Number(data.moved || 0)}，复制 ${Number(data.copied || 0)}。清理源文件：${JSON.stringify(data.import_source_cleanup || {})}`, false);
+                refreshMainImageList();
+                // refresh current folder list to reflect moved files
+                await renderNasMainImageList();
+            } catch (e) {
+                showNasMainImageStatus('导入失败: ' + e, true);
+            }
         }
 
         function normalizeCodePrefix(value) {
@@ -2434,6 +2747,10 @@
             document.getElementById('copy-modal').classList.remove('active');
         }
 
+        document.getElementById('nas-main-image-import-modal')?.addEventListener('click', function(e) {
+            if (e.target === this) closeNasMainImageImportModal();
+        });
+
         function renderCopyList() {
             const keyword = (document.getElementById('copySearchInput').value || '').trim().toLowerCase();
             const list = document.getElementById('copyList');
@@ -2698,6 +3015,14 @@
         document.getElementById('copy-modal').addEventListener('click', function(e) {
             if (e.target === this) closeCopyModal();
         });
+        const mainImageReplaceInput = document.getElementById('mainImageReplaceInput');
+        if (mainImageReplaceInput) {
+            mainImageReplaceInput.addEventListener('change', function() {
+                const f = (this.files && this.files[0]) ? this.files[0] : null;
+                if (!f) return;
+                uploadReplaceMainImage(f);
+            });
+        }
         window.addEventListener('load', initPage);
     </script>
 </body>

@@ -377,10 +377,12 @@ class FabricManagementMixin:
 
                             if remain_total <= 0:
                                 if file_path is not None:
-                                    try:
-                                        os.remove(file_path)
-                                    except Exception as remove_err:
-                                        return self.send_json({'status': 'error', 'message': f'删除文件失败: {remove_err}'}, start_response)
+                                    moved_ok, _dst, _err = self._move_file_to_listing_recycle_bin(file_path)
+                                    if not moved_ok:
+                                        try:
+                                            os.remove(file_path)
+                                        except Exception as remove_err:
+                                            return self.send_json({'status': 'error', 'message': f'删除文件失败: {remove_err}'}, start_response)
                                 cur.execute("DELETE FROM image_assets WHERE id=%s", (asset_id,))
                                 return self.send_json(
                                     {
@@ -388,7 +390,7 @@ class FabricManagementMixin:
                                         'mapping_deleted': deleted_mapping,
                                         'asset_deleted': True,
                                         'remaining_refs': 0,
-                                        'message': '图片已完全删除（无面料/规格关联）',
+                                        'message': '图片记录已删除；原文件已移入『上架资源』/回收站（若移动失败则尝试直接删除）',
                                     },
                                     start_response,
                                 )
@@ -407,11 +409,13 @@ class FabricManagementMixin:
             # Fallback: no asset row found, treat as orphan physical file.
             if file_path is None:
                 return self.send_json({'status': 'error', 'message': '图片文件不存在'}, start_response)
-            try:
-                os.remove(file_path)
-            except Exception as remove_err:
-                return self.send_json({'status': 'error', 'message': f'删除文件失败: {remove_err}'}, start_response)
-            return self.send_json({'status': 'success', 'asset_deleted': True, 'remaining_refs': 0, 'message': '孤立图片文件已删除'}, start_response)
+            moved_ok, _dst, _err = self._move_file_to_listing_recycle_bin(file_path)
+            if not moved_ok:
+                try:
+                    os.remove(file_path)
+                except Exception as remove_err:
+                    return self.send_json({'status': 'error', 'message': f'删除文件失败: {remove_err}'}, start_response)
+            return self.send_json({'status': 'success', 'asset_deleted': True, 'remaining_refs': 0, 'message': '孤立图片文件已移入『上架资源』/回收站（若移动失败则尝试直接删除）'}, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 

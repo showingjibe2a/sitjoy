@@ -4,6 +4,8 @@
 import base64
 import unicodedata
 import os
+import shutil
+import time
 
 class EncodingUtilsMixin:
     """编码、转换和Unicode处理工具"""
@@ -38,6 +40,92 @@ class EncodingUtilsMixin:
             return os.fsdecode(value)
         except Exception:
             return bytes(value).decode('utf-8', errors='surrogatepass')
+
+    def _listing_resources_root_abs_b(self):
+        """
+        Absolute bytes path to the 『上架资源』 root (same as app.RESOURCES_PATH_BYTES when available).
+        """
+        try:
+            from app import RESOURCES_PATH_BYTES  # type: ignore
+            root = RESOURCES_PATH_BYTES
+        except Exception:
+            root = None
+        if not root:
+            try:
+                if hasattr(self, '_join_resources'):
+                    root = self._join_resources('')
+            except Exception:
+                root = None
+        if not root:
+            return b''
+        try:
+            return self._safe_fsencode(os.path.normpath(root))
+        except Exception:
+            return bytes(root) if isinstance(root, (bytes, bytearray)) else self._safe_fsencode(root)
+
+    def _listing_recycle_bin_dir_abs_b(self):
+        """Absolute bytes path to 『上架资源』/回收站 (created if missing)."""
+        root = self._listing_resources_root_abs_b()
+        if not root:
+            return b''
+        try:
+            recycle = os.path.join(root, self._safe_fsencode('回收站'))
+        except Exception:
+            recycle = root + b'/' + self._safe_fsencode('回收站')
+        try:
+            os.makedirs(recycle, exist_ok=True)
+        except Exception:
+            pass
+        return recycle
+
+    def _move_file_to_listing_recycle_bin(self, src_abs):
+        """
+        Move a file into 『上架资源』/回收站 with a collision-safe name.
+        Returns (ok: bool, dst_abs: bytes|str|None, err: str|None)
+        """
+        if not src_abs:
+            return False, None, 'empty_path'
+        src_b = self._safe_fsencode(src_abs)
+        try:
+            if not os.path.exists(src_b):
+                return True, None, None
+        except Exception:
+            return False, None, 'stat_failed'
+
+        recycle = self._listing_recycle_bin_dir_abs_b()
+        if not recycle:
+            return False, None, 'no_resources_root'
+
+        try:
+            base = os.path.basename(src_b)
+        except Exception:
+            base = b'file'
+
+        stamp = time.strftime('%Y%m%d-%H%M%S', time.localtime())
+        ext = b''
+        try:
+            root_name, ext = os.path.splitext(base)
+        except Exception:
+            root_name, ext = base, b''
+
+        for i in range(0, 200):
+            suffix = f'__{stamp}' + (f'_{i}' if i else '')
+            try:
+                cand_name = root_name + self._safe_fsencode(suffix) + ext
+            except Exception:
+                cand_name = root_name + str(suffix).encode('utf-8', errors='ignore') + ext
+            dst_b = recycle + b'/' + cand_name
+            try:
+                if os.path.exists(dst_b):
+                    continue
+            except Exception:
+                continue
+            try:
+                shutil.move(src_b, dst_b)
+                return True, dst_b, None
+            except Exception as e:
+                return False, None, str(e)
+        return False, None, 'rename_exhausted'
 
     def _b64url_encode(self, raw):
         """URL安全的Base64编码"""

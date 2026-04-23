@@ -52,6 +52,74 @@ class SalesProductMixin:
     def _abs_from_storage_path(self, storage_path):
         return self._join_resources((storage_path or '').strip().replace('\\', '/'))
 
+    def _fs_realpath_key(self, path):
+        """Stable key for same-file detection (bytes-safe)."""
+        if not path:
+            return None
+        try:
+            p = self._safe_fsencode(path)
+            if not os.path.exists(p):
+                return None
+            return os.path.realpath(p)
+        except Exception:
+            return None
+
+    def _canonical_asset_abs_keys(self, conn, asset_ids):
+        """Set of realpath keys for current on-disk canonical files of given image_assets ids."""
+        keys = set()
+        for aid in asset_ids or []:
+            aid = int(aid or 0)
+            if aid <= 0:
+                continue
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT storage_path FROM image_assets WHERE id=%s LIMIT 1", (aid,))
+                    row = cur.fetchone() or {}
+                sp = (row.get('storage_path') or '').strip()
+                if not sp:
+                    continue
+                abs_p = self._abs_from_storage_path(sp)
+                k = self._fs_realpath_key(abs_p)
+                if k:
+                    keys.add(k)
+            except Exception:
+                continue
+        return keys
+
+    def _cleanup_import_by_path_sources(self, conn, source_files, asset_ids):
+        """
+        After a successful import-by-path bind: remove duplicate copies left in manual staging folders.
+        Anything still on disk under source_files that is NOT the canonical asset file is moved to recycle
+        (then best-effort unlink).
+        """
+        if not source_files:
+            return {'cleaned': 0, 'skipped_samefile': 0, 'failures': 0}
+        canonical = self._canonical_asset_abs_keys(conn, asset_ids)
+        cleaned = 0
+        skipped = 0
+        failures = 0
+        for source_file in source_files:
+            try:
+                sb = self._safe_fsencode(source_file)
+                if not os.path.exists(sb):
+                    continue
+                rk = self._fs_realpath_key(sb)
+                if rk and rk in canonical:
+                    skipped += 1
+                    continue
+                moved_ok, _dst, _err = self._move_file_to_listing_recycle_bin(sb)
+                if moved_ok:
+                    cleaned += 1
+                    continue
+                try:
+                    self._safe_unlink(sb)
+                    cleaned += 1
+                except Exception:
+                    failures += 1
+            except Exception:
+                failures += 1
+        return {'cleaned': cleaned, 'skipped_samefile': skipped, 'failures': failures}
+
     def _ensure_listing_sales_common_folder(self, sku_family):
         """Ensure 货号/主图/通用 exists. Return absolute folder path (bytes)."""
         sku_name = (sku_family or '').strip()
@@ -170,16 +238,20 @@ class SalesProductMixin:
         except Exception:
             pass
 
-        # Prefer move when src is within resources root (same NAS) to reduce IO.
+        # Prefer rename/move within same filesystem; then shutil.move (may copy across devices);
+        # last resort copy bytes and then remove the old file to avoid duplicate磁盘占用.
         moved = False
         try:
             os.replace(src_abs, dst_abs)
             moved = True
         except Exception:
-            moved = False
+            try:
+                shutil.move(src_abs, dst_abs)
+                moved = True
+            except Exception:
+                moved = False
 
         if not moved:
-            # Fallback: copy + keep old
             try:
                 with open(src_abs, 'rb') as fsrc:
                     data = fsrc.read()
@@ -187,6 +259,14 @@ class SalesProductMixin:
                     fdst.write(data)
             except Exception:
                 return None
+            # Copy succeeded: DB will point at dst; src must not remain as a second full copy.
+            try:
+                if os.path.exists(dst_abs):
+                    self._safe_unlink(src_abs)
+                    if os.path.exists(src_abs):
+                        self._move_file_to_listing_recycle_bin(src_abs)
+            except Exception:
+                pass
 
         new_storage_path = self._storage_path_from_abs(dst_abs)
         with conn.cursor() as cur:
@@ -2210,6 +2290,7 @@ class SalesProductMixin:
                 db_new_assets = []  # [{sha256, storage_path, filename, ext, file_size}]
                 reuse_assets = []   # [{asset_id, sha256, idx, source_file}]
                 move_failures = []  # [{src, reason}]
+                bound_source_files = []  # sources actually linked in this request (avoid deleting skipped files)
 
                 for idx, source_file in enumerate(source_files, start=1):
                     # Keep bytes path for filesystem operations
@@ -2316,6 +2397,7 @@ class SalesProductMixin:
                         })
 
                     sort_order = start_sort + idx
+                    bound_source_files.append(source_file)
                     # Defer DB mapping inserts until after all files staged successfully (atomic batch)
                     items.append({'filename': filename, 'sha256': sha256[:12], 'sort_order': sort_order, 'idx': idx, 'sha256_full': sha256})
 
@@ -2405,10 +2487,26 @@ class SalesProductMixin:
                     except Exception:
                         deleted_source_count = deleted_source_count or 0
 
-                # After commit: apply rehome rules best-effort
+                # After commit: apply rehome rules best-effort (new rows + reused rows may change ref counts)
+                all_aids = []
+                for aid, _ in created_asset_ids:
+                    if aid:
+                        all_aids.append(int(aid))
+                for r in reuse_assets:
+                    aid = int(r.get('asset_id') or 0)
+                    if aid:
+                        all_aids.append(aid)
+                all_aids = sorted(set(all_aids))
                 try:
-                    for aid, _ in created_asset_ids:
+                    for aid in all_aids:
                         self._rehome_image_asset_if_needed(conn, aid)
+                except Exception:
+                    pass
+
+                # Always clean up manual staging duplicates left on disk (esp. reuse/sha256 hits and copy-fallback paths)
+                import_cleanup = {'cleaned': 0, 'skipped_samefile': 0, 'failures': 0}
+                try:
+                    import_cleanup = self._cleanup_import_by_path_sources(conn, bound_source_files, all_aids)
                 except Exception:
                     pass
 
@@ -2422,6 +2520,7 @@ class SalesProductMixin:
                     'copied': copied_count,
                     'deleted_source': (deleted_source_count if delete_source else None),
                     'linked': linked_count,
+                    'import_source_cleanup': import_cleanup,
                     'source_share': (self._unc_share_key(source_path) if debug_move else None),
                     'target_share': (None if debug_move else None),
                     'move_failures': (move_failures[:10] if debug_move else None),
@@ -3083,6 +3182,7 @@ class SalesProductMixin:
                 image_type_name = str(data.get('image_type_name') or '').strip()
                 is_deprecated = self._parse_int(data.get('is_deprecated'))
                 sort_order = self._parse_int(data.get('sort_order'))
+                new_filename = str(data.get('new_filename') or data.get('new_image_name') or '').strip()
                 if not sales_product_id or not image_name:
                     return self.send_json({'status': 'error', 'message': 'Missing sales_product_id or image_name'}, start_response)
 
@@ -3174,6 +3274,61 @@ class SalesProductMixin:
                                         )
                         except Exception:
                             pass
+                        # Optional manual rename of the on-disk filename (storage_path basename)
+                        if new_filename:
+                            cur.execute("SELECT storage_path FROM image_assets WHERE id=%s", (aid,))
+                            prow = cur.fetchone() or {}
+                            cur_storage = str((prow.get('storage_path') or '')).strip().replace('\\', '/')
+                            if cur_storage:
+                                old_base = os.path.basename(cur_storage)
+                                old_name, old_ext = os.path.splitext(old_base)
+                                want_base = os.path.basename(new_filename.replace('\\', '/'))
+                                want_base = self._sanitize_filename_component(want_base, 160)
+                                if not want_base or want_base in ('.', '..'):
+                                    return self.send_json({'status': 'error', 'message': '无效的文件名'}, start_response)
+                                want_name, want_ext = os.path.splitext(want_base)
+                                if not want_ext:
+                                    want_ext = old_ext or ''
+                                if old_ext and want_ext and want_ext.lower() != old_ext.lower():
+                                    return self.send_json({'status': 'error', 'message': '不允许修改图片扩展名'}, start_response)
+                                final_base = (want_name + (want_ext or old_ext)).strip()
+                                if final_base != old_base:
+                                    new_storage_path = (cur_storage[: -len(old_base)] + final_base) if cur_storage.endswith(old_base) else ''
+                                    if not new_storage_path:
+                                        return self.send_json({'status': 'error', 'message': '无法计算新的 storage_path'}, start_response)
+                                    cur.execute(
+                                        """
+                                        SELECT COUNT(1) AS cnt
+                                        FROM image_assets
+                                        WHERE id<>%s
+                                          AND (
+                                                storage_path=%s
+                                             OR storage_path LIKE %s
+                                             OR storage_path LIKE %s
+                                          )
+                                        """,
+                                        (aid, new_storage_path, f'%/{final_base}', f'%/{final_base}/%'),
+                                    )
+                                    clash = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
+                                    if clash:
+                                        return self.send_json({'status': 'error', 'message': '文件名已被其他图片占用'}, start_response)
+                                    old_abs = self._join_resources(cur_storage)
+                                    new_abs = self._join_resources(new_storage_path)
+                                    if os.path.exists(new_abs):
+                                        return self.send_json({'status': 'error', 'message': '目标文件名已存在'}, start_response)
+                                    try:
+                                        os.replace(old_abs, new_abs)
+                                    except Exception as e:
+                                        return self.send_json({'status': 'error', 'message': f'重命名失败: {str(e)}'}, start_response)
+                                    ia_rename_sets = ['storage_path=%s']
+                                    ia_rename_params = [new_storage_path]
+                                    if self._table_has_column(conn, 'image_assets', 'original_filename'):
+                                        ia_rename_sets.append('original_filename=%s')
+                                        ia_rename_params.append(final_base)
+                                    cur.execute(
+                                        f"UPDATE image_assets SET {', '.join(ia_rename_sets)} WHERE id=%s",
+                                        tuple(ia_rename_params + [aid]),
+                                    )
                         if sort_order is not None:
                             cur.execute(
                                 "UPDATE sku_image_mappings SET sort_order=%s WHERE id=%s",
@@ -3240,8 +3395,10 @@ class SalesProductMixin:
                             if storage_path:
                                 try:
                                     abs_path = self._join_resources(storage_path)
-                                    if os.path.exists(abs_path):
-                                        os.remove(abs_path)
+                                    moved_ok, _dst, _err = self._move_file_to_listing_recycle_bin(abs_path)
+                                    if not moved_ok:
+                                        # Best-effort fallback: avoid leaving DB inconsistent with a still-present file
+                                        self._safe_unlink(abs_path)
                                 except Exception:
                                     pass
                             cur.execute("DELETE FROM image_assets WHERE id=%s", (image_asset_id,))
@@ -3250,7 +3407,7 @@ class SalesProductMixin:
                                     'status': 'success',
                                     'asset_deleted': True,
                                     'remaining_refs': 0,
-                                    'message': '图片已完全删除（无面料/规格关联）',
+                                    'message': '图片记录已删除；原文件已移入『上架资源』/回收站（若移动失败则尝试直接删除）',
                                 },
                                 start_response,
                             )
@@ -3265,6 +3422,269 @@ class SalesProductMixin:
                 )
 
             return self.send_error(405, 'Method not allowed', start_response)
+        except RuntimeError as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_sales_product_main_images_replace_api(self, environ, start_response):
+        """Replace a single SKU main image file: new bytes -> new sha256, old file -> 『上架资源』/回收站."""
+        try:
+            if environ.get('REQUEST_METHOD') != 'POST':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+
+            content_type = environ.get('CONTENT_TYPE', '')
+            if 'multipart/form-data' not in content_type:
+                return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
+
+            raw_body = self._read_wsgi_request_body(environ)
+            if raw_body:
+                env_copy = dict(environ)
+                env_copy['CONTENT_LENGTH'] = str(len(raw_body))
+                form = cgi.FieldStorage(fp=io.BytesIO(raw_body), environ=env_copy, keep_blank_values=True)
+            else:
+                form = cgi.FieldStorage(fp=environ.get('wsgi.input'), environ=environ, keep_blank_values=True)
+
+            sales_product_id = self._parse_int((form.getfirst('sales_product_id', '') or '').strip()) if form else 0
+            image_name = str((form.getfirst('image_name', '') or '').strip()) if form else ''
+            if not sales_product_id or not image_name:
+                return self.send_json({'status': 'error', 'message': 'Missing sales_product_id or image_name'}, start_response)
+
+            uploads = []
+            for p in getattr(form, 'list', []) or []:
+                if getattr(p, 'filename', None):
+                    try:
+                        content = p.file.read() or b''
+                    except Exception:
+                        content = b''
+                    uploads.append({'filename': p.filename, 'content': content})
+            if not uploads and raw_body:
+                uploads = self._parse_multipart_uploads_fallback(content_type, raw_body)
+            if not uploads:
+                return self.send_json({'status': 'error', 'message': 'No image uploaded'}, start_response)
+            item0 = uploads[0]
+            filename = os.path.basename(item0.get('filename') or '')
+            content = item0.get('content') or b''
+            if not filename or not content:
+                return self.send_json({'status': 'error', 'message': 'Empty upload'}, start_response)
+            if not self._is_image_name(filename):
+                return self.send_json({'status': 'error', 'message': '不支持的图片类型'}, start_response)
+
+            user_id = None
+            try:
+                user_id = self._get_session_user(environ)
+            except Exception as e:
+                return self.send_json({'status': 'error', 'message': f'无法验证用户身份：{str(e)}'}, start_response)
+            if not user_id:
+                return self.send_json({'status': 'error', 'message': '必须登录才能替换图片'}, start_response)
+
+            new_sha = self._sha256_hex(content)
+            folder_info = self._resolve_sales_product_variant_folder(sales_product_id, ensure_folder=True)
+            target_folder_abs = folder_info.get('folder_path')
+            if not target_folder_abs or not os.path.exists(target_folder_abs):
+                return self.send_json({'status': 'error', 'message': '无法定位主图文件夹，请确认货号/规格/面料信息完整'}, start_response)
+
+            with self._get_db_connection() as conn:
+                variant_id = 0
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT variant_id FROM sales_products WHERE id=%s", (sales_product_id,))
+                        row = cur.fetchone() or {}
+                        variant_id = self._parse_int(row.get('variant_id')) or 0
+                except Exception:
+                    variant_id = 0
+
+                has_sim_vid = self._table_has_column(conn, 'sku_image_mappings', 'variant_id')
+                has_sim_spid = self._table_has_column(conn, 'sku_image_mappings', 'sales_product_id')
+                if not has_sim_vid and not has_sim_spid:
+                    return self.send_json({'status': 'error', 'message': '图片映射表缺少 variant_id / sales_product_id 字段，无法定位图片'}, start_response)
+                if has_sim_vid and variant_id:
+                    where_key = "sim.variant_id"
+                    where_val = variant_id
+                elif has_sim_spid:
+                    where_key = "sim.sales_product_id"
+                    where_val = sales_product_id
+                else:
+                    return self.send_json({'status': 'error', 'message': '当前销售产品缺少 variant_id，无法定位图片'}, start_response)
+
+                with conn.cursor() as cur:
+                    has_sim_tid = self._table_has_column(conn, 'sku_image_mappings', 'image_type_id')
+                    join_it = "LEFT JOIN image_types it ON it.id = ia.image_type_id" if self._table_has_column(conn, 'image_assets', 'image_type_id') else ""
+                    if has_sim_tid and join_it:
+                        type_sel = "COALESCE(NULLIF(sim.image_type_id, 0), ia.image_type_id, it.id) AS image_type_id, it.name AS image_type_name"
+                    elif has_sim_tid:
+                        type_sel = "NULLIF(sim.image_type_id, 0) AS image_type_id, '' AS image_type_name"
+                    elif join_it:
+                        type_sel = "ia.image_type_id AS image_type_id, it.name AS image_type_name"
+                    else:
+                        type_sel = "0 AS image_type_id, '' AS image_type_name"
+                    cur.execute(
+                        f"""
+                        SELECT sim.id AS mapping_id, sim.sort_order, sim.image_asset_id, ia.storage_path, ia.sha256 AS old_sha256,
+                               {type_sel}
+                        FROM sku_image_mappings sim
+                        JOIN image_assets ia ON ia.id = sim.image_asset_id
+                        {join_it}
+                        WHERE {where_key}=%s AND (ia.storage_path=%s OR ia.storage_path LIKE %s)
+                        ORDER BY sim.sort_order ASC, sim.id ASC
+                        LIMIT 1
+                        """.format(where_key=where_key),
+                        (where_val, image_name, f'%/{image_name}'),
+                    )
+                    mapping = cur.fetchone() or {}
+                    if not mapping.get('mapping_id'):
+                        return self.send_json({'status': 'error', 'message': '图片不存在'}, start_response)
+
+                    old_aid = int(mapping.get('image_asset_id') or 0)
+                    old_sha = str(mapping.get('old_sha256') or '').strip()
+                    if old_sha and new_sha == old_sha:
+                        return self.send_json({'status': 'error', 'message': '替换文件内容与当前图片相同（sha256 未变化）'}, start_response)
+
+                    sort_order = self._parse_int(mapping.get('sort_order')) or 1
+                    image_type_id = self._parse_int(mapping.get('image_type_id')) or 0
+                    if not image_type_id and self._table_has_column(conn, 'image_assets', 'image_type_id'):
+                        cur.execute("SELECT image_type_id FROM image_assets WHERE id=%s", (old_aid,))
+                        trow = cur.fetchone() or {}
+                        image_type_id = self._parse_int(trow.get('image_type_id')) or 0
+                    if not image_type_id:
+                        # Fallback: infer from filename prefix "类型-..."
+                        try:
+                            base0 = os.path.basename(str(mapping.get('storage_path') or ''))
+                            if '-' in base0:
+                                type_guess = base0.split('-', 1)[0].strip()
+                                image_type_id = self._get_image_type_id_by_name(conn, type_guess) or image_type_id
+                        except Exception:
+                            pass
+                    if not image_type_id:
+                        return self.send_json({'status': 'error', 'message': '无法解析图片类型，拒绝替换'}, start_response)
+
+                    # Safety: only replace when the asset is uniquely referenced by this single mapping row.
+                    cur.execute("SELECT COUNT(1) AS cnt FROM sku_image_mappings WHERE image_asset_id=%s", (old_aid,))
+                    sku_refs = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
+                    fab_refs = 0
+                    if self._has_required_tables(['fabric_image_mappings']):
+                        cur.execute("SELECT COUNT(1) AS cnt FROM fabric_image_mappings WHERE image_asset_id=%s", (old_aid,))
+                        fab_refs = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
+                    if sku_refs != 1 or fab_refs != 0:
+                        return self.send_json({'status': 'error', 'message': '该图片被多处引用，禁止直接替换文件（请先解除复用/关联）'}, start_response)
+
+                    old_storage = str(mapping.get('storage_path') or '').strip()
+                    old_abs = self._join_resources(old_storage) if old_storage else ''
+                    old_dir_abs = os.path.dirname(old_abs) if old_abs else target_folder_abs
+                    ext = self._guess_image_ext(filename, content) or (os.path.splitext(old_storage)[1] if old_storage else '') or '.jpg'
+
+                    old_base = os.path.basename(old_storage) if old_storage else ''
+                    type_part = ''
+                    rest_part = os.path.splitext(filename)[0]
+                    if old_base and '-' in old_base:
+                        type_part = self._sanitize_filename_component(old_base.split('-', 1)[0], 32)
+                    if not type_part:
+                        try:
+                            cur.execute("SELECT name FROM image_types WHERE id=%s LIMIT 1", (image_type_id,))
+                            tname = (cur.fetchone() or {}).get('name')
+                            type_part = self._sanitize_filename_component(tname, 32) or '图片'
+                        except Exception:
+                            type_part = '图片'
+                    base_part = self._sanitize_filename_component(rest_part, 80) or new_sha[:12]
+                    final_name = self._next_available_filename(old_dir_abs, f"{type_part}-{base_part}{ext}")
+                    new_abs = os.path.join(old_dir_abs, self._safe_fsencode(final_name))
+                    try:
+                        with open(new_abs, 'wb') as f:
+                            f.write(content or b'')
+                    except Exception as e:
+                        self._safe_unlink(new_abs)
+                        return self.send_json({'status': 'error', 'message': f'写入新图片失败: {str(e)}'}, start_response)
+
+                    new_storage_path = self._storage_path_from_abs(new_abs)
+                    if not new_storage_path:
+                        self._safe_unlink(new_abs)
+                        return self.send_json({'status': 'error', 'message': '无法计算新 storage_path'}, start_response)
+
+                    created_new_row = False
+                    new_aid = 0
+                    try:
+                        self._tx_begin(conn)
+                        with conn.cursor() as cur2:
+                            existing = self._find_image_asset_by_sha256(conn, new_sha)
+                            if existing and int(existing.get('id') or 0) != int(old_aid):
+                                self._tx_rollback(conn)
+                                self._safe_unlink(new_abs)
+                                return self.send_json({'status': 'error', 'message': '新图片与库中已有图片重复（sha256 冲突），请换一张图'}, start_response)
+
+                            cur2.execute("DELETE FROM sku_image_mappings WHERE id=%s", (mapping.get('mapping_id'),))
+
+                            if existing and int(existing.get('id') or 0) == int(old_aid):
+                                sets = ['sha256=%s', 'storage_path=%s']
+                                params = [new_sha, new_storage_path]
+                                if self._table_has_column(conn, 'image_assets', 'original_filename'):
+                                    sets.append('original_filename=%s')
+                                    params.append(final_name)
+                                for c in ('file_ext', 'mime_type', 'file_size'):
+                                    if self._table_has_column(conn, 'image_assets', c):
+                                        if c == 'file_ext':
+                                            sets.append('file_ext=%s')
+                                            params.append(ext.lstrip('.'))
+                                        elif c == 'mime_type':
+                                            sets.append('mime_type=%s')
+                                            params.append('image/*')
+                                        else:
+                                            sets.append('file_size=%s')
+                                            params.append(len(content or b''))
+                                cur2.execute(
+                                    f"UPDATE image_assets SET {', '.join(sets)} WHERE id=%s",
+                                    tuple(params + [old_aid]),
+                                )
+                                new_aid = old_aid
+                            else:
+                                new_aid = self._insert_image_asset_dynamic(
+                                    conn,
+                                    cur2,
+                                    {
+                                        'sha256': new_sha,
+                                        'storage_path': new_storage_path,
+                                        'filename': filename,
+                                        'ext': ext,
+                                        'file_size': len(content or b''),
+                                        'image_type_id': image_type_id,
+                                        'created_by': user_id,
+                                        'description': '',
+                                        'is_deprecated': 0,
+                                    },
+                                )
+                                created_new_row = True
+                                cur2.execute("DELETE FROM image_assets WHERE id=%s", (old_aid,))
+
+                            self._execute_sku_mapping_upsert(
+                                conn, cur2, int(new_aid), sort_order, image_type_id, variant_id, sales_product_id, user_id
+                            )
+                        self._tx_commit(conn)
+                    except Exception as e:
+                        self._tx_rollback(conn)
+                        self._safe_unlink(new_abs)
+                        return self.send_json({'status': 'error', 'message': f'替换失败，已回滚：{str(e)}'}, start_response)
+
+                    # Post-commit: retire old file (DB row already gone if we created a new asset)
+                    if old_abs:
+                        moved_ok, _dst, _err = self._move_file_to_listing_recycle_bin(old_abs)
+                        if not moved_ok:
+                            self._safe_unlink(old_abs)
+
+                    try:
+                        self._rehome_image_asset_if_needed(conn, int(new_aid))
+                    except Exception:
+                        pass
+
+                    return self.send_json(
+                        {
+                            'status': 'success',
+                            'image_name': final_name,
+                            'image_asset_id': int(new_aid),
+                            'sha256': new_sha,
+                            'created_new_asset': bool(created_new_row),
+                            'message': '已替换图片：数据库已更新，原文件已移入『上架资源』/回收站',
+                        },
+                        start_response,
+                    )
         except RuntimeError as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
         except Exception as e:
