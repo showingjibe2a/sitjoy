@@ -168,6 +168,7 @@
         let gallerySalesImageTypeOptions = [];
         const GALLERY_LAST_PATH_KEY = 'sitjoy_gallery_last_path_v1';
         let galleryRecommendNameTouched = false;
+        let galleryImageTypeTouched = false;
 
         function saveGalleryLastPath(path) {
             try {
@@ -521,6 +522,13 @@
                 name: imageName
             };
 
+            // 打开新图片时，先清空上一次的状态（避免“信息残留”）
+            gallerySelectedVariantIds = new Set();
+            updateGalleryVariantSelectedText();
+            galleryImageTypeTouched = false;
+            setGalleryImageTypeName('', false);
+            galleryRecommendNameTouched = false;
+
             const currentNameInput = document.getElementById('current-name');
             if (currentNameInput) {
                 currentNameInput.value = imageName;
@@ -637,6 +645,10 @@
         function showToast(message, variant) {
             const stack = document.getElementById('galleryToastStack');
             if (!stack) return;
+            try {
+                const offset = getToastBottomOffset();
+                stack.style.bottom = `calc(18px + ${offset}px)`;
+            } catch (e) {}
             const toast = document.createElement('div');
             toast.className = `app-toast ${variant || 'success'}`;
             toast.innerHTML = `
@@ -654,7 +666,27 @@
             closeBtn.addEventListener('click', close);
             stack.appendChild(toast);
             requestAnimationFrame(() => toast.classList.add('show'));
-            setTimeout(close, 4200);
+            setTimeout(close, 10000);
+        }
+
+        function getToastBottomOffset() {
+            let maxHeight = 0;
+            const candidates = [
+                '.app-upload-progress-panel.show',
+                '.app-result-panel.show',
+                '.pm-batch-float-bar.active',
+                '.preview-savebar.active',
+            ];
+            candidates.forEach(sel => {
+                document.querySelectorAll(sel).forEach(el => {
+                    const style = window.getComputedStyle(el);
+                    if (style.display === 'none' || style.visibility === 'hidden') return;
+                    const rect = el.getBoundingClientRect();
+                    if (!rect || rect.height <= 0) return;
+                    maxHeight = Math.max(maxHeight, Math.ceil(rect.height) + 18);
+                });
+            });
+            return maxHeight;
         }
 
         async function ensureSalesImageTypeOptions() {
@@ -674,7 +706,7 @@
             return String(seg?.dataset?.value || '').trim();
         }
 
-        function setGalleryImageTypeName(value) {
+        function setGalleryImageTypeName(value, fromUser) {
             const seg = document.getElementById('galleryImageTypeSegment');
             if (!seg) return;
             const v = String(value || '').trim();
@@ -683,6 +715,7 @@
                 const bv = String(btn.getAttribute('data-value') || '').trim();
                 btn.classList.toggle('is-active', bv === v);
             });
+            if (fromUser) galleryImageTypeTouched = true;
             applyGalleryRecommendedNameIfNeeded();
         }
 
@@ -705,10 +738,10 @@
             seg.querySelectorAll('button[data-value]').forEach(btn => {
                 btn.addEventListener('click', () => {
                     const v = String(btn.getAttribute('data-value') || '').trim();
-                    setGalleryImageTypeName(v);
+                    setGalleryImageTypeName(v, true);
                 });
             });
-            if (current) setGalleryImageTypeName(current);
+            if (current) setGalleryImageTypeName(current, false);
         }
 
         async function tryPrefillImageTypeFromDb() {
@@ -717,10 +750,11 @@
             try {
                 const resp = await fetch('/api/gallery-image-meta?id=' + encodeURIComponent(currentRenameImage.path));
                 const data = await resp.json();
+                if (galleryImageTypeTouched) return;
                 if (data && data.status === 'success' && data.linked && data.image_type_name) {
-                    setGalleryImageTypeName(String(data.image_type_name || '').trim());
+                    setGalleryImageTypeName(String(data.image_type_name || '').trim(), false);
                 } else {
-                    setGalleryImageTypeName('');
+                    setGalleryImageTypeName('', false);
                 }
             } catch (e) {
                 // ignore
@@ -734,15 +768,26 @@
                 await ensureGalleryVariantOptions().catch(() => {});
                 const resp = await fetch('/api/gallery-image-links?id=' + encodeURIComponent(currentRenameImage.path));
                 const data = await resp.json();
-                if (!data || data.status !== 'success' || !data.linked) return;
+                if (!data || data.status !== 'success' || !data.linked) {
+                    gallerySelectedVariantIds = new Set();
+                    updateGalleryVariantSelectedText();
+                    return;
+                }
                 const vids = Array.isArray(data.variant_ids) ? data.variant_ids : [];
                 const next = new Set(vids.map(v => Number(v)).filter(v => v > 0));
                 if (next.size) {
                     gallerySelectedVariantIds = next;
                     updateGalleryVariantSelectedText();
+                } else {
+                    gallerySelectedVariantIds = new Set();
+                    updateGalleryVariantSelectedText();
                 }
-                if (data.image_type_name) {
-                    setGalleryImageTypeName(String(data.image_type_name || '').trim());
+                if (!galleryImageTypeTouched) {
+                    if (data.image_type_name) {
+                        setGalleryImageTypeName(String(data.image_type_name || '').trim(), false);
+                    } else {
+                        setGalleryImageTypeName('', false);
+                    }
                 }
             } catch (e) {
                 // ignore
@@ -766,7 +811,7 @@
             const action = actionEl ? String(actionEl.value || 'move') : 'move';
             const promptDup = !!(document.getElementById('galleryApplyPromptDuplicate') && document.getElementById('galleryApplyPromptDuplicate').checked);
 
-            if (!renameNeeded && !vids.length) {
+            if (!renameNeeded && !vids.length && !typeName) {
                 statusDiv.textContent = '未做任何修改';
                 statusDiv.className = 'status-message error';
                 statusDiv.style.display = 'block';
@@ -783,7 +828,6 @@
             try {
                 // 1) 如需关联规格：先校验类型
                 if (vids.length && !typeName) {
-                    showToast('请选择图片类型后再提交', 'error');
                     statusDiv.textContent = '请选择图片类型后再提交';
                     statusDiv.className = 'status-message error';
                     statusDiv.style.display = 'block';
@@ -791,6 +835,8 @@
                 }
 
                 // 2) 如需重命名：先重命名并更新 currentRenameImage.path
+                const changedParts = [];
+                const details = [];
                 if (renameNeeded) {
                     const newNameB64 = utf8ToB64(newName);
                     const resp = await fetch('/api/rename', {
@@ -810,6 +856,23 @@
                     const newRel = folder ? `${folder}/${newFilename}` : newFilename;
                     currentRenameImage.path = utf8ToB64(newRel);
                     currentRenameImage.name = newFilename;
+                    changedParts.push('标题');
+                    details.push(`- 标题：${newName}`);
+                }
+
+                // 3) 保存图片类型（无论是否关联规格，只要选择了类型就写入 DB）
+                if (typeName) {
+                    const respType = await fetch('/api/gallery-image-meta', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: currentRenameImage.path, image_type_name: typeName })
+                    });
+                    const dataType = await respType.json();
+                    if (!dataType || dataType.status !== 'success') {
+                        throw new Error((dataType && dataType.message) ? dataType.message : '保存图片类型失败');
+                    }
+                    changedParts.push('图片类型');
+                    details.push(`- 图片类型：${typeName}`);
                 }
 
                 // 3) 如需关联规格：调用 apply 接口
@@ -835,16 +898,23 @@
                     }
                     const dupCount = Number(data2.already_linked || 0);
                     const rehomeKind = String((data2 && data2.rehome_kind) || '').trim();
-                    const needsWarn = (dupCount > 0 && promptDup) || !!rehomeKind || !!data2.recycled_duplicate;
-                    if (needsWarn) showToast(data2.message || '已完成', 'error');
-                    if (action === 'move' && !data2.file_op_done) {
-                        showToast('提示：本次未发生文件移动（源图片已在目标目录或因复用记录未移动）', 'error');
-                    }
+                    changedParts.push('关联规格');
+                    details.push(`- 关联规格：${vids.length} 个（新增 ${Number(data2.linked || 0)}，已存在 ${Number(data2.already_linked || 0)}）`);
+                    const fileLines = [];
+                    fileLines.push(`- 图片去留：${action === 'move' ? '移动' : '复制'}${data2.file_op_done ? '（已执行）' : '（未发生文件移动/复制）'}`);
+                    if (data2.recycled_duplicate) fileLines.push(`  - 重复文件：已移入回收站`);
+                    if (rehomeKind) fileLines.push(`  - 归一化：${rehomeKind}`);
+                    if (dupCount > 0 && promptDup) fileLines.push(`  - 提示：检测到已存在关联并跳过`);
+                    details.push(fileLines.join('\n'));
                 }
 
                 statusDiv.textContent = '✓ 已提交';
                 statusDiv.className = 'status-message success';
                 statusDiv.style.display = 'block';
+
+                // 右下角只显示一个成功弹窗（绿色背景），分点展示避免混乱
+                const titleLine = changedParts.length ? `保存成功（修改：${Array.from(new Set(changedParts)).join(' / ')}）` : '保存成功';
+                showToast([titleLine].concat(details).join('\n'), 'success');
                 setTimeout(() => {
                     closeRenameDialog();
                     browse(currentPath);

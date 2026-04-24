@@ -1971,7 +1971,7 @@ button:hover {
 .app-toast-stack {
     position: fixed;
     right: 18px;
-    bottom: 18px;
+    bottom: calc(18px + var(--app-toast-bottom-offset, 0px));
     z-index: 5000;
     display: grid;
     gap: 0.55rem;

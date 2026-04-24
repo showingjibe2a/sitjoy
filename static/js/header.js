@@ -308,6 +308,38 @@
         return toastStack;
     }
 
+    function computeAppBottomOverlayOffset(){
+        // 计算右下角固定控件的最大高度，用于给 toast stack 腾位置，避免重叠
+        let maxHeight = 0;
+        const candidates = [
+            '.app-upload-progress-panel.show',
+            '.app-result-panel.show',
+            '.pm-batch-float-bar.active',
+            '.preview-savebar.active',
+        ];
+        candidates.forEach(selector => {
+            document.querySelectorAll(selector).forEach(el => {
+                try {
+                    const style = window.getComputedStyle(el);
+                    if(style.display === 'none' || style.visibility === 'hidden') return;
+                    const rect = el.getBoundingClientRect();
+                    if(!rect || rect.height <= 0) return;
+                    maxHeight = Math.max(maxHeight, Math.ceil(rect.height) + 18);
+                } catch(_e){
+                }
+            });
+        });
+        return maxHeight;
+    }
+
+    function syncAppToastStackOffset(){
+        try {
+            const offset = computeAppBottomOverlayOffset();
+            document.documentElement.style.setProperty('--app-toast-bottom-offset', `${Math.max(0, offset)}px`);
+        } catch(_e){
+        }
+    }
+
     function copyTextToClipboard(text){
         const value = String(text || '');
         if(!value) return Promise.resolve(false);
@@ -335,9 +367,10 @@
     function showAppToast(message, isError, duration){
         const text = String(message || '').trim();
         if(!text) return;
+        syncAppToastStackOffset();
         const stack = ensureToastStack();
         const toast = document.createElement('div');
-        toast.className = `app-toast ${isError ? 'error persistent' : 'success'}`;
+        toast.className = `app-toast ${isError ? 'error' : 'success'}`;
 
         const messageEl = document.createElement('div');
         messageEl.className = 'app-toast-message';
@@ -378,8 +411,7 @@
             window.setTimeout(() => { copyBtn.textContent = '复制'; }, 1200);
         });
 
-        if(isError) return;
-        const timeout = Number(duration || 2600);
+        const timeout = Number(duration || 10000);
         window.setTimeout(removeToast, Math.max(800, timeout));
     }
 
@@ -727,11 +759,13 @@
             fillEl.style.width = `${percent}%`;
         }
         panel.classList.add('show');
+        syncAppToastStackOffset();
     }
 
     function hideAppUploadProgress(){
         const panel = document.getElementById('app-upload-progress-panel');
         if(panel) panel.classList.remove('show');
+        syncAppToastStackOffset();
     }
 
     function syncModalScrollLock(){

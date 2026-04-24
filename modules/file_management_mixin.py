@@ -442,10 +442,29 @@ class FileManagementMixin:
             # 重命名
             os.rename(full_old_path, full_new_path)
 
+            # 若该文件已入库（image_assets.storage_path），同步更新数据库记录
+            db_updated = 0
+            try:
+                old_rel = str(old_path or '').strip().replace('\\', '/').lstrip('/')
+                folder_rel = str(os.path.dirname(old_path) or '').strip().replace('\\', '/').lstrip('/')
+                new_base = os.fsdecode(new_filename).replace('\\', '/')
+                new_rel = f"{folder_rel}/{new_base}".lstrip('/') if folder_rel else new_base.lstrip('/')
+                if old_rel and new_rel and hasattr(self, '_get_db_connection'):
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "UPDATE image_assets SET storage_path=%s WHERE storage_path=%s",
+                                (new_rel, old_rel),
+                            )
+                            db_updated = int(cur.rowcount or 0)
+            except Exception:
+                db_updated = 0
+
             resp = {
                 'status': 'success',
                 'message': 'Renamed',
-                'new_name': os.fsdecode(new_filename)
+                'new_name': os.fsdecode(new_filename),
+                'db_updated': db_updated,
             }
             return self.send_json(resp, start_response)
         except Exception as e:

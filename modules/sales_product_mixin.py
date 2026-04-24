@@ -113,10 +113,16 @@ class SalesProductMixin:
     def handle_gallery_image_meta_api(self, environ, method, start_response):
         """按 gallery 的相对路径（base64 bytes）查库里是否已关联，并返回图片类型。"""
         try:
-            if method != 'GET':
+            if method not in ('GET', 'PUT'):
                 return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+            data = None
+            if method == 'PUT':
+                # PUT 请求体只能读取一次：提前读取并复用，避免后续读到空导致误判
+                data = self._read_json_body(environ) or {}
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
             path_b64 = str(query_params.get('id', [''])[0] or '').strip()
+            if method == 'PUT' and not path_b64:
+                path_b64 = str((data or {}).get('id') or '').strip()
             if not path_b64:
                 return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
             try:
@@ -168,6 +174,32 @@ class SalesProductMixin:
                                 (base, f'%/{base}'),
                             )
                             row = cur.fetchone() or {}
+
+                    if method == 'PUT':
+                        if not has_tid:
+                            return self.send_json({'status': 'error', 'message': 'image_assets 缺少 image_type_id'}, start_response)
+                        image_type_name = str(((data or {}) if data is not None else {}).get('image_type_name') or '').strip()
+                        if not image_type_name:
+                            return self.send_json({'status': 'error', 'message': '请选择图片类型'}, start_response)
+                        aid = self._parse_int(row.get('id')) or 0
+                        if not aid:
+                            return self.send_json({'status': 'error', 'message': '图片未入库，无法保存类型'}, start_response)
+                        tid = self._get_image_type_id_by_name(conn, image_type_name)
+                        if not tid:
+                            return self.send_json({'status': 'error', 'message': f'未知图片类型: {image_type_name}'}, start_response)
+                        cur.execute("UPDATE image_assets SET image_type_id=%s WHERE id=%s", (int(tid), int(aid)))
+                        # 回读确认
+                        cur.execute(
+                            f"""
+                            SELECT ia.id, ia.storage_path, ia.image_type_id AS image_type_id, it.name AS image_type_name
+                            FROM image_assets ia
+                            LEFT JOIN image_types it ON it.id = ia.image_type_id
+                            WHERE ia.id=%s
+                            LIMIT 1
+                            """,
+                            (int(aid),),
+                        )
+                        row = cur.fetchone() or row
 
             linked = bool(row.get('id'))
             return self.send_json(
@@ -609,7 +641,7 @@ class SalesProductMixin:
                     if self._table_has_column(conn, 'image_assets', 'image_type_id') and aid and image_type_id:
                         with conn.cursor() as cur:
                             cur.execute(
-                                "UPDATE image_assets SET image_type_id=COALESCE(NULLIF(image_type_id,0), %s) WHERE id=%s",
+                                "UPDATE image_assets SET image_type_id=%s WHERE id=%s",
                                 (int(image_type_id), int(aid)),
                             )
                 except Exception:
@@ -960,9 +992,102 @@ class SalesProductMixin:
         except Exception:
             pass
 
+        # If moving into “通用/全局通用”目录：尽量按推荐语法改名
+        # 面料（若所有关联规格面料一致）-图片类型-原名
         ext = os.path.splitext(os.path.basename(storage_path))[1] or '.jpg'
         orig = os.path.basename(storage_path)
-        base_part = self._sanitize_filename_component(os.path.splitext(orig)[0], 80) or f"image_{aid}"
+        base_part = self._sanitize_filename_component(os.path.splitext(orig)[0], 120) or f"image_{aid}"
+
+        def _is_common_folder(folder_abs):
+            try:
+                p = os.fsdecode(folder_abs).replace('\\\\', '/')
+            except Exception:
+                try:
+                    p = str(folder_abs)
+                except Exception:
+                    p = ''
+            return ('/通用' in p) or ('『通用图片』/主图' in p)
+
+        def _get_asset_type_name():
+            try:
+                if not self._table_has_column(conn, 'image_assets', 'image_type_id'):
+                    return ''
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT it.name AS name
+                        FROM image_assets ia
+                        LEFT JOIN image_types it ON it.id = ia.image_type_id
+                        WHERE ia.id=%s
+                        LIMIT 1
+                        """,
+                        (aid,),
+                    )
+                    row = cur.fetchone() or {}
+                return str(row.get('name') or '').strip()
+            except Exception:
+                return ''
+
+        def _get_common_fabric_name():
+            try:
+                vids = self._get_asset_referenced_variant_ids(conn, aid) or []
+            except Exception:
+                vids = []
+            vids = [int(v or 0) for v in vids if int(v or 0) > 0]
+            if not vids:
+                return ''
+            placeholders = ','.join(['%s'] * len(vids))
+            try:
+                has_fabric_id = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
+                has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+                fabric_join = "LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id" if has_fabric_id else ""
+                if has_fabric_id and has_fabric_text:
+                    fabric_expr = "COALESCE(NULLIF(TRIM(fm.fabric_name_en),''), NULLIF(TRIM(fm.fabric_code),''), NULLIF(TRIM(v.fabric),'')) AS fabric"
+                elif has_fabric_id:
+                    fabric_expr = "COALESCE(NULLIF(TRIM(fm.fabric_name_en),''), NULLIF(TRIM(fm.fabric_code),'')) AS fabric"
+                elif has_fabric_text:
+                    fabric_expr = "NULLIF(TRIM(v.fabric),'') AS fabric"
+                else:
+                    fabric_expr = "'' AS fabric"
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""
+                        SELECT DISTINCT {fabric_expr}
+                        FROM sales_product_variants v
+                        {fabric_join}
+                        WHERE v.id IN ({placeholders})
+                        """,
+                        tuple(vids),
+                    )
+                    vals = [str(r.get('fabric') or '').strip() for r in (cur.fetchall() or [])]
+                vals = [v for v in vals if v]
+                if not vals:
+                    return ''
+                first = vals[0]
+                return first if all(v == first for v in vals) else ''
+            except Exception:
+                return ''
+
+        if _is_common_folder(target_folder):
+            type_name = _get_asset_type_name()
+            type_part = self._sanitize_filename_component(type_name, 32) if type_name else ''
+            fabric_name = _get_common_fabric_name()
+            fabric_part = self._sanitize_filename_component(fabric_name, 40) if fabric_name else ''
+            if type_part:
+                if fabric_part and base_part.startswith(f"{fabric_part}-{type_part}-") and len(base_part) > len(fabric_part) + len(type_part) + 2:
+                    pass  # already conforms
+                elif (not fabric_part) and base_part.startswith(f"{type_part}-") and len(base_part) > len(type_part) + 1:
+                    pass
+                else:
+                    # If base already starts with "类型-" and we now have a fabric, avoid double "类型-类型-"
+                    rest = base_part
+                    if base_part.startswith(f"{type_part}-"):
+                        rest = base_part[len(type_part) + 1:] or base_part
+                    if fabric_part:
+                        base_part = f"{fabric_part}-{type_part}-{rest}"
+                    else:
+                        base_part = f"{type_part}-{rest}"
+
         filename = f"{base_part}{ext}"
         final_name = self._next_available_filename(target_folder, filename)
         dst_abs = os.path.join(target_folder, self._safe_fsencode(final_name))
