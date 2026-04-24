@@ -207,9 +207,6 @@
             margin-right: 8px;
             margin-bottom: 0;
         }
-        #todoModal .pm-modal-content {
-            overflow: visible;
-        }
         #assigneePicker {
             min-height: 40px;
         }
@@ -529,6 +526,7 @@
     <!-- 待办弹窗（使用产品管理风格的 pm-modal 布局） -->
     <div id="todoModal" class="pm-modal">
         <div class="pm-modal-content pm-modal-content--wide">
+            <div class="pm-modal-scroll">
             <h3 id="todoModalTitle" style="margin-top:0;">新增待办</h3>
             <div class="pm-form">
                 <div class="pm-section">
@@ -588,6 +586,7 @@
                 </div>
             </div>
             <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            </div>
             <div class="pm-modal-actions">
                 <button class="btn-secondary" onclick="closeTodoModal()">取消</button>
                 <button class="btn-primary" id="modalSaveBtn" onclick="handleTodoModalSubmit(event)">保存待办</button>
@@ -598,6 +597,7 @@
     <!-- 新增员工弹窗 -->
     <div id="employeeCreateModal" class="pm-modal">
         <div class="pm-modal-content pm-modal-content--wide">
+            <div class="pm-modal-scroll">
             <div class="modal-header">
                 <h2>新增账号</h2>
                 <button class="modal-close" onclick="closeEmployeeCreateModal()">×</button>
@@ -632,6 +632,7 @@
                 </div>
             </form>
             <div id="employeeCreateHint" class="response" style="display:none; margin-top:0.75rem;"></div>
+            </div>
             <div class="pm-modal-actions">
                 <button class="btn-secondary" type="button" onclick="closeEmployeeCreateModal()">取消</button>
                 <button class="btn-primary" type="submit" form="employeeCreateForm">保存</button>
@@ -642,6 +643,7 @@
     <!-- 编辑员工弹窗 -->
     <div id="employeeEditModal" class="pm-modal">
         <div class="pm-modal-content pm-modal-content--wide">
+            <div class="pm-modal-scroll">
             <div class="modal-header">
                 <h2>编辑账号资料</h2>
                 <button class="modal-close" onclick="closeEmployeeEditModal()">×</button>
@@ -701,6 +703,7 @@
                 </div>
             </form>
             <div id="employeeEditHint" class="response" style="display:none; margin-top:0.75rem;"></div>
+            </div>
             <div class="pm-modal-actions">
                 <button class="btn-secondary" type="button" onclick="closeEmployeeEditModal()">取消</button>
                 <button class="btn-primary" type="submit" form="employeeEditForm">保存</button>

@@ -54,6 +54,7 @@
     <!-- 重命名对话框（统一 pm-modal 风格） -->
     <div class="pm-modal" id="rename-dialog">
         <div class="pm-modal-content pm-modal-content--wide gallery-rename-modal">
+            <div class="pm-modal-scroll">
             <h3 style="margin-top: 0;">✏️ 编辑图片信息</h3>
 
             <div class="gallery-rename-preview">
@@ -70,9 +71,52 @@
 
             <div id="rename-status" class="status-message" style="display: none; margin-top: 0.65rem;"></div>
 
+            <div class="pm-section" style="margin-top: 1rem;">
+                <h4 class="pm-section-title">批量应用到规格</h4>
+                <div class="pm-section-body pm-form" style="grid-template-columns: 1fr;">
+                    <div class="form-group pm-form-full" style="margin:0;">
+                        <label>已选规格</label>
+                        <div class="pm-actions" style="justify-content:space-between; gap:0.6rem; flex-wrap:wrap;">
+                            <div id="galleryApplySelectedText" class="helper-text" style="margin:0;">未选择</div>
+                            <div class="pm-actions" style="margin:0;">
+                                <button class="btn-secondary" type="button" onclick="openGalleryVariantPicker()">选择规格</button>
+                                <button class="btn-secondary" type="button" onclick="clearGalleryVariantSelection()">清空</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-group pm-form-full" style="margin:0;">
+                        <label>目标文件夹（相对路径，可选）</label>
+                        <input type="text" id="galleryApplyTargetFolder" placeholder="留空=默认放入『销售产品图片』/assets；例如：『销售产品图片』/assets/临时">
+                        <div class="helper-text">说明：数据库以 sha256 去重，同一内容只会有一条 image_assets 记录；若该图片已存在于数据库，将仅建立关联，不再复制/移动出新的副本。</div>
+                    </div>
+                    <div class="form-group pm-form-full" style="margin:0;">
+                        <label>复制/移动</label>
+                        <div class="pm-actions" style="justify-content:flex-start; gap:1rem;">
+                            <label style="display:inline-flex; align-items:center; gap:0.4rem; cursor:pointer;">
+                                <input type="radio" name="galleryApplyAction" value="copy" checked>
+                                <span>复制（源文件保留）</span>
+                            </label>
+                            <label style="display:inline-flex; align-items:center; gap:0.4rem; cursor:pointer;">
+                                <input type="radio" name="galleryApplyAction" value="move">
+                                <span>移动（源文件不在目标目录时将消失）</span>
+                            </label>
+                            <label style="display:inline-flex; align-items:center; gap:0.4rem; cursor:pointer;">
+                                <input type="checkbox" id="galleryApplyPromptDuplicate" checked>
+                                <span>提示已存在关联</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-group pm-form-full" style="margin:0;">
+                        <button class="btn-accent" type="button" onclick="applyImageToVariants()">一键应用图片到所选规格</button>
+                        <div id="galleryApplyStatus" class="status-message" style="display:none; margin-top:0.65rem;"></div>
+                    </div>
+                </div>
+            </div>
+            </div>
+
             <div class="pm-modal-actions">
                 <button class="btn-secondary" type="button" onclick="closeRenameDialog()">取消</button>
-                <button class="btn-secondary" type="button" onclick="triggerReplaceImage()">替换图片</button>
+                <button class="btn-secondary gallery-preview-zoom" type="button" onclick="triggerReplaceImage()" title="替换图片" style="right: 54px;">⟳</button>
                 <button class="btn-primary" type="button" onclick="confirmRename()">提交修改</button>
             </div>
         </div>
@@ -90,6 +134,8 @@
         let lastImages = [];
         const DEBUG_MODE = true;
         const selectedItems = new Map();
+        let galleryVariantOptions = [];
+        let gallerySelectedVariantIds = new Set();
 
         function decodeB64Utf8(b64) {
             if (!b64) return '';
@@ -589,6 +635,183 @@
                 closeRenameDialog();
             }
         });
+
+        function showGalleryApplyStatus(text, isError) {
+            const el = document.getElementById('galleryApplyStatus');
+            if (!el) return;
+            el.textContent = text || '';
+            el.className = 'status-message ' + (isError ? 'error' : 'success');
+            el.style.display = 'block';
+        }
+
+        function updateGalleryVariantSelectedText() {
+            const el = document.getElementById('galleryApplySelectedText');
+            if (!el) return;
+            const n = (gallerySelectedVariantIds ? gallerySelectedVariantIds.size : 0) || 0;
+            el.textContent = n ? `已选择 ${n} 个规格` : '未选择';
+        }
+
+        function clearGalleryVariantSelection() {
+            gallerySelectedVariantIds = new Set();
+            updateGalleryVariantSelectedText();
+            const st = document.getElementById('galleryApplyStatus');
+            if (st) st.style.display = 'none';
+        }
+
+        async function ensureGalleryVariantOptions() {
+            if (Array.isArray(galleryVariantOptions) && galleryVariantOptions.length) return galleryVariantOptions;
+            const resp = await fetch('/api/gallery-variant-picker');
+            const data = await resp.json();
+            if (!data || data.status !== 'success') {
+                throw new Error((data && data.message) ? data.message : '无法加载规格列表');
+            }
+            galleryVariantOptions = data.items || [];
+            return galleryVariantOptions;
+        }
+
+        function openGalleryVariantPicker() {
+            if (!currentRenameImage) return;
+            ensureGalleryVariantOptions().then(items => {
+                // 简单弹窗：用原生 showDialog（header.js）风格不稳定，这里用 confirm/modal 内渲染
+                const html = `
+                    <div style="display:grid; gap:0.6rem;">
+                        <div class="helper-text" style="margin:0;">可搜索后多选规格（货号/规格/面料）</div>
+                        <input type="text" id="galleryVariantSearch" class="pm-select-search" placeholder="搜索：货号 / 规格 / 面料">
+                        <div id="galleryVariantList" style="max-height:52vh; overflow:auto; border:1px solid rgba(207,199,189,0.7); border-radius:10px; background:#fff; padding:0.5rem;"></div>
+                        <div class="pm-actions" style="justify-content:space-between;">
+                            <label style="display:inline-flex; align-items:center; gap:0.4rem; cursor:pointer;">
+                                <input type="checkbox" id="galleryVariantSelectAll">
+                                <span>全选当前过滤结果</span>
+                            </label>
+                            <div class="pm-actions">
+                                <button class="btn-secondary" type="button" id="galleryVariantCancelBtn">取消</button>
+                                <button class="btn-primary" type="button" id="galleryVariantOkBtn">确定</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                const modal = document.createElement('div');
+                modal.className = 'pm-modal active';
+                modal.innerHTML = `
+                    <div class="pm-modal-content" style="max-width:760px;">
+                        <h3 style="margin-top:0;">选择规格</h3>
+                        ${html}
+                    </div>
+                `;
+                document.body.appendChild(modal);
+
+                function close() {
+                    modal.classList.remove('active');
+                    modal.remove();
+                }
+                modal.addEventListener('click', e => { if (e.target === modal) close(); });
+
+                const listEl = modal.querySelector('#galleryVariantList');
+                const searchEl = modal.querySelector('#galleryVariantSearch');
+                const selectAllEl = modal.querySelector('#galleryVariantSelectAll');
+
+                function render() {
+                    const kw = String(searchEl.value || '').trim().toLowerCase();
+                    const filtered = (items || []).filter(it => {
+                        const line = `${it.sku_family || ''} ${it.spec_name || ''} ${it.fabric_name_en || ''} ${it.fabric_code || ''}`.toLowerCase();
+                        return !kw || line.includes(kw);
+                    });
+                    listEl.innerHTML = filtered.map(it => {
+                        const vid = Number(it.variant_id || 0);
+                        const checked = gallerySelectedVariantIds.has(vid) ? 'checked' : '';
+                        const label = `${it.sku_family || '-'} / ${it.spec_name || '-'} / ${it.fabric_name_en || it.fabric_code || '-'}`;
+                        return `<label style="display:flex; gap:0.5rem; align-items:center; padding:0.35rem 0.2rem; cursor:pointer; border-bottom:1px dashed rgba(207,199,189,0.45);">
+                            <input type="checkbox" data-vid="${vid}" ${checked}>
+                            <span style="color:var(--morandi-ink); font-size:0.92rem;">${label.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>
+                        </label>`;
+                    }).join('') || `<div class="helper-text" style="padding:0.6rem;">无匹配结果</div>`;
+
+                    // 全选状态
+                    const vids = Array.from(listEl.querySelectorAll('input[type=\"checkbox\"][data-vid]')).map(x => Number(x.getAttribute('data-vid')||0)).filter(Boolean);
+                    const checkedCount = vids.filter(v => gallerySelectedVariantIds.has(v)).length;
+                    selectAllEl.checked = vids.length > 0 && checkedCount === vids.length;
+                    selectAllEl.indeterminate = checkedCount > 0 && checkedCount < vids.length;
+                }
+
+                listEl.addEventListener('change', e => {
+                    const box = e.target;
+                    if (!box || box.tagName !== 'INPUT') return;
+                    const vid = Number(box.getAttribute('data-vid') || 0);
+                    if (!vid) return;
+                    if (box.checked) gallerySelectedVariantIds.add(vid);
+                    else gallerySelectedVariantIds.delete(vid);
+                    render();
+                });
+                selectAllEl.addEventListener('change', () => {
+                    const vids = Array.from(listEl.querySelectorAll('input[type=\"checkbox\"][data-vid]')).map(x => Number(x.getAttribute('data-vid')||0)).filter(Boolean);
+                    if (selectAllEl.checked) vids.forEach(v => gallerySelectedVariantIds.add(v));
+                    else vids.forEach(v => gallerySelectedVariantIds.delete(v));
+                    render();
+                });
+                searchEl.addEventListener('input', render);
+
+                modal.querySelector('#galleryVariantCancelBtn').addEventListener('click', close);
+                modal.querySelector('#galleryVariantOkBtn').addEventListener('click', () => {
+                    updateGalleryVariantSelectedText();
+                    close();
+                });
+
+                render();
+            }).catch(e => {
+                showGalleryApplyStatus('加载规格列表失败: ' + e.message, true);
+            });
+        }
+
+        function _textToB64Utf8(text) {
+            const s = String(text || '').trim();
+            if (!s) return '';
+            try {
+                if (typeof TextEncoder !== 'undefined') {
+                    const bytes = new TextEncoder().encode(s);
+                    let binary = '';
+                    bytes.forEach(b => binary += String.fromCharCode(b));
+                    return btoa(binary);
+                }
+                return btoa(unescape(encodeURIComponent(s)));
+            } catch (e) {
+                return '';
+            }
+        }
+
+        async function applyImageToVariants() {
+            if (!currentRenameImage) return;
+            if (!gallerySelectedVariantIds || gallerySelectedVariantIds.size === 0) {
+                showGalleryApplyStatus('请先选择规格', true);
+                return;
+            }
+            const actionEl = document.querySelector('input[name=\"galleryApplyAction\"]:checked');
+            const action = actionEl ? String(actionEl.value || 'copy') : 'copy';
+            const targetFolderText = String((document.getElementById('galleryApplyTargetFolder') || {}).value || '').trim();
+            const promptDup = !!(document.getElementById('galleryApplyPromptDuplicate') && document.getElementById('galleryApplyPromptDuplicate').checked);
+            showGalleryApplyStatus('处理中...', false);
+            try {
+                const payload = {
+                    image_path_b64: currentRenameImage.path,
+                    variant_ids: Array.from(gallerySelectedVariantIds),
+                    action,
+                    target_folder_b64: targetFolderText ? _textToB64Utf8(targetFolderText) : '',
+                    prompt_duplicate: promptDup ? 1 : 0
+                };
+                const resp = await fetch('/api/gallery-apply-image', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await resp.json();
+                if (!data || data.status !== 'success') {
+                    showGalleryApplyStatus((data && data.message) ? data.message : '操作失败', true);
+                    return;
+                }
+                showGalleryApplyStatus(data.message || '已完成', false);
+            } catch (e) {
+                showGalleryApplyStatus('操作失败: ' + e.message, true);
+            }
+        }
     </script>
 </body>
     <script src="/static/js/header.js"></script>

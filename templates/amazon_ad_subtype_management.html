@@ -48,11 +48,6 @@
         }
         .pm-select-option:hover { background: rgba(207, 199, 189, 0.55); }
         .pm-select-empty { padding: 0.6rem; text-align: center; color: var(--morandi-slate); font-size: 0.9rem; }
-        .pm-modal-content--wide {
-            max-width: 920px;
-            max-height: 82vh;
-            overflow-y: auto;
-        }
         .switch-wrap {
             position: relative;
             display: inline-flex;
@@ -238,6 +233,7 @@
 
     <div class="pm-modal" id="subtype-modal">
         <div class="pm-modal-content pm-modal-content--wide">
+            <div class="pm-modal-scroll">
             <h3 id="subtype-modal-title" style="margin-top:0;">新增广告分类</h3>
             <div class="pm-section">
                 <h4 class="pm-section-title">基础信息</h4>
@@ -286,6 +282,7 @@
                 </div>
             </div>
             <div id="subtypeModalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            </div>
             <div class="pm-modal-actions">
                 <button class="btn-danger" id="subtypeDeleteBtn" style="display:none;" onclick="deleteSubtypeFromModal()">删除</button>
                 <button class="btn-secondary" onclick="closeSubtypeModal()">取消</button>
@@ -296,6 +293,7 @@
 
     <div class="pm-modal" id="optype-modal">
         <div class="pm-modal-content pm-modal-content--wide">
+            <div class="pm-modal-scroll">
             <h3 id="optype-modal-title" style="margin-top:0;">新增操作类型</h3>
 
             <div class="pm-section">
@@ -340,6 +338,7 @@
             </div>
 
             <div id="optypeModalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            </div>
             <div class="pm-modal-actions">
                 <button class="btn-danger" id="optypeDeleteBtn" style="display:none;" onclick="deleteOpTypeFromModal()">删除</button>
                 <button class="btn-secondary" onclick="closeOpTypeModal()">取消</button>

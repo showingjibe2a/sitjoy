@@ -1373,30 +1373,52 @@ input.optional-field[type="datetime-local"]:focus {
     }
 }
 
+/* 宽弹窗：默认整块可纵向滚动，底部 .pm-modal-actions 用 sticky 贴在卡片视口底（兼容无 .pm-modal-scroll 的旧结构） */
 .pm-modal-content--wide {
     max-width: 980px;
-    /* Scroll only the body area, keep actions fixed */
-    min-height: min(720px, calc(100vh - 140px));
     max-height: calc(100vh - 64px);
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
-/* Scroll container inside wide modals */
-.pm-modal-content--wide .pm-modal-scroll {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow: auto;
-}
-
-/* Fixed bottom actions within wide modals */
-.pm-modal-content--wide .pm-modal-actions {
-    flex: 0 0 auto;
+.pm-modal-content--wide > .pm-modal-actions {
+    position: sticky;
+    bottom: 0;
     margin-top: 0.75rem;
     padding-top: 0.9rem;
+    padding-bottom: 0.05rem;
     background: var(--morandi-cream);
     border-top: 1px solid rgba(207, 199, 189, 0.6);
+    z-index: 2;
+}
+
+/* 新结构：显式 .pm-modal-scroll 时仅中间滚动，操作区真正固定在卡片底部（不随正文滚动） */
+@supports selector(:has(*)) {
+    .pm-modal-content--wide:has(> .pm-modal-scroll) {
+        min-height: min(720px, calc(100vh - 140px));
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .pm-modal-content--wide:has(> .pm-modal-scroll) > .pm-modal-scroll {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .pm-modal-content--wide:has(> .pm-modal-scroll) > .pm-modal-actions {
+        position: static;
+        flex: 0 0 auto;
+        margin-top: 0.75rem;
+        padding-top: 0.9rem;
+        padding-bottom: 0;
+        background: var(--morandi-cream);
+        border-top: 1px solid rgba(207, 199, 189, 0.6);
+        z-index: auto;
+    }
 }
 
 html.has-active-modal,

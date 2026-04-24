@@ -52,6 +52,408 @@ class SalesProductMixin:
     def _abs_from_storage_path(self, storage_path):
         return self._join_resources((storage_path or '').strip().replace('\\', '/'))
 
+    def _resolve_sales_variant_folder_by_variant_id(self, variant_id, ensure_folder=False):
+        """按 variant_id 解析销售主图文件夹（货号/主图/规格-面料）。"""
+        vid = int(variant_id or 0)
+        if vid <= 0:
+            raise RuntimeError('Missing variant_id')
+        with self._get_db_connection() as conn:
+            with conn.cursor() as cur:
+                has_fabric_id = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
+                has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+                fabric_join = "LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id" if has_fabric_id else ""
+                if has_fabric_id and has_fabric_text:
+                    fabric_select = "COALESCE(fm.fabric_code, v.fabric) AS fabric"
+                elif has_fabric_id:
+                    fabric_select = "fm.fabric_code AS fabric"
+                else:
+                    fabric_select = ("v.fabric AS fabric" if has_fabric_text else "'' AS fabric")
+                cur.execute(
+                    f"""
+                    SELECT v.id, v.spec_name, {fabric_select}, pf.sku_family,
+                           {("fm.fabric_name_en AS fabric_name_en, v.fabric_id AS fabric_id" if has_fabric_id else "'' AS fabric_name_en, 0 AS fabric_id")}
+                    FROM sales_product_variants v
+                    LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                    {fabric_join}
+                    WHERE v.id=%s
+                    """,
+                    (vid,),
+                )
+                row = cur.fetchone() or {}
+            if not row.get('id'):
+                raise RuntimeError('规格不存在')
+
+            sku_name = (row.get('sku_family') or '').strip()
+            spec_part = (row.get('spec_name') or '').strip().replace('/', '-').replace('\\', '-')
+            fabric_part = str(row.get('fabric_name_en') or '').strip().replace('/', '-').replace('\\', '-')
+            if not fabric_part:
+                fabric_part = self._resolve_fabric_folder_part(conn, row.get('fabric_id'), row.get('fabric'))
+            if not (sku_name and spec_part and fabric_part):
+                raise RuntimeError('当前规格缺少货号/规格/面料，无法定位主图文件夹')
+
+            if ensure_folder:
+                self._ensure_listing_sales_variant_folder(sku_name, spec_part, fabric_part)
+            base_folder = self._ensure_listing_folder()
+            variant_folder_name = f"{spec_part}-{fabric_part}"
+            folder_path = os.path.join(
+                base_folder,
+                self._safe_fsencode(sku_name),
+                self._safe_fsencode('主图'),
+                self._safe_fsencode(variant_folder_name),
+            )
+            return {
+                'variant_id': vid,
+                'sku_family': sku_name,
+                'spec_name': spec_part,
+                'fabric_folder_part': fabric_part,
+                'variant_folder': variant_folder_name,
+                'folder_path': folder_path,
+            }
+
+    def handle_gallery_image_meta_api(self, environ, method, start_response):
+        """按 gallery 的相对路径（base64 bytes）查库里是否已关联，并返回图片类型。"""
+        try:
+            if method != 'GET':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            path_b64 = str(query_params.get('id', [''])[0] or '').strip()
+            if not path_b64:
+                return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+            try:
+                raw = base64.b64decode(path_b64)
+            except Exception:
+                return self.send_json({'status': 'error', 'message': 'Invalid id'}, start_response)
+            rel_text = ''
+            try:
+                rel_text = os.fsdecode(raw)
+            except Exception:
+                try:
+                    rel_text = raw.decode('utf-8', errors='surrogatepass')
+                except Exception:
+                    rel_text = ''
+            rel_text = (rel_text or '').strip().replace('\\', '/').lstrip('/')
+            if not rel_text or '..' in rel_text:
+                return self.send_json({'status': 'error', 'message': 'Invalid path'}, start_response)
+
+            with self._get_db_connection() as conn:
+                has_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
+                join_type = "LEFT JOIN image_types it ON it.id = ia.image_type_id" if has_tid else ""
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""
+                        SELECT ia.id, ia.storage_path, {('ia.image_type_id AS image_type_id' if has_tid else '0 AS image_type_id')},
+                               {('it.name AS image_type_name' if has_tid else "'' AS image_type_name")}
+                        FROM image_assets ia
+                        {join_type}
+                        WHERE ia.storage_path=%s
+                        LIMIT 1
+                        """,
+                        (rel_text,),
+                    )
+                    row = cur.fetchone() or {}
+                    if not row.get('id'):
+                        # 容错：若目录层级有差异，尝试按 basename 匹配（仅用于预填，非强一致）
+                        base = os.path.basename(rel_text)
+                        if base:
+                            cur.execute(
+                                f"""
+                                SELECT ia.id, ia.storage_path, {('ia.image_type_id AS image_type_id' if has_tid else '0 AS image_type_id')},
+                                       {('it.name AS image_type_name' if has_tid else "'' AS image_type_name")}
+                                FROM image_assets ia
+                                {join_type}
+                                WHERE ia.storage_path=%s OR ia.storage_path LIKE %s
+                                ORDER BY ia.id DESC
+                                LIMIT 1
+                                """,
+                                (base, f'%/{base}'),
+                            )
+                            row = cur.fetchone() or {}
+
+            linked = bool(row.get('id'))
+            return self.send_json(
+                {
+                    'status': 'success',
+                    'linked': linked,
+                    'image_asset_id': self._parse_int(row.get('id')) or 0,
+                    'storage_path': (row.get('storage_path') or '').strip(),
+                    'image_type_id': self._parse_int(row.get('image_type_id')) or 0,
+                    'image_type_name': (row.get('image_type_name') or '').strip(),
+                },
+                start_response,
+            )
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_gallery_variant_picker_api(self, environ, method, start_response):
+        """给 gallery 弹窗提供规格选择数据（货号+面料+规格）。"""
+        try:
+            if method != 'GET':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+
+            with self._get_db_connection() as conn:
+                has_fabric_id = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
+                has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+                fabric_join = "LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id" if has_fabric_id else ""
+                if has_fabric_id and has_fabric_text:
+                    fabric_code_expr = "COALESCE(fm.fabric_code, v.fabric) AS fabric_code"
+                elif has_fabric_id:
+                    fabric_code_expr = "fm.fabric_code AS fabric_code"
+                elif has_fabric_text:
+                    fabric_code_expr = "v.fabric AS fabric_code"
+                else:
+                    fabric_code_expr = "'' AS fabric_code"
+
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""
+                        SELECT
+                            v.id,
+                            v.spec_name,
+                            v.sku_family_id,
+                            pf.sku_family,
+                            {('v.fabric_id' if has_fabric_id else '0 AS fabric_id')},
+                            {fabric_code_expr},
+                            {('fm.fabric_name_en AS fabric_name_en' if has_fabric_id else "'' AS fabric_name_en")}
+                        FROM sales_product_variants v
+                        LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                        {fabric_join}
+                        ORDER BY pf.sku_family ASC, v.spec_name ASC, {('fm.fabric_name_en' if has_fabric_id else 'v.id')} ASC, v.id ASC
+                        """
+                    )
+                    rows = cur.fetchall() or []
+            items = []
+            for r in rows:
+                items.append({
+                    'variant_id': self._parse_int(r.get('id')) or 0,
+                    'sku_family_id': self._parse_int(r.get('sku_family_id')) or 0,
+                    'sku_family': (r.get('sku_family') or '').strip(),
+                    'spec_name': (r.get('spec_name') or '').strip(),
+                    'fabric_id': self._parse_int(r.get('fabric_id')) or 0,
+                    'fabric_code': (r.get('fabric_code') or '').strip(),
+                    'fabric_name_en': (r.get('fabric_name_en') or '').strip(),
+                })
+            return self.send_json({'status': 'success', 'items': items}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_gallery_apply_image_api(self, environ, method, start_response):
+        """
+        从 gallery 选择一张图片，一键应用到多个规格（variant_id）。
+        支持 copy/move 到目标文件夹；并写入 image_assets + sku_image_mappings。
+        """
+        try:
+            if method != 'POST':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+
+            user_id = 0
+            try:
+                user_id = self._parse_int(self._get_session_user(environ)) or 0
+            except Exception:
+                user_id = 0
+            if not user_id:
+                return self.send_json({'status': 'error', 'message': '必须登录才能执行该操作'}, start_response)
+
+            data = self._read_json_body(environ) or {}
+            image_path_b64 = str(data.get('image_path_b64') or '').strip()
+            variant_ids = data.get('variant_ids') or []
+            action = str(data.get('action') or '').strip().lower() or 'copy'
+            image_type_name = str(data.get('image_type_name') or '').strip()
+            prompt_duplicate = str(data.get('prompt_duplicate') or '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+            if not image_path_b64:
+                return self.send_json({'status': 'error', 'message': '缺少图片路径'}, start_response)
+            if not image_type_name:
+                return self.send_json({'status': 'error', 'message': '请选择图片类型'}, start_response)
+            vids = []
+            if isinstance(variant_ids, (list, tuple)):
+                for v in variant_ids:
+                    vid = self._parse_int(v) or 0
+                    if vid > 0:
+                        vids.append(vid)
+            vids = sorted(set(vids))
+            if not vids:
+                return self.send_json({'status': 'error', 'message': '请先选择要应用的规格'}, start_response)
+            if action not in ('copy', 'move'):
+                action = 'copy'
+
+            try:
+                rel_raw = base64.b64decode(image_path_b64)
+            except Exception:
+                return self.send_json({'status': 'error', 'message': '图片路径不是合法 Base64'}, start_response)
+
+            # gallery 传入的是 resources 根目录下的相对 bytes 路径
+            abs_source = os.path.join(self._resources_root(), rel_raw)
+            abs_source = self._safe_fsencode(abs_source)
+            try:
+                if not os.path.isfile(abs_source):
+                    return self.send_json({'status': 'error', 'message': '源图片不存在'}, start_response)
+            except Exception:
+                return self.send_json({'status': 'error', 'message': '源图片不存在'}, start_response)
+
+            filename = os.path.basename(self._safe_fsdecode(abs_source))
+            if not self._is_image_name(filename):
+                return self.send_json({'status': 'error', 'message': '不支持的图片类型'}, start_response)
+
+            try:
+                with open(abs_source, 'rb') as f:
+                    content = f.read() or b''
+            except Exception as e:
+                return self.send_json({'status': 'error', 'message': f'读取源图片失败: {str(e)}'}, start_response)
+            if not content:
+                return self.send_json({'status': 'error', 'message': '源图片为空'}, start_response)
+            sha256 = self._sha256_hex(content)
+
+            with self._get_db_connection() as conn:
+                image_type_id = self._get_image_type_id_by_name(conn, image_type_name)
+                if not image_type_id:
+                    return self.send_json({'status': 'error', 'message': f'未知图片类型: {image_type_name}'}, start_response)
+
+                existing = self._find_image_asset_by_sha256(conn, sha256)
+                aid = int(existing.get('id') or 0) if existing else 0
+                storage_path = (existing.get('storage_path') or '').strip() if existing else ''
+                created_new_asset = False
+                file_op_done = False
+
+                # 如果库里已有同 sha256 的记录，不能再复制/移动成另一份（sha256 唯一约束）。
+                # 直接复用已有 image_assets 记录并写关联即可。
+                if not aid:
+                    # 主图管理：目标目录固定为“货号/主图/规格-面料”
+                    first_vid = vids[0]
+                    folder_info = self._resolve_sales_variant_folder_by_variant_id(first_vid, ensure_folder=True)
+                    target_abs = folder_info.get('folder_path')
+                    if isinstance(target_abs, str):
+                        target_abs = self._safe_fsencode(target_abs)
+                    if not os.path.exists(target_abs):
+                        os.makedirs(target_abs, exist_ok=True)
+
+                    ext = self._guess_image_ext(filename, content)
+                    base0 = os.path.splitext(filename)[0].strip() or sha256[:12]
+                    safe_base0 = self._sanitize_filename_component(base0, 80) or sha256[:12]
+                    final_name = self._next_available_filename(target_abs, f"{safe_base0}{ext}")
+                    abs_target = os.path.join(target_abs, self._safe_fsencode(final_name))
+
+                    try:
+                        if action == 'move':
+                            # 源已在目标目录内则不移动
+                            if os.path.abspath(os.path.dirname(abs_source)) != os.path.abspath(target_abs):
+                                os.replace(abs_source, abs_target)
+                                file_op_done = True
+                            else:
+                                abs_target = abs_source
+                        else:
+                            if os.path.abspath(abs_source) != os.path.abspath(abs_target):
+                                shutil.copy2(abs_source, abs_target)
+                                file_op_done = True
+                            else:
+                                abs_target = abs_source
+                    except Exception as e:
+                        return self.send_json({'status': 'error', 'message': f'复制/移动文件失败: {str(e)}'}, start_response)
+
+                    storage_path = self._storage_path_from_abs(abs_target)
+                    if not storage_path:
+                        return self.send_json({'status': 'error', 'message': '无法计算 storage_path'}, start_response)
+
+                    try:
+                        self._tx_begin(conn)
+                        with conn.cursor() as cur:
+                            aid = int(self._insert_image_asset_dynamic(conn, cur, {
+                                'sha256': sha256,
+                                'storage_path': storage_path,
+                                'filename': final_name,
+                                'original_filename': filename,
+                                'image_type_id': int(image_type_id),
+                                'created_by': user_id,
+                            }) or 0)
+                        self._tx_commit(conn)
+                        created_new_asset = True
+                    except Exception as e:
+                        self._tx_rollback(conn)
+                        # best-effort: 回滚文件
+                        try:
+                            if created_new_asset and storage_path:
+                                self._safe_unlink(self._abs_from_storage_path(storage_path))
+                        except Exception:
+                            pass
+                        return self.send_json({'status': 'error', 'message': f'写入数据库失败: {str(e)}'}, start_response)
+
+                # 批量去重提示：先查已存在的关联
+                has_var = self._table_has_column(conn, 'sku_image_mappings', 'variant_id')
+                if not has_var:
+                    return self.send_json({'status': 'error', 'message': 'sku_image_mappings 缺少 variant_id，无法批量应用'}, start_response)
+
+                # 若是复用的旧 asset 且用户指定了类型：尽量补齐 image_assets.image_type_id
+                try:
+                    if self._table_has_column(conn, 'image_assets', 'image_type_id') and aid and image_type_id:
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "UPDATE image_assets SET image_type_id=COALESCE(NULLIF(image_type_id,0), %s) WHERE id=%s",
+                                (int(image_type_id), int(aid)),
+                            )
+                except Exception:
+                    pass
+
+                already_linked = set()
+                with conn.cursor() as cur:
+                    placeholders = ','.join(['%s'] * len(vids))
+                    cur.execute(
+                        f"SELECT variant_id FROM sku_image_mappings WHERE variant_id IN ({placeholders}) AND image_asset_id=%s",
+                        tuple(vids + [aid])
+                    )
+                    for row in (cur.fetchall() or []):
+                        already_linked.add(self._parse_int(row.get('variant_id')) or 0)
+
+                # 取每个 variant 当前 max(sort_order)
+                max_sort_map = {vid: 0 for vid in vids}
+                with conn.cursor() as cur:
+                    placeholders = ','.join(['%s'] * len(vids))
+                    cur.execute(
+                        f"SELECT variant_id, COALESCE(MAX(sort_order),0) AS max_sort FROM sku_image_mappings WHERE variant_id IN ({placeholders}) GROUP BY variant_id",
+                        tuple(vids)
+                    )
+                    for row in (cur.fetchall() or []):
+                        vid = self._parse_int(row.get('variant_id')) or 0
+                        if vid:
+                            max_sort_map[vid] = max(0, self._parse_int(row.get('max_sort')) or 0)
+
+                linked = 0
+                skipped = 0
+                with conn.cursor() as cur:
+                    for vid in vids:
+                        if vid in already_linked:
+                            skipped += 1
+                            continue
+                        sort_order = (max_sort_map.get(vid) or 0) + 1
+                        self._execute_sku_mapping_upsert(
+                            conn, cur,
+                            aid=aid,
+                            sort_order=sort_order,
+                            image_type_id=int(image_type_id),
+                            variant_id=vid,
+                            sales_product_id=0,
+                            user_id=user_id
+                        )
+                        linked += 1
+
+                msg_parts = [f'已应用到 {linked} 个规格']
+                if skipped and prompt_duplicate:
+                    msg_parts.append(f'（{skipped} 个规格已存在关联，已跳过）')
+                if existing:
+                    msg_parts.append('；图片已存在于数据库，已复用记录')
+                elif created_new_asset:
+                    msg_parts.append('；已写入数据库并建立关联')
+                return self.send_json({
+                    'status': 'success',
+                    'message': ''.join(msg_parts),
+                    'image_asset_id': aid,
+                    'storage_path': storage_path,
+                    'created_new_asset': bool(created_new_asset),
+                    'file_op_done': bool(file_op_done),
+                    'linked': int(linked),
+                    'already_linked': int(skipped),
+                }, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
     def _fs_realpath_key(self, path):
         """Stable key for same-file detection (bytes-safe)."""
         if not path:

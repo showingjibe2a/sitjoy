@@ -77,6 +77,12 @@ class UtilityMixin:
                 include_all = str((query_params.get('include_all', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
                 with_links = str((query_params.get('with_links', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
                 with self._get_db_connection() as conn:
+                    has_created_by = self._todo_column_exists(conn, 'created_by')
+                    if not include_all and not has_created_by:
+                        return self.send_json({
+                            'status': 'error',
+                            'message': '数据库表 todos 缺少字段 created_by，请执行 scripts/sql/20260424_02_todos_add_created_by.sql 后重试'
+                        }, start_response)
                     with conn.cursor() as cur:
                         params = []
                         where_sql = ''
@@ -188,26 +194,34 @@ class UtilityMixin:
                 related_sku_family_ids = data.get('related_sku_family_ids') or []
 
                 with self._get_db_connection() as conn:
+                    has_created_by = self._todo_column_exists(conn, 'created_by')
+                    if not has_created_by:
+                        return self.send_json({
+                            'status': 'error',
+                            'message': '数据库表 todos 缺少字段 created_by，请执行 scripts/sql/20260424_02_todos_add_created_by.sql 后重试'
+                        }, start_response)
                     has_reminder_interval_days = self._todo_column_exists(conn, 'reminder_interval_days')
+                    has_is_recurring = self._todo_column_exists(conn, 'is_recurring')
+                    insert_cols = ['title', 'detail', 'start_date', 'due_date']
+                    insert_vals = [title, detail, start_date, due_date]
+                    if has_reminder_interval_days:
+                        insert_cols.append('reminder_interval_days')
+                        insert_vals.append(reminder_interval_days)
+                    if has_is_recurring:
+                        insert_cols.append('is_recurring')
+                        insert_vals.append(is_recurring)
+                    insert_cols.extend(['status', 'priority'])
+                    insert_vals.extend(['open', priority])
+                    if has_created_by:
+                        insert_cols.append('created_by')
+                        insert_vals.append(user_id)
+                    placeholders = ','.join(['%s'] * len(insert_vals))
+                    col_sql = ','.join(insert_cols)
                     with conn.cursor() as cur:
-                        if has_reminder_interval_days:
-                            cur.execute(
-                                """
-                                INSERT INTO todos
-                                (title, detail, start_date, due_date, reminder_interval_days, is_recurring, status, priority, created_by)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                                """,
-                                (title, detail, start_date, due_date, reminder_interval_days, is_recurring, 'open', priority, user_id)
-                            )
-                        else:
-                            cur.execute(
-                                """
-                                INSERT INTO todos
-                                (title, detail, start_date, due_date, is_recurring, status, priority, created_by)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                                """,
-                                (title, detail, start_date, due_date, is_recurring, 'open', priority, user_id)
-                            )
+                        cur.execute(
+                            f'INSERT INTO todos ({col_sql}) VALUES ({placeholders})',
+                            tuple(insert_vals)
+                        )
                         new_id = cur.lastrowid
                     self._replace_todo_assignees(conn, new_id, assignee_ids)
                     self._replace_todo_sales_links(conn, new_id, related_sales_product_ids, related_sku_family_ids)
@@ -245,6 +259,11 @@ class UtilityMixin:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
 
                 with self._get_db_connection() as conn:
+                    if not self._todo_column_exists(conn, 'created_by'):
+                        return self.send_json({
+                            'status': 'error',
+                            'message': '数据库表 todos 缺少字段 created_by，请执行 scripts/sql/20260424_02_todos_add_created_by.sql 后重试'
+                        }, start_response)
                     with conn.cursor() as cur:
                         cur.execute("DELETE FROM todos WHERE id=%s AND created_by=%s", (item_id, user_id))
                 return self.send_json({'status': 'success'}, start_response)
