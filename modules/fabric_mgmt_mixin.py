@@ -377,7 +377,7 @@ class FabricManagementMixin:
 
                             if remain_total <= 0:
                                 if file_path is not None:
-                                    moved_ok, _dst, _err = self._move_file_to_listing_recycle_bin(file_path)
+                                    moved_ok, _dst, _err = self._move_file_to_listing_recycle_bin(file_path, '删除')
                                     if not moved_ok:
                                         try:
                                             os.remove(file_path)
@@ -409,7 +409,7 @@ class FabricManagementMixin:
             # Fallback: no asset row found, treat as orphan physical file.
             if file_path is None:
                 return self.send_json({'status': 'error', 'message': '图片文件不存在'}, start_response)
-            moved_ok, _dst, _err = self._move_file_to_listing_recycle_bin(file_path)
+            moved_ok, _dst, _err = self._move_file_to_listing_recycle_bin(file_path, '删除')
             if not moved_ok:
                 try:
                     os.remove(file_path)

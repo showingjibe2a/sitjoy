@@ -591,7 +591,7 @@ class FileManagementMixin:
             moved_ok = False
             try:
                 if hasattr(self, '_move_file_to_listing_recycle_bin'):
-                    moved_ok, _dst, _err = self._move_file_to_listing_recycle_bin(full_old_path)
+                    moved_ok, _dst, _err = self._move_file_to_listing_recycle_bin(full_old_path, '替换')
             except Exception:
                 moved_ok = False
             if not moved_ok:

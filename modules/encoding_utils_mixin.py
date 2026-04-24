@@ -78,7 +78,7 @@ class EncodingUtilsMixin:
             pass
         return recycle
 
-    def _move_file_to_listing_recycle_bin(self, src_abs):
+    def _move_file_to_listing_recycle_bin(self, src_abs, reason=None):
         """
         Move a file into 『上架资源』/回收站 with a collision-safe name.
         Returns (ok: bool, dst_abs: bytes|str|None, err: str|None)
@@ -100,6 +100,15 @@ class EncodingUtilsMixin:
             base = os.path.basename(src_b)
         except Exception:
             base = b'file'
+
+        # 在回收站文件名前增加原因前缀（便于追溯）：例如 “重复__xxx.jpg”
+        reason_text = str(reason or '').strip()
+        if reason_text:
+            try:
+                prefix = self._safe_fsencode(reason_text) + self._safe_fsencode('__')
+            except Exception:
+                prefix = str(reason_text).encode('utf-8', errors='ignore') + b'__'
+            base = prefix + base
 
         stamp = time.strftime('%Y%m%d-%H%M%S', time.localtime())
         ext = b''

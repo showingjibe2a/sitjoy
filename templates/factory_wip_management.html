@@ -263,11 +263,15 @@ function installWipColumnFilterButtons(){
   if(!window.SitjoyColumnFilter) return;
   const table = document.getElementById('mainTable');
   if(!table) return;
-  table.querySelectorAll('.wip-col-filter-btn').forEach(btn => btn.remove());
-  document.querySelectorAll('.pm-managed-head-table .wip-col-filter-btn').forEach(btn => btn.remove());
-  const oldHandle = window.__factoryWipColumnFilterHandle || window.SitjoyColumnFilter.get(table);
-  if(oldHandle && typeof oldHandle.destroy === 'function'){
-    oldHandle.destroy();
+  const existing = window.__factoryWipColumnFilterHandle || window.SitjoyColumnFilter.get(table);
+  if(existing){
+    // 表体刷新时不要销毁/重建，否则筛选状态会丢失导致“筛选失效”
+    if(typeof existing.setFilters === 'function'){
+      existing.setFilters(factoryWipColumnFilters || {});
+    }
+    if(typeof existing.refreshButtons === 'function') existing.refreshButtons();
+    window.__factoryWipColumnFilterHandle = existing;
+    return;
   }
   const handle = window.SitjoyColumnFilter.attach(table, {
     columns: Object.keys(WIP_FILTER_COLUMNS).map(key => {
@@ -605,7 +609,13 @@ function getWipSelectAllCheckboxes(){
 
 function syncWipSelectAll(){
   const masters = getWipSelectAllCheckboxes();
-  const rows = Array.from(document.querySelectorAll('.wip-row-checkbox'));
+  const rows = Array.from(document.querySelectorAll('.wip-row-checkbox')).filter(cb => {
+    const tr = cb.closest('tr');
+    if(!tr) return false;
+    if(String(tr.dataset.pmFilterHidden || '0') === '1') return false;
+    if(tr.style && tr.style.display === 'none') return false;
+    return true;
+  });
   if(!masters.length) return;
   if(!rows.length){
     masters.forEach(master => {
@@ -624,12 +634,29 @@ function syncWipSelectAll(){
 }
 
 function toggleWipSelectAll(checked){
-  document.querySelectorAll('.wip-row-checkbox').forEach(el => {
+  const rows = Array.from(document.querySelectorAll('.wip-row-checkbox')).filter(cb => {
+    const tr = cb.closest('tr');
+    if(!tr) return false;
+    if(String(tr.dataset.pmFilterHidden || '0') === '1') return false;
+    if(tr.style && tr.style.display === 'none') return false;
+    return true;
+  });
+  const visibleIds = rows
+    .map(el => Number(el.getAttribute('data-id') || 0))
+    .filter(id => Number.isFinite(id) && id > 0);
+
+  // 经过筛选/搜索后，“全选”应只作用于当前可见行：
+  // - 勾选：仅选中可见行（清掉其它历史选择）
+  // - 取消：仅取消可见行（保留其它隐藏行的选择，便于跨页/跨筛选操作）
+  if(checked){
+    selectedWipIds = new Set(visibleIds);
+  } else {
+    visibleIds.forEach(id => selectedWipIds.delete(id));
+  }
+
+  rows.forEach(el => {
     const id = Number(el.getAttribute('data-id') || 0);
-    el.checked = !!checked;
-    if(!id) return;
-    if(checked) selectedWipIds.add(id);
-    else selectedWipIds.delete(id);
+    el.checked = checked ? selectedWipIds.has(id) : false;
   });
   syncWipSelectAll();
 }

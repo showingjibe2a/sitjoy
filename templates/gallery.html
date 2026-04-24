@@ -59,13 +59,23 @@
 
             <div class="gallery-rename-preview">
                 <img id="rename-preview-img" src="" alt="预览">
-                <button class="btn-secondary gallery-preview-zoom" type="button" onclick="openPreviewZoom()" title="放大查看">🔍</button>
+                <button class="btn-secondary gallery-preview-zoom" type="button" onclick="openPreviewZoom()" title="放大查看" style="font-size:12px; padding:0.22rem 0.5rem; min-height:28px;">🔍</button>
+                <button class="btn-secondary gallery-preview-zoom" type="button" onclick="triggerReplaceImage()" title="替换图片" style="right: 54px; font-size:12px; padding:0.22rem 0.5rem; min-height:28px;">⟳</button>
             </div>
 
             <div class="pm-form" style="grid-template-columns: 1fr;">
                 <div class="form-group pm-form-full">
                     <label>文件名（无需扩展名）</label>
                     <input type="text" id="new-name" placeholder="输入新文件名">
+                </div>
+                <div class="form-group pm-form-full">
+                    <label style="display:flex; align-items:center; gap:0.4rem;">
+                        <span>图片类型 <span class="required-asterisk">*</span></span>
+                        <span class="help-dot" data-tip="未选择图片类型将无法提交“一键应用”。若该图片已在数据库关联过，将自动预选其类型。"></span>
+                    </label>
+                    <div class="status-segment status-segment--inline" id="galleryImageTypeSegment" data-value="">
+                        <button type="button" class="status-pill status-pill--no is-active" data-value="" title="必须选择一个图片类型">未选择</button>
+                    </div>
                 </div>
             </div>
 
@@ -76,28 +86,22 @@
                 <div class="pm-section-body pm-form" style="grid-template-columns: 1fr;">
                     <div class="form-group pm-form-full" style="margin:0;">
                         <label>已选规格</label>
-                        <div class="pm-actions" style="justify-content:space-between; gap:0.6rem; flex-wrap:wrap;">
-                            <div id="galleryApplySelectedText" class="helper-text" style="margin:0;">未选择</div>
-                            <div class="pm-actions" style="margin:0;">
-                                <button class="btn-secondary" type="button" onclick="openGalleryVariantPicker()">选择规格</button>
-                                <button class="btn-secondary" type="button" onclick="clearGalleryVariantSelection()">清空</button>
-                            </div>
+                        <div class="pm-actions" style="justify-content:flex-end; gap:0.6rem; flex-wrap:wrap; margin-bottom:0.35rem;">
+                            <button class="btn-secondary" type="button" onclick="openGalleryVariantPicker()">选择规格</button>
+                            <button class="btn-secondary" type="button" onclick="clearGalleryVariantSelection()">清空</button>
                         </div>
-                    </div>
-                    <div class="form-group pm-form-full" style="margin:0;">
-                        <label>目标文件夹（相对路径，可选）</label>
-                        <input type="text" id="galleryApplyTargetFolder" placeholder="留空=默认放入『销售产品图片』/assets；例如：『销售产品图片』/assets/临时">
-                        <div class="helper-text">说明：数据库以 sha256 去重，同一内容只会有一条 image_assets 记录；若该图片已存在于数据库，将仅建立关联，不再复制/移动出新的副本。</div>
+                        <div id="galleryApplySelectedText" class="helper-text" style="margin:0;">未选择</div>
+                        <div id="galleryApplySelectedList" class="helper-text" style="margin:0.35rem 0 0; display:none;"></div>
                     </div>
                     <div class="form-group pm-form-full" style="margin:0;">
                         <label>复制/移动</label>
                         <div class="pm-actions" style="justify-content:flex-start; gap:1rem;">
                             <label style="display:inline-flex; align-items:center; gap:0.4rem; cursor:pointer;">
-                                <input type="radio" name="galleryApplyAction" value="copy" checked>
+                                <input type="radio" name="galleryApplyAction" value="copy">
                                 <span>复制（源文件保留）</span>
                             </label>
                             <label style="display:inline-flex; align-items:center; gap:0.4rem; cursor:pointer;">
-                                <input type="radio" name="galleryApplyAction" value="move">
+                                <input type="radio" name="galleryApplyAction" value="move" checked>
                                 <span>移动（源文件不在目标目录时将消失）</span>
                             </label>
                             <label style="display:inline-flex; align-items:center; gap:0.4rem; cursor:pointer;">
@@ -108,7 +112,6 @@
                     </div>
                     <div class="form-group pm-form-full" style="margin:0;">
                         <button class="btn-accent" type="button" onclick="applyImageToVariants()">一键应用图片到所选规格</button>
-                        <div id="galleryApplyStatus" class="status-message" style="display:none; margin-top:0.65rem;"></div>
                     </div>
                 </div>
             </div>
@@ -116,12 +119,12 @@
 
             <div class="pm-modal-actions">
                 <button class="btn-secondary" type="button" onclick="closeRenameDialog()">取消</button>
-                <button class="btn-secondary gallery-preview-zoom" type="button" onclick="triggerReplaceImage()" title="替换图片" style="right: 54px;">⟳</button>
                 <button class="btn-primary" type="button" onclick="confirmRename()">提交修改</button>
             </div>
         </div>
     </div>
 
+    <div class="app-toast-stack" id="galleryToastStack"></div>
 
     <footer>
         <p>&copy; 2026 SITJOY | 内部使用</p>
@@ -136,6 +139,23 @@
         const selectedItems = new Map();
         let galleryVariantOptions = [];
         let gallerySelectedVariantIds = new Set();
+        let gallerySalesImageTypeOptions = [];
+        const GALLERY_LAST_PATH_KEY = 'sitjoy_gallery_last_path_v1';
+
+        function saveGalleryLastPath(path) {
+            try {
+                const normalized = String(path || '').trim();
+                localStorage.setItem(GALLERY_LAST_PATH_KEY, normalized);
+            } catch (_) {}
+        }
+
+        function loadGalleryLastPath() {
+            try {
+                return String(localStorage.getItem(GALLERY_LAST_PATH_KEY) || '').trim();
+            } catch (_) {
+                return '';
+            }
+        }
 
         function decodeB64Utf8(b64) {
             if (!b64) return '';
@@ -158,12 +178,14 @@
 
         // 页面加载时浏览根目录
         window.addEventListener('load', function() {
-            browse('');
+            const last = loadGalleryLastPath();
+            browse(last || '');
         });
 
         // 浏览目录
         function browse(path) {
             currentPath = path;
+            saveGalleryLastPath(currentPath);
             const grid = document.getElementById('browser-grid');
             grid.innerHTML = '<div class="loading">加载中...</div>';
 
@@ -186,12 +208,21 @@
                     } else {
                         grid.innerHTML = '<p style="color: red; text-align: center;">加载失败: ' + data.message + '</p>';
                         renderDebug([], 0, 0);
+                        // 若上次路径已失效/无权限，自动回退到根目录，避免“永远进不去”
+                        if (path) {
+                            saveGalleryLastPath('');
+                            setTimeout(() => browse(''), 120);
+                        }
                     }
                 })
                 .catch(error => {
                     console.error('错误:', error);
                     grid.innerHTML = '<p style="color: red; text-align: center;">加载错误: ' + error + '</p>';
                     renderDebug([], 0, 0);
+                    if (path) {
+                        saveGalleryLastPath('');
+                        setTimeout(() => browse(''), 120);
+                    }
                 });
         }
 
@@ -410,7 +441,25 @@
                 const card = document.createElement('div');
                 const isSelected = selectedItems.has(image.path);
                 card.className = 'item-card item-card--compact' + (isSelected ? ' item-card--selected' : '');
-                card.onclick = () => openRenameDialog(image.path, name);
+                // 交互约定：单击仅选中（用于下载/批量操作），双击进入编辑弹窗
+                card.onclick = () => {
+                    const nextChecked = !selectedItems.has(image.path);
+                    toggleSelection(image.path, 'image', nextChecked);
+                    card.classList.toggle('item-card--selected', nextChecked);
+                    const checkbox = card.querySelector('input[type="checkbox"][data-path]');
+                    if(checkbox) checkbox.checked = nextChecked;
+                };
+                card.ondblclick = (e) => {
+                    if(e && typeof e.preventDefault === 'function') e.preventDefault();
+                    // 双击时确保处于选中态
+                    if(!selectedItems.has(image.path)){
+                        toggleSelection(image.path, 'image', true);
+                        card.classList.add('item-card--selected');
+                        const checkbox = card.querySelector('input[type="checkbox"][data-path]');
+                        if(checkbox) checkbox.checked = true;
+                    }
+                    openRenameDialog(image.path, name);
+                };
 
                 const thumbnailUrl = `/api/image-preview?id=${encodeURIComponent(image.path)}`;
 
@@ -553,6 +602,98 @@
                 });
         }
 
+        function showToast(message, variant) {
+            const stack = document.getElementById('galleryToastStack');
+            if (!stack) return;
+            const toast = document.createElement('div');
+            toast.className = `app-toast ${variant || 'success'}`;
+            toast.innerHTML = `
+                <div class="app-toast-message"></div>
+                <div class="app-toast-actions">
+                    <button type="button" class="app-toast-btn close">×</button>
+                </div>
+            `;
+            toast.querySelector('.app-toast-message').textContent = String(message || '');
+            const closeBtn = toast.querySelector('.app-toast-btn.close');
+            const close = () => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 180);
+            };
+            closeBtn.addEventListener('click', close);
+            stack.appendChild(toast);
+            requestAnimationFrame(() => toast.classList.add('show'));
+            setTimeout(close, 4200);
+        }
+
+        async function ensureSalesImageTypeOptions() {
+            if (Array.isArray(gallerySalesImageTypeOptions) && gallerySalesImageTypeOptions.length) return gallerySalesImageTypeOptions;
+            const resp = await fetch('/api/sales-image-type?usage=sales');
+            const data = await resp.json();
+            if (!data || data.status !== 'success') {
+                gallerySalesImageTypeOptions = [];
+                return gallerySalesImageTypeOptions;
+            }
+            gallerySalesImageTypeOptions = Array.isArray(data.items) ? data.items : [];
+            return gallerySalesImageTypeOptions;
+        }
+
+        function getSelectedGalleryImageTypeName() {
+            const seg = document.getElementById('galleryImageTypeSegment');
+            return String(seg?.dataset?.value || '').trim();
+        }
+
+        function setGalleryImageTypeName(value) {
+            const seg = document.getElementById('galleryImageTypeSegment');
+            if (!seg) return;
+            const v = String(value || '').trim();
+            seg.dataset.value = v;
+            seg.querySelectorAll('button[data-value]').forEach(btn => {
+                const bv = String(btn.getAttribute('data-value') || '').trim();
+                btn.classList.toggle('is-active', bv === v);
+            });
+        }
+
+        async function refreshGalleryImageTypeSelect() {
+            const seg = document.getElementById('galleryImageTypeSegment');
+            if (!seg) return;
+            const items = await ensureSalesImageTypeOptions();
+            const current = String(seg.dataset.value || '').trim();
+            const btns = (items || [])
+                .map(it => String(it.name || '').trim())
+                .filter(Boolean)
+                .map(name => {
+                    const safe = name.replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+                    const isActive = current && current === name;
+                    return `<button type="button" class="status-pill status-pill--yes ${isActive ? 'is-active' : ''}" data-value="${safe}">${safe}</button>`;
+                });
+            seg.innerHTML = btns.length
+                ? btns.join('')
+                : `<button type="button" class="status-pill status-pill--no is-active" data-value="">暂无可用类型</button>`;
+            seg.querySelectorAll('button[data-value]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const v = String(btn.getAttribute('data-value') || '').trim();
+                    setGalleryImageTypeName(v);
+                });
+            });
+            if (current) setGalleryImageTypeName(current);
+        }
+
+        async function tryPrefillImageTypeFromDb() {
+            const seg = document.getElementById('galleryImageTypeSegment');
+            if (!seg || !currentRenameImage) return;
+            try {
+                const resp = await fetch('/api/gallery-image-meta?id=' + encodeURIComponent(currentRenameImage.path));
+                const data = await resp.json();
+                if (data && data.status === 'success' && data.linked && data.image_type_name) {
+                    setGalleryImageTypeName(String(data.image_type_name || '').trim());
+                } else {
+                    setGalleryImageTypeName('');
+                }
+            } catch (e) {
+                // ignore
+            }
+        }
+
         // 确认重命名
         function confirmRename() {
             if (!currentRenameImage) return;
@@ -636,26 +777,44 @@
             }
         });
 
-        function showGalleryApplyStatus(text, isError) {
-            const el = document.getElementById('galleryApplyStatus');
-            if (!el) return;
-            el.textContent = text || '';
-            el.className = 'status-message ' + (isError ? 'error' : 'success');
-            el.style.display = 'block';
-        }
-
         function updateGalleryVariantSelectedText() {
             const el = document.getElementById('galleryApplySelectedText');
             if (!el) return;
             const n = (gallerySelectedVariantIds ? gallerySelectedVariantIds.size : 0) || 0;
             el.textContent = n ? `已选择 ${n} 个规格` : '未选择';
+
+            const listEl = document.getElementById('galleryApplySelectedList');
+            if (!listEl) return;
+            const vids = Array.from(gallerySelectedVariantIds || []).map(v => Number(v)).filter(v => v > 0);
+            if (!vids.length) {
+                listEl.style.display = 'none';
+                listEl.innerHTML = '';
+                return;
+            }
+            const map = new Map((galleryVariantOptions || []).map(it => [Number(it.variant_id || 0), it]));
+            const lines = vids.slice(0, 18).map(vid => {
+                const it = map.get(vid) || {};
+                const label = `${it.sku_family || '-'} / ${it.spec_name || '-'} / ${it.fabric_name_en || it.fabric_code || '-'}`;
+                return `<div style="display:flex; justify-content:space-between; gap:0.5rem; padding:0.15rem 0;">
+                    <span style="color:var(--morandi-ink);">${label.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>
+                    <button type="button" class="btn-secondary" style="padding:0.22rem 0.45rem; font-size:0.8rem; min-height:26px;" onclick="removeGallerySelectedVariant(${vid})">移除</button>
+                </div>`;
+            });
+            const more = vids.length > 18 ? `<div style="opacity:.75; padding-top:0.2rem;">… 还有 ${vids.length - 18} 个未显示</div>` : '';
+            listEl.innerHTML = lines.join('') + more;
+            listEl.style.display = '';
+        }
+
+        function removeGallerySelectedVariant(variantId) {
+            const vid = Number(variantId || 0);
+            if (!vid) return;
+            gallerySelectedVariantIds.delete(vid);
+            updateGalleryVariantSelectedText();
         }
 
         function clearGalleryVariantSelection() {
             gallerySelectedVariantIds = new Set();
             updateGalleryVariantSelectedText();
-            const st = document.getElementById('galleryApplyStatus');
-            if (st) st.style.display = 'none';
         }
 
         async function ensureGalleryVariantOptions() {
@@ -675,8 +834,21 @@
                 // 简单弹窗：用原生 showDialog（header.js）风格不稳定，这里用 confirm/modal 内渲染
                 const html = `
                     <div style="display:grid; gap:0.6rem;">
-                        <div class="helper-text" style="margin:0;">可搜索后多选规格（货号/规格/面料）</div>
-                        <input type="text" id="galleryVariantSearch" class="pm-select-search" placeholder="搜索：货号 / 规格 / 面料">
+                        <div class="helper-text" style="margin:0;">可分别搜索：货号 / 规格 / 面料（支持多选）</div>
+                        <div class="pm-form" style="grid-template-columns: 1fr 1fr 1fr; gap:0.5rem;">
+                            <div class="form-group" style="margin:0;">
+                                <label style="font-size:0.82rem; color:var(--morandi-slate);">货号</label>
+                                <input type="text" id="galleryVariantSearchSku" class="pm-select-search" placeholder="例如：SKU_FAMILY">
+                            </div>
+                            <div class="form-group" style="margin:0;">
+                                <label style="font-size:0.82rem; color:var(--morandi-slate);">规格</label>
+                                <input type="text" id="galleryVariantSearchSpec" class="pm-select-search" placeholder="例如：King">
+                            </div>
+                            <div class="form-group" style="margin:0;">
+                                <label style="font-size:0.82rem; color:var(--morandi-slate);">面料</label>
+                                <input type="text" id="galleryVariantSearchFabric" class="pm-select-search" placeholder="例如：Linen">
+                            </div>
+                        </div>
                         <div id="galleryVariantList" style="max-height:52vh; overflow:auto; border:1px solid rgba(207,199,189,0.7); border-radius:10px; background:#fff; padding:0.5rem;"></div>
                         <div class="pm-actions" style="justify-content:space-between;">
                             <label style="display:inline-flex; align-items:center; gap:0.4rem; cursor:pointer;">
@@ -707,14 +879,23 @@
                 modal.addEventListener('click', e => { if (e.target === modal) close(); });
 
                 const listEl = modal.querySelector('#galleryVariantList');
-                const searchEl = modal.querySelector('#galleryVariantSearch');
+                const skuEl = modal.querySelector('#galleryVariantSearchSku');
+                const specEl = modal.querySelector('#galleryVariantSearchSpec');
+                const fabricEl = modal.querySelector('#galleryVariantSearchFabric');
                 const selectAllEl = modal.querySelector('#galleryVariantSelectAll');
 
                 function render() {
-                    const kw = String(searchEl.value || '').trim().toLowerCase();
+                    const kwSku = String(skuEl.value || '').trim().toLowerCase();
+                    const kwSpec = String(specEl.value || '').trim().toLowerCase();
+                    const kwFabric = String(fabricEl.value || '').trim().toLowerCase();
                     const filtered = (items || []).filter(it => {
-                        const line = `${it.sku_family || ''} ${it.spec_name || ''} ${it.fabric_name_en || ''} ${it.fabric_code || ''}`.toLowerCase();
-                        return !kw || line.includes(kw);
+                        const sku = String(it.sku_family || '').toLowerCase();
+                        const spec = String(it.spec_name || '').toLowerCase();
+                        const fab = `${it.fabric_name_en || ''} ${it.fabric_code || ''}`.toLowerCase();
+                        if (kwSku && !sku.includes(kwSku)) return false;
+                        if (kwSpec && !spec.includes(kwSpec)) return false;
+                        if (kwFabric && !fab.includes(kwFabric)) return false;
+                        return true;
                     });
                     listEl.innerHTML = filtered.map(it => {
                         const vid = Number(it.variant_id || 0);
@@ -748,7 +929,9 @@
                     else vids.forEach(v => gallerySelectedVariantIds.delete(v));
                     render();
                 });
-                searchEl.addEventListener('input', render);
+                skuEl.addEventListener('input', render);
+                specEl.addEventListener('input', render);
+                fabricEl.addEventListener('input', render);
 
                 modal.querySelector('#galleryVariantCancelBtn').addEventListener('click', close);
                 modal.querySelector('#galleryVariantOkBtn').addEventListener('click', () => {
@@ -762,39 +945,29 @@
             });
         }
 
-        function _textToB64Utf8(text) {
-            const s = String(text || '').trim();
-            if (!s) return '';
-            try {
-                if (typeof TextEncoder !== 'undefined') {
-                    const bytes = new TextEncoder().encode(s);
-                    let binary = '';
-                    bytes.forEach(b => binary += String.fromCharCode(b));
-                    return btoa(binary);
-                }
-                return btoa(unescape(encodeURIComponent(s)));
-            } catch (e) {
-                return '';
-            }
-        }
-
         async function applyImageToVariants() {
             if (!currentRenameImage) return;
             if (!gallerySelectedVariantIds || gallerySelectedVariantIds.size === 0) {
-                showGalleryApplyStatus('请先选择规格', true);
+                showToast('请先选择规格', 'error');
+                return;
+            }
+            const typeName = getSelectedGalleryImageTypeName();
+            if (!typeName) {
+                showToast('请选择图片类型后再提交', 'error');
                 return;
             }
             const actionEl = document.querySelector('input[name=\"galleryApplyAction\"]:checked');
             const action = actionEl ? String(actionEl.value || 'copy') : 'copy';
-            const targetFolderText = String((document.getElementById('galleryApplyTargetFolder') || {}).value || '').trim();
             const promptDup = !!(document.getElementById('galleryApplyPromptDuplicate') && document.getElementById('galleryApplyPromptDuplicate').checked);
-            showGalleryApplyStatus('处理中...', false);
+            if (window.showAppUploadProgress) {
+                window.showAppUploadProgress({ title: '正在应用图片...', summary: '写入数据库并处理文件移动/复制', percent: 35 });
+            }
             try {
                 const payload = {
                     image_path_b64: currentRenameImage.path,
                     variant_ids: Array.from(gallerySelectedVariantIds),
                     action,
-                    target_folder_b64: targetFolderText ? _textToB64Utf8(targetFolderText) : '',
+                    image_type_name: typeName,
                     prompt_duplicate: promptDup ? 1 : 0
                 };
                 const resp = await fetch('/api/gallery-apply-image', {
@@ -803,15 +976,45 @@
                     body: JSON.stringify(payload)
                 });
                 const data = await resp.json();
+                if (window.showAppUploadProgress) {
+                    window.showAppUploadProgress({ title: '正在应用图片...', summary: '处理中...', percent: 85 });
+                }
                 if (!data || data.status !== 'success') {
-                    showGalleryApplyStatus((data && data.message) ? data.message : '操作失败', true);
+                    showToast((data && data.message) ? data.message : '操作失败', 'error');
                     return;
                 }
-                showGalleryApplyStatus(data.message || '已完成', false);
+                const dupCount = Number(data.already_linked || 0);
+                const rehomeKind = String((data && data.rehome_kind) || '').trim();
+                const needsWarn = (dupCount > 0 && promptDup) || !!rehomeKind;
+                if (needsWarn) {
+                    showToast(data.message || '已完成', 'error');
+                } else {
+                    // 无重复/无归一化，不打扰用户；仅在移动模式下提示并关闭窗口
+                }
+                if (action === 'move') {
+                    if (!data.file_op_done) {
+                        showToast('提示：本次未发生文件移动（源图片已在目标目录或因复用记录未移动）', 'error');
+                    }
+                    if (data.recycled_duplicate) {
+                        showToast('已将重复图片移入回收站（原因：重复）', 'error');
+                    }
+                    closeRenameDialog();
+                    browse(currentPath);
+                }
             } catch (e) {
-                showGalleryApplyStatus('操作失败: ' + e.message, true);
+                showToast('操作失败: ' + e.message, 'error');
+            }
+            finally {
+                if (window.hideAppUploadProgress) window.hideAppUploadProgress();
             }
         }
+
+        // 打开编辑弹窗时：刷新图片类型，并按 DB 预填（若未关联过则保持空）
+        const _origOpenRenameDialog = window.openRenameDialog;
+        window.openRenameDialog = function(imagePath, imageName) {
+            try { _origOpenRenameDialog(imagePath, imageName); } catch (e) {}
+            refreshGalleryImageTypeSelect().then(() => tryPrefillImageTypeFromDb()).catch(() => {});
+        };
     </script>
 </body>
     <script src="/static/js/header.js"></script>

@@ -184,6 +184,58 @@ class SalesProductMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def handle_spec_main_images_api(self, environ, method, start_response):
+        """规格主图管理：按 variant_id 读取该规格已关联的图片记录（只读）。"""
+        try:
+            if method != 'GET':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            variant_id = self._parse_int(query_params.get('variant_id', [''])[0] or query_params.get('id', [''])[0])
+            if not variant_id:
+                return self.send_json({'status': 'error', 'message': 'Missing variant_id'}, start_response)
+
+            with self._get_db_connection() as conn:
+                items = self._read_sales_product_image_items(conn, sales_product_id=None, variant_id=variant_id) or []
+
+                # 尽量返回规格基础信息（便于前端显示校验）
+                base = {}
+                try:
+                    with conn.cursor() as cur:
+                        has_fabric_id = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
+                        has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+                        fabric_join = "LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id" if has_fabric_id else ""
+                        if has_fabric_id and has_fabric_text:
+                            fabric_select = "COALESCE(fm.fabric_name_en, v.fabric) AS fabric_name_en"
+                        elif has_fabric_id:
+                            fabric_select = "fm.fabric_name_en AS fabric_name_en"
+                        else:
+                            fabric_select = ("v.fabric AS fabric_name_en" if has_fabric_text else "'' AS fabric_name_en")
+                        cur.execute(
+                            f"""
+                            SELECT v.id, v.spec_name, {fabric_select}, pf.sku_family
+                            FROM sales_product_variants v
+                            LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                            {fabric_join}
+                            WHERE v.id=%s
+                            LIMIT 1
+                            """,
+                            (int(variant_id),),
+                        )
+                        row = cur.fetchone() or {}
+                        if row.get('id'):
+                            base = {
+                                'variant_id': self._parse_int(row.get('id')) or 0,
+                                'sku_family': str(row.get('sku_family') or '').strip(),
+                                'spec_name': str(row.get('spec_name') or '').strip(),
+                                'fabric_name_en': str(row.get('fabric_name_en') or '').strip(),
+                            }
+                except Exception:
+                    base = {}
+
+            return self.send_json({'status': 'success', 'items': items, 'variant': base}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
     def handle_gallery_variant_picker_api(self, environ, method, start_response):
         """给 gallery 弹窗提供规格选择数据（货号+面料+规格）。"""
         try:
@@ -313,14 +365,40 @@ class SalesProductMixin:
                 storage_path = (existing.get('storage_path') or '').strip() if existing else ''
                 created_new_asset = False
                 file_op_done = False
+                recycled_duplicate = False
+
+                # 计算最终引用范围（数据库已有 + 本次新增）
+                db_vids = self._get_asset_referenced_variant_ids(conn, aid) if aid else []
+                all_vids = sorted(set(list(vids) + list(db_vids)))
+                sku_families = self._detect_cross_sku_family_by_variant_ids(conn, all_vids)
+                is_cross_sku = len(sku_families) > 1
+                is_multi_variant_same_sku = (not is_cross_sku) and (len(all_vids) > 1) and (len(sku_families) == 1)
+
+                # 若 sha256 已存在：为了保证“只能有一张图”，把当前选中的重复文件移入回收站（最佳努力）。
+                # 注意：不能删除/移动 canonical 文件本体（storage_path 指向的那一份）。
+                if aid and storage_path:
+                    try:
+                        canonical_abs = self._abs_from_storage_path(storage_path)
+                        src_key = self._fs_realpath_key(abs_source)
+                        canon_key = self._fs_realpath_key(canonical_abs)
+                        if src_key and canon_key and src_key != canon_key:
+                            moved_ok, _dst, _err = self._move_file_to_listing_recycle_bin(abs_source, '重复')
+                            recycled_duplicate = bool(moved_ok)
+                    except Exception:
+                        pass
 
                 # 如果库里已有同 sha256 的记录，不能再复制/移动成另一份（sha256 唯一约束）。
                 # 直接复用已有 image_assets 记录并写关联即可。
                 if not aid:
                     # 主图管理：目标目录固定为“货号/主图/规格-面料”
-                    first_vid = vids[0]
-                    folder_info = self._resolve_sales_variant_folder_by_variant_id(first_vid, ensure_folder=True)
-                    target_abs = folder_info.get('folder_path')
+                    if is_cross_sku:
+                        target_abs = self._ensure_listing_sales_global_common_folder()
+                    elif is_multi_variant_same_sku:
+                        target_abs = self._ensure_listing_sales_common_folder(sku_families[0])
+                    else:
+                        first_vid = vids[0]
+                        folder_info = self._resolve_sales_variant_folder_by_variant_id(first_vid, ensure_folder=True)
+                        target_abs = folder_info.get('folder_path')
                     if isinstance(target_abs, str):
                         target_abs = self._safe_fsencode(target_abs)
                     if not os.path.exists(target_abs):
@@ -392,6 +470,32 @@ class SalesProductMixin:
                 except Exception:
                     pass
 
+                # 归一化文件位置：跨货号 -> 『通用图片』/主图；同货号多规格 -> 货号/主图/通用
+                rehome_kind = ''
+                rehomed = False
+                if aid and storage_path and (is_cross_sku or is_multi_variant_same_sku):
+                    try:
+                        if is_cross_sku:
+                            rehome_kind = 'cross_sku'
+                            target_folder = self._ensure_listing_sales_global_common_folder()
+                        else:
+                            rehome_kind = 'same_sku_common'
+                            target_folder = self._ensure_listing_sales_common_folder(sku_families[0])
+                        cur_abs = self._abs_from_storage_path(storage_path)
+                        if cur_abs and os.path.exists(cur_abs):
+                            if os.path.abspath(os.path.dirname(cur_abs)) != os.path.abspath(target_folder):
+                                base = os.path.basename(cur_abs)
+                                new_name = self._next_available_filename(target_folder, base)
+                                dst_abs = os.path.join(target_folder, self._safe_fsencode(new_name))
+                                os.replace(cur_abs, dst_abs)
+                                storage_path = self._storage_path_from_abs(dst_abs)
+                                with conn.cursor() as cur:
+                                    cur.execute("UPDATE image_assets SET storage_path=%s WHERE id=%s", (storage_path, int(aid)))
+                                rehomed = True
+                    except Exception:
+                        # best-effort: 不阻断关联写入
+                        pass
+
                 already_linked = set()
                 with conn.cursor() as cur:
                     placeholders = ','.join(['%s'] * len(vids))
@@ -417,26 +521,49 @@ class SalesProductMixin:
 
                 linked = 0
                 skipped = 0
-                with conn.cursor() as cur:
-                    for vid in vids:
-                        if vid in already_linked:
-                            skipped += 1
-                            continue
-                        sort_order = (max_sort_map.get(vid) or 0) + 1
-                        self._execute_sku_mapping_upsert(
-                            conn, cur,
-                            aid=aid,
-                            sort_order=sort_order,
-                            image_type_id=int(image_type_id),
-                            variant_id=vid,
-                            sales_product_id=0,
-                            user_id=user_id
-                        )
-                        linked += 1
+                has_sim_tid = self._table_has_column(conn, 'sku_image_mappings', 'image_type_id')
+                has_sim_created_by = self._table_has_column(conn, 'sku_image_mappings', 'created_by')
+                cols = ['variant_id', 'image_asset_id']
+                if has_sim_tid:
+                    cols.append('image_type_id')
+                cols.append('sort_order')
+                if has_sim_created_by:
+                    cols.append('created_by')
+                ph = ','.join(['%s'] * len(cols))
+                dup_parts = ['sort_order=VALUES(sort_order)']
+                if has_sim_tid:
+                    dup_parts.append('image_type_id=VALUES(image_type_id)')
+                upsert_sql = (
+                    f"INSERT INTO sku_image_mappings ({', '.join(cols)}) VALUES ({ph}) "
+                    f"ON DUPLICATE KEY UPDATE {', '.join(dup_parts)}"
+                )
+                batch_rows = []
+                for vid in vids:
+                    if vid in already_linked:
+                        skipped += 1
+                        continue
+                    sort_order = (max_sort_map.get(vid) or 0) + 1
+                    row = [int(vid), int(aid)]
+                    if has_sim_tid:
+                        row.append(int(image_type_id))
+                    row.append(int(sort_order))
+                    if has_sim_created_by:
+                        row.append(int(user_id) if user_id else None)
+                    batch_rows.append(tuple(row))
+                if batch_rows:
+                    with conn.cursor() as cur:
+                        cur.executemany(upsert_sql, batch_rows)
+                    linked = len(batch_rows)
 
                 msg_parts = [f'已应用到 {linked} 个规格']
                 if skipped and prompt_duplicate:
                     msg_parts.append(f'（{skipped} 个规格已存在关联，已跳过）')
+                if is_cross_sku:
+                    msg_parts.append('；检测到跨货号引用，图片将放入『通用图片』/主图')
+                elif is_multi_variant_same_sku:
+                    msg_parts.append('；同货号多规格引用，图片将放入该货号 主图/通用')
+                if rehome_kind:
+                    msg_parts.append('（已移动归一化）' if rehomed else '（归一化失败则保持原路径）')
                 if existing:
                     msg_parts.append('；图片已存在于数据库，已复用记录')
                 elif created_new_asset:
@@ -448,8 +575,12 @@ class SalesProductMixin:
                     'storage_path': storage_path,
                     'created_new_asset': bool(created_new_asset),
                     'file_op_done': bool(file_op_done),
+                    'recycled_duplicate': bool(recycled_duplicate),
                     'linked': int(linked),
                     'already_linked': int(skipped),
+                    'rehome_kind': rehome_kind,
+                    'rehomed': bool(rehomed),
+                    'sku_families': sku_families,
                 }, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
@@ -509,7 +640,7 @@ class SalesProductMixin:
                 if rk and rk in canonical:
                     skipped += 1
                     continue
-                moved_ok, _dst, _err = self._move_file_to_listing_recycle_bin(sb)
+                moved_ok, _dst, _err = self._move_file_to_listing_recycle_bin(sb, '重复')
                 if moved_ok:
                     cleaned += 1
                     continue
@@ -537,6 +668,61 @@ class SalesProductMixin:
         if not os.path.exists(common_folder):
             os.makedirs(common_folder, exist_ok=True)
         return common_folder
+
+    def _ensure_listing_sales_global_common_folder(self):
+        """Ensure 『通用图片』/主图 exists (与各货号文件夹同层). Return absolute folder path (bytes)."""
+        base_folder = self._ensure_listing_folder()
+        common_root = os.path.join(base_folder, self._safe_fsencode('『通用图片』'))
+        if not os.path.exists(common_root):
+            os.makedirs(common_root, exist_ok=True)
+        main_folder = os.path.join(common_root, self._safe_fsencode('主图'))
+        if not os.path.exists(main_folder):
+            os.makedirs(main_folder, exist_ok=True)
+        return main_folder
+
+    def _detect_cross_sku_family_by_variant_ids(self, conn, variant_ids):
+        """Return sorted distinct sku_family list for given variant_ids."""
+        vids = [int(v or 0) for v in (variant_ids or []) if int(v or 0) > 0]
+        vids = sorted(set(vids))
+        if not vids:
+            return []
+        placeholders = ','.join(['%s'] * len(vids))
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT DISTINCT pf.sku_family
+                    FROM sales_product_variants v
+                    LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                    WHERE v.id IN ({placeholders})
+                    """,
+                    tuple(vids),
+                )
+                sku_list = [str(r.get('sku_family') or '').strip() for r in (cur.fetchall() or [])]
+            sku_list = [s for s in sku_list if s]
+            sku_list = sorted(set(sku_list))
+            return sku_list
+        except Exception:
+            return []
+
+    def _get_asset_referenced_variant_ids(self, conn, asset_id):
+        """Return distinct variant_ids already referencing this asset."""
+        aid = int(asset_id or 0)
+        if aid <= 0:
+            return []
+        if not self._table_has_column(conn, 'sku_image_mappings', 'variant_id'):
+            return []
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT DISTINCT variant_id FROM sku_image_mappings WHERE image_asset_id=%s AND variant_id IS NOT NULL AND variant_id>0",
+                    (aid,),
+                )
+                vids = [self._parse_int(r.get('variant_id')) or 0 for r in (cur.fetchall() or [])]
+            vids = [v for v in vids if v > 0]
+            return sorted(set(vids))
+        except Exception:
+            return []
 
     def _choose_rehome_target(self, conn, asset_id):
         """
@@ -666,7 +852,7 @@ class SalesProductMixin:
                 if os.path.exists(dst_abs):
                     self._safe_unlink(src_abs)
                     if os.path.exists(src_abs):
-                        self._move_file_to_listing_recycle_bin(src_abs)
+                        self._move_file_to_listing_recycle_bin(src_abs, '重复')
             except Exception:
                 pass
 
@@ -4024,7 +4210,7 @@ class SalesProductMixin:
                             if storage_path:
                                 try:
                                     abs_path = self._join_resources(storage_path)
-                                    moved_ok, _dst, _err = self._move_file_to_listing_recycle_bin(abs_path)
+                                    moved_ok, _dst, _err = self._move_file_to_listing_recycle_bin(abs_path, '删除')
                                     if not moved_ok:
                                         # Best-effort fallback: avoid leaving DB inconsistent with a still-present file
                                         self._safe_unlink(abs_path)
@@ -4294,7 +4480,7 @@ class SalesProductMixin:
 
                     # Post-commit: retire old file (DB row already gone if we created a new asset)
                     if old_abs:
-                        moved_ok, _dst, _err = self._move_file_to_listing_recycle_bin(old_abs)
+                        moved_ok, _dst, _err = self._move_file_to_listing_recycle_bin(old_abs, '替换')
                         if not moved_ok:
                             self._safe_unlink(old_abs)
 
