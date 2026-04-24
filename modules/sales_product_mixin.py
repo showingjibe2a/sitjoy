@@ -184,6 +184,151 @@ class SalesProductMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def handle_gallery_image_links_api(self, environ, method, start_response):
+        """按图片路径（base64 bytes）查该图片已关联的规格列表（用于 gallery 预填）。"""
+        try:
+            if method != 'GET':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            path_b64 = str(query_params.get('id', [''])[0] or '').strip()
+            if not path_b64:
+                return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+            try:
+                raw = base64.b64decode(path_b64)
+            except Exception:
+                return self.send_json({'status': 'error', 'message': 'Invalid id'}, start_response)
+            rel_text = ''
+            try:
+                rel_text = os.fsdecode(raw)
+            except Exception:
+                try:
+                    rel_text = raw.decode('utf-8', errors='surrogatepass')
+                except Exception:
+                    rel_text = ''
+            rel_text = (rel_text or '').strip().replace('\\', '/').lstrip('/')
+            if not rel_text or '..' in rel_text:
+                return self.send_json({'status': 'error', 'message': 'Invalid path'}, start_response)
+
+            with self._get_db_connection() as conn:
+                has_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
+                join_type = "LEFT JOIN image_types it ON it.id = ia.image_type_id" if has_tid else ""
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""
+                        SELECT ia.id, ia.storage_path,
+                               {('ia.image_type_id AS image_type_id' if has_tid else '0 AS image_type_id')},
+                               {('it.name AS image_type_name' if has_tid else "'' AS image_type_name")}
+                        FROM image_assets ia
+                        {join_type}
+                        WHERE ia.storage_path=%s
+                        LIMIT 1
+                        """,
+                        (rel_text,),
+                    )
+                    row = cur.fetchone() or {}
+                    if not row.get('id'):
+                        base = os.path.basename(rel_text)
+                        if base:
+                            cur.execute(
+                                f"""
+                                SELECT ia.id, ia.storage_path,
+                                       {('ia.image_type_id AS image_type_id' if has_tid else '0 AS image_type_id')},
+                                       {('it.name AS image_type_name' if has_tid else "'' AS image_type_name")}
+                                FROM image_assets ia
+                                {join_type}
+                                WHERE ia.storage_path=%s OR ia.storage_path LIKE %s
+                                ORDER BY ia.id DESC
+                                LIMIT 1
+                                """,
+                                (base, f'%/{base}'),
+                            )
+                            row = cur.fetchone() or {}
+
+                    aid = self._parse_int(row.get('id')) or 0
+                    if not aid:
+                        return self.send_json(
+                            {
+                                'status': 'success',
+                                'linked': False,
+                                'image_asset_id': 0,
+                                'image_type_name': '',
+                                'variants': [],
+                                'variant_ids': [],
+                            },
+                            start_response,
+                        )
+
+                    if not self._table_has_column(conn, 'sku_image_mappings', 'variant_id'):
+                        return self.send_json({'status': 'error', 'message': 'sku_image_mappings 缺少 variant_id'}, start_response)
+
+                    cur.execute(
+                        """
+                        SELECT DISTINCT variant_id
+                        FROM sku_image_mappings
+                        WHERE image_asset_id=%s AND variant_id IS NOT NULL AND variant_id>0
+                        ORDER BY variant_id ASC
+                        """,
+                        (aid,),
+                    )
+                    vids = [self._parse_int(r.get('variant_id')) or 0 for r in (cur.fetchall() or [])]
+                    vids = [v for v in vids if v > 0]
+
+                    variants = []
+                    if vids:
+                        placeholders = ','.join(['%s'] * len(vids))
+                        has_fabric_id = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
+                        has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+                        fabric_join = "LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id" if has_fabric_id else ""
+                        if has_fabric_id and has_fabric_text:
+                            fabric_code_expr = "COALESCE(fm.fabric_code, v.fabric) AS fabric_code"
+                            fabric_name_expr = "COALESCE(fm.fabric_name_en, v.fabric) AS fabric_name_en"
+                        elif has_fabric_id:
+                            fabric_code_expr = "fm.fabric_code AS fabric_code"
+                            fabric_name_expr = "fm.fabric_name_en AS fabric_name_en"
+                        elif has_fabric_text:
+                            fabric_code_expr = "v.fabric AS fabric_code"
+                            fabric_name_expr = "v.fabric AS fabric_name_en"
+                        else:
+                            fabric_code_expr = "'' AS fabric_code"
+                            fabric_name_expr = "'' AS fabric_name_en"
+                        cur.execute(
+                            f"""
+                            SELECT v.id, v.spec_name, pf.sku_family,
+                                   {fabric_code_expr},
+                                   {fabric_name_expr}
+                            FROM sales_product_variants v
+                            LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                            {fabric_join}
+                            WHERE v.id IN ({placeholders})
+                            ORDER BY pf.sku_family ASC, v.spec_name ASC, v.id ASC
+                            """,
+                            tuple(vids),
+                        )
+                        for r in (cur.fetchall() or []):
+                            variants.append({
+                                'variant_id': self._parse_int(r.get('id')) or 0,
+                                'sku_family': str(r.get('sku_family') or '').strip(),
+                                'spec_name': str(r.get('spec_name') or '').strip(),
+                                'fabric_code': str(r.get('fabric_code') or '').strip(),
+                                'fabric_name_en': str(r.get('fabric_name_en') or '').strip(),
+                            })
+
+            return self.send_json(
+                {
+                    'status': 'success',
+                    'linked': True,
+                    'image_asset_id': self._parse_int(row.get('id')) or 0,
+                    'storage_path': (row.get('storage_path') or '').strip(),
+                    'image_type_id': self._parse_int(row.get('image_type_id')) or 0,
+                    'image_type_name': (row.get('image_type_name') or '').strip(),
+                    'variant_ids': vids,
+                    'variants': variants,
+                },
+                start_response,
+            )
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
     def handle_spec_main_images_api(self, environ, method, start_response):
         """规格主图管理：按 variant_id 读取该规格已关联的图片记录（只读）。"""
         try:
