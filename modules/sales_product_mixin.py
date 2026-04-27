@@ -111,7 +111,7 @@ class SalesProductMixin:
             }
 
     def handle_gallery_image_meta_api(self, environ, method, start_response):
-        """按 gallery 的相对路径（base64 bytes）查库里是否已关联，并返回图片类型。"""
+        """按 gallery 的相对路径（base64 bytes）查库里是否已关联，并返回图片类型/启用状态。"""
         try:
             if method not in ('GET', 'PUT'):
                 return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
@@ -143,11 +143,14 @@ class SalesProductMixin:
 
             with self._get_db_connection() as conn:
                 has_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
+                has_enabled = self._table_has_column(conn, 'image_assets', 'is_enabled')
                 join_type = "LEFT JOIN image_types it ON it.id = ia.image_type_id" if has_tid else ""
                 with conn.cursor() as cur:
                     cur.execute(
                         f"""
-                        SELECT ia.id, ia.storage_path, {('ia.image_type_id AS image_type_id' if has_tid else '0 AS image_type_id')},
+                        SELECT ia.id, ia.storage_path,
+                               {('ia.image_type_id AS image_type_id' if has_tid else '0 AS image_type_id')},
+                               {('ia.is_enabled AS is_enabled' if has_enabled else '1 AS is_enabled')},
                                {('it.name AS image_type_name' if has_tid else "'' AS image_type_name")}
                         FROM image_assets ia
                         {join_type}
@@ -163,7 +166,9 @@ class SalesProductMixin:
                         if base:
                             cur.execute(
                                 f"""
-                                SELECT ia.id, ia.storage_path, {('ia.image_type_id AS image_type_id' if has_tid else '0 AS image_type_id')},
+                                SELECT ia.id, ia.storage_path,
+                                       {('ia.image_type_id AS image_type_id' if has_tid else '0 AS image_type_id')},
+                                       {('ia.is_enabled AS is_enabled' if has_enabled else '1 AS is_enabled')},
                                        {('it.name AS image_type_name' if has_tid else "'' AS image_type_name")}
                                 FROM image_assets ia
                                 {join_type}
@@ -176,24 +181,40 @@ class SalesProductMixin:
                             row = cur.fetchone() or {}
 
                     if method == 'PUT':
-                        if not has_tid:
-                            return self.send_json({'status': 'error', 'message': 'image_assets 缺少 image_type_id'}, start_response)
+                        # 允许单独更新 is_enabled；若同时带 image_type_name，则更新类型
                         image_type_name = str(((data or {}) if data is not None else {}).get('image_type_name') or '').strip()
-                        if not image_type_name:
-                            return self.send_json({'status': 'error', 'message': '请选择图片类型'}, start_response)
+                        is_enabled_raw = ((data or {}) if data is not None else {}).get('is_enabled', None)
+                        has_enabled_patch = is_enabled_raw is not None and str(is_enabled_raw).strip() != ''
+                        if (not image_type_name) and (not has_enabled_patch):
+                            return self.send_json({'status': 'error', 'message': '缺少可更新字段'}, start_response)
+
                         aid = self._parse_int(row.get('id')) or 0
                         if not aid:
                             return self.send_json({'status': 'error', 'message': '图片未入库，无法保存类型'}, start_response)
-                        tid = self._get_image_type_id_by_name(conn, image_type_name)
-                        if not tid:
-                            return self.send_json({'status': 'error', 'message': f'未知图片类型: {image_type_name}'}, start_response)
-                        cur.execute("UPDATE image_assets SET image_type_id=%s WHERE id=%s", (int(tid), int(aid)))
+
+                        if image_type_name:
+                            if not has_tid:
+                                return self.send_json({'status': 'error', 'message': 'image_assets 缺少 image_type_id'}, start_response)
+                            tid = self._get_image_type_id_by_name(conn, image_type_name)
+                            if not tid:
+                                return self.send_json({'status': 'error', 'message': f'未知图片类型: {image_type_name}'}, start_response)
+                            cur.execute("UPDATE image_assets SET image_type_id=%s WHERE id=%s", (int(tid), int(aid)))
+
+                        if has_enabled_patch:
+                            if not has_enabled:
+                                return self.send_json({'status': 'error', 'message': 'image_assets 缺少 is_enabled'}, start_response)
+                            is_enabled = 1 if str(is_enabled_raw).strip().lower() in ('1', 'true', 'yes', 'on', '启用') else 0
+                            cur.execute("UPDATE image_assets SET is_enabled=%s WHERE id=%s", (int(is_enabled), int(aid)))
+
                         # 回读确认
                         cur.execute(
                             f"""
-                            SELECT ia.id, ia.storage_path, ia.image_type_id AS image_type_id, it.name AS image_type_name
+                            SELECT ia.id, ia.storage_path,
+                                   {('ia.image_type_id AS image_type_id' if has_tid else '0 AS image_type_id')},
+                                   {('ia.is_enabled AS is_enabled' if has_enabled else '1 AS is_enabled')},
+                                   {('it.name AS image_type_name' if has_tid else "'' AS image_type_name")}
                             FROM image_assets ia
-                            LEFT JOIN image_types it ON it.id = ia.image_type_id
+                            {join_type}
                             WHERE ia.id=%s
                             LIMIT 1
                             """,
@@ -210,6 +231,7 @@ class SalesProductMixin:
                     'storage_path': (row.get('storage_path') or '').strip(),
                     'image_type_id': self._parse_int(row.get('image_type_id')) or 0,
                     'image_type_name': (row.get('image_type_name') or '').strip(),
+                    'is_enabled': 1 if self._parse_int(row.get('is_enabled', 1)) else 0,
                 },
                 start_response,
             )

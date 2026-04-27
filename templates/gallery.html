@@ -13,7 +13,7 @@
     <div class="container container--wide">
         <section class="header header-row">
             <div>
-                <h2>📁 文件浏览器</h2>
+                <h2>文件浏览器</h2>
                 <p>点击文件夹进入，点击图片重命名</p>
             </div>
         </section>
@@ -30,13 +30,6 @@
                         <button class="btn-accent" onclick="uploadImages()">上传</button>
                     </div>
                     <div id="upload-status" class="upload-status"></div>
-                </div>
-
-                <div class="download-bar">
-                    <div class="bar-body download-left">
-                        <button class="btn-primary" onclick="downloadSelected()">下载选中</button>
-                    </div>
-                    <div id="download-status" class="upload-status"></div>
                 </div>
             </div>
         </div>
@@ -55,38 +48,41 @@
     <div class="pm-modal" id="rename-dialog">
         <div class="pm-modal-content pm-modal-content--wide gallery-rename-modal">
             <div class="pm-modal-scroll">
-            <h3 style="margin-top: 0;">✏️ 编辑图片信息</h3>
+            <h3 style="margin-top: 0;">编辑图片信息</h3>
 
             <div class="gallery-rename-preview">
                 <img id="rename-preview-img" src="" alt="预览">
                 <button class="btn-secondary gallery-preview-zoom" type="button" onclick="openPreviewZoom()" title="放大查看" style="font-size:12px; padding:0.22rem 0.5rem; min-height:28px;">🔍</button>
-                <button class="btn-secondary gallery-preview-zoom" type="button" onclick="triggerReplaceImage()" title="替换图片" style="right: 54px; font-size:12px; padding:0.22rem 0.5rem; min-height:28px;">⟳</button>
+                <button class="btn-secondary gallery-preview-zoom" type="button" onclick="triggerReplaceImage()" title="选择新文件后立即上传替换：会更新 sha256；旧文件会进入『上架资源』/回收站。" style="right: 54px; font-size:12px; padding:0.22rem 0.5rem; min-height:28px;">替换</button>
             </div>
 
-            <div class="pm-form" style="grid-template-columns: 1fr;">
-                <div class="form-group pm-form-full">
-                    <div style="display:flex; align-items:center; justify-content:space-between; gap:0.6rem;">
-                        <div style="display:flex; align-items:center; gap:0.35rem;">
-                            <label style="margin:0;">文件名（无需扩展名）</label>
-                            <span class="help-dot" data-tip="开启“推荐名称”时会自动按规则生成：面料（若所有已选规格面料一致）-图片类型-原名。若文件名已符合该语法则不会重复叠加。"></span>
-                        </div>
-                        <div class="nas-header-control" style="margin-top:-2px;">
-                            <span class="nas-header-control-label">推荐名称</span>
-                            <div class="status-segment status-segment--inline" id="galleryRecommendNameSegment" data-value="1">
-                                <button type="button" class="status-pill status-pill--yes is-active" data-value="1">是</button>
-                                <button type="button" class="status-pill status-pill--no" data-value="0">否</button>
+            <div class="pm-section" style="margin-top: 1rem;">
+                <div class="pm-section-body pm-form" style="grid-template-columns: 1fr;">
+                    <h4 class="pm-section-title">基础信息</h4>
+                    <div class="form-group pm-form-full">
+                        <div style="display:flex; align-items:center; justify-content:space-between; gap:0.6rem;">
+                            <div style="display:flex; align-items:center; gap:0.35rem;">
+                                <label>文件名（无需扩展名）</label>
+                                <span class="help-dot" data-tip="开启“推荐名称”时会自动按规则生成：面料（若所有已选规格面料一致）-图片类型-原名。若文件名已符合该语法则不会重复叠加。"></span>
+                            </div>
+                            <div class="nas-header-control">
+                                <span class="nas-header-control-label">推荐名称</span>
+                                <div class="status-segment status-segment--inline" id="galleryRecommendNameSegment" data-value="1">
+                                    <button type="button" class="status-pill status-pill--yes is-active" data-value="1">是</button>
+                                    <button type="button" class="status-pill status-pill--no" data-value="0">否</button>
+                                </div>
                             </div>
                         </div>
+                        <input type="text" id="new-name" placeholder="输入新文件名">
                     </div>
-                    <input type="text" id="new-name" placeholder="输入新文件名">
-                </div>
-                <div class="form-group pm-form-full">
-                    <label style="display:flex; align-items:center; gap:0.4rem;">
-                        <span>图片类型 <span class="required-asterisk">*</span></span>
-                        <span class="help-dot" data-tip="未选择图片类型将无法提交“一键应用”。若该图片已在数据库关联过，将自动预选其类型。"></span>
-                    </label>
-                    <div class="status-segment status-segment--inline" id="galleryImageTypeSegment" data-value="">
-                        <button type="button" class="status-pill status-pill--no is-active" data-value="" title="必须选择一个图片类型">未选择</button>
+                    <div class="form-group pm-form-full">
+                        <label style="display:flex; align-items:center; gap:0.4rem;">
+                            <span>图片类型 <span class="required-asterisk">*</span></span>
+                            <span class="help-dot" data-tip="未选择图片类型将无法提交“一键应用”。若该图片已在数据库关联过，将自动预选其类型。"></span>
+                        </label>
+                        <div class="status-segment status-segment--inline" id="galleryImageTypeSegment" data-value="">
+                            <button type="button" class="status-pill status-pill--no is-active" data-value="" title="必须选择一个图片类型">未选择</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -94,8 +90,8 @@
             <div id="rename-status" class="status-message" style="display: none; margin-top: 0.65rem;"></div>
 
             <div class="pm-section" style="margin-top: 1rem;">
-                <h4 class="pm-section-title">批量应用到规格</h4>
                 <div class="pm-section-body pm-form" style="grid-template-columns: 1fr;">
+                    <h4 class="pm-section-title">批量应用到规格</h4>
                     <div class="form-group pm-form-full" style="margin:0;">
                         <label>已选规格</label>
                         <div id="galleryApplySelectedTableWrap" style="margin-top:0.45rem;">
@@ -151,6 +147,12 @@
     </div>
 
     <div class="app-toast-stack" id="galleryToastStack"></div>
+
+    <div class="pm-batch-float-bar" id="galleryBatchBar" aria-live="polite">
+        <span class="pm-batch-float-count" id="galleryBatchCountText">已勾选 0 项</span>
+        <button type="button" class="btn-primary" onclick="downloadSelected()">下载选中</button>
+        <button type="button" class="btn-danger" onclick="galleryBatchDelete()">批量删除</button>
+    </div>
 
     <footer>
         <p>&copy; 2026 SITJOY | 内部使用</p>
@@ -208,6 +210,7 @@
         window.addEventListener('load', function() {
             const last = loadGalleryLastPath();
             browse(last || '');
+            syncGalleryBatchBar();
         });
 
         // 浏览目录
@@ -370,11 +373,22 @@
             } else {
                 selectedItems.delete(path);
             }
+            syncGalleryBatchBar();
+        }
+
+        function syncGalleryBatchBar() {
+            const bar = document.getElementById('galleryBatchBar');
+            const text = document.getElementById('galleryBatchCountText');
+            if (!bar || !text) return;
+            const n = selectedItems.size || 0;
+            text.textContent = `已勾选 ${n} 项`;
+            bar.classList.toggle('active', n > 0);
         }
 
         async function downloadSelected() {
             if (selectedItems.size === 0) {
-                setDownloadStatus('请先勾选要下载的内容', 'error');
+                if (window.showAppToast) window.showAppToast('请先勾选要下载的内容', true, 4200);
+                else setDownloadStatus('请先勾选要下载的内容', 'error');
                 return;
             }
 
@@ -419,6 +433,63 @@
             .catch(err => {
                 setDownloadStatus('下载失败: ' + err.message, 'error');
             });
+        }
+
+        async function galleryBatchDelete() {
+            if (selectedItems.size === 0) {
+                if (window.showAppToast) window.showAppToast('请先勾选要删除的内容', true, 4200);
+                return;
+            }
+
+            const count = selectedItems.size;
+            const firstOk = window.showAppConfirmAsync
+                ? await window.showAppConfirmAsync({
+                    title: '批量删除（第 1 步 / 2 步）',
+                    description: `将把所选 ${count} 项移入“同目录/回收站”。确认继续？`,
+                    confirmText: '继续',
+                    cancelText: '取消',
+                    danger: true
+                })
+                : window.confirm(`将把所选 ${count} 项移入“同目录/回收站”。确认继续？`);
+            if (!firstOk) return;
+
+            const secondOk = window.showAppConfirmAsync
+                ? await window.showAppConfirmAsync({
+                    title: '批量删除（第 2 步 / 2 步）',
+                    description: '这是二次确认。确认执行批量删除？',
+                    confirmText: '确认删除',
+                    cancelText: '取消',
+                    danger: true
+                })
+                : window.confirm('这是二次确认。确认执行批量删除？');
+            if (!secondOk) return;
+
+            const payload = [];
+            selectedItems.forEach((type, path) => payload.push({ type, path }));
+
+            try {
+                if (window.showAppUploadProgress) {
+                    window.showAppUploadProgress({ title: '批量删除', message: '移动到同目录回收站中…' });
+                }
+                const resp = await fetch('/api/gallery-batch-delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ items: payload })
+                });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok || !data || data.status !== 'success') {
+                    throw new Error((data && data.message) ? data.message : `HTTP ${resp.status}`);
+                }
+
+                selectedItems.clear();
+                syncGalleryBatchBar();
+                if (window.showAppToast) window.showAppToast(data.message || '批量删除完成', false, 10000);
+                browse(currentPath || '');
+            } catch (e) {
+                if (window.showAppToast) window.showAppToast('批量删除失败：' + (e && e.message ? e.message : e), true, 10000);
+            } finally {
+                if (window.hideAppUploadProgress) window.hideAppUploadProgress();
+            }
         }
 
         // 显示项目（文件夹和图片）

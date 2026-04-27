@@ -413,7 +413,6 @@ input[type="month"] {
     display: block;
     font-size: 13px;
     color: #6b5e4d;
-    margin-bottom: 8px;
     font-weight: 600;
 }
 .sku-sub-title {
@@ -758,6 +757,24 @@ input.optional-field[type="datetime-local"]:focus {
 
 .pm-table tbody tr:hover {
     background: rgba(0, 0, 0, 0.04);
+}
+
+.pm-table.pm-table--compact {
+    font-size: 0.84rem;
+}
+
+.pm-table.pm-table--compact th,
+.pm-table.pm-table--compact td {
+    padding: 0.28rem 0.46rem;
+    line-height: 1.18;
+}
+
+.pm-table.pm-table--compact th {
+    font-size: 0.82rem;
+}
+
+.pm-modal .pm-table.pm-table--compact {
+    box-shadow: 0 8px 22px rgba(0,0,0,0.10);
 }
 
 .pm-table.is-grid-selecting td.pm-grid-cell-selected {
@@ -3036,10 +3053,6 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
-    padding: 0.3rem 0.45rem;
-    border-radius: 12px;
-    border: 1px solid rgba(207, 199, 189, 0.55);
-    background: rgba(255, 255, 255, 0.45);
 }
 
 .nas-header-control-label {

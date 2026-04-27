@@ -6,6 +6,7 @@ import os
 import sys
 import threading
 
+# 导入各个功能模块（Mixin）
 from modules.amazon_account_health_mixin import AmazonAccountHealthMixin
 from modules.amazon_ad_mixin import AmazonAdMixin
 from modules.app_entry_mixin import AppEntryMixin
@@ -34,47 +35,52 @@ from modules.sales_product_mixin import SalesProductMixin
 from modules.support_domain_mixin import SupportDomainMixin
 from modules.utility_mixin import UtilityMixin
 
-
+# 解决标准输出/错误输出的编码问题，确保在控制台打印中文时不报错
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='surrogatepass')
 if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='surrogatepass')
 
-
+# 定义主应用类：通过“多重继承”将所有功能合并到一个类中
 class WSGIApp(
-    AppEntryMixin,
-    RequestRoutingMixin,
-    PagePermissionMixin,
-    CoreAppMixin,
-    AuthEmployeeMixin,
-    UtilityMixin,
-    EncodingUtilsMixin,
-    ExcelToolsMixin,
-    FileUtilsMixin,
-    ImageProcessingMixin,
-    FileManagementMixin,
-    LogisticsWarehouseMixin,
-    LogisticsInTransitMixin,
-    SupportDomainMixin,
-    ProductManagementMixin,
-    FabricManagementMixin,
-    OrderManagementMixin,
-    AmazonAccountHealthMixin,
-    AmazonAdMixin,
-    SalesProductMixin,
-    AplusMixin,
-    SalesManagementMixin,
+    AppEntryMixin,            # 启动入口逻辑
+    RequestRoutingMixin,      # 路由分发逻辑
+    PagePermissionMixin,      # 页面权限控制
+    CoreAppMixin,             # 核心基础逻辑
+    AuthEmployeeMixin,        # 员工权限认证
+    UtilityMixin,             # 工具集：通用
+    EncodingUtilsMixin,       # 工具集：编码处理
+    ExcelToolsMixin,          # 工具集：Excel处理
+    FileUtilsMixin,           # 工具集：文件处理
+    ImageProcessingMixin,     # 工具集：图片处理
+    FileManagementMixin,      # 工具集：资源文件管理
+    LogisticsWarehouseMixin,  # 仓库物流
+    LogisticsInTransitMixin,  # 在途物流
+    SupportDomainMixin,       # 支撑域逻辑
+    ProductManagementMixin,   # 产品管理
+    FabricManagementMixin,    # 面料管理
+    OrderManagementMixin,     # 订单管理
+    AmazonAccountHealthMixin, # 亚马逊账户健康
+    AmazonAdMixin,            # 亚马逊广告
+    SalesProductMixin,        # 销售产品
+    AplusMixin,               # A+ 页面
+    SalesManagementMixin,     # 销售管理
 ):
+    # 用于缓存数据库 Schema 是否准备就绪，避免重复检查
     _schema_ready_cache = {}
 
     def __init__(self):
-        self.base_path = os.path.dirname(os.path.abspath(__file__))
-        self._user_session = {}
-        self._template_options_cache = {}
-        self._schema_ensure_lock = threading.Lock()
-        self._todo_ensure_lock = threading.Lock()
-
+        # 1. 初始化基础环境
+        self.base_path = os.path.dirname(os.path.abspath(__file__)) # 获取项目根目录
+        self._user_session = {}                                     # 简单的内存会话存储
+        self._template_options_cache = {}                           # 模板选项缓存
+        self._schema_ensure_lock = threading.Lock()                 # 数据库结构同步锁
+        self._todo_ensure_lock = threading.Lock()                   # 待办事项同步锁
+        
+        # 2. 构建权限键值列表
         self.PAGE_PERMISSION_KEYS = self._build_page_permission_keys()
+
+        # 3. 定义页面 ID 与中文名称的映射关系，用于权限控制和界面显示
         label_map = {
             'home': '首页',
             'about': '关于 - 我的网页',
@@ -108,10 +114,14 @@ class WSGIApp(
             'image_type_management': '图片类型管理',
             'aplus_management': 'A+管理',
         }
+
+        # 将上面定义的中文名应用到权限列表里
         self.PAGE_PERMISSION_LABELS = {
             key: label_map.get(key, key.replace('_', ' '))
             for key in self.PAGE_PERMISSION_KEYS
         }
+
+        # 4. 定义菜单栏的分组结构
         self.PAGE_PERMISSION_GROUPS = [
             {'key': 'home', 'title': '首页', 'page_keys': ['home']},
             {'key': 'shop_brand_management', 'title': '店铺管理', 'page_keys': ['shop_brand_management', 'amazon_account_health_management']},
@@ -125,6 +135,7 @@ class WSGIApp(
 
     @staticmethod
     def _build_page_permission_keys():
+        """自动扫描并汇总所有需要权限控制的页面 Key"""
         ordered = []
         seen = set()
 
@@ -135,13 +146,16 @@ class WSGIApp(
             seen.add(key_text)
             ordered.append(key_text)
 
+        # 强制添加首页和关于页
         add_key('home')
         add_key('about')
+
+        # 从路由映射表和模板映射表中自动提取权限 Key
         for key in API_PERMISSION_MAP.values():
             add_key(key)
         for _, (_, key) in PAGE_TEMPLATE_MAP.items():
             add_key(key)
         return ordered
 
-
+# 最终实例化的 application 对象供 WSGI 服务器（如 Gunicorn, uWSGI）调用
 application = WSGIApp()

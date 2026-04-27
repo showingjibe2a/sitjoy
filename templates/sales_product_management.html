@@ -542,21 +542,19 @@
             <div class="gallery-rename-preview" style="margin-top:0.65rem;">
                 <img id="mainImageEditPreviewImg" src="" alt="预览">
                 <button class="btn-secondary gallery-preview-zoom" type="button" onclick="openMainImagePreviewZoom()" title="放大查看">🔍</button>
-                <button class="btn-secondary gallery-preview-zoom" type="button" onclick="triggerMainImageReplace()" title="替换图片" style="right: 54px;">⟳</button>
+                <button class="btn-secondary gallery-preview-zoom" type="button" onclick="triggerMainImageReplace()" title="选择新文件后立即上传替换：会更新 sha256；旧文件会进入『上架资源』/回收站。" style="right: 54px;">替换</button>
+                <input type="file" id="mainImageReplaceInput" accept="image/*" class="optional-field" style="display:none;">
             </div>
 
             <div class="pm-section pm-form-full" style="margin-top:0.45rem;">
                 <h4>基础信息</h4>
                 <div class="pm-section-body pm-form">
                     <div class="form-group pm-form-full">
-                        <label for="mainImageRenameInput">文件名（无需扩展名）</label>
+                        <div style="display:flex; align-items:center; gap:0.6rem;">
+                            <label for="mainImageRenameInput">文件名（无需扩展名）</label>
+                            <span class="help-dot" data-tip="保存时会同步重命名磁盘文件；扩展名需与当前文件一致。"></span>
+                        </div>
                         <input type="text" id="mainImageRenameInput" class="required-field" autocomplete="off" placeholder="例如：文字卖点图-场景A">
-                        <div class="auto-note" style="margin-top:0.35rem;">保存时会同步重命名磁盘文件；扩展名需与当前文件一致。</div>
-                    </div>
-                    <div class="form-group pm-form-full">
-                        <label for="mainImageReplaceInput">替换图片</label>
-                        <input type="file" id="mainImageReplaceInput" accept="image/*" class="optional-field" style="display:none;">
-                        <div class="auto-note" style="margin-top:0.35rem;">选择新文件后立即上传替换：会更新 sha256；旧文件会进入『上架资源』/回收站。</div>
                     </div>
                 </div>
             </div>

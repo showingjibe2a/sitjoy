@@ -792,6 +792,95 @@ class FileManagementMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def handle_gallery_batch_delete_api(self, environ, start_response):
+        """gallery 批量删除：把选中项移动到“同目录/回收站”子文件夹。"""
+        try:
+            if environ.get('REQUEST_METHOD') != 'POST':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+
+            data = self._read_json_body(environ) or {}
+            items = data.get('items', []) if isinstance(data, dict) else []
+            if not isinstance(items, (list, tuple)) or not items:
+                return self.send_json({'status': 'error', 'message': 'No items selected'}, start_response)
+
+            def safe_reason_prefix():
+                return '删除__'
+
+            def ensure_local_recycle_dir(parent_dir):
+                # parent_dir: absolute bytes path
+                recycle = os.path.join(parent_dir, os.fsencode('回收站'))
+                try:
+                    os.makedirs(recycle, exist_ok=True)
+                except Exception:
+                    pass
+                return recycle
+
+            def next_available_path(dst_dir, base_name_b):
+                stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+                name_root, ext = os.path.splitext(base_name_b)
+                for i in range(0, 200):
+                    suffix = f'__{stamp}' + (f'_{i}' if i else '')
+                    cand = name_root + os.fsencode(suffix) + ext
+                    dst = os.path.join(dst_dir, cand)
+                    try:
+                        if os.path.exists(dst):
+                            continue
+                    except Exception:
+                        continue
+                    return dst
+                return os.path.join(dst_dir, base_name_b)
+
+            moved = 0
+            skipped = 0
+            failures = []
+
+            abs_resources = os.path.abspath(RESOURCES_PATH_BYTES)
+
+            for item in items[:800]:
+                try:
+                    path_b64 = item.get('path', '') if isinstance(item, dict) else ''
+                    if not path_b64:
+                        skipped += 1
+                        continue
+                    rel_path = self._fs_from_b64(path_b64)
+                    if '..' in rel_path or rel_path.startswith('/'):
+                        skipped += 1
+                        continue
+                    full_path = self._join_resources(rel_path)
+                    abs_path = os.path.abspath(full_path)
+                    if not abs_path.startswith(abs_resources):
+                        skipped += 1
+                        continue
+                    if not os.path.exists(full_path):
+                        skipped += 1
+                        continue
+
+                    parent_dir = os.path.dirname(full_path)
+                    recycle_dir = ensure_local_recycle_dir(parent_dir)
+                    src_base = os.path.basename(full_path)
+                    try:
+                        base_b = src_base if isinstance(src_base, (bytes, bytearray)) else os.fsencode(src_base)
+                    except Exception:
+                        base_b = str(src_base).encode('utf-8', errors='surrogatepass')
+                    dst_name = os.fsencode(safe_reason_prefix()) + base_b
+                    dst = next_available_path(recycle_dir, dst_name)
+                    # Move file/folder into recycle
+                    import shutil
+                    shutil.move(full_path, dst)
+                    moved += 1
+                except Exception as e:
+                    failures.append(str(e)[:220])
+
+            return self.send_json({
+                'status': 'success',
+                'moved': moved,
+                'skipped': skipped,
+                'failures': failures[:12],
+                'message': f'已移入同目录回收站：{moved} 项' + (f'（跳过 {skipped} 项）' if skipped else ''),
+            }, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
 
 
 
