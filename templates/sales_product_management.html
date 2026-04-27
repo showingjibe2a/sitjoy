@@ -535,59 +535,7 @@
         </div>
     </div>
 
-    <div class="pm-modal" id="main-image-desc-modal">
-        <div class="pm-modal-content" style="max-width: 720px;">
-            <h3 style="margin-top:0;">编辑主图</h3>
-
-            <div class="gallery-rename-preview" style="margin-top:0.65rem;">
-                <img id="mainImageEditPreviewImg" src="" alt="预览">
-                <button class="btn-secondary gallery-preview-zoom" type="button" onclick="openMainImagePreviewZoom()" title="放大查看">🔍</button>
-                <button class="btn-secondary gallery-preview-zoom" type="button" onclick="triggerMainImageReplace()" title="选择新文件后立即上传替换：会更新 sha256；旧文件会进入『上架资源』/回收站。" style="right: 54px;">替换</button>
-                <input type="file" id="mainImageReplaceInput" accept="image/*" class="optional-field" style="display:none;">
-            </div>
-
-            <div class="pm-section pm-form-full" style="margin-top:0.45rem;">
-                <h4>基础信息</h4>
-                <div class="pm-section-body pm-form">
-                    <div class="form-group pm-form-full">
-                        <div style="display:flex; align-items:center; gap:0.6rem;">
-                            <label for="mainImageRenameInput">文件名（无需扩展名）</label>
-                            <span class="help-dot" data-tip="保存时会同步重命名磁盘文件；扩展名需与当前文件一致。"></span>
-                        </div>
-                        <input type="text" id="mainImageRenameInput" class="required-field" autocomplete="off" placeholder="例如：文字卖点图-场景A">
-                    </div>
-                </div>
-            </div>
-
-            <div class="pm-section pm-form-full" style="margin-top:0.55rem;">
-                <h4>展示属性</h4>
-                <div class="pm-section-body pm-form">
-                    <div class="form-group pm-form-full">
-                        <label>图片类型</label>
-                        <div class="image-type-bar" id="mainImageEditTypeBar" style="gap:0.35rem; flex-wrap:wrap;">
-                            <!-- options injected -->
-                        </div>
-                    </div>
-                    <div class="form-group pm-form-full">
-                        <label>是否弃用</label>
-                        <div style="display:flex; gap:0.45rem; flex-wrap:wrap;">
-                            <button id="mainImageDeprecatedNo" class="status-pill status-pill--no" type="button" onclick="setMainImageDeprecated(false)">否</button>
-                            <button id="mainImageDeprecatedYes" class="status-pill status-pill--yes" type="button" onclick="setMainImageDeprecated(true)">是</button>
-                        </div>
-                    </div>
-                    <div class="form-group pm-form-full">
-                        <label for="mainImageDescInput">图片备注<span class="help-dot" data-tip="用于标注卖点/场景等信息；可为空。"></span></label>
-                        <textarea id="mainImageDescInput" class="optional-field" placeholder="请输入图片备注（可为空）" style="min-height: 140px;"></textarea>
-                    </div>
-                </div>
-            </div>
-
-            <div class="pm-modal-actions">
-                <button class="btn-secondary" type="button" onclick="closeMainImageDescModal()">取消</button>
-                <button class="btn-primary" type="button" onclick="saveMainImageDescription()">保存</button>
-            </div>
-        </div>
-    </div>
+    <!-- 旧 #main-image-desc-modal 已移除：改用共享组件 `PmImageEditModal` 动态注入 -->
 
     <div class="pm-modal" id="sales-image-type-modal">
         <div class="pm-modal-content" style="max-width: 460px;">
@@ -727,6 +675,17 @@
         let currentEditingMainImageDeprecated = false;
         let currentEditingMainImageName = '';
         let currentEditingMainImageOriginalName = '';
+        let currentEditingMainImageEnabled = true;
+        let currentEditingMainImagePathB64 = '';
+        let currentSalesVariantId = 0;
+        // 与 gallery 完全同一套“批量应用到规格”状态
+        let galleryVariantOptions = [];
+        let gallerySelectedVariantIds = new Set();
+        let mainImageTypeTouched = false;
+        let mainImageEnabledTouched = false;
+        let mainImageDescTouched = false;
+        let mainImageEnabledInitial = 1;
+        let mainImageDescInitial = '';
         let salesImageTypeOptions = [];
         let selectedMainImageType = '文字卖点图';
         let selectedMainImageFilterType = '全部';
@@ -1922,6 +1881,7 @@
                     fabricImageItems = Array.isArray(data.fabric_items) ? data.fabric_items : [];
                     if (!selectedMainImageFilterType) selectedMainImageFilterType = '全部';
                     const folder = data.folder || {};
+                    currentSalesVariantId = Number(folder.variant_id || 0) || 0;
                     const tip = document.getElementById('mainImageFolderTip');
                     if (tip) {
                         tip.textContent = `当前目录：${folder.sku_family || '-'} / 主图 / ${folder.variant_folder || '-'}`;
@@ -2086,47 +2046,51 @@
 
         function openMainImageDescModal(imageName) {
             if (!editId || !imageName) return;
-            currentEditingMainImageName = imageName;
-            currentEditingMainImageOriginalName = imageName;
+            if (!window.PmImageEditModal || !window.PmImageEditModal.open) {
+                window.showAppToast && window.showAppToast('共享编辑弹窗未加载，请刷新页面后重试', true, 8000);
+                return;
+            }
             const current = (mainImageItems || []).find(x => String(x.image_name || '') === String(imageName));
-            document.getElementById('mainImageDescInput').value = current ? (current.description || '') : '';
-            const renameEl = document.getElementById('mainImageRenameInput');
-            if (renameEl) {
-                const base = String(imageName || '');
-                renameEl.value = base.includes('.') ? base.slice(0, base.lastIndexOf('.')) : base;
+            const pathB64 = current ? String(current.image_b64 || current.storage_path || '') : '';
+            if (!pathB64) {
+                window.showAppToast && window.showAppToast('未找到该图片的路径信息，无法打开编辑弹窗', true, 8000);
+                return;
             }
-            const prevEl = document.getElementById('mainImageEditPreviewImg');
-            if (prevEl) {
-                const rec = current || {};
-                const src = rec.storage_path ? `/api/image-preview?id=${encodeURIComponent(rec.image_b64 || rec.storage_path || '')}` : '';
-                // Fallback: list grid uses image_b64 for preview; keep consistent by using that when available
-                prevEl.src = `/api/image-preview?id=${encodeURIComponent((current && (current.image_b64 || current.storage_path)) ? (current.image_b64 || current.storage_path) : '')}&mode=thumb&w=900&q=85`;
-            }
-            const repEl = document.getElementById('mainImageReplaceInput');
-            if (repEl) repEl.value = '';
-            setMainImageDeprecated(Boolean(current && Number(current.is_deprecated || 0) === 1));
-            // Render type bar in modal (same options as main bar, without "+")
-            const bar = document.getElementById('mainImageEditTypeBar');
-            if (bar) {
-                const list = (salesImageTypeOptions || []).filter(x => String(x.name || '').trim());
-                const currentType = normalizeMainImageTypeName(current ? (current.image_type_name || '') : selectedMainImageType);
-                if (!list.length) {
-                    bar.innerHTML = '<span class="pm-select-empty" style="padding:0 .4rem;">暂无类型</span>';
-                } else {
-                    bar.innerHTML = list.map(item => {
-                        const name = String(item.name || '').trim();
-                        const checked = name === currentType ? 'checked' : '';
-                        return `
-                            <label class="image-type-radio" style="transform:scale(0.96); transform-origin:left;">
-                                <input type="radio" name="mainImageEditType" value="${escapeHtml(name)}" ${checked}>
-                                <span>${escapeHtml(name)}</span>
-                            </label>
-                        `;
-                    }).join('');
+            const computeRenamedPathB64 = ({ oldPathB64, newFilename }) => {
+                const oldRel = decodeB64Utf8(oldPathB64);
+                const folder = oldRel.includes('/') ? oldRel.slice(0, oldRel.lastIndexOf('/')) : '';
+                const newRel = folder ? `${folder}/${newFilename}` : newFilename;
+                return utf8ToB64(newRel);
+            };
+
+            window.PmImageEditModal.init({
+                mode: 'sales_product_management',
+                hooks: {
+                    prefillVariantLinks: true,
+                    onRenamed: computeRenamedPathB64,
+                    onAfterSuccess: () => refreshMainImageList(),
+                    onReplaceSelected: ({ file, current }) => {
+                        if (!file) return;
+                        const fd = new FormData();
+                        fd.append('sales_product_id', String(editId));
+                        fd.append('image_name', String(current?.name || imageName));
+                        fd.append('file', file, file.name || 'image.bin');
+                        window.showAppUploadProgress && window.showAppUploadProgress({ title: '替换图片', message: '上传并替换中…' });
+                        fetch('/api/sales-product-main-images-replace', { method: 'POST', body: fd })
+                            .then(r => r.json())
+                            .then(data => {
+                                if (!data || data.status !== 'success') throw new Error((data && data.message) ? data.message : '替换失败');
+                                window.showAppToast && window.showAppToast(data.message || '替换成功', false, 6000);
+                                refreshMainImageList();
+                            })
+                            .catch(err => window.showAppToast && window.showAppToast('替换失败：' + (err && err.message ? err.message : err), true, 10000))
+                            .finally(() => window.hideAppUploadProgress && window.hideAppUploadProgress());
+                    }
                 }
-            }
-            document.getElementById('main-image-desc-modal').classList.add('active');
-            document.getElementById('mainImageDescInput').focus();
+            });
+
+            const defaultVids = Number(currentSalesVariantId || 0) > 0 ? [Number(currentSalesVariantId)] : [];
+            window.PmImageEditModal.open({ pathB64, name: imageName, defaultVariantIds: defaultVids });
         }
 
         function openMainImagePreviewZoom() {
@@ -2143,55 +2107,505 @@
             repEl.click();
         }
 
-        function setMainImageDeprecated(isDeprecated) {
-            currentEditingMainImageDeprecated = Boolean(isDeprecated);
-            const yesBtn = document.getElementById('mainImageDeprecatedYes');
-            const noBtn = document.getElementById('mainImageDeprecatedNo');
-            if (yesBtn) yesBtn.classList.toggle('is-active', currentEditingMainImageDeprecated);
-            if (noBtn) noBtn.classList.toggle('is-active', !currentEditingMainImageDeprecated);
+        function setMainImageEnabled(enabled) {
+            currentEditingMainImageEnabled = !!enabled;
+            currentEditingMainImageDeprecated = !currentEditingMainImageEnabled;
+            const seg = document.getElementById('mainImageEnabledSegment');
+            if (!seg) return;
+            seg.dataset.value = currentEditingMainImageEnabled ? '1' : '0';
+            seg.querySelectorAll('button[data-value]').forEach(btn => {
+                const bv = String(btn.getAttribute('data-value') || '').trim();
+                btn.classList.toggle('is-active', bv === (currentEditingMainImageEnabled ? '1' : '0'));
+            });
+        }
+
+        function installMainImageEnabledSegment() {
+            const seg = document.getElementById('mainImageEnabledSegment');
+            if (!seg || seg.dataset._bound === '1') return;
+            seg.dataset._bound = '1';
+            seg.querySelectorAll('button[data-value]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const v = String(btn.getAttribute('data-value') || '1').trim();
+                    mainImageEnabledTouched = true;
+                    setMainImageEnabled(v !== '0');
+                });
+            });
+        }
+
+        function setMainImageEditTypeName(value) {
+            const seg = document.getElementById('mainImageEditTypeSegment');
+            if (!seg) return;
+            const v = String(value || '').trim();
+            seg.dataset.value = v;
+            seg.querySelectorAll('button[data-value]').forEach(btn => {
+                const bv = String(btn.getAttribute('data-value') || '').trim();
+                btn.classList.toggle('is-active', bv === v);
+            });
+            applyMainImageRecommendedNameIfNeeded();
+        }
+
+        function getMainImageEditTypeName() {
+            const seg = document.getElementById('mainImageEditTypeSegment');
+            return String(seg?.dataset?.value || '').trim();
+        }
+
+        function refreshMainImageEditTypeSegment(prefillTypeName) {
+            const seg = document.getElementById('mainImageEditTypeSegment');
+            if (!seg) return;
+            const list = (salesImageTypeOptions || []).filter(x => String(x.name || '').trim());
+            const currentType = normalizeMainImageTypeName(prefillTypeName || '');
+            const btns = list.map(item => {
+                const name = String(item.name || '').trim();
+                const safe = escapeHtml(name);
+                const isActive = currentType && name === currentType;
+                return `<button type="button" class="status-pill status-pill--yes ${isActive ? 'is-active' : ''}" data-value="${safe}">${safe}</button>`;
+            });
+            seg.innerHTML = btns.length
+                ? btns.join('')
+                : `<button type="button" class="status-pill status-pill--no is-active" data-value="">暂无类型</button>`;
+            seg.querySelectorAll('button[data-value]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const v = String(btn.getAttribute('data-value') || '').trim();
+                    mainImageTypeTouched = true;
+                    setMainImageEditTypeName(v);
+                });
+            });
+            setMainImageEditTypeName(currentType || '');
+        }
+
+        function setMainImageRecommendNameEnabled(enabled) {
+            const seg = document.getElementById('mainImageRecommendNameSegment');
+            if (!seg) return;
+            seg.dataset.value = enabled ? '1' : '0';
+            seg.querySelectorAll('button[data-value]').forEach(btn => {
+                const bv = String(btn.getAttribute('data-value') || '').trim();
+                btn.classList.toggle('is-active', (enabled ? '1' : '0') === bv);
+            });
+        }
+
+        function isMainImageRecommendNameEnabled() {
+            const seg = document.getElementById('mainImageRecommendNameSegment');
+            return String(seg?.dataset?.value || '1') !== '0';
+        }
+
+        function getMainImageCurrentFabricName() {
+            try {
+                const sel = document.getElementById('modalFabricId');
+                const opt = sel && sel.selectedOptions && sel.selectedOptions[0] ? sel.selectedOptions[0] : null;
+                const text = opt ? String(opt.textContent || '').trim() : '';
+                // 优先括号里的英文名：CODE（Name）
+                const m = text.match(/（([^）]+)）/);
+                if (m && m[1]) return String(m[1]).trim();
+                return text;
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function computeMainImageRecommendedBaseName(origBase, typeName) {
+            const base = String(origBase || '').trim();
+            const t = String(typeName || '').trim();
+            const fabric = String(getMainImageCurrentFabricName() || '').trim();
+            const parts = [];
+            if (fabric) parts.push(fabric);
+            if (t) parts.push(t);
+            const prefix = parts.length ? (parts.join('-') + '-') : '';
+            if (!prefix) return base;
+            if (base.startsWith(prefix)) return base;
+            return prefix + base;
+        }
+
+        function applyMainImageRecommendedNameIfNeeded(force) {
+            const input = document.getElementById('mainImageRenameInput');
+            if (!input) return;
+            if (!force && !isMainImageRecommendNameEnabled()) return;
+            const raw = String(input.value || '').trim();
+            const typeName = getMainImageEditTypeName();
+            if (!raw) return;
+            // 完全复用 gallery 的规则：面料（若所有已选规格面料一致）-图片类型-原名，并避免重复叠加
+            const currentRenameImage = { name: raw + (String(currentEditingMainImageOriginalName || currentEditingMainImageName || '').includes('.') ? String(currentEditingMainImageOriginalName || currentEditingMainImageName || '').slice(String(currentEditingMainImageOriginalName || currentEditingMainImageName || '').lastIndexOf('.')) : '') };
+            const getSelectedGalleryImageTypeName = () => String(typeName || '').trim();
+            const getGalleryBaseNameWithoutExt = (fullName) => {
+                const n = String(fullName || '').trim();
+                if (!n) return '';
+                const idx = n.lastIndexOf('.');
+                return idx > 0 ? n.slice(0, idx) : n;
+            };
+            const getGalleryCommonFabricName = () => {
+                const vids = Array.from(gallerySelectedVariantIds || []).map(v => Number(v)).filter(v => v > 0);
+                if (!vids.length) return '';
+                const map = new Map((galleryVariantOptions || []).map(it => [Number(it.variant_id || 0), it]));
+                const fabrics = vids
+                    .map(vid => {
+                        const it = map.get(vid) || {};
+                        return String(it.fabric_name_en || it.fabric_code || '').trim();
+                    })
+                    .filter(Boolean);
+                if (!fabrics.length) return '';
+                const first = fabrics[0];
+                if (fabrics.every(f => f === first)) return first;
+                return '';
+            };
+            const computeGalleryRecommendedBaseName = () => {
+                const fabric = getGalleryCommonFabricName();
+                const wantType = String(getSelectedGalleryImageTypeName() || '').trim();
+                const base = getGalleryBaseNameWithoutExt(currentRenameImage.name);
+                const wantFabric = String(fabric || '').trim();
+                if (!wantType) return '';
+                const alreadyOk = (() => {
+                    if (wantFabric) {
+                        const prefix = `${wantFabric}-${wantType}-`;
+                        return base.startsWith(prefix) && base.length > prefix.length;
+                    }
+                    const prefix = `${wantType}-`;
+                    return base.startsWith(prefix) && base.length > prefix.length;
+                })();
+                if (alreadyOk) return base;
+                const parts = [];
+                if (wantFabric) parts.push(wantFabric);
+                parts.push(wantType);
+                parts.push(base || '');
+                return parts.filter(Boolean).join('-');
+            };
+            const next = computeGalleryRecommendedBaseName();
+            if (next && next !== raw) input.value = next;
+        }
+
+        // ===== 以下为“批量应用到规格”模块（与 gallery 完全一致）=====
+        function updateGalleryVariantSelectedText() {
+            const tbody = document.getElementById('galleryApplySelectedTbody');
+            if (!tbody) return;
+            const vids = Array.from(gallerySelectedVariantIds || []).map(v => Number(v)).filter(v => v > 0);
+            if (!vids.length) {
+                tbody.innerHTML = `<tr><td colspan="4" class="helper-text" style="text-align:center;">未选择</td></tr>`;
+                applyMainImageRecommendedNameIfNeeded();
+                return;
+            }
+            const map = new Map((galleryVariantOptions || []).map(it => [Number(it.variant_id || 0), it]));
+            tbody.innerHTML = vids.map(vid => {
+                const it = map.get(vid) || {};
+                const sku = String(it.sku_family || '-').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                const spec = String(it.spec_name || '-').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                const fabric = String(it.fabric_name_en || it.fabric_code || '-').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+                return `
+                    <tr>
+                        <td>${sku}</td>
+                        <td>${spec}</td>
+                        <td>${fabric}</td>
+                        <td style="text-align:right;">
+                            <button type="button" class="btn-danger" style="padding:0.28rem 0.55rem; font-size:0.82rem; min-height:28px;" onclick="removeGallerySelectedVariant(${vid})">移除</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            applyMainImageRecommendedNameIfNeeded();
+        }
+
+        function removeGallerySelectedVariant(variantId) {
+            const vid = Number(variantId || 0);
+            if (!vid) return;
+            gallerySelectedVariantIds.delete(vid);
+            updateGalleryVariantSelectedText();
+            applyMainImageRecommendedNameIfNeeded();
+        }
+
+        function clearGalleryVariantSelection() {
+            gallerySelectedVariantIds = new Set();
+            updateGalleryVariantSelectedText();
+            applyMainImageRecommendedNameIfNeeded();
+        }
+
+        async function ensureGalleryVariantOptions() {
+            if (Array.isArray(galleryVariantOptions) && galleryVariantOptions.length) return galleryVariantOptions;
+            const resp = await fetch('/api/gallery-variant-picker');
+            const data = await resp.json();
+            if (!data || data.status !== 'success') {
+                throw new Error((data && data.message) ? data.message : '无法加载规格列表');
+            }
+            galleryVariantOptions = data.items || [];
+            return galleryVariantOptions;
+        }
+
+        function openGalleryVariantPicker() {
+            ensureGalleryVariantOptions().then(items => {
+                const STORAGE_KEY = 'sitjoy_gallery_variant_search_v1';
+                const loadSearchState = () => {
+                    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') || {}; } catch (_) { return {}; }
+                };
+                const saveSearchState = (next) => {
+                    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next || {})); } catch (_) {}
+                };
+
+                const html = `
+                    <div style="display:grid; gap:0.6rem;">
+                        <div class="helper-text" style="margin:0;">可分别搜索：货号 / 规格 / 面料（支持多选）</div>
+                        <div style="border:1px solid rgba(207,199,189,0.7); border-radius:10px; background:#fff; overflow:hidden;">
+                            <table class="pm-table" style="margin:0;">
+                                <thead style="position:sticky; top:0; z-index:1;">
+                                    <tr>
+                                        <th style="width:68px; text-align:center;">
+                                            <label style="display:inline-flex; align-items:center; gap:0.35rem; user-select:none; cursor:pointer;">
+                                                <input type="checkbox" id="galleryVariantSelectAll">
+                                                <span style="font-size:0.86rem;">全选</span>
+                                            </label>
+                                        </th>
+                                        <th style="width:210px;">
+                                            <div style="display:grid; gap:0.25rem;">
+                                                <div style="font-size:0.82rem; color:var(--morandi-slate);">货号</div>
+                                                <input type="text" id="galleryVariantSearchSku" class="pm-select-search" placeholder="搜索货号" style="margin:0;">
+                                            </div>
+                                        </th>
+                                        <th style="width:210px;">
+                                            <div style="display:grid; gap:0.25rem;">
+                                                <div style="font-size:0.82rem; color:var(--morandi-slate);">规格</div>
+                                                <input type="text" id="galleryVariantSearchSpec" class="pm-select-search" placeholder="搜索规格" style="margin:0;">
+                                            </div>
+                                        </th>
+                                        <th>
+                                            <div style="display:grid; gap:0.25rem;">
+                                                <div style="font-size:0.82rem; color:var(--morandi-slate);">面料</div>
+                                                <input type="text" id="galleryVariantSearchFabric" class="pm-select-search" placeholder="搜索面料" style="margin:0;">
+                                            </div>
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody id="galleryVariantPickerTbody"></tbody>
+                            </table>
+                        </div>
+                        <div class="helper-text" style="margin:0;">提示：输入框会在本地记忆（同一次访问）以节省重复筛选时间。</div>
+                    </div>
+                `;
+                const ok = window.showAppConfirmAsync
+                    ? window.showAppConfirmAsync({ title: '选择规格', description: html, confirmText: '确定', cancelText: '取消', html: true, maxWidth: 920 })
+                    : Promise.resolve(false);
+                // 若没有全局 confirm 弹窗能力，则退化为不打开（避免重复造轮子）
+                if (!ok) return;
+
+                setTimeout(() => {
+                    const state = loadSearchState();
+                    const skuEl = document.getElementById('galleryVariantSearchSku');
+                    const specEl = document.getElementById('galleryVariantSearchSpec');
+                    const fabEl = document.getElementById('galleryVariantSearchFabric');
+                    if (skuEl) skuEl.value = String(state.sku || '');
+                    if (specEl) specEl.value = String(state.spec || '');
+                    if (fabEl) fabEl.value = String(state.fabric || '');
+
+                    const render = () => {
+                        const skuQ = String(skuEl?.value || '').trim().toLowerCase();
+                        const specQ = String(specEl?.value || '').trim().toLowerCase();
+                        const fabQ = String(fabEl?.value || '').trim().toLowerCase();
+                        saveSearchState({ sku: skuEl?.value || '', spec: specEl?.value || '', fabric: fabEl?.value || '' });
+                        const tbody = document.getElementById('galleryVariantPickerTbody');
+                        if (!tbody) return;
+                        const rows = (items || []).filter(it => {
+                            const sku = String(it.sku_family || '').toLowerCase();
+                            const spec = String(it.spec_name || '').toLowerCase();
+                            const fab = String(it.fabric_name_en || it.fabric_code || '').toLowerCase();
+                            if (skuQ && !sku.includes(skuQ)) return false;
+                            if (specQ && !spec.includes(specQ)) return false;
+                            if (fabQ && !(fab.includes(fabQ))) return false;
+                            return true;
+                        });
+                        tbody.innerHTML = rows.map(it => {
+                            const vid = Number(it.variant_id || 0);
+                            const checked = gallerySelectedVariantIds.has(vid) ? 'checked' : '';
+                            return `
+                                <tr>
+                                    <td style="text-align:center;"><input type="checkbox" class="galleryVariantPickBox" data-vid="${vid}" ${checked}></td>
+                                    <td>${String(it.sku_family || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</td>
+                                    <td>${String(it.spec_name || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</td>
+                                    <td>${String(it.fabric_name_en || it.fabric_code || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</td>
+                                </tr>
+                            `;
+                        }).join('');
+                        tbody.querySelectorAll('input.galleryVariantPickBox').forEach(box => {
+                            box.addEventListener('change', () => {
+                                const vid = Number(box.getAttribute('data-vid') || 0);
+                                if (!vid) return;
+                                if (box.checked) gallerySelectedVariantIds.add(vid);
+                                else gallerySelectedVariantIds.delete(vid);
+                            });
+                        });
+                        const selAll = document.getElementById('galleryVariantSelectAll');
+                        if (selAll) {
+                            selAll.checked = rows.length > 0 && rows.every(r => gallerySelectedVariantIds.has(Number(r.variant_id || 0)));
+                        }
+                    };
+
+                    [skuEl, specEl, fabEl].forEach(el => el && el.addEventListener('input', render));
+                    const selAll = document.getElementById('galleryVariantSelectAll');
+                    if (selAll) {
+                        selAll.addEventListener('change', () => {
+                            const tbody = document.getElementById('galleryVariantPickerTbody');
+                            if (!tbody) return;
+                            const boxes = Array.from(tbody.querySelectorAll('input.galleryVariantPickBox'));
+                            boxes.forEach(box => {
+                                const vid = Number(box.getAttribute('data-vid') || 0);
+                                if (!vid) return;
+                                if (selAll.checked) gallerySelectedVariantIds.add(vid);
+                                else gallerySelectedVariantIds.delete(vid);
+                                box.checked = selAll.checked;
+                            });
+                        });
+                    }
+                    render();
+                }, 0);
+
+                Promise.resolve(ok).then(confirmed => {
+                    if (!confirmed) return;
+                    updateGalleryVariantSelectedText();
+                    applyMainImageRecommendedNameIfNeeded(true);
+                }).catch(() => {});
+            }).catch(err => {
+                window.showAppToast && window.showAppToast('加载规格列表失败：' + (err && err.message ? err.message : err), true, 8000);
+            });
+        }
+
+        async function tryPrefillMainImageMetaFromDb() {
+            if (!currentEditingMainImagePathB64) return;
+            try {
+                const resp = await fetch('/api/gallery-image-meta?id=' + encodeURIComponent(currentEditingMainImagePathB64));
+                const data = await resp.json();
+                if (!data || data.status !== 'success' || !data.linked) return;
+                if (!mainImageEnabledTouched && typeof data.is_enabled !== 'undefined') {
+                    const enabled = Number(data.is_enabled) ? 1 : 0;
+                    mainImageEnabledInitial = enabled;
+                    setMainImageEnabled(!!enabled);
+                }
+                if (!mainImageTypeTouched && data.image_type_name) {
+                    setMainImageEditTypeName(String(data.image_type_name || '').trim());
+                }
+                if (!mainImageDescTouched && typeof data.description !== 'undefined') {
+                    const desc = String(data.description || '');
+                    mainImageDescInitial = desc;
+                    const descEl = document.getElementById('mainImageDescInput');
+                    if (descEl) descEl.value = desc;
+                }
+            } catch (e) {}
         }
 
         function closeMainImageDescModal() {
-            document.getElementById('main-image-desc-modal').classList.remove('active');
+            const modal = document.getElementById('main-image-desc-modal');
+            if (modal) modal.classList.remove('active');
             currentEditingMainImageName = '';
             currentEditingMainImageOriginalName = '';
             const repEl = document.getElementById('mainImageReplaceInput');
             if (repEl) repEl.value = '';
         }
 
-        function saveMainImageDescription() {
-            if (!editId || !currentEditingMainImageName) return;
-            const description = document.getElementById('mainImageDescInput').value.trim();
-            let image_type_name = '';
-            try {
-                const checked = document.querySelector('input[name="mainImageEditType"]:checked');
-                image_type_name = checked ? normalizeMainImageTypeName(checked.value) : '';
-            } catch (e) {}
+        async function confirmMainImageEdit() {
+            const statusDiv = document.getElementById('mainImageEditStatus');
+            if (!currentEditingMainImagePathB64) return;
+
             const renameEl = document.getElementById('mainImageRenameInput');
-            const desiredBase = renameEl ? String(renameEl.value || '').trim() : '';
-            const desiredName = desiredBase.replace(/\.[^/.]+$/, ''); // forbid changing ext
-            const origName = String(currentEditingMainImageOriginalName || currentEditingMainImageName || '').trim();
-            const origBase = origName.includes('.') ? origName.slice(0, origName.lastIndexOf('.')) : origName;
-            const new_filename = (desiredName && origBase && desiredName !== origBase) ? desiredName : '';
-            fetch('/api/sales-product-main-images', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    sales_product_id: editId,
-                    image_name: currentEditingMainImageName,
-                    description,
-                    image_type_name,
-                    is_deprecated: currentEditingMainImageDeprecated ? 1 : 0,
-                    new_filename
-                })
-            }).then(r => r.json()).then(data => {
-                if (data.status !== 'success') {
-                    showModalStatus(data.message || '保存描述失败', true);
-                    return;
+            const descEl = document.getElementById('mainImageDescInput');
+            const typeName = getMainImageEditTypeName();
+            const enabledVal = (document.getElementById('mainImageEnabledSegment')?.dataset?.value || '1') === '1' ? 1 : 0;
+            const enabledChanged = Number(enabledVal) !== Number(mainImageEnabledInitial);
+            const descVal = descEl ? String(descEl.value || '').trim() : '';
+            const descChanged = String(descVal) !== String(mainImageDescInitial || '');
+
+            const oldName = String(currentEditingMainImageOriginalName || currentEditingMainImageName || '').trim();
+            const oldBase = oldName.includes('.') ? oldName.slice(0, oldName.lastIndexOf('.')) : oldName;
+            let desiredBase = renameEl ? String(renameEl.value || '').trim() : '';
+            if (!desiredBase) desiredBase = oldBase;
+            const renameNeeded = desiredBase !== oldBase;
+
+            const vids = Array.from(gallerySelectedVariantIds || []).map(v => Number(v)).filter(v => v > 0);
+            const actionEl = document.querySelector('input[name="galleryApplyAction"]:checked');
+            const action = actionEl ? String(actionEl.value || 'move') : 'move';
+            const promptDup = !!(document.getElementById('galleryApplyPromptDuplicate') && document.getElementById('galleryApplyPromptDuplicate').checked);
+
+            if (!renameNeeded && !enabledChanged && !descChanged && !typeName && !vids.length) {
+                if (statusDiv) {
+                    statusDiv.textContent = '未做任何修改';
+                    statusDiv.className = 'status-message error';
+                    statusDiv.style.display = 'block';
                 }
+                return;
+            }
+
+            if (statusDiv) {
+                statusDiv.textContent = '处理中...';
+                statusDiv.className = 'status-message info';
+                statusDiv.style.display = 'block';
+            }
+            if (window.showAppUploadProgress) window.showAppUploadProgress({ title: '正在提交...', summary: '重命名/保存属性', percent: 25 });
+
+            try {
+                // 1) rename
+                if (renameNeeded) {
+                    const newNameB64 = (function utf8ToB64(text){
+                        try {
+                            if (typeof TextEncoder !== 'undefined') {
+                                const bytes = new TextEncoder().encode(text);
+                                let binary = '';
+                                bytes.forEach(b => binary += String.fromCharCode(b));
+                                return btoa(binary);
+                            }
+                            return btoa(unescape(encodeURIComponent(text)));
+                        } catch (e) { return ''; }
+                    })(desiredBase);
+                    const r = await fetch('/api/rename', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: currentEditingMainImagePathB64, new_name_b64: newNameB64 })
+                    });
+                    const data = await r.json();
+                    if (!data || data.status !== 'success') throw new Error((data && data.message) ? data.message : '重命名失败');
+                    // Update display name for next operations (basename replace)
+                    const ext = oldName.includes('.') ? oldName.slice(oldName.lastIndexOf('.')) : '';
+                    const newFilename = desiredBase + ext;
+                    currentEditingMainImageName = newFilename;
+                    currentEditingMainImageOriginalName = newFilename;
+                }
+
+                // 2) meta save
+                const respMeta = await fetch('/api/gallery-image-meta', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: currentEditingMainImagePathB64, image_type_name: typeName, is_enabled: enabledVal, description: descVal })
+                });
+                const meta = await respMeta.json();
+                if (!meta || meta.status !== 'success') throw new Error((meta && meta.message) ? meta.message : '保存失败');
+                mainImageEnabledInitial = enabledVal;
+                mainImageDescInitial = descVal;
+
+                // 3) 如需关联规格：调用 apply 接口（与 gallery 完全一致）
+                if (vids.length) {
+                    if (window.showAppUploadProgress) window.showAppUploadProgress({ title: '正在提交...', summary: '写入数据库并处理文件移动/复制', percent: 70 });
+                    const payload = {
+                        image_path_b64: currentEditingMainImagePathB64,
+                        variant_ids: vids,
+                        action,
+                        image_type_name: typeName,
+                        prompt_duplicate: promptDup ? 1 : 0
+                    };
+                    const resp2 = await fetch('/api/gallery-apply-image', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const data2 = await resp2.json();
+                    if (!data2 || data2.status !== 'success') {
+                        throw new Error((data2 && data2.message) ? data2.message : '关联失败');
+                    }
+                }
+
+                if (window.showAppToast) window.showAppToast('保存成功', false, 6000);
                 closeMainImageDescModal();
                 refreshMainImageList();
-            }).catch(err => showModalStatus('保存描述失败: ' + err, true));
+            } catch (e) {
+                const msg = '✗ ' + (e && e.message ? e.message : '提交失败');
+                if (statusDiv) {
+                    statusDiv.textContent = msg;
+                    statusDiv.className = 'status-message error';
+                    statusDiv.style.display = 'block';
+                }
+                if (window.showAppToast) window.showAppToast(msg, true, 10000);
+            } finally {
+                if (window.hideAppUploadProgress) window.hideAppUploadProgress();
+            }
         }
 
         async function uploadReplaceMainImage(file) {
@@ -3435,6 +3849,23 @@
             mainImagePromptDuplicate = readBoolSetting(MAIN_IMAGE_PROMPT_DUP_KEY, true);
             mainImageShowFabric = readBoolSetting(MAIN_IMAGE_SHOW_FABRIC_KEY, true);
             renderMainImageSettingsToggles();
+            installMainImageEnabledSegment();
+            const seg = document.getElementById('mainImageRecommendNameSegment');
+            if (seg && seg.dataset._bound !== '1') {
+                seg.dataset._bound = '1';
+                seg.querySelectorAll('button[data-value]').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const v = String(btn.getAttribute('data-value') || '1').trim();
+                        setMainImageRecommendNameEnabled(v !== '0');
+                        applyMainImageRecommendedNameIfNeeded(true);
+                    });
+                });
+            }
+            const descEl = document.getElementById('mainImageDescInput');
+            if (descEl && descEl.dataset._bound !== '1') {
+                descEl.dataset._bound = '1';
+                descEl.addEventListener('input', () => { mainImageDescTouched = true; });
+            }
         }
 
         document.getElementById('searchInput').addEventListener('keydown', function(e) {
@@ -3522,9 +3953,13 @@
         document.getElementById('bulk-sku-modal').addEventListener('click', function(e) {
             if (e.target === this) closeBulkSkuImportModal();
         });
-        document.getElementById('main-image-desc-modal').addEventListener('click', function(e) {
-            if (e.target === this) closeMainImageDescModal();
-        });
+        (function() {
+            const modal = document.getElementById('main-image-desc-modal');
+            if (!modal) return;
+            modal.addEventListener('click', function(e) {
+                if (e.target === this) closeMainImageDescModal();
+            });
+        })();
         document.getElementById('sales-image-type-modal').addEventListener('click', function(e) {
             if (e.target === this) closeSalesImageTypeCreateModal();
         });
@@ -3592,5 +4027,6 @@
     </script>
 </body>
 <script src="/static/js/header.js"></script>
+<script src="/static/js/pm_image_edit_modal.js"></script>
 </html>
 

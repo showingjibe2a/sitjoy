@@ -2066,7 +2066,14 @@
             renderChart(transformed.items || [], transformed.events || []);
             renderGroups(state.lastDashboardPayload.groups || []);
             const status = document.getElementById('dataStatus');
-            if (status) status.textContent = `货号组: ${(state.lastDashboardPayload.groups || []).length}，事件: ${(state.lastDashboardPayload.events || []).length}`;
+            if (status) {
+                const groupCount = Number(payload.total_groups || (state.lastDashboardPayload.groups || []).length || 0);
+                const itemCount = Number(payload.total_items || 0);
+                const eventCount = Number((state.lastDashboardPayload.events || []).length || 0);
+                status.textContent = itemCount > 0
+                    ? `货号组: ${groupCount}，平台SKU: ${itemCount}，事件: ${eventCount}`
+                    : `货号组: ${groupCount}，事件: ${eventCount}`;
+            }
         }
 
         async function loadDashboard() {

@@ -881,6 +881,78 @@ class FileManagementMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def handle_gallery_duplicate_check_api(self, environ, start_response):
+        """gallery 重复检测：按 path 计算 sha256，并在 DB 中查找同 sha256 的已入库图片。"""
+        try:
+            if environ.get('REQUEST_METHOD') != 'POST':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+
+            data = self._read_json_body(environ) or {}
+            path_b64 = str(data.get('id') or data.get('path') or '').strip()
+            if not path_b64:
+                return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+
+            rel_path = self._fs_from_b64(path_b64)
+            if '..' in rel_path or rel_path.startswith('/'):
+                return self.send_json({'status': 'error', 'message': 'Invalid path'}, start_response)
+
+            full_path = self._join_resources(rel_path)
+            abs_path = os.path.abspath(full_path)
+            abs_resources = os.path.abspath(RESOURCES_PATH_BYTES)
+            if not abs_path.startswith(abs_resources):
+                return self.send_json({'status': 'error', 'message': 'Access denied'}, start_response)
+            if not os.path.isfile(full_path):
+                return self.send_json({'status': 'error', 'message': 'File not found'}, start_response)
+
+            import hashlib
+            h = hashlib.sha256()
+            with open(full_path, 'rb') as f:
+                for chunk in iter(lambda: f.read(1024 * 1024), b''):
+                    h.update(chunk)
+            sha256 = h.hexdigest()
+
+            canonical = None
+            try:
+                with self._get_db_connection() as conn:
+                    if not self._table_has_column(conn, 'image_assets', 'sha256'):
+                        return self.send_json({'status': 'success', 'sha256': sha256, 'duplicate': False}, start_response)
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT id, storage_path, sha256 FROM image_assets WHERE sha256=%s ORDER BY id ASC LIMIT 1",
+                            (sha256,),
+                        )
+                        row = cur.fetchone() or {}
+                        if row.get('id'):
+                            canonical = {
+                                'image_asset_id': int(row.get('id') or 0),
+                                'storage_path': str(row.get('storage_path') or '').strip(),
+                                'sha256': str(row.get('sha256') or '').strip(),
+                            }
+            except Exception:
+                canonical = None
+
+            cur_rel = rel_path.replace('\\', '/').lstrip('/')
+            can_rel = str((canonical or {}).get('storage_path') or '').replace('\\', '/').lstrip('/')
+            is_dup = bool(canonical and canonical.get('storage_path') and can_rel and can_rel != cur_rel)
+
+            def dirname(p):
+                if not p:
+                    return ''
+                return p.rsplit('/', 1)[0] if '/' in p else ''
+
+            same_folder = (dirname(cur_rel) == dirname(can_rel)) if (cur_rel and can_rel) else False
+
+            return self.send_json({
+                'status': 'success',
+                'sha256': sha256,
+                'duplicate': bool(is_dup),
+                'same_folder': bool(same_folder),
+                'current_path': cur_rel,
+                'canonical': canonical or None,
+            }, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
 
 
 

@@ -111,7 +111,12 @@ class SalesProductMixin:
             }
 
     def handle_gallery_image_meta_api(self, environ, method, start_response):
-        """按 gallery 的相对路径（base64 bytes）查库里是否已关联，并返回图片类型/启用状态。"""
+        """按 gallery 的相对路径（base64 bytes）查库里是否已关联，并返回图片类型/启用状态/备注。
+
+        说明：
+        - 由于历史库里图片弃用字段为 image_assets.is_deprecated（1=弃用），这里对外统一输出 is_enabled（1=启用/0=弃用）。
+        - PUT 时若传入 is_enabled，会映射写回 is_deprecated。
+        """
         try:
             if method not in ('GET', 'PUT'):
                 return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
@@ -143,14 +148,16 @@ class SalesProductMixin:
 
             with self._get_db_connection() as conn:
                 has_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
-                has_enabled = self._table_has_column(conn, 'image_assets', 'is_enabled')
+                has_desc = self._table_has_column(conn, 'image_assets', 'description')
+                has_dep = self._table_has_column(conn, 'image_assets', 'is_deprecated')
                 join_type = "LEFT JOIN image_types it ON it.id = ia.image_type_id" if has_tid else ""
                 with conn.cursor() as cur:
                     cur.execute(
                         f"""
                         SELECT ia.id, ia.storage_path,
                                {('ia.image_type_id AS image_type_id' if has_tid else '0 AS image_type_id')},
-                               {('ia.is_enabled AS is_enabled' if has_enabled else '1 AS is_enabled')},
+                               {('ia.is_deprecated AS is_deprecated' if has_dep else '0 AS is_deprecated')},
+                               {('ia.description AS description' if has_desc else "'' AS description")},
                                {('it.name AS image_type_name' if has_tid else "'' AS image_type_name")}
                         FROM image_assets ia
                         {join_type}
@@ -168,7 +175,8 @@ class SalesProductMixin:
                                 f"""
                                 SELECT ia.id, ia.storage_path,
                                        {('ia.image_type_id AS image_type_id' if has_tid else '0 AS image_type_id')},
-                                       {('ia.is_enabled AS is_enabled' if has_enabled else '1 AS is_enabled')},
+                                       {('ia.is_deprecated AS is_deprecated' if has_dep else '0 AS is_deprecated')},
+                                       {('ia.description AS description' if has_desc else "'' AS description")},
                                        {('it.name AS image_type_name' if has_tid else "'' AS image_type_name")}
                                 FROM image_assets ia
                                 {join_type}
@@ -184,9 +192,12 @@ class SalesProductMixin:
                         # 允许单独更新 is_enabled；若同时带 image_type_name，则更新类型
                         image_type_name = str(((data or {}) if data is not None else {}).get('image_type_name') or '').strip()
                         is_enabled_raw = ((data or {}) if data is not None else {}).get('is_enabled', None)
+                        description_raw = ((data or {}) if data is not None else {}).get('description', None)
                         has_enabled_patch = is_enabled_raw is not None and str(is_enabled_raw).strip() != ''
+                        has_desc_patch = description_raw is not None
                         if (not image_type_name) and (not has_enabled_patch):
-                            return self.send_json({'status': 'error', 'message': '缺少可更新字段'}, start_response)
+                            if not has_desc_patch:
+                                return self.send_json({'status': 'error', 'message': '缺少可更新字段'}, start_response)
 
                         aid = self._parse_int(row.get('id')) or 0
                         if not aid:
@@ -201,17 +212,25 @@ class SalesProductMixin:
                             cur.execute("UPDATE image_assets SET image_type_id=%s WHERE id=%s", (int(tid), int(aid)))
 
                         if has_enabled_patch:
-                            if not has_enabled:
-                                return self.send_json({'status': 'error', 'message': 'image_assets 缺少 is_enabled'}, start_response)
+                            if not has_dep:
+                                return self.send_json({'status': 'error', 'message': 'image_assets 缺少 is_deprecated'}, start_response)
                             is_enabled = 1 if str(is_enabled_raw).strip().lower() in ('1', 'true', 'yes', 'on', '启用') else 0
-                            cur.execute("UPDATE image_assets SET is_enabled=%s WHERE id=%s", (int(is_enabled), int(aid)))
+                            is_deprecated = 0 if is_enabled else 1
+                            cur.execute("UPDATE image_assets SET is_deprecated=%s WHERE id=%s", (int(is_deprecated), int(aid)))
+
+                        if has_desc_patch:
+                            if not has_desc:
+                                return self.send_json({'status': 'error', 'message': 'image_assets 缺少 description'}, start_response)
+                            description = str(description_raw or '').strip()
+                            cur.execute("UPDATE image_assets SET description=%s WHERE id=%s", (description, int(aid)))
 
                         # 回读确认
                         cur.execute(
                             f"""
                             SELECT ia.id, ia.storage_path,
                                    {('ia.image_type_id AS image_type_id' if has_tid else '0 AS image_type_id')},
-                                   {('ia.is_enabled AS is_enabled' if has_enabled else '1 AS is_enabled')},
+                                   {('ia.is_deprecated AS is_deprecated' if has_dep else '0 AS is_deprecated')},
+                                   {('ia.description AS description' if has_desc else "'' AS description")},
                                    {('it.name AS image_type_name' if has_tid else "'' AS image_type_name")}
                             FROM image_assets ia
                             {join_type}
@@ -223,6 +242,7 @@ class SalesProductMixin:
                         row = cur.fetchone() or row
 
             linked = bool(row.get('id'))
+            is_deprecated_val = self._parse_int(row.get('is_deprecated', 0)) or 0
             return self.send_json(
                 {
                     'status': 'success',
@@ -231,7 +251,8 @@ class SalesProductMixin:
                     'storage_path': (row.get('storage_path') or '').strip(),
                     'image_type_id': self._parse_int(row.get('image_type_id')) or 0,
                     'image_type_name': (row.get('image_type_name') or '').strip(),
-                    'is_enabled': 1 if self._parse_int(row.get('is_enabled', 1)) else 0,
+                    'is_enabled': 0 if int(is_deprecated_val) == 1 else 1,
+                    'description': (row.get('description') or '').strip(),
                 },
                 start_response,
             )
@@ -4276,6 +4297,7 @@ class SalesProductMixin:
                     'items': items,
                     'fabric_items': fabric_items,
                     'folder': {
+                        'variant_id': int(variant_id or 0),
                         'sku_family': folder_info.get('sku_family') or '',
                         'variant_folder': folder_info.get('variant_folder') or ''
                     }
@@ -6156,7 +6178,7 @@ class SalesProductMixin:
                 if platform_type_ids:
                     agg_sql.append(f" AND sh.platform_type_id IN ({','.join(['%s'] * len(platform_type_ids))})")
                     agg_params.extend(platform_type_ids)
-                agg_sql.append(' GROUP BY DATE(spp.record_date) ORDER BY record_date DESC LIMIT 365')
+                agg_sql.append(' GROUP BY DATE(spp.record_date) ORDER BY record_date ASC')
                 
                 with conn.cursor() as cur:
                     cur.execute(''.join(agg_sql), tuple(agg_params))
@@ -6171,7 +6193,7 @@ class SalesProductMixin:
                     chart_items.append(item)
                 perf_timings['chart_agg'] = time.time() - perf_t_a
 
-                # === 优化2：获取货号分组数据有 LIMIT 限制 ===
+                # === 优化2：货号分组（改为数据库聚合，避免拉全量日明细）===
                 perf_t_g = time.time()
                 has_fabric_id = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
                 has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
@@ -6182,11 +6204,33 @@ class SalesProductMixin:
                     fabric_expr = "fm.fabric_code"
                 else:
                     fabric_expr = ("v.fabric" if has_fabric_text else "''")
+                # 子表展示只需要“平台SKU级别”的汇总，不需要把每日记录全拉回后端再 Python 分组。
+                group_cols = [
+                    "sp.id AS sp_id",
+                    "sp.platform_sku",
+                    f"{fabric_expr} AS fabric",
+                    "v.spec_name",
+                    "v.sku_family_id",
+                    "pf.sku_family",
+                    "MIN(DATE(spp.record_date)) AS min_date",
+                    "MAX(DATE(spp.record_date)) AS max_date",
+                    "COUNT(1) AS rows",
+                    "SUM(COALESCE(spp.sales_qty,0)) AS sales_qty",
+                    "SUM(COALESCE(spp.net_sales_amount,0)) AS net_sales_amount",
+                    "SUM(COALESCE(spp.order_qty,0)) AS order_qty",
+                    "SUM(COALESCE(spp.session_total,0)) AS session_total",
+                    "SUM(COALESCE(spp.ad_impressions,0)) AS ad_impressions",
+                    "SUM(COALESCE(spp.ad_clicks,0)) AS ad_clicks",
+                    "SUM(COALESCE(spp.ad_orders,0)) AS ad_orders",
+                    "SUM(COALESCE(spp.ad_spend,0)) AS ad_spend",
+                    "SUM(COALESCE(spp.ad_sales_amount,0)) AS ad_sales_amount",
+                    "SUM(COALESCE(spp.refund_amount,0)) AS refund_amount",
+                    "AVG(spp.sub_category_rank) AS sub_category_rank",
+                ]
+
                 sql = [
                     f"""
-                    SELECT spp.*, sp.id as sp_id, sp.platform_sku, {fabric_expr} AS fabric, v.spec_name, v.sku_family_id,
-                              pf.sku_family, sh.id AS shop_id, sh.shop_name,
-                              pt.id AS platform_type_id, pt.name AS platform_type_name
+                    SELECT {', '.join(group_cols)}
                     FROM sales_product_performances spp
                     JOIN sales_products sp ON sp.id = spp.sales_product_id
                     LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
@@ -6224,38 +6268,33 @@ class SalesProductMixin:
                 if platform_type_ids:
                     sql.append(f" AND sh.platform_type_id IN ({','.join(['%s'] * len(platform_type_ids))})")
                     params.extend(platform_type_ids)
-                sql.append(' ORDER BY pf.sku_family ASC, sp.platform_sku ASC, spp.record_date DESC LIMIT 5000')
+                sql.append(' GROUP BY sp.id, sp.platform_sku, fabric, v.spec_name, v.sku_family_id, pf.sku_family')
+                sql.append(' ORDER BY pf.sku_family ASC, sp.platform_sku ASC')
 
                 with conn.cursor() as cur:
                     cur.execute(''.join(sql), tuple(params))
                     rows = cur.fetchall() or []
 
                 group_map = {}
-                target_sp_ids = set()
-                target_sf_ids = set()
                 for row in rows:
                     sp_id = self._parse_int(row.get('sp_id'))
                     sf_id = self._parse_int(row.get('sku_family_id'))
                     sf_name = str(row.get('sku_family') or '未分组货号').strip() or '未分组货号'
                     sku = str(row.get('platform_sku') or '').strip()
-                    target_sp_ids.add(sp_id)
-                    if sf_id:
-                        target_sf_ids.add(sf_id)
                     gkey = f"{sf_id or 0}:{sf_name}"
                     group = group_map.setdefault(gkey, {
                         'sku_family_id': sf_id,
                         'sku_family': sf_name,
-                        'items_map': {}
+                        'items': []
                     })
-                    item = group['items_map'].setdefault(sp_id, {
+                    group['items'].append({
                         'sales_product_id': sp_id,
                         'platform_sku': sku,
                         'fabric': row.get('fabric') or '',
                         'spec_name': row.get('spec_name') or '',
-                        'records': []
-                    })
-                    item['records'].append({
-                        'record_date': str(row.get('record_date') or ''),
+                        'min_date': str(row.get('min_date') or ''),
+                        'max_date': str(row.get('max_date') or ''),
+                        'rows': self._parse_int(row.get('rows')) or 0,
                         'sales_qty': row.get('sales_qty') or 0,
                         'net_sales_amount': row.get('net_sales_amount') or 0,
                         'order_qty': row.get('order_qty') or 0,
@@ -6266,20 +6305,16 @@ class SalesProductMixin:
                         'ad_spend': row.get('ad_spend') or 0,
                         'ad_sales_amount': row.get('ad_sales_amount') or 0,
                         'refund_amount': row.get('refund_amount') or 0,
-                        'sub_category_rank': row.get('sub_category_rank')
+                        'sub_category_rank': row.get('sub_category_rank'),
                     })
 
-                groups = []
-                for g in group_map.values():
-                    items = list(g['items_map'].values())
-                    items.sort(key=lambda x: x.get('platform_sku') or '')
-                    groups.append({
-                        'sku_family_id': g.get('sku_family_id'),
-                        'sku_family': g.get('sku_family') or '',
-                        'items': items[:50]
-                    })
-                groups = groups[:500]
+                groups = list(group_map.values())
+                for g in groups:
+                    g['items'].sort(key=lambda x: x.get('platform_sku') or '')
                 groups.sort(key=lambda x: x.get('sku_family') or '')
+
+                total_groups = len(groups)
+                total_items = sum(len(g.get('items') or []) for g in groups)
                 perf_timings['groups'] = time.time() - perf_t_g
 
                 events = []
@@ -6303,6 +6338,8 @@ class SalesProductMixin:
                 return self.send_json({
                     'status': 'success',
                     'groups': groups,
+                    'total_groups': total_groups,
+                    'total_items': total_items,
                     'chart_items': chart_items,
                     'metric_defs': metric_defs,
                     'events': events,
