@@ -5161,6 +5161,125 @@ class SalesProductMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def _table_exists_simple(self, conn, table_name):
+        name = str(table_name or '').strip()
+        if not name:
+            return False
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SHOW TABLES LIKE %s", (name,))
+                return bool(cur.fetchone())
+        except Exception:
+            return False
+
+    def _refresh_sales_perf_agg_range(self, conn, start_date, end_date):
+        """
+        方案A：按给定日期范围，刷新周/月聚合快照表。
+        - start_date/end_date: 'YYYY-MM-DD'
+        """
+        if not conn:
+            return
+        s = str(start_date or '').strip()
+        e = str(end_date or '').strip()
+        if not s or not e:
+            return
+        try:
+            sd = datetime.strptime(s, '%Y-%m-%d').date()
+            ed = datetime.strptime(e, '%Y-%m-%d').date()
+        except Exception:
+            return
+        if ed < sd:
+            sd, ed = ed, sd
+
+        if (not self._table_exists_simple(conn, 'sales_perf_agg_week')) or (not self._table_exists_simple(conn, 'sales_perf_agg_month')):
+            return
+
+        # 计算周期边界（week_start=周一，month_start=每月1号）
+        week_start = sd - timedelta(days=sd.weekday())
+        week_end = ed - timedelta(days=ed.weekday())
+        month_start = sd.replace(day=1)
+        month_end = ed.replace(day=1)
+
+        with conn.cursor() as cur:
+            # WEEK
+            cur.execute(
+                "DELETE FROM sales_perf_agg_week WHERE week_start >= %s AND week_start <= %s",
+                (week_start.strftime('%Y-%m-%d'), week_end.strftime('%Y-%m-%d')),
+            )
+            cur.execute(
+                f"""
+                INSERT INTO sales_perf_agg_week
+                    (sales_product_id,
+                     week_start, week_end, year_week, source_rows,
+                     sales_qty, net_sales_amount, order_qty, session_total,
+                     ad_impressions, ad_clicks, ad_orders, ad_spend, ad_sales_amount,
+                     refund_amount, sub_category_rank_avg)
+                SELECT
+                    spp.sales_product_id AS sales_product_id,
+                    DATE_SUB(DATE(spp.record_date), INTERVAL WEEKDAY(spp.record_date) DAY) AS week_start,
+                    DATE_ADD(DATE_SUB(DATE(spp.record_date), INTERVAL WEEKDAY(spp.record_date) DAY), INTERVAL 6 DAY) AS week_end,
+                    YEARWEEK(spp.record_date, 1) AS year_week,
+                    COUNT(1) AS source_rows,
+                    SUM(COALESCE(spp.sales_qty,0)) AS sales_qty,
+                    SUM(COALESCE(spp.net_sales_amount,0)) AS net_sales_amount,
+                    SUM(COALESCE(spp.order_qty,0)) AS order_qty,
+                    SUM(COALESCE(spp.session_total,0)) AS session_total,
+                    SUM(COALESCE(spp.ad_impressions,0)) AS ad_impressions,
+                    SUM(COALESCE(spp.ad_clicks,0)) AS ad_clicks,
+                    SUM(COALESCE(spp.ad_orders,0)) AS ad_orders,
+                    SUM(COALESCE(spp.ad_spend,0)) AS ad_spend,
+                    SUM(COALESCE(spp.ad_sales_amount,0)) AS ad_sales_amount,
+                    SUM(COALESCE(spp.refund_amount,0)) AS refund_amount,
+                    AVG(spp.sub_category_rank) AS sub_category_rank_avg
+                FROM sales_product_performances spp
+                WHERE spp.record_date >= %s AND spp.record_date <= %s
+                GROUP BY spp.sales_product_id, year_week, week_start, week_end
+                """,
+                (sd.strftime('%Y-%m-%d'), ed.strftime('%Y-%m-%d')),
+            )
+
+            # MONTH
+            cur.execute(
+                "DELETE FROM sales_perf_agg_month WHERE month_start >= %s AND month_start <= %s",
+                (month_start.strftime('%Y-%m-%d'), month_end.strftime('%Y-%m-%d')),
+            )
+            cur.execute(
+                f"""
+                INSERT INTO sales_perf_agg_month
+                    (sales_product_id,
+                     month_start, month_end, year_month, source_rows,
+                     sales_qty, net_sales_amount, order_qty, session_total,
+                     ad_impressions, ad_clicks, ad_orders, ad_spend, ad_sales_amount,
+                     refund_amount, sub_category_rank_avg)
+                SELECT
+                    spp.sales_product_id AS sales_product_id,
+                    STR_TO_DATE(DATE_FORMAT(spp.record_date, '%Y-%m-01'), '%Y-%m-%d') AS month_start,
+                    LAST_DAY(spp.record_date) AS month_end,
+                    CAST(DATE_FORMAT(spp.record_date, '%Y%m') AS UNSIGNED) AS year_month,
+                    COUNT(1) AS source_rows,
+                    SUM(COALESCE(spp.sales_qty,0)) AS sales_qty,
+                    SUM(COALESCE(spp.net_sales_amount,0)) AS net_sales_amount,
+                    SUM(COALESCE(spp.order_qty,0)) AS order_qty,
+                    SUM(COALESCE(spp.session_total,0)) AS session_total,
+                    SUM(COALESCE(spp.ad_impressions,0)) AS ad_impressions,
+                    SUM(COALESCE(spp.ad_clicks,0)) AS ad_clicks,
+                    SUM(COALESCE(spp.ad_orders,0)) AS ad_orders,
+                    SUM(COALESCE(spp.ad_spend,0)) AS ad_spend,
+                    SUM(COALESCE(spp.ad_sales_amount,0)) AS ad_sales_amount,
+                    SUM(COALESCE(spp.refund_amount,0)) AS refund_amount,
+                    AVG(spp.sub_category_rank) AS sub_category_rank_avg
+                FROM sales_product_performances spp
+                WHERE spp.record_date >= %s AND spp.record_date <= %s
+                GROUP BY spp.sales_product_id, year_month, month_start, month_end
+                """,
+                (sd.strftime('%Y-%m-%d'), ed.strftime('%Y-%m-%d')),
+            )
+
+        try:
+            conn.commit()
+        except Exception:
+            pass
+
     def handle_sales_product_performance_api(self, environ, method, start_response):
         try:
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
@@ -5295,6 +5414,10 @@ class SalesProductMixin:
                                     values['sub_category_rank'], performance_id
                                 )
                             )
+                        try:
+                            self._refresh_sales_perf_agg_range(conn, record_date, record_date)
+                        except Exception:
+                            pass
                         return self.send_json({'status': 'success', 'id': performance_id}, start_response)
 
                     with conn.cursor() as cur:
@@ -5324,6 +5447,10 @@ class SalesProductMixin:
                                 values['sub_category_rank']
                             )
                         )
+                    try:
+                        self._refresh_sales_perf_agg_range(conn, record_date, record_date)
+                    except Exception:
+                        pass
                         return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':
@@ -5332,8 +5459,20 @@ class SalesProductMixin:
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
                 with self._get_db_connection() as conn:
+                    record_date = ''
                     with conn.cursor() as cur:
+                        try:
+                            cur.execute("SELECT record_date FROM sales_product_performances WHERE id=%s LIMIT 1", (item_id,))
+                            row = cur.fetchone() or {}
+                            record_date = _normalize_date_text(row.get('record_date'))
+                        except Exception:
+                            record_date = ''
                         cur.execute("DELETE FROM sales_product_performances WHERE id=%s", (item_id,))
+                    if record_date:
+                        try:
+                            self._refresh_sales_perf_agg_range(conn, record_date, record_date)
+                        except Exception:
+                            pass
                 return self.send_json({'status': 'success'}, start_response)
 
             return self.send_error(405, 'Method not allowed', start_response)
@@ -5723,6 +5862,9 @@ class SalesProductMixin:
                 'message': '开始处理...'
             })
 
+            min_record_date = None
+            max_record_date = None
+
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
                     # 一次性加载SKU/ASIN映射，避免双遍Excel扫描导致总时长翻倍
@@ -5817,6 +5959,15 @@ class SalesProductMixin:
                                 skipped_invalid_date += 1
                                 continue
 
+                            try:
+                                d_obj = datetime.strptime(record_date, '%Y-%m-%d').date()
+                                if (min_record_date is None) or (d_obj < min_record_date):
+                                    min_record_date = d_obj
+                                if (max_record_date is None) or (d_obj > max_record_date):
+                                    max_record_date = d_obj
+                            except Exception:
+                                pass
+
                             # 兼容历史模板样例行保护（避免误导入示例数据）
                             if record_date == '2026-04-07':
                                 skipped_template_sample += 1
@@ -5864,6 +6015,16 @@ class SalesProductMixin:
                     if not check_only:
                         upserted += flush_batch_data()
                         conn.commit()  # 最终确保commit
+                        # 导入成功后：刷新周/月聚合快照（方案A）
+                        if min_record_date and max_record_date:
+                            try:
+                                self._refresh_sales_perf_agg_range(
+                                    conn,
+                                    min_record_date.strftime('%Y-%m-%d'),
+                                    max_record_date.strftime('%Y-%m-%d')
+                                )
+                            except Exception:
+                                pass
 
             if not check_only and upserted <= 0:
                 msg = (
@@ -5975,6 +6136,9 @@ class SalesProductMixin:
 
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
             mode = str((query_params.get('mode', ['dashboard'])[0] or 'dashboard')).strip().lower()
+            granularity = str((query_params.get('granularity', ['day'])[0] or 'day')).strip().lower()
+            if granularity not in ('day', 'week', 'month'):
+                granularity = 'day'
 
             def parse_csv_text(name):
                 raw_list = query_params.get(name, [])
@@ -6127,73 +6291,161 @@ class SalesProductMixin:
                 ad_operation_type_ids = parse_csv_int('ad_operation_type_ids')
                 perf_timings['params'] = time.time() - perf_t_start
 
-                # === 优化1：数据库端聚合图表数据（GROUP BY + SUM/AVG）===
+                # 粒度限制（前端也会限制；这里做硬保护，避免误查导致超慢）
+                def _to_date(text):
+                    try:
+                        return datetime.strptime(str(text or ''), '%Y-%m-%d').date()
+                    except Exception:
+                        return None
+
+                max_days = None
+                if granularity == 'day':
+                    max_days = 31
+                elif granularity == 'week':
+                    max_days = 183
+
+                if max_days and start_date and end_date:
+                    sd = _to_date(start_date)
+                    ed = _to_date(end_date)
+                    if sd and ed:
+                        if ed < sd:
+                            sd, ed = ed, sd
+                            start_date, end_date = sd.strftime('%Y-%m-%d'), ed.strftime('%Y-%m-%d')
+                        diff = (ed - sd).days + 1
+                        if diff > max_days:
+                            return self.send_json({
+                                'status': 'error',
+                                'message': f'当前粒度「{granularity}」仅允许查看 {max_days} 天范围，请缩小日期区间后重试。',
+                                'max_days': max_days
+                            }, start_response)
+
+                # === 图表：按粒度从不同数据源聚合 ===
                 perf_t_a = time.time()
-                agg_columns = "DATE(spp.record_date) as record_date"
-                for key in metric_keys:
-                    metric = next((m for m in metric_defs if m['key'] == key), None)
-                    if metric:
-                        agg = metric['agg']
-                        if agg == 'sum':
-                            agg_columns += f", SUM(spp.{key}) as {key}"
-                        elif agg == 'avg':
-                            agg_columns += f", AVG(spp.{key}) as {key}"
-                
-                agg_sql = [
-                    f"""
-                    SELECT {agg_columns}
-                    FROM sales_product_performances spp
-                    JOIN sales_products sp ON sp.id = spp.sales_product_id
-                    LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
-                    LEFT JOIN product_families pf ON pf.id = v.sku_family_id
-                    LEFT JOIN shops sh ON sh.id = sp.shop_id
-                    LEFT JOIN platform_types pt ON pt.id = sh.platform_type_id
-                    WHERE 1=1
-                    """
-                ]
-                agg_params = []
-                has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
-                if start_date:
-                    agg_sql.append(' AND spp.record_date >= %s')
-                    agg_params.append(start_date)
-                if end_date:
-                    agg_sql.append(' AND spp.record_date <= %s')
-                    agg_params.append(end_date)
-                if sku_family_ids:
-                    agg_sql.append(f" AND v.sku_family_id IN ({','.join(['%s'] * len(sku_family_ids))})")
-                    agg_params.extend(sku_family_ids)
-                if platform_skus:
-                    agg_sql.append(f" AND sp.platform_sku IN ({','.join(['%s'] * len(platform_skus))})")
-                    agg_params.extend(platform_skus)
-                if fabrics:
-                    if has_fabric_text:
+                chart_items = []
+
+                if granularity == 'day':
+                    agg_columns = "DATE(spp.record_date) as record_date"
+                    for key in metric_keys:
+                        metric = next((m for m in metric_defs if m['key'] == key), None)
+                        if metric:
+                            agg = metric['agg']
+                            if agg == 'sum':
+                                agg_columns += f", SUM(spp.{key}) as {key}"
+                            elif agg == 'avg':
+                                agg_columns += f", AVG(spp.{key}) as {key}"
+
+                    agg_sql = [
+                        f"""
+                        SELECT {agg_columns}
+                        FROM sales_product_performances spp
+                        JOIN sales_products sp ON sp.id = spp.sales_product_id
+                        LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
+                        LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                        LEFT JOIN shops sh ON sh.id = sp.shop_id
+                        LEFT JOIN platform_types pt ON pt.id = sh.platform_type_id
+                        WHERE 1=1
+                        """
+                    ]
+                    agg_params = []
+                    has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+                    if start_date:
+                        agg_sql.append(' AND spp.record_date >= %s')
+                        agg_params.append(start_date)
+                    if end_date:
+                        agg_sql.append(' AND spp.record_date <= %s')
+                        agg_params.append(end_date)
+                    if sku_family_ids:
+                        agg_sql.append(f" AND v.sku_family_id IN ({','.join(['%s'] * len(sku_family_ids))})")
+                        agg_params.extend(sku_family_ids)
+                    if platform_skus:
+                        agg_sql.append(f" AND sp.platform_sku IN ({','.join(['%s'] * len(platform_skus))})")
+                        agg_params.extend(platform_skus)
+                    if fabrics and has_fabric_text:
                         agg_sql.append(f" AND v.fabric IN ({','.join(['%s'] * len(fabrics))})")
                         agg_params.extend(fabrics)
-                if spec_names:
-                    agg_sql.append(f" AND v.spec_name IN ({','.join(['%s'] * len(spec_names))})")
-                    agg_params.extend(spec_names)
-                if shop_ids:
-                    agg_sql.append(f" AND sp.shop_id IN ({','.join(['%s'] * len(shop_ids))})")
-                    agg_params.extend(shop_ids)
-                if platform_type_ids:
-                    agg_sql.append(f" AND sh.platform_type_id IN ({','.join(['%s'] * len(platform_type_ids))})")
-                    agg_params.extend(platform_type_ids)
-                agg_sql.append(' GROUP BY DATE(spp.record_date) ORDER BY record_date ASC')
-                
-                with conn.cursor() as cur:
-                    cur.execute(''.join(agg_sql), tuple(agg_params))
-                    agg_rows = cur.fetchall() or []
-                
-                chart_items = []
-                for row in agg_rows:
-                    item = {'record_date': row.get('record_date')}
+                    if spec_names:
+                        agg_sql.append(f" AND v.spec_name IN ({','.join(['%s'] * len(spec_names))})")
+                        agg_params.extend(spec_names)
+                    if shop_ids:
+                        agg_sql.append(f" AND sp.shop_id IN ({','.join(['%s'] * len(shop_ids))})")
+                        agg_params.extend(shop_ids)
+                    if platform_type_ids:
+                        agg_sql.append(f" AND sh.platform_type_id IN ({','.join(['%s'] * len(platform_type_ids))})")
+                        agg_params.extend(platform_type_ids)
+                    agg_sql.append(' GROUP BY DATE(spp.record_date) ORDER BY record_date ASC')
+
+                    with conn.cursor() as cur:
+                        cur.execute(''.join(agg_sql), tuple(agg_params))
+                        agg_rows = cur.fetchall() or []
+                    for row in agg_rows:
+                        item = {'record_date': row.get('record_date')}
+                        for key in metric_keys:
+                            val = row.get(key)
+                            item[key] = round(float(val), 2) if val is not None else 0
+                        chart_items.append(item)
+                else:
+                    src_table = 'sales_perf_agg_week' if granularity == 'week' else 'sales_perf_agg_month'
+                    period_col = 'week_start' if granularity == 'week' else 'month_start'
+
+                    cols = [f"DATE(a.{period_col}) AS record_date"]
                     for key in metric_keys:
-                        val = row.get(key)
-                        item[key] = round(float(val), 2) if val is not None else 0
-                    chart_items.append(item)
+                        if key == 'sub_category_rank':
+                            cols.append("AVG(a.sub_category_rank_avg) AS sub_category_rank")
+                        else:
+                            cols.append(f"SUM(COALESCE(a.{key},0)) AS {key}")
+
+                    agg_sql = [
+                        f"""
+                        SELECT {', '.join(cols)}
+                        FROM {src_table} a
+                        JOIN sales_products sp ON sp.id = a.sales_product_id
+                        LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
+                        LEFT JOIN shops sh ON sh.id = sp.shop_id
+                        WHERE 1=1
+                        """
+                    ]
+                    agg_params = []
+                    if start_date:
+                        agg_sql.append(f" AND a.{period_col} >= %s")
+                        agg_params.append(start_date)
+                    if end_date:
+                        agg_sql.append(f" AND a.{period_col} <= %s")
+                        agg_params.append(end_date)
+                    if sku_family_ids:
+                        agg_sql.append(f" AND v.sku_family_id IN ({','.join(['%s'] * len(sku_family_ids))})")
+                        agg_params.extend(sku_family_ids)
+                    if platform_skus:
+                        agg_sql.append(f" AND sp.platform_sku IN ({','.join(['%s'] * len(platform_skus))})")
+                        agg_params.extend(platform_skus)
+                    if fabrics:
+                        has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+                        if has_fabric_text:
+                            agg_sql.append(f" AND v.fabric IN ({','.join(['%s'] * len(fabrics))})")
+                            agg_params.extend(fabrics)
+                    if spec_names:
+                        agg_sql.append(f" AND v.spec_name IN ({','.join(['%s'] * len(spec_names))})")
+                        agg_params.extend(spec_names)
+                    if shop_ids:
+                        agg_sql.append(f" AND sp.shop_id IN ({','.join(['%s'] * len(shop_ids))})")
+                        agg_params.extend(shop_ids)
+                    if platform_type_ids:
+                        agg_sql.append(f" AND sh.platform_type_id IN ({','.join(['%s'] * len(platform_type_ids))})")
+                        agg_params.extend(platform_type_ids)
+                    agg_sql.append(" GROUP BY DATE(record_date) ORDER BY record_date ASC")
+
+                    with conn.cursor() as cur:
+                        cur.execute(''.join(agg_sql), tuple(agg_params))
+                        agg_rows = cur.fetchall() or []
+                    for row in agg_rows:
+                        item = {'record_date': row.get('record_date')}
+                        for key in metric_keys:
+                            val = row.get(key)
+                            item[key] = round(float(val), 2) if val is not None else 0
+                        chart_items.append(item)
+
                 perf_timings['chart_agg'] = time.time() - perf_t_a
 
-                # === 优化2：货号分组（改为数据库聚合，避免拉全量日明细）===
+                # === 货号分组（按粒度选择数据源）===
                 perf_t_g = time.time()
                 has_fabric_id = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
                 has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
@@ -6204,72 +6456,139 @@ class SalesProductMixin:
                     fabric_expr = "fm.fabric_code"
                 else:
                     fabric_expr = ("v.fabric" if has_fabric_text else "''")
-                # 子表展示只需要“平台SKU级别”的汇总，不需要把每日记录全拉回后端再 Python 分组。
-                group_cols = [
-                    "sp.id AS sp_id",
-                    "sp.platform_sku",
-                    f"{fabric_expr} AS fabric",
-                    "v.spec_name",
-                    "v.sku_family_id",
-                    "pf.sku_family",
-                    "MIN(DATE(spp.record_date)) AS min_date",
-                    "MAX(DATE(spp.record_date)) AS max_date",
-                    "COUNT(1) AS rows",
-                    "SUM(COALESCE(spp.sales_qty,0)) AS sales_qty",
-                    "SUM(COALESCE(spp.net_sales_amount,0)) AS net_sales_amount",
-                    "SUM(COALESCE(spp.order_qty,0)) AS order_qty",
-                    "SUM(COALESCE(spp.session_total,0)) AS session_total",
-                    "SUM(COALESCE(spp.ad_impressions,0)) AS ad_impressions",
-                    "SUM(COALESCE(spp.ad_clicks,0)) AS ad_clicks",
-                    "SUM(COALESCE(spp.ad_orders,0)) AS ad_orders",
-                    "SUM(COALESCE(spp.ad_spend,0)) AS ad_spend",
-                    "SUM(COALESCE(spp.ad_sales_amount,0)) AS ad_sales_amount",
-                    "SUM(COALESCE(spp.refund_amount,0)) AS refund_amount",
-                    "AVG(spp.sub_category_rank) AS sub_category_rank",
-                ]
-
-                sql = [
-                    f"""
-                    SELECT {', '.join(group_cols)}
-                    FROM sales_product_performances spp
-                    JOIN sales_products sp ON sp.id = spp.sales_product_id
-                    LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
-                    LEFT JOIN product_families pf ON pf.id = v.sku_family_id
-                    LEFT JOIN shops sh ON sh.id = sp.shop_id
-                    LEFT JOIN platform_types pt ON pt.id = sh.platform_type_id
-                    {fabric_join}
-                    WHERE 1=1
-                    """
-                ]
                 params = []
-                # has_fabric_text already computed above
-                if start_date:
-                    sql.append(' AND spp.record_date >= %s')
-                    params.append(start_date)
-                if end_date:
-                    sql.append(' AND spp.record_date <= %s')
-                    params.append(end_date)
-                if sku_family_ids:
-                    sql.append(f" AND v.sku_family_id IN ({','.join(['%s'] * len(sku_family_ids))})")
-                    params.extend(sku_family_ids)
-                if platform_skus:
-                    sql.append(f" AND sp.platform_sku IN ({','.join(['%s'] * len(platform_skus))})")
-                    params.extend(platform_skus)
-                if fabrics:
-                    if has_fabric_text:
+                sql = []
+                if granularity == 'day':
+                    # 子表展示只需要“平台SKU级别”的汇总，不需要把每日记录全拉回后端再 Python 分组。
+                    group_cols = [
+                        "sp.id AS sp_id",
+                        "sp.platform_sku",
+                        f"{fabric_expr} AS fabric",
+                        "v.spec_name",
+                        "v.sku_family_id",
+                        "pf.sku_family",
+                        "MIN(DATE(spp.record_date)) AS min_date",
+                        "MAX(DATE(spp.record_date)) AS max_date",
+                        "COUNT(1) AS `rows`",
+                        "SUM(COALESCE(spp.sales_qty,0)) AS sales_qty",
+                        "SUM(COALESCE(spp.net_sales_amount,0)) AS net_sales_amount",
+                        "SUM(COALESCE(spp.order_qty,0)) AS order_qty",
+                        "SUM(COALESCE(spp.session_total,0)) AS session_total",
+                        "SUM(COALESCE(spp.ad_impressions,0)) AS ad_impressions",
+                        "SUM(COALESCE(spp.ad_clicks,0)) AS ad_clicks",
+                        "SUM(COALESCE(spp.ad_orders,0)) AS ad_orders",
+                        "SUM(COALESCE(spp.ad_spend,0)) AS ad_spend",
+                        "SUM(COALESCE(spp.ad_sales_amount,0)) AS ad_sales_amount",
+                        "SUM(COALESCE(spp.refund_amount,0)) AS refund_amount",
+                        "AVG(spp.sub_category_rank) AS sub_category_rank",
+                    ]
+
+                    sql = [
+                        f"""
+                        SELECT {', '.join(group_cols)}
+                        FROM sales_product_performances spp
+                        JOIN sales_products sp ON sp.id = spp.sales_product_id
+                        LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
+                        LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                        LEFT JOIN shops sh ON sh.id = sp.shop_id
+                        LEFT JOIN platform_types pt ON pt.id = sh.platform_type_id
+                        {fabric_join}
+                        WHERE 1=1
+                        """
+                    ]
+                    if start_date:
+                        sql.append(' AND spp.record_date >= %s')
+                        params.append(start_date)
+                    if end_date:
+                        sql.append(' AND spp.record_date <= %s')
+                        params.append(end_date)
+                    if sku_family_ids:
+                        sql.append(f" AND v.sku_family_id IN ({','.join(['%s'] * len(sku_family_ids))})")
+                        params.extend(sku_family_ids)
+                    if platform_skus:
+                        sql.append(f" AND sp.platform_sku IN ({','.join(['%s'] * len(platform_skus))})")
+                        params.extend(platform_skus)
+                    if fabrics and has_fabric_text:
                         sql.append(f" AND v.fabric IN ({','.join(['%s'] * len(fabrics))})")
                         params.extend(fabrics)
-                if spec_names:
-                    sql.append(f" AND v.spec_name IN ({','.join(['%s'] * len(spec_names))})")
-                    params.extend(spec_names)
-                if shop_ids:
-                    sql.append(f" AND sp.shop_id IN ({','.join(['%s'] * len(shop_ids))})")
-                    params.extend(shop_ids)
-                if platform_type_ids:
-                    sql.append(f" AND sh.platform_type_id IN ({','.join(['%s'] * len(platform_type_ids))})")
-                    params.extend(platform_type_ids)
-                sql.append(' GROUP BY sp.id, sp.platform_sku, fabric, v.spec_name, v.sku_family_id, pf.sku_family')
-                sql.append(' ORDER BY pf.sku_family ASC, sp.platform_sku ASC')
+                    if spec_names:
+                        sql.append(f" AND v.spec_name IN ({','.join(['%s'] * len(spec_names))})")
+                        params.extend(spec_names)
+                    if shop_ids:
+                        sql.append(f" AND sp.shop_id IN ({','.join(['%s'] * len(shop_ids))})")
+                        params.extend(shop_ids)
+                    if platform_type_ids:
+                        sql.append(f" AND sh.platform_type_id IN ({','.join(['%s'] * len(platform_type_ids))})")
+                        params.extend(platform_type_ids)
+                    sql.append(' GROUP BY sp.id, sp.platform_sku, fabric, v.spec_name, v.sku_family_id, pf.sku_family')
+                    sql.append(' ORDER BY pf.sku_family ASC, sp.platform_sku ASC')
+                else:
+                    src_table = 'sales_perf_agg_week' if granularity == 'week' else 'sales_perf_agg_month'
+                    period_start_col = 'week_start' if granularity == 'week' else 'month_start'
+                    period_end_col = 'week_end' if granularity == 'week' else 'month_end'
+
+                    group_cols = [
+                        "0 AS sp_id",
+                        "sp.platform_sku",
+                        f"{fabric_expr} AS fabric",
+                        "v.spec_name",
+                        "v.sku_family_id",
+                        "COALESCE(pf.sku_family, '未分组货号') AS sku_family",
+                        f"MIN(DATE(a.{period_start_col})) AS min_date",
+                        f"MAX(DATE(a.{period_end_col})) AS max_date",
+                        "SUM(COALESCE(a.source_rows,0)) AS `rows`",
+                        "SUM(COALESCE(a.sales_qty,0)) AS sales_qty",
+                        "SUM(COALESCE(a.net_sales_amount,0)) AS net_sales_amount",
+                        "SUM(COALESCE(a.order_qty,0)) AS order_qty",
+                        "SUM(COALESCE(a.session_total,0)) AS session_total",
+                        "SUM(COALESCE(a.ad_impressions,0)) AS ad_impressions",
+                        "SUM(COALESCE(a.ad_clicks,0)) AS ad_clicks",
+                        "SUM(COALESCE(a.ad_orders,0)) AS ad_orders",
+                        "SUM(COALESCE(a.ad_spend,0)) AS ad_spend",
+                        "SUM(COALESCE(a.ad_sales_amount,0)) AS ad_sales_amount",
+                        "SUM(COALESCE(a.refund_amount,0)) AS refund_amount",
+                        "AVG(a.sub_category_rank_avg) AS sub_category_rank",
+                    ]
+
+                    sql = [
+                        f"""
+                        SELECT {', '.join(group_cols)}
+                        FROM {src_table} a
+                        JOIN sales_products sp ON sp.id = a.sales_product_id
+                        LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
+                        LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                        LEFT JOIN shops sh ON sh.id = sp.shop_id
+                        {fabric_join}
+                        WHERE 1=1
+                        """
+                    ]
+                    if start_date:
+                        sql.append(f' AND a.{period_start_col} >= %s')
+                        params.append(start_date)
+                    if end_date:
+                        sql.append(f' AND a.{period_start_col} <= %s')
+                        params.append(end_date)
+                    if sku_family_ids:
+                        sql.append(f" AND v.sku_family_id IN ({','.join(['%s'] * len(sku_family_ids))})")
+                        params.extend(sku_family_ids)
+                    if platform_skus:
+                        sql.append(f" AND sp.platform_sku IN ({','.join(['%s'] * len(platform_skus))})")
+                        params.extend(platform_skus)
+                    if fabrics:
+                        if has_fabric_text:
+                            sql.append(f" AND v.fabric IN ({','.join(['%s'] * len(fabrics))})")
+                            params.extend(fabrics)
+                    if spec_names:
+                        sql.append(f" AND v.spec_name IN ({','.join(['%s'] * len(spec_names))})")
+                        params.extend(spec_names)
+                    if shop_ids:
+                        sql.append(f" AND sp.shop_id IN ({','.join(['%s'] * len(shop_ids))})")
+                        params.extend(shop_ids)
+                    if platform_type_ids:
+                        sql.append(f" AND sh.platform_type_id IN ({','.join(['%s'] * len(platform_type_ids))})")
+                        params.extend(platform_type_ids)
+                    sql.append(' GROUP BY sp.platform_sku, fabric, v.spec_name, v.sku_family_id, sku_family')
+                    sql.append(' ORDER BY sku_family ASC, sp.platform_sku ASC')
 
                 with conn.cursor() as cur:
                     cur.execute(''.join(sql), tuple(params))

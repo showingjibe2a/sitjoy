@@ -128,7 +128,8 @@
 <div id="factoryWipSaveBar" class="preview-savebar" aria-live="polite">
   <span id="factoryWipSaveText">已修改 0 条预览数据</span>
   <button type="button" class="btn-secondary" onclick="cancelFactoryWipEdits()">取消修改</button>
-  <button type="button" class="btn-primary" onclick="saveFactoryWipEdits()">统一保存</button>
+  <button id="factoryWipSaveNoStockBtn" type="button" class="btn-secondary" onclick="saveFactoryWipEdits(false)">批量保存（不更新在库）</button>
+  <button id="factoryWipSaveUpdateStockBtn" type="button" class="btn-primary" onclick="saveFactoryWipEdits(true)">批量保存并更新工厂在库数据</button>
 </div>
 
 <style>
@@ -840,48 +841,42 @@ function collectFactoryWipUpdateItems(){
   }));
 }
 
-function saveFactoryWipEdits(){
+function saveFactoryWipEdits(updateFactoryStock){
   const items = collectFactoryWipUpdateItems();
   if(!items.length){
     syncFactoryWipSaveBar();
     return;
   }
   const bar = document.getElementById('factoryWipSaveBar');
-  const saveBtn = bar ? bar.querySelector('.btn-primary') : null;
-  if(saveBtn){
-    saveBtn.disabled = true;
-    saveBtn.textContent = '保存中...';
-  }
+  const btnNoStock = document.getElementById('factoryWipSaveNoStockBtn');
+  const btnUpdateStock = document.getElementById('factoryWipSaveUpdateStockBtn');
+  const runningText = '保存中...';
+  if(btnNoStock){ btnNoStock.disabled = true; btnNoStock.textContent = runningText; }
+  if(btnUpdateStock){ btnUpdateStock.disabled = true; btnUpdateStock.textContent = runningText; }
   fetch('/api/factory-wip?action=bulk_update', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ items })
+    body: JSON.stringify({ items, update_factory_stock: updateFactoryStock ? 1 : 0 })
   })
     .then(r => r.json())
     .then(d => {
       if(d.status !== 'success'){
         if(window.showAppToast){ window.showAppToast(d.message || '批量更新失败', true, 3200); }
-        if(saveBtn){
-          saveBtn.disabled = false;
-          saveBtn.textContent = '统一保存';
-        }
+        if(btnNoStock){ btnNoStock.disabled = false; btnNoStock.textContent = '批量保存（不更新在库）'; }
+        if(btnUpdateStock){ btnUpdateStock.disabled = false; btnUpdateStock.textContent = '批量保存并更新工厂在库数据'; }
         return;
       }
       factoryWipEditDraft = {};
       if(window.showAppToast){ window.showAppToast(`批量更新成功：${Number(d.updated || items.length)} 条`, false, 2200); }
       loadOptions().catch(() => null).finally(loadList);
       syncFactoryWipSaveBar();
-      if(saveBtn){
-        saveBtn.disabled = false;
-        saveBtn.textContent = '统一保存';
-      }
+      if(btnNoStock){ btnNoStock.disabled = false; btnNoStock.textContent = '批量保存（不更新在库）'; }
+      if(btnUpdateStock){ btnUpdateStock.disabled = false; btnUpdateStock.textContent = '批量保存并更新工厂在库数据'; }
     })
     .catch(err => {
       if(window.showAppToast){ window.showAppToast(err.message || '批量更新失败', true, 3200); }
-      if(saveBtn){
-        saveBtn.disabled = false;
-        saveBtn.textContent = '统一保存';
-      }
+      if(btnNoStock){ btnNoStock.disabled = false; btnNoStock.textContent = '批量保存（不更新在库）'; }
+      if(btnUpdateStock){ btnUpdateStock.disabled = false; btnUpdateStock.textContent = '批量保存并更新工厂在库数据'; }
     });
 }
 

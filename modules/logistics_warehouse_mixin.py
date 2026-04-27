@@ -361,6 +361,7 @@ class LogisticsWarehouseMixin:
                     items = data.get('items') if isinstance(data, dict) else None
                     if not isinstance(items, list) or not items:
                         return self.send_json({'status': 'error', 'message': '缺少批量更新数据'}, start_response)
+                    update_factory_stock = _parse_yes_no((data or {}).get('update_factory_stock'))
 
                     parsed_items = []
                     seen_ids = set()
@@ -909,6 +910,7 @@ class LogisticsWarehouseMixin:
                     items = data.get('items') if isinstance(data, dict) else None
                     if not isinstance(items, list) or not items:
                         return self.send_json({'status': 'error', 'message': '缺少批量更新数据'}, start_response)
+                    update_factory_stock = _parse_yes_no((data or {}).get('update_factory_stock'))
 
                     parsed_items = []
                     seen_ids = set()
@@ -955,7 +957,7 @@ class LogisticsWarehouseMixin:
                     with self._get_db_connection() as conn:
                         with conn.cursor() as cur:
                             cur.execute(
-                                f"SELECT id, factory_id, contract_id FROM factory_wip_inventory WHERE id IN ({id_placeholders})",
+                                f"SELECT id, factory_id, order_product_id, contract_id, quantity, is_completed FROM factory_wip_inventory WHERE id IN ({id_placeholders})",
                                 tuple(id_list)
                             )
                             existing_rows = cur.fetchall() or []
@@ -1005,6 +1007,38 @@ class LogisticsWarehouseMixin:
                                         item['id'],
                                     )
                                 )
+
+                            if update_factory_stock:
+                                # Only transfer rows that become completed in THIS bulk update.
+                                for item in parsed_items:
+                                    existing_row = existing_map.get(item['id']) or {}
+                                    previous_completed = int(existing_row.get('is_completed') or 0)
+                                    if previous_completed == 1:
+                                        continue
+                                    if int(item.get('is_completed') or 0) != 1:
+                                        continue
+
+                                    transfer_qty = max(0, int(item.get('quantity') or 0))
+                                    if transfer_qty <= 0:
+                                        continue
+
+                                    order_product_id = self._parse_int(existing_row.get('order_product_id'))
+                                    factory_id = self._parse_int(existing_row.get('factory_id'))
+                                    if not order_product_id or not factory_id:
+                                        continue
+                                    if not self._order_product_allowed_for_factory(order_product_id, factory_id):
+                                        continue
+
+                                    cur.execute(
+                                        """
+                                        INSERT INTO factory_stock_inventory (order_product_id, factory_id, quantity, notes)
+                                        VALUES (%s, %s, %s, %s)
+                                        ON DUPLICATE KEY UPDATE
+                                          quantity = quantity + VALUES(quantity),
+                                          notes = COALESCE(VALUES(notes), notes)
+                                        """,
+                                        (order_product_id, factory_id, transfer_qty, item.get('notes'))
+                                    )
 
                     return self.send_json({'status': 'success', 'updated': len(parsed_items)}, start_response)
 
