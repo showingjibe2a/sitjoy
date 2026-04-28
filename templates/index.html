@@ -405,6 +405,20 @@
             margin: 0.6rem 0 0.35rem 0;
             font-weight: 600;
         }
+        #todoTypeBar.material-type-bar {
+            background-color: rgba(115, 115, 120, 0.32);
+            padding: 0.45rem 0.55rem;
+            border-radius: 10px;
+        }
+        #todoTypeBar .material-type-radio span {
+            padding: 0.34rem 0.55rem;
+            border-radius: 10px;
+            font-size: 0.82rem;
+        }
+        #todoTypeBar .material-type-add {
+            border-radius: 10px;
+            padding: 0.36rem 0.55rem;
+        }
         .todo-table-wrap {
             width: 100%;
             overflow: auto;
@@ -418,28 +432,9 @@
         #todoTable .pm-actions { display: inline-flex; gap: 0.35rem; }
         .todo-title-cell { min-width: 140px; word-break: break-word; }
         .todo-mini-sub { font-size: 11px; color: #888; margin-top: 2px; }
-        .todo-complete-pop {
-            position: fixed;
-            z-index: 5200;
-            min-width: 240px;
-            background: #fff;
-            border: 1px solid rgba(207, 199, 189, 0.72);
-            border-radius: 10px;
-            box-shadow: 0 10px 28px rgba(0,0,0,0.14);
-            padding: 0.65rem 0.75rem;
-            display: none;
-        }
-        .todo-complete-pop.active { display: block; }
-        .todo-complete-pop .pop-title { font-size: 12px; font-weight: 700; color: var(--morandi-ink); margin-bottom: 0.4rem; }
-        .todo-complete-pop .pop-row { display: grid; gap: 0.35rem; }
-        .todo-complete-pop input[type="datetime-local"]{
-            padding: 0.35rem 0.55rem;
-            border: 1px solid rgba(207, 199, 189, 0.72);
-            border-radius: 8px;
-            font-size: 12px;
-        }
-        .todo-complete-pop .pop-actions { display: flex; justify-content: flex-end; gap: 0.45rem; margin-top: 0.55rem; }
-        .todo-complete-pop .pop-actions button { padding: 0.35rem 0.75rem; font-size: 12px; }
+        /* todo-complete-pop removed */
+        /* Todo modal - yellow priority pill */
+        .status-pill--warning.is-active { background: #b6912f !important; } /* warm yellow, similar saturation */
     </style>
 </head>
 <body>
@@ -452,12 +447,12 @@
         <section class="home-layout">
             <aside class="todo-rail">
                 <div class="rail-card">
-                    <h3>待办</h3>
-                    <div style="margin-bottom: 20px;">
-                        <button class="btn-primary" style="width: 100%;" onclick="showTodoModal('create')">+ 新增待办</button>
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:0.6rem;">
+                        <h3>待办</h3>
+                        <button class="btn-add" onclick="showTodoModal('create')">+ 新增待办</button>
                     </div>
                     <div class="todo-type-bar-title">待办类型管理</div>
-                    <div class="material-type-bar" id="todoTypeBar" style="margin-bottom: 0.7rem;">
+                    <div class="supplier-manage-bar" id="todoTypeBar" style="margin-bottom: 0.7rem;">
                         <button class="material-type-add" type="button" aria-label="新增类型" onclick="openTodoTypeModal('create')">+</button>
                     </div>
                     <div class="todo-table-wrap">
@@ -468,11 +463,12 @@
                                     <th style="width:120px;">类型</th>
                                     <th>事项</th>
                                     <th style="width:130px;">开始/截止</th>
+                                    <th style="width:190px;">完成时间</th>
                                     <th style="width:120px;">操作</th>
                                 </tr>
                             </thead>
                             <tbody id="todoTableBody">
-                                <tr><td colspan="5" style="text-align:center;">加载中...</td></tr>
+                                <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -595,43 +591,81 @@
                     <h4>基础信息</h4>
                     <div class="pm-section-body">
                         <input type="hidden" id="todoModalId" value="">
-                        <div class="form-group">
+                        <div class="form-group pm-form-full">
+                            <label>待办类型 <span class="required-asterisk">*</span></label>
+                            <input type="hidden" id="todoModalTypeId" value="">
+                            <div class="status-segment status-segment--inline" id="todoModalTypeSegment" data-value="">
+                                <button type="button" class="status-pill status-pill--enabled" data-value="">加载中</button>
+                            </div>
+                        </div>
+                        <div class="form-group pm-form-full">
+                            <label>优先级</label>
+                            <input type="hidden" id="todoModalPriorityVal" value="2">
+                            <div class="status-segment status-segment--inline" id="todoModalPrioritySegment" data-value="2">
+                                <button type="button" class="status-pill status-pill--paused" data-value="3">高</button>
+                                <button type="button" class="status-pill status-pill--warning is-active" data-value="2">中</button>
+                                <button type="button" class="status-pill status-pill--enabled" data-value="1">低</button>
+                            </div>
+                        </div>
+                        <div class="form-group pm-form-full">
                             <label>事项标题 <span class="required-asterisk">*</span></label>
                             <input type="text" id="todoModalTitle_input" placeholder="事项" required>
                         </div>
-                        <div class="form-group">
-                            <label>待办类型 <span class="required-asterisk">*</span></label>
-                            <select id="todoModalType" data-universal-no-search="1"></select>
+                        <div class="form-group pm-form-full">
+                            <label>详情/备注</label>
+                            <textarea id="todoModalDetail" rows="4" placeholder="可选的任务详情"></textarea>
                         </div>
                         <div class="form-group">
                             <label>开始日期 <span class="required-asterisk">*</span></label>
                             <input type="date" id="todoModalStartDate" required>
                         </div>
                         <div class="form-group">
-                            <label>优先级</label>
-                            <select id="todoModalPriority" data-universal-no-search="1">
-                                <option value="3">高</option>
-                                <option value="2" selected>中</option>
-                                <option value="1">低</option>
-                            </select>
+                            <label>是否为循环任务</label>
+                            <input type="hidden" id="todoModalIsRecurringVal" value="0">
+                            <div class="status-segment status-segment--inline" id="todoModalRecurringSegment" data-value="0">
+                                <button type="button" class="status-pill status-pill--enabled" data-value="1">循环任务</button>
+                                <button type="button" class="status-pill status-pill--paused is-active" data-value="0">不循环</button>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label>提醒间隔（天）</label>
+                        <div class="form-group" id="todoModalReminderWrap" style="display:none;">
+                            <label>提醒间隔（天，循环任务必填）</label>
                             <input type="number" id="todoModalReminderInterval" value="1" min="1" max="365">
                         </div>
-                        <div class="form-group">
-                            <label>是否为循环任务</label>
-                            <div style="display: flex; align-items: center; gap: 12px;">
-                                <label class="switch-wrap">
-                                    <input type="checkbox" id="todoModalIsRecurring">
-                                    <span class="switch-slider"></span>
-                                </label>
-                                <span style="font-size: 13px; color: #666;">启用循环任务</span>
+                        <div class="form-group pm-form-full">
+                            <label>关联货号（可多选）</label>
+                            <div class="feature-category-picker is-multi-check" id="todoSkuFamilyPicker">
+                                <div class="feature-category-chips" id="todoSkuFamilySelected"></div>
+                                <div class="feature-category-dropdown" id="todoSkuFamilyDropdown">
+                                    <button type="button" class="feature-category-add" id="todoSkuFamilyToggle">
+                                        <span class="feature-category-add-icon">+</span>
+                                        <span class="feature-category-add-text">添加货号</span>
+                                    </button>
+                                    <div class="feature-category-menu" id="todoSkuFamilyMenu">
+                                        <input type="text" id="todoSkuFamilySearch" class="universal-select-search" placeholder="搜索货号/类目">
+                                        <div class="feature-category-list" id="todoSkuFamilyList"></div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         <div class="form-group pm-form-full">
-                            <label>详情/备注</label>
-                            <textarea id="todoModalDetail" rows="4" placeholder="可选的任务详情"></textarea>
+                            <label>关联销售SKU（可多选，选择SKU会同步关联其货号）</label>
+                            <div class="feature-category-picker is-multi-check" id="todoSalesSkuPicker">
+                                <div class="feature-category-chips" id="todoSalesSkuSelected"></div>
+                                <div class="feature-category-dropdown" id="todoSalesSkuDropdown">
+                                    <button type="button" class="feature-category-add" id="todoSalesSkuToggle">
+                                        <span class="feature-category-add-icon">+</span>
+                                        <span class="feature-category-add-text">添加销售SKU</span>
+                                    </button>
+                                    <div class="feature-category-menu" id="todoSalesSkuMenu">
+                                        <input type="text" id="todoSalesSkuSearch" class="universal-select-search" placeholder="搜索平台SKU/货号/规格">
+                                        <div class="feature-category-list" id="todoSalesSkuList"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group" id="todoModalDueDateWrap">
+                            <label>截止日期（非循环任务必填）</label>
+                            <input type="date" id="todoModalDueDate">
                         </div>
                         <div class="form-group pm-form-full">
                             <label>分配给（可多选）</label>
@@ -687,18 +721,7 @@
         </div>
     </div>
 
-    <!-- 完成时间小弹窗 -->
-    <div class="todo-complete-pop" id="todoCompletePop">
-        <div class="pop-title">设置完成时间</div>
-        <div class="pop-row">
-            <input type="hidden" id="todoCompletePopId" value="">
-            <input type="datetime-local" id="todoCompletePopTime">
-        </div>
-        <div class="pop-actions">
-            <button class="btn-secondary" type="button" onclick="closeTodoCompletePop()">取消</button>
-            <button class="btn-primary" type="button" onclick="confirmTodoCompleteTime()">确认</button>
-        </div>
-    </div>
+    <!-- 完成时间小弹窗已移除：点击“已完成”直接写入当前时间 -->
 
     <!-- 新增员工弹窗 -->
     <div id="employeeCreateModal" class="pm-modal">
@@ -1153,46 +1176,92 @@
                              String(today.getDate()).padStart(2, '0');
             const idEl = document.getElementById('todoModalId');
             if (idEl) idEl.value = '';
+            // reset link selections
+            setTodoSelectedSkuFamilyIds([]);
+            setTodoSelectedSalesProductIds([]);
+            window.todoEditingSkuFamilyNamesById = {};
+            window.todoEditingSalesSkuNamesById = {};
+            updateTodoSkuFamilySelected();
+            updateTodoSalesSkuSelected();
             
             if (action === 'create') {
                 document.getElementById('todoModalTitle').textContent = '新增待办';
                 document.getElementById('todoModalTitle_input').value = '';
-                ensureTodoTypeOptions();
                 document.getElementById('todoModalStartDate').value = dateString;
+                const dueEl = document.getElementById('todoModalDueDate');
+                if (dueEl) dueEl.value = dateString;
                 document.getElementById('todoModalReminderInterval').value = 1;
-                document.getElementById('todoModalPriority').value = 2;
-                document.getElementById('todoModalIsRecurring').checked = false;
                 document.getElementById('todoModalDetail').value = '';
-                setTodoSelectedAssigneeIds([]);
+                // default assignee: self
+                setTodoSelectedAssigneeIds(currentUser && Number(currentUser.id || 0) > 0 ? [Number(currentUser.id)] : []);
                 const assigneeSearch = document.getElementById('todoModalAssigneeSearch');
                 if (assigneeSearch) assigneeSearch.value = '';
                 document.getElementById('assigneeSelected').innerHTML = '';
+                setSegmentValue(document.getElementById('todoModalPrioritySegment'), '2');
+                setSegmentValue(document.getElementById('todoModalRecurringSegment'), '0');
             } else if (action === 'edit' && todoId) {
                 document.getElementById('todoModalTitle').textContent = '编辑待办';
                 const idNum = parseInt(todoId, 10) || 0;
                 if (idEl) idEl.value = String(idNum);
                 const todo = (window.homeTodosCache || []).find(x => parseInt(x.id, 10) === idNum);
                 if (todo) {
-                    ensureTodoTypeOptions(todo.todo_type_id);
                     document.getElementById('todoModalTitle_input').value = todo.title || '';
                     document.getElementById('todoModalStartDate').value = todo.start_date || dateString;
+                    const dueEl = document.getElementById('todoModalDueDate');
+                    if (dueEl) dueEl.value = (todo.due_date || todo.start_date || dateString);
                     document.getElementById('todoModalReminderInterval').value = todo.reminder_interval_days || 1;
-                    document.getElementById('todoModalPriority').value = todo.priority || 2;
-                    document.getElementById('todoModalIsRecurring').checked = !!todo.is_recurring;
                     document.getElementById('todoModalDetail').value = todo.detail || '';
                     setTodoSelectedAssigneeIds((todo.assignees || []).map(a => a.assignee_id));
                     updateAssigneeSelected();
+                    setSegmentValue(document.getElementById('todoModalPrioritySegment'), String(todo.priority || 2));
+                    setSegmentValue(document.getElementById('todoModalRecurringSegment'), String(Number(todo.is_recurring || 0) ? 1 : 0));
+                    setSegmentValue(document.getElementById('todoModalTypeSegment'), String(todo.todo_type_id || ''));
+                    // links backfill
+                    setTodoSelectedSkuFamilyIds(todo.sku_family_ids || []);
+                    setTodoSelectedSalesProductIds(todo.sales_product_ids || []);
+                    // store names for chips (in case options not loaded yet)
+                    window.todoEditingSkuFamilyNamesById = {};
+                    (todo.sku_family_ids || []).forEach((id, idx) => {
+                        const name = (todo.sku_families || [])[idx] || '';
+                        if (name) window.todoEditingSkuFamilyNamesById[parseInt(id, 10)] = name;
+                    });
+                    window.todoEditingSalesSkuNamesById = {};
+                    (todo.sales_product_ids || []).forEach((id, idx) => {
+                        const name = (todo.platform_skus || [])[idx] || '';
+                        if (name) window.todoEditingSalesSkuNamesById[parseInt(id, 10)] = name;
+                    });
+                    updateTodoSkuFamilySelected();
+                    updateTodoSalesSkuSelected();
                 } else {
-                    ensureTodoTypeOptions();
+                    setSegmentValue(document.getElementById('todoModalPrioritySegment'), '2');
+                    setSegmentValue(document.getElementById('todoModalRecurringSegment'), '0');
                 }
             }
             
             loadAssigneeCheckboxes();
+            // preload sku families for better UX
+            loadTodoSkuFamilyOptions('').then(() => updateTodoSkuFamilySelected()).catch(() => {});
+            syncTodoRecurringUi();
+        }
+
+        function syncTodoRecurringUi() {
+            const seg = document.getElementById('todoModalRecurringSegment');
+            const isRecurring = !!(seg && String(seg.dataset.value || '0') === '1');
+            const dueWrap = document.getElementById('todoModalDueDateWrap');
+            const dueEl = document.getElementById('todoModalDueDate');
+            const intervalEl = document.getElementById('todoModalReminderInterval');
+            const reminderWrap = document.getElementById('todoModalReminderWrap');
+            if (dueWrap) dueWrap.style.display = isRecurring ? 'none' : '';
+            if (dueEl) dueEl.disabled = isRecurring;
+            if (reminderWrap) reminderWrap.style.display = isRecurring ? '' : 'none';
+            if (intervalEl) intervalEl.disabled = !isRecurring;
         }
 
         function closeTodoModal() {
             document.getElementById('todoModal').classList.remove('active');
             closeAssigneeDropdown();
+            closeTodoSkuFamilyDropdown();
+            closeTodoSalesSkuDropdown();
         }
 
         function toggleAssigneeDropdown() {
@@ -1300,23 +1369,293 @@
             }
         }
 
+        // Bind todo link dropdown toggles & searches
+        document.addEventListener('click', (e) => {
+            const skuToggle = document.getElementById('todoSkuFamilyToggle');
+            const skuDropdown = document.getElementById('todoSkuFamilyDropdown');
+            if (skuToggle && e.target === skuToggle || (e.target && e.target.closest && e.target.closest('#todoSkuFamilyToggle'))) {
+                toggleTodoSkuFamilyDropdown();
+            } else if (skuDropdown && skuDropdown.classList.contains('open') && !skuDropdown.contains(e.target)) {
+                // close when clicking outside
+                // (outer global click handler also exists; keep local for safety)
+                closeTodoSkuFamilyDropdown();
+            }
+
+            const spToggle = document.getElementById('todoSalesSkuToggle');
+            const spDropdown = document.getElementById('todoSalesSkuDropdown');
+            if (spToggle && (e.target === spToggle || (e.target && e.target.closest && e.target.closest('#todoSalesSkuToggle')))) {
+                toggleTodoSalesSkuDropdown();
+            } else if (spDropdown && spDropdown.classList.contains('open') && !spDropdown.contains(e.target)) {
+                closeTodoSalesSkuDropdown();
+            }
+        });
+
+        const todoSkuFamilySearch = document.getElementById('todoSkuFamilySearch');
+        if (todoSkuFamilySearch) {
+            todoSkuFamilySearch.addEventListener('input', () => {
+                renderTodoSkuFamilyOptions(todoSkuFamilySearch.value || '');
+            });
+        }
+        const todoSalesSkuSearch = document.getElementById('todoSalesSkuSearch');
+        if (todoSalesSkuSearch) {
+            todoSalesSkuSearch.addEventListener('input', () => {
+                const v = todoSalesSkuSearch.value || '';
+                if (window.__todoSalesSkuSearchTimer) window.clearTimeout(window.__todoSalesSkuSearchTimer);
+                window.__todoSalesSkuSearchTimer = window.setTimeout(() => {
+                    renderTodoSalesSkuOptions(v);
+                }, 220);
+            });
+        }
+
+        // ===== Todo links: 关联货号 / 关联销售SKU =====
+        function getTodoSelectedSkuFamilyIds() {
+            if (!Array.isArray(window.todoSelectedSkuFamilyIds)) window.todoSelectedSkuFamilyIds = [];
+            return window.todoSelectedSkuFamilyIds;
+        }
+        function setTodoSelectedSkuFamilyIds(ids) {
+            window.todoSelectedSkuFamilyIds = Array.from(new Set((ids || []).map(v => parseInt(v, 10)).filter(v => Number.isFinite(v) && v > 0)));
+        }
+        function getTodoSelectedSalesProductIds() {
+            if (!Array.isArray(window.todoSelectedSalesProductIds)) window.todoSelectedSalesProductIds = [];
+            return window.todoSelectedSalesProductIds;
+        }
+        function setTodoSelectedSalesProductIds(ids) {
+            window.todoSelectedSalesProductIds = Array.from(new Set((ids || []).map(v => parseInt(v, 10)).filter(v => Number.isFinite(v) && v > 0)));
+        }
+
+        async function loadTodoSkuFamilyOptions(keyword = '') {
+            const q = (keyword || '').trim();
+            const params = new URLSearchParams();
+            params.set('brief', '1');
+            params.set('limit', '3000');
+            if (q) params.set('q', q);
+            const resp = await fetch('/api/sku?' + params.toString(), { credentials: 'include' });
+            const data = await resp.json();
+            window.todoSkuFamilyOptions = (data && data.status === 'success' && Array.isArray(data.items)) ? data.items : [];
+            return window.todoSkuFamilyOptions;
+        }
+
+        async function loadTodoSalesSkuOptions(keyword = '') {
+            const q = (keyword || '').trim();
+            const params = new URLSearchParams();
+            if (q) params.set('q', q);
+            const resp = await fetch('/api/sales-product?' + params.toString(), { credentials: 'include' });
+            const data = await resp.json();
+            const items = (data && data.status === 'success' && Array.isArray(data.items)) ? data.items : [];
+            window.todoSalesSkuOptions = items.slice(0, 800);
+            window.todoSalesSkuMap = window.todoSalesSkuMap || {};
+            (window.todoSalesSkuOptions || []).forEach(x => {
+                const id = parseInt(x.id, 10) || 0;
+                if (id) window.todoSalesSkuMap[id] = x;
+            });
+            return window.todoSalesSkuOptions;
+        }
+
+        function toggleTodoSkuFamilyDropdown() {
+            const dropdown = document.getElementById('todoSkuFamilyDropdown');
+            if (!dropdown) return;
+            dropdown.classList.toggle('open');
+            dropdown.classList.toggle('expanded');
+            if (dropdown.classList.contains('open')) {
+                renderTodoSkuFamilyOptions((document.getElementById('todoSkuFamilySearch') || {}).value || '');
+            }
+        }
+        function closeTodoSkuFamilyDropdown() {
+            const dropdown = document.getElementById('todoSkuFamilyDropdown');
+            if (!dropdown) return;
+            dropdown.classList.remove('open');
+            dropdown.classList.remove('expanded');
+        }
+        function toggleTodoSalesSkuDropdown() {
+            const dropdown = document.getElementById('todoSalesSkuDropdown');
+            if (!dropdown) return;
+            dropdown.classList.toggle('open');
+            dropdown.classList.toggle('expanded');
+            if (dropdown.classList.contains('open')) {
+                renderTodoSalesSkuOptions((document.getElementById('todoSalesSkuSearch') || {}).value || '');
+            }
+        }
+        function closeTodoSalesSkuDropdown() {
+            const dropdown = document.getElementById('todoSalesSkuDropdown');
+            if (!dropdown) return;
+            dropdown.classList.remove('open');
+            dropdown.classList.remove('expanded');
+        }
+
+        function updateTodoSkuFamilySelected() {
+            const wrap = document.getElementById('todoSkuFamilySelected');
+            const toggleText = document.querySelector('#todoSkuFamilyToggle .feature-category-add-text');
+            if (!wrap) return;
+            const selectedIds = getTodoSelectedSkuFamilyIds();
+            const options = window.todoSkuFamilyOptions || [];
+            const map = {};
+            options.forEach(x => { const id = parseInt(x.id, 10) || 0; if (id) map[id] = x; });
+            const textById = window.todoEditingSkuFamilyNamesById || {};
+            wrap.innerHTML = '';
+            if (selectedIds.length === 0) {
+                wrap.innerHTML = '<span class="assignee-empty">未关联货号</span>';
+                if (toggleText) toggleText.textContent = '添加货号';
+                return;
+            }
+            selectedIds.forEach(id => {
+                const row = map[id] || {};
+                const name = row.sku_family || textById[id] || ('货号#' + id);
+                const tag = document.createElement('span');
+                tag.className = 'feature-category-chip';
+                tag.innerHTML = `<span>${escapeHtml(name)}</span><button type="button" class="feature-category-remove" data-remove-sf="${id}">×</button>`;
+                wrap.appendChild(tag);
+            });
+            if (toggleText) toggleText.textContent = `已选 ${selectedIds.length} 个`;
+        }
+
+        function updateTodoSalesSkuSelected() {
+            const wrap = document.getElementById('todoSalesSkuSelected');
+            const toggleText = document.querySelector('#todoSalesSkuToggle .feature-category-add-text');
+            if (!wrap) return;
+            const selectedIds = getTodoSelectedSalesProductIds();
+            const map = window.todoSalesSkuMap || {};
+            const textById = window.todoEditingSalesSkuNamesById || {};
+            wrap.innerHTML = '';
+            if (selectedIds.length === 0) {
+                wrap.innerHTML = '<span class="assignee-empty">未关联销售SKU</span>';
+                if (toggleText) toggleText.textContent = '添加销售SKU';
+                return;
+            }
+            selectedIds.forEach(id => {
+                const row = map[id] || {};
+                const name = row.platform_sku || textById[id] || ('SKU#' + id);
+                const tag = document.createElement('span');
+                tag.className = 'feature-category-chip';
+                tag.innerHTML = `<span>${escapeHtml(name)}</span><button type="button" class="feature-category-remove" data-remove-sp="${id}">×</button>`;
+                wrap.appendChild(tag);
+            });
+            if (toggleText) toggleText.textContent = `已选 ${selectedIds.length} 个`;
+        }
+
+        async function renderTodoSkuFamilyOptions(keyword = '') {
+            const list = document.getElementById('todoSkuFamilyList');
+            if (!list) return;
+            try {
+                await loadTodoSkuFamilyOptions(keyword);
+            } catch (e) {
+                window.todoSkuFamilyOptions = [];
+            }
+            const selectedIds = new Set(getTodoSelectedSkuFamilyIds().map(id => String(id)));
+            const query = String(keyword || '').trim().toLowerCase();
+            const options = (window.todoSkuFamilyOptions || []).filter(item => {
+                if (!query) return true;
+                const sku = String(item.sku_family || '').toLowerCase();
+                const cat = String(item.category || '').toLowerCase();
+                return sku.includes(query) || cat.includes(query);
+            }).slice(0, 800);
+            if (options.length === 0) {
+                list.innerHTML = '<div class="feature-category-empty">暂无可选货号</div>';
+                return;
+            }
+            list.innerHTML = options.map(item => {
+                const id = parseInt(item.id, 10) || 0;
+                const checked = selectedIds.has(String(id));
+                const title = (item.sku_family || '') + (item.category ? (' · ' + item.category) : '');
+                return `
+                    <label class="feature-category-item ${checked ? 'is-selected' : ''}">
+                        <input type="checkbox" ${checked ? 'checked' : ''} data-sf-id="${id}">
+                        <span>${escapeHtml(title || ('货号#' + id))}</span>
+                    </label>
+                `;
+            }).join('');
+            list.querySelectorAll('input[type="checkbox"][data-sf-id]').forEach(cb => {
+                cb.addEventListener('change', () => {
+                    const id = parseInt(cb.dataset.sfId || '0', 10) || 0;
+                    if (!id) return;
+                    const current = new Set(getTodoSelectedSkuFamilyIds());
+                    if (cb.checked) current.add(id);
+                    else current.delete(id);
+                    setTodoSelectedSkuFamilyIds(Array.from(current));
+                    updateTodoSkuFamilySelected();
+                });
+            });
+        }
+
+        async function renderTodoSalesSkuOptions(keyword = '') {
+            const list = document.getElementById('todoSalesSkuList');
+            if (!list) return;
+            try {
+                await loadTodoSalesSkuOptions(keyword);
+            } catch (e) {
+                window.todoSalesSkuOptions = [];
+            }
+            const selectedIds = new Set(getTodoSelectedSalesProductIds().map(id => String(id)));
+            const options = (window.todoSalesSkuOptions || []).slice(0, 200);
+            if (options.length === 0) {
+                list.innerHTML = '<div class="feature-category-empty">请输入关键词搜索销售SKU</div>';
+                return;
+            }
+            list.innerHTML = options.map(item => {
+                const id = parseInt(item.id, 10) || 0;
+                const checked = selectedIds.has(String(id));
+                const title = (item.platform_sku || '') +
+                    (item.sku_family ? (' · ' + item.sku_family) : '') +
+                    (item.spec_name ? (' · ' + item.spec_name) : '');
+                return `
+                    <label class="feature-category-item ${checked ? 'is-selected' : ''}">
+                        <input type="checkbox" ${checked ? 'checked' : ''} data-sp-id="${id}" data-sp-sf="${parseInt(item.sku_family_id,10)||0}">
+                        <span>${escapeHtml(title || ('SKU#' + id))}</span>
+                    </label>
+                `;
+            }).join('');
+            list.querySelectorAll('input[type="checkbox"][data-sp-id]').forEach(cb => {
+                cb.addEventListener('change', () => {
+                    const id = parseInt(cb.dataset.spId || '0', 10) || 0;
+                    const sfid = parseInt(cb.dataset.spSf || '0', 10) || 0;
+                    if (!id) return;
+                    const current = new Set(getTodoSelectedSalesProductIds());
+                    if (cb.checked) {
+                        current.add(id);
+                        if (sfid) {
+                            const sfCurrent = new Set(getTodoSelectedSkuFamilyIds());
+                            sfCurrent.add(sfid);
+                            setTodoSelectedSkuFamilyIds(Array.from(sfCurrent));
+                            updateTodoSkuFamilySelected();
+                        }
+                    } else {
+                        current.delete(id);
+                    }
+                    setTodoSelectedSalesProductIds(Array.from(current));
+                    updateTodoSalesSkuSelected();
+                });
+            });
+        }
+
         async function handleTodoModalSubmit(event) {
             event.preventDefault();
             
             const title = document.getElementById('todoModalTitle_input').value.trim();
-            const todo_type_id = parseInt((document.getElementById('todoModalType') || {}).value || '0', 10) || 0;
+            const todo_type_id = parseInt((document.getElementById('todoModalTypeSegment') || {}).dataset.value || '0', 10) || 0;
             const start_date = document.getElementById('todoModalStartDate').value;
+            const due_date = (document.getElementById('todoModalDueDate') || {}).value || '';
             const reminder_interval_days = parseInt(document.getElementById('todoModalReminderInterval').value, 10) || 1;
-            const is_recurring = document.getElementById('todoModalIsRecurring').checked ? 1 : 0;
+            const is_recurring = String((document.getElementById('todoModalRecurringSegment') || {}).dataset.value || '0') === '1' ? 1 : 0;
             const detail = document.getElementById('todoModalDetail').value.trim();
-            const priority = parseInt(document.getElementById('todoModalPriority').value, 10);
+            const priority = parseInt((document.getElementById('todoModalPrioritySegment') || {}).dataset.value || '2', 10) || 2;
             
             // 收集选中的分配人
             const assignee_ids = getTodoSelectedAssigneeIds();
+            const related_sku_family_ids = getTodoSelectedSkuFamilyIds();
+            const related_sales_product_ids = getTodoSelectedSalesProductIds();
             
             if (!title || !start_date || !todo_type_id) {
                 if (window.showAppToast) window.showAppToast('请填写事项标题、开始日期，并选择待办类型', true, 0);
                 else alert('请填写事项标题、开始日期，并选择待办类型');
+                return;
+            }
+            if (!is_recurring && !due_date) {
+                if (window.showAppToast) window.showAppToast('非循环任务必须填写截止日期', true, 0);
+                else alert('非循环任务必须填写截止日期');
+                return;
+            }
+            if (is_recurring && (!reminder_interval_days || reminder_interval_days <= 0)) {
+                if (window.showAppToast) window.showAppToast('循环任务必须填写提醒间隔（天）', true, 0);
+                else alert('循环任务必须填写提醒间隔（天）');
                 return;
             }
             
@@ -1324,11 +1663,14 @@
                 title,
                 todo_type_id,
                 start_date,
+                due_date: is_recurring ? null : (due_date || start_date),
                 reminder_interval_days,
                 is_recurring,
                 detail,
                 priority,
-                assignee_ids
+                assignee_ids,
+                related_sku_family_ids,
+                related_sales_product_ids
             };
             
             try {
@@ -1344,6 +1686,7 @@
                 
                 const data = await resp.json();
                 if (data.status === 'success') {
+                    if (window.showAppToast) window.showAppToast('保存成功', false, 1800);
                     closeTodoModal();
                     loadTodos();
                     loadCalendar();
@@ -1511,6 +1854,7 @@
 
         function loadTodos() {
             const params = new URLSearchParams();
+            params.set('with_links', '1');
             if (window.todoSelectedTypeId && parseInt(window.todoSelectedTypeId, 10) > 0) {
                 params.set('todo_type_id', String(parseInt(window.todoSelectedTypeId, 10)));
             }
@@ -1531,38 +1875,44 @@
             if (!tbody) return;
             const list = Array.isArray(items) ? items.slice() : [];
             list.sort((a, b) => {
-                const ad = (a.status === 'done') ? 1 : 0;
-                const bd = (b.status === 'done') ? 1 : 0;
+                const ad = (Number(a.my_is_completed || 0) === 1) ? 1 : 0;
+                const bd = (Number(b.my_is_completed || 0) === 1) ? 1 : 0;
                 if (ad !== bd) return ad - bd;
+                // 已完成：按完成时间倒序（最近完成排在更靠上）
+                if (ad === 1 && bd === 1) {
+                    const at = String(a.my_completed_at || '');
+                    const bt = String(b.my_completed_at || '');
+                    if (at !== bt) return bt.localeCompare(at);
+                }
                 const adue = String(a.due_date || a.start_date || '');
                 const bdue = String(b.due_date || b.start_date || '');
                 if (adue !== bdue) return adue.localeCompare(bdue);
                 return (parseInt(b.id, 10) || 0) - (parseInt(a.id, 10) || 0);
             });
             if (!list.length) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">暂无待办</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无待办</td></tr>';
                 return;
             }
             tbody.innerHTML = list.map(todo => {
-                const status = (todo.status === 'done') ? 'done' : 'open';
+                const status = (Number(todo.my_is_completed || 0) === 1) ? 'done' : 'open';
                 const typeName = todo.todo_type_name || '-';
                 const start = todo.start_date || '';
                 const due = todo.due_date || '';
                 const dateText = (start && due && start !== due) ? (start + ' ~ ' + due) : (start || due || '-');
-                const completedAt = todo.completed_at ? String(todo.completed_at) : '';
+                const completedAt = todo.my_completed_at ? String(todo.my_completed_at) : '';
                 return `
                     <tr data-todo-id="${todo.id}">
                         <td>
                             <div class="status-segment status-segment--inline">
                                 <button type="button"
-                                        class="status-pill ${status === 'done' ? 'status-pill--enabled' : 'status-pill--paused'}"
+                                        class="status-pill ${status === 'done' ? 'status-pill--enabled is-active' : 'status-pill--paused'}"
                                         data-todo-action="set-done"
                                         data-id="${todo.id}"
                                         data-completed-at="${completedAt}">
                                     已完成
                                 </button>
                                 <button type="button"
-                                        class="status-pill ${status === 'open' ? 'status-pill--enabled' : 'status-pill--paused'}"
+                                        class="status-pill ${status === 'open' ? 'status-pill--enabled is-active' : 'status-pill--paused'}"
                                         data-todo-action="set-open"
                                         data-id="${todo.id}">
                                     未完成
@@ -1570,20 +1920,45 @@
                             </div>
                         </td>
                         <td>${escapeHtml(typeName)}</td>
+                        <td>${escapeHtml(priorityLabel(todo.priority))}</td>
                         <td class="todo-title-cell">
                             <div style="font-weight:600;">${escapeHtml(todo.title || '')}</div>
                             ${todo.detail ? `<div class="todo-mini-sub">${escapeHtml(String(todo.detail).slice(0, 60))}</div>` : ''}
                         </td>
                         <td>${escapeHtml(dateText)}</td>
                         <td>
+                            ${
+                                status === 'done'
+                                    ? `<input type="datetime-local" class="optional-field todo-completed-at-input" data-todo-id="${todo.id}" value="${toDatetimeLocalValue(completedAt)}" title="编辑完成时间（自动保存）">`
+                                    : `<span style="color:#999;">—</span>`
+                            }
+                        </td>
+                        <td>
                             <div class="pm-actions">
-                                <button class="btn-primary" type="button" data-todo-action="edit" data-id="${todo.id}">编辑</button>
+                                <button class="btn-secondary" type="button" data-todo-action="edit" data-id="${todo.id}">编辑</button>
                                 <button class="btn-danger" type="button" data-todo-action="delete" data-id="${todo.id}">删除</button>
                             </div>
                         </td>
                     </tr>
                 `;
             }).join('');
+        }
+
+        function toDatetimeLocalValue(text) {
+            if (!text) return '';
+            const s = String(text).trim();
+            const t = s.replace('T', ' ').slice(0, 19);
+            const m = t.match(/^(\d{4}-\d{2}-\d{2})[ ](\d{2}:\d{2})/);
+            if (!m) return '';
+            return `${m[1]}T${m[2]}`;
+        }
+
+        function priorityLabel(v) {
+            const n = parseInt(v || '0', 10) || 0;
+            if (n === 3) return '高';
+            if (n === 2) return '中';
+            if (n === 1) return '低';
+            return '-';
         }
 
         function escapeHtml(text) {
@@ -1618,20 +1993,23 @@
 
             const selected = parseInt(window.todoSelectedTypeId || '0', 10) || 0;
             const makeBtn = (id, name) => {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'material-type-radio' + ((selected === id) ? ' active' : '');
-                btn.textContent = name;
-                btn.dataset.typeId = String(id);
-                btn.addEventListener('click', () => {
-                    window.todoSelectedTypeId = id;
-                    renderTodoTypeBar();
-                    loadTodos();
-                });
-                btn.addEventListener('dblclick', () => {
+                const label = document.createElement('label');
+                label.className = 'material-type-option material-type-radio';
+                label.dataset.typeId = String(id);
+                label.innerHTML = `<input type="radio" name="todoTypeFilter" value="${id}"><span>${escapeHtml(name)}</span>`;
+                const input = label.querySelector('input');
+                if (input) {
+                    input.checked = (selected === id);
+                    input.addEventListener('click', () => {
+                        window.todoSelectedTypeId = id;
+                        renderTodoTypeBar();
+                        loadTodos();
+                    });
+                }
+                label.addEventListener('dblclick', () => {
                     if (id > 0) openTodoTypeModal('edit', id);
                 });
-                return btn;
+                return label;
             };
 
             host.appendChild(makeBtn(0, '全部'));
@@ -1643,32 +2021,58 @@
         }
 
         function ensureTodoTypeOptions(preferId) {
-            const select = document.getElementById('todoModalType');
-            if (!select) return;
             const types = window.todoTypesCache || [];
-            const current = parseInt(preferId || select.value || '0', 10) || 0;
-            select.innerHTML = '';
-            types.forEach(t => {
+            const seg = document.getElementById('todoModalTypeSegment');
+            if (!seg) return;
+            const prefer = parseInt(preferId || '0', 10) || 0;
+            seg.innerHTML = '';
+            (types || []).forEach(t => {
                 const id = parseInt(t.id, 10) || 0;
                 if (!id) return;
-                const opt = document.createElement('option');
-                opt.value = String(id);
-                opt.textContent = t.type_name || ('类型#' + id);
-                select.appendChild(opt);
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'status-pill status-pill--enabled';
+                btn.dataset.value = String(id);
+                btn.textContent = t.type_name || ('类型#' + id);
+                seg.appendChild(btn);
             });
-            if (select.options.length === 0) {
-                const opt = document.createElement('option');
-                opt.value = '';
-                opt.textContent = '请先新增待办类型';
-                select.appendChild(opt);
+            bindSegmentButtons(seg);
+            let target = prefer;
+            if (!target) {
+                const def = (types || []).find(x => String(x.type_name || '').trim() === '默认');
+                target = def ? (parseInt(def.id, 10) || 0) : 0;
             }
-            if (select.options.length > 0) {
-                let target = current;
-                if (!target) {
-                    const def = types.find(x => String(x.type_name || '').trim() === '默认');
-                    target = def ? (parseInt(def.id, 10) || 0) : 0;
-                }
-                if (target) select.value = String(target);
+            if (target) setSegmentValue(seg, String(target));
+        }
+
+        function bindSegmentButtons(seg) {
+            if (!seg || seg.dataset.bound === '1') return;
+            seg.dataset.bound = '1';
+            seg.addEventListener('click', (e) => {
+                const btn = e.target && e.target.closest ? e.target.closest('.status-pill[data-value]') : null;
+                if (!btn) return;
+                setSegmentValue(seg, String(btn.dataset.value || ''));
+            });
+        }
+
+        function setSegmentValue(seg, value) {
+            if (!seg) return;
+            const v = String(value == null ? '' : value);
+            seg.dataset.value = v;
+            seg.querySelectorAll('.status-pill').forEach(btn => {
+                btn.classList.toggle('is-active', String(btn.dataset.value || '') === v);
+            });
+            if (seg.id === 'todoModalPrioritySegment') {
+                const hid = document.getElementById('todoModalPriorityVal');
+                if (hid) hid.value = v;
+            }
+            if (seg.id === 'todoModalRecurringSegment') {
+                const hid = document.getElementById('todoModalIsRecurringVal');
+                if (hid) hid.value = v;
+            }
+            if (seg.id === 'todoModalTypeSegment') {
+                const hid = document.getElementById('todoModalTypeId');
+                if (hid) hid.value = v;
             }
         }
 
@@ -1759,63 +2163,45 @@
             }
         }
 
-        function closeTodoCompletePop() {
-            const pop = document.getElementById('todoCompletePop');
-            if (pop) pop.classList.remove('active');
-        }
-
-        function openTodoCompletePop(todoId, anchorEl, existingText) {
-            const pop = document.getElementById('todoCompletePop');
-            if (!pop) return;
-            const idEl = document.getElementById('todoCompletePopId');
-            const timeEl = document.getElementById('todoCompletePopTime');
-            if (idEl) idEl.value = String(todoId || '');
-            const now = new Date();
-            const toLocalVal = (dt) => {
-                const y = dt.getFullYear();
-                const m = String(dt.getMonth() + 1).padStart(2, '0');
-                const d = String(dt.getDate()).padStart(2, '0');
-                const hh = String(dt.getHours()).padStart(2, '0');
-                const mm = String(dt.getMinutes()).padStart(2, '0');
-                return `${y}-${m}-${d}T${hh}:${mm}`;
-            };
-            let preset = now;
-            if (existingText) {
-                const t = String(existingText).replace('T', ' ').slice(0, 19);
-                const parsed = new Date(t.replace(/-/g, '/'));
-                if (!isNaN(parsed.getTime())) preset = parsed;
-            }
-            if (timeEl) timeEl.value = toLocalVal(preset);
-            const rect = anchorEl && anchorEl.getBoundingClientRect ? anchorEl.getBoundingClientRect() : null;
-            if (rect) {
-                pop.style.left = Math.min(rect.left, window.innerWidth - 260) + 'px';
-                pop.style.top = Math.min(rect.bottom + 8, window.innerHeight - 140) + 'px';
-            } else {
-                pop.style.left = '18px';
-                pop.style.top = '90px';
-            }
-            pop.classList.add('active');
-        }
-
-        async function confirmTodoCompleteTime() {
-            const id = parseInt((document.getElementById('todoCompletePopId') || {}).value || '0', 10) || 0;
-            const timeVal = (document.getElementById('todoCompletePopTime') || {}).value || '';
-            if (!id || !timeVal) return;
-            const completed_at = timeVal.replace('T', ' ') + ':00';
+        async function setTodoCompletedNow(todoId) {
+            const id = parseInt(todoId || '0', 10) || 0;
+            if (!id) return;
             try {
                 const resp = await fetch('/api/todo', {
                     method: 'PUT',
                     credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id, status: 'done', completed_at })
+                    body: JSON.stringify({ id, is_completed: 1 })
                 });
                 const data = await resp.json();
                 if (!data || data.status !== 'success') throw new Error((data && data.message) || '更新失败');
-                closeTodoCompletePop();
+                if (window.showAppToast) window.showAppToast('已标记为已完成', false, 1600);
                 await loadTodos();
                 loadCalendar({ forceReload: true });
             } catch (err) {
                 if (window.showAppToast) window.showAppToast(err && err.message ? err.message : '更新失败', true, 0);
+            }
+        }
+
+        async function updateTodoCompletedAtAuto(todoId, datetimeLocalValue) {
+            const id = parseInt(todoId || '0', 10) || 0;
+            if (!id) return;
+            const v = String(datetimeLocalValue || '').trim();
+            if (!v) return;
+            const completed_at = v.replace('T', ' ') + ':00';
+            try {
+                const resp = await fetch('/api/todo', {
+                    method: 'PUT',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, completed_at })
+                });
+                const data = await resp.json();
+                if (!data || data.status !== 'success') throw new Error((data && data.message) || '保存失败');
+                if (window.showAppToast) window.showAppToast('完成时间已保存', false, 1400);
+                await loadTodos();
+            } catch (err) {
+                if (window.showAppToast) window.showAppToast(err && err.message ? err.message : '保存失败', true, 0);
             }
         }
 
@@ -1851,7 +2237,7 @@
                             </td>
                             <td>
                                 <div class="pm-actions">
-                                    <button class="btn-primary" data-pending-action="approve" data-id="${u.id}">批准</button>
+                                    <button class="btn-secondary" data-pending-action="approve" data-id="${u.id}">批准</button>
                                     <button class="btn-danger" data-pending-action="reject" data-id="${u.id}">拒绝</button>
                                 </div>
                             </td>
@@ -1980,7 +2366,7 @@
 
                 const indicators = document.createElement('div');
                 indicators.className = 'day-indicators';
-                const todoCount = todos.filter(t => t.start_date === dateStr || t.due_date === dateStr).length;
+                const todoCount = todos.filter(t => (t.effective_date || t.due_date || t.start_date) === dateStr).length;
                 const bdayCount = employees.filter(emp => emp.birthday && emp.birthday.slice(5) === dateStr.slice(5)).length;
                 if (todoCount > 0) {
                     const s = document.createElement('span');
@@ -2014,7 +2400,7 @@
 
             const todos = (window.calendarTodosCache || []);
             const employees = (window.calendarEmployeesCache || []);
-            const todoItems = todos.filter(t => t.start_date === dateStr || t.due_date === dateStr);
+            const todoItems = todos.filter(t => (t.effective_date || t.due_date || t.start_date) === dateStr);
             const bdays = employees.filter(emp => emp.birthday && emp.birthday.slice(5) === dateStr.slice(5));
 
             let html = '';
@@ -2250,6 +2636,28 @@
                 });
             }
 
+            const todoSkuFamilySelected = document.getElementById('todoSkuFamilySelected');
+            if (todoSkuFamilySelected) {
+                todoSkuFamilySelected.addEventListener('click', e => {
+                    const rid = parseInt(e.target.dataset.removeSf || '0', 10) || 0;
+                    if (!rid) return;
+                    setTodoSelectedSkuFamilyIds(getTodoSelectedSkuFamilyIds().filter(v => v !== rid));
+                    updateTodoSkuFamilySelected();
+                    renderTodoSkuFamilyOptions((document.getElementById('todoSkuFamilySearch') || {}).value || '');
+                });
+            }
+
+            const todoSalesSkuSelected = document.getElementById('todoSalesSkuSelected');
+            if (todoSalesSkuSelected) {
+                todoSalesSkuSelected.addEventListener('click', e => {
+                    const rid = parseInt(e.target.dataset.removeSp || '0', 10) || 0;
+                    if (!rid) return;
+                    setTodoSelectedSalesProductIds(getTodoSelectedSalesProductIds().filter(v => v !== rid));
+                    updateTodoSalesSkuSelected();
+                    renderTodoSalesSkuOptions((document.getElementById('todoSalesSkuSearch') || {}).value || '');
+                });
+            }
+
             const employeeEditFactoryScopeMode = document.getElementById('employeeEditFactoryScopeMode');
             if (employeeEditFactoryScopeMode) {
                 employeeEditFactoryScopeMode.addEventListener('change', () => {
@@ -2333,20 +2741,37 @@
                             method: 'PUT',
                             credentials: 'include',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ id: id, status: 'open' })
+                            body: JSON.stringify({ id: id, is_completed: 0 })
                         })
                             .then(() => {
+                                if (window.showAppToast) window.showAppToast('已更新为未完成', false, 1800);
                                 loadTodos();
                                 loadCalendar({ forceReload: true });
                             });
                         return;
                     }
                     if (action === 'set-done') {
-                        openTodoCompletePop(id, actionEl, actionEl.dataset.completedAt || '');
+                        setTodoCompletedNow(id);
                         return;
                     }
                 });
             }
+
+            if (todoTable) {
+                todoTable.addEventListener('change', (e) => {
+                    const input = e.target && e.target.classList && e.target.classList.contains('todo-completed-at-input') ? e.target : null;
+                    if (!input) return;
+                    const id = parseInt(input.dataset.todoId || '0', 10) || 0;
+                    if (!id) return;
+                    updateTodoCompletedAtAuto(id, input.value || '');
+                });
+            }
+
+            // recurring now uses segment
+
+            // bind segments
+            bindSegmentButtons(document.getElementById('todoModalPrioritySegment'));
+            bindSegmentButtons(document.getElementById('todoModalRecurringSegment'));
 
             const pendingUsersTable = document.getElementById('pendingUsersTable');
             if (pendingUsersTable) {
@@ -2623,10 +3048,7 @@
                 if (employeeFactoryDropdown && !employeeFactoryDropdown.contains(e.target)) {
                     closeEmployeeEditFactoryScopeDropdown();
                 }
-                const pop = document.getElementById('todoCompletePop');
-                if (pop && pop.classList.contains('active') && !pop.contains(e.target)) {
-                    closeTodoCompletePop();
-                }
+                // todoCompletePop removed
             });
 
             document.addEventListener('change', e => {

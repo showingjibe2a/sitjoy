@@ -47,6 +47,66 @@ class UtilityMixin:
                 continue
         return None
 
+    def _todo_apply_recurring_resets(self, conn, assignee_id, todo_type_id=None):
+        """循环任务自动复位：
+
+        若 assignment.is_completed=1 且 completed_at + reminder_interval_days <= 今日，则将 is_completed 置回 0。
+        """
+        aid = self._parse_int(assignee_id)
+        if not aid:
+            return
+        params = [aid]
+        type_clause = ''
+        if self._parse_int(todo_type_id):
+            type_clause = ' AND t.todo_type_id=%s'
+            params.append(self._parse_int(todo_type_id))
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                UPDATE todo_assignments ta
+                JOIN todos t ON t.id = ta.todo_id
+                SET ta.is_completed = 0
+                WHERE ta.assignee_id=%s
+                  AND ta.is_completed=1
+                  AND COALESCE(t.is_recurring,0)=1
+                  AND t.reminder_interval_days IS NOT NULL
+                  AND ta.completed_at IS NOT NULL
+                  AND DATE_ADD(DATE(ta.completed_at), INTERVAL t.reminder_interval_days DAY) <= CURDATE()
+                  {type_clause}
+                """,
+                tuple(params)
+            )
+
+    def _todo_effective_calendar_date(self, todo_row):
+        """日历/列表用日期：
+
+        - 循环任务：completed_at + reminder_interval_days（若 completed_at 为空则用 created_at）
+        - 非循环任务：due_date
+        """
+        is_rec = int(todo_row.get('is_recurring') or 0) == 1
+        if is_rec:
+            interval = self._parse_int(todo_row.get('reminder_interval_days')) or 0
+            completed_at = todo_row.get('my_completed_at') or todo_row.get('completed_at')
+            base_dt = None
+            if completed_at:
+                if isinstance(completed_at, datetime):
+                    base_dt = completed_at
+                else:
+                    try:
+                        base_dt = datetime.strptime(str(completed_at)[:19], '%Y-%m-%d %H:%M:%S')
+                    except Exception:
+                        base_dt = None
+            if base_dt and interval > 0:
+                return (base_dt + timedelta(days=interval)).strftime('%Y-%m-%d')
+            created_at = todo_row.get('created_at')
+            if isinstance(created_at, datetime):
+                return created_at.strftime('%Y-%m-%d')
+            return datetime.now().strftime('%Y-%m-%d')
+        due_date = todo_row.get('due_date')
+        if isinstance(due_date, datetime):
+            return due_date.strftime('%Y-%m-%d')
+        return str(due_date or '')[:10] if due_date else None
+
     def handle_todo_type_api(self, environ, method, start_response):
         """待办类型管理 API（CRUD）"""
         try:
@@ -143,21 +203,6 @@ class UtilityMixin:
             print(f'Todo type API error: {str(e)}')
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
-    def _todo_column_exists(self, conn, column_name):
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT 1
-                FROM information_schema.COLUMNS
-                WHERE TABLE_SCHEMA = DATABASE()
-                  AND TABLE_NAME = 'todos'
-                  AND COLUMN_NAME = %s
-                LIMIT 1
-                """,
-                (str(column_name or '').strip(),)
-            )
-            return bool(cur.fetchone())
-
     def _replace_todo_sales_links(self, conn, todo_id, sales_product_ids, sku_family_ids):
         with conn.cursor() as cur:
             cur.execute("DELETE FROM todo_sales_links WHERE todo_id=%s", (todo_id,))
@@ -180,8 +225,8 @@ class UtilityMixin:
             ids = sorted(set([self._parse_int(x) for x in (assignee_ids or []) if self._parse_int(x)]))
             for aid in ids:
                 cur.execute(
-                    "INSERT INTO todo_assignments (todo_id, assignee_id, assignment_status) VALUES (%s, %s, %s)",
-                    (todo_id, aid, 'pending')
+                    "INSERT INTO todo_assignments (todo_id, assignee_id, is_completed, completed_at) VALUES (%s, %s, %s, %s)",
+                    (todo_id, aid, 0, None)
                 )
 
     def handle_todo_api(self, environ, method, start_response):
@@ -197,32 +242,48 @@ class UtilityMixin:
                 with_links = str((query_params.get('with_links', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
                 todo_type_id = self._parse_int((query_params.get('todo_type_id', [''])[0] or '').strip())
                 with self._get_db_connection() as conn:
-                    has_created_by = self._todo_column_exists(conn, 'created_by')
-                    if not include_all and not has_created_by:
-                        return self.send_json({
-                            'status': 'error',
-                            'message': '数据库表 todos 缺少字段 created_by，请执行 scripts/sql/20260424_02_todos_add_created_by.sql 后重试'
-                        }, start_response)
+                    if not include_all:
+                        self._todo_apply_recurring_resets(conn, user_id, todo_type_id=todo_type_id)
                     with conn.cursor() as cur:
                         params = []
-                        where_parts = []
-                        if not include_all:
-                            where_parts.append('t.created_by=%s')
+                        if include_all:
+                            where_sql = "WHERE 1=1"
+                        else:
+                            where_sql = "WHERE ta.assignee_id=%s"
                             params.append(user_id)
                         if todo_type_id:
-                            where_parts.append('t.todo_type_id=%s')
+                            where_sql += " AND t.todo_type_id=%s"
                             params.append(todo_type_id)
-                        where_sql = ('WHERE ' + ' AND '.join(where_parts)) if where_parts else ''
+
                         cur.execute(
                             f"""
-                            SELECT t.*, u.name AS creator_name, u.username AS creator_username,
-                                   tt.type_name AS todo_type_name
+                            SELECT
+                                t.id,
+                                t.todo_type_id,
+                                tt.type_name AS todo_type_name,
+                                t.title,
+                                t.detail,
+                                t.start_date,
+                                t.due_date,
+                                t.reminder_interval_days,
+                                t.is_recurring,
+                                t.priority,
+                                t.created_by,
+                                t.created_at,
+                                u.name AS creator_name,
+                                u.username AS creator_username,
+                                ta.assignee_id AS my_assignee_id,
+                                ta.is_completed AS my_is_completed,
+                                ta.completed_at AS my_completed_at
                             FROM todos t
-                            LEFT JOIN users u ON u.id = t.created_by
                             LEFT JOIN todo_types tt ON tt.id = t.todo_type_id
+                            LEFT JOIN users u ON u.id = t.created_by
+                            LEFT JOIN todo_assignments ta ON ta.todo_id = t.id
                             {where_sql}
-                            ORDER BY (t.status='done') ASC, t.due_date ASC, t.id DESC
-                            LIMIT 500
+                            ORDER BY (COALESCE(ta.is_completed,0)=1) ASC,
+                                     COALESCE(t.due_date, '9999-12-31') ASC,
+                                     t.id DESC
+                            LIMIT 800
                             """,
                             tuple(params)
                         )
@@ -271,7 +332,8 @@ class UtilityMixin:
 
                                 cur.execute(
                                     f"""
-                                    SELECT ta.todo_id, ta.assignee_id, u.name, u.username
+                                    SELECT ta.todo_id, ta.assignee_id, u.name, u.username,
+                                           ta.is_completed, ta.completed_at
                                     FROM todo_assignments ta
                                     LEFT JOIN users u ON u.id = ta.assignee_id
                                     WHERE ta.todo_id IN ({placeholders})
@@ -288,7 +350,9 @@ class UtilityMixin:
                                     ass_map.setdefault(tid, []).append({
                                         'assignee_id': self._parse_int(ar.get('assignee_id')),
                                         'name': ar.get('name') or '',
-                                        'username': ar.get('username') or ''
+                                        'username': ar.get('username') or '',
+                                        'is_completed': int(ar.get('is_completed') or 0),
+                                        'completed_at': ar.get('completed_at'),
                                     })
 
                                 for r in rows:
@@ -301,6 +365,9 @@ class UtilityMixin:
                                     })
                                     r.update(details)
                                     r['assignees'] = ass_map.get(tid, [])
+
+                        for r in rows:
+                            r['effective_date'] = self._todo_effective_calendar_date(r)
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             if method == 'POST':
@@ -310,8 +377,8 @@ class UtilityMixin:
                     return self.send_json({'status': 'error', 'message': 'Missing title'}, start_response)
 
                 start_date = self._todo_parse_date(data.get('start_date')) or datetime.now().strftime('%Y-%m-%d')
-                due_date = self._todo_parse_date(data.get('due_date')) or start_date
-                reminder_interval_days = max(1, self._parse_int(data.get('reminder_interval_days')) or 1)
+                due_date = self._todo_parse_date(data.get('due_date'))
+                reminder_interval_days = self._parse_int(data.get('reminder_interval_days'))
                 is_recurring = 1 if str(data.get('is_recurring', 0)).strip().lower() in ('1', 'true', 'yes', 'on') else 0
                 detail = (data.get('detail') or '').strip() or None
                 priority = self._parse_int(data.get('priority')) or 2
@@ -321,14 +388,6 @@ class UtilityMixin:
                 related_sku_family_ids = data.get('related_sku_family_ids') or []
 
                 with self._get_db_connection() as conn:
-                    has_created_by = self._todo_column_exists(conn, 'created_by')
-                    if not has_created_by:
-                        return self.send_json({
-                            'status': 'error',
-                            'message': '数据库表 todos 缺少字段 created_by，请执行 scripts/sql/20260424_02_todos_add_created_by.sql 后重试'
-                        }, start_response)
-                    has_reminder_interval_days = self._todo_column_exists(conn, 'reminder_interval_days')
-                    has_is_recurring = self._todo_column_exists(conn, 'is_recurring')
                     if not todo_type_id:
                         # 默认使用 todo_types 中 sort_order 最小的类型（一般为“默认”）
                         try:
@@ -339,21 +398,29 @@ class UtilityMixin:
                         except Exception:
                             todo_type_id = 0
 
-                    insert_cols = ['title', 'detail', 'start_date', 'due_date']
-                    insert_vals = [title, detail, start_date, due_date]
-                    insert_cols.append('todo_type_id')
-                    insert_vals.append(todo_type_id)
-                    if has_reminder_interval_days:
-                        insert_cols.append('reminder_interval_days')
-                        insert_vals.append(reminder_interval_days)
-                    if has_is_recurring:
-                        insert_cols.append('is_recurring')
-                        insert_vals.append(is_recurring)
-                    insert_cols.extend(['status', 'priority'])
-                    insert_vals.extend(['open', priority])
-                    if has_created_by:
-                        insert_cols.append('created_by')
-                        insert_vals.append(user_id)
+                    # 互斥：循环任务用 reminder_interval_days；非循环任务用 due_date
+                    if is_recurring:
+                        if not reminder_interval_days or int(reminder_interval_days or 0) <= 0:
+                            return self.send_json({'status': 'error', 'message': '循环任务必须设置 reminder_interval_days'}, start_response)
+                        reminder_interval_days = max(1, int(reminder_interval_days))
+                        due_date = None
+                    else:
+                        if not due_date:
+                            return self.send_json({'status': 'error', 'message': '非循环任务必须设置 due_date'}, start_response)
+                        reminder_interval_days = None
+
+                    insert_cols = [
+                        'todo_type_id', 'title', 'detail',
+                        'start_date', 'due_date',
+                        'reminder_interval_days', 'is_recurring',
+                        'priority', 'created_by'
+                    ]
+                    insert_vals = [
+                        todo_type_id, title, detail,
+                        start_date, due_date,
+                        reminder_interval_days, is_recurring,
+                        priority, user_id
+                    ]
                     placeholders = ','.join(['%s'] * len(insert_vals))
                     col_sql = ','.join(insert_cols)
                     with conn.cursor() as cur:
@@ -362,6 +429,10 @@ class UtilityMixin:
                             tuple(insert_vals)
                         )
                         new_id = cur.lastrowid
+                    if not isinstance(assignee_ids, list):
+                        assignee_ids = []
+                    if not assignee_ids:
+                        assignee_ids = [user_id]
                     self._replace_todo_assignees(conn, new_id, assignee_ids)
                     self._replace_todo_sales_links(conn, new_id, related_sales_product_ids, related_sku_family_ids)
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
@@ -372,11 +443,13 @@ class UtilityMixin:
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
 
-                status = str(data.get('status') or '').strip().lower()
-                if status not in ('open', 'done'):
-                    status = 'open'
-                completed_at = self._todo_parse_datetime(data.get('completed_at')) if status == 'done' else None
-                if status == 'done' and not completed_at:
+                is_completed = None
+                if 'is_completed' in (data or {}):
+                    is_completed = 1 if str(data.get('is_completed', 0)).strip().lower() in ('1', 'true', 'yes', 'on') else 0
+                completed_at = None
+                if 'completed_at' in (data or {}):
+                    completed_at = self._todo_parse_datetime(data.get('completed_at'))
+                if is_completed == 1 and not completed_at:
                     completed_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 related_sales_product_ids = data.get('related_sales_product_ids') if isinstance(data.get('related_sales_product_ids'), list) else None
                 related_sku_family_ids = data.get('related_sku_family_ids') if isinstance(data.get('related_sku_family_ids'), list) else None
@@ -394,8 +467,8 @@ class UtilityMixin:
                 
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        sets = ['status=%s', 'completed_at=%s']
-                        params = [status, completed_at]
+                        sets = []
+                        params = []
                         if title is not None:
                             sets.append('title=%s')
                             params.append(title)
@@ -405,18 +478,33 @@ class UtilityMixin:
                         if start_date is not None:
                             sets.append('start_date=%s')
                             params.append(start_date or datetime.now().strftime('%Y-%m-%d'))
-                        if due_date is not None:
-                            sets.append('due_date=%s')
-                            params.append(due_date or (start_date or datetime.now().strftime('%Y-%m-%d')))
                         if priority is not None:
                             sets.append('priority=%s')
                             params.append(max(1, min(5, priority or 2)))
-                        if reminder_interval_days is not None:
-                            sets.append('reminder_interval_days=%s')
-                            params.append(max(1, reminder_interval_days or 1))
                         if is_recurring is not None:
                             sets.append('is_recurring=%s')
                             params.append(1 if is_recurring else 0)
+                        if is_recurring is not None:
+                            if is_recurring == 1:
+                                rid = max(1, int(reminder_interval_days or 1))
+                                sets.append('reminder_interval_days=%s')
+                                params.append(rid)
+                                sets.append('due_date=%s')
+                                params.append(None)
+                            else:
+                                if not due_date:
+                                    return self.send_json({'status': 'error', 'message': '非循环任务必须设置 due_date'}, start_response)
+                                sets.append('due_date=%s')
+                                params.append(due_date)
+                                sets.append('reminder_interval_days=%s')
+                                params.append(None)
+                        else:
+                            if due_date is not None:
+                                sets.append('due_date=%s')
+                                params.append(due_date)
+                            if reminder_interval_days is not None:
+                                sets.append('reminder_interval_days=%s')
+                                params.append(max(1, int(reminder_interval_days or 1)))
                         if todo_type_id is not None:
                             if not todo_type_id:
                                 # 兼容：将空值回落到默认类型
@@ -428,8 +516,29 @@ class UtilityMixin:
                                     todo_type_id = 0
                             sets.append('todo_type_id=%s')
                             params.append(max(1, todo_type_id or 1))
-                        params.append(item_id)
-                        cur.execute(f"UPDATE todos SET {', '.join(sets)} WHERE id=%s", tuple(params))
+                        if sets:
+                            params.append(item_id)
+                            cur.execute(f"UPDATE todos SET {', '.join(sets)} WHERE id=%s", tuple(params))
+                        # assignment：按人完成状态/完成时间
+                        if is_completed is not None:
+                            cur.execute(
+                                """
+                                UPDATE todo_assignments
+                                SET is_completed=%s, completed_at=%s
+                                WHERE todo_id=%s AND assignee_id=%s
+                                """,
+                                (is_completed, completed_at if is_completed == 1 else None, item_id, user_id)
+                            )
+                        elif completed_at is not None:
+                            # 仅修改完成时间：默认要求该任务对当前人已完成
+                            cur.execute(
+                                """
+                                UPDATE todo_assignments
+                                SET completed_at=%s
+                                WHERE todo_id=%s AND assignee_id=%s AND is_completed=1
+                                """,
+                                (completed_at, item_id, user_id)
+                            )
                     if related_sales_product_ids is not None or related_sku_family_ids is not None:
                         self._replace_todo_sales_links(conn, item_id, related_sales_product_ids or [], related_sku_family_ids or [])
                     if assignee_ids is not None:
@@ -443,11 +552,6 @@ class UtilityMixin:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
 
                 with self._get_db_connection() as conn:
-                    if not self._todo_column_exists(conn, 'created_by'):
-                        return self.send_json({
-                            'status': 'error',
-                            'message': '数据库表 todos 缺少字段 created_by，请执行 scripts/sql/20260424_02_todos_add_created_by.sql 后重试'
-                        }, start_response)
                     with conn.cursor() as cur:
                         cur.execute("DELETE FROM todos WHERE id=%s AND created_by=%s", (item_id, user_id))
                 return self.send_json({'status': 'success'}, start_response)
@@ -472,17 +576,38 @@ class UtilityMixin:
             end_date = f"{year:04d}-{month:02d}-{days_in_month:02d}"
 
             days = {}
+            user_id = self._get_session_user(environ)
+            if not user_id:
+                return self.send_json({'status': 'success', 'days': {}}, start_response)
             with self._get_db_connection() as conn:
+                self._todo_apply_recurring_resets(conn, user_id)
                 with conn.cursor() as cur:
                     cur.execute(
-                        "SELECT id, title, due_date, status FROM todos WHERE due_date BETWEEN %s AND %s",
-                        (start_date, end_date)
+                        """
+                        SELECT
+                            t.id, t.title, t.due_date, t.is_recurring, t.reminder_interval_days, t.created_at,
+                            ta.is_completed AS my_is_completed,
+                            ta.completed_at AS my_completed_at
+                        FROM todo_assignments ta
+                        JOIN todos t ON t.id = ta.todo_id
+                        WHERE ta.assignee_id=%s
+                        ORDER BY t.id DESC
+                        """,
+                        (user_id,)
                     )
-                    for row in cur.fetchall() or []:
-                        due_date = (row.get('due_date') or '').strip()
-                        if due_date not in days:
-                            days[due_date] = {'todos': []}
-                        days[due_date]['todos'].append(row)
+                    for row in (cur.fetchall() or []):
+                        key = self._todo_effective_calendar_date(row)
+                        if not key:
+                            continue
+                        if key < start_date or key > end_date:
+                            continue
+                        if key not in days:
+                            days[key] = {'todos': []}
+                        days[key]['todos'].append({
+                            'id': row.get('id'),
+                            'title': row.get('title'),
+                            'is_completed': int(row.get('my_is_completed') or 0),
+                        })
 
             return self.send_json({'status': 'success', 'days': days}, start_response)
         except Exception as e:
