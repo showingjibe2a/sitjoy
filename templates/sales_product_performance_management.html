@@ -615,24 +615,7 @@
             background: #fff;
             max-width: 100%;
         }
-        /* 分组明细仅保留 managed-body-wrap 一层滚动，避免外层滚动导致 sticky 表头不可见 */
-        .perf-group-tree-wrap .pm-table-wrap.is-managed-wrap.pm-managed-body-wrap {
-            overflow: visible;
-        }
-        .perf-group-tree-wrap .pm-table-wrap.is-managed-wrap.pm-managed-body-wrap::-webkit-scrollbar {
-            display: none;
-            height: 0;
-        }
-        .perf-group-tree-wrap .pm-table-wrap.is-managed-wrap.pm-managed-body-wrap {
-            max-height: 640px;
-            overflow: auto;
-        }
-        .perf-group-tree-wrap thead th {
-            position: sticky;
-            top: 0;
-            z-index: 3;
-            background: #f7f4ef;
-        }
+        /* 分组明细：交给全局 managed-table 接管（列筛选/字段排序/字段显示） */
         .perf-group-parent-row {
             background: #f7f4ef;
             cursor: pointer;
@@ -1840,7 +1823,7 @@
             const geom = state.chartGeom || {};
             const row = (geom.rowByDate || {})[dateText] || {};
             const keys = (state.metricOrder || []).filter(Boolean);
-            const displayRange = formatBucketRangeLabel(dateText, state.chartGranularity);
+            const displayRange = getBucketRangeLabel(dateText, state.chartGranularity);
             const metricRows = keys.map(k => {
                 const m = (state.metricMap || {})[k] || { label: k };
                 return `<div style="display:flex; justify-content:space-between; gap:0.6rem;"><span>${m.label || k}</span><strong>${formatMetricValue(resolveMetricValue(row, k), k)}</strong></div>`;
@@ -1863,10 +1846,10 @@
             state.selectedChartDateOpen = false;
             // 收起图表明细时：恢复“汇总”分组明细（不修改顶部筛选；只刷新分组）
             if (state._chartDrillRange && state._chartDrillRange.active) {
-                const prevStart = state._chartDrillRange.prevStart || '';
-                const prevEnd = state._chartDrillRange.prevEnd || '';
                 state._chartDrillRange.active = false;
-                loadGroupsOnly(prevStart, prevEnd);
+                // 不再二次请求：直接恢复首次查询返回的汇总 groups
+                const base = state.lastDashboardPayload || {};
+                renderGroups(base.groups || []);
             }
         }
 
@@ -1876,7 +1859,7 @@
             const row = state.chartDataByDate[dateText] || {};
             const keys = (state.chartMetricOrder || state.metricOrder || []).filter(Boolean);
             const events = state.eventByDate[dateText] || [];
-            const displayRange = formatBucketRangeLabel(dateText, state.chartGranularity);
+            const displayRange = getBucketRangeLabel(dateText, state.chartGranularity);
             const metricHtml = keys.map(k => {
                 const m = (state.metricMap || {})[k] || { label: k };
                 return `<div class="perf-chart-detail-row"><span>${m.label || k}</span><strong>${formatMetricValue(resolveMetricValue(row, k), k)}</strong></div>`;
@@ -1920,44 +1903,13 @@
                 const prevEnd = (document.getElementById('filterEndDate') || {}).value || '';
                 const rng = getBucketStartEnd(dateText, state.chartGranularity);
                 if (rng && rng.start && rng.end) {
-                    state._chartDrillRange = { active: true, prevStart, prevEnd, drillStart: rng.start, drillEnd: rng.end };
-                    loadGroupsOnly(rng.start, rng.end);
+                    state._chartDrillRange = { active: true, prevStart, prevEnd, drillStart: rng.start, drillEnd: rng.end, bucketKey: dateText };
+                    // 不再二次请求：使用首次查询返回的 groups_by_bucket
+                    const base = state.lastDashboardPayload || {};
+                    const byBucket = base.groups_by_bucket || {};
+                    renderGroups(byBucket[dateText] || []);
                 }
             } catch (e) { /* ignore */ }
-        }
-
-        function buildDashboardQueryOverrideDates(start, end) {
-            const q = new URLSearchParams();
-            const gran = String(state.chartGranularity || 'day').toLowerCase();
-            q.set('granularity', gran);
-            q.set('start_date', String(start || ''));
-            q.set('end_date', String(end || ''));
-            q.set('metric_keys', (state.metrics || []).map(m => m.key).join(','));
-            q.set('include_todos', document.getElementById('toggleTodos').checked ? '1' : '0');
-            q.set('include_ads', document.getElementById('toggleAds').checked ? '1' : '0');
-            const setIf = (k, arr) => { if (arr.length) q.set(k, arr.join(',')); };
-            setIf('platform_type_ids', getFilterValues('platforms'));
-            setIf('shop_ids', getFilterValues('shops'));
-            setIf('sku_family_ids', getFilterValues('skuFamilies'));
-            setIf('platform_skus', getFilterValues('platformSkus'));
-            setIf('fabrics', getFilterValues('fabrics'));
-            setIf('spec_names', getFilterValues('specs'));
-            setIf('ad_operation_type_ids', getFilterValues('adTypes'));
-            return q.toString();
-        }
-
-        async function loadGroupsOnly(start, end) {
-            try {
-                const query = buildDashboardQueryOverrideDates(start, end);
-                const resp = await fetch(`/api/sales-product-performance-dashboard?${query}`, { credentials: 'include' });
-                const data = await resp.json();
-                if (!resp.ok || data.status !== 'success') throw new Error(data.message || '加载分组失败');
-                // 只更新分组明细（不触碰图表与其它状态）
-                renderGroups(data.groups || []);
-            } catch (e) {
-                const host = document.getElementById('groupContainer');
-                if (host) host.innerHTML = `<div class="perf-panel-caption">货号分组明细</div><p class="status-tip">${String(e && e.message || '加载失败')}</p>`;
-            }
         }
 
         function getBucketStartEnd(dateText, granularity) {
@@ -1983,6 +1935,14 @@
                 return { start: `${y}-${pad2(m + 1)}-01`, end: `${y}-${pad2(m + 1)}-${pad2(last.getDate())}` };
             }
             return { start: dt, end: dt };
+        }
+
+        function getBucketRangeLabel(dateText, granularity) {
+            const key = String(dateText || '').slice(0, 10);
+            const map = state.bucketRangeByDate || {};
+            const r = map[key];
+            if (r && r.start && r.end) return `${r.start} ~ ${r.end}`;
+            return formatBucketRangeLabel(dateText, granularity);
         }
 
         function getNearestDateByChartX(x) {
@@ -2132,8 +2092,8 @@
             const host = document.getElementById('groupContainer');
             const metricKeys = (state.groupMetricOrder && state.groupMetricOrder.length ? state.groupMetricOrder : state.metricOrder).slice();
             const drill = state._chartDrillRange && state._chartDrillRange.active ? state._chartDrillRange : null;
-            const rangeLabel = drill
-                ? `${drill.drillStart} ~ ${drill.drillEnd}（图表细分）`
+            const rangeLabel = drill && drill.bucketKey
+                ? `${getBucketRangeLabel(drill.bucketKey, state.chartGranularity)}（图表细分）`
                 : `${(document.getElementById('filterStartDate') || {}).value || ''} ~ ${(document.getElementById('filterEndDate') || {}).value || ''}`.trim();
             host.innerHTML = `
                 <div class="perf-panel-caption">${rangeLabel || '-'} · 货号分组明细</div>
@@ -2148,13 +2108,17 @@
             wrap.className = 'perf-group-tree-wrap';
             const table = document.createElement('table');
             table.className = 'perf-table pm-table';
-            // 避免被全局 managed-table 机制接管（否则会对子SKU与父货号一起全局排序/分页，观感很乱）
-            table.setAttribute('data-disable-table-manage', '1');
+            table.id = 'perfGroupTable';
+            // 交给 managed-table 接管列筛选/字段排序/字段显示；但分页对分组树不友好，强制单页展示
+            table.dataset.serverPaginationMode = 'server';
+            table.dataset.serverCurrentPage = '1';
+            table.dataset.serverPageSize = '1000000';
             const headCols = ['展开', '货号/SKU', '面料', '规格', '记录数'].concat(metricKeys.map(k => (state.metricMap[k] && state.metricMap[k].label) || k));
+            const headKeys = ['__toggle', '__sku', '__fabric', '__spec', '__rows'].concat(metricKeys.map(k => String(k)));
             table.innerHTML = `
                 <thead>
                     <tr>
-                        ${headCols.map((c, i) => `<th${i===0?' style="width:72px;"':''}>${c}</th>`).join('')}
+                        ${headCols.map((c, i) => `<th data-manage-col-key="${headKeys[i] || c}" data-disable-sort="1"${i===0?' style="width:72px;"':''}>${c}</th>`).join('')}
                     </tr>
                 </thead>
                 <tbody id="perfGroupTreeBody"></tbody>
@@ -2213,10 +2177,11 @@
                 tbody.appendChild(parentTr);
 
                 if (childRows.length) {
-                    childRows.forEach(row => {
+                    childRows.forEach((row, childIdx) => {
                         const tr = document.createElement('tr');
                         tr.className = 'perf-group-child-item';
                         tr.dataset.groupKey = groupKey;
+                        tr.dataset.sortOrigin = String(childIdx);
                         const mn = String(row.min_date || '').slice(0, 10);
                         const mx = String(row.max_date || '').slice(0, 10);
                         const recordDates = [];
@@ -2240,11 +2205,9 @@
                 }
             });
 
-            // 仅保留一个滚动层：pm-table-wrap is-managed-wrap pm-managed-body-wrap
-            const bodyWrap = document.createElement('div');
-            bodyWrap.className = 'pm-table-wrap is-managed-wrap pm-managed-body-wrap';
-            bodyWrap.appendChild(table);
-            wrap.appendChild(bodyWrap);
+            // 让全局 managed-table 机制接管：直接把 table 放入容器即可
+            table.dataset.serverTotalRows = String((tbody && tbody.rows && tbody.rows.length) ? tbody.rows.length : 0);
+            wrap.appendChild(table);
             host.appendChild(wrap);
 
             host.querySelectorAll('.perf-group-toggle').forEach(btn => {
@@ -2258,19 +2221,13 @@
                 });
             });
 
-            // 层级排序：只排序货号父行；每个货号内部子SKU按平台SKU单独排序（不参与全局混排）
-            bindPerfGroupHierSort(table, metricKeys);
+            // 层级排序：绑定到 managed 生成的表头（显示箭头），并对子SKU应用同规则排序
+            bindPerfGroupHierSort(table);
         }
 
-        function bindPerfGroupHierSort(table, metricKeys) {
+        function bindPerfGroupHierSort(table) {
             if (!table) return;
-            const thead = table.tHead;
             const tbody = table.tBodies && table.tBodies[0];
-            if (!thead || !tbody) return;
-            const headerRow = thead.rows && thead.rows[0];
-            if (!headerRow) return;
-
-            // 0=展开（不排序）；1=货号/SKU；2=面料；3=规格；4=记录数；5+=指标
             const parentRows = () => Array.from(tbody.querySelectorAll('tr.perf-group-parent-row'));
             const childRowsByKey = (key) => Array.from(tbody.querySelectorAll(`tr.perf-group-child-item[data-group-key="${key}"]`));
 
@@ -2283,15 +2240,98 @@
                 return txt;
             };
 
-            const sortState = { idx: -1, dir: null }; // dir: 'asc'|'desc'|null
+            const sortState = { key: '', dir: null }; // dir: 'asc'|'desc'|null
 
-            Array.from(headerRow.cells || []).forEach((th, idx) => {
-                if (idx === 0) return;
-                th.style.cursor = 'pointer';
-                th.addEventListener('click', (e) => {
+            const findBodyColIndexByKey = (manageKey) => {
+                const head = table.tHead && table.tHead.rows && table.tHead.rows[0];
+                if (!head) return -1;
+                for (let i = 0; i < head.cells.length; i++) {
+                    const k = String(head.cells[i].dataset.manageColKey || '').trim();
+                    if (k && k === manageKey) return i;
+                }
+                return -1;
+            };
+
+            const refreshHeaderArrows = (headerRowEl) => {
+                if (!headerRowEl) return;
+                Array.from(headerRowEl.cells || []).forEach((th) => {
+                    const k = String(th.dataset.manageColKey || '').trim();
+                    th.classList.remove('pm-sortable', 'pm-sort-asc', 'pm-sort-desc');
+                    if (!k || k === '__toggle') return;
+                    th.classList.add('pm-sortable');
+                    if (sortState.key !== k || !sortState.dir) return;
+                    if (sortState.dir === 'asc') th.classList.add('pm-sort-asc');
+                    if (sortState.dir === 'desc') th.classList.add('pm-sort-desc');
+                });
+            };
+
+            const applyHierSort = (manageKey) => {
+                const idx = findBodyColIndexByKey(manageKey);
+                if (idx < 0) return;
+
+                const parents = parentRows();
+                const origin = parents.map((tr, i) => [tr, i]);
+                const mapOrigin = new Map(origin);
+
+                const applyOrder = (orderedParents) => {
+                    orderedParents.forEach(p => {
+                        const key = String(p.dataset.groupKey || '');
+                        tbody.appendChild(p);
+                        const kids = childRowsByKey(key).slice();
+                        if (!sortState.dir) {
+                            kids.sort((a, b) => Number(a.dataset.sortOrigin || '0') - Number(b.dataset.sortOrigin || '0'));
+                        } else {
+                            const dir = sortState.dir;
+                            kids.sort((a, b) => {
+                                const av = readComparable(a, idx);
+                                const bv = readComparable(b, idx);
+                                if (av == null && bv == null) return Number(a.dataset.sortOrigin || '0') - Number(b.dataset.sortOrigin || '0');
+                                if (av == null) return 1;
+                                if (bv == null) return -1;
+                                if (typeof av === 'number' && typeof bv === 'number') return dir === 'asc' ? (av - bv) : (bv - av);
+                                if (av === bv) return Number(a.dataset.sortOrigin || '0') - Number(b.dataset.sortOrigin || '0');
+                                return dir === 'asc'
+                                    ? String(av).localeCompare(String(bv), 'zh-Hans-CN', { sensitivity: 'base' })
+                                    : String(bv).localeCompare(String(av), 'zh-Hans-CN', { sensitivity: 'base' });
+                            });
+                        }
+                        kids.forEach(k => tbody.appendChild(k));
+                    });
+                };
+
+                if (!sortState.dir) {
+                    const restored = parents.slice().sort((a, b) => (Number(a.dataset.sortOrigin || '0') - Number(b.dataset.sortOrigin || '0')));
+                    applyOrder(restored);
+                    return;
+                }
+                const dir = sortState.dir;
+                const sorted = parents.slice().sort((a, b) => {
+                    const av = readComparable(a, idx);
+                    const bv = readComparable(b, idx);
+                    if (av == null && bv == null) return (mapOrigin.get(a) ?? 0) - (mapOrigin.get(b) ?? 0);
+                    if (av == null) return 1;
+                    if (bv == null) return -1;
+                    if (typeof av === 'number' && typeof bv === 'number') return dir === 'asc' ? (av - bv) : (bv - av);
+                    if (av === bv) return (mapOrigin.get(a) ?? 0) - (mapOrigin.get(b) ?? 0);
+                    return dir === 'asc'
+                        ? String(av).localeCompare(String(bv), 'zh-Hans-CN', { sensitivity: 'base' })
+                        : String(bv).localeCompare(String(av), 'zh-Hans-CN', { sensitivity: 'base' });
+                });
+                applyOrder(sorted);
+            };
+
+            const bindHeaderRow = (headerRowEl) => {
+                if (!headerRowEl || headerRowEl.dataset.perfGroupSortBound === '1') return;
+                headerRowEl.dataset.perfGroupSortBound = '1';
+                refreshHeaderArrows(headerRowEl);
+                Array.from(headerRowEl.cells || []).forEach((th) => {
+                    const manageKey = String(th.dataset.manageColKey || '').trim();
+                    if (!manageKey || manageKey === '__toggle') return;
+                    th.style.cursor = 'pointer';
+                    th.addEventListener('click', (e) => {
                     if (e.target && e.target.closest && e.target.closest('button,input,select,textarea,a,label')) return;
-                    if (sortState.idx !== idx) {
-                        sortState.idx = idx;
+                    if (sortState.key !== manageKey) {
+                        sortState.key = manageKey;
                         sortState.dir = 'desc';
                     } else if (sortState.dir === 'desc') {
                         sortState.dir = 'asc';
@@ -2300,48 +2340,26 @@
                     } else {
                         sortState.dir = 'desc';
                     }
-
-                    const parents = parentRows();
-                    const origin = parents.map((tr, i) => [tr, i]);
-                    const mapOrigin = new Map(origin);
-
-                    const applyOrder = (orderedParents) => {
-                        orderedParents.forEach(p => {
-                            const key = String(p.dataset.groupKey || '');
-                            tbody.appendChild(p);
-                            // 子SKU组内排序：平台SKU升序（独立于父级排序）
-                            const kids = childRowsByKey(key).sort((a, b) => {
-                                const av = String(a.dataset.platformSku || '').trim();
-                                const bv = String(b.dataset.platformSku || '').trim();
-                                return av.localeCompare(bv, 'zh-Hans-CN', { sensitivity: 'base' });
-                            });
-                            kids.forEach(k => tbody.appendChild(k));
-                        });
-                    };
-
-                    if (!sortState.dir) {
-                        // 恢复：按初始渲染顺序（依赖 sortOrigin）
-                        const restored = parents.slice().sort((a, b) => (Number(a.dataset.sortOrigin || '0') - Number(b.dataset.sortOrigin || '0')));
-                        applyOrder(restored);
-                        return;
-                    }
-
-                    const dir = sortState.dir;
-                    const sorted = parents.slice().sort((a, b) => {
-                        const av = readComparable(a, idx);
-                        const bv = readComparable(b, idx);
-                        if (av == null && bv == null) return (mapOrigin.get(a) ?? 0) - (mapOrigin.get(b) ?? 0);
-                        if (av == null) return 1;
-                        if (bv == null) return -1;
-                        if (typeof av === 'number' && typeof bv === 'number') return dir === 'asc' ? (av - bv) : (bv - av);
-                        if (av === bv) return (mapOrigin.get(a) ?? 0) - (mapOrigin.get(b) ?? 0);
-                        return dir === 'asc'
-                            ? String(av).localeCompare(String(bv), 'zh-Hans-CN', { sensitivity: 'base' })
-                            : String(bv).localeCompare(String(av), 'zh-Hans-CN', { sensitivity: 'base' });
+                    // 同步所有表头（原表头 + detached 表头）
+                    const root = table.parentElement ? table.parentElement.parentElement : document;
+                    root.querySelectorAll('table.pm-managed-head-table thead tr, table#perfGroupTable thead tr').forEach(r => refreshHeaderArrows(r));
+                    applyHierSort(manageKey);
                     });
-                    applyOrder(sorted);
                 });
-            });
+            };
+
+            // 原表头绑定（有时用户仍会点到）
+            if (table.tHead && table.tHead.rows && table.tHead.rows[0]) {
+                bindHeaderRow(table.tHead.rows[0]);
+            }
+            // managed 会生成 detached header：延迟绑定
+            window.setTimeout(() => {
+                const bodyWrap = table.closest('.pm-managed-body-wrap');
+                const host = bodyWrap && bodyWrap.parentElement ? bodyWrap.parentElement : document;
+                const headTable = host.querySelector('.pm-managed-head-wrap table.pm-managed-head-table');
+                const r = headTable && headTable.tHead && headTable.tHead.rows && headTable.tHead.rows[0];
+                if (r) bindHeaderRow(r);
+            }, 60);
         }
 
         function renderDashboardPayload(data) {
@@ -2349,16 +2367,17 @@
             state.lastDashboardPayload = {
                 chart_items: payload.chart_items || [],
                 events: payload.events || [],
-                groups: payload.groups || []
+                groups: payload.groups || [],
+                groups_by_bucket: payload.groups_by_bucket || {}
             };
-            // 若当前处于“图表细分”查看，但本次刷新并非细分区间（比如用户手动改日期后查询），则自动退出细分模式
-            if (state._chartDrillRange && state._chartDrillRange.active) {
-                const curStart = (document.getElementById('filterStartDate') || {}).value || '';
-                const curEnd = (document.getElementById('filterEndDate') || {}).value || '';
-                if (state._chartDrillRange.drillStart !== curStart || state._chartDrillRange.drillEnd !== curEnd) {
-                    state._chartDrillRange.active = false;
-                }
-            }
+            // 建立“桶 -> 真实范围”的映射（用于截断桶显示）
+            state.bucketRangeByDate = {};
+            (state.lastDashboardPayload.chart_items || []).forEach(it => {
+                const k = String(it.record_date || '').slice(0, 10);
+                const rs = String(it.range_start || '').slice(0, 10);
+                const re = String(it.range_end || '').slice(0, 10);
+                if (k && rs && re) state.bucketRangeByDate[k] = { start: rs, end: re };
+            });
             const transformed = aggregateChartByGranularity(state.lastDashboardPayload.chart_items, state.lastDashboardPayload.events, state.chartGranularity);
             const titleEl = document.getElementById('chartTitle');
             if (titleEl) titleEl.textContent = getChartTitleByGranularity(state.chartGranularity);

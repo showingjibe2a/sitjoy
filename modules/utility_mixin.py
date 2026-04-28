@@ -24,6 +24,125 @@ class UtilityMixin:
                 continue
         return None
 
+    def _todo_parse_datetime(self, value):
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.strftime('%Y-%m-%d %H:%M:%S')
+        text = str(value).strip()
+        if not text:
+            return None
+        for fmt in (
+            '%Y-%m-%d %H:%M:%S',
+            '%Y/%m/%d %H:%M:%S',
+            '%Y-%m-%d',
+            '%Y/%m/%d',
+        ):
+            try:
+                dt = datetime.strptime(text, fmt)
+                if fmt in ('%Y-%m-%d', '%Y/%m/%d'):
+                    dt = dt.replace(hour=0, minute=0, second=0)
+                return dt.strftime('%Y-%m-%d %H:%M:%S')
+            except Exception:
+                continue
+        return None
+
+    def handle_todo_type_api(self, environ, method, start_response):
+        """待办类型管理 API（CRUD）"""
+        try:
+            user_id = self._get_session_user(environ)
+            if not user_id:
+                return self.send_json({'status': 'error', 'message': '未登录'}, start_response)
+
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            action = (query_params.get('action', [''])[0] or '').strip().lower()
+
+            if method == 'GET':
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT id, type_name, sort_order, created_at, updated_at
+                            FROM todo_types
+                            ORDER BY sort_order ASC, id ASC
+                            """
+                        )
+                        rows = cur.fetchall() or []
+                return self.send_json({'status': 'success', 'items': rows}, start_response)
+
+            if method == 'POST':
+                data = self._read_json_body(environ) or {}
+                type_name = (data.get('type_name') or '').strip()
+                sort_order = self._parse_int(data.get('sort_order')) or 0
+                if not type_name:
+                    return self.send_json({'status': 'error', 'message': '缺少类型名称'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "INSERT INTO todo_types (type_name, sort_order) VALUES (%s, %s)",
+                            (type_name, max(0, sort_order))
+                        )
+                        new_id = cur.lastrowid
+                return self.send_json({'status': 'success', 'id': new_id}, start_response)
+
+            if method == 'PUT':
+                data = self._read_json_body(environ) or {}
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': '缺少 id'}, start_response)
+
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        if action == 'reorder':
+                            orders = data.get('orders') if isinstance(data.get('orders'), list) else []
+                            pairs = []
+                            for row in orders:
+                                if not isinstance(row, dict):
+                                    continue
+                                tid = self._parse_int(row.get('id'))
+                                so = self._parse_int(row.get('sort_order'))
+                                if tid:
+                                    pairs.append((max(0, so or 0), tid))
+                            if pairs:
+                                cur.executemany("UPDATE todo_types SET sort_order=%s WHERE id=%s", pairs)
+                            return self.send_json({'status': 'success'}, start_response)
+
+                        type_name = (data.get('type_name') or '').strip()
+                        sort_order = self._parse_int(data.get('sort_order'))
+                        sets = []
+                        params = []
+                        if type_name:
+                            sets.append("type_name=%s")
+                            params.append(type_name)
+                        if sort_order is not None:
+                            sets.append("sort_order=%s")
+                            params.append(max(0, sort_order))
+                        if not sets:
+                            return self.send_json({'status': 'error', 'message': '没有可更新字段'}, start_response)
+                        params.append(item_id)
+                        cur.execute(f"UPDATE todo_types SET {', '.join(sets)} WHERE id=%s", tuple(params))
+                return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'DELETE':
+                data = self._read_json_body(environ) or {}
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': '缺少 id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        # 保底：不允许删“默认”
+                        cur.execute("SELECT type_name FROM todo_types WHERE id=%s LIMIT 1", (item_id,))
+                        row = cur.fetchone() or {}
+                        if (row.get('type_name') or '').strip() == '默认':
+                            return self.send_json({'status': 'error', 'message': '默认类型不可删除'}, start_response)
+                        cur.execute("DELETE FROM todo_types WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except Exception as e:
+            print(f'Todo type API error: {str(e)}')
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
     def _todo_column_exists(self, conn, column_name):
         with conn.cursor() as cur:
             cur.execute(
@@ -76,6 +195,7 @@ class UtilityMixin:
                 query_params = parse_qs(environ.get('QUERY_STRING', ''))
                 include_all = str((query_params.get('include_all', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
                 with_links = str((query_params.get('with_links', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
+                todo_type_id = self._parse_int((query_params.get('todo_type_id', [''])[0] or '').strip())
                 with self._get_db_connection() as conn:
                     has_created_by = self._todo_column_exists(conn, 'created_by')
                     if not include_all and not has_created_by:
@@ -85,17 +205,23 @@ class UtilityMixin:
                         }, start_response)
                     with conn.cursor() as cur:
                         params = []
-                        where_sql = ''
+                        where_parts = []
                         if not include_all:
-                            where_sql = 'WHERE t.created_by=%s'
+                            where_parts.append('t.created_by=%s')
                             params.append(user_id)
+                        if todo_type_id:
+                            where_parts.append('t.todo_type_id=%s')
+                            params.append(todo_type_id)
+                        where_sql = ('WHERE ' + ' AND '.join(where_parts)) if where_parts else ''
                         cur.execute(
                             f"""
-                            SELECT t.*, u.name AS creator_name, u.username AS creator_username
+                            SELECT t.*, u.name AS creator_name, u.username AS creator_username,
+                                   tt.type_name AS todo_type_name
                             FROM todos t
                             LEFT JOIN users u ON u.id = t.created_by
+                            LEFT JOIN todo_types tt ON tt.id = t.todo_type_id
                             {where_sql}
-                            ORDER BY t.due_date ASC, t.id DESC
+                            ORDER BY (t.status='done') ASC, t.due_date ASC, t.id DESC
                             LIMIT 500
                             """,
                             tuple(params)
@@ -189,6 +315,7 @@ class UtilityMixin:
                 is_recurring = 1 if str(data.get('is_recurring', 0)).strip().lower() in ('1', 'true', 'yes', 'on') else 0
                 detail = (data.get('detail') or '').strip() or None
                 priority = self._parse_int(data.get('priority')) or 2
+                todo_type_id = self._parse_int(data.get('todo_type_id')) or 0
                 assignee_ids = data.get('assignee_ids') or []
                 related_sales_product_ids = data.get('related_sales_product_ids') or []
                 related_sku_family_ids = data.get('related_sku_family_ids') or []
@@ -202,8 +329,20 @@ class UtilityMixin:
                         }, start_response)
                     has_reminder_interval_days = self._todo_column_exists(conn, 'reminder_interval_days')
                     has_is_recurring = self._todo_column_exists(conn, 'is_recurring')
+                    if not todo_type_id:
+                        # 默认使用 todo_types 中 sort_order 最小的类型（一般为“默认”）
+                        try:
+                            with conn.cursor() as cur:
+                                cur.execute("SELECT id FROM todo_types ORDER BY sort_order ASC, id ASC LIMIT 1")
+                                row = cur.fetchone() or {}
+                                todo_type_id = self._parse_int(row.get('id')) or 0
+                        except Exception:
+                            todo_type_id = 0
+
                     insert_cols = ['title', 'detail', 'start_date', 'due_date']
                     insert_vals = [title, detail, start_date, due_date]
+                    insert_cols.append('todo_type_id')
+                    insert_vals.append(todo_type_id)
                     if has_reminder_interval_days:
                         insert_cols.append('reminder_interval_days')
                         insert_vals.append(reminder_interval_days)
@@ -236,16 +375,61 @@ class UtilityMixin:
                 status = str(data.get('status') or '').strip().lower()
                 if status not in ('open', 'done'):
                     status = 'open'
+                completed_at = self._todo_parse_datetime(data.get('completed_at')) if status == 'done' else None
+                if status == 'done' and not completed_at:
+                    completed_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 related_sales_product_ids = data.get('related_sales_product_ids') if isinstance(data.get('related_sales_product_ids'), list) else None
                 related_sku_family_ids = data.get('related_sku_family_ids') if isinstance(data.get('related_sku_family_ids'), list) else None
                 assignee_ids = data.get('assignee_ids') if isinstance(data.get('assignee_ids'), list) else None
+                title = (data.get('title') or '').strip() if 'title' in (data or {}) else None
+                detail = (data.get('detail') or '').strip() if 'detail' in (data or {}) else None
+                start_date = self._todo_parse_date(data.get('start_date')) if 'start_date' in (data or {}) else None
+                due_date = self._todo_parse_date(data.get('due_date')) if 'due_date' in (data or {}) else None
+                priority = self._parse_int(data.get('priority')) if 'priority' in (data or {}) else None
+                reminder_interval_days = self._parse_int(data.get('reminder_interval_days')) if 'reminder_interval_days' in (data or {}) else None
+                is_recurring = None
+                if 'is_recurring' in (data or {}):
+                    is_recurring = 1 if str(data.get('is_recurring', 0)).strip().lower() in ('1', 'true', 'yes', 'on') else 0
+                todo_type_id = self._parse_int(data.get('todo_type_id')) if 'todo_type_id' in (data or {}) else None
                 
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute(
-                            "UPDATE todos SET status=%s, completed_at=%s WHERE id=%s",
-                            (status, datetime.now().strftime('%Y-%m-%d %H:%M:%S') if status == 'done' else None, item_id)
-                        )
+                        sets = ['status=%s', 'completed_at=%s']
+                        params = [status, completed_at]
+                        if title is not None:
+                            sets.append('title=%s')
+                            params.append(title)
+                        if detail is not None:
+                            sets.append('detail=%s')
+                            params.append(detail or None)
+                        if start_date is not None:
+                            sets.append('start_date=%s')
+                            params.append(start_date or datetime.now().strftime('%Y-%m-%d'))
+                        if due_date is not None:
+                            sets.append('due_date=%s')
+                            params.append(due_date or (start_date or datetime.now().strftime('%Y-%m-%d')))
+                        if priority is not None:
+                            sets.append('priority=%s')
+                            params.append(max(1, min(5, priority or 2)))
+                        if reminder_interval_days is not None:
+                            sets.append('reminder_interval_days=%s')
+                            params.append(max(1, reminder_interval_days or 1))
+                        if is_recurring is not None:
+                            sets.append('is_recurring=%s')
+                            params.append(1 if is_recurring else 0)
+                        if todo_type_id is not None:
+                            if not todo_type_id:
+                                # 兼容：将空值回落到默认类型
+                                try:
+                                    cur.execute("SELECT id FROM todo_types ORDER BY sort_order ASC, id ASC LIMIT 1")
+                                    row = cur.fetchone() or {}
+                                    todo_type_id = self._parse_int(row.get('id')) or 0
+                                except Exception:
+                                    todo_type_id = 0
+                            sets.append('todo_type_id=%s')
+                            params.append(max(1, todo_type_id or 1))
+                        params.append(item_id)
+                        cur.execute(f"UPDATE todos SET {', '.join(sets)} WHERE id=%s", tuple(params))
                     if related_sales_product_ids is not None or related_sku_family_ids is not None:
                         self._replace_todo_sales_links(conn, item_id, related_sales_product_ids or [], related_sku_family_ids or [])
                     if assignee_ids is not None:

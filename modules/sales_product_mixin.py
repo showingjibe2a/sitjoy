@@ -7133,66 +7133,232 @@ class SalesProductMixin:
                         for key in metric_keys:
                             val = row.get(key)
                             item[key] = round(float(val), 2) if val is not None else 0
+                        # 用于前端展示真实范围（day 本身无截断概念）
+                        item['range_start'] = str(item.get('record_date') or '')[:10]
+                        item['range_end'] = str(item.get('record_date') or '')[:10]
                         chart_items.append(item)
                 else:
                     src_table = 'sales_perf_agg_week' if granularity == 'week' else 'sales_perf_agg_month'
                     period_col = 'week_start' if granularity == 'week' else 'month_start'
 
-                    cols = [f"DATE(a.{period_col}) AS record_date"]
-                    for key in metric_keys:
-                        if key == 'sub_category_rank':
-                            cols.append("AVG(a.sub_category_rank_avg) AS sub_category_rank")
-                        else:
-                            cols.append(f"SUM(COALESCE(a.{key},0)) AS {key}")
+                    # 周/月混合策略：
+                    # - 中间完整周/月：用聚合表（更快）
+                    # - 两端被日期区间截断的周/月：用明细表按真实起止即时汇总（更符合日常筛选逻辑）
+                    def _to_date_obj(text):
+                        try:
+                            return datetime.strptime(str(text or ''), '%Y-%m-%d').date()
+                        except Exception:
+                            return None
 
-                    agg_sql = [
-                        f"""
-                        SELECT {', '.join(cols)}
-                        FROM {src_table} a
-                        JOIN sales_products sp ON sp.id = a.sales_product_id
-                        LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
-                        LEFT JOIN shops sh ON sh.id = sp.shop_id
-                        WHERE 1=1
-                        """
-                    ]
-                    agg_params = []
-                    if start_date:
-                        agg_sql.append(f" AND a.{period_col} >= %s")
-                        agg_params.append(start_date)
-                    if end_date:
-                        agg_sql.append(f" AND a.{period_col} <= %s")
-                        agg_params.append(end_date)
-                    if sku_family_ids:
-                        agg_sql.append(f" AND v.sku_family_id IN ({','.join(['%s'] * len(sku_family_ids))})")
-                        agg_params.extend(sku_family_ids)
-                    if platform_skus:
-                        agg_sql.append(f" AND sp.platform_sku IN ({','.join(['%s'] * len(platform_skus))})")
-                        agg_params.extend(platform_skus)
-                    if fabrics:
-                        has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
-                        if has_fabric_text:
-                            agg_sql.append(f" AND v.fabric IN ({','.join(['%s'] * len(fabrics))})")
-                            agg_params.extend(fabrics)
-                    if spec_names:
-                        agg_sql.append(f" AND v.spec_name IN ({','.join(['%s'] * len(spec_names))})")
-                        agg_params.extend(spec_names)
-                    if shop_ids:
-                        agg_sql.append(f" AND sp.shop_id IN ({','.join(['%s'] * len(shop_ids))})")
-                        agg_params.extend(shop_ids)
-                    if platform_type_ids:
-                        agg_sql.append(f" AND sh.platform_type_id IN ({','.join(['%s'] * len(platform_type_ids))})")
-                        agg_params.extend(platform_type_ids)
-                    agg_sql.append(" GROUP BY DATE(record_date) ORDER BY record_date ASC")
+                    def _fmt_date(d):
+                        return d.strftime('%Y-%m-%d') if d else ''
 
-                    with conn.cursor() as cur:
-                        cur.execute(''.join(agg_sql), tuple(agg_params))
-                        agg_rows = cur.fetchall() or []
-                    for row in agg_rows:
-                        item = {'record_date': row.get('record_date')}
+                    sd_obj = _to_date_obj(start_date)
+                    ed_obj = _to_date_obj(end_date)
+                    if sd_obj and ed_obj and ed_obj < sd_obj:
+                        sd_obj, ed_obj = ed_obj, sd_obj
+
+                    def _bucket_start(d):
+                        if not d:
+                            return None
+                        if granularity == 'month':
+                            return d.replace(day=1)
+                        # week: treat Monday as week_start
+                        return d - timedelta(days=d.weekday())
+
+                    def _bucket_end(bucket_start):
+                        if not bucket_start:
+                            return None
+                        if granularity == 'month':
+                            # last day of month
+                            next_month = (bucket_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+                            return next_month - timedelta(days=1)
+                        return bucket_start + timedelta(days=6)
+
+                    def _add_common_filters(sql_parts, params, sp_alias, v_alias, sh_alias, fabric_alias=None, has_fabric_text=False):
+                        if sku_family_ids:
+                            sql_parts.append(f" AND {v_alias}.sku_family_id IN ({','.join(['%s'] * len(sku_family_ids))})")
+                            params.extend(sku_family_ids)
+                        if platform_skus:
+                            sql_parts.append(f" AND {sp_alias}.platform_sku IN ({','.join(['%s'] * len(platform_skus))})")
+                            params.extend(platform_skus)
+                        if fabrics and has_fabric_text and fabric_alias:
+                            sql_parts.append(f" AND {fabric_alias}.fabric IN ({','.join(['%s'] * len(fabrics))})")
+                            params.extend(fabrics)
+                        if spec_names:
+                            sql_parts.append(f" AND {v_alias}.spec_name IN ({','.join(['%s'] * len(spec_names))})")
+                            params.extend(spec_names)
+                        if shop_ids:
+                            sql_parts.append(f" AND {sp_alias}.shop_id IN ({','.join(['%s'] * len(shop_ids))})")
+                            params.extend(shop_ids)
+                        if platform_type_ids:
+                            sql_parts.append(f" AND {sh_alias}.platform_type_id IN ({','.join(['%s'] * len(platform_type_ids))})")
+                            params.extend(platform_type_ids)
+
+                    has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+
+                    bucket_items = []
+                    if sd_obj and ed_obj:
+                        first_bucket_start = _bucket_start(sd_obj)
+                        last_bucket_start = _bucket_start(ed_obj)
+                        first_bucket_end = _bucket_end(first_bucket_start)
+                        last_bucket_end = _bucket_end(last_bucket_start)
+
+                        left_partial = (sd_obj > first_bucket_start) if first_bucket_start else False
+                        right_partial = (ed_obj < last_bucket_end) if last_bucket_end else False
+
+                        # helper: query raw for a partial bucket and return one aggregated row
+                        def _query_raw_bucket(bucket_start, rng_start, rng_end):
+                            cols = ["%s AS record_date"]
+                            for key in metric_keys:
+                                if key == 'sub_category_rank':
+                                    cols.append("AVG(spp.sub_category_rank) AS sub_category_rank")
+                                else:
+                                    cols.append(f"SUM(COALESCE(spp.{key},0)) AS {key}")
+                            sql_parts = [
+                                f"""
+                                SELECT {', '.join(cols)}
+                                FROM sales_product_performances spp
+                                JOIN sales_products sp ON sp.id = spp.sales_product_id
+                                LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
+                                LEFT JOIN shops sh ON sh.id = sp.shop_id
+                                WHERE 1=1
+                                """
+                            ]
+                            params = [_fmt_date(bucket_start)]
+                            sql_parts.append(" AND spp.record_date >= %s")
+                            params.append(_fmt_date(rng_start))
+                            sql_parts.append(" AND spp.record_date <= %s")
+                            params.append(_fmt_date(rng_end))
+                            _add_common_filters(sql_parts, params, 'sp', 'v', 'sh', fabric_alias='v', has_fabric_text=has_fabric_text)
+                            with conn.cursor() as cur:
+                                cur.execute(''.join(sql_parts), tuple(params))
+                                row = cur.fetchone() or {}
+                            out = {'record_date': row.get('record_date')}
+                            for key in metric_keys:
+                                val = row.get(key)
+                                out[key] = round(float(val), 2) if val is not None else 0
+                            # 记录该桶真实参与计算的数据范围（用于前端显示）
+                            out['range_start'] = _fmt_date(rng_start)
+                            out['range_end'] = _fmt_date(rng_end)
+                            return out
+
+                        # left edge partial
+                        if left_partial and first_bucket_start:
+                            bucket_items.append(_query_raw_bucket(first_bucket_start, sd_obj, min(ed_obj, first_bucket_end)))
+
+                        # middle full buckets via agg table
+                        # compute next/prev bucket start safely
+                        def _next_bucket_start(b):
+                            if granularity == 'month':
+                                y, m = b.year, b.month
+                                if m == 12:
+                                    return datetime(y + 1, 1, 1).date()
+                                return datetime(y, m + 1, 1).date()
+                            return b + timedelta(days=7)
+
+                        def _prev_bucket_start(b):
+                            if granularity == 'month':
+                                y, m = b.year, b.month
+                                if m == 1:
+                                    return datetime(y - 1, 12, 1).date()
+                                return datetime(y, m - 1, 1).date()
+                            return b - timedelta(days=7)
+
+                        full_from = _next_bucket_start(first_bucket_start) if left_partial else first_bucket_start
+                        full_to = _prev_bucket_start(last_bucket_start) if right_partial else last_bucket_start
+
+                        if full_from and full_to and full_from <= full_to:
+                            cols = [f"DATE(a.{period_col}) AS record_date"]
+                            for key in metric_keys:
+                                if key == 'sub_category_rank':
+                                    cols.append("AVG(a.sub_category_rank_avg) AS sub_category_rank")
+                                else:
+                                    cols.append(f"SUM(COALESCE(a.{key},0)) AS {key}")
+                            agg_sql = [
+                                f"""
+                                SELECT {', '.join(cols)}
+                                FROM {src_table} a
+                                JOIN sales_products sp ON sp.id = a.sales_product_id
+                                LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
+                                LEFT JOIN shops sh ON sh.id = sp.shop_id
+                                WHERE 1=1
+                                """
+                            ]
+                            agg_params = []
+                            agg_sql.append(f" AND a.{period_col} >= %s")
+                            agg_params.append(_fmt_date(full_from))
+                            agg_sql.append(f" AND a.{period_col} <= %s")
+                            agg_params.append(_fmt_date(full_to))
+                            _add_common_filters(agg_sql, agg_params, 'sp', 'v', 'sh', fabric_alias='v', has_fabric_text=has_fabric_text)
+                            agg_sql.append(" GROUP BY DATE(record_date) ORDER BY record_date ASC")
+                            with conn.cursor() as cur:
+                                cur.execute(''.join(agg_sql), tuple(agg_params))
+                                agg_rows = cur.fetchall() or []
+                            for row in agg_rows:
+                                item = {'record_date': row.get('record_date')}
+                                for key in metric_keys:
+                                    val = row.get(key)
+                                    item[key] = round(float(val), 2) if val is not None else 0
+                                # 完整桶：真实范围即完整周/月
+                                try:
+                                    bstart = _to_date_obj(item.get('record_date'))
+                                except Exception:
+                                    bstart = None
+                                bend = _bucket_end(bstart) if bstart else None
+                                item['range_start'] = _fmt_date(bstart)
+                                item['range_end'] = _fmt_date(bend)
+                                bucket_items.append(item)
+
+                        # right edge partial (avoid duplicate when same bucket as left)
+                        if right_partial and last_bucket_start and (not first_bucket_start or last_bucket_start != first_bucket_start):
+                            bucket_items.append(_query_raw_bucket(last_bucket_start, max(sd_obj, last_bucket_start), ed_obj))
+
+                        # sort by record_date
+                        bucket_items.sort(key=lambda x: str(x.get('record_date') or ''))
+                        chart_items.extend(bucket_items)
+                    else:
+                        # fallback: keep legacy behavior if dates are missing/unparseable
+                        cols = [f"DATE(a.{period_col}) AS record_date"]
                         for key in metric_keys:
-                            val = row.get(key)
-                            item[key] = round(float(val), 2) if val is not None else 0
-                        chart_items.append(item)
+                            if key == 'sub_category_rank':
+                                cols.append("AVG(a.sub_category_rank_avg) AS sub_category_rank")
+                            else:
+                                cols.append(f"SUM(COALESCE(a.{key},0)) AS {key}")
+
+                        agg_sql = [
+                            f"""
+                            SELECT {', '.join(cols)}
+                            FROM {src_table} a
+                            JOIN sales_products sp ON sp.id = a.sales_product_id
+                            LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
+                            LEFT JOIN shops sh ON sh.id = sp.shop_id
+                            WHERE 1=1
+                            """
+                        ]
+                        agg_params = []
+                        if start_date:
+                            agg_sql.append(f" AND a.{period_col} >= %s")
+                            agg_params.append(start_date)
+                        if end_date:
+                            agg_sql.append(f" AND a.{period_col} <= %s")
+                            agg_params.append(end_date)
+                        _add_common_filters(agg_sql, agg_params, 'sp', 'v', 'sh', fabric_alias='v', has_fabric_text=has_fabric_text)
+                        agg_sql.append(" GROUP BY DATE(record_date) ORDER BY record_date ASC")
+
+                        with conn.cursor() as cur:
+                            cur.execute(''.join(agg_sql), tuple(agg_params))
+                            agg_rows = cur.fetchall() or []
+                        for row in agg_rows:
+                            item = {'record_date': row.get('record_date')}
+                            for key in metric_keys:
+                                val = row.get(key)
+                                item[key] = round(float(val), 2) if val is not None else 0
+                            # fallback：尽量提供范围
+                            rd = str(item.get('record_date') or '')[:10]
+                            item['range_start'] = rd
+                            item['range_end'] = rd
+                            chart_items.append(item)
 
                 perf_timings['chart_agg'] = time.time() - perf_t_a
 
@@ -7387,6 +7553,131 @@ class SalesProductMixin:
                 total_items = sum(len(g.get('items') or []) for g in groups)
                 perf_timings['groups'] = time.time() - perf_t_g
 
+                # === 货号分组（按图表桶范围预计算，用于前端点击趋势时“无二次请求”切换明细） ===
+                # 注意：这里统一使用原始明细表在桶范围内计算（避免 week/month 聚合表在截断桶上失真）
+                groups_by_bucket = {}
+                try:
+                    # 取图表桶的真实范围（chart_items 已带 range_start/range_end）
+                    bucket_ranges = []
+                    for it in (chart_items or []):
+                        bkey = str(it.get('record_date') or '')[:10]
+                        rs = str(it.get('range_start') or '')[:10]
+                        rng_end_text = str(it.get('range_end') or '')[:10]
+                        if bkey and rs and rng_end_text:
+                            bucket_ranges.append((bkey, rs, rng_end_text))
+
+                    if bucket_ranges:
+                        # 复用 day 分组 SQL（按日期范围汇总到平台SKU粒度，再按货号分组）
+                        def _query_groups_raw_range(rng_start, rng_end):
+                            local_params = []
+                            group_cols_local = [
+                                "sp.id AS sp_id",
+                                "sp.platform_sku",
+                                f"{fabric_expr} AS fabric",
+                                "v.spec_name",
+                                "v.sku_family_id",
+                                "pf.sku_family",
+                                "MIN(DATE(spp.record_date)) AS min_date",
+                                "MAX(DATE(spp.record_date)) AS max_date",
+                                "COUNT(1) AS `rows`",
+                                "SUM(COALESCE(spp.sales_qty,0)) AS sales_qty",
+                                "SUM(COALESCE(spp.net_sales_amount,0)) AS net_sales_amount",
+                                "SUM(COALESCE(spp.order_qty,0)) AS order_qty",
+                                "SUM(COALESCE(spp.session_total,0)) AS session_total",
+                                "SUM(COALESCE(spp.ad_impressions,0)) AS ad_impressions",
+                                "SUM(COALESCE(spp.ad_clicks,0)) AS ad_clicks",
+                                "SUM(COALESCE(spp.ad_orders,0)) AS ad_orders",
+                                "SUM(COALESCE(spp.ad_spend,0)) AS ad_spend",
+                                "SUM(COALESCE(spp.ad_sales_amount,0)) AS ad_sales_amount",
+                                "SUM(COALESCE(spp.refund_amount,0)) AS refund_amount",
+                                "AVG(spp.sub_category_rank) AS sub_category_rank",
+                            ]
+                            local_sql = [
+                                f"""
+                                SELECT {', '.join(group_cols_local)}
+                                FROM sales_product_performances spp
+                                JOIN sales_products sp ON sp.id = spp.sales_product_id
+                                LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
+                                LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                                LEFT JOIN shops sh ON sh.id = sp.shop_id
+                                LEFT JOIN platform_types pt ON pt.id = sh.platform_type_id
+                                {fabric_join}
+                                WHERE 1=1
+                                """
+                            ]
+                            if rng_start:
+                                local_sql.append(' AND spp.record_date >= %s')
+                                local_params.append(rng_start)
+                            if rng_end:
+                                local_sql.append(' AND spp.record_date <= %s')
+                                local_params.append(rng_end)
+                            if sku_family_ids:
+                                local_sql.append(f" AND v.sku_family_id IN ({','.join(['%s'] * len(sku_family_ids))})")
+                                local_params.extend(sku_family_ids)
+                            if platform_skus:
+                                local_sql.append(f" AND sp.platform_sku IN ({','.join(['%s'] * len(platform_skus))})")
+                                local_params.extend(platform_skus)
+                            if fabrics and has_fabric_text:
+                                local_sql.append(f" AND v.fabric IN ({','.join(['%s'] * len(fabrics))})")
+                                local_params.extend(fabrics)
+                            if spec_names:
+                                local_sql.append(f" AND v.spec_name IN ({','.join(['%s'] * len(spec_names))})")
+                                local_params.extend(spec_names)
+                            if shop_ids:
+                                local_sql.append(f" AND sp.shop_id IN ({','.join(['%s'] * len(shop_ids))})")
+                                local_params.extend(shop_ids)
+                            if platform_type_ids:
+                                local_sql.append(f" AND sh.platform_type_id IN ({','.join(['%s'] * len(platform_type_ids))})")
+                                local_params.extend(platform_type_ids)
+                            local_sql.append(' GROUP BY sp.id, sp.platform_sku, fabric, v.spec_name, v.sku_family_id, pf.sku_family')
+                            local_sql.append(' ORDER BY pf.sku_family ASC, sp.platform_sku ASC')
+                            with conn.cursor() as cur2:
+                                cur2.execute(''.join(local_sql), tuple(local_params))
+                                local_rows = cur2.fetchall() or []
+
+                            local_group_map = {}
+                            for r in local_rows:
+                                sp_id = self._parse_int(r.get('sp_id'))
+                                sf_id = self._parse_int(r.get('sku_family_id'))
+                                sf_name = str(r.get('sku_family') or '未分组货号').strip() or '未分组货号'
+                                sku = str(r.get('platform_sku') or '').strip()
+                                gkey = f"{sf_id or 0}:{sf_name}"
+                                grp = local_group_map.setdefault(gkey, {
+                                    'sku_family_id': sf_id,
+                                    'sku_family': sf_name,
+                                    'items': []
+                                })
+                                grp['items'].append({
+                                    'sales_product_id': sp_id,
+                                    'platform_sku': sku,
+                                    'fabric': r.get('fabric') or '',
+                                    'spec_name': r.get('spec_name') or '',
+                                    'min_date': str(r.get('min_date') or ''),
+                                    'max_date': str(r.get('max_date') or ''),
+                                    'rows': self._parse_int(r.get('rows')) or 0,
+                                    'sales_qty': r.get('sales_qty') or 0,
+                                    'net_sales_amount': r.get('net_sales_amount') or 0,
+                                    'order_qty': r.get('order_qty') or 0,
+                                    'session_total': r.get('session_total') or 0,
+                                    'ad_impressions': r.get('ad_impressions') or 0,
+                                    'ad_clicks': r.get('ad_clicks') or 0,
+                                    'ad_orders': r.get('ad_orders') or 0,
+                                    'ad_spend': r.get('ad_spend') or 0,
+                                    'ad_sales_amount': r.get('ad_sales_amount') or 0,
+                                    'refund_amount': r.get('refund_amount') or 0,
+                                    'sub_category_rank': r.get('sub_category_rank'),
+                                })
+                            local_groups = list(local_group_map.values())
+                            for gg in local_groups:
+                                gg['items'].sort(key=lambda x: x.get('platform_sku') or '')
+                            local_groups.sort(key=lambda x: x.get('sku_family') or '')
+                            return local_groups
+
+                        for bkey, rs, rng_end in bucket_ranges:
+                            groups_by_bucket[bkey] = _query_groups_raw_range(rs, rng_end)
+                except Exception:
+                    groups_by_bucket = {}
+
                 events = []
                 perf_timings['events'] = 0
                 
@@ -7408,6 +7699,7 @@ class SalesProductMixin:
                 return self.send_json({
                     'status': 'success',
                     'groups': groups,
+                    'groups_by_bucket': groups_by_bucket,
                     'total_groups': total_groups,
                     'total_items': total_items,
                     'chart_items': chart_items,

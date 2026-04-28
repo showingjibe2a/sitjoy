@@ -397,6 +397,49 @@
             justify-content: flex-end;
             margin-bottom: 12px;
         }
+
+        /* Home - Todo rail enhancements */
+        .todo-type-bar-title {
+            font-size: 13px;
+            color: #444;
+            margin: 0.6rem 0 0.35rem 0;
+            font-weight: 600;
+        }
+        .todo-table-wrap {
+            width: 100%;
+            overflow: auto;
+            max-height: 520px;
+            border: 1px solid rgba(207, 199, 189, 0.6);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.86);
+        }
+        #todoTable th, #todoTable td { font-size: 12px; }
+        #todoTable thead th { position: sticky; top: 0; z-index: 2; background: #f5efe5; }
+        #todoTable .pm-actions { display: inline-flex; gap: 0.35rem; }
+        .todo-title-cell { min-width: 140px; word-break: break-word; }
+        .todo-mini-sub { font-size: 11px; color: #888; margin-top: 2px; }
+        .todo-complete-pop {
+            position: fixed;
+            z-index: 5200;
+            min-width: 240px;
+            background: #fff;
+            border: 1px solid rgba(207, 199, 189, 0.72);
+            border-radius: 10px;
+            box-shadow: 0 10px 28px rgba(0,0,0,0.14);
+            padding: 0.65rem 0.75rem;
+            display: none;
+        }
+        .todo-complete-pop.active { display: block; }
+        .todo-complete-pop .pop-title { font-size: 12px; font-weight: 700; color: var(--morandi-ink); margin-bottom: 0.4rem; }
+        .todo-complete-pop .pop-row { display: grid; gap: 0.35rem; }
+        .todo-complete-pop input[type="datetime-local"]{
+            padding: 0.35rem 0.55rem;
+            border: 1px solid rgba(207, 199, 189, 0.72);
+            border-radius: 8px;
+            font-size: 12px;
+        }
+        .todo-complete-pop .pop-actions { display: flex; justify-content: flex-end; gap: 0.45rem; margin-top: 0.55rem; }
+        .todo-complete-pop .pop-actions button { padding: 0.35rem 0.75rem; font-size: 12px; }
     </style>
 </head>
 <body>
@@ -413,7 +456,26 @@
                     <div style="margin-bottom: 20px;">
                         <button class="btn-primary" style="width: 100%;" onclick="showTodoModal('create')">+ 新增待办</button>
                     </div>
-                    <div class="rail-list" id="todoList"></div>
+                    <div class="todo-type-bar-title">待办类型管理</div>
+                    <div class="material-type-bar" id="todoTypeBar" style="margin-bottom: 0.7rem;">
+                        <button class="material-type-add" type="button" aria-label="新增类型" onclick="openTodoTypeModal('create')">+</button>
+                    </div>
+                    <div class="todo-table-wrap">
+                        <table class="pm-table" id="todoTable">
+                            <thead>
+                                <tr>
+                                    <th style="width:120px;">完成状态</th>
+                                    <th style="width:120px;">类型</th>
+                                    <th>事项</th>
+                                    <th style="width:130px;">开始/截止</th>
+                                    <th style="width:120px;">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="todoTableBody">
+                                <tr><td colspan="5" style="text-align:center;">加载中...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
             </aside>
@@ -532,9 +594,14 @@
                 <div class="pm-section">
                     <h4>基础信息</h4>
                     <div class="pm-section-body">
+                        <input type="hidden" id="todoModalId" value="">
                         <div class="form-group">
                             <label>事项标题 <span class="required-asterisk">*</span></label>
                             <input type="text" id="todoModalTitle_input" placeholder="事项" required>
+                        </div>
+                        <div class="form-group">
+                            <label>待办类型 <span class="required-asterisk">*</span></label>
+                            <select id="todoModalType" data-universal-no-search="1"></select>
                         </div>
                         <div class="form-group">
                             <label>开始日期 <span class="required-asterisk">*</span></label>
@@ -591,6 +658,45 @@
                 <button class="btn-secondary" onclick="closeTodoModal()">取消</button>
                 <button class="btn-primary" id="modalSaveBtn" onclick="handleTodoModalSubmit(event)">保存待办</button>
             </div>
+        </div>
+    </div>
+
+    <!-- 待办类型弹窗 -->
+    <div id="todoTypeModal" class="pm-modal">
+        <div class="pm-modal-content">
+            <div class="pm-modal-scroll">
+                <h3 id="todoTypeModalTitle" style="margin-top:0;">新增待办类型</h3>
+                <div class="pm-form">
+                    <input type="hidden" id="todoTypeModalId" value="">
+                    <div class="form-group">
+                        <label>类型名称 <span class="required-asterisk">*</span></label>
+                        <input type="text" id="todoTypeModalName" placeholder="例如：采购/开发/运营" required>
+                    </div>
+                    <div class="form-group">
+                        <label>排序（越小越靠前）</label>
+                        <input type="number" id="todoTypeModalSort" value="0" min="0" step="1">
+                    </div>
+                    <div id="todoTypeModalHint" class="response" style="display:none; margin-top:0.75rem;"></div>
+                </div>
+            </div>
+            <div class="pm-modal-actions">
+                <button class="btn-secondary" onclick="closeTodoTypeModal()">取消</button>
+                <button class="btn-danger" id="todoTypeModalDeleteBtn" style="display:none;" onclick="deleteTodoType()">删除</button>
+                <button class="btn-primary" onclick="submitTodoType()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 完成时间小弹窗 -->
+    <div class="todo-complete-pop" id="todoCompletePop">
+        <div class="pop-title">设置完成时间</div>
+        <div class="pop-row">
+            <input type="hidden" id="todoCompletePopId" value="">
+            <input type="datetime-local" id="todoCompletePopTime">
+        </div>
+        <div class="pop-actions">
+            <button class="btn-secondary" type="button" onclick="closeTodoCompletePop()">取消</button>
+            <button class="btn-primary" type="button" onclick="confirmTodoCompleteTime()">确认</button>
         </div>
     </div>
 
@@ -764,7 +870,7 @@
                     { key: 'product_management', title: '产品管理', page_keys: ['product_management', 'fabric_management', 'feature_management', 'material_management', 'certification_management', 'order_product_management'] },
                     { key: 'logistics_factory_management', title: '物流仓储管理', page_keys: ['logistics_factory_management', 'logistics_forwarder_management', 'logistics_warehouse_management', 'logistics_warehouse_inventory_management', 'logistics_in_transit_management', 'factory_stock_management', 'factory_wip_management', 'logistics_warehouse_dashboard'] },
                     { key: 'gallery', title: '图片管理', page_keys: ['gallery'] },
-                    { key: 'sales_product_management', title: '销售管理', page_keys: ['sales_product_management', 'sales_product_performance_management', 'sales_order_registration_management', 'parent_management'] },
+                    { key: 'sales_product_management', title: '销售管理', page_keys: ['sales_product_management', 'sales_product_performance_management', 'sales_forecast_management', 'sales_order_registration_management', 'parent_management'] },
                     { key: 'amazon_ad_adjustment_management', title: 'Amazon广告管理', page_keys: ['amazon_ad_adjustment_management', 'amazon_ad_keyword_management', 'amazon_ad_management', 'amazon_ad_subtype_management', 'amazon_ad_delivery_management', 'amazon_ad_product_management'] },
                     { key: 'about', title: '关于', page_keys: ['about'] }
                 ];
@@ -1045,10 +1151,13 @@
             const dateString = String(today.getFullYear()).padStart(4, '0') + '-' +
                              String(today.getMonth() + 1).padStart(2, '0') + '-' +
                              String(today.getDate()).padStart(2, '0');
+            const idEl = document.getElementById('todoModalId');
+            if (idEl) idEl.value = '';
             
             if (action === 'create') {
                 document.getElementById('todoModalTitle').textContent = '新增待办';
                 document.getElementById('todoModalTitle_input').value = '';
+                ensureTodoTypeOptions();
                 document.getElementById('todoModalStartDate').value = dateString;
                 document.getElementById('todoModalReminderInterval').value = 1;
                 document.getElementById('todoModalPriority').value = 2;
@@ -1060,7 +1169,22 @@
                 document.getElementById('assigneeSelected').innerHTML = '';
             } else if (action === 'edit' && todoId) {
                 document.getElementById('todoModalTitle').textContent = '编辑待办';
-                // 加载现有待办数据（后续实现）
+                const idNum = parseInt(todoId, 10) || 0;
+                if (idEl) idEl.value = String(idNum);
+                const todo = (window.homeTodosCache || []).find(x => parseInt(x.id, 10) === idNum);
+                if (todo) {
+                    ensureTodoTypeOptions(todo.todo_type_id);
+                    document.getElementById('todoModalTitle_input').value = todo.title || '';
+                    document.getElementById('todoModalStartDate').value = todo.start_date || dateString;
+                    document.getElementById('todoModalReminderInterval').value = todo.reminder_interval_days || 1;
+                    document.getElementById('todoModalPriority').value = todo.priority || 2;
+                    document.getElementById('todoModalIsRecurring').checked = !!todo.is_recurring;
+                    document.getElementById('todoModalDetail').value = todo.detail || '';
+                    setTodoSelectedAssigneeIds((todo.assignees || []).map(a => a.assignee_id));
+                    updateAssigneeSelected();
+                } else {
+                    ensureTodoTypeOptions();
+                }
             }
             
             loadAssigneeCheckboxes();
@@ -1180,6 +1304,7 @@
             event.preventDefault();
             
             const title = document.getElementById('todoModalTitle_input').value.trim();
+            const todo_type_id = parseInt((document.getElementById('todoModalType') || {}).value || '0', 10) || 0;
             const start_date = document.getElementById('todoModalStartDate').value;
             const reminder_interval_days = parseInt(document.getElementById('todoModalReminderInterval').value, 10) || 1;
             const is_recurring = document.getElementById('todoModalIsRecurring').checked ? 1 : 0;
@@ -1189,13 +1314,15 @@
             // 收集选中的分配人
             const assignee_ids = getTodoSelectedAssigneeIds();
             
-            if (!title || !start_date) {
-                alert('请填写事项标题和开始日期');
+            if (!title || !start_date || !todo_type_id) {
+                if (window.showAppToast) window.showAppToast('请填写事项标题、开始日期，并选择待办类型', true, 0);
+                else alert('请填写事项标题、开始日期，并选择待办类型');
                 return;
             }
             
             const payload = {
                 title,
+                todo_type_id,
                 start_date,
                 reminder_interval_days,
                 is_recurring,
@@ -1205,8 +1332,11 @@
             };
             
             try {
+                const todoId = (document.getElementById('todoModalId') || {}).value || '';
+                const isEdit = !!todoId;
+                if (isEdit) payload.id = parseInt(todoId, 10);
                 const resp = await fetch('/api/todo', {
-                    method: 'POST',
+                    method: isEdit ? 'PUT' : 'POST',
                     credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -1218,10 +1348,14 @@
                     loadTodos();
                     loadCalendar();
                 } else {
-                    alert(data.message || '保存失败');
+                    const msg = data.message || '保存失败';
+                    if (window.showAppToast) window.showAppToast(msg, true, 0);
+                    else alert(msg);
                 }
             } catch (err) {
-                alert('请求失败：' + err.message);
+                const msg = '请求失败：' + (err && err.message ? err.message : '');
+                if (window.showAppToast) window.showAppToast(msg, true, 0);
+                else alert(msg);
             }
         }
 
@@ -1366,35 +1500,323 @@
             }
         });
 
+        const todoTypeModalEl = document.getElementById('todoTypeModal');
+        if (todoTypeModalEl) {
+            todoTypeModalEl.addEventListener('click', e => {
+                if (e.target === todoTypeModalEl) {
+                    closeTodoTypeModal();
+                }
+            });
+        }
+
         function loadTodos() {
-            return fetch('/api/todo', { credentials: 'include' })
+            const params = new URLSearchParams();
+            if (window.todoSelectedTypeId && parseInt(window.todoSelectedTypeId, 10) > 0) {
+                params.set('todo_type_id', String(parseInt(window.todoSelectedTypeId, 10)));
+            }
+            const url = '/api/todo' + (params.toString() ? ('?' + params.toString()) : '');
+            return fetch(url, { credentials: 'include' })
                 .then(r => r.json())
                 .then(data => {
-                    const container = document.getElementById('todoList');
-                    container.innerHTML = '';
                     const items = (data && data.items) ? data.items : [];
                     window.calendarTodosCache = items;
-                    if (!items.length) return items;
-                    
-                    items.forEach(todo => {
-                        const div = document.createElement('div');
-                        div.className = 'rail-item';
-                        div.innerHTML = `
-                            <div style="flex:1">
-                                <div style="font-weight:500;word-break:break-word">${todo.title}</div>
-                                <div style="font-size:12px;color:#999;margin-top:4px">${todo.start_date || todo.due_date}</div>
-                            </div>
-                            <div style="display:flex;gap:8px;">
-                                <button data-action="toggle" data-status="${todo.status}" data-id="${todo.id}" class="btn-ghost" style="padding:4px 8px;font-size:11px;">
-                                    ${todo.status === 'done' ? '完成' : '待做'}
-                                </button>
-                                <button data-action="delete" data-id="${todo.id}" class="btn-ghost" style="padding:4px 8px;font-size:11px;color:#c91d1d;">删除</button>
-                            </div>
-                        `;
-                        container.appendChild(div);
-                    });
+                    window.homeTodosCache = items;
+                    renderTodoTable(items);
                     return items;
                 });
+        }
+
+        function renderTodoTable(items) {
+            const tbody = document.getElementById('todoTableBody');
+            if (!tbody) return;
+            const list = Array.isArray(items) ? items.slice() : [];
+            list.sort((a, b) => {
+                const ad = (a.status === 'done') ? 1 : 0;
+                const bd = (b.status === 'done') ? 1 : 0;
+                if (ad !== bd) return ad - bd;
+                const adue = String(a.due_date || a.start_date || '');
+                const bdue = String(b.due_date || b.start_date || '');
+                if (adue !== bdue) return adue.localeCompare(bdue);
+                return (parseInt(b.id, 10) || 0) - (parseInt(a.id, 10) || 0);
+            });
+            if (!list.length) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">暂无待办</td></tr>';
+                return;
+            }
+            tbody.innerHTML = list.map(todo => {
+                const status = (todo.status === 'done') ? 'done' : 'open';
+                const typeName = todo.todo_type_name || '-';
+                const start = todo.start_date || '';
+                const due = todo.due_date || '';
+                const dateText = (start && due && start !== due) ? (start + ' ~ ' + due) : (start || due || '-');
+                const completedAt = todo.completed_at ? String(todo.completed_at) : '';
+                return `
+                    <tr data-todo-id="${todo.id}">
+                        <td>
+                            <div class="status-segment status-segment--inline">
+                                <button type="button"
+                                        class="status-pill ${status === 'done' ? 'status-pill--enabled' : 'status-pill--paused'}"
+                                        data-todo-action="set-done"
+                                        data-id="${todo.id}"
+                                        data-completed-at="${completedAt}">
+                                    已完成
+                                </button>
+                                <button type="button"
+                                        class="status-pill ${status === 'open' ? 'status-pill--enabled' : 'status-pill--paused'}"
+                                        data-todo-action="set-open"
+                                        data-id="${todo.id}">
+                                    未完成
+                                </button>
+                            </div>
+                        </td>
+                        <td>${escapeHtml(typeName)}</td>
+                        <td class="todo-title-cell">
+                            <div style="font-weight:600;">${escapeHtml(todo.title || '')}</div>
+                            ${todo.detail ? `<div class="todo-mini-sub">${escapeHtml(String(todo.detail).slice(0, 60))}</div>` : ''}
+                        </td>
+                        <td>${escapeHtml(dateText)}</td>
+                        <td>
+                            <div class="pm-actions">
+                                <button class="btn-primary" type="button" data-todo-action="edit" data-id="${todo.id}">编辑</button>
+                                <button class="btn-danger" type="button" data-todo-action="delete" data-id="${todo.id}">删除</button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function escapeHtml(text) {
+            const s = String(text == null ? '' : text);
+            return s
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/\"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        // ===== Todo types / filter / completion time pop =====
+        async function loadTodoTypes() {
+            try {
+                const resp = await fetch('/api/todo-type', { credentials: 'include' });
+                const data = await resp.json();
+                window.todoTypesCache = (data && data.status === 'success' && Array.isArray(data.items)) ? data.items : [];
+            } catch (e) {
+                window.todoTypesCache = [];
+            }
+            renderTodoTypeBar();
+            ensureTodoTypeOptions();
+        }
+
+        function renderTodoTypeBar() {
+            const host = document.getElementById('todoTypeBar');
+            if (!host) return;
+            const addBtn = host.querySelector('.material-type-add');
+            host.innerHTML = '';
+            if (addBtn) host.appendChild(addBtn);
+
+            const selected = parseInt(window.todoSelectedTypeId || '0', 10) || 0;
+            const makeBtn = (id, name) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'material-type-radio' + ((selected === id) ? ' active' : '');
+                btn.textContent = name;
+                btn.dataset.typeId = String(id);
+                btn.addEventListener('click', () => {
+                    window.todoSelectedTypeId = id;
+                    renderTodoTypeBar();
+                    loadTodos();
+                });
+                btn.addEventListener('dblclick', () => {
+                    if (id > 0) openTodoTypeModal('edit', id);
+                });
+                return btn;
+            };
+
+            host.appendChild(makeBtn(0, '全部'));
+            (window.todoTypesCache || []).forEach(t => {
+                const id = parseInt(t.id, 10) || 0;
+                if (!id) return;
+                host.appendChild(makeBtn(id, t.type_name || ('类型#' + id)));
+            });
+        }
+
+        function ensureTodoTypeOptions(preferId) {
+            const select = document.getElementById('todoModalType');
+            if (!select) return;
+            const types = window.todoTypesCache || [];
+            const current = parseInt(preferId || select.value || '0', 10) || 0;
+            select.innerHTML = '';
+            types.forEach(t => {
+                const id = parseInt(t.id, 10) || 0;
+                if (!id) return;
+                const opt = document.createElement('option');
+                opt.value = String(id);
+                opt.textContent = t.type_name || ('类型#' + id);
+                select.appendChild(opt);
+            });
+            if (select.options.length === 0) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = '请先新增待办类型';
+                select.appendChild(opt);
+            }
+            if (select.options.length > 0) {
+                let target = current;
+                if (!target) {
+                    const def = types.find(x => String(x.type_name || '').trim() === '默认');
+                    target = def ? (parseInt(def.id, 10) || 0) : 0;
+                }
+                if (target) select.value = String(target);
+            }
+        }
+
+        function openTodoTypeModal(mode, typeId) {
+            const modal = document.getElementById('todoTypeModal');
+            if (!modal) return;
+            const titleEl = document.getElementById('todoTypeModalTitle');
+            const idEl = document.getElementById('todoTypeModalId');
+            const nameEl = document.getElementById('todoTypeModalName');
+            const sortEl = document.getElementById('todoTypeModalSort');
+            const delBtn = document.getElementById('todoTypeModalDeleteBtn');
+            resetModalHint('todoTypeModalHint');
+            if (mode === 'edit' && typeId) {
+                const idNum = parseInt(typeId, 10) || 0;
+                const row = (window.todoTypesCache || []).find(x => parseInt(x.id, 10) === idNum) || {};
+                if (titleEl) titleEl.textContent = '编辑待办类型';
+                if (idEl) idEl.value = String(idNum);
+                if (nameEl) nameEl.value = row.type_name || '';
+                if (sortEl) sortEl.value = String(row.sort_order || 0);
+                if (delBtn) delBtn.style.display = '';
+            } else {
+                if (titleEl) titleEl.textContent = '新增待办类型';
+                if (idEl) idEl.value = '';
+                if (nameEl) nameEl.value = '';
+                if (sortEl) sortEl.value = '0';
+                if (delBtn) delBtn.style.display = 'none';
+            }
+            modal.classList.add('active');
+        }
+
+        function closeTodoTypeModal() {
+            const modal = document.getElementById('todoTypeModal');
+            if (modal) modal.classList.remove('active');
+        }
+
+        async function submitTodoType() {
+            const id = parseInt((document.getElementById('todoTypeModalId') || {}).value || '0', 10) || 0;
+            const type_name = (document.getElementById('todoTypeModalName') || {}).value
+                ? document.getElementById('todoTypeModalName').value.trim()
+                : '';
+            const sort_order = parseInt((document.getElementById('todoTypeModalSort') || {}).value || '0', 10) || 0;
+            if (!type_name) {
+                showModalHint('todoTypeModalHint', '请填写类型名称', true);
+                return;
+            }
+            try {
+                const resp = await fetch('/api/todo-type', {
+                    method: id ? 'PUT' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify(id ? { id, type_name, sort_order } : { type_name, sort_order })
+                });
+                const data = await resp.json();
+                if (!data || data.status !== 'success') throw new Error((data && data.message) || '保存失败');
+                await loadTodoTypes();
+                showModalHint('todoTypeModalHint', '保存成功', false);
+                setTimeout(() => closeTodoTypeModal(), 400);
+            } catch (err) {
+                showModalHint('todoTypeModalHint', err && err.message ? err.message : '保存失败', true);
+            }
+        }
+
+        async function deleteTodoType() {
+            const id = parseInt((document.getElementById('todoTypeModalId') || {}).value || '0', 10) || 0;
+            if (!id) return;
+            const ok = window.showAppConfirmAsync
+                ? await window.showAppConfirmAsync('确认删除该待办类型？')
+                : confirm('确认删除该待办类型？');
+            if (!ok) return;
+            try {
+                const resp = await fetch('/api/todo-type', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ id })
+                });
+                const data = await resp.json();
+                if (!data || data.status !== 'success') throw new Error((data && data.message) || '删除失败');
+                await loadTodoTypes();
+                closeTodoTypeModal();
+                if (parseInt(window.todoSelectedTypeId || '0', 10) === id) {
+                    window.todoSelectedTypeId = 0;
+                    renderTodoTypeBar();
+                    loadTodos();
+                }
+            } catch (err) {
+                showModalHint('todoTypeModalHint', err && err.message ? err.message : '删除失败', true);
+            }
+        }
+
+        function closeTodoCompletePop() {
+            const pop = document.getElementById('todoCompletePop');
+            if (pop) pop.classList.remove('active');
+        }
+
+        function openTodoCompletePop(todoId, anchorEl, existingText) {
+            const pop = document.getElementById('todoCompletePop');
+            if (!pop) return;
+            const idEl = document.getElementById('todoCompletePopId');
+            const timeEl = document.getElementById('todoCompletePopTime');
+            if (idEl) idEl.value = String(todoId || '');
+            const now = new Date();
+            const toLocalVal = (dt) => {
+                const y = dt.getFullYear();
+                const m = String(dt.getMonth() + 1).padStart(2, '0');
+                const d = String(dt.getDate()).padStart(2, '0');
+                const hh = String(dt.getHours()).padStart(2, '0');
+                const mm = String(dt.getMinutes()).padStart(2, '0');
+                return `${y}-${m}-${d}T${hh}:${mm}`;
+            };
+            let preset = now;
+            if (existingText) {
+                const t = String(existingText).replace('T', ' ').slice(0, 19);
+                const parsed = new Date(t.replace(/-/g, '/'));
+                if (!isNaN(parsed.getTime())) preset = parsed;
+            }
+            if (timeEl) timeEl.value = toLocalVal(preset);
+            const rect = anchorEl && anchorEl.getBoundingClientRect ? anchorEl.getBoundingClientRect() : null;
+            if (rect) {
+                pop.style.left = Math.min(rect.left, window.innerWidth - 260) + 'px';
+                pop.style.top = Math.min(rect.bottom + 8, window.innerHeight - 140) + 'px';
+            } else {
+                pop.style.left = '18px';
+                pop.style.top = '90px';
+            }
+            pop.classList.add('active');
+        }
+
+        async function confirmTodoCompleteTime() {
+            const id = parseInt((document.getElementById('todoCompletePopId') || {}).value || '0', 10) || 0;
+            const timeVal = (document.getElementById('todoCompletePopTime') || {}).value || '';
+            if (!id || !timeVal) return;
+            const completed_at = timeVal.replace('T', ' ') + ':00';
+            try {
+                const resp = await fetch('/api/todo', {
+                    method: 'PUT',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, status: 'done', completed_at })
+                });
+                const data = await resp.json();
+                if (!data || data.status !== 'success') throw new Error((data && data.message) || '更新失败');
+                closeTodoCompletePop();
+                await loadTodos();
+                loadCalendar({ forceReload: true });
+            } catch (err) {
+                if (window.showAppToast) window.showAppToast(err && err.message ? err.message : '更新失败', true, 0);
+            }
         }
 
         function loadPendingUsers() {
@@ -1881,37 +2303,48 @@
                 });
             }
 
-            const todoList = document.getElementById('todoList');
-            if (todoList) {
-                todoList.addEventListener('click', e => {
-                const action = e.target.dataset.action;
-                const id = e.target.dataset.id;
-                if (!action || !id) return;
-                if (action === 'delete') {
-                    fetch('/api/todo', {
-                        method: 'DELETE',
-                        credentials: 'include',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ id: id })
-                    })
-                        .then(() => {
-                            loadTodos();
-                            loadCalendar();
-                        });
-                }
-                if (action === 'toggle') {
-                    const status = e.target.dataset.status === 'done' ? 'open' : 'done';
-                    fetch('/api/todo', {
-                        method: 'PUT',
-                        credentials: 'include',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ id: id, status: status })
-                    })
-                        .then(() => {
-                            loadTodos();
-                            loadCalendar();
-                        });
-                }
+            const todoTable = document.getElementById('todoTable');
+            if (todoTable) {
+                todoTable.addEventListener('click', e => {
+                    const actionEl = e.target.closest('[data-todo-action]');
+                    if (!actionEl) return;
+                    const action = actionEl.dataset.todoAction;
+                    const id = parseInt(actionEl.dataset.id || '0', 10) || 0;
+                    if (!action || !id) return;
+                    if (action === 'delete') {
+                        fetch('/api/todo', {
+                            method: 'DELETE',
+                            credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ id: id })
+                        })
+                            .then(() => {
+                                loadTodos();
+                                loadCalendar({ forceReload: true });
+                            });
+                        return;
+                    }
+                    if (action === 'edit') {
+                        showTodoModal('edit', id);
+                        return;
+                    }
+                    if (action === 'set-open') {
+                        fetch('/api/todo', {
+                            method: 'PUT',
+                            credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ id: id, status: 'open' })
+                        })
+                            .then(() => {
+                                loadTodos();
+                                loadCalendar({ forceReload: true });
+                            });
+                        return;
+                    }
+                    if (action === 'set-done') {
+                        openTodoCompletePop(id, actionEl, actionEl.dataset.completedAt || '');
+                        return;
+                    }
                 });
             }
 
@@ -2190,6 +2623,10 @@
                 if (employeeFactoryDropdown && !employeeFactoryDropdown.contains(e.target)) {
                     closeEmployeeEditFactoryScopeDropdown();
                 }
+                const pop = document.getElementById('todoCompletePop');
+                if (pop && pop.classList.contains('active') && !pop.contains(e.target)) {
+                    closeTodoCompletePop();
+                }
             });
 
             document.addEventListener('change', e => {
@@ -2204,7 +2641,7 @@
                 buildCalendarControls();
                 bindEvents();
                 if (isAdmin) loadPendingUsers();
-                Promise.all([loadTodos(), loadEmployees()])
+                Promise.all([loadTodoTypes(), loadTodos(), loadEmployees()])
                     .then(() => loadCalendar())
                     .catch(() => loadCalendar());
             });

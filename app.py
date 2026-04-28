@@ -109,6 +109,7 @@ class WSGIApp(
             'sales_product_management': '销售产品管理',
             'sales_product_performance_management': '产品表现看板',
             'sales_order_registration_management': '订单登记管理',
+            'sales_forecast_management': '销量预测',
             'parent_management': '父体管理',
             'gallery': '图片管理',
             'image_type_management': '图片类型管理',
@@ -128,7 +129,7 @@ class WSGIApp(
             {'key': 'product_management', 'title': '产品管理', 'page_keys': ['product_management', 'fabric_management', 'feature_management', 'material_management', 'certification_management', 'order_product_management']},
             {'key': 'logistics_factory_management', 'title': '物流仓储管理', 'page_keys': ['logistics_factory_management', 'logistics_forwarder_management', 'logistics_warehouse_management', 'logistics_warehouse_inventory_management', 'logistics_in_transit_management', 'factory_stock_management', 'factory_wip_management', 'logistics_warehouse_dashboard']},
             {'key': 'gallery', 'title': '图片管理', 'page_keys': ['gallery', 'image_type_management', 'aplus_management']},
-            {'key': 'sales_product_management', 'title': '销售管理', 'page_keys': ['sales_product_management', 'sales_product_performance_management', 'sales_order_registration_management', 'parent_management']},
+            {'key': 'sales_product_management', 'title': '销售管理', 'page_keys': ['sales_product_management', 'sales_product_performance_management', 'sales_forecast_management', 'sales_order_registration_management', 'parent_management']},
             {'key': 'amazon_ad_adjustment_management', 'title': 'Amazon广告管理', 'page_keys': ['amazon_ad_adjustment_management', 'amazon_ad_keyword_management', 'amazon_ad_management', 'amazon_ad_subtype_management', 'amazon_ad_delivery_management', 'amazon_ad_product_management']},
             {'key': 'about', 'title': '关于', 'page_keys': ['about']}
         ]

@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>销量预测</title>
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .sf-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.6rem 1rem;
+            padding: 0.6rem 0.75rem;
+            background: rgba(255, 255, 255, 0.7);
+            border: 1px solid rgba(207, 199, 189, 0.55);
+            border-radius: 8px;
+            margin-bottom: 0.85rem;
+        }
+        .sf-toolbar-group {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            flex-wrap: wrap;
+        }
+        .sf-toolbar label {
+            font-size: 0.85rem;
+            color: var(--morandi-slate);
+        }
+        .sf-toolbar input[type="text"],
+        .sf-toolbar input[type="month"],
+        .sf-toolbar input[type="number"],
+        .sf-toolbar select {
+            padding: 0.35rem 0.55rem;
+            border: 1px solid rgba(207, 199, 189, 0.72);
+            border-radius: 6px;
+            background: #fff;
+            font-size: 0.88rem;
+            min-width: 0;
+        }
+        .sf-toolbar input[type="text"] { min-width: 120px; }
+        .sf-toolbar .btn-secondary,
+        .sf-toolbar .btn-primary,
+        .sf-toolbar .btn-accent { padding: 0.4rem 0.85rem; font-size: 0.88rem; }
+        .sf-month-chip-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.3rem;
+            align-items: center;
+        }
+        .sf-month-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.2rem 0.5rem;
+            background: #efe7d8;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 999px;
+            font-size: 0.78rem;
+            color: var(--morandi-ink);
+        }
+        .sf-month-chip button {
+            border: none;
+            background: transparent;
+            font-size: 0.78rem;
+            cursor: pointer;
+            color: #b06b6b;
+            padding: 0;
+            line-height: 1;
+        }
+        .sf-month-chip-add {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .sf-table-wrap {
+            border: 1px solid rgba(207, 199, 189, 0.55);
+            border-radius: 8px;
+            background: #fff;
+            overflow: auto;
+            max-height: calc(100vh - 220px);
+            position: relative;
+        }
+        table.sf-table {
+            border-collapse: separate;
+            border-spacing: 0;
+            width: 100%;
+            font-size: 0.85rem;
+        }
+        table.sf-table thead th {
+            position: sticky;
+            top: 0;
+            background: #f5efe5;
+            color: var(--morandi-ink);
+            border-bottom: 1px solid rgba(207, 199, 189, 0.85);
+            padding: 0.45rem 0.55rem;
+            font-weight: 600;
+            text-align: left;
+            white-space: nowrap;
+            z-index: 4;
+        }
+        table.sf-table thead th.sf-th-section { background: #ece2cf; }
+        table.sf-table tbody td {
+            padding: 0.4rem 0.55rem;
+            border-bottom: 1px solid rgba(207, 199, 189, 0.42);
+            vertical-align: middle;
+            white-space: nowrap;
+        }
+        table.sf-table tbody tr.sf-row-spec td {
+            background: #fdfbf6;
+        }
+        table.sf-table tbody tr.sf-row-order td {
+            background: #fbf6ec;
+            color: #4f463b;
+        }
+        table.sf-table tbody tr.sf-row-order td.sf-cell-indent {
+            padding-left: 1.35rem;
+        }
+        table.sf-table tbody tr.sf-row-spec.is-expanded td.sf-cell-toggle .sf-toggle-icon {
+            transform: rotate(90deg);
+        }
+        td.sf-cell-toggle {
+            width: 22px;
+            cursor: pointer;
+            text-align: center;
+            color: var(--morandi-slate);
+            user-select: none;
+        }
+        .sf-toggle-icon {
+            display: inline-block;
+            transition: transform 0.18s ease;
+            font-size: 0.7rem;
+        }
+        td.sf-cell-spec {
+            min-width: 200px;
+            white-space: normal;
+            line-height: 1.25;
+        }
+        td.sf-cell-spec .sf-spec-sub {
+            color: var(--morandi-slate);
+            font-size: 0.78rem;
+        }
+        td.sf-cell-fabric { min-width: 150px; white-space: normal; line-height: 1.2; }
+
+        .sf-num-input {
+            width: 88px;
+            padding: 0.25rem 0.4rem;
+            border: 1px solid rgba(207, 199, 189, 0.72);
+            border-radius: 5px;
+            font-size: 0.88rem;
+            background: #fff;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+        .sf-num-input.is-dirty {
+            border-color: #b67f7f;
+            background: #fff6ee;
+        }
+        .sf-num-input.is-readonly {
+            background: #f4f0e7;
+            color: #62574a;
+            border-style: dashed;
+        }
+        .sf-num-input.is-auto {
+            background: #f0f4ec;
+            color: #4f5e44;
+            border-style: dashed;
+        }
+        td.sf-cell-history {
+            background: #f7f4ec;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+        td.sf-cell-forecast {
+            text-align: right;
+        }
+        th.sf-th-month {
+            background: #ede2cb;
+        }
+        th.sf-th-history {
+            background: #f0ece1;
+        }
+        .sf-status-text {
+            font-size: 0.8rem;
+            color: var(--morandi-slate);
+        }
+        .sf-empty {
+            text-align: center;
+            color: var(--morandi-slate);
+            padding: 1.6rem 0;
+        }
+        .sf-tooltip-wrap {
+            position: relative;
+            display: inline-block;
+        }
+        .sf-tooltip-wrap[data-tooltip] {
+            cursor: help;
+        }
+        .sf-tooltip-bubble {
+            position: absolute;
+            z-index: 30;
+            top: 100%;
+            right: 0;
+            min-width: 220px;
+            background: #2a2420;
+            color: #fff;
+            padding: 0.55rem 0.7rem;
+            border-radius: 6px;
+            font-size: 0.78rem;
+            line-height: 1.45;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+            display: none;
+            white-space: normal;
+        }
+        .sf-tooltip-wrap:hover .sf-tooltip-bubble,
+        .sf-tooltip-wrap:focus-within .sf-tooltip-bubble {
+            display: block;
+        }
+        .sf-tooltip-bubble dl {
+            margin: 0;
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 0.2rem 0.5rem;
+        }
+        .sf-tooltip-bubble dt {
+            color: #d6cfbf;
+            font-weight: 500;
+        }
+        .sf-tooltip-bubble dd {
+            margin: 0;
+            color: #fff;
+        }
+        .sf-toolbar .pill-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .sf-divider {
+            width: 1px;
+            height: 22px;
+            background: rgba(207, 199, 189, 0.72);
+        }
+        .sf-loading-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(255, 255, 255, 0.7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            color: var(--morandi-slate);
+            z-index: 10;
+        }
+        .sf-loading-overlay.is-active {
+            display: flex;
+        }
+    </style>
+</head>
+<body>
+    <div id="site-header"></div>
+
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1.2rem;">
+            <h2>销量预测</h2>
+            <p>按规格分月预测销量，自动拆分下单SKU需求；可参考过去一年的实际销量。</p>
+        </section>
+
+        <div class="card pm-card" style="padding: 0.9rem 1rem;">
+            <div class="sf-toolbar">
+                <div class="sf-toolbar-group">
+                    <label>预测月份：</label>
+                    <div id="forecastMonthChips" class="sf-month-chip-row"></div>
+                    <div class="sf-month-chip-add">
+                        <input type="month" id="addMonthInput">
+                        <button class="btn-secondary" onclick="addForecastMonth()">添加</button>
+                    </div>
+                    <button class="btn-secondary" onclick="setForecastMonthsFuture(3)">未来3月</button>
+                    <button class="btn-secondary" onclick="setForecastMonthsFuture(6)">未来6月</button>
+                    <button class="btn-secondary" onclick="setForecastMonthsFuture(12)">未来12月</button>
+                </div>
+                <span class="sf-divider" aria-hidden="true"></span>
+                <div class="sf-toolbar-group">
+                    <label>历史销量范围：</label>
+                    <input type="month" id="historyStart">
+                    <span>至</span>
+                    <input type="month" id="historyEnd">
+                    <select id="historyPreset">
+                        <option value="">自定义</option>
+                        <option value="3">最近3月</option>
+                        <option value="6">最近6月</option>
+                        <option value="12" selected>最近12月</option>
+                        <option value="24">最近24月</option>
+                    </select>
+                </div>
+                <span class="sf-divider" aria-hidden="true"></span>
+                <div class="sf-toolbar-group">
+                    <label>筛选：</label>
+                    <input type="text" id="filterSku" placeholder="货号">
+                    <input type="text" id="filterSpec" placeholder="规格">
+                    <input type="text" id="filterFabric" placeholder="面料">
+                </div>
+                <span class="sf-divider" aria-hidden="true"></span>
+                <div class="sf-toolbar-group">
+                    <button class="btn-primary" onclick="loadForecastData()">加载/刷新</button>
+                    <button class="btn-accent" onclick="saveAllChanges()" id="saveAllBtn">批量保存</button>
+                    <span id="dirtyCounter" class="sf-status-text"></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="sf-table-wrap" id="forecastTableWrap">
+            <table class="sf-table" id="forecastTable">
+                <thead id="forecastThead"></thead>
+                <tbody id="forecastTbody"></tbody>
+            </table>
+            <div class="sf-loading-overlay" id="forecastLoading">数据加载中…</div>
+        </div>
+    </div>
+
+    <script>
+        const state = {
+            months: [],
+            historyMonths: [],
+            historyRange: { start: '', end: '' },
+            variants: [],
+            orderProductsMap: {},
+            specCells: {},
+            orderCells: {},
+            autoOrderCells: {},
+            historyCells: {},
+            expanded: new Set(),
+            dirtySpec: new Map(),
+            dirtyOrder: new Map(),
+        };
+
+        function pad2(n) { n = Number(n) || 0; return n < 10 ? ('0' + n) : ('' + n); }
+
+        function monthKeyFromValue(value) {
+            if (!value) return '';
+            const text = String(value).trim();
+            if (!text) return '';
+            const m = text.match(/^(\d{4})\D*(\d{1,2})/);
+            if (!m) return '';
+            const year = parseInt(m[1], 10);
+            const month = parseInt(m[2], 10);
+            if (!year || !month || month < 1 || month > 12) return '';
+            return year.toString().padStart(4, '0') + '-' + pad2(month) + '-01';
+        }
+
+        function monthShortLabel(monthKey) {
+            if (!monthKey) return '';
+            return monthKey.slice(0, 7);
+        }
+
+        function todayMonthKey() {
+            const d = new Date();
+            return d.getFullYear().toString().padStart(4, '0') + '-' + pad2(d.getMonth() + 1) + '-01';
+        }
+
+        function shiftMonth(monthKey, delta) {
+            if (!monthKey) return '';
+            const [y, m] = monthKey.split('-').map(s => parseInt(s, 10));
+            let year = y;
+            let month = m + delta;
+            while (month < 1) { month += 12; year -= 1; }
+            while (month > 12) { month -= 12; year += 1; }
+            return year.toString().padStart(4, '0') + '-' + pad2(month) + '-01';
+        }
+
+        function setForecastMonthsFuture(count) {
+            const list = [];
+            const start = todayMonthKey();
+            for (let i = 0; i < count; i++) {
+                list.push(shiftMonth(start, i));
+            }
+            state.months = list;
+            renderMonthChips();
+        }
+
+        function addForecastMonth() {
+            const el = document.getElementById('addMonthInput');
+            const val = monthKeyFromValue(el && el.value);
+            if (!val) return;
+            if (state.months.indexOf(val) === -1) {
+                state.months.push(val);
+                state.months.sort();
+                renderMonthChips();
+            }
+            if (el) el.value = '';
+        }
+
+        function removeForecastMonth(monthKey) {
+            state.months = state.months.filter(m => m !== monthKey);
+            renderMonthChips();
+        }
+
+        function renderMonthChips() {
+            const host = document.getElementById('forecastMonthChips');
+            if (!host) return;
+            host.innerHTML = '';
+            state.months.forEach(m => {
+                const chip = document.createElement('span');
+                chip.className = 'sf-month-chip';
+                chip.innerHTML = '<span>' + monthShortLabel(m) + '</span>';
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.title = '移除';
+                btn.textContent = '×';
+                btn.addEventListener('click', () => removeForecastMonth(m));
+                chip.appendChild(btn);
+                host.appendChild(chip);
+            });
+        }
+
+        function applyHistoryPreset() {
+            const preset = (document.getElementById('historyPreset') || {}).value || '';
+            if (!preset) return;
+            const count = parseInt(preset, 10) || 12;
+            const today = new Date();
+            let endY = today.getFullYear();
+            let endM = today.getMonth();
+            if (endM < 1) { endM = 12; endY -= 1; }
+            const endKey = endY.toString().padStart(4, '0') + '-' + pad2(endM) + '-01';
+            const startKey = shiftMonth(endKey, -(count - 1));
+            const startEl = document.getElementById('historyStart');
+            const endEl = document.getElementById('historyEnd');
+            if (startEl) startEl.value = startKey.slice(0, 7);
+            if (endEl) endEl.value = endKey.slice(0, 7);
+        }
+
+        function setLoading(active) {
+            const overlay = document.getElementById('forecastLoading');
+            if (!overlay) return;
+            overlay.classList.toggle('is-active', !!active);
+        }
+
+        function showToast(message, isError) {
+            if (window.showAppToast) {
+                window.showAppToast(message, !!isError, isError ? 0 : 2200);
+            } else {
+                console.log(message);
+            }
+        }
+
+        async function loadForecastData() {
+            const monthsParam = (state.months || []).map(m => m.slice(0, 7)).join(',');
+            const histStartEl = document.getElementById('historyStart');
+            const histEndEl = document.getElementById('historyEnd');
+            const skuEl = document.getElementById('filterSku');
+            const specEl = document.getElementById('filterSpec');
+            const fabricEl = document.getElementById('filterFabric');
+
+            const params = new URLSearchParams();
+            params.set('mode', 'page_data');
+            if (monthsParam) params.set('months', monthsParam);
+            if (histStartEl && histStartEl.value) params.set('history_start', histStartEl.value);
+            if (histEndEl && histEndEl.value) params.set('history_end', histEndEl.value);
+            if (skuEl && skuEl.value.trim()) params.set('sku', skuEl.value.trim());
+            if (specEl && specEl.value.trim()) params.set('spec', specEl.value.trim());
+            if (fabricEl && fabricEl.value.trim()) params.set('fabric', fabricEl.value.trim());
+
+            setLoading(true);
+            try {
+                const resp = await fetch('/api/sales-forecast?' + params.toString());
+                const data = await resp.json();
+                if (!data || data.status !== 'success') {
+                    throw new Error((data && data.message) || '加载失败');
+                }
+                applyDashboardPayload(data);
+                renderForecastTable();
+            } catch (err) {
+                showToast(err && err.message ? err.message : '加载失败', true);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        function applyDashboardPayload(data) {
+            state.months = Array.isArray(data.months) ? data.months.slice() : state.months;
+            state.historyMonths = Array.isArray(data.history_months) ? data.history_months.slice() : [];
+            state.historyRange = data.history_range || { start: '', end: '' };
+            state.variants = Array.isArray(data.variants) ? data.variants : [];
+            state.orderProductsMap = {};
+            (data.order_products || []).forEach(op => {
+                const id = parseInt(op.order_product_id, 10);
+                if (id) state.orderProductsMap[id] = op;
+            });
+            state.specCells = {};
+            (data.spec_cells || []).forEach(cell => {
+                const key = cell.variant_id + '|' + cell.forecast_month;
+                state.specCells[key] = cell;
+            });
+            state.orderCells = {};
+            (data.order_cells || []).forEach(cell => {
+                const key = cell.variant_id + '|' + cell.order_product_id + '|' + cell.forecast_month;
+                state.orderCells[key] = cell;
+            });
+            state.autoOrderCells = {};
+            (data.auto_order_cells || []).forEach(cell => {
+                const key = cell.variant_id + '|' + cell.order_product_id + '|' + cell.forecast_month;
+                state.autoOrderCells[key] = cell.auto_qty || 0;
+            });
+            state.historyCells = {};
+            (data.history_cells || []).forEach(cell => {
+                const key = cell.variant_id + '|' + cell.month_start;
+                state.historyCells[key] = cell;
+            });
+            state.dirtySpec.clear();
+            state.dirtyOrder.clear();
+            updateDirtyCounter();
+            renderMonthChips();
+            const histStartEl = document.getElementById('historyStart');
+            const histEndEl = document.getElementById('historyEnd');
+            if (histStartEl && state.historyRange.start) histStartEl.value = state.historyRange.start.slice(0, 7);
+            if (histEndEl && state.historyRange.end) histEndEl.value = state.historyRange.end.slice(0, 7);
+        }
+
+        function recomputeAutoForVariant(vid) {
+            const variant = state.variants.find(v => parseInt(v.variant_id, 10) === parseInt(vid, 10));
+            if (!variant) return;
+            const links = variant.order_links || [];
+            (state.months || []).forEach(monthKey => {
+                const specCell = getSpecCell(vid, monthKey);
+                const base = specCell ? Number(specCell.latest_qty || 0) : 0;
+                links.forEach(link => {
+                    const opId = parseInt(link.order_product_id, 10);
+                    const qtyPer = Math.max(1, parseInt(link.quantity, 10) || 1);
+                    const key = vid + '|' + opId + '|' + monthKey;
+                    state.autoOrderCells[key] = base * qtyPer;
+                });
+            });
+        }
+
+        function getSpecCell(variantId, monthKey) {
+            return state.specCells[variantId + '|' + monthKey] || null;
+        }
+
+        function getDirtySpec(variantId, monthKey) {
+            const k = variantId + '|' + monthKey;
+            if (state.dirtySpec.has(k)) return state.dirtySpec.get(k);
+            return null;
+        }
+
+        function getEffectiveSpecLatest(variantId, monthKey) {
+            const dirty = getDirtySpec(variantId, monthKey);
+            if (dirty !== null && dirty !== undefined) return dirty;
+            const cell = getSpecCell(variantId, monthKey);
+            return cell ? Number(cell.latest_qty || 0) : 0;
+        }
+
+        function getDirtyOrder(variantId, opId, monthKey) {
+            const k = variantId + '|' + opId + '|' + monthKey;
+            if (state.dirtyOrder.has(k)) return state.dirtyOrder.get(k);
+            return null;
+        }
+
+        function getOrderCell(variantId, opId, monthKey) {
+            return state.orderCells[variantId + '|' + opId + '|' + monthKey] || null;
+        }
+
+        function getAutoOrder(variantId, opId, monthKey) {
+            return Number(state.autoOrderCells[variantId + '|' + opId + '|' + monthKey] || 0);
+        }
+
+        function getHistoryCell(variantId, monthKey) {
+            return state.historyCells[variantId + '|' + monthKey] || null;
+        }
+
+        function updateDirtyCounter() {
+            const total = state.dirtySpec.size + state.dirtyOrder.size;
+            const el = document.getElementById('dirtyCounter');
+            if (el) {
+                el.textContent = total > 0 ? ('未保存修改：' + total + ' 个') : '';
+            }
+            const btn = document.getElementById('saveAllBtn');
+            if (btn) {
+                btn.disabled = total <= 0;
+                btn.style.opacity = total <= 0 ? '0.6' : '1';
+            }
+        }
+
+        function formatNumber(value) {
+            if (value === null || value === undefined || value === '') return '';
+            const num = Number(value);
+            if (!isFinite(num)) return '';
+            return num.toLocaleString('en-US', { maximumFractionDigits: 0 });
+        }
+
+        function formatDateTime(value) {
+            if (!value) return '—';
+            return String(value);
+        }
+
+        function buildForecastTooltip(cell) {
+            if (!cell) return '';
+            const initial = cell.initial_qty === null || cell.initial_qty === undefined ? '—' : formatNumber(cell.initial_qty);
+            const prev = cell.prev_qty === null || cell.prev_qty === undefined ? '—' : formatNumber(cell.prev_qty);
+            const latest = cell.latest_qty === null || cell.latest_qty === undefined ? '—' : formatNumber(cell.latest_qty);
+            return (
+                '<dl>' +
+                '<dt>初始</dt><dd>' + initial + '</dd>' +
+                '<dt>上次</dt><dd>' + prev + '</dd>' +
+                '<dt>最新</dt><dd>' + latest + '</dd>' +
+                '<dt>创建</dt><dd>' + formatDateTime(cell.created_at) + '</dd>' +
+                '<dt>上次更新</dt><dd>' + formatDateTime(cell.prev_updated_at) + '</dd>' +
+                '<dt>最新更新</dt><dd>' + formatDateTime(cell.latest_updated_at) + '</dd>' +
+                '</dl>'
+            );
+        }
+
+        function buildHistoryTooltip(cell) {
+            if (!cell) return '';
+            const fields = [
+                ['销量', formatNumber(cell.sales_qty)],
+                ['销售额(净)', formatNumber(cell.net_sales_amount)],
+                ['订单数', formatNumber(cell.order_qty)],
+                ['会话数', formatNumber(cell.session_total)],
+                ['退款金额', formatNumber(cell.refund_amount)],
+            ];
+            return '<dl>' + fields.map(([k, v]) => '<dt>' + k + '</dt><dd>' + (v || '0') + '</dd>').join('') + '</dl>';
+        }
+
+        function makeTooltipWrap(html, contentNode) {
+            const wrap = document.createElement('span');
+            wrap.className = 'sf-tooltip-wrap';
+            wrap.tabIndex = 0;
+            wrap.appendChild(contentNode);
+            const bubble = document.createElement('span');
+            bubble.className = 'sf-tooltip-bubble';
+            bubble.innerHTML = html;
+            wrap.appendChild(bubble);
+            return wrap;
+        }
+
+        function renderForecastTable() {
+            const thead = document.getElementById('forecastThead');
+            const tbody = document.getElementById('forecastTbody');
+            if (!thead || !tbody) return;
+
+            const monthCount = state.months.length;
+            const histCount = state.historyMonths.length;
+
+            const headRowSection = document.createElement('tr');
+            headRowSection.innerHTML = '<th class="sf-th-section" colspan="3">规格信息</th>' +
+                (monthCount > 0 ? ('<th class="sf-th-section" colspan="' + monthCount + '">预测月份</th>') : '') +
+                (histCount > 0 ? ('<th class="sf-th-section" colspan="' + histCount + '">历史月销量</th>') : '');
+
+            const headRowCols = document.createElement('tr');
+            headRowCols.innerHTML =
+                '<th></th>' +
+                '<th>货号 / 规格</th>' +
+                '<th>面料</th>' +
+                state.months.map(m => '<th class="sf-th-month">' + monthShortLabel(m) + '</th>').join('') +
+                state.historyMonths.map(m => '<th class="sf-th-history">' + monthShortLabel(m) + '</th>').join('');
+
+            thead.innerHTML = '';
+            thead.appendChild(headRowSection);
+            thead.appendChild(headRowCols);
+
+            tbody.innerHTML = '';
+
+            if (!state.variants || !state.variants.length) {
+                const tr = document.createElement('tr');
+                const td = document.createElement('td');
+                td.colSpan = 3 + monthCount + histCount;
+                td.className = 'sf-empty';
+                td.textContent = '没有匹配的规格数据';
+                tr.appendChild(td);
+                tbody.appendChild(tr);
+                return;
+            }
+
+            state.variants.forEach(variant => {
+                const vid = parseInt(variant.variant_id, 10);
+                if (!vid) return;
+                const isExpanded = state.expanded.has(vid);
+                const links = variant.order_links || [];
+
+                const trSpec = document.createElement('tr');
+                trSpec.className = 'sf-row-spec' + (isExpanded ? ' is-expanded' : '');
+                trSpec.dataset.variantId = String(vid);
+
+                const tdToggle = document.createElement('td');
+                tdToggle.className = 'sf-cell-toggle';
+                tdToggle.innerHTML = links.length ? '<span class="sf-toggle-icon">▶</span>' : '';
+                if (links.length) {
+                    tdToggle.addEventListener('click', () => toggleVariantExpand(vid));
+                }
+                trSpec.appendChild(tdToggle);
+
+                const tdSpec = document.createElement('td');
+                tdSpec.className = 'sf-cell-spec';
+                const skuFamily = variant.sku_family || '—';
+                const specName = variant.spec_name || '';
+                tdSpec.innerHTML = '<div><strong>' + skuFamily + '</strong></div>' +
+                    (specName ? '<div class="sf-spec-sub">' + specName + '</div>' : '');
+                trSpec.appendChild(tdSpec);
+
+                const tdFabric = document.createElement('td');
+                tdFabric.className = 'sf-cell-fabric';
+                if (variant.fabric_code || variant.fabric_name_en) {
+                    tdFabric.innerHTML = '<div><strong>' + (variant.fabric_code || '') + '</strong></div>' +
+                        (variant.fabric_name_en ? '<div class="sf-spec-sub">' + variant.fabric_name_en + '</div>' : '');
+                } else {
+                    tdFabric.textContent = '—';
+                }
+                trSpec.appendChild(tdFabric);
+
+                state.months.forEach(monthKey => {
+                    const td = document.createElement('td');
+                    td.className = 'sf-cell-forecast';
+                    const cell = getSpecCell(vid, monthKey);
+                    const dirtyVal = getDirtySpec(vid, monthKey);
+                    const value = dirtyVal !== null && dirtyVal !== undefined
+                        ? dirtyVal
+                        : (cell ? Number(cell.latest_qty || 0) : 0);
+                    const input = document.createElement('input');
+                    input.type = 'number';
+                    input.min = '0';
+                    input.step = '1';
+                    input.className = 'sf-num-input' + (dirtyVal !== null && dirtyVal !== undefined ? ' is-dirty' : '');
+                    input.value = String(value || 0);
+                    input.dataset.variantId = String(vid);
+                    input.dataset.month = monthKey;
+                    input.addEventListener('input', onSpecInputChange);
+                    const wrap = makeTooltipWrap(buildForecastTooltip(cell), input);
+                    td.appendChild(wrap);
+                    trSpec.appendChild(td);
+                });
+
+                state.historyMonths.forEach(monthKey => {
+                    const td = document.createElement('td');
+                    td.className = 'sf-cell-history';
+                    const cell = getHistoryCell(vid, monthKey);
+                    const text = cell ? formatNumber(cell.sales_qty) : '0';
+                    const span = document.createElement('span');
+                    span.textContent = text;
+                    if (cell) {
+                        const wrap = makeTooltipWrap(buildHistoryTooltip(cell), span);
+                        td.appendChild(wrap);
+                    } else {
+                        td.appendChild(span);
+                    }
+                    trSpec.appendChild(td);
+                });
+
+                tbody.appendChild(trSpec);
+
+                if (isExpanded && links.length) {
+                    links.forEach(link => {
+                        const opId = parseInt(link.order_product_id, 10);
+                        if (!opId) return;
+                        const trOrder = document.createElement('tr');
+                        trOrder.className = 'sf-row-order';
+                        trOrder.dataset.variantId = String(vid);
+                        trOrder.dataset.orderProductId = String(opId);
+
+                        const tdEmpty = document.createElement('td');
+                        tdEmpty.className = 'sf-cell-toggle';
+                        trOrder.appendChild(tdEmpty);
+
+                        const tdSku = document.createElement('td');
+                        tdSku.className = 'sf-cell-spec sf-cell-indent';
+                        const opMeta = state.orderProductsMap[opId] || {};
+                        const sku = link.sku || opMeta.sku || ('SKU#' + opId);
+                        const ratio = '配比 ×' + Math.max(1, parseInt(link.quantity, 10) || 1);
+                        tdSku.innerHTML = '<div><strong>' + sku + '</strong></div>' +
+                            '<div class="sf-spec-sub">' + ratio +
+                            (opMeta.spec_qty_short ? ' · ' + opMeta.spec_qty_short : '') + '</div>';
+                        trOrder.appendChild(tdSku);
+
+                        const tdMeta = document.createElement('td');
+                        tdMeta.className = 'sf-cell-fabric';
+                        tdMeta.innerHTML = opMeta.contents_desc_en
+                            ? '<div class="sf-spec-sub">' + opMeta.contents_desc_en + '</div>'
+                            : '<span class="sf-spec-sub">—</span>';
+                        trOrder.appendChild(tdMeta);
+
+                        state.months.forEach(monthKey => {
+                            const td = document.createElement('td');
+                            td.className = 'sf-cell-forecast';
+                            const orderCell = getOrderCell(vid, opId, monthKey);
+                            const dirtyVal = getDirtyOrder(vid, opId, monthKey);
+                            const auto = getAutoOrder(vid, opId, monthKey);
+                            const hasOverride = orderCell !== null;
+                            const baseVal = hasOverride ? Number(orderCell.latest_qty || 0) : auto;
+                            const value = dirtyVal !== null && dirtyVal !== undefined ? dirtyVal : baseVal;
+                            const input = document.createElement('input');
+                            input.type = 'number';
+                            input.min = '0';
+                            input.step = '1';
+                            input.className = 'sf-num-input';
+                            if (dirtyVal !== null && dirtyVal !== undefined) input.classList.add('is-dirty');
+                            else if (!hasOverride) input.classList.add('is-auto');
+                            input.value = String(value || 0);
+                            input.dataset.variantId = String(vid);
+                            input.dataset.orderProductId = String(opId);
+                            input.dataset.month = monthKey;
+                            input.dataset.autoQty = String(auto);
+                            input.addEventListener('input', onOrderInputChange);
+                            const wrap = makeTooltipWrap(
+                                buildForecastTooltip(orderCell) +
+                                '<dl><dt>自动算</dt><dd>' + formatNumber(auto) + '</dd></dl>',
+                                input
+                            );
+                            td.appendChild(wrap);
+                            trOrder.appendChild(td);
+                        });
+
+                        state.historyMonths.forEach(() => {
+                            const td = document.createElement('td');
+                            td.className = 'sf-cell-history';
+                            td.textContent = '';
+                            trOrder.appendChild(td);
+                        });
+
+                        tbody.appendChild(trOrder);
+                    });
+                }
+            });
+        }
+
+        function toggleVariantExpand(vid) {
+            const id = parseInt(vid, 10);
+            if (!id) return;
+            if (state.expanded.has(id)) state.expanded.delete(id);
+            else state.expanded.add(id);
+            renderForecastTable();
+        }
+
+        function onSpecInputChange(e) {
+            const input = e.target;
+            const vid = parseInt(input.dataset.variantId, 10);
+            const monthKey = input.dataset.month;
+            if (!vid || !monthKey) return;
+            const newVal = Math.max(0, parseInt(input.value, 10) || 0);
+            const cell = getSpecCell(vid, monthKey);
+            const original = cell ? Number(cell.latest_qty || 0) : 0;
+            const k = vid + '|' + monthKey;
+            if (newVal === original) {
+                state.dirtySpec.delete(k);
+                input.classList.remove('is-dirty');
+            } else {
+                state.dirtySpec.set(k, newVal);
+                input.classList.add('is-dirty');
+            }
+            recomputeAutoForVariant(vid);
+            updateDirtyCounter();
+            updateOrderInputsForVariant(vid);
+        }
+
+        function updateOrderInputsForVariant(vid) {
+            const tbody = document.getElementById('forecastTbody');
+            if (!tbody) return;
+            const rows = tbody.querySelectorAll('tr.sf-row-order[data-variant-id="' + vid + '"]');
+            rows.forEach(tr => {
+                const inputs = tr.querySelectorAll('input.sf-num-input');
+                inputs.forEach(input => {
+                    const opId = parseInt(input.dataset.orderProductId, 10);
+                    const monthKey = input.dataset.month;
+                    if (!opId || !monthKey) return;
+                    const dirtyKey = vid + '|' + opId + '|' + monthKey;
+                    if (state.dirtyOrder.has(dirtyKey)) return;
+                    const orderCell = getOrderCell(vid, opId, monthKey);
+                    if (orderCell) return;
+                    const auto = getAutoOrder(vid, opId, monthKey);
+                    input.value = String(auto || 0);
+                    input.dataset.autoQty = String(auto);
+                });
+            });
+        }
+
+        function onOrderInputChange(e) {
+            const input = e.target;
+            const vid = parseInt(input.dataset.variantId, 10);
+            const opId = parseInt(input.dataset.orderProductId, 10);
+            const monthKey = input.dataset.month;
+            if (!vid || !opId || !monthKey) return;
+            const newVal = Math.max(0, parseInt(input.value, 10) || 0);
+            const orderCell = getOrderCell(vid, opId, monthKey);
+            const auto = Number(input.dataset.autoQty || 0);
+            const original = orderCell ? Number(orderCell.latest_qty || 0) : auto;
+            const k = vid + '|' + opId + '|' + monthKey;
+            if (newVal === original) {
+                state.dirtyOrder.delete(k);
+                input.classList.remove('is-dirty');
+            } else {
+                state.dirtyOrder.set(k, newVal);
+                input.classList.add('is-dirty');
+            }
+            updateDirtyCounter();
+        }
+
+        async function saveAllChanges() {
+            if (state.dirtySpec.size <= 0 && state.dirtyOrder.size <= 0) {
+                showToast('没有可保存的修改');
+                return;
+            }
+            const specCells = [];
+            state.dirtySpec.forEach((value, key) => {
+                const [vid, month] = key.split('|');
+                specCells.push({ variant_id: parseInt(vid, 10), forecast_month: month, latest_qty: value });
+            });
+            const orderCells = [];
+            state.dirtyOrder.forEach((value, key) => {
+                const [vid, opId, month] = key.split('|');
+                orderCells.push({
+                    variant_id: parseInt(vid, 10),
+                    order_product_id: parseInt(opId, 10),
+                    forecast_month: month,
+                    latest_qty: value,
+                });
+            });
+            setLoading(true);
+            try {
+                const resp = await fetch('/api/sales-forecast-bulk-update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ spec_cells: specCells, order_cells: orderCells }),
+                });
+                const data = await resp.json();
+                if (!data || data.status !== 'success') {
+                    throw new Error((data && data.message) || '保存失败');
+                }
+                (data.spec_cells || []).forEach(cell => {
+                    state.specCells[cell.variant_id + '|' + cell.forecast_month] = cell;
+                });
+                (data.order_cells || []).forEach(cell => {
+                    state.orderCells[cell.variant_id + '|' + cell.order_product_id + '|' + cell.forecast_month] = cell;
+                });
+                state.dirtySpec.clear();
+                state.dirtyOrder.clear();
+                const variantSet = new Set();
+                (data.spec_cells || []).forEach(cell => variantSet.add(parseInt(cell.variant_id, 10)));
+                variantSet.forEach(vid => recomputeAutoForVariant(vid));
+                updateDirtyCounter();
+                renderForecastTable();
+                showToast('保存成功');
+            } catch (err) {
+                showToast(err && err.message ? err.message : '保存失败', true);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const presetEl = document.getElementById('historyPreset');
+            if (presetEl) presetEl.addEventListener('change', () => { applyHistoryPreset(); loadForecastData(); });
+            applyHistoryPreset();
+            setForecastMonthsFuture(6);
+            loadForecastData();
+        });
+    </script>
+</body>
+<script src="/static/js/header.js"></script>
+</html>
