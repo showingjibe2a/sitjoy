@@ -5659,6 +5659,7 @@ class SalesProductMixin:
             temp_token = str((query_params.get('from_temp', [''])[0] or '')).strip()
             resume_from = str((query_params.get('resume_from', [''])[0] or '')).strip()
             force_restart = str((query_params.get('force', [''])[0] or '')).strip().lower() in ('1', 'true', 'yes', 'on')
+            restart_reason = str((query_params.get('reason', [''])[0] or '')).strip().lower()
 
             import tempfile
 
@@ -5796,6 +5797,11 @@ class SalesProductMixin:
                     cp = int(data.get('checkpoint_row') or 0)
                 except Exception:
                     cp = 0
+                if cp <= 0:
+                    try:
+                        cp = int(data.get('processed_rows') or 0)
+                    except Exception:
+                        cp = 0
                 if resume_from:
                     try:
                         cp = max(cp, int(resume_from))
@@ -5811,7 +5817,8 @@ class SalesProductMixin:
                     'phase': 'restart',
                     'run_id': new_run_id,
                     'checkpoint_row': cp,
-                    'message': f'正在从第 {cp} 行继续恢复导入...'
+                    'retry_reason': restart_reason or 'stale_progress',
+                    'message': f'检测到{restart_reason or "stale_progress"}，正在从第 {cp} 行继续恢复导入...'
                 }, merge=True)
 
                 def _restart_worker():
@@ -6139,6 +6146,8 @@ class SalesProductMixin:
 
                     # 初始化批处理变量
                     batch_rows = []
+                    batch_row_marks = []
+                    batch_row_marks = []
                     # 批量写入：增大批次减少 roundtrip，提升导入速度
                     batch_size = 2000
                     flush_chunk_size = 400  # 单次 executemany 过大易导致长时间无心跳/超时
@@ -6179,8 +6188,27 @@ class SalesProductMixin:
                             'error 2013',
                         )
                         return any(token in err_text for token in retry_tokens)
+
+                    def _commit_checkpoint(committed_row):
+                        nonlocal checkpoint_row
+                        try:
+                            committed_row = int(committed_row or 0)
+                        except Exception:
+                            committed_row = 0
+                        if committed_row <= 0:
+                            return
+                        if committed_row > checkpoint_row:
+                            checkpoint_row = committed_row
+                        _write_progress(safe_task_id, {
+                            'status': 'success',
+                            'task_id': safe_task_id,
+                            'state': 'running',
+                            'run_id': worker_run_id,
+                            'checkpoint_row': checkpoint_row,
+                        }, merge=True)
                     
                     def flush_batch_data():
+                        nonlocal cur
                         if not batch_rows:
                             return 0
                         try:
@@ -6189,6 +6217,8 @@ class SalesProductMixin:
                             # 分片写入：避免 executemany 单次执行过久，进度 ts 长时间不更新
                             for i in range(0, total, flush_chunk_size):
                                 chunk = batch_rows[i:i + flush_chunk_size]
+                                chunk_marks = batch_row_marks[i:i + flush_chunk_size]
+                                chunk_checkpoint = int(chunk_marks[-1] or 0) if chunk_marks else checkpoint_row
                                 _write_progress(safe_task_id, {
                                     'status': 'success',
                                     'task_id': safe_task_id,
@@ -6198,6 +6228,7 @@ class SalesProductMixin:
                                     'total_rows': total_rows_hint,
                                     'created': created,
                                     'upserted': upserted,
+                                    'checkpoint_row': checkpoint_row,
                                     'message': f'正在写入数据库（批量分片 {min(i + len(chunk), total)}/{total}）...'
                                 }, merge=True)
                                 try:
@@ -6205,6 +6236,7 @@ class SalesProductMixin:
                                     written += len(chunk)
                                     # 小步提交：降低单事务持锁时长，也让长任务更“有心跳”
                                     conn.commit()
+                                    _commit_checkpoint(chunk_checkpoint)
                                 except Exception as chunk_err:
                                     if not _is_retryable_write_error(chunk_err):
                                         raise
@@ -6214,6 +6246,7 @@ class SalesProductMixin:
                                         pass
                                     try:
                                         conn.ping(reconnect=True)
+                                        cur = conn.cursor()
                                     except Exception:
                                         raise RuntimeError(f"批量写入失败: {str(chunk_err)[:180]}")
                                     _write_progress(safe_task_id, {
@@ -6225,23 +6258,21 @@ class SalesProductMixin:
                                         'total_rows': total_rows_hint,
                                         'created': created,
                                         'upserted': upserted,
-                                        'message': f'当前分片写入失败，正在重连后重试（{min(i + len(chunk), total)}/{total}）...'
+                                        'checkpoint_row': checkpoint_row,
+                                        'retry_reason': 'retryable_db_error',
+                                        'message': f'当前分片写入失败，正在重连后重试（断点 {chunk_checkpoint}/{total_rows_hint}）...'
                                     }, merge=True)
                                     try:
                                         cur.executemany(upsert_sql, chunk)
                                         written += len(chunk)
                                         conn.commit()
+                                        _commit_checkpoint(chunk_checkpoint)
                                     except Exception as retry_err:
                                         try:
                                             conn.rollback()
                                         except Exception:
                                             pass
                                         raise RuntimeError(f"批量写入失败: {str(retry_err)[:180]}")
-                                checkpoint_row = row_count
-                                _write_progress(safe_task_id, {
-                                    'run_id': worker_run_id,
-                                    'checkpoint_row': checkpoint_row,
-                                }, merge=True)
                             return written
                         except Exception as e:
                             try:
@@ -6299,7 +6330,7 @@ class SalesProductMixin:
 
                         row_count += 1
                         # worker 被 restart 后应尽快退出（避免并发写入）
-                        if row_count % 200 == 0:
+                        if row_count % 50 == 0:
                             live = _read_progress(safe_task_id) or {}
                             if str(live.get('run_id') or '') and str(live.get('run_id') or '') != str(worker_run_id):
                                 return self.send_json({'status': 'success', 'task_id': safe_task_id, 'message': '任务已被重启，当前worker退出'}, start_response)
@@ -6364,6 +6395,7 @@ class SalesProductMixin:
                                     parse_number_flexible(get_cell(row, 'refund_amount'), False),
                                     parse_rank(get_cell(row, 'sub_category_rank')),
                                 ))
+                                batch_row_marks.append(row_count)
                                 created += 1
                                 try:
                                     touched_agg_ids.add(int(sales_product_id))
@@ -6392,6 +6424,7 @@ class SalesProductMixin:
                                     'total_rows': total_rows_hint,
                                     'created': created,
                                     'upserted': upserted,
+                                    'checkpoint_row': checkpoint_row,
                                     'message': f'写入数据库失败：{fatal_write_error}'
                                 }, merge=True)
                                 break
@@ -6408,6 +6441,7 @@ class SalesProductMixin:
                                 'processed_rows': row_count,
                                 'total_rows': total_rows_hint,
                                 'created': created,
+                                'checkpoint_row': checkpoint_row,
                                 'message': f'正在处理第 {row_count} 行'
                             })
                             last_progress_heartbeat = time.time()
@@ -6423,6 +6457,7 @@ class SalesProductMixin:
                                     'processed_rows': row_count,
                                     'total_rows': total_rows_hint,
                                     'created': created,
+                                    'checkpoint_row': checkpoint_row,
                                     'message': f'正在处理第 {row_count} 行'
                                 }, merge=True)
                                 last_progress_heartbeat = now_hb
@@ -6448,6 +6483,7 @@ class SalesProductMixin:
                                 'total_rows': total_rows_hint,
                                 'created': created,
                                 'upserted': upserted,
+                                'checkpoint_row': checkpoint_row,
                                 'message': msg,
                                 'errors': errors[:100],
                             }, merge=True)

@@ -2253,12 +2253,14 @@
             let sameMessageCount = 0;
             let restartRequested = false;
             let consecutiveNoResponse = 0;
+            let lastStuckReason = '';
 
-            async function tryRestartImportIfStuck() {
+            async function tryRestartImportIfStuck(reason) {
                 if (restartRequested) return;
                 restartRequested = true;
+                const restartReason = String(reason || lastStuckReason || 'stale_progress').trim() || 'stale_progress';
                 try {
-                    const resp = await fetchJsonSafe(`/api/sales-product-performance-import?mode=restart&force=1&task_id=${encodeURIComponent(taskId)}`, {
+                    const resp = await fetchJsonSafe(`/api/sales-product-performance-import?mode=restart&force=1&reason=${encodeURIComponent(restartReason)}&task_id=${encodeURIComponent(taskId)}`, {
                         method: 'GET',
                         credentials: 'include',
                         headers: {
@@ -2320,8 +2322,9 @@
                     }
                     // 若 ts 超长时间不变（疑似写库卡死/连接挂起），自动触发后端“重启导入”
                     if (sameTsCount >= 90 || sameMessageCount >= 90) { // ~90*0.7s ≈ 1分钟
+                        lastStuckReason = sameTsCount >= sameMessageCount ? 'stale_ts' : 'stale_message';
                         window.showAppToast && window.showAppToast('进度长时间无更新，尝试自动重启导入任务…', true, 3200);
-                        tryRestartImportIfStuck();
+                        tryRestartImportIfStuck(lastStuckReason);
                     }
 
                     if (state === 'success') {
@@ -2343,7 +2346,8 @@
                     // 短时间连续无响应：直接触发恢复重启（从 checkpoint 继续）
                     if (consecutiveNoResponse >= 3) {
                         try {
-                            const r = await fetchJsonSafe(`/api/sales-product-performance-import?mode=restart&force=1&task_id=${encodeURIComponent(taskId)}`, {
+                            lastStuckReason = 'no_response';
+                            const r = await fetchJsonSafe(`/api/sales-product-performance-import?mode=restart&force=1&reason=${encodeURIComponent(lastStuckReason)}&task_id=${encodeURIComponent(taskId)}`, {
                                 method: 'GET',
                                 credentials: 'include',
                                 headers: {
@@ -2400,7 +2404,11 @@
                 }
                 const stateText = String(data.state || '').toLowerCase();
                 if (stateText === 'success') return data;
-                if (stateText === 'error') throw new Error(data.message || '导入失败');
+                if (stateText === 'error') {
+                    const err = new Error(data.message || '导入失败');
+                    err.importData = data;
+                    throw err;
+                }
                 // 周/月聚合可能远长于写明细；处于聚合阶段时放宽等待上限，避免误判超时
                 const phase = String(data.phase || '');
                 if (phase === 'agg_refresh' || phase === 'agg_refresh_done' || phase === 'agg_refresh_warn') {
@@ -2446,6 +2454,70 @@
             } catch (e) {
                 const sample = String(text || '').slice(0, 220).replace(/\s+/g, ' ').trim();
                 throw new Error(`接口未返回JSON（HTTP ${r.status}）。响应片段: ${sample || '(empty)'}`);
+            }
+        }
+
+        function getImportStopReasonText(data) {
+            const payload = data && typeof data === 'object' ? data : {};
+            const phase = String(payload.phase || '').trim();
+            const retryReason = String(payload.retry_reason || '').trim();
+            const checkpointRow = Number(payload.checkpoint_row || 0);
+            const message = String(payload.message || '').trim();
+            const reasonMap = {
+                stale_ts: '进度时间戳长时间未更新',
+                stale_message: '进度消息长时间未变化',
+                no_response: '进度接口连续无响应/网关异常',
+                retryable_db_error: '数据库写入出现可恢复异常并已触发重试',
+            };
+            const parts = [];
+            if (retryReason) {
+                parts.push(reasonMap[retryReason] || `重试原因：${retryReason}`);
+            }
+            if (phase) {
+                const phaseMap = {
+                    writing_error: '写库阶段失败',
+                    restart_error: '重启导入失败',
+                    restart: '已触发重启恢复',
+                    writing_retry: '写库分片重试中',
+                };
+                parts.push(phaseMap[phase] || `阶段：${phase}`);
+            }
+            if (checkpointRow > 0) {
+                parts.push(`断点行号：${checkpointRow}`);
+            }
+            if (!parts.length && message) {
+                parts.push(message);
+            }
+            return parts.length ? parts.join('；') : '原因未知';
+        }
+
+        function showImportResultPanel(title, summary, data, isError) {
+            const payload = data && typeof data === 'object' ? data : {};
+            const details = [];
+            const stopReason = getImportStopReasonText(payload);
+            if (summary) details.push(summary);
+            if (stopReason) details.push(`停止原因：${stopReason}`);
+            if (String(payload.message || '').trim() && String(payload.message || '').trim() !== summary) {
+                details.push(`消息：${String(payload.message || '').trim()}`);
+            }
+            if (Array.isArray(payload.errors) && payload.errors.length) {
+                payload.errors.slice(0, 6).forEach(errItem => {
+                    if (typeof errItem === 'string') {
+                        details.push(errItem);
+                    } else if (errItem && typeof errItem === 'object') {
+                        details.push(`第${errItem.row || '-'}行：${errItem.error || errItem.warning || '处理失败'}`);
+                    }
+                });
+            }
+            if (window.showAppResultPanel) {
+                window.showAppResultPanel({
+                    title: String(title || (isError ? '导入失败' : '导入完成')),
+                    summary: String(summary || '').trim(),
+                    details,
+                    isError: !!isError,
+                });
+            } else if (window.showAppToast) {
+                window.showAppToast(`${title || (isError ? '导入失败' : '导入完成')}：${summary || stopReason}`, !!isError, 4800);
             }
         }
 
@@ -2801,10 +2873,7 @@
                 if (data.status !== 'success') {
                     hideUploadProgress();
                     const failMsg = data.message || '导入失败';
-                    window.showAppToast && window.showAppToast(`导入失败：${failMsg}`, true, 4200);
-                    if ((data.errors || []).length) {
-                        showPerfDialog({ title: '导入失败', message: failMsg, errors: data.errors || [] });
-                    }
+                    showImportResultPanel('导入失败', failMsg, data, true);
                     return;
                 }
                 if (data.async) {
@@ -2818,6 +2887,7 @@
                         const aggWarn = String(finalData.agg_refresh_warning || '').trim();
                         const bgAgg = !!(finalData.agg_refresh_background || finalData.agg_refresh_status === 'running');
                         const errList = finalData.errors || [];
+                        const stopReasonText = getImportStopReasonText(finalData);
                         hideUploadProgress();
                         const summaryLine = `匹配 ${Number(finalData.created || 0)} 条，写入 ${upserted} 条，未匹配SKU ${skippedSku} 条，空标识 ${skippedId} 条，日期无效 ${skippedDate} 条，示例行跳过 ${skippedSample} 条，失败 ${errList.length} 条`;
                         const okLine = aggWarn
@@ -2826,20 +2896,15 @@
                                 ? `导入完成：${summaryLine}（周/月聚合后台刷新中）`
                                 : `导入完成：${summaryLine}`);
                         window.showAppToast && window.showAppToast(okLine, false, aggWarn ? 6200 : (bgAgg ? 5200 : 4200));
-                        if (errList.length || aggWarn) {
-                            showPerfDialog({
-                                title: '导入完成',
-                                message: `${summaryLine}${aggWarn ? `\n\n${aggWarn}` : ''}`,
-                                errors: errList
-                            });
-                        }
+                        showImportResultPanel('导入完成', `${summaryLine}${aggWarn ? `；${aggWarn}` : ''}${stopReasonText ? `；${stopReasonText}` : ''}`, finalData, false);
                         loadSalesProductPerformanceList(1);
                         if (state.dashboardQueried) loadDashboard();
                     }).catch(err => {
                         hideUploadProgress();
                         const msg = (err && err.message) ? String(err.message) : String(err);
-                        window.showAppToast && window.showAppToast(`导入失败：${msg}`, true, 4800);
-                        showPerfDialog({ title: '导入失败', message: '导入失败: ' + msg });
+                        const payload = err && err.importData ? err.importData : {};
+                        const summary = payload && payload.message ? String(payload.message) : msg;
+                        showImportResultPanel('导入失败', summary, Object.assign({ message: msg }, payload || {}), true);
                     });
                     return;
                 }
@@ -2847,8 +2912,7 @@
             }).catch(err => {
                 hideUploadProgress();
                 const msg = (err && err.message) ? String(err.message) : String(err);
-                window.showAppToast && window.showAppToast(`导入失败：${msg}`, true, 4800);
-                showPerfDialog({ title: '导入失败', message: '导入失败: ' + msg });
+                showImportResultPanel('导入失败', msg, { message: msg }, true);
             });
         }
 
@@ -2871,44 +2935,23 @@
                 hideUploadProgress();
                 if (data.status !== 'success') {
                     const failMessage = data.message || '预检失败';
-                    if (window.showAppResultPanel) {
-                        window.showAppResultPanel({
-                            title: '预检失败',
-                            summary: failMessage,
-                            details: (data.errors || []).length ? data.errors : [failMessage],
-                            isError: true
-                        });
-                    } else {
-                        window.showAppToast && window.showAppToast(`预检失败：${failMessage}`, true, 4200);
-                    }
+                    showImportResultPanel('预检失败', failMessage, data, true);
                     return;
                 }
                 const summaryText = `预检完成：可匹配 ${data.created || 0} 条，未匹配SKU ${data.skipped_unmatched_sku || 0} 条，空标识 ${data.skipped_empty_identifier || 0} 条，日期无效 ${data.skipped_invalid_date || 0} 条，示例行跳过 ${data.skipped_template_sample || 0} 条`;
-                if (window.showAppResultPanel) {
-                    window.showAppResultPanel({
-                        title: '预检通过',
-                        summary: summaryText,
-                        details: [
-                            `可匹配：${data.created || 0} 条`,
-                            `未匹配SKU：${data.skipped_unmatched_sku || 0} 条`,
-                            `空标识：${data.skipped_empty_identifier || 0} 条`,
-                            `日期无效：${data.skipped_invalid_date || 0} 条`,
-                            `示例行跳过：${data.skipped_template_sample || 0} 条`
-                        ],
-                        isError: false
-                    });
-                } else {
-                    window.showAppToast && window.showAppToast(summaryText, false, 4200);
-                }
+                showImportResultPanel('预检通过', summaryText, {
+                    message: summaryText,
+                    created: data.created,
+                    skipped_unmatched_sku: data.skipped_unmatched_sku,
+                    skipped_empty_identifier: data.skipped_empty_identifier,
+                    skipped_invalid_date: data.skipped_invalid_date,
+                    skipped_template_sample: data.skipped_template_sample,
+                }, false);
                 uploadSalesProductPerformanceTemplate(file, taskId);
             }).catch(err => {
                 hideUploadProgress();
                 const msg = (err && err.message) ? String(err.message) : String(err);
-                if (window.showAppResultPanel) {
-                    window.showAppResultPanel({ title: '预检失败', summary: '预检失败: ' + msg, isError: true, details: [msg] });
-                } else {
-                    window.showAppToast && window.showAppToast(`预检失败：${msg}`, true, 4800);
-                }
+                showImportResultPanel('预检失败', '预检失败: ' + msg, { message: msg }, true);
             });
         }
 
