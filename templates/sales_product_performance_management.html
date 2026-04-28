@@ -2249,6 +2249,35 @@
             let pollDelayMs = 700;
             let lastTs = '';
             let sameTsCount = 0;
+            let restartRequested = false;
+            let consecutiveNoResponse = 0;
+
+            async function tryRestartImportIfStuck() {
+                if (restartRequested) return;
+                restartRequested = true;
+                try {
+                    const resp = await fetchJsonSafe(`/api/sales-product-performance-import?mode=restart&task_id=${encodeURIComponent(taskId)}`, {
+                        method: 'GET',
+                        credentials: 'include',
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    }, 9000);
+                    const ok = String(resp.status || '').toLowerCase() === 'success';
+                    if (ok) {
+                        window.showAppToast && window.showAppToast(resp.message || '已触发后台重启导入任务', false, 3200);
+                    } else {
+                        window.showAppToast && window.showAppToast(resp.message || '触发重启失败', true, 4200);
+                    }
+                } catch (e) {
+                    const msg = (e && e.message) ? String(e.message) : String(e);
+                    window.showAppToast && window.showAppToast(`触发重启失败：${msg}`, true, 4200);
+                } finally {
+                    // 允许后续再次触发（比如又卡住了）
+                    window.setTimeout(() => { restartRequested = false; }, 15000);
+                }
+            }
 
             async function pollOnce() {
                 try {
@@ -2283,6 +2312,11 @@
                     if (sameTsCount === 25) { // ~25*0.7s ≈ 17s
                         window.showAppToast && window.showAppToast('进度暂未刷新，正在自动重试…', true, 2200);
                     }
+                    // 若 ts 超长时间不变（疑似写库卡死/连接挂起），自动触发后端“重启导入”
+                    if (sameTsCount === 180) { // ~180*0.7s ≈ 2分钟
+                        window.showAppToast && window.showAppToast('进度长时间无更新，尝试自动重启导入任务…', true, 3200);
+                        tryRestartImportIfStuck();
+                    }
 
                     if (state === 'success') {
                         showUploadProgress('处理完成，正在返回结果...', 100);
@@ -2295,9 +2329,28 @@
                 } catch (e) {
                     // 504/HTML 等“非正常响应”不终止：持续重试并做退避
                     failCount += 1;
+                    consecutiveNoResponse += 1;
                     pollDelayMs = Math.min(6000, Math.floor(pollDelayMs * 1.6));
                     if (failCount === 3) {
                         window.showAppToast && window.showAppToast('网络/网关异常，正在自动重试获取进度…', true, 2600);
+                    }
+                    // 短时间连续无响应：直接触发恢复重启（从 checkpoint 继续）
+                    if (consecutiveNoResponse >= 3) {
+                        try {
+                            const r = await fetchJsonSafe(`/api/sales-product-performance-import?mode=restart&force=1&task_id=${encodeURIComponent(taskId)}`, {
+                                method: 'GET',
+                                credentials: 'include',
+                                headers: {
+                                    'Accept': 'application/json',
+                                    'X-Requested-With': 'XMLHttpRequest'
+                                }
+                            }, 9000);
+                            window.showAppToast && window.showAppToast(r.message || '已触发恢复重启导入任务', false, 3200);
+                        } catch (e2) {
+                            // ignore
+                        } finally {
+                            consecutiveNoResponse = 0;
+                        }
                     }
                     showUploadProgress(`进度获取失败，${Math.floor(pollDelayMs / 1000)}秒后重试…`, 8);
                     return true;

@@ -5656,6 +5656,8 @@ class SalesProductMixin:
             task_id = str((query_params.get('task_id', [''])[0] or '')).strip()
             async_import = str((query_params.get('async', [''])[0] or '')).strip().lower() in ('1', 'true', 'yes', 'on')
             temp_token = str((query_params.get('from_temp', [''])[0] or '')).strip()
+            resume_from = str((query_params.get('resume_from', [''])[0] or '')).strip()
+            force_restart = str((query_params.get('force', [''])[0] or '')).strip().lower() in ('1', 'true', 'yes', 'on')
 
             import tempfile
 
@@ -5759,6 +5761,80 @@ class SalesProductMixin:
                 data.setdefault('task_id', safe_task_id)
                 return self.send_json(data, start_response)
 
+            # 触发“重启导入任务”（用于写库阶段卡死/无响应时的自愈）
+            # 前提：异步导入已把文件缓存到 temp（token = task_id），且进度长时间不更新。
+            if method == 'GET' and mode == 'restart':
+                if not safe_task_id:
+                    return self.send_json({'status': 'error', 'message': 'task_id无效'}, start_response)
+                data = _read_progress(safe_task_id) or {}
+                # 若已完成则不重启
+                if str(data.get('state') or '').lower() in ('success', 'error'):
+                    return self.send_json({'status': 'success', 'message': '任务已结束，无需重启', 'task_id': safe_task_id}, start_response)
+
+                # 允许前端 force=1 触发快速恢复（例如连续请求无响应）
+                if not force_restart:
+                    stale = False
+                    try:
+                        ts = str(data.get('ts') or '').strip()
+                        if ts:
+                            last_dt = datetime.strptime(ts, '%Y-%m-%d %H:%M:%S')
+                            if (datetime.now() - last_dt).total_seconds() >= 120:
+                                stale = True
+                    except Exception:
+                        stale = True
+                    if not stale:
+                        return self.send_json({'status': 'success', 'message': '任务仍在运行（未超过120秒无更新），无需重启', 'task_id': safe_task_id}, start_response)
+
+                temp_path = _temp_upload_path(safe_task_id)
+                if not os.path.exists(temp_path):
+                    return self.send_json({'status': 'error', 'message': '临时文件不存在，无法重启（可能已清理或任务启动方式非异步）', 'task_id': safe_task_id}, start_response)
+
+                # 读取 checkpoint（已安全落库的行号），用于恢复
+                cp = 0
+                try:
+                    cp = int(data.get('checkpoint_row') or 0)
+                except Exception:
+                    cp = 0
+                if resume_from:
+                    try:
+                        cp = max(cp, int(resume_from))
+                    except Exception:
+                        pass
+
+                # bump run_id：旧 worker 会检测到并退出
+                new_run_id = hashlib.md5(f"{datetime.now().isoformat()}_{os.getpid()}_{time.time()}".encode('utf-8')).hexdigest()[:10]
+                _write_progress(safe_task_id, {
+                    'status': 'success',
+                    'task_id': safe_task_id,
+                    'state': 'running',
+                    'phase': 'restart',
+                    'run_id': new_run_id,
+                    'checkpoint_row': cp,
+                    'message': f'正在从第 {cp} 行继续恢复导入...'
+                }, merge=True)
+
+                def _restart_worker():
+                    try:
+                        q = f"task_id={safe_task_id}&check_only=0&async=0&from_temp={safe_task_id}&resume_from={cp}&run_id={new_run_id}"
+                        bg_env = {
+                            'QUERY_STRING': q,
+                            'CONTENT_TYPE': '',
+                            'CONTENT_LENGTH': '0',
+                            'wsgi.input': io.BytesIO(b''),
+                        }
+                        self.handle_sales_product_performance_import_api(bg_env, 'POST', lambda *args, **kwargs: None)
+                    except Exception as _e:
+                        _write_progress(safe_task_id, {
+                            'status': 'error',
+                            'task_id': safe_task_id,
+                            'state': 'error',
+                            'phase': 'restart_error',
+                            'message': f'重启失败：{str(_e)[:200]}'
+                        }, merge=True)
+
+                threading.Thread(target=_restart_worker, daemon=True).start()
+                return self.send_json({'status': 'success', 'task_id': safe_task_id, 'message': '已触发重启，请继续观察进度'}, start_response)
+
             if method != 'POST':
                 return self.send_error(405, 'Method not allowed', start_response)
             if load_workbook is None:
@@ -5767,6 +5843,11 @@ class SalesProductMixin:
 
             if not safe_task_id:
                 safe_task_id = hashlib.md5(f"{datetime.now().isoformat()}_{os.getpid()}".encode('utf-8')).hexdigest()[:16]
+
+            # 每次 worker 运行都有自己的 run_id（用于被 restart 终止）
+            worker_run_id = str((query_params.get('run_id', [''])[0] or '')).strip()
+            if not worker_run_id:
+                worker_run_id = hashlib.md5(f"{safe_task_id}_{datetime.now().isoformat()}_{os.getpid()}".encode('utf-8')).hexdigest()[:10]
 
             file_bytes = b''
             if temp_token:
@@ -5991,6 +6072,8 @@ class SalesProductMixin:
                 'total_rows': total_rows_hint,
                 'created': 0,
                 'phase': 'start',
+                'run_id': worker_run_id,
+                'checkpoint_row': 0,
                 'message': '开始处理...'
             })
 
@@ -5999,8 +6082,8 @@ class SalesProductMixin:
             touched_agg_ids = set()
             agg_refresh_warning = None
 
-            # 大批量 executemany 在 NAS/弱 IO 下常超过默认连接 12s 读写超时，易 2013；导入整段用长连接
-            with self._get_db_connection_long(600, 600, 10) as conn:
+            # 导入用“中等超时”长连接：避免 12s 频繁 2013，同时允许真正卡死的连接尽快超时抛错，便于自愈重启
+            with self._get_db_connection_long(90, 90, 10) as conn:
                 with conn.cursor() as cur:
                     _write_progress(safe_task_id, {
                         'status': 'success',
@@ -6101,6 +6184,11 @@ class SalesProductMixin:
                                 written += len(chunk)
                                 # 小步提交：降低单事务持锁时长，也让长任务更“有心跳”
                                 conn.commit()
+                                checkpoint_row = row_count
+                                _write_progress(safe_task_id, {
+                                    'run_id': worker_run_id,
+                                    'checkpoint_row': checkpoint_row,
+                                }, merge=True)
                             return written
                         except Exception as e:
                             try:
@@ -6117,6 +6205,27 @@ class SalesProductMixin:
                     row_count = 0
                     last_progress_heartbeat = time.time()
                     fatal_write_error = None
+                    checkpoint_row = 0
+
+                    # 恢复：跳过已处理的数据行（row_count 从 1 开始对应 Excel 数据第2行）
+                    resume_row = 0
+                    try:
+                        resume_row = int(resume_from or 0)
+                    except Exception:
+                        resume_row = 0
+                    if resume_row > 0:
+                        _write_progress(safe_task_id, {
+                            'status': 'success',
+                            'task_id': safe_task_id,
+                            'state': 'running',
+                            'phase': 'resume',
+                            'run_id': worker_run_id,
+                            'checkpoint_row': resume_row,
+                            'processed_rows': resume_row,
+                            'total_rows': total_rows_hint,
+                            'created': created,
+                            'message': f'正在恢复：跳过前 {resume_row} 行已处理数据...'
+                        }, merge=True)
 
                     _write_progress(safe_task_id, {
                         'status': 'success',
@@ -6136,6 +6245,14 @@ class SalesProductMixin:
                             break
 
                         row_count += 1
+                        # worker 被 restart 后应尽快退出（避免并发写入）
+                        if row_count % 200 == 0:
+                            live = _read_progress(safe_task_id) or {}
+                            if str(live.get('run_id') or '') and str(live.get('run_id') or '') != str(worker_run_id):
+                                return self.send_json({'status': 'success', 'task_id': safe_task_id, 'message': '任务已被重启，当前worker退出'}, start_response)
+
+                        if resume_row and row_count <= resume_row:
+                            continue
 
                         if not any(cell is not None and str(cell).strip() for cell in row):
                             continue
