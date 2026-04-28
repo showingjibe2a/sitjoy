@@ -2325,7 +2325,7 @@
                     }
 
                     if (state === 'success') {
-                        showUploadProgress('处理完成，正在返回结果...', 100);
+                        hideUploadProgress();
                         return false;
                     }
                     if (state === 'error') {
