@@ -5323,6 +5323,7 @@ class SalesProductMixin:
                         tuple([ws.strftime('%Y-%m-%d'), we.strftime('%Y-%m-%d'), year_week, ws.strftime('%Y-%m-%d'), we.strftime('%Y-%m-%d')] + id_params),
                     )
                     conn.commit()
+                    _after_agg_commit('week', str(year_week))
 
             # MONTH: one month per query
             for ms in _iter_months(sd, ed):
@@ -5373,7 +5374,7 @@ class SalesProductMixin:
                         tuple([ms.strftime('%Y-%m-%d'), me.strftime('%Y-%m-%d'), year_month, ms.strftime('%Y-%m-%d'), me.strftime('%Y-%m-%d')] + id_params),
                     )
                     conn.commit()
-                    _after_agg_commit('month', ms.strftime('%Y-%m-%d'))
+                    _after_agg_commit('month', str(year_month))
 
         # per-chunk commits done above
 
@@ -6159,6 +6160,25 @@ class SalesProductMixin:
                         "refund_amount=VALUES(refund_amount),"
                         "sub_category_rank=VALUES(sub_category_rank)"
                     )
+
+                    def _is_retryable_write_error(exc):
+                        err_text = str(exc or '').lower()
+                        retry_tokens = (
+                            'lost connection',
+                            'server has gone away',
+                            'connection reset',
+                            'broken pipe',
+                            'read timed out',
+                            'write timed out',
+                            'timed out',
+                            'deadlock found',
+                            'lock wait timeout',
+                            'error 1205',
+                            'error 1213',
+                            'error 2006',
+                            'error 2013',
+                        )
+                        return any(token in err_text for token in retry_tokens)
                     
                     def flush_batch_data():
                         if not batch_rows:
@@ -6180,10 +6200,43 @@ class SalesProductMixin:
                                     'upserted': upserted,
                                     'message': f'正在写入数据库（批量分片 {min(i + len(chunk), total)}/{total}）...'
                                 }, merge=True)
-                                cur.executemany(upsert_sql, chunk)
-                                written += len(chunk)
-                                # 小步提交：降低单事务持锁时长，也让长任务更“有心跳”
-                                conn.commit()
+                                try:
+                                    cur.executemany(upsert_sql, chunk)
+                                    written += len(chunk)
+                                    # 小步提交：降低单事务持锁时长，也让长任务更“有心跳”
+                                    conn.commit()
+                                except Exception as chunk_err:
+                                    if not _is_retryable_write_error(chunk_err):
+                                        raise
+                                    try:
+                                        conn.rollback()
+                                    except Exception:
+                                        pass
+                                    try:
+                                        conn.ping(reconnect=True)
+                                    except Exception:
+                                        raise RuntimeError(f"批量写入失败: {str(chunk_err)[:180]}")
+                                    _write_progress(safe_task_id, {
+                                        'status': 'success',
+                                        'task_id': safe_task_id,
+                                        'state': 'running',
+                                        'phase': 'writing_retry',
+                                        'processed_rows': row_count,
+                                        'total_rows': total_rows_hint,
+                                        'created': created,
+                                        'upserted': upserted,
+                                        'message': f'当前分片写入失败，正在重连后重试（{min(i + len(chunk), total)}/{total}）...'
+                                    }, merge=True)
+                                    try:
+                                        cur.executemany(upsert_sql, chunk)
+                                        written += len(chunk)
+                                        conn.commit()
+                                    except Exception as retry_err:
+                                        try:
+                                            conn.rollback()
+                                        except Exception:
+                                            pass
+                                        raise RuntimeError(f"批量写入失败: {str(retry_err)[:180]}")
                                 checkpoint_row = row_count
                                 _write_progress(safe_task_id, {
                                     'run_id': worker_run_id,

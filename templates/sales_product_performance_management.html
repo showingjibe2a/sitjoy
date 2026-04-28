@@ -2248,7 +2248,9 @@
             let failCount = 0;
             let pollDelayMs = 700;
             let lastTs = '';
+            let lastMessage = '';
             let sameTsCount = 0;
+            let sameMessageCount = 0;
             let restartRequested = false;
             let consecutiveNoResponse = 0;
 
@@ -2256,7 +2258,7 @@
                 if (restartRequested) return;
                 restartRequested = true;
                 try {
-                    const resp = await fetchJsonSafe(`/api/sales-product-performance-import?mode=restart&task_id=${encodeURIComponent(taskId)}`, {
+                    const resp = await fetchJsonSafe(`/api/sales-product-performance-import?mode=restart&force=1&task_id=${encodeURIComponent(taskId)}`, {
                         method: 'GET',
                         credentials: 'include',
                         headers: {
@@ -2303,6 +2305,10 @@
                     else sameTsCount = 0;
                     lastTs = ts || lastTs;
 
+                    if (msg && msg === lastMessage) sameMessageCount += 1;
+                    else sameMessageCount = 0;
+                    lastMessage = msg || lastMessage;
+
                     const label = msg
                         ? msg
                         : (total > 0 ? `正在处理数据... ${done}/${total}` : `正在处理数据... 已处理 ${done} 行`);
@@ -2313,7 +2319,7 @@
                         window.showAppToast && window.showAppToast('进度暂未刷新，正在自动重试…', true, 2200);
                     }
                     // 若 ts 超长时间不变（疑似写库卡死/连接挂起），自动触发后端“重启导入”
-                    if (sameTsCount === 180) { // ~180*0.7s ≈ 2分钟
+                    if (sameTsCount >= 90 || sameMessageCount >= 90) { // ~90*0.7s ≈ 1分钟
                         window.showAppToast && window.showAppToast('进度长时间无更新，尝试自动重启导入任务…', true, 3200);
                         tryRestartImportIfStuck();
                     }
@@ -2776,11 +2782,11 @@
             }).catch(err => alertPerfDialog('删除失败: ' + err, '删除失败'));
         }
 
-        function uploadSalesProductPerformanceTemplate(file) {
+        function uploadSalesProductPerformanceTemplate(file, reuseTaskId) {
             if (!file) return;
             const formData = new FormData();
             formData.append('file', file);
-            const taskId = buildImportTaskId();
+            const taskId = reuseTaskId || buildImportTaskId();
             showUploadProgress('正在上传模板...', 35);
             startImportProgressPolling(taskId);
             fetchJsonSafe(`/api/sales-product-performance-import?task_id=${encodeURIComponent(taskId)}&async=1`, {
@@ -2864,24 +2870,45 @@
             }, 25000).then(data => {
                 hideUploadProgress();
                 if (data.status !== 'success') {
-                    window.showAppToast && window.showAppToast(`预检失败：${data.message || '预检失败'}`, true, 4200);
-                    showPerfDialog({ title: '预检失败', message: data.message || '预检失败', errors: data.errors || [] });
+                    const failMessage = data.message || '预检失败';
+                    if (window.showAppResultPanel) {
+                        window.showAppResultPanel({
+                            title: '预检失败',
+                            summary: failMessage,
+                            details: (data.errors || []).length ? data.errors : [failMessage],
+                            isError: true
+                        });
+                    } else {
+                        window.showAppToast && window.showAppToast(`预检失败：${failMessage}`, true, 4200);
+                    }
                     return;
                 }
-                const msg = `预检完成：可匹配 ${data.created || 0} 条，未匹配SKU ${data.skipped_unmatched_sku || 0} 条，空标识 ${data.skipped_empty_identifier || 0} 条，日期无效 ${data.skipped_invalid_date || 0} 条，示例行跳过 ${data.skipped_template_sample || 0} 条。\n是否继续上传？`;
-                showPerfDialog({
-                    title: '批量上传预检',
-                    message: msg,
-                    errors: data.errors || [],
-                    okText: '继续上传',
-                    cancelText: '取消',
-                    onOk: function() { uploadSalesProductPerformanceTemplate(file); }
-                });
+                const summaryText = `预检完成：可匹配 ${data.created || 0} 条，未匹配SKU ${data.skipped_unmatched_sku || 0} 条，空标识 ${data.skipped_empty_identifier || 0} 条，日期无效 ${data.skipped_invalid_date || 0} 条，示例行跳过 ${data.skipped_template_sample || 0} 条`;
+                if (window.showAppResultPanel) {
+                    window.showAppResultPanel({
+                        title: '预检通过',
+                        summary: summaryText,
+                        details: [
+                            `可匹配：${data.created || 0} 条`,
+                            `未匹配SKU：${data.skipped_unmatched_sku || 0} 条`,
+                            `空标识：${data.skipped_empty_identifier || 0} 条`,
+                            `日期无效：${data.skipped_invalid_date || 0} 条`,
+                            `示例行跳过：${data.skipped_template_sample || 0} 条`
+                        ],
+                        isError: false
+                    });
+                } else {
+                    window.showAppToast && window.showAppToast(summaryText, false, 4200);
+                }
+                uploadSalesProductPerformanceTemplate(file, taskId);
             }).catch(err => {
                 hideUploadProgress();
                 const msg = (err && err.message) ? String(err.message) : String(err);
-                window.showAppToast && window.showAppToast(`预检失败：${msg}`, true, 4800);
-                showPerfDialog({ title: '预检失败', message: '预检失败: ' + msg });
+                if (window.showAppResultPanel) {
+                    window.showAppResultPanel({ title: '预检失败', summary: '预检失败: ' + msg, isError: true, details: [msg] });
+                } else {
+                    window.showAppToast && window.showAppToast(`预检失败：${msg}`, true, 4800);
+                }
             });
         }
 
