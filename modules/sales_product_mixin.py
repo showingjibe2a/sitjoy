@@ -10,7 +10,7 @@ import threading
 import time
 from email import policy
 from email.parser import BytesParser
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import parse_qs
 
 try:
@@ -5172,10 +5172,12 @@ class SalesProductMixin:
         except Exception:
             return False
 
-    def _refresh_sales_perf_agg_range(self, conn, start_date, end_date):
+    def _refresh_sales_perf_agg_range(self, conn, start_date, end_date, sales_product_ids=None, progress_hook=None):
         """
         方案A：按给定日期范围，刷新周/月聚合快照表。
         - start_date/end_date: 'YYYY-MM-DD'
+        - sales_product_ids: 可选，仅刷新涉及到的销售产品（导入场景强烈建议传入，避免全表扫描导致超时）
+        - progress_hook: 可选 callable(dict)，在耗时循环中节流回调；dict 含 step/total/segment/period_key
         """
         if not conn:
             return
@@ -5192,93 +5194,188 @@ class SalesProductMixin:
             sd, ed = ed, sd
 
         if (not self._table_exists_simple(conn, 'sales_perf_agg_week')) or (not self._table_exists_simple(conn, 'sales_perf_agg_month')):
-            return
+            raise RuntimeError('聚合快照表不存在：请先在数据库执行 scripts/sql/20260427_01_sales_perf_agg_tables.sql')
 
-        # 计算周期边界（week_start=周一，month_start=每月1号）
-        week_start = sd - timedelta(days=sd.weekday())
-        week_end = ed - timedelta(days=ed.weekday())
-        month_start = sd.replace(day=1)
-        month_end = ed.replace(day=1)
+        # 分段刷新：避免单条大 SQL 导致 MySQL 超时断连（2013 timed out）
+        def _iter_weeks(d0, d1):
+            cur = d0 - timedelta(days=d0.weekday())
+            end = d1 - timedelta(days=d1.weekday())
+            while cur <= end:
+                yield cur
+                cur = cur + timedelta(days=7)
+
+        def _iter_months(d0, d1):
+            cur = d0.replace(day=1)
+            end = d1.replace(day=1)
+            while cur <= end:
+                yield cur
+                # next month
+                if cur.month == 12:
+                    cur = cur.replace(year=cur.year + 1, month=1, day=1)
+                else:
+                    cur = cur.replace(month=cur.month + 1, day=1)
+
+        def _month_end(ms):
+            if ms.month == 12:
+                nxt = ms.replace(year=ms.year + 1, month=1, day=1)
+            else:
+                nxt = ms.replace(month=ms.month + 1, day=1)
+            return nxt - timedelta(days=1)
+
+        ids = None
+        if sales_product_ids is not None:
+            ids = []
+            if isinstance(sales_product_ids, (set, list, tuple)):
+                tmp = set()
+                for x in sales_product_ids:
+                    try:
+                        v = int(x)
+                    except Exception:
+                        continue
+                    if v > 0:
+                        tmp.add(v)
+                ids = sorted(tmp)
+
+        id_chunk_size = 300
+        id_chunks = []
+        if ids is None:
+            id_chunks = [None]
+        elif ids:
+            for i in range(0, len(ids), id_chunk_size):
+                id_chunks.append(ids[i:i + id_chunk_size])
+        else:
+            id_chunks = [None]
+
+        weeks_list = list(_iter_weeks(sd, ed))
+        months_list = list(_iter_months(sd, ed))
+        total_steps = len(weeks_list) * len(id_chunks) + len(months_list) * len(id_chunks)
+        total_steps = max(1, total_steps)
+        step_i = 0
+        last_emit_ts = 0.0
+
+        def _after_agg_commit(segment, period_key):
+            nonlocal step_i, last_emit_ts
+            step_i += 1
+            if not progress_hook:
+                return
+            now = time.time()
+            is_last = step_i >= total_steps
+            if not is_last and (now - last_emit_ts) < 1.2:
+                return
+            last_emit_ts = now
+            try:
+                progress_hook({
+                    'step': step_i,
+                    'total': total_steps,
+                    'segment': segment,
+                    'period_key': period_key,
+                })
+            except Exception:
+                pass
 
         with conn.cursor() as cur:
-            # WEEK
-            cur.execute(
-                "DELETE FROM sales_perf_agg_week WHERE week_start >= %s AND week_start <= %s",
-                (week_start.strftime('%Y-%m-%d'), week_end.strftime('%Y-%m-%d')),
-            )
-            cur.execute(
-                f"""
-                INSERT INTO sales_perf_agg_week
-                    (sales_product_id,
-                     week_start, week_end, year_week, source_rows,
-                     sales_qty, net_sales_amount, order_qty, session_total,
-                     ad_impressions, ad_clicks, ad_orders, ad_spend, ad_sales_amount,
-                     refund_amount, sub_category_rank_avg)
-                SELECT
-                    spp.sales_product_id AS sales_product_id,
-                    DATE_SUB(DATE(spp.record_date), INTERVAL WEEKDAY(spp.record_date) DAY) AS week_start,
-                    DATE_ADD(DATE_SUB(DATE(spp.record_date), INTERVAL WEEKDAY(spp.record_date) DAY), INTERVAL 6 DAY) AS week_end,
-                    YEARWEEK(spp.record_date, 1) AS year_week,
-                    COUNT(1) AS source_rows,
-                    SUM(COALESCE(spp.sales_qty,0)) AS sales_qty,
-                    SUM(COALESCE(spp.net_sales_amount,0)) AS net_sales_amount,
-                    SUM(COALESCE(spp.order_qty,0)) AS order_qty,
-                    SUM(COALESCE(spp.session_total,0)) AS session_total,
-                    SUM(COALESCE(spp.ad_impressions,0)) AS ad_impressions,
-                    SUM(COALESCE(spp.ad_clicks,0)) AS ad_clicks,
-                    SUM(COALESCE(spp.ad_orders,0)) AS ad_orders,
-                    SUM(COALESCE(spp.ad_spend,0)) AS ad_spend,
-                    SUM(COALESCE(spp.ad_sales_amount,0)) AS ad_sales_amount,
-                    SUM(COALESCE(spp.refund_amount,0)) AS refund_amount,
-                    AVG(spp.sub_category_rank) AS sub_category_rank_avg
-                FROM sales_product_performances spp
-                WHERE spp.record_date >= %s AND spp.record_date <= %s
-                GROUP BY spp.sales_product_id, year_week, week_start, week_end
-                """,
-                (sd.strftime('%Y-%m-%d'), ed.strftime('%Y-%m-%d')),
-            )
+            # WEEK: one week per query
+            for ws in weeks_list:
+                we = ws + timedelta(days=6)
+                year_week = int(ws.isocalendar().year) * 100 + int(ws.isocalendar().week)
+                for id_chunk in id_chunks:
+                    if id_chunk:
+                        placeholders = ','.join(['%s'] * len(id_chunk))
+                        cur.execute(
+                            f"DELETE FROM sales_perf_agg_week WHERE week_start=%s AND sales_product_id IN ({placeholders})",
+                            tuple([ws.strftime('%Y-%m-%d')] + id_chunk),
+                        )
+                        id_filter_sql = f" AND spp.sales_product_id IN ({placeholders})"
+                        id_params = list(id_chunk)
+                    else:
+                        cur.execute("DELETE FROM sales_perf_agg_week WHERE week_start=%s", (ws.strftime('%Y-%m-%d'),))
+                        id_filter_sql = ''
+                        id_params = []
+                    cur.execute(
+                        f"""
+                        INSERT INTO sales_perf_agg_week
+                            (sales_product_id, week_start, week_end, `year_week`, source_rows,
+                             sales_qty, net_sales_amount, order_qty, session_total,
+                             ad_impressions, ad_clicks, ad_orders, ad_spend, ad_sales_amount,
+                             refund_amount, sub_category_rank_avg)
+                        SELECT
+                            spp.sales_product_id,
+                            %s AS week_start,
+                            %s AS week_end,
+                            %s AS `year_week`,
+                            COUNT(1) AS source_rows,
+                            SUM(COALESCE(spp.sales_qty,0)) AS sales_qty,
+                            SUM(COALESCE(spp.net_sales_amount,0)) AS net_sales_amount,
+                            SUM(COALESCE(spp.order_qty,0)) AS order_qty,
+                            SUM(COALESCE(spp.session_total,0)) AS session_total,
+                            SUM(COALESCE(spp.ad_impressions,0)) AS ad_impressions,
+                            SUM(COALESCE(spp.ad_clicks,0)) AS ad_clicks,
+                            SUM(COALESCE(spp.ad_orders,0)) AS ad_orders,
+                            SUM(COALESCE(spp.ad_spend,0)) AS ad_spend,
+                            SUM(COALESCE(spp.ad_sales_amount,0)) AS ad_sales_amount,
+                            SUM(COALESCE(spp.refund_amount,0)) AS refund_amount,
+                            AVG(spp.sub_category_rank) AS sub_category_rank_avg
+                        FROM sales_product_performances spp
+                        WHERE spp.record_date >= %s AND spp.record_date <= %s
+                        {id_filter_sql}
+                        GROUP BY spp.sales_product_id
+                        """,
+                        tuple([ws.strftime('%Y-%m-%d'), we.strftime('%Y-%m-%d'), year_week, ws.strftime('%Y-%m-%d'), we.strftime('%Y-%m-%d')] + id_params),
+                    )
+                    conn.commit()
 
-            # MONTH
-            cur.execute(
-                "DELETE FROM sales_perf_agg_month WHERE month_start >= %s AND month_start <= %s",
-                (month_start.strftime('%Y-%m-%d'), month_end.strftime('%Y-%m-%d')),
-            )
-            cur.execute(
-                f"""
-                INSERT INTO sales_perf_agg_month
-                    (sales_product_id,
-                     month_start, month_end, year_month, source_rows,
-                     sales_qty, net_sales_amount, order_qty, session_total,
-                     ad_impressions, ad_clicks, ad_orders, ad_spend, ad_sales_amount,
-                     refund_amount, sub_category_rank_avg)
-                SELECT
-                    spp.sales_product_id AS sales_product_id,
-                    STR_TO_DATE(DATE_FORMAT(spp.record_date, '%Y-%m-01'), '%Y-%m-%d') AS month_start,
-                    LAST_DAY(spp.record_date) AS month_end,
-                    CAST(DATE_FORMAT(spp.record_date, '%Y%m') AS UNSIGNED) AS year_month,
-                    COUNT(1) AS source_rows,
-                    SUM(COALESCE(spp.sales_qty,0)) AS sales_qty,
-                    SUM(COALESCE(spp.net_sales_amount,0)) AS net_sales_amount,
-                    SUM(COALESCE(spp.order_qty,0)) AS order_qty,
-                    SUM(COALESCE(spp.session_total,0)) AS session_total,
-                    SUM(COALESCE(spp.ad_impressions,0)) AS ad_impressions,
-                    SUM(COALESCE(spp.ad_clicks,0)) AS ad_clicks,
-                    SUM(COALESCE(spp.ad_orders,0)) AS ad_orders,
-                    SUM(COALESCE(spp.ad_spend,0)) AS ad_spend,
-                    SUM(COALESCE(spp.ad_sales_amount,0)) AS ad_sales_amount,
-                    SUM(COALESCE(spp.refund_amount,0)) AS refund_amount,
-                    AVG(spp.sub_category_rank) AS sub_category_rank_avg
-                FROM sales_product_performances spp
-                WHERE spp.record_date >= %s AND spp.record_date <= %s
-                GROUP BY spp.sales_product_id, year_month, month_start, month_end
-                """,
-                (sd.strftime('%Y-%m-%d'), ed.strftime('%Y-%m-%d')),
-            )
+            # MONTH: one month per query
+            for ms in _iter_months(sd, ed):
+                me = _month_end(ms)
+                year_month = int(ms.year) * 100 + int(ms.month)
+                for id_chunk in id_chunks:
+                    if id_chunk:
+                        placeholders = ','.join(['%s'] * len(id_chunk))
+                        cur.execute(
+                            f"DELETE FROM sales_perf_agg_month WHERE month_start=%s AND sales_product_id IN ({placeholders})",
+                            tuple([ms.strftime('%Y-%m-%d')] + id_chunk),
+                        )
+                        id_filter_sql = f" AND spp.sales_product_id IN ({placeholders})"
+                        id_params = list(id_chunk)
+                    else:
+                        cur.execute("DELETE FROM sales_perf_agg_month WHERE month_start=%s", (ms.strftime('%Y-%m-%d'),))
+                        id_filter_sql = ''
+                        id_params = []
+                    cur.execute(
+                        f"""
+                        INSERT INTO sales_perf_agg_month
+                            (sales_product_id, month_start, month_end, `year_month`, source_rows,
+                             sales_qty, net_sales_amount, order_qty, session_total,
+                             ad_impressions, ad_clicks, ad_orders, ad_spend, ad_sales_amount,
+                             refund_amount, sub_category_rank_avg)
+                        SELECT
+                            spp.sales_product_id,
+                            %s AS month_start,
+                            %s AS month_end,
+                            %s AS `year_month`,
+                            COUNT(1) AS source_rows,
+                            SUM(COALESCE(spp.sales_qty,0)) AS sales_qty,
+                            SUM(COALESCE(spp.net_sales_amount,0)) AS net_sales_amount,
+                            SUM(COALESCE(spp.order_qty,0)) AS order_qty,
+                            SUM(COALESCE(spp.session_total,0)) AS session_total,
+                            SUM(COALESCE(spp.ad_impressions,0)) AS ad_impressions,
+                            SUM(COALESCE(spp.ad_clicks,0)) AS ad_clicks,
+                            SUM(COALESCE(spp.ad_orders,0)) AS ad_orders,
+                            SUM(COALESCE(spp.ad_spend,0)) AS ad_spend,
+                            SUM(COALESCE(spp.ad_sales_amount,0)) AS ad_sales_amount,
+                            SUM(COALESCE(spp.refund_amount,0)) AS refund_amount,
+                            AVG(spp.sub_category_rank) AS sub_category_rank_avg
+                        FROM sales_product_performances spp
+                        WHERE spp.record_date >= %s AND spp.record_date <= %s
+                        {id_filter_sql}
+                        GROUP BY spp.sales_product_id
+                        """,
+                        tuple([ms.strftime('%Y-%m-%d'), me.strftime('%Y-%m-%d'), year_month, ms.strftime('%Y-%m-%d'), me.strftime('%Y-%m-%d')] + id_params),
+                    )
+                    conn.commit()
+                    _after_agg_commit('month', ms.strftime('%Y-%m-%d'))
 
-        try:
-            conn.commit()
-        except Exception:
-            pass
+        # per-chunk commits done above
 
     def handle_sales_product_performance_api(self, environ, method, start_response):
         try:
@@ -5578,6 +5675,19 @@ class SalesProductMixin:
                     pass
                 return os.path.join(progress_dir, f'sales_product_performance_{tid}.json')
 
+            _progress_lock_registry_guard = threading.Lock()
+            _progress_locks_by_tid = {}
+
+            def _progress_lock_for(tid):
+                if not tid:
+                    return None
+                with _progress_lock_registry_guard:
+                    lk = _progress_locks_by_tid.get(tid)
+                    if lk is None:
+                        lk = threading.Lock()
+                        _progress_locks_by_tid[tid] = lk
+                    return lk
+
             def _temp_upload_path(token):
                 temp_dir = os.path.join(tempfile.gettempdir(), 'sitjoy_import_temp')
                 try:
@@ -5586,15 +5696,32 @@ class SalesProductMixin:
                     pass
                 return os.path.join(temp_dir, f'spp_{token}.bin')
 
-            def _write_progress(tid, payload):
+            def _write_progress(tid, payload, merge=False):
                 if not tid:
                     return
                 path = _progress_file_path(tid)
                 tmp_path = path + '.tmp'
+                lk = _progress_lock_for(tid) or threading.Lock()
                 try:
-                    with open(tmp_path, 'w', encoding='utf-8') as f:
-                        json.dump(payload, f, ensure_ascii=False)
-                    os.replace(tmp_path, path)
+                    with lk:
+                        if merge and isinstance(payload, dict):
+                            base = {}
+                            if os.path.exists(path):
+                                try:
+                                    with open(path, 'r', encoding='utf-8') as f:
+                                        base = json.load(f)
+                                except Exception:
+                                    base = {}
+                            if not isinstance(base, dict):
+                                base = {}
+                            merged = dict(base)
+                            merged.update(payload)
+                            payload = merged
+                        if isinstance(payload, dict):
+                            payload.setdefault('ts', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                        with open(tmp_path, 'w', encoding='utf-8') as f:
+                            json.dump(payload, f, ensure_ascii=False)
+                        os.replace(tmp_path, path)
                 except Exception:
                     pass
 
@@ -5604,9 +5731,13 @@ class SalesProductMixin:
                 path = _progress_file_path(tid)
                 if not os.path.exists(path):
                     return None
+                lk = _progress_lock_for(tid) or threading.Lock()
                 try:
-                    with open(path, 'r', encoding='utf-8') as f:
-                        return json.load(f)
+                    with lk:
+                        if not os.path.exists(path):
+                            return None
+                        with open(path, 'r', encoding='utf-8') as f:
+                            return json.load(f)
                 except Exception:
                     return None
 
@@ -5859,14 +5990,28 @@ class SalesProductMixin:
                 'processed_rows': 0,
                 'total_rows': total_rows_hint,
                 'created': 0,
+                'phase': 'start',
                 'message': '开始处理...'
             })
 
             min_record_date = None
             max_record_date = None
+            touched_agg_ids = set()
+            agg_refresh_warning = None
 
-            with self._get_db_connection() as conn:
+            # 大批量 executemany 在 NAS/弱 IO 下常超过默认连接 12s 读写超时，易 2013；导入整段用长连接
+            with self._get_db_connection_long(600, 600, 10) as conn:
                 with conn.cursor() as cur:
+                    _write_progress(safe_task_id, {
+                        'status': 'success',
+                        'task_id': safe_task_id,
+                        'state': 'running',
+                        'phase': 'loading_sku_map',
+                        'processed_rows': 0,
+                        'total_rows': total_rows_hint,
+                        'created': 0,
+                        'message': '正在加载SKU映射（sales_products）...'
+                    })
                     # 一次性加载SKU/ASIN映射，避免双遍Excel扫描导致总时长翻倍
                     sku_map = {}
                     asin_map = {}
@@ -5879,10 +6024,40 @@ class SalesProductMixin:
                             sku_map[sku] = rid
                         if rid and child_code:
                             asin_map[child_code] = rid
-                    
+                    _write_progress(safe_task_id, {
+                        'status': 'success',
+                        'task_id': safe_task_id,
+                        'state': 'running',
+                        'phase': 'loading_sku_map_done',
+                        'processed_rows': 0,
+                        'total_rows': total_rows_hint,
+                        'created': 0,
+                        'message': f'SKU映射加载完成：sku={len(sku_map)}，asin={len(asin_map)}'
+                    })
+
+                    def _resolve_sales_product_id_for_row(raw_identifier):
+                        """先整串匹配 platform_sku / child_code；失败则按中英文逗号等切分后逐段匹配。"""
+                        text = str(raw_identifier or '').strip()
+                        if not text:
+                            return None
+                        low = text.lower()
+                        pid = sku_map.get(low) or asin_map.get(low)
+                        if pid:
+                            return pid
+                        for seg in re.split(r'[,，;；]+', text):
+                            t = seg.strip().lower()
+                            if not t:
+                                continue
+                            pid = sku_map.get(t) or asin_map.get(t)
+                            if pid:
+                                return pid
+                        return None
+
                     # 初始化批处理变量
                     batch_rows = []
-                    batch_size = 300
+                    # 批量写入：增大批次减少 roundtrip，提升导入速度
+                    batch_size = 2000
+                    flush_chunk_size = 400  # 单次 executemany 过大易导致长时间无心跳/超时
                     upsert_sql = (
                         "INSERT INTO sales_product_performances "
                         "(sales_product_id,record_date,sales_qty,net_sales_amount,order_qty,session_total,"
@@ -5906,11 +6081,32 @@ class SalesProductMixin:
                         if not batch_rows:
                             return 0
                         try:
-                            cur.executemany(upsert_sql, batch_rows)
-                            conn.commit()
-                            return len(batch_rows)
+                            total = len(batch_rows)
+                            written = 0
+                            # 分片写入：避免 executemany 单次执行过久，进度 ts 长时间不更新
+                            for i in range(0, total, flush_chunk_size):
+                                chunk = batch_rows[i:i + flush_chunk_size]
+                                _write_progress(safe_task_id, {
+                                    'status': 'success',
+                                    'task_id': safe_task_id,
+                                    'state': 'running',
+                                    'phase': 'writing',
+                                    'processed_rows': row_count,
+                                    'total_rows': total_rows_hint,
+                                    'created': created,
+                                    'upserted': upserted,
+                                    'message': f'正在写入数据库（批量分片 {min(i + len(chunk), total)}/{total}）...'
+                                }, merge=True)
+                                cur.executemany(upsert_sql, chunk)
+                                written += len(chunk)
+                                # 小步提交：降低单事务持锁时长，也让长任务更“有心跳”
+                                conn.commit()
+                            return written
                         except Exception as e:
-                            conn.rollback()
+                            try:
+                                conn.rollback()
+                            except Exception:
+                                pass
                             raise RuntimeError(f"批量写入失败: {str(e)[:180]}")
                         finally:
                             batch_rows.clear()
@@ -5919,6 +6115,19 @@ class SalesProductMixin:
                     process_limit = 100 if check_only else 999999
                     processed_count = 0
                     row_count = 0
+                    last_progress_heartbeat = time.time()
+                    fatal_write_error = None
+
+                    _write_progress(safe_task_id, {
+                        'status': 'success',
+                        'task_id': safe_task_id,
+                        'state': 'running',
+                        'phase': 'iter_rows',
+                        'processed_rows': 0,
+                        'total_rows': total_rows_hint,
+                        'created': 0,
+                        'message': '开始逐行读取并写入数据库...'
+                    })
 
                     # 使用iter_rows避免遍历max_row导致的超时问题
                     for row in ws.iter_rows(min_row=2, values_only=True):
@@ -5941,12 +6150,10 @@ class SalesProductMixin:
                                 continue
 
                             low_identifier = identifier.lower()
-                            if any(x in low_identifier for x in ('示例', 'sample', 'demo', 'template', '请删除')):
+                            if any(x in low_identifier for x in ('示例', '请删除')):
                                 skipped_template_sample += 1
                                 continue
-                            sales_product_id = sku_map.get(low_identifier)
-                            if not sales_product_id:
-                                sales_product_id = asin_map.get(low_identifier)
+                            sales_product_id = _resolve_sales_product_id_for_row(identifier)
 
                             # SKU无法匹配时，直接跳过该行（不计入errors，不中断流程）
                             if not sales_product_id:
@@ -5968,11 +6175,6 @@ class SalesProductMixin:
                             except Exception:
                                 pass
 
-                            # 兼容历史模板样例行保护（避免误导入示例数据）
-                            if record_date == '2026-04-07':
-                                skipped_template_sample += 1
-                                continue
-
                             # 预检模式：只计算统计，不入库
                             if check_only:
                                 created += 1
@@ -5993,38 +6195,182 @@ class SalesProductMixin:
                                     parse_rank(get_cell(row, 'sub_category_rank')),
                                 ))
                                 created += 1
+                                try:
+                                    touched_agg_ids.add(int(sales_product_id))
+                                except Exception:
+                                    pass
 
                                 # 达到batch_size则执行
                                 if len(batch_rows) >= batch_size:
-                                    upserted += flush_batch_data()
+                                    try:
+                                        upserted += flush_batch_data()
+                                        # flush_batch_data 内已分片 commit，这里仅兜底
+                                        conn.commit()
+                                    except Exception as werr:
+                                        fatal_write_error = str(werr)[:200]
+                                        raise
                         except Exception as batch_err:
+                            # 写库失败属于致命错误：继续跑会导致“写了一半却返回成功”
+                            if (not check_only) and ('批量写入失败' in str(batch_err) or 'Lost connection' in str(batch_err) or 'timed out' in str(batch_err)):
+                                fatal_write_error = fatal_write_error or str(batch_err)[:200]
+                                _write_progress(safe_task_id, {
+                                    'status': 'error',
+                                    'task_id': safe_task_id,
+                                    'state': 'error',
+                                    'phase': 'writing_error',
+                                    'processed_rows': row_count,
+                                    'total_rows': total_rows_hint,
+                                    'created': created,
+                                    'upserted': upserted,
+                                    'message': f'写入数据库失败：{fatal_write_error}'
+                                }, merge=True)
+                                break
                             errors.append(f"第{row_count+1}行处理失败: {str(batch_err)[:100]}")
+                        if fatal_write_error:
+                            break
 
-                        if row_count % 50 == 0:
+                        if row_count % 10 == 0:
                             _write_progress(safe_task_id, {
                                 'status': 'success',
                                 'task_id': safe_task_id,
                                 'state': 'running',
+                                'phase': 'writing',
                                 'processed_rows': row_count,
                                 'total_rows': total_rows_hint,
                                 'created': created,
                                 'message': f'正在处理第 {row_count} 行'
                             })
+                            last_progress_heartbeat = time.time()
+                        else:
+                            # 即使行号没到 10 的倍数，也定期刷新 ts，避免前端误判卡死
+                            now_hb = time.time()
+                            if (now_hb - last_progress_heartbeat) >= 2.5:
+                                _write_progress(safe_task_id, {
+                                    'status': 'success',
+                                    'task_id': safe_task_id,
+                                    'state': 'running',
+                                    'phase': 'writing',
+                                    'processed_rows': row_count,
+                                    'total_rows': total_rows_hint,
+                                    'created': created,
+                                    'message': f'正在处理第 {row_count} 行'
+                                }, merge=True)
+                                last_progress_heartbeat = now_hb
 
                     # 导入完成后，flush最后的batch数据
                     if not check_only:
-                        upserted += flush_batch_data()
-                        conn.commit()  # 最终确保commit
-                        # 导入成功后：刷新周/月聚合快照（方案A）
-                        if min_record_date and max_record_date:
+                        if not fatal_write_error:
                             try:
-                                self._refresh_sales_perf_agg_range(
-                                    conn,
-                                    min_record_date.strftime('%Y-%m-%d'),
-                                    max_record_date.strftime('%Y-%m-%d')
-                                )
+                                upserted += flush_batch_data()
+                                # flush_batch_data 内已分片 commit，这里仅兜底再 commit 一次
+                                conn.commit()
+                            except Exception as werr2:
+                                fatal_write_error = str(werr2)[:200]
+
+                        if fatal_write_error:
+                            msg = f'写入数据库失败：{fatal_write_error}'
+                            _write_progress(safe_task_id, {
+                                'status': 'error',
+                                'task_id': safe_task_id,
+                                'state': 'error',
+                                'phase': 'writing_error',
+                                'processed_rows': row_count,
+                                'total_rows': total_rows_hint,
+                                'created': created,
+                                'upserted': upserted,
+                                'message': msg,
+                                'errors': errors[:100],
+                            }, merge=True)
+                            return self.send_json({
+                                'status': 'error',
+                                'task_id': safe_task_id,
+                                'message': msg,
+                                'errors': errors[:100],
+                            }, start_response)
+
+            # 周/月聚合耗时可远超网关/反代超时，长时间 phase=agg_refresh 易导致轮询 504。
+            # 主流程在明细提交后立即 state=success；聚合放到后台线程，进度文件用 merge 增量更新。
+            needs_agg_bg = bool((not check_only) and min_record_date and max_record_date and touched_agg_ids)
+            agg_bg_fn = None  # 后台聚合线程入口（非 None 时在写入最终进度后启动）
+            if needs_agg_bg:
+                _agg_d0 = min_record_date.strftime('%Y-%m-%d')
+                _agg_d1 = max_record_date.strftime('%Y-%m-%d')
+                _agg_id_set = set(touched_agg_ids)
+                # 后台 merge 时必须反复带上最终统计快照，覆盖进度文件里可能过期的字段（部分更新/并发读）
+                _agg_stat_fields = {
+                    'processed_rows': row_count,
+                    'total_rows': total_rows_hint,
+                    'created': created,
+                    'updated': updated,
+                    'unchanged': unchanged,
+                    'upserted': upserted,
+                    'skipped_empty_identifier': skipped_empty_identifier,
+                    'skipped_unmatched_sku': skipped_unmatched_sku,
+                    'skipped_invalid_date': skipped_invalid_date,
+                    'skipped_template_sample': skipped_template_sample,
+                    'errors': list(errors[:100]),
+                }
+
+                def _run_sales_perf_agg_background():
+                    tid = safe_task_id
+
+                    def _agg_progress_overlay(extra):
+                        pl = dict(_agg_stat_fields)
+                        pl['status'] = 'success'
+                        pl['task_id'] = tid
+                        pl['state'] = 'success'
+                        pl.update(extra or {})
+                        _write_progress(tid, pl, merge=True)
+
+                    try:
+                        def _on_agg_progress(info):
+                            try:
+                                st = int(info.get('step') or 0)
+                                tot = int(info.get('total') or 1)
+                                seg = str(info.get('segment') or '')
+                                pk = str(info.get('period_key') or '')
+                                lab = '周' if seg == 'week' else '月'
+                                _agg_progress_overlay({
+                                    'phase': 'agg_refresh',
+                                    'agg_refresh_status': 'running',
+                                    'agg_refresh_step': st,
+                                    'agg_refresh_total': tot,
+                                    'message': f'明细已入库。后台刷新周/月聚合：{lab} {pk}（{st}/{tot}）',
+                                })
                             except Exception:
                                 pass
+
+                        with self._get_db_connection_long() as agg_conn:
+                            self._refresh_sales_perf_agg_range(
+                                agg_conn,
+                                _agg_d0,
+                                _agg_d1,
+                                sales_product_ids=_agg_id_set,
+                                progress_hook=_on_agg_progress,
+                            )
+                        c0 = int(_agg_stat_fields.get('created') or 0)
+                        u0 = int(_agg_stat_fields.get('upserted') or 0)
+                        _agg_progress_overlay({
+                            'phase': 'done',
+                            'agg_refresh_status': 'complete',
+                            'agg_refresh_background': False,
+                            'agg_refresh_step': None,
+                            'agg_refresh_total': None,
+                            'message': f'处理完成（周/月聚合已刷新），匹配 {c0} 条，写入 {u0} 条',
+                        })
+                    except Exception as _e:
+                        w = f'周/月聚合后台刷新未完成：{str(_e)[:200]}（日明细已在库；周/月看板可稍后再查）'
+                        c0 = int(_agg_stat_fields.get('created') or 0)
+                        u0 = int(_agg_stat_fields.get('upserted') or 0)
+                        _agg_progress_overlay({
+                            'phase': 'done',
+                            'agg_refresh_status': 'error',
+                            'agg_refresh_background': False,
+                            'agg_refresh_warning': w,
+                            'message': f'处理完成，匹配 {c0} 条，写入 {u0} 条；{w}',
+                        })
+
+                agg_bg_fn = _run_sales_perf_agg_background
 
             if not check_only and upserted <= 0:
                 msg = (
@@ -6059,10 +6405,17 @@ class SalesProductMixin:
                     'errors': errors[:100]
                 }, start_response)
 
-            _write_progress(safe_task_id, {
+            done_msg = f'处理完成，匹配 {created} 条，写入 {upserted} 条'
+            if needs_agg_bg:
+                done_msg = f'{done_msg}；周/月聚合正在后台刷新（完成后周/月看板将更新）'
+            if agg_refresh_warning:
+                done_msg = f"{done_msg}；{agg_refresh_warning}"
+
+            done_payload = {
                 'status': 'success',
                 'task_id': safe_task_id,
                 'state': 'success',
+                'phase': 'done',
                 'processed_rows': row_count,
                 'total_rows': total_rows_hint,
                 'created': created,
@@ -6072,10 +6425,18 @@ class SalesProductMixin:
                 'skipped_invalid_date': skipped_invalid_date,
                 'skipped_template_sample': skipped_template_sample,
                 'errors': errors[:100],
-                'message': f'处理完成，匹配 {created} 条，写入 {upserted} 条'
-            })
+                'message': done_msg,
+            }
+            if agg_refresh_warning:
+                done_payload['agg_refresh_warning'] = agg_refresh_warning
+            if needs_agg_bg:
+                done_payload['agg_refresh_status'] = 'running'
+                done_payload['agg_refresh_background'] = True
+            _write_progress(safe_task_id, done_payload)
+            if agg_bg_fn:
+                threading.Thread(target=agg_bg_fn, daemon=True).start()
 
-            return self.send_json({
+            resp = {
                 'status': 'success',
                 'task_id': safe_task_id,
                 'check_only': check_only,
@@ -6092,8 +6453,18 @@ class SalesProductMixin:
                 'message': (
                     f"成功处理：匹配{created}条，写入{upserted}条，"
                     f"未匹配SKU{skipped_unmatched_sku}条，示例行{skipped_template_sample}条"
-                ) if not check_only else f"预检完成，预计可识别{created}条数据"
-            }, start_response)
+                ) if not check_only else f"预检完成，预计可识别{created}条数据",
+            }
+            if agg_refresh_warning:
+                resp['agg_refresh_warning'] = agg_refresh_warning
+                if not check_only:
+                    resp['message'] = f"{resp['message']}；{agg_refresh_warning}"
+            if needs_agg_bg:
+                resp['agg_refresh_status'] = 'running'
+                resp['agg_refresh_background'] = True
+                if not check_only:
+                    resp['message'] = f"{resp['message']}；周/月聚合后台刷新中"
+            return self.send_json(resp, start_response)
         except Exception as e:
             import traceback
             try:

@@ -289,6 +289,7 @@ class LogisticsInTransitMixin:
                 item_id = self._parse_int(query_params.get('id', [''])[0])
                 keyword = (query_params.get('q', [''])[0] or '').strip()
                 sku_keyword = (query_params.get('sku', [''])[0] or '').strip()
+                color_keyword = (query_params.get('color', [''])[0] or '').strip()
                 page = self._parse_int(query_params.get('page', ['1'])[0]) or 1
                 page_size = self._parse_int(query_params.get('page_size', ['50'])[0]) or 50
                 page = max(1, page)
@@ -381,6 +382,21 @@ class LogisticsInTransitMixin:
                                 """
                             )
                             params.append(like_sku)
+                        if color_keyword:
+                            like_color = f"%{color_keyword}%"
+                            filters.append(
+                                """
+                                EXISTS (
+                                    SELECT 1
+                                    FROM logistics_in_transit_items li3
+                                    JOIN order_products op3 ON op3.id = li3.order_product_id
+                                    LEFT JOIN fabric_materials fm3 ON fm3.id = op3.fabric_id
+                                    WHERE li3.transit_id = t.id
+                                      AND COALESCE(fm3.representative_color, '') LIKE %s
+                                )
+                                """
+                            )
+                            params.append(like_color)
                         where_sql = (' WHERE ' + ' AND '.join(filters)) if filters else ''
 
                         total = None

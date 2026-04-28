@@ -303,7 +303,6 @@
             justify-content: space-between;
             gap: 0.55rem;
             flex-wrap: wrap;
-            margin-bottom: 0.28rem;
         }
         .perf-chart-granularity {
             display: inline-flex;
@@ -460,11 +459,6 @@
         .perf-chart-detail-empty {
             color: var(--morandi-slate);
             font-size: 0.86rem;
-        }
-        .perf-event-click-tip {
-            margin-top: 0.35rem;
-            color: var(--morandi-slate);
-            font-size: 0.82rem;
         }
         .perf-chart-footer {
             margin-top: 0.45rem;
@@ -875,7 +869,10 @@
 
                 <div class="perf-panel">
                     <div class="perf-chart-head">
-                        <div class="perf-panel-caption" id="chartTitle">按日趋势</div>
+                        <div style="display:flex; align-items:center; gap:0.6rem;">
+                            <div class="perf-panel-caption" id="chartTitle">按日趋势</div>
+                            <span class="help-dot" data-tip="鼠标移动会自动吸附到最近日期，点击可展开或收起图表明细。"></span>
+                        </div>
                         <div class="perf-chart-granularity">
                             <span>周期</span>
                             <select id="chartGranularity" data-universal-no-search="1">
@@ -891,7 +888,6 @@
                         <div class="perf-chart-hover-line" id="chartHoverLine"></div>
                         <div class="perf-event-tooltip" id="eventTooltip"></div>
                     </div>
-                    <div class="perf-event-click-tip">提示：鼠标移动会自动吸附到最近日期，点击可展开或收起图表明细。</div>
                     <div class="perf-chart-detail" id="chartDetailPanel"></div>
                 </div>
 
@@ -2249,7 +2245,12 @@
                 clearInterval(uploadProgressPollingTimer);
                 uploadProgressPollingTimer = null;
             }
-            uploadProgressPollingTimer = setInterval(async () => {
+            let failCount = 0;
+            let pollDelayMs = 700;
+            let lastTs = '';
+            let sameTsCount = 0;
+
+            async function pollOnce() {
                 try {
                     const data = await fetchJsonSafe(`/api/sales-product-performance-import?mode=progress&task_id=${encodeURIComponent(taskId)}`, {
                         method: 'GET',
@@ -2258,43 +2259,94 @@
                             'Accept': 'application/json',
                             'X-Requested-With': 'XMLHttpRequest'
                         }
-                    });
+                    }, 5500);
                     const total = Number(data.total_rows || 0);
                     const done = Number(data.processed_rows || 0);
                     const percent = total > 0 ? Math.floor((done / total) * 100) : 0;
                     const state = String(data.state || 'running');
-                    const label = total > 0
-                        ? `正在处理数据... ${done}/${total}`
-                        : `正在处理数据... 已处理 ${done} 行`;
-                    showUploadProgress(label, Math.max(1, Math.min(99, percent)));
+                    const msg = String(data.message || '').trim();
+                    const ts = String(data.ts || '').trim();
+
+                    failCount = 0;
+                    pollDelayMs = 700;
+
+                    if (ts && ts === lastTs) sameTsCount += 1;
+                    else sameTsCount = 0;
+                    lastTs = ts || lastTs;
+
+                    const label = msg
+                        ? msg
+                        : (total > 0 ? `正在处理数据... ${done}/${total}` : `正在处理数据... 已处理 ${done} 行`);
+                    showUploadProgress(ts ? `${label}（${ts}）` : label, Math.max(1, Math.min(99, percent)));
+
+                    // 若长时间 ts 不变，主动提示但继续重试（有些阶段会很慢）
+                    if (sameTsCount === 25) { // ~25*0.7s ≈ 17s
+                        window.showAppToast && window.showAppToast('进度暂未刷新，正在自动重试…', true, 2200);
+                    }
+
                     if (state === 'success') {
                         showUploadProgress('处理完成，正在返回结果...', 100);
-                        clearInterval(uploadProgressPollingTimer);
-                        uploadProgressPollingTimer = null;
-                    } else if (state === 'error') {
-                        clearInterval(uploadProgressPollingTimer);
-                        uploadProgressPollingTimer = null;
+                        return false;
                     }
+                    if (state === 'error') {
+                        return false;
+                    }
+                    return true;
                 } catch (e) {
-                    // 轮询失败不打断主流程
+                    // 504/HTML 等“非正常响应”不终止：持续重试并做退避
+                    failCount += 1;
+                    pollDelayMs = Math.min(6000, Math.floor(pollDelayMs * 1.6));
+                    if (failCount === 3) {
+                        window.showAppToast && window.showAppToast('网络/网关异常，正在自动重试获取进度…', true, 2600);
+                    }
+                    showUploadProgress(`进度获取失败，${Math.floor(pollDelayMs / 1000)}秒后重试…`, 8);
+                    return true;
                 }
-            }, 700);
+            }
+
+            async function loop() {
+                while (true) {
+                    const shouldContinue = await pollOnce();
+                    if (!shouldContinue) break;
+                    await new Promise(r => setTimeout(r, pollDelayMs));
+                }
+            }
+
+            uploadProgressPollingTimer = setInterval(() => {}, 9999999);
+            loop().finally(() => {
+                if (uploadProgressPollingTimer) {
+                    clearInterval(uploadProgressPollingTimer);
+                    uploadProgressPollingTimer = null;
+                }
+            });
         }
 
         async function waitImportTaskDone(taskId) {
-            const deadline = Date.now() + 1000 * 60 * 30;
+            let deadline = Date.now() + 1000 * 60 * 30;
             while (Date.now() < deadline) {
-                const data = await fetchJsonSafe(`/api/sales-product-performance-import?mode=progress&task_id=${encodeURIComponent(taskId)}`, {
-                    method: 'GET',
-                    credentials: 'include',
-                    headers: {
-                        'Accept': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                });
+                let data = null;
+                try {
+                    data = await fetchJsonSafe(`/api/sales-product-performance-import?mode=progress&task_id=${encodeURIComponent(taskId)}`, {
+                        method: 'GET',
+                        credentials: 'include',
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    }, 6500);
+                } catch (e) {
+                    // 504/HTML 等情况：继续等待并重试，不把整个导入判失败
+                    await new Promise(r => setTimeout(r, 1300));
+                    continue;
+                }
                 const stateText = String(data.state || '').toLowerCase();
                 if (stateText === 'success') return data;
                 if (stateText === 'error') throw new Error(data.message || '导入失败');
+                // 周/月聚合可能远长于写明细；处于聚合阶段时放宽等待上限，避免误判超时
+                const phase = String(data.phase || '');
+                if (phase === 'agg_refresh' || phase === 'agg_refresh_done' || phase === 'agg_refresh_warn') {
+                    deadline = Math.max(deadline, Date.now() + 1000 * 60 * 90);
+                }
                 await new Promise(r => setTimeout(r, 900));
             }
             throw new Error('导入超时，请稍后重试');
@@ -2315,8 +2367,20 @@
             }, 180);
         }
 
-        async function fetchJsonSafe(url, options) {
-            const r = await fetch(url, options);
+        async function fetchJsonSafe(url, options, timeoutMs) {
+            const controller = new AbortController();
+            const to = window.setTimeout(() => controller.abort(), Math.max(500, Number(timeoutMs || 0) || 0));
+            let r;
+            try {
+                r = await fetch(url, { ...(options || {}), signal: controller.signal });
+            } catch (e) {
+                if (e && (e.name === 'AbortError' || String(e).includes('AbortError'))) {
+                    throw new Error('请求超时（已中止）');
+                }
+                throw e;
+            } finally {
+                window.clearTimeout(to);
+            }
             const text = await r.text();
             try {
                 return JSON.parse(text);
@@ -2674,10 +2738,14 @@
                     'Accept': 'application/json',
                     'X-Requested-With': 'XMLHttpRequest'
                 }
-            }).then(data => {
+            }, 25000).then(data => {
                 if (data.status !== 'success') {
                     hideUploadProgress();
-                    showPerfDialog({ title: '导入失败', message: data.message || '导入失败', errors: data.errors || [] });
+                    const failMsg = data.message || '导入失败';
+                    window.showAppToast && window.showAppToast(`导入失败：${failMsg}`, true, 4200);
+                    if ((data.errors || []).length) {
+                        showPerfDialog({ title: '导入失败', message: failMsg, errors: data.errors || [] });
+                    }
                     return;
                 }
                 if (data.async) {
@@ -2688,24 +2756,40 @@
                         const skippedId = Number(finalData.skipped_empty_identifier || 0);
                         const skippedDate = Number(finalData.skipped_invalid_date || 0);
                         const skippedSample = Number(finalData.skipped_template_sample || 0);
-                        showUploadToast(`导入成功：写入 ${upserted} 条`, 100);
-                        showPerfDialog({
-                            title: '导入完成',
-                            message: `导入完成：匹配 ${finalData.created || 0} 条，实际写入(新增或更新) ${upserted} 条，未匹配SKU ${skippedSku} 条，空标识 ${skippedId} 条，日期无效 ${skippedDate} 条，示例行跳过 ${skippedSample} 条，失败 ${(finalData.errors || []).length} 条`,
-                            errors: finalData.errors || []
-                        });
+                        const aggWarn = String(finalData.agg_refresh_warning || '').trim();
+                        const bgAgg = !!(finalData.agg_refresh_background || finalData.agg_refresh_status === 'running');
+                        const errList = finalData.errors || [];
+                        hideUploadProgress();
+                        const summaryLine = `匹配 ${Number(finalData.created || 0)} 条，写入 ${upserted} 条，未匹配SKU ${skippedSku} 条，空标识 ${skippedId} 条，日期无效 ${skippedDate} 条，示例行跳过 ${skippedSample} 条，失败 ${errList.length} 条`;
+                        const okLine = aggWarn
+                            ? `导入完成：${summaryLine}（周/月聚合未完全刷新）`
+                            : (bgAgg
+                                ? `导入完成：${summaryLine}（周/月聚合后台刷新中）`
+                                : `导入完成：${summaryLine}`);
+                        window.showAppToast && window.showAppToast(okLine, false, aggWarn ? 6200 : (bgAgg ? 5200 : 4200));
+                        if (errList.length || aggWarn) {
+                            showPerfDialog({
+                                title: '导入完成',
+                                message: `${summaryLine}${aggWarn ? `\n\n${aggWarn}` : ''}`,
+                                errors: errList
+                            });
+                        }
                         loadSalesProductPerformanceList(1);
                         if (state.dashboardQueried) loadDashboard();
                     }).catch(err => {
                         hideUploadProgress();
-                        showPerfDialog({ title: '导入失败', message: '导入失败: ' + err });
+                        const msg = (err && err.message) ? String(err.message) : String(err);
+                        window.showAppToast && window.showAppToast(`导入失败：${msg}`, true, 4800);
+                        showPerfDialog({ title: '导入失败', message: '导入失败: ' + msg });
                     });
                     return;
                 }
                 hideUploadProgress();
             }).catch(err => {
                 hideUploadProgress();
-                showPerfDialog({ title: '导入失败', message: '导入失败: ' + err });
+                const msg = (err && err.message) ? String(err.message) : String(err);
+                window.showAppToast && window.showAppToast(`导入失败：${msg}`, true, 4800);
+                showPerfDialog({ title: '导入失败', message: '导入失败: ' + msg });
             });
         }
 
@@ -2724,9 +2808,10 @@
                     'Accept': 'application/json',
                     'X-Requested-With': 'XMLHttpRequest'
                 }
-            }).then(data => {
+            }, 25000).then(data => {
                 hideUploadProgress();
                 if (data.status !== 'success') {
+                    window.showAppToast && window.showAppToast(`预检失败：${data.message || '预检失败'}`, true, 4200);
                     showPerfDialog({ title: '预检失败', message: data.message || '预检失败', errors: data.errors || [] });
                     return;
                 }
@@ -2741,7 +2826,9 @@
                 });
             }).catch(err => {
                 hideUploadProgress();
-                showPerfDialog({ title: '预检失败', message: '预检失败: ' + err });
+                const msg = (err && err.message) ? String(err.message) : String(err);
+                window.showAppToast && window.showAppToast(`预检失败：${msg}`, true, 4800);
+                showPerfDialog({ title: '预检失败', message: '预检失败: ' + msg });
             });
         }
 

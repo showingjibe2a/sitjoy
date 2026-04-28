@@ -321,6 +321,28 @@ class CoreAppMixin:
             write_timeout=12
         )
 
+    def _get_db_connection_long(self, read_timeout=600, write_timeout=600, connect_timeout=10):
+        """
+        用于可能较慢的后台任务（例如大表聚合刷新）。默认连接 read/write_timeout=12 秒，
+        容易触发 MySQL 2013（查询执行中连接被服务端/客户端掐断）。
+        """
+        if not pymysql:
+            raise RuntimeError(f"PyMySQL not available: {_pymysql_import_error}")
+        cfg = self._get_db_config()
+        return pymysql.connect(
+            host=cfg['host'],
+            user=cfg['user'],
+            password=cfg['password'],
+            database=cfg['database'],
+            port=cfg['port'],
+            charset=cfg['charset'],
+            cursorclass=pymysql.cursors.DictCursor,
+            autocommit=True,
+            connect_timeout=int(connect_timeout or 10),
+            read_timeout=int(read_timeout or 600),
+            write_timeout=int(write_timeout or 600),
+        )
+
     def _split_multi_values(self, value):
         if value is None:
             return []
