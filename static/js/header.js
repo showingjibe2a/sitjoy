@@ -313,7 +313,6 @@
         let maxHeight = 0;
         const candidates = [
             '.app-upload-progress-panel.show',
-            '.app-result-panel.show',
             '.pm-batch-float-bar.active',
             '.preview-savebar.active',
         ];
@@ -411,8 +410,15 @@
             window.setTimeout(() => { copyBtn.textContent = '复制'; }, 1200);
         });
 
-        const timeout = Number(duration || 10000);
-        window.setTimeout(removeToast, Math.max(800, timeout));
+        // duration:
+        // - <= 0: sticky（不自动关闭）
+        // - > 0 : 自动关闭
+        const timeout = Number(duration);
+        if(Number.isFinite(timeout) && timeout <= 0){
+            return;
+        }
+        const finalTimeout = Number.isFinite(timeout) ? timeout : 10000;
+        window.setTimeout(removeToast, Math.max(800, finalTimeout));
     }
 
     function parseDownloadFilename(contentDisposition, fallbackName){
@@ -668,54 +674,18 @@
     }
 
     function showAppResultPanel(options){
+        // 已废弃：统一用 toast。错误 toast 不自动关闭（duration=0）。
         const opt = options && typeof options === 'object' ? options : { title: '处理结果', summary: String(options || '') };
-        const title = String(opt.title || '处理结果').trim() || '处理结果';
+        const title = String(opt.title || '处理结果').trim();
         const summary = String(opt.summary || '').trim();
         const details = Array.isArray(opt.details) ? opt.details : [];
         const isError = !!opt.isError;
-
-        let panel = document.getElementById('app-result-panel');
-        if(!panel){
-            panel = document.createElement('div');
-            panel.id = 'app-result-panel';
-            panel.className = 'app-result-panel';
-            panel.innerHTML = [
-                '<div class="app-result-panel-head">',
-                '  <div class="app-result-panel-title"></div>',
-                '  <button type="button" class="app-result-panel-close" aria-label="关闭">×</button>',
-                '</div>',
-                '<div class="app-result-panel-summary"></div>',
-                '<ul class="app-result-panel-list"></ul>'
-            ].join('');
-            document.body.appendChild(panel);
-            const closeBtn = panel.querySelector('.app-result-panel-close');
-            if(closeBtn){
-                closeBtn.addEventListener('click', () => panel.classList.remove('show'));
-            }
-        }
-
-        panel.classList.toggle('error', isError);
-        panel.classList.toggle('success', !isError);
-        const titleEl = panel.querySelector('.app-result-panel-title');
-        const summaryEl = panel.querySelector('.app-result-panel-summary');
-        const listEl = panel.querySelector('.app-result-panel-list');
-
-        if(titleEl) titleEl.textContent = title;
-        if(summaryEl) {
-            summaryEl.textContent = summary || '';
-            summaryEl.style.display = summary ? '' : 'none';
-        }
-        if(listEl){
-            if(details.length){
-                listEl.innerHTML = details.map(item => `<li>${String(item || '')}</li>`).join('');
-                listEl.style.display = '';
-            } else {
-                listEl.innerHTML = '';
-                listEl.style.display = 'none';
-            }
-        }
-
-        panel.classList.add('show');
+        const parts = [];
+        if(title) parts.push(title);
+        if(summary) parts.push(summary);
+        if(details.length) parts.push(details.slice(0, 8).map(x => String(x || '')).join('\n'));
+        const msg = parts.filter(Boolean).join('：').replace(/：\n/g, '\n');
+        showAppToast(msg, isError, isError ? 0 : 4200);
     }
 
     function ensureUploadProgressPanel(){

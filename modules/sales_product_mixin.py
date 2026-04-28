@@ -5708,6 +5708,24 @@ class SalesProductMixin:
                 lk = _progress_lock_for(tid) or threading.Lock()
                 try:
                     with lk:
+                        if isinstance(payload, dict):
+                            # 即便是“覆盖写”（merge=False），也尽量保留诊断/心跳字段，
+                            # 否则心跳线程写入的 hb_* 会被主线程的覆盖写频繁擦掉，导致无法定位卡点。
+                            preserve_keys = (
+                                'hb_ts', 'hb_phase', 'hb_stage', 'hb_processed_rows', 'hb_checkpoint_row',
+                                'advance_ts',
+                            )
+                            if (not merge) and os.path.exists(path):
+                                try:
+                                    with open(path, 'r', encoding='utf-8') as f:
+                                        base_keep = json.load(f)
+                                    if isinstance(base_keep, dict):
+                                        for k in preserve_keys:
+                                            if k not in payload and k in base_keep:
+                                                payload[k] = base_keep.get(k)
+                                except Exception:
+                                    pass
+
                         if merge and isinstance(payload, dict):
                             base = {}
                             if os.path.exists(path):
@@ -5745,6 +5763,71 @@ class SalesProductMixin:
                 except Exception:
                     return None
 
+            def _now_ts_text():
+                return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+            # “真实前进”的标记：用于判断是否真的卡住（而不是仅仅无日志）。
+            def _mark_progress_advance(tid, processed_rows=None, checkpoint_row=None, extra=None):
+                payload = {'advance_ts': _now_ts_text()}
+                if processed_rows is not None:
+                    try:
+                        payload['processed_rows'] = int(processed_rows or 0)
+                    except Exception:
+                        pass
+                if checkpoint_row is not None:
+                    try:
+                        payload['checkpoint_row'] = int(checkpoint_row or 0)
+                    except Exception:
+                        pass
+                if isinstance(extra, dict):
+                    payload.update(extra)
+                _write_progress(tid, payload, merge=True)
+
+            # 心跳线程：即使主线程卡在 DB/IO，也能持续上报“卡在哪个阶段”。
+            hb_state = {
+                'run_id': '',
+                'phase': '',
+                'stage': '',
+                'processed_rows': 0,
+                'checkpoint_row': 0,
+            }
+            hb_stop_flag = {'stop': False}
+
+            def _set_hb(stage=None, phase=None, processed_rows=None, checkpoint_row=None):
+                if stage is not None:
+                    hb_state['stage'] = str(stage or '')
+                if phase is not None:
+                    hb_state['phase'] = str(phase or '')
+                if processed_rows is not None:
+                    try:
+                        hb_state['processed_rows'] = int(processed_rows or 0)
+                    except Exception:
+                        pass
+                if checkpoint_row is not None:
+                    try:
+                        hb_state['checkpoint_row'] = int(checkpoint_row or 0)
+                    except Exception:
+                        pass
+
+            def _heartbeat_worker(tid):
+                while not hb_stop_flag.get('stop'):
+                    try:
+                        live = _read_progress(tid) or {}
+                        st = str(live.get('state') or '').lower()
+                        if st in ('success', 'error'):
+                            break
+                        _write_progress(tid, {
+                            'hb_ts': _now_ts_text(),
+                            'hb_phase': str(hb_state.get('phase') or ''),
+                            'hb_stage': str(hb_state.get('stage') or ''),
+                            'hb_processed_rows': int(hb_state.get('processed_rows') or 0),
+                            'hb_checkpoint_row': int(hb_state.get('checkpoint_row') or 0),
+                            'run_id': str(hb_state.get('run_id') or ''),
+                        }, merge=True)
+                    except Exception:
+                        pass
+                    time.sleep(3.0)
+
             safe_task_id = _safe_task_id(task_id)
 
             if method == 'GET' and mode == 'progress':
@@ -5777,11 +5860,18 @@ class SalesProductMixin:
                 if not force_restart:
                     stale = False
                     try:
-                        ts = str(data.get('ts') or '').strip()
-                        if ts:
-                            last_dt = datetime.strptime(ts, '%Y-%m-%d %H:%M:%S')
-                            if (datetime.now() - last_dt).total_seconds() >= 120:
+                        adv = str(data.get('advance_ts') or '').strip()
+                        if adv:
+                            last_dt = datetime.strptime(adv, '%Y-%m-%d %H:%M:%S')
+                            # 更敏感的自愈：若“真实前进时间”超过 60 秒不更新，认为已卡住
+                            if (datetime.now() - last_dt).total_seconds() >= 60:
                                 stale = True
+                        else:
+                            ts = str(data.get('ts') or '').strip()
+                            if ts:
+                                last_dt = datetime.strptime(ts, '%Y-%m-%d %H:%M:%S')
+                                if (datetime.now() - last_dt).total_seconds() >= 60:
+                                    stale = True
                     except Exception:
                         stale = True
                     if not stale:
@@ -5797,11 +5887,15 @@ class SalesProductMixin:
                     cp = int(data.get('checkpoint_row') or 0)
                 except Exception:
                     cp = 0
-                if cp <= 0:
-                    try:
-                        cp = int(data.get('processed_rows') or 0)
-                    except Exception:
-                        cp = 0
+                # pending_batch_start_row：当前内存批次最早未落库行号。
+                # 重启时应回退到该位置，避免丢失未提交的数据，同时尽量靠后以减少重复耗时。
+                pending_start = 0
+                try:
+                    pending_start = int(data.get('pending_batch_start_row') or 0)
+                except Exception:
+                    pending_start = 0
+                if pending_start > 1:
+                    cp = max(cp, pending_start - 1)
                 if resume_from:
                     try:
                         cp = max(cp, int(resume_from))
@@ -6070,6 +6164,7 @@ class SalesProductMixin:
             skipped_unmatched_sku = 0
             skipped_invalid_date = 0
             skipped_template_sample = 0
+            skipped_all_zero = 0
             upserted = 0
 
             _write_progress(safe_task_id, {
@@ -6082,8 +6177,12 @@ class SalesProductMixin:
                 'phase': 'start',
                 'run_id': worker_run_id,
                 'checkpoint_row': 0,
+                'advance_ts': _now_ts_text(),
                 'message': '开始处理...'
             })
+            hb_state['run_id'] = worker_run_id
+            _set_hb(stage='init', phase='start', processed_rows=0, checkpoint_row=0)
+            threading.Thread(target=_heartbeat_worker, args=(safe_task_id,), daemon=True).start()
 
             min_record_date = None
             max_record_date = None
@@ -6103,6 +6202,7 @@ class SalesProductMixin:
                         'created': 0,
                         'message': '正在加载SKU映射（sales_products）...'
                     })
+                    _set_hb(stage='loading_sku_map', phase='loading_sku_map', processed_rows=0, checkpoint_row=0)
                     # 一次性加载SKU/ASIN映射，避免双遍Excel扫描导致总时长翻倍
                     sku_map = {}
                     asin_map = {}
@@ -6125,6 +6225,7 @@ class SalesProductMixin:
                         'created': 0,
                         'message': f'SKU映射加载完成：sku={len(sku_map)}，asin={len(asin_map)}'
                     })
+                    _mark_progress_advance(safe_task_id, processed_rows=0, checkpoint_row=0, extra={'phase': 'loading_sku_map_done'})
 
                     def _resolve_sales_product_id_for_row(raw_identifier):
                         """先整串匹配 platform_sku / child_code；失败则按中英文逗号等切分后逐段匹配。"""
@@ -6146,7 +6247,6 @@ class SalesProductMixin:
 
                     # 初始化批处理变量
                     batch_rows = []
-                    batch_row_marks = []
                     batch_row_marks = []
                     # 批量写入：增大批次减少 roundtrip，提升导入速度
                     batch_size = 2000
@@ -6206,12 +6306,16 @@ class SalesProductMixin:
                             'run_id': worker_run_id,
                             'checkpoint_row': checkpoint_row,
                         }, merge=True)
+                        _mark_progress_advance(safe_task_id, processed_rows=row_count, checkpoint_row=checkpoint_row)
+                        _set_hb(stage='checkpoint_commit', phase='writing', processed_rows=row_count, checkpoint_row=checkpoint_row)
                     
                     def flush_batch_data():
                         nonlocal cur
                         if not batch_rows:
                             return 0
                         try:
+                            # 在进入写库分片前就切换 hb_stage，避免“message=writing 但 hb_stage 仍停留在 iter_rows”
+                            _set_hb(stage='db_executemany', phase='writing', processed_rows=row_count, checkpoint_row=checkpoint_row)
                             total = len(batch_rows)
                             written = 0
                             # 分片写入：避免 executemany 单次执行过久，进度 ts 长时间不更新
@@ -6219,6 +6323,9 @@ class SalesProductMixin:
                                 chunk = batch_rows[i:i + flush_chunk_size]
                                 chunk_marks = batch_row_marks[i:i + flush_chunk_size]
                                 chunk_checkpoint = int(chunk_marks[-1] or 0) if chunk_marks else checkpoint_row
+                                # 先切换心跳阶段，再写入进度消息，避免出现 message=writing 但 hb_stage 仍是 iter_rows
+                                _set_hb(stage='db_executemany', phase='writing', processed_rows=row_count, checkpoint_row=checkpoint_row)
+                                _mark_progress_advance(safe_task_id, processed_rows=row_count, checkpoint_row=checkpoint_row, extra={'phase': 'writing'})
                                 _write_progress(safe_task_id, {
                                     'status': 'success',
                                     'task_id': safe_task_id,
@@ -6235,6 +6342,7 @@ class SalesProductMixin:
                                     cur.executemany(upsert_sql, chunk)
                                     written += len(chunk)
                                     # 小步提交：降低单事务持锁时长，也让长任务更“有心跳”
+                                    _set_hb(stage='db_commit', phase='writing', processed_rows=row_count, checkpoint_row=checkpoint_row)
                                     conn.commit()
                                     _commit_checkpoint(chunk_checkpoint)
                                 except Exception as chunk_err:
@@ -6262,9 +6370,11 @@ class SalesProductMixin:
                                         'retry_reason': 'retryable_db_error',
                                         'message': f'当前分片写入失败，正在重连后重试（断点 {chunk_checkpoint}/{total_rows_hint}）...'
                                     }, merge=True)
+                                    _set_hb(stage='db_executemany_retry', phase='writing_retry', processed_rows=row_count, checkpoint_row=checkpoint_row)
                                     try:
                                         cur.executemany(upsert_sql, chunk)
                                         written += len(chunk)
+                                        _set_hb(stage='db_commit', phase='writing_retry', processed_rows=row_count, checkpoint_row=checkpoint_row)
                                         conn.commit()
                                         _commit_checkpoint(chunk_checkpoint)
                                     except Exception as retry_err:
@@ -6282,6 +6392,11 @@ class SalesProductMixin:
                             raise RuntimeError(f"批量写入失败: {str(e)[:180]}")
                         finally:
                             batch_rows.clear()
+                            batch_row_marks.clear()
+                            _write_progress(safe_task_id, {
+                                'pending_batch_start_row': 0,
+                                'pending_batch_size': 0,
+                            }, merge=True)
 
                     # 预检模式：只检查前100行用于快速验证；正式模式：处理全部行
                     process_limit = 100 if check_only else 999999
@@ -6321,6 +6436,7 @@ class SalesProductMixin:
                         'created': 0,
                         'message': '开始逐行读取并写入数据库...'
                     })
+                    _set_hb(stage='iter_rows', phase='iter_rows', processed_rows=0, checkpoint_row=0)
 
                     # 使用iter_rows避免遍历max_row导致的超时问题
                     for row in ws.iter_rows(min_row=2, values_only=True):
@@ -6367,6 +6483,36 @@ class SalesProductMixin:
                                 skipped_invalid_date += 1
                                 continue
 
+                            # 对于“指标全为0/空”的行，直接跳过。
+                            # 性能关键：解析数值只做一次（避免 all_zero 判断与 batch_rows.append 重复解析导致 iter_rows 阶段极慢）。
+                            sales_qty = parse_number_flexible(get_cell(row, 'sales_qty'), True)
+                            net_sales_amount = parse_number_flexible(get_cell(row, 'net_sales_amount'), False)
+                            order_qty = parse_number_flexible(get_cell(row, 'order_qty'), True)
+                            session_total = parse_number_flexible(get_cell(row, 'session_total'), True)
+                            ad_impressions = parse_number_flexible(get_cell(row, 'ad_impressions'), True)
+                            ad_clicks = parse_number_flexible(get_cell(row, 'ad_clicks'), True)
+                            ad_orders = parse_number_flexible(get_cell(row, 'ad_orders'), True)
+                            ad_spend = parse_number_flexible(get_cell(row, 'ad_spend'), False)
+                            ad_sales_amount = parse_number_flexible(get_cell(row, 'ad_sales_amount'), False)
+                            refund_amount = parse_number_flexible(get_cell(row, 'refund_amount'), False)
+                            sub_category_rank = parse_rank(get_cell(row, 'sub_category_rank'))
+
+                            if (
+                                (sub_category_rank is None)
+                                and float(sales_qty or 0) == 0.0
+                                and float(net_sales_amount or 0) == 0.0
+                                and float(order_qty or 0) == 0.0
+                                and float(session_total or 0) == 0.0
+                                and float(ad_impressions or 0) == 0.0
+                                and float(ad_clicks or 0) == 0.0
+                                and float(ad_orders or 0) == 0.0
+                                and float(ad_spend or 0) == 0.0
+                                and float(ad_sales_amount or 0) == 0.0
+                                and float(refund_amount or 0) == 0.0
+                            ):
+                                skipped_all_zero += 1
+                                continue
+
                             try:
                                 d_obj = datetime.strptime(record_date, '%Y-%m-%d').date()
                                 if (min_record_date is None) or (d_obj < min_record_date):
@@ -6383,19 +6529,30 @@ class SalesProductMixin:
                                 batch_rows.append((
                                     sales_product_id,
                                     record_date,
-                                    parse_number_flexible(get_cell(row, 'sales_qty'), True),
-                                    parse_number_flexible(get_cell(row, 'net_sales_amount'), False),
-                                    parse_number_flexible(get_cell(row, 'order_qty'), True),
-                                    parse_number_flexible(get_cell(row, 'session_total'), True),
-                                    parse_number_flexible(get_cell(row, 'ad_impressions'), True),
-                                    parse_number_flexible(get_cell(row, 'ad_clicks'), True),
-                                    parse_number_flexible(get_cell(row, 'ad_orders'), True),
-                                    parse_number_flexible(get_cell(row, 'ad_spend'), False),
-                                    parse_number_flexible(get_cell(row, 'ad_sales_amount'), False),
-                                    parse_number_flexible(get_cell(row, 'refund_amount'), False),
-                                    parse_rank(get_cell(row, 'sub_category_rank')),
+                                    sales_qty,
+                                    net_sales_amount,
+                                    order_qty,
+                                    session_total,
+                                    ad_impressions,
+                                    ad_clicks,
+                                    ad_orders,
+                                    ad_spend,
+                                    ad_sales_amount,
+                                    refund_amount,
+                                    sub_category_rank,
                                 ))
                                 batch_row_marks.append(row_count)
+                                if len(batch_rows) == 1:
+                                    # 记录当前内存批次的起始行号，用于重启从更靠后的安全断点恢复
+                                    _write_progress(safe_task_id, {
+                                        'pending_batch_start_row': row_count,
+                                        'pending_batch_size': len(batch_rows),
+                                    }, merge=True)
+                                elif (len(batch_rows) % 200) == 0:
+                                    _write_progress(safe_task_id, {
+                                        'pending_batch_start_row': int(batch_row_marks[0] or row_count),
+                                        'pending_batch_size': len(batch_rows),
+                                    }, merge=True)
                                 created += 1
                                 try:
                                     touched_agg_ids.add(int(sales_product_id))
@@ -6405,6 +6562,7 @@ class SalesProductMixin:
                                 # 达到batch_size则执行
                                 if len(batch_rows) >= batch_size:
                                     try:
+                                        _set_hb(stage='flush_batch', phase='writing', processed_rows=row_count, checkpoint_row=checkpoint_row)
                                         upserted += flush_batch_data()
                                         # flush_batch_data 内已分片 commit，这里仅兜底
                                         conn.commit()
@@ -6437,13 +6595,15 @@ class SalesProductMixin:
                                 'status': 'success',
                                 'task_id': safe_task_id,
                                 'state': 'running',
-                                'phase': 'writing',
+                                'phase': 'iter_rows',
                                 'processed_rows': row_count,
                                 'total_rows': total_rows_hint,
                                 'created': created,
                                 'checkpoint_row': checkpoint_row,
                                 'message': f'正在处理第 {row_count} 行'
                             })
+                            _mark_progress_advance(safe_task_id, processed_rows=row_count, checkpoint_row=checkpoint_row)
+                            _set_hb(stage='iter_rows', phase='iter_rows', processed_rows=row_count, checkpoint_row=checkpoint_row)
                             last_progress_heartbeat = time.time()
                         else:
                             # 即使行号没到 10 的倍数，也定期刷新 ts，避免前端误判卡死
@@ -6453,19 +6613,22 @@ class SalesProductMixin:
                                     'status': 'success',
                                     'task_id': safe_task_id,
                                     'state': 'running',
-                                    'phase': 'writing',
+                                    'phase': 'iter_rows',
                                     'processed_rows': row_count,
                                     'total_rows': total_rows_hint,
                                     'created': created,
                                     'checkpoint_row': checkpoint_row,
                                     'message': f'正在处理第 {row_count} 行'
                                 }, merge=True)
+                                _mark_progress_advance(safe_task_id, processed_rows=row_count, checkpoint_row=checkpoint_row)
+                                _set_hb(stage='iter_rows', phase='iter_rows', processed_rows=row_count, checkpoint_row=checkpoint_row)
                                 last_progress_heartbeat = now_hb
 
                     # 导入完成后，flush最后的batch数据
                     if not check_only:
                         if not fatal_write_error:
                             try:
+                                _set_hb(stage='flush_batch_final', phase='writing', processed_rows=row_count, checkpoint_row=checkpoint_row)
                                 upserted += flush_batch_data()
                                 # flush_batch_data 内已分片 commit，这里仅兜底再 commit 一次
                                 conn.commit()
@@ -6487,6 +6650,7 @@ class SalesProductMixin:
                                 'message': msg,
                                 'errors': errors[:100],
                             }, merge=True)
+                            hb_stop_flag['stop'] = True
                             return self.send_json({
                                 'status': 'error',
                                 'task_id': safe_task_id,
@@ -6496,12 +6660,14 @@ class SalesProductMixin:
 
             # 周/月聚合耗时可远超网关/反代超时，长时间 phase=agg_refresh 易导致轮询 504。
             # 主流程在明细提交后立即 state=success；聚合放到后台线程，进度文件用 merge 增量更新。
-            needs_agg_bg = bool((not check_only) and min_record_date and max_record_date and touched_agg_ids)
+            # 聚合刷新不应依赖“本次导入涉及的SKU集合”是否非空：
+            # - 用户可能只上传了少量SKU/少量天数，但仍希望周/月看板对该日期范围完整可见
+            # - 若只按 touched_agg_ids 刷新，聚合表未初始化的SKU会长期缺失，表现为“周/月缺很多”
+            needs_agg_bg = bool((not check_only) and min_record_date and max_record_date)
             agg_bg_fn = None  # 后台聚合线程入口（非 None 时在写入最终进度后启动）
             if needs_agg_bg:
                 _agg_d0 = min_record_date.strftime('%Y-%m-%d')
                 _agg_d1 = max_record_date.strftime('%Y-%m-%d')
-                _agg_id_set = set(touched_agg_ids)
                 # 后台 merge 时必须反复带上最终统计快照，覆盖进度文件里可能过期的字段（部分更新/并发读）
                 _agg_stat_fields = {
                     'processed_rows': row_count,
@@ -6551,7 +6717,8 @@ class SalesProductMixin:
                                 agg_conn,
                                 _agg_d0,
                                 _agg_d1,
-                                sales_product_ids=_agg_id_set,
+                                # 对该日期范围做全量聚合补齐，避免周/月聚合表缺失导致看板“缺很多”
+                                sales_product_ids=None,
                                 progress_hook=_on_agg_progress,
                             )
                         c0 = int(_agg_stat_fields.get('created') or 0)
@@ -6630,6 +6797,7 @@ class SalesProductMixin:
                 'skipped_unmatched_sku': skipped_unmatched_sku,
                 'skipped_invalid_date': skipped_invalid_date,
                 'skipped_template_sample': skipped_template_sample,
+                'skipped_all_zero': skipped_all_zero,
                 'errors': errors[:100],
                 'message': done_msg,
             }
@@ -6654,6 +6822,7 @@ class SalesProductMixin:
                 'skipped_unmatched_sku': skipped_unmatched_sku,
                 'skipped_invalid_date': skipped_invalid_date,
                 'skipped_template_sample': skipped_template_sample,
+                'skipped_all_zero': skipped_all_zero,
                 'errors': errors,
                 'total_rows': created + updated + unchanged + len(errors),
                 'message': (
@@ -6670,6 +6839,7 @@ class SalesProductMixin:
                 resp['agg_refresh_background'] = True
                 if not check_only:
                     resp['message'] = f"{resp['message']}；周/月聚合后台刷新中"
+            hb_stop_flag['stop'] = True
             return self.send_json(resp, start_response)
         except Exception as e:
             import traceback
@@ -6683,6 +6853,10 @@ class SalesProductMixin:
                     'created': 0,
                     'message': str(e)[:200]
                 })
+            except Exception:
+                pass
+            try:
+                hb_stop_flag['stop'] = True
             except Exception:
                 pass
             error_str = str(e).lower()

@@ -2127,9 +2127,10 @@ button:hover {
 
 .app-upload-progress-panel {
     position: fixed;
-    right: 18px;
+    left: 18px;
+    right: auto;
     bottom: 18px;
-    z-index: 5250;
+    z-index: 4200;
     width: min(420px, calc(100vw - 24px));
     background: #fff;
     border: 1px solid rgba(207, 199, 189, 0.9);
@@ -2190,6 +2191,14 @@ button:hover {
     width: 0;
     background: linear-gradient(135deg, #4a7dd8, #2f6f2f);
     transition: width 0.18s ease;
+}
+
+/* 兼容旧页面的局部上传进度条（.upload-progress / #uploadProgress），避免与右下角弹窗/操作条重叠 */
+.upload-progress,
+#uploadProgress {
+    left: 18px !important;
+    right: auto !important;
+    z-index: 4200 !important;
 }
 
 pre {

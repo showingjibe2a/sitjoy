@@ -396,6 +396,25 @@
             pointer-events: none;
             line-height: 1.42;
         }
+
+        .perf-percent-bar {
+            margin-left: auto;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.55rem;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            color: var(--morandi-slate);
+            font-size: 0.82rem;
+        }
+        .perf-percent-bar .perf-legend-item { color: var(--morandi-slate); }
+        .perf-percent-bar .perf-legend-dot { opacity: 0.9; }
+        .perf-legend-row {
+            display: flex;
+            align-items: center;
+            gap: 0.7rem;
+            flex-wrap: wrap;
+        }
         .perf-chart-detail {
             margin-top: 0.55rem;
             display: none;
@@ -591,11 +610,28 @@
             min-width: 1180px;
         }
         .perf-group-tree-wrap {
-            overflow: auto;
             border: 1px solid rgba(207, 199, 189, 0.76);
             border-radius: 8px;
             background: #fff;
             max-width: 100%;
+        }
+        /* 分组明细仅保留 managed-body-wrap 一层滚动，避免外层滚动导致 sticky 表头不可见 */
+        .perf-group-tree-wrap .pm-table-wrap.is-managed-wrap.pm-managed-body-wrap {
+            overflow: visible;
+        }
+        .perf-group-tree-wrap .pm-table-wrap.is-managed-wrap.pm-managed-body-wrap::-webkit-scrollbar {
+            display: none;
+            height: 0;
+        }
+        .perf-group-tree-wrap .pm-table-wrap.is-managed-wrap.pm-managed-body-wrap {
+            max-height: 640px;
+            overflow: auto;
+        }
+        .perf-group-tree-wrap thead th {
+            position: sticky;
+            top: 0;
+            z-index: 3;
+            background: #f7f4ef;
         }
         .perf-group-parent-row {
             background: #f7f4ef;
@@ -606,22 +642,47 @@
             background: #f1ece4;
         }
         .perf-group-toggle {
-            border: 1px solid var(--morandi-sand);
-            border-radius: 999px;
-            background: #fff;
-            color: var(--morandi-ink);
-            min-width: 28px;
-            height: 24px;
-            padding: 0 8px;
+            border: none;
+            border-radius: 6px;
+            background: transparent;
+            color: var(--morandi-slate);
+            min-width: 18px;
+            height: 18px;
+            padding: 0 4px;
             cursor: pointer;
             font-size: 0.78rem;
             line-height: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            outline: none;
+            box-shadow: none;
         }
-        .perf-group-child-row {
+        .perf-group-toggle:focus,
+        .perf-group-toggle:focus-visible,
+        .perf-group-toggle:active {
+            outline: none;
+            box-shadow: none;
+            border: none;
+        }
+        .perf-group-toggle::before {
+            content: '▸';
+            font-size: 0.95rem;
+            line-height: 1;
+            transform: rotate(0deg);
+            transition: transform 120ms ease;
+            color: var(--morandi-slate);
+        }
+        .perf-group-toggle.open::before {
+            transform: rotate(90deg);
+        }
+        .perf-group-child-row,
+        .perf-group-child-item {
             display: none;
             background: #fff;
         }
-        .perf-group-child-row.open {
+        .perf-group-child-row.open,
+        .perf-group-child-item.open {
             display: table-row;
         }
         .perf-group-child-box {
@@ -882,16 +943,18 @@
                             </select>
                         </div>
                     </div>
-                    <div class="perf-legend" id="chartLegend"></div>
+                    <div class="perf-legend-row">
+                        <div class="perf-legend" id="chartLegend"></div>
+                        <div class="perf-percent-bar" id="percentMetricBar" title="当前图表选择的百分比字段（右轴）"></div>
+                    </div>
                     <div class="perf-chart-wrap" id="chartWrap">
                         <canvas id="perfChart"></canvas>
                         <div class="perf-chart-hover-line" id="chartHoverLine"></div>
                         <div class="perf-event-tooltip" id="eventTooltip"></div>
                     </div>
                     <div class="perf-chart-detail" id="chartDetailPanel"></div>
+                    <div class="perf-panel perf-group" id="groupContainer"></div>
                 </div>
-
-                <div class="perf-panel perf-group" id="groupContainer"></div>
 
             </div>
 
@@ -974,7 +1037,7 @@
                     </div>
                 </div>
             </div>
-            <div id="performanceStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <!-- 统一使用全局 showAppToast / showAppResultPanel；移除旧的预检/导入专用状态条 -->
             </div>
             <div class="pm-modal-actions">
                 <button class="btn-secondary" id="btnPerfModalCancel" type="button">取消</button>
@@ -1018,6 +1081,8 @@
         const state = {
             metrics: [],
             metricOrder: [],
+            chartMetricOrder: [],
+            groupMetricOrder: [],
             metricMap: {},
             chartGranularity: 'day',
             dashboardQueried: false,
@@ -1455,7 +1520,11 @@
                         state.metricOrder = getDefaultMetricOrder();
                         renderMetricCheckboxBar();
                     }
+                    // 分组明细字段仅受“字段显示”影响；图表可单独演进（目前默认保持一致）
+                    state.groupMetricOrder = state.metricOrder.slice();
+                    state.chartMetricOrder = state.metricOrder.slice();
                     saveMetricOrderToStorage();
+                    renderPercentMetricBar();
                     if (state.dashboardQueried) loadDashboard();
                 });
             });
@@ -1494,7 +1563,10 @@
             if (!state.metricOrder.length) {
                 state.metricOrder = getDefaultMetricOrder();
             }
+            state.groupMetricOrder = state.metricOrder.slice();
+            state.chartMetricOrder = state.metricOrder.slice();
             renderMetricCheckboxBar();
+            renderPercentMetricBar();
         }
 
         function buildDashboardQuery() {
@@ -1577,7 +1649,7 @@
         function renderLegend() {
             const host = document.getElementById('chartLegend');
             host.innerHTML = '';
-            state.metricOrder.forEach(k => {
+            (state.chartMetricOrder || state.metricOrder || []).forEach(k => {
                 const m = state.metricMap[k];
                 if (!m) return;
                 const item = document.createElement('span');
@@ -1586,6 +1658,25 @@
                 host.appendChild(item);
             });
             host.insertAdjacentHTML('beforeend', '<span class="perf-legend-item"><span class="perf-legend-dot" style="background:#8f8f8f"></span><span>事件线(虚线)</span></span>');
+        }
+
+        function renderPercentMetricBar() {
+            const host = document.getElementById('percentMetricBar');
+            if (!host) return;
+            const keys = (state.chartMetricOrder || state.metricOrder || []).filter(k => isPercentMetricKey(k));
+            if (!keys.length) {
+                host.innerHTML = '';
+                host.style.display = 'none';
+                return;
+            }
+            host.style.display = '';
+            host.innerHTML = [
+                '<span style="font-weight:700;">百分比字段(右轴)</span>',
+                keys.map(k => {
+                    const m = (state.metricMap || {})[k] || { label: k, color: '#5b6aa8' };
+                    return `<span class="perf-legend-item"><span class="perf-legend-dot" style="background:${m.color || '#5b6aa8'}"></span><span>${m.label || k}</span></span>`;
+                }).join('')
+            ].join('');
         }
 
         function renderChart(chartItems, events) {
@@ -1604,7 +1695,8 @@
             ctx.scale(dpr, dpr);
             ctx.clearRect(0, 0, width, height);
 
-            if (!chartItems || !chartItems.length || !state.metricOrder.length) {
+            const chartKeys = (state.chartMetricOrder || state.metricOrder || []).filter(Boolean);
+            if (!chartItems || !chartItems.length || !chartKeys.length) {
                 ctx.fillStyle = '#7f7a73';
                 ctx.font = '14px sans-serif';
                 ctx.fillText('暂无趋势数据', 24, 42);
@@ -1616,50 +1708,75 @@
                 return;
             }
 
-            const pad = { left: 56, right: 24, top: 18, bottom: 36 };
+            const valueKeys = chartKeys.filter(k => !isPercentMetricKey(k));
+            const percentKeys = chartKeys.filter(k => isPercentMetricKey(k));
+            const hasRightAxis = percentKeys.length > 0;
+            const pad = { left: 56, right: hasRightAxis ? 66 : 24, top: 18, bottom: 36 };
             const innerW = width - pad.left - pad.right;
             const innerH = height - pad.top - pad.bottom;
             const dates = chartItems.map(x => String(x.record_date || '').slice(0, 10));
 
-            const allPercentMetrics = state.metricOrder.length > 0 && state.metricOrder.every(k => isPercentMetricKey(k));
-            let minV = Infinity;
-            let maxV = -Infinity;
-            state.metricOrder.forEach(k => {
+            const yTick = 5;
+            // left(value) axis scale
+            let vMin = Infinity, vMax = -Infinity;
+            (valueKeys.length ? valueKeys : percentKeys).forEach(k => {
                 chartItems.forEach(row => {
                     const v = resolveMetricValue(row, k);
                     if (!Number.isFinite(v)) return;
-                    if (v < minV) minV = v;
-                    if (v > maxV) maxV = v;
+                    if (v < vMin) vMin = v;
+                    if (v > vMax) vMax = v;
                 });
             });
-            if (!Number.isFinite(minV) || !Number.isFinite(maxV)) {
-                minV = 0;
-                maxV = 1;
+            if (!Number.isFinite(vMin) || !Number.isFinite(vMax)) { vMin = 0; vMax = 1; }
+            const leftAsPercent = valueKeys.length === 0 && percentKeys.length > 0;
+            if (leftAsPercent) {
+                vMin = Math.max(0, vMin);
+                vMax = Math.max(vMax, 0.01);
             }
-            if (allPercentMetrics) {
-                minV = Math.max(0, minV);
-                maxV = Math.max(maxV, 0.01);
+            const leftScale = buildNiceScale(vMin, vMax, yTick + 1);
+            vMin = leftScale.min; vMax = leftScale.max;
+
+            // right(percent) axis scale
+            let pMin = 0, pMax = 0.01;
+            if (percentKeys.length) {
+                pMin = Infinity; pMax = -Infinity;
+                percentKeys.forEach(k => {
+                    chartItems.forEach(row => {
+                        const v = resolveMetricValue(row, k);
+                        if (!Number.isFinite(v)) return;
+                        if (v < pMin) pMin = v;
+                        if (v > pMax) pMax = v;
+                    });
+                });
+                if (!Number.isFinite(pMin) || !Number.isFinite(pMax)) { pMin = 0; pMax = 0.01; }
+                pMin = Math.max(0, pMin);
+                pMax = Math.max(pMax, 0.01);
             }
-            const yTick = 5;
-            const yScale = buildNiceScale(minV, maxV, yTick + 1);
-            minV = yScale.min;
-            maxV = yScale.max;
+            const rightScale = percentKeys.length ? buildNiceScale(pMin, pMax, yTick + 1) : null;
+            if (rightScale) { pMin = rightScale.min; pMax = rightScale.max; }
 
             ctx.strokeStyle = 'rgba(128, 128, 128, 0.22)';
             ctx.fillStyle = '#746d64';
             ctx.font = '12px sans-serif';
             for (let i = 0; i <= yTick; i += 1) {
                 const y = pad.top + (innerH * i / yTick);
-                const val = maxV - ((maxV - minV) * i / yTick);
+                const val = vMax - ((vMax - vMin) * i / yTick);
                 ctx.beginPath();
                 ctx.moveTo(pad.left, y);
                 ctx.lineTo(width - pad.right, y);
                 ctx.stroke();
-                ctx.fillText(formatAxisTickValue(val, allPercentMetrics), 8, y + 4);
+                ctx.fillText(formatAxisTickValue(val, leftAsPercent), 8, y + 4);
+                if (rightScale) {
+                    const pVal = pMax - ((pMax - pMin) * i / yTick);
+                    const label = formatAxisTickValue(pVal, true);
+                    const textW = ctx.measureText(label).width;
+                    ctx.fillText(label, width - pad.right + Math.max(0, (pad.right - textW - 6)), y + 4);
+                }
             }
 
             const xAt = idx => pad.left + (innerW * (dates.length <= 1 ? 0 : idx / (dates.length - 1)));
-            const yAt = v => pad.top + (innerH * (maxV - v) / (maxV - minV));
+            const yAtValue = v => pad.top + (innerH * (vMax - v) / (vMax - vMin));
+            const yAtPercent = v => pad.top + (innerH * (pMax - v) / (pMax - pMin));
             const rowByDate = {};
             chartItems.forEach(row => {
                 const d = String(row.record_date || '').slice(0, 10);
@@ -1676,7 +1793,7 @@
                     const v = resolveMetricValue(row, k);
                     if (!Number.isFinite(v)) return;
                     const x = xAt(idx);
-                    const y = yAt(v);
+                    const y = isPercentMetricKey(k) && rightScale ? yAtPercent(v) : yAtValue(v);
                     if (idx === 0) ctx.moveTo(x, y);
                     else ctx.lineTo(x, y);
                 });
@@ -1744,13 +1861,20 @@
             panel.innerHTML = '';
             state.selectedChartDate = '';
             state.selectedChartDateOpen = false;
+            // 收起图表明细时：恢复“汇总”分组明细（不修改顶部筛选；只刷新分组）
+            if (state._chartDrillRange && state._chartDrillRange.active) {
+                const prevStart = state._chartDrillRange.prevStart || '';
+                const prevEnd = state._chartDrillRange.prevEnd || '';
+                state._chartDrillRange.active = false;
+                loadGroupsOnly(prevStart, prevEnd);
+            }
         }
 
         function renderChartDetailPanel(dateText) {
             const panel = document.getElementById('chartDetailPanel');
             if (!panel) return;
             const row = state.chartDataByDate[dateText] || {};
-            const keys = (state.metricOrder || []).filter(Boolean);
+            const keys = (state.chartMetricOrder || state.metricOrder || []).filter(Boolean);
             const events = state.eventByDate[dateText] || [];
             const displayRange = formatBucketRangeLabel(dateText, state.chartGranularity);
             const metricHtml = keys.map(k => {
@@ -1790,6 +1914,75 @@
             state.selectedChartDate = dateText;
             state.selectedChartDateOpen = true;
             renderChartDetailPanel(dateText);
+            // 单击图表时：仅更新下方明细（不修改顶部筛选；不重绘图表）
+            try {
+                const prevStart = (document.getElementById('filterStartDate') || {}).value || '';
+                const prevEnd = (document.getElementById('filterEndDate') || {}).value || '';
+                const rng = getBucketStartEnd(dateText, state.chartGranularity);
+                if (rng && rng.start && rng.end) {
+                    state._chartDrillRange = { active: true, prevStart, prevEnd, drillStart: rng.start, drillEnd: rng.end };
+                    loadGroupsOnly(rng.start, rng.end);
+                }
+            } catch (e) { /* ignore */ }
+        }
+
+        function buildDashboardQueryOverrideDates(start, end) {
+            const q = new URLSearchParams();
+            const gran = String(state.chartGranularity || 'day').toLowerCase();
+            q.set('granularity', gran);
+            q.set('start_date', String(start || ''));
+            q.set('end_date', String(end || ''));
+            q.set('metric_keys', (state.metrics || []).map(m => m.key).join(','));
+            q.set('include_todos', document.getElementById('toggleTodos').checked ? '1' : '0');
+            q.set('include_ads', document.getElementById('toggleAds').checked ? '1' : '0');
+            const setIf = (k, arr) => { if (arr.length) q.set(k, arr.join(',')); };
+            setIf('platform_type_ids', getFilterValues('platforms'));
+            setIf('shop_ids', getFilterValues('shops'));
+            setIf('sku_family_ids', getFilterValues('skuFamilies'));
+            setIf('platform_skus', getFilterValues('platformSkus'));
+            setIf('fabrics', getFilterValues('fabrics'));
+            setIf('spec_names', getFilterValues('specs'));
+            setIf('ad_operation_type_ids', getFilterValues('adTypes'));
+            return q.toString();
+        }
+
+        async function loadGroupsOnly(start, end) {
+            try {
+                const query = buildDashboardQueryOverrideDates(start, end);
+                const resp = await fetch(`/api/sales-product-performance-dashboard?${query}`, { credentials: 'include' });
+                const data = await resp.json();
+                if (!resp.ok || data.status !== 'success') throw new Error(data.message || '加载分组失败');
+                // 只更新分组明细（不触碰图表与其它状态）
+                renderGroups(data.groups || []);
+            } catch (e) {
+                const host = document.getElementById('groupContainer');
+                if (host) host.innerHTML = `<div class="perf-panel-caption">货号分组明细</div><p class="status-tip">${String(e && e.message || '加载失败')}</p>`;
+            }
+        }
+
+        function getBucketStartEnd(dateText, granularity) {
+            const dt = String(dateText || '').slice(0, 10);
+            if (!dt) return null;
+            const pad2 = n => String(n).padStart(2, '0');
+            const addDays = (yyyyMMdd, days) => {
+                const d = new Date(yyyyMMdd + 'T00:00:00');
+                d.setDate(d.getDate() + (Number(days) || 0));
+                const y = d.getFullYear();
+                const m = pad2(d.getMonth() + 1);
+                const dd = pad2(d.getDate());
+                return `${y}-${m}-${dd}`;
+            };
+            if (granularity === 'week') {
+                return { start: dt, end: addDays(dt, 6) };
+            }
+            if (granularity === 'month') {
+                const d = new Date(dt + 'T00:00:00');
+                const y = d.getFullYear();
+                const m = d.getMonth(); // 0-based
+                const last = new Date(y, m + 1, 0);
+                return { start: `${y}-${pad2(m + 1)}-01`, end: `${y}-${pad2(m + 1)}-${pad2(last.getDate())}` };
+            }
+            return { start: dt, end: dt };
         }
 
         function getNearestDateByChartX(x) {
@@ -1859,7 +2052,10 @@
             const hitRows = [];
             document.querySelectorAll('#groupContainer tbody tr').forEach(tr => {
                 const recordDates = String(tr.dataset.recordDates || '').split('|').filter(Boolean);
-                if (recordDates.includes(dateText)) hitRows.push(tr);
+                if (recordDates.includes(dateText)) { hitRows.push(tr); return; }
+                const minDate = String(tr.dataset.minDate || '').slice(0, 10);
+                const maxDate = String(tr.dataset.maxDate || '').slice(0, 10);
+                if (minDate && maxDate && dateText >= minDate && dateText <= maxDate) hitRows.push(tr);
             });
             document.querySelectorAll('#groupContainer tbody tr.row-focus').forEach(tr => tr.classList.remove('row-focus'));
             hitRows.forEach(tr => tr.classList.add('row-focus'));
@@ -1892,8 +2088,19 @@
                 }
                 tip.innerHTML = buildDateColumnTooltipHtml(point.date);
                 tip.style.display = 'block';
-                tip.style.left = `${Math.max(8, Math.min(rect.width - 20, point.x + 14))}px`;
+                // 右侧防遮挡：优先显示在点的右侧，若超出 viewport / wrap 则自动翻转到左侧并 clamp
                 const wrapRect = canvas.parentElement.getBoundingClientRect();
+                const viewportW = window.innerWidth || document.documentElement.clientWidth || (wrapRect.right + 1);
+                const margin = 10;
+                const tipW = Math.max(260, tip.offsetWidth || 0);
+                let leftPx = point.x + 14;
+                // overflow to viewport right -> flip
+                if ((wrapRect.left + leftPx + tipW + margin) > viewportW) {
+                    leftPx = point.x - tipW - 14;
+                }
+                // clamp within wrap
+                leftPx = Math.max(8, Math.min(wrapRect.width - tipW - 8, leftPx));
+                tip.style.left = `${leftPx}px`;
                 const tipHeight = Math.max(140, tip.offsetHeight || 0);
                 let top = Math.max(8, e.clientY - wrapRect.top + 10);
                 if (top + tipHeight > wrapRect.height - 8) {
@@ -1923,10 +2130,14 @@
         function renderGroups(groups) {
             state.lastGroups = Array.isArray(groups) ? groups : [];
             const host = document.getElementById('groupContainer');
-            const metricKeys = state.metricOrder.slice();
+            const metricKeys = (state.groupMetricOrder && state.groupMetricOrder.length ? state.groupMetricOrder : state.metricOrder).slice();
+            const drill = state._chartDrillRange && state._chartDrillRange.active ? state._chartDrillRange : null;
+            const rangeLabel = drill
+                ? `${drill.drillStart} ~ ${drill.drillEnd}（图表细分）`
+                : `${(document.getElementById('filterStartDate') || {}).value || ''} ~ ${(document.getElementById('filterEndDate') || {}).value || ''}`.trim();
             host.innerHTML = `
-                <div class="perf-panel-caption">货号分组明细</div>
-                <div class="perf-group-meta" style="margin-bottom:0.35rem;">货号行显示汇总，点击展开可查看平台SKU明细</div>
+                <div class="perf-panel-caption">${rangeLabel || '-'} · 货号分组明细</div>
+                <div class="perf-group-meta" style="margin-bottom:0.35rem;">维度：货号 → 平台SKU（默认收起）</div>
             `;
             if (!state.lastGroups.length) {
                 host.insertAdjacentHTML('beforeend', '<p class="status-tip">暂无符合筛选条件的数据</p>');
@@ -1937,161 +2148,198 @@
             wrap.className = 'perf-group-tree-wrap';
             const table = document.createElement('table');
             table.className = 'perf-table pm-table';
+            // 避免被全局 managed-table 机制接管（否则会对子SKU与父货号一起全局排序/分页，观感很乱）
+            table.setAttribute('data-disable-table-manage', '1');
+            const headCols = ['展开', '货号/SKU', '面料', '规格', '记录数'].concat(metricKeys.map(k => (state.metricMap[k] && state.metricMap[k].label) || k));
             table.innerHTML = `
                 <thead>
                     <tr>
-                        <th style="width:72px;">展开</th>
-                        <th>货号</th>
-                        <th style="width:100px;">SKU数</th>
-                        <th style="width:110px;">记录数</th>
-                        <th style="width:110px;">销量</th>
-                        <th style="width:130px;">净销售额</th>
-                        <th style="width:100px;">订单量</th>
-                        <th style="width:120px;">广告花费</th>
-                        <th style="width:130px;">广告销售额</th>
+                        ${headCols.map((c, i) => `<th${i===0?' style="width:72px;"':''}>${c}</th>`).join('')}
                     </tr>
                 </thead>
                 <tbody id="perfGroupTreeBody"></tbody>
             `;
             const tbody = table.querySelector('#perfGroupTreeBody');
 
+            const BASE_KEYS = [
+                'sales_qty', 'net_sales_amount', 'order_qty', 'session_total',
+                'ad_impressions', 'ad_clicks', 'ad_orders', 'ad_spend', 'ad_sales_amount',
+                'refund_amount'
+            ];
+
             state.lastGroups.forEach((g, idx) => {
                 const groupKey = `grp_${idx}_${String(g.sku_family_id || '').trim()}`;
-                const skuMap = {};
-                const sum = {
-                    record_count: 0,
-                    sku_count: 0,
-                    sales_qty: 0,
-                    net_sales_amount: 0,
-                    order_qty: 0,
-                    ad_spend: 0,
-                    ad_sales_amount: 0
-                };
-                (g.items || []).forEach(it => {
-                    (it.records || []).forEach(rec => {
-                        const row = rec || {};
-                        sum.record_count += 1;
-                        sum.sales_qty += Number(row.sales_qty || 0);
-                        sum.net_sales_amount += Number(row.net_sales_amount || 0);
-                        sum.order_qty += Number(row.order_qty || 0);
-                        sum.ad_spend += Number(row.ad_spend || 0);
-                        sum.ad_sales_amount += Number(row.ad_sales_amount || 0);
-
-                        const sku = String(it.platform_sku || '').trim() || '-';
-                        const skuRow = skuMap[sku] || (skuMap[sku] = {
-                            platform_sku: it.platform_sku || '',
-                            fabric: it.fabric || '',
-                            spec_name: it.spec_name || '',
-                            recordDates: new Set(),
-                            minDate: '',
-                            maxDate: '',
-                            sales_qty: 0,
-                            net_sales_amount: 0,
-                            order_qty: 0,
-                            session_total: 0,
-                            ad_impressions: 0,
-                            ad_clicks: 0,
-                            ad_orders: 0,
-                            ad_spend: 0,
-                            ad_sales_amount: 0,
-                            refund_amount: 0,
-                            sub_category_rank_sum: 0,
-                            sub_category_rank_count: 0,
-                            rows: 0
-                        });
-                        skuRow.rows += 1;
-                        const dateText = String(row.record_date || '').slice(0, 10);
-                        if (dateText) skuRow.recordDates.add(dateText);
-                        if (!skuRow.minDate || (dateText && dateText < skuRow.minDate)) skuRow.minDate = dateText;
-                        if (!skuRow.maxDate || (dateText && dateText > skuRow.maxDate)) skuRow.maxDate = dateText;
-                        skuRow.sales_qty += Number(row.sales_qty || 0);
-                        skuRow.net_sales_amount += Number(row.net_sales_amount || 0);
-                        skuRow.order_qty += Number(row.order_qty || 0);
-                        skuRow.session_total += Number(row.session_total || 0);
-                        skuRow.ad_impressions += Number(row.ad_impressions || 0);
-                        skuRow.ad_clicks += Number(row.ad_clicks || 0);
-                        skuRow.ad_orders += Number(row.ad_orders || 0);
-                        skuRow.ad_spend += Number(row.ad_spend || 0);
-                        skuRow.ad_sales_amount += Number(row.ad_sales_amount || 0);
-                        skuRow.refund_amount += Number(row.refund_amount || 0);
-                        const rankNum = Number(row.sub_category_rank);
-                        if (Number.isFinite(rankNum) && rankNum > 0) {
-                            skuRow.sub_category_rank_sum += rankNum;
-                            skuRow.sub_category_rank_count += 1;
-                        }
-                    });
-                });
-                const childRows = Object.values(skuMap).map(row => {
-                    if (row.sub_category_rank_count > 0) {
-                        row.sub_category_rank = row.sub_category_rank_sum / row.sub_category_rank_count;
+                const items = Array.isArray(g.items) ? g.items : [];
+                const sum = { rows: 0 };
+                BASE_KEYS.forEach(k => { sum[k] = 0; });
+                // 小类排名：按 rows 加权平均（避免简单相加导致父行错误）
+                sum.__rank_weight_sum = 0;
+                sum.__rank_weight_cnt = 0;
+                let minDate = '';
+                let maxDate = '';
+                items.forEach(it => {
+                    sum.rows += Number(it.rows || 0);
+                    BASE_KEYS.forEach(k => { sum[k] += Number(it[k] || 0); });
+                    const r = Number(it.sub_category_rank);
+                    if (Number.isFinite(r) && r > 0) {
+                        const w = Math.max(1, Number(it.rows || 1));
+                        sum.__rank_weight_sum += r * w;
+                        sum.__rank_weight_cnt += w;
                     }
-                    return row;
-                }).sort((a, b) => String(b.maxDate || '').localeCompare(String(a.maxDate || '')) || String(a.platform_sku || '').localeCompare(String(b.platform_sku || '')));
-                sum.sku_count = childRows.length;
+                    const mn = String(it.min_date || '').slice(0, 10);
+                    const mx = String(it.max_date || '').slice(0, 10);
+                    if (mn && (!minDate || mn < minDate)) minDate = mn;
+                    if (mx && (!maxDate || mx > maxDate)) maxDate = mx;
+                });
+                if (sum.__rank_weight_cnt > 0) {
+                    sum.sub_category_rank = Math.round((sum.__rank_weight_sum / sum.__rank_weight_cnt) * 100) / 100;
+                }
+                const childRows = items.slice().sort((a, b) => String(a.platform_sku || '').localeCompare(String(b.platform_sku || '')));
 
                 const parentTr = document.createElement('tr');
                 parentTr.className = 'perf-group-parent-row';
                 parentTr.dataset.groupKey = groupKey;
+                parentTr.dataset.sortOrigin = String(idx);
+                parentTr.dataset.minDate = minDate || '';
+                parentTr.dataset.maxDate = maxDate || '';
                 parentTr.innerHTML = `
-                    <td><button type="button" class="perf-group-toggle" data-group-key="${groupKey}">展开</button></td>
+                    <td><button type="button" class="perf-group-toggle" data-group-key="${groupKey}" aria-label="展开/收起"></button></td>
                     <td>${g.sku_family || '未分组货号'}</td>
-                    <td>${sum.sku_count}</td>
-                    <td>${sum.record_count}</td>
-                    <td>${formatNumber(sum.sales_qty)}</td>
-                    <td>${formatNumber(sum.net_sales_amount)}</td>
-                    <td>${formatNumber(sum.order_qty)}</td>
-                    <td>${formatNumber(sum.ad_spend)}</td>
-                    <td>${formatNumber(sum.ad_sales_amount)}</td>
+                    <td>-</td>
+                    <td>-</td>
+                    <td>${formatNumber(sum.rows)}</td>
+                    ${metricKeys.map(k => `<td>${formatMetricValue(resolveMetricValue(sum, k), k)}</td>`).join('')}
                 `;
                 tbody.appendChild(parentTr);
 
-                const childTr = document.createElement('tr');
-                childTr.className = 'perf-group-child-row';
-                childTr.dataset.groupKey = groupKey;
-
-                const childHeadCols = ['平台SKU', '面料', '规格', '日期范围', '记录数'].concat(metricKeys.map(k => (state.metricMap[k] && state.metricMap[k].label) || k));
-                const childRowsHtml = childRows.length
-                    ? childRows.map(row => {
-                        const baseCells = [
-                            row.platform_sku || '-',
-                            row.fabric || '-',
-                            row.spec_name || '-',
-                            row.minDate && row.maxDate ? `${row.minDate} ~ ${row.maxDate}` : (row.maxDate || row.minDate || '-'),
-                            row.rows || 0
-                        ];
-                        const metricCells = metricKeys.map(k => formatMetricValue(resolveMetricValue(row, k), k));
-                        return `<tr>${baseCells.concat(metricCells).map(v => `<td>${v}</td>`).join('')}</tr>`;
-                    }).join('')
-                    : '<tr><td colspan="999" style="text-align:center;color:#888;">暂无平台明细</td></tr>';
-
-                childTr.innerHTML = `
-                    <td colspan="9">
-                        <div class="perf-group-child-box">
-                            <div class="perf-group-child-title">${g.sku_family || '未分组货号'} 的平台SKU明细</div>
-                            <div class="perf-table-wrap">
-                                <table class="perf-table pm-table">
-                                    <thead><tr>${childHeadCols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
-                                    <tbody>${childRowsHtml}</tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </td>
-                `;
-                tbody.appendChild(childTr);
+                if (childRows.length) {
+                    childRows.forEach(row => {
+                        const tr = document.createElement('tr');
+                        tr.className = 'perf-group-child-item';
+                        tr.dataset.groupKey = groupKey;
+                        const mn = String(row.min_date || '').slice(0, 10);
+                        const mx = String(row.max_date || '').slice(0, 10);
+                        const recordDates = [];
+                        const rawDates = row.record_dates;
+                        if (Array.isArray(rawDates)) rawDates.forEach(d => d && recordDates.push(String(d).slice(0, 10)));
+                        tr.dataset.platformSku = String(row.platform_sku || '').trim();
+                        tr.dataset.skuFamily = String(g.sku_family || '').trim();
+                        tr.dataset.recordDates = recordDates.join('|');
+                        tr.dataset.minDate = mn;
+                        tr.dataset.maxDate = mx;
+                        tr.innerHTML = `
+                            <td></td>
+                            <td style="padding-left:18px;">${row.platform_sku || '-'}</td>
+                            <td>${row.fabric || '-'}</td>
+                            <td>${row.spec_name || '-'}</td>
+                            <td>${formatNumber(row.rows || 0)}</td>
+                            ${metricKeys.map(k => `<td>${formatMetricValue(resolveMetricValue(row, k), k)}</td>`).join('')}
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
             });
 
-            wrap.appendChild(table);
+            // 仅保留一个滚动层：pm-table-wrap is-managed-wrap pm-managed-body-wrap
+            const bodyWrap = document.createElement('div');
+            bodyWrap.className = 'pm-table-wrap is-managed-wrap pm-managed-body-wrap';
+            bodyWrap.appendChild(table);
+            wrap.appendChild(bodyWrap);
             host.appendChild(wrap);
 
             host.querySelectorAll('.perf-group-toggle').forEach(btn => {
                 btn.addEventListener('click', function() {
                     const key = this.getAttribute('data-group-key') || '';
                     if (!key) return;
-                    const row = host.querySelector(`.perf-group-child-row[data-group-key="${key}"]`);
-                    if (!row) return;
-                    const willOpen = !row.classList.contains('open');
-                    row.classList.toggle('open', willOpen);
-                    this.textContent = willOpen ? '收起' : '展开';
+                    const rows = host.querySelectorAll(`.perf-group-child-item[data-group-key="${key}"]`);
+                    const willOpen = !(this.classList.contains('open'));
+                    this.classList.toggle('open', willOpen);
+                    rows.forEach(r => r.classList.toggle('open', willOpen));
+                });
+            });
+
+            // 层级排序：只排序货号父行；每个货号内部子SKU按平台SKU单独排序（不参与全局混排）
+            bindPerfGroupHierSort(table, metricKeys);
+        }
+
+        function bindPerfGroupHierSort(table, metricKeys) {
+            if (!table) return;
+            const thead = table.tHead;
+            const tbody = table.tBodies && table.tBodies[0];
+            if (!thead || !tbody) return;
+            const headerRow = thead.rows && thead.rows[0];
+            if (!headerRow) return;
+
+            // 0=展开（不排序）；1=货号/SKU；2=面料；3=规格；4=记录数；5+=指标
+            const parentRows = () => Array.from(tbody.querySelectorAll('tr.perf-group-parent-row'));
+            const childRowsByKey = (key) => Array.from(tbody.querySelectorAll(`tr.perf-group-child-item[data-group-key="${key}"]`));
+
+            const readComparable = (tr, cellIndex) => {
+                const cell = tr && tr.cells ? tr.cells[cellIndex] : null;
+                const txt = String(cell ? cell.textContent : '').trim();
+                if (!txt || txt === '-') return null;
+                const n = Number(String(txt).replace(/[%,\s]/g, ''));
+                if (Number.isFinite(n) && /[\d]/.test(txt)) return n;
+                return txt;
+            };
+
+            const sortState = { idx: -1, dir: null }; // dir: 'asc'|'desc'|null
+
+            Array.from(headerRow.cells || []).forEach((th, idx) => {
+                if (idx === 0) return;
+                th.style.cursor = 'pointer';
+                th.addEventListener('click', (e) => {
+                    if (e.target && e.target.closest && e.target.closest('button,input,select,textarea,a,label')) return;
+                    if (sortState.idx !== idx) {
+                        sortState.idx = idx;
+                        sortState.dir = 'desc';
+                    } else if (sortState.dir === 'desc') {
+                        sortState.dir = 'asc';
+                    } else if (sortState.dir === 'asc') {
+                        sortState.dir = null;
+                    } else {
+                        sortState.dir = 'desc';
+                    }
+
+                    const parents = parentRows();
+                    const origin = parents.map((tr, i) => [tr, i]);
+                    const mapOrigin = new Map(origin);
+
+                    const applyOrder = (orderedParents) => {
+                        orderedParents.forEach(p => {
+                            const key = String(p.dataset.groupKey || '');
+                            tbody.appendChild(p);
+                            // 子SKU组内排序：平台SKU升序（独立于父级排序）
+                            const kids = childRowsByKey(key).sort((a, b) => {
+                                const av = String(a.dataset.platformSku || '').trim();
+                                const bv = String(b.dataset.platformSku || '').trim();
+                                return av.localeCompare(bv, 'zh-Hans-CN', { sensitivity: 'base' });
+                            });
+                            kids.forEach(k => tbody.appendChild(k));
+                        });
+                    };
+
+                    if (!sortState.dir) {
+                        // 恢复：按初始渲染顺序（依赖 sortOrigin）
+                        const restored = parents.slice().sort((a, b) => (Number(a.dataset.sortOrigin || '0') - Number(b.dataset.sortOrigin || '0')));
+                        applyOrder(restored);
+                        return;
+                    }
+
+                    const dir = sortState.dir;
+                    const sorted = parents.slice().sort((a, b) => {
+                        const av = readComparable(a, idx);
+                        const bv = readComparable(b, idx);
+                        if (av == null && bv == null) return (mapOrigin.get(a) ?? 0) - (mapOrigin.get(b) ?? 0);
+                        if (av == null) return 1;
+                        if (bv == null) return -1;
+                        if (typeof av === 'number' && typeof bv === 'number') return dir === 'asc' ? (av - bv) : (bv - av);
+                        if (av === bv) return (mapOrigin.get(a) ?? 0) - (mapOrigin.get(b) ?? 0);
+                        return dir === 'asc'
+                            ? String(av).localeCompare(String(bv), 'zh-Hans-CN', { sensitivity: 'base' })
+                            : String(bv).localeCompare(String(av), 'zh-Hans-CN', { sensitivity: 'base' });
+                    });
+                    applyOrder(sorted);
                 });
             });
         }
@@ -2103,6 +2351,14 @@
                 events: payload.events || [],
                 groups: payload.groups || []
             };
+            // 若当前处于“图表细分”查看，但本次刷新并非细分区间（比如用户手动改日期后查询），则自动退出细分模式
+            if (state._chartDrillRange && state._chartDrillRange.active) {
+                const curStart = (document.getElementById('filterStartDate') || {}).value || '';
+                const curEnd = (document.getElementById('filterEndDate') || {}).value || '';
+                if (state._chartDrillRange.drillStart !== curStart || state._chartDrillRange.drillEnd !== curEnd) {
+                    state._chartDrillRange.active = false;
+                }
+            }
             const transformed = aggregateChartByGranularity(state.lastDashboardPayload.chart_items, state.lastDashboardPayload.events, state.chartGranularity);
             const titleEl = document.getElementById('chartTitle');
             if (titleEl) titleEl.textContent = getChartTitleByGranularity(state.chartGranularity);
@@ -2132,6 +2388,7 @@
                     throw new Error(data.message || '加载看板失败');
                 }
                 renderDashboardPayload(data);
+                renderPercentMetricBar();
             } catch (err) {
                 status.textContent = err.message || '加载失败';
                 document.getElementById('groupContainer').innerHTML = '<div class="perf-panel-caption">货号分组明细</div><p class="status-tip">加载失败，请稍后重试</p>';
@@ -2140,11 +2397,10 @@
         }
 
         function showPerformanceStatus(message, isError) {
-            const el = document.getElementById('performanceStatus');
-            el.style.display = 'block';
-            el.style.background = isError ? '#ffecec' : '#f0fff0';
-            el.style.color = isError ? '#a33' : '#2f6f2f';
-            el.innerText = message;
+            // 统一使用全局 toast 样式（绿色成功/红色错误）
+            if (window.showAppToast) {
+                window.showAppToast(String(message || ''), !!isError, isError ? 5200 : 3200);
+            }
         }
 
         function showPerfDialog(opts) {
@@ -2509,23 +2765,24 @@
                     }
                 });
             }
+            // 统一：成功走 toast（绿色），失败才弹 result panel（若可用）
+            if (!isError) {
+                window.showAppToast && window.showAppToast(`${title || '导入完成'}：${summary || ''}`.trim(), false, 4200);
+                return;
+            }
             if (window.showAppResultPanel) {
                 window.showAppResultPanel({
-                    title: String(title || (isError ? '导入失败' : '导入完成')),
+                    title: String(title || '导入失败'),
                     summary: String(summary || '').trim(),
                     details,
-                    isError: !!isError,
+                    isError: true,
                 });
             } else if (window.showAppToast) {
-                window.showAppToast(`${title || (isError ? '导入失败' : '导入完成')}：${summary || stopReason}`, !!isError, 4800);
+                window.showAppToast(`${title || '导入失败'}：${summary || stopReason}`, true, 5200);
             }
         }
 
-        function resetPerformanceStatus() {
-            const el = document.getElementById('performanceStatus');
-            el.style.display = 'none';
-            el.innerText = '';
-        }
+        function resetPerformanceStatus() { /* deprecated: use showAppToast/showAppResultPanel */ }
 
         function renderPerformanceSkuSuggestions() {
             const dl = document.getElementById('performanceSkuSuggestions');
@@ -2884,12 +3141,13 @@
                         const skippedId = Number(finalData.skipped_empty_identifier || 0);
                         const skippedDate = Number(finalData.skipped_invalid_date || 0);
                         const skippedSample = Number(finalData.skipped_template_sample || 0);
+                        const skippedZero = Number(finalData.skipped_all_zero || 0);
                         const aggWarn = String(finalData.agg_refresh_warning || '').trim();
                         const bgAgg = !!(finalData.agg_refresh_background || finalData.agg_refresh_status === 'running');
                         const errList = finalData.errors || [];
                         const stopReasonText = getImportStopReasonText(finalData);
                         hideUploadProgress();
-                        const summaryLine = `匹配 ${Number(finalData.created || 0)} 条，写入 ${upserted} 条，未匹配SKU ${skippedSku} 条，空标识 ${skippedId} 条，日期无效 ${skippedDate} 条，示例行跳过 ${skippedSample} 条，失败 ${errList.length} 条`;
+                        const summaryLine = `匹配 ${Number(finalData.created || 0)} 条，写入 ${upserted} 条，未匹配SKU ${skippedSku} 条，空标识 ${skippedId} 条，日期无效 ${skippedDate} 条，示例行跳过 ${skippedSample} 条，全0行跳过 ${skippedZero} 条，失败 ${errList.length} 条`;
                         const okLine = aggWarn
                             ? `导入完成：${summaryLine}（周/月聚合未完全刷新）`
                             : (bgAgg
@@ -2938,7 +3196,7 @@
                     showImportResultPanel('预检失败', failMessage, data, true);
                     return;
                 }
-                const summaryText = `预检完成：可匹配 ${data.created || 0} 条，未匹配SKU ${data.skipped_unmatched_sku || 0} 条，空标识 ${data.skipped_empty_identifier || 0} 条，日期无效 ${data.skipped_invalid_date || 0} 条，示例行跳过 ${data.skipped_template_sample || 0} 条`;
+                const summaryText = `预检完成：可匹配 ${data.created || 0} 条，未匹配SKU ${data.skipped_unmatched_sku || 0} 条，空标识 ${data.skipped_empty_identifier || 0} 条，日期无效 ${data.skipped_invalid_date || 0} 条，示例行跳过 ${data.skipped_template_sample || 0} 条，全0行跳过 ${data.skipped_all_zero || 0} 条`;
                 showImportResultPanel('预检通过', summaryText, {
                     message: summaryText,
                     created: data.created,
@@ -2946,7 +3204,9 @@
                     skipped_empty_identifier: data.skipped_empty_identifier,
                     skipped_invalid_date: data.skipped_invalid_date,
                     skipped_template_sample: data.skipped_template_sample,
+                    skipped_all_zero: data.skipped_all_zero,
                 }, false);
+                window.showAppToast && window.showAppToast(summaryText, false, 4200);
                 uploadSalesProductPerformanceTemplate(file, taskId);
             }).catch(err => {
                 hideUploadProgress();
