@@ -434,7 +434,7 @@
         .todo-mini-sub { font-size: 12px; color: #888; margin-top: 2px; }
         /* todo-complete-pop removed */
         /* Todo modal - yellow priority pill */
-        .status-pill--warning.is-active { background: #b6912f !important; } /* warm yellow, similar saturation */
+        .status-pill--warning.is-active { background: #d2bf82 !important; } /* lighter yellow */
     </style>
 </head>
 <body>
@@ -459,13 +459,13 @@
                         <table class="pm-table" id="todoTable">
                             <thead>
                                 <tr>
-                                    <th style="width:120px;">完成状态</th>
                                     <th style="width:120px;">类型</th>
-                                    <th style="width:56px;">优先级</th>
+                                    <th style="width:100px;">优先级</th>
                                     <th style="min-width:180px;">事项</th>
                                     <th style="min-width:180px;">详情/备注</th>
                                     <th style="width:120px;">开始日期</th>
                                     <th style="width:120px;">截止日期</th>
+                                    <th style="width:120px;">完成状态</th>
                                     <th style="width:190px;">完成时间</th>
                                     <th style="width:120px;">操作</th>
                                 </tr>
@@ -634,9 +634,21 @@
                             <label>提醒间隔（天，循环任务必填）</label>
                             <input type="number" id="todoModalReminderInterval" value="1" min="1" max="365">
                         </div>
-                        <div class="form-group pm-form-full" id="todoModalDueDateWrap">
+                        <div class="form-group" id="todoModalDueDateWrap">
                             <label>截止日期（非循环任务必填）</label>
                             <input type="date" id="todoModalDueDate">
+                        </div>
+                        <div class="form-group" id="todoModalCompleteStatusWrap">
+                            <label>完成状态</label>
+                            <input type="hidden" id="todoModalCompleteStatusVal" value="0">
+                            <div class="status-segment status-segment--inline" id="todoModalCompleteStatusSegment" data-value="0">
+                                <button type="button" class="status-pill status-pill--enabled" data-value="1">已完成</button>
+                                <button type="button" class="status-pill status-pill--paused is-active" data-value="0">未完成</button>
+                            </div>
+                        </div>
+                        <div class="form-group" id="todoModalCompletedAtWrap" style="display:none;">
+                            <label>完成时间</label>
+                            <input type="datetime-local" id="todoModalCompletedAtInput">
                         </div>
                         <div class="form-group pm-form-full">
                             <label>关联货号（可多选）</label>
@@ -1195,6 +1207,9 @@
                 if (dueEl) dueEl.value = dateString;
                 document.getElementById('todoModalReminderInterval').value = 1;
                 document.getElementById('todoModalDetail').value = '';
+                window.todoModalCurrentCompletedAt = '';
+                const completedInput = document.getElementById('todoModalCompletedAtInput');
+                if (completedInput) completedInput.value = '';
                 // default assignee: self
                 setTodoSelectedAssigneeIds(currentUser && Number(currentUser.id || 0) > 0 ? [Number(currentUser.id)] : []);
                 const assigneeSearch = document.getElementById('todoModalAssigneeSearch');
@@ -1202,6 +1217,7 @@
                 document.getElementById('assigneeSelected').innerHTML = '';
                 setSegmentValue(document.getElementById('todoModalPrioritySegment'), '2');
                 setSegmentValue(document.getElementById('todoModalRecurringSegment'), '0');
+                setSegmentValue(document.getElementById('todoModalCompleteStatusSegment'), '0');
             } else if (action === 'edit' && todoId) {
                 document.getElementById('todoModalTitle').textContent = '编辑待办';
                 const idNum = parseInt(todoId, 10) || 0;
@@ -1214,10 +1230,14 @@
                     if (dueEl) dueEl.value = (todo.due_date || todo.start_date || dateString);
                     document.getElementById('todoModalReminderInterval').value = todo.reminder_interval_days || 1;
                     document.getElementById('todoModalDetail').value = todo.detail || '';
+                    window.todoModalCurrentCompletedAt = todo.my_completed_at || '';
+                    const completedInput = document.getElementById('todoModalCompletedAtInput');
+                    if (completedInput) completedInput.value = toDatetimeLocalValue(todo.my_completed_at || '');
                     setTodoSelectedAssigneeIds((todo.assignees || []).map(a => a.assignee_id));
                     updateAssigneeSelected();
                     setSegmentValue(document.getElementById('todoModalPrioritySegment'), String(todo.priority || 2));
                     setSegmentValue(document.getElementById('todoModalRecurringSegment'), String(Number(todo.is_recurring || 0) ? 1 : 0));
+                    setSegmentValue(document.getElementById('todoModalCompleteStatusSegment'), String(Number(todo.my_is_completed || 0) ? 1 : 0));
                     setSegmentValue(document.getElementById('todoModalTypeSegment'), String(todo.todo_type_id || ''));
                     // links backfill
                     setTodoSelectedSkuFamilyIds(todo.sku_family_ids || []);
@@ -1236,8 +1256,12 @@
                     updateTodoSkuFamilySelected();
                     updateTodoSalesSkuSelected();
                 } else {
+                    window.todoModalCurrentCompletedAt = '';
+                    const completedInput = document.getElementById('todoModalCompletedAtInput');
+                    if (completedInput) completedInput.value = '';
                     setSegmentValue(document.getElementById('todoModalPrioritySegment'), '2');
                     setSegmentValue(document.getElementById('todoModalRecurringSegment'), '0');
+                    setSegmentValue(document.getElementById('todoModalCompleteStatusSegment'), '0');
                 }
             }
             
@@ -1245,6 +1269,7 @@
             // preload sku families for better UX
             loadTodoSkuFamilyOptions('').then(() => updateTodoSkuFamilySelected()).catch(() => {});
             syncTodoRecurringUi();
+            syncTodoCompletionUi();
         }
 
         function syncTodoRecurringUi() {
@@ -1259,6 +1284,28 @@
             if (isRecurring) {
                 syncRecurringDueDate();
             }
+        }
+
+        function syncTodoCompletionUi() {
+            const seg = document.getElementById('todoModalCompleteStatusSegment');
+            const completedWrap = document.getElementById('todoModalCompletedAtWrap');
+            const completedInput = document.getElementById('todoModalCompletedAtInput');
+            const isDone = !!(seg && String(seg.dataset.value || '0') === '1');
+            if (completedWrap) completedWrap.style.display = isDone ? '' : 'none';
+            if (!isDone) {
+                window.todoModalCurrentCompletedAt = '';
+                if (completedInput) completedInput.value = '';
+            } else if (completedInput && !completedInput.value) {
+                const now = new Date();
+                const y = String(now.getFullYear()).padStart(4, '0');
+                const m = String(now.getMonth() + 1).padStart(2, '0');
+                const d = String(now.getDate()).padStart(2, '0');
+                const hh = String(now.getHours()).padStart(2, '0');
+                const mm = String(now.getMinutes()).padStart(2, '0');
+                completedInput.value = `${y}-${m}-${d}T${hh}:${mm}`;
+                window.todoModalCurrentCompletedAt = `${y}-${m}-${d} ${hh}:${mm}:00`;
+            }
+            syncRecurringDueDate();
         }
 
         function parseDateInputValue(value) {
@@ -1282,15 +1329,51 @@
             const isRecurring = !!(seg && String(seg.dataset.value || '0') === '1');
             if (!isRecurring) return;
             const startEl = document.getElementById('todoModalStartDate');
-            const intervalEl = document.getElementById('todoModalReminderInterval');
             const dueEl = document.getElementById('todoModalDueDate');
-            if (!startEl || !intervalEl || !dueEl) return;
-            const startDate = parseDateInputValue(startEl.value);
-            const intervalDays = Math.max(1, parseInt(intervalEl.value || '1', 10) || 1);
-            if (!startDate) return;
-            const nextDate = new Date(startDate.getTime());
-            nextDate.setDate(nextDate.getDate() + intervalDays);
+            if (!startEl || !dueEl) return;
+            const completedAtText = String(window.todoModalCurrentCompletedAt || '').trim();
+            let baseDate = null;
+            if (completedAtText) {
+                baseDate = parseDateInputValue(completedAtText.slice(0, 10));
+            }
+            if (!baseDate) {
+                baseDate = parseDateInputValue(startEl.value);
+            }
+            if (!baseDate) return;
+            const nextDate = new Date(baseDate.getTime());
+            nextDate.setDate(nextDate.getDate() + 1);
             dueEl.value = formatDateInputValue(nextDate);
+        }
+
+        function prioritySegmentHtml(priority) {
+            const p = parseInt(priority || '2', 10) || 2;
+            return `
+                <div class="status-segment status-segment--inline" style="pointer-events:none;">
+                    <button type="button" class="status-pill status-pill--paused ${p === 3 ? 'is-active' : ''}">高</button>
+                    <button type="button" class="status-pill status-pill--warning ${p === 2 ? 'is-active' : ''}">中</button>
+                    <button type="button" class="status-pill status-pill--enabled ${p === 1 ? 'is-active' : ''}">低</button>
+                </div>
+            `;
+        }
+
+        function todoStatusSegmentHtml(status, todoId, completedAt) {
+            return `
+                <div class="status-segment status-segment--inline">
+                    <button type="button"
+                            class="status-pill ${status === 'done' ? 'status-pill--enabled is-active' : 'status-pill--paused'}"
+                            data-todo-action="set-done"
+                            data-id="${todoId}"
+                            data-completed-at="${completedAt}">
+                        已完成
+                    </button>
+                    <button type="button"
+                            class="status-pill ${status === 'open' ? 'status-pill--enabled is-active' : 'status-pill--paused'}"
+                            data-todo-action="set-open"
+                            data-id="${todoId}">
+                        未完成
+                    </button>
+                </div>
+            `;
         }
 
         function closeTodoModal() {
@@ -1593,21 +1676,21 @@
                 const checked = selectedIds.has(String(id));
                 const title = (item.sku_family || '') + (item.category ? (' · ' + item.category) : '');
                 return `
-                    <label class="feature-category-item ${checked ? 'is-selected' : ''}">
-                        <input type="checkbox" ${checked ? 'checked' : ''} data-sf-id="${id}">
+                    <div class="feature-category-item ${checked ? 'is-selected' : ''}" data-sf-id="${id}">
                         <span>${escapeHtml(title || ('货号#' + id))}</span>
-                    </label>
+                    </div>
                 `;
             }).join('');
-            list.querySelectorAll('input[type="checkbox"][data-sf-id]').forEach(cb => {
-                cb.addEventListener('change', () => {
-                    const id = parseInt(cb.dataset.sfId || '0', 10) || 0;
+            list.querySelectorAll('[data-sf-id]').forEach(row => {
+                row.addEventListener('click', () => {
+                    const id = parseInt(row.dataset.sfId || '0', 10) || 0;
                     if (!id) return;
                     const current = new Set(getTodoSelectedSkuFamilyIds());
-                    if (cb.checked) current.add(id);
-                    else current.delete(id);
+                    if (current.has(id)) current.delete(id);
+                    else current.add(id);
                     setTodoSelectedSkuFamilyIds(Array.from(current));
                     updateTodoSkuFamilySelected();
+                    renderTodoSkuFamilyOptions((document.getElementById('todoSkuFamilySearch') || {}).value || '');
                 });
             });
         }
@@ -1633,19 +1716,18 @@
                     (item.sku_family ? (' · ' + item.sku_family) : '') +
                     (item.spec_name ? (' · ' + item.spec_name) : '');
                 return `
-                    <label class="feature-category-item ${checked ? 'is-selected' : ''}">
-                        <input type="checkbox" ${checked ? 'checked' : ''} data-sp-id="${id}" data-sp-sf="${parseInt(item.sku_family_id,10)||0}">
+                    <div class="feature-category-item ${checked ? 'is-selected' : ''}" data-sp-id="${id}" data-sp-sf="${parseInt(item.sku_family_id,10)||0}">
                         <span>${escapeHtml(title || ('SKU#' + id))}</span>
-                    </label>
+                    </div>
                 `;
             }).join('');
-            list.querySelectorAll('input[type="checkbox"][data-sp-id]').forEach(cb => {
-                cb.addEventListener('change', () => {
-                    const id = parseInt(cb.dataset.spId || '0', 10) || 0;
-                    const sfid = parseInt(cb.dataset.spSf || '0', 10) || 0;
+            list.querySelectorAll('[data-sp-id]').forEach(row => {
+                row.addEventListener('click', () => {
+                    const id = parseInt(row.dataset.spId || '0', 10) || 0;
+                    const sfid = parseInt(row.dataset.spSf || '0', 10) || 0;
                     if (!id) return;
                     const current = new Set(getTodoSelectedSalesProductIds());
-                    if (cb.checked) {
+                    if (!current.has(id)) {
                         current.add(id);
                         if (sfid) {
                             const sfCurrent = new Set(getTodoSelectedSkuFamilyIds());
@@ -1658,6 +1740,7 @@
                     }
                     setTodoSelectedSalesProductIds(Array.from(current));
                     updateTodoSalesSkuSelected();
+                    renderTodoSalesSkuOptions((document.getElementById('todoSalesSkuSearch') || {}).value || '');
                 });
             });
         }
@@ -1671,8 +1754,22 @@
             const due_date = (document.getElementById('todoModalDueDate') || {}).value || '';
             const reminder_interval_days = parseInt(document.getElementById('todoModalReminderInterval').value, 10) || 1;
             const is_recurring = String((document.getElementById('todoModalRecurringSegment') || {}).dataset.value || '0') === '1' ? 1 : 0;
+            const is_completed = String((document.getElementById('todoModalCompleteStatusSegment') || {}).dataset.value || '0') === '1' ? 1 : 0;
+            const completed_at_local = (document.getElementById('todoModalCompletedAtInput') || {}).value || '';
+            const completed_at = completed_at_local ? completed_at_local.replace('T', ' ') + ':00' : '';
             const detail = document.getElementById('todoModalDetail').value.trim();
             const priority = parseInt((document.getElementById('todoModalPrioritySegment') || {}).dataset.value || '2', 10) || 2;
+            const recurringDueDate = (() => {
+                if (!is_recurring) return due_date;
+                const completedAtText = String(window.todoModalCurrentCompletedAt || '').trim();
+                let baseDate = null;
+                if (completedAtText) baseDate = parseDateInputValue(completedAtText.slice(0, 10));
+                if (!baseDate) baseDate = parseDateInputValue(start_date);
+                if (!baseDate) return '';
+                const d = new Date(baseDate.getTime());
+                d.setDate(d.getDate() + 1);
+                return formatDateInputValue(d);
+            })();
             
             // 收集选中的分配人
             const assignee_ids = getTodoSelectedAssigneeIds();
@@ -1699,11 +1796,13 @@
                 title,
                 todo_type_id,
                 start_date,
-                due_date: is_recurring ? null : (due_date || start_date),
+                due_date: is_recurring ? recurringDueDate : (due_date || start_date),
                 reminder_interval_days,
                 is_recurring,
                 detail,
                 priority,
+                is_completed,
+                completed_at: is_completed ? (completed_at || null) : null,
                 assignee_ids,
                 related_sku_family_ids,
                 related_sales_product_ids
@@ -1938,31 +2037,15 @@
                 const completedAt = todo.my_completed_at ? String(todo.my_completed_at) : '';
                 return `
                     <tr data-todo-id="${todo.id}">
-                        <td>
-                            <div class="status-segment status-segment--inline">
-                                <button type="button"
-                                        class="status-pill ${status === 'done' ? 'status-pill--enabled is-active' : 'status-pill--paused'}"
-                                        data-todo-action="set-done"
-                                        data-id="${todo.id}"
-                                        data-completed-at="${completedAt}">
-                                    已完成
-                                </button>
-                                <button type="button"
-                                        class="status-pill ${status === 'open' ? 'status-pill--enabled is-active' : 'status-pill--paused'}"
-                                        data-todo-action="set-open"
-                                        data-id="${todo.id}">
-                                    未完成
-                                </button>
-                            </div>
-                        </td>
                         <td>${escapeHtml(typeName)}</td>
-                        <td>${escapeHtml(priorityLabel(todo.priority))}</td>
+                        <td>${prioritySegmentHtml(todo.priority)}</td>
                         <td class="todo-title-cell">
                             <div style="font-weight:600;">${escapeHtml(todo.title || '')}</div>
                         </td>
                         <td class="todo-mini-sub">${escapeHtml(detailText)}</td>
                         <td>${escapeHtml(start || '-')}</td>
                         <td>${escapeHtml(due || '-')}</td>
+                        <td>${todoStatusSegmentHtml(status, todo.id, completedAt)}</td>
                         <td>
                             ${
                                 status === 'done'
@@ -2107,6 +2190,11 @@
                 const hid = document.getElementById('todoModalIsRecurringVal');
                 if (hid) hid.value = v;
                 syncTodoRecurringUi();
+            }
+            if (seg.id === 'todoModalCompleteStatusSegment') {
+                const hid = document.getElementById('todoModalCompleteStatusVal');
+                if (hid) hid.value = v;
+                syncTodoCompletionUi();
             }
             if (seg.id === 'todoModalTypeSegment') {
                 const hid = document.getElementById('todoModalTypeId');
@@ -2464,6 +2552,20 @@
             }
 
             tip.innerHTML = html;
+            const margin = 10;
+            const viewportW = window.innerWidth || document.documentElement.clientWidth || 0;
+            const viewportH = window.innerHeight || document.documentElement.clientHeight || 0;
+            const rect = tip.getBoundingClientRect();
+            let left = x + 12;
+            let top = y + 12;
+            if (viewportW > 0 && rect.right > viewportW - margin) {
+                left = Math.max(margin, x - rect.width - 12);
+            }
+            if (viewportH > 0 && rect.bottom > viewportH - margin) {
+                top = Math.max(margin, y - rect.height - 12);
+            }
+            tip.style.left = left + 'px';
+            tip.style.top = top + 'px';
         }
 
         function hideCalendarTooltip() {
@@ -2810,6 +2912,7 @@
             // bind segments
             bindSegmentButtons(document.getElementById('todoModalPrioritySegment'));
             bindSegmentButtons(document.getElementById('todoModalRecurringSegment'));
+            bindSegmentButtons(document.getElementById('todoModalCompleteStatusSegment'));
             const todoModalStartDate = document.getElementById('todoModalStartDate');
             if (todoModalStartDate) {
                 todoModalStartDate.addEventListener('change', syncRecurringDueDate);
@@ -2818,6 +2921,16 @@
             if (todoModalReminderInterval) {
                 todoModalReminderInterval.addEventListener('input', syncRecurringDueDate);
                 todoModalReminderInterval.addEventListener('change', syncRecurringDueDate);
+            }
+            const todoModalCompletedAtInput = document.getElementById('todoModalCompletedAtInput');
+            if (todoModalCompletedAtInput) {
+                const onCompletedAtChange = () => {
+                    const v = String(todoModalCompletedAtInput.value || '').trim();
+                    window.todoModalCurrentCompletedAt = v ? (v.replace('T', ' ') + ':00') : '';
+                    syncRecurringDueDate();
+                };
+                todoModalCompletedAtInput.addEventListener('input', onCompletedAtChange);
+                todoModalCompletedAtInput.addEventListener('change', onCompletedAtChange);
             }
 
             const pendingUsersTable = document.getElementById('pendingUsersTable');

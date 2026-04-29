@@ -87,6 +87,27 @@
       white-space: nowrap;
       z-index: 1;
     }
+    .board-hover-tip {
+      position: fixed;
+      z-index: 1600;
+      background: rgba(47, 47, 51, 0.95);
+      color: #ece7df;
+      padding: 6px 8px;
+      border-radius: 10px;
+      font-size: 12px;
+      line-height: 1.4;
+      box-shadow: 0 12px 26px rgba(0, 0, 0, 0.25);
+      pointer-events: none;
+      white-space: pre-wrap;
+      max-width: min(360px, calc(100vw - 16px));
+      display: none;
+    }
+    .board-hover-tip.is-visible { display: block; }
+    [data-hover-tip] { cursor: help; }
+    .board-tip-pinned {
+      box-shadow: 0 0 0 2px rgba(123, 154, 176, 0.3);
+      border-radius: 6px;
+    }
     .group-row td {
       cursor: pointer;
       font-weight: 700;
@@ -550,10 +571,127 @@ let boardSelectionFocus = null;
 let boardSelectionBounds = null;
 let boardSelectionMode = 'cell';
 let boardSelectionLocked = false;
+let boardHoverTipEl = null;
+let boardPinnedTipTarget = null;
+let boardHoveredTipTarget = null;
 
 let REGION_ORDER = ['美西', '美中', '美东南', '美东'];
 
 function $(s){ return document.querySelector(s); }
+
+function ensureBoardHoverTip(){
+  if(boardHoverTipEl) return boardHoverTipEl;
+  const tip = document.createElement('div');
+  tip.className = 'board-hover-tip';
+  document.body.appendChild(tip);
+  boardHoverTipEl = tip;
+  return tip;
+}
+
+function getTipTextFromTarget(target){
+  if(!target) return '';
+  return String(target.getAttribute('data-hover-tip') || '').trim();
+}
+
+function positionBoardHoverTip(anchorEl){
+  if(!boardHoverTipEl || !anchorEl) return;
+  const rect = anchorEl.getBoundingClientRect();
+  const margin = 8;
+  const tipRect = boardHoverTipEl.getBoundingClientRect();
+  let left = rect.left + (rect.width / 2) - (tipRect.width / 2);
+  let top = rect.top - tipRect.height - margin;
+  if(left < margin) left = margin;
+  if(left + tipRect.width > window.innerWidth - margin){
+    left = window.innerWidth - tipRect.width - margin;
+  }
+  if(top < margin){
+    top = rect.bottom + margin;
+  }
+  if(top + tipRect.height > window.innerHeight - margin){
+    top = Math.max(margin, window.innerHeight - tipRect.height - margin);
+  }
+  boardHoverTipEl.style.left = `${left}px`;
+  boardHoverTipEl.style.top = `${top}px`;
+}
+
+function showBoardHoverTip(target){
+  const text = getTipTextFromTarget(target);
+  if(!text) return;
+  const tip = ensureBoardHoverTip();
+  tip.textContent = text;
+  tip.classList.add('is-visible');
+  positionBoardHoverTip(target);
+}
+
+function hideBoardHoverTip(force){
+  if(!boardHoverTipEl) return;
+  if(!force && boardPinnedTipTarget) return;
+  boardHoverTipEl.classList.remove('is-visible');
+}
+
+function clearPinnedBoardHoverTip(){
+  if(boardPinnedTipTarget){
+    boardPinnedTipTarget.classList.remove('board-tip-pinned');
+    boardPinnedTipTarget = null;
+  }
+  hideBoardHoverTip(true);
+}
+
+function normalizeBoardNativeTitles(scopeEl){
+  const scope = scopeEl || document;
+  scope.querySelectorAll('[title]').forEach(el => {
+    const title = String(el.getAttribute('title') || '').trim();
+    if(!title) return;
+    el.setAttribute('data-hover-tip', title);
+    el.removeAttribute('title');
+  });
+}
+
+function bindBoardHoverTipEvents(){
+  const host = document.body;
+  if(!host || host.dataset.boardTipBound === '1') return;
+  host.dataset.boardTipBound = '1';
+  host.addEventListener('mouseover', (e) => {
+    const target = e.target && e.target.closest ? e.target.closest('[data-hover-tip]') : null;
+    if(!target || !document.body.contains(target)) return;
+    boardHoveredTipTarget = target;
+    if(boardPinnedTipTarget && boardPinnedTipTarget !== target) return;
+    showBoardHoverTip(target);
+  });
+  host.addEventListener('mouseout', (e) => {
+    const target = e.target && e.target.closest ? e.target.closest('[data-hover-tip]') : null;
+    if(!target) return;
+    const next = e.relatedTarget && e.relatedTarget.closest ? e.relatedTarget.closest('[data-hover-tip]') : null;
+    if(next === target) return;
+    if(boardPinnedTipTarget === target) return;
+    if(boardHoveredTipTarget === target) boardHoveredTipTarget = null;
+    hideBoardHoverTip(false);
+  });
+  host.addEventListener('click', (e) => {
+    const target = e.target && e.target.closest ? e.target.closest('[data-hover-tip]') : null;
+    if(!target){
+      clearPinnedBoardHoverTip();
+      return;
+    }
+    e.stopPropagation();
+    if(boardPinnedTipTarget === target){
+      clearPinnedBoardHoverTip();
+      return;
+    }
+    clearPinnedBoardHoverTip();
+    boardPinnedTipTarget = target;
+    target.classList.add('board-tip-pinned');
+    showBoardHoverTip(target);
+  });
+  window.addEventListener('scroll', () => {
+    if(boardPinnedTipTarget) positionBoardHoverTip(boardPinnedTipTarget);
+    else if(boardHoveredTipTarget) positionBoardHoverTip(boardHoveredTipTarget);
+  }, true);
+  window.addEventListener('resize', () => {
+    if(boardPinnedTipTarget) positionBoardHoverTip(boardPinnedTipTarget);
+    else if(boardHoveredTipTarget) positionBoardHoverTip(boardHoveredTipTarget);
+  });
+}
 
 function getVisibleSkuRows(){
   return Array.from(document.querySelectorAll('#boardBodyTable tbody tr.sku-row'))
@@ -1464,6 +1602,8 @@ function renderBoard(){
   });
 
   tbody.innerHTML = html;
+  normalizeBoardNativeTitles(document.getElementById('boardHeadTable'));
+  normalizeBoardNativeTitles(document.getElementById('boardBodyTable'));
   document.querySelectorAll('.group-row').forEach(el => {
     el.addEventListener('click', function(){
       const family = String(this.getAttribute('data-family') || '');
@@ -1566,6 +1706,7 @@ function collapseAllGroups(){
 }
 
 window.addEventListener('load', function(){
+  bindBoardHoverTipEvents();
   const wrap = document.getElementById('boardBodyWrap');
   const head = document.getElementById('boardHeaderWrap');
   const top = document.getElementById('boardTopScroll');

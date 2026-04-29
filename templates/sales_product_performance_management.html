@@ -622,35 +622,42 @@
             font-weight: 700;
         }
         .perf-group-parent-row:hover {
-            background: #f1ece4;
+            background: #f7f4ef;
         }
         .perf-group-toggle {
-            border: none;
-            border-radius: 6px;
-            background: transparent;
+            border: none !important;
+            border-radius: 0 !important;
+            background: transparent !important;
             color: var(--morandi-slate);
-            min-width: 18px;
-            height: 18px;
-            padding: 0 4px;
+            min-width: 12px !important;
+            width: 12px !important;
+            min-height: 12px !important;
+            height: 12px !important;
+            padding: 0 !important;
+            margin: 0 !important;
             cursor: pointer;
-            font-size: 0.78rem;
+            font-size: 0.72rem;
             line-height: 1;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             outline: none;
-            box-shadow: none;
+            box-shadow: none !important;
+            transform: none !important;
         }
         .perf-group-toggle:focus,
         .perf-group-toggle:focus-visible,
-        .perf-group-toggle:active {
+        .perf-group-toggle:active,
+        .perf-group-toggle:hover {
             outline: none;
-            box-shadow: none;
-            border: none;
+            box-shadow: none !important;
+            border: none !important;
+            background: transparent !important;
+            transform: none !important;
         }
         .perf-group-toggle::before {
             content: '▸';
-            font-size: 0.95rem;
+            font-size: 0.8rem;
             line-height: 1;
             transform: rotate(0deg);
             transition: transform 120ms ease;
@@ -658,6 +665,12 @@
         }
         .perf-group-toggle.open::before {
             transform: rotate(90deg);
+        }
+        .perf-group-parent-row td:first-child,
+        .perf-group-child-item td:first-child {
+            padding-top: 0 !important;
+            padding-bottom: 0 !important;
+            line-height: 1 !important;
         }
         .perf-group-child-row,
         .perf-group-child-item {
@@ -1503,8 +1516,8 @@
                         state.metricOrder = getDefaultMetricOrder();
                         renderMetricCheckboxBar();
                     }
-                    // 分组明细字段仅受“字段显示”影响；图表可单独演进（目前默认保持一致）
-                    state.groupMetricOrder = state.metricOrder.slice();
+                    // 分组明细默认始终显示全部字段，不跟“字段显示”勾选联动
+                    state.groupMetricOrder = (state.metrics || []).map(x => String(x.key || '').trim()).filter(Boolean);
                     state.chartMetricOrder = state.metricOrder.slice();
                     saveMetricOrderToStorage();
                     renderPercentMetricBar();
@@ -1546,7 +1559,7 @@
             if (!state.metricOrder.length) {
                 state.metricOrder = getDefaultMetricOrder();
             }
-            state.groupMetricOrder = state.metricOrder.slice();
+            state.groupMetricOrder = (state.metrics || []).map(x => String(x.key || '').trim()).filter(Boolean);
             state.chartMetricOrder = state.metricOrder.slice();
             renderMetricCheckboxBar();
             renderPercentMetricBar();
@@ -2090,15 +2103,18 @@
         function renderGroups(groups) {
             state.lastGroups = Array.isArray(groups) ? groups : [];
             const host = document.getElementById('groupContainer');
-            const metricKeys = (state.groupMetricOrder && state.groupMetricOrder.length ? state.groupMetricOrder : state.metricOrder).slice();
+            const allMetricKeys = (state.metrics || []).map(x => String(x.key || '').trim()).filter(Boolean);
+            const metricKeys = (state.groupMetricOrder && state.groupMetricOrder.length ? state.groupMetricOrder : allMetricKeys).slice();
             const drill = state._chartDrillRange && state._chartDrillRange.active ? state._chartDrillRange : null;
             const rangeLabel = drill && drill.bucketKey
                 ? `${getBucketRangeLabel(drill.bucketKey, state.chartGranularity)}（图表细分）`
                 : `${(document.getElementById('filterStartDate') || {}).value || ''} ~ ${(document.getElementById('filterEndDate') || {}).value || ''}`.trim();
             host.innerHTML = `
-                <div class="perf-panel-caption">${rangeLabel || '-'} · 货号分组明细</div>
-                <div class="perf-group-meta" style="margin-bottom:0.35rem;">维度：货号 → 平台SKU（默认收起）</div>
-                <div class="perf-group-toolbar" id="perfGroupSortToolbar">
+                <div style="display:flex; align-items:center; gap:0.6rem;">
+                    <div class="perf-panel-caption">${rangeLabel || '-'} · 货号分组明细</div>
+                    <span class="help-dot" data-tip="维度：货号 → 平台SKU（默认收起）"></span>
+                </div>
+                <div id="perfGroupSortToolbar">
                     <span class="perf-inline-help">外层排序</span>
                     <select id="perfGroupOuterSortKey" class="optional-field" style="width:160px;"></select>
                     <select id="perfGroupOuterSortDir" class="optional-field" style="width:110px;">
@@ -2244,6 +2260,18 @@
             const tbody = table.tBodies && table.tBodies[0];
             const parentRows = () => Array.from(tbody.querySelectorAll('tr.perf-group-parent-row'));
             const childRowsByKey = (key) => Array.from(tbody.querySelectorAll(`tr.perf-group-child-item[data-group-key="${key}"]`));
+            const forceShowAllGroupColumns = () => {
+                const root = table.parentElement ? table.parentElement.parentElement : document;
+                const tables = root.querySelectorAll('table#perfGroupTable, table.pm-managed-head-table');
+                tables.forEach(tb => {
+                    (tb.querySelectorAll('th,td') || []).forEach(cell => {
+                        if (cell && cell.style && cell.style.display === 'none') cell.style.display = '';
+                        if (cell && cell.classList) {
+                            cell.classList.remove('is-hidden-col', 'pm-col-hidden', 'pm-hidden-col');
+                        }
+                    });
+                });
+            };
 
             const readComparable = (tr, cellIndex) => {
                 const cell = tr && tr.cells ? tr.cells[cellIndex] : null;
@@ -2368,6 +2396,8 @@
                     th.style.cursor = 'pointer';
                     th.addEventListener('click', (e) => {
                     if (e.target && e.target.closest && e.target.closest('button,input,select,textarea,a,label')) return;
+                    e.preventDefault();
+                    e.stopPropagation();
                     if (outerSortState.key !== manageKey) {
                         outerSortState.key = manageKey;
                         outerSortState.dir = 'desc';
@@ -2399,9 +2429,11 @@
                 const headTable = host.querySelector('.pm-managed-head-wrap table.pm-managed-head-table');
                 const r = headTable && headTable.tHead && headTable.tHead.rows && headTable.tHead.rows[0];
                 if (r) bindHeaderRow(r);
+                forceShowAllGroupColumns();
             }, 60);
             bindSortToolbar();
             applyHierSort();
+            forceShowAllGroupColumns();
         }
 
         function normalizePerfPageSize(rawValue, fallback) {

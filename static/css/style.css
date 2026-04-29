@@ -1436,6 +1436,14 @@ input.optional-field[type="datetime-local"]:focus {
         border-top: 1px solid rgba(207, 199, 189, 0.6);
         z-index: auto;
     }
+
+    /* 全局修复：当弹窗内下拉菜单展开时，避免被 pm-modal-scroll 裁切 */
+    .pm-modal-content--wide:has(.feature-category-dropdown.open) {
+        overflow: visible;
+    }
+    .pm-modal-content--wide:has(.feature-category-dropdown.open) > .pm-modal-scroll {
+        overflow: visible;
+    }
 }
 
 html.has-active-modal,

@@ -1210,16 +1210,7 @@ class SalesManagementMixin:
     # 销量预测（Sales Forecast）
     # ==============================================
 
-    def _forecast_table_exists(self, conn, table_name):
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = %s LIMIT 1",
-                    (table_name,)
-                )
-                return bool(cur.fetchone())
-        except Exception:
-            return False
+    FORECAST_MODES = ('platform', 'spec', 'order')
 
     def _forecast_normalize_month(self, value):
         """将输入归一化为本月首日的 YYYY-MM-01 字符串。支持 YYYY-MM、YYYY-MM-DD、YYYY/MM。"""
@@ -1332,6 +1323,40 @@ class SalesManagementMixin:
                 y += 1
         return months
 
+    def _forecast_format_dt(self, value):
+        if value is None:
+            return None
+        if hasattr(value, 'strftime'):
+            try:
+                return value.strftime('%Y-%m-%d %H:%M:%S')
+            except Exception:
+                return str(value)
+        return str(value)
+
+    def _forecast_month_to_str(self, value, fallback=None):
+        if hasattr(value, 'strftime'):
+            try:
+                return value.strftime('%Y-%m-01')
+            except Exception:
+                pass
+        if value:
+            text = str(value)[:7]
+            if len(text) == 7:
+                return text + '-01'
+        return fallback
+
+    def _forecast_normalize_mode(self, raw):
+        text = str(raw or '').strip().lower()
+        if text in self.FORECAST_MODES:
+            return text
+        if text in ('platform_sku', 'platformsku', 'sku'):
+            return 'platform'
+        if text in ('spec_fabric', 'specfabric', 'variant'):
+            return 'spec'
+        if text in ('order_sku', 'ordersku', 'order_product'):
+            return 'order'
+        return 'spec'
+
     def _forecast_load_variants(self, conn, query_params=None):
         """加载预测页所需的规格列表（含货号/规格/面料/关联下单SKU）。"""
         sku_keyword = ''
@@ -1417,15 +1442,262 @@ class SalesManagementMixin:
             v['order_links'] = order_links_by_variant.get(vid, [])
         return variants, order_products_map
 
+    def _forecast_history_end_exclusive(self, end_month):
+        try:
+            ed_dt = datetime.strptime(end_month, '%Y-%m-%d')
+            year = ed_dt.year
+            month = ed_dt.month + 1
+            if month > 12:
+                month = 1
+                year += 1
+            return f'{year:04d}-{month:02d}-01'
+        except Exception:
+            return None
+
+    def _forecast_load_platform_sku_dim(self, conn, query_params=None):
+        """加载平台SKU维度行：sales_products + variant + family + fabric + 在售标识。"""
+        sku_keyword = ''
+        spec_keyword = ''
+        fabric_keyword = ''
+        if query_params:
+            sku_keyword = (query_params.get('sku', [''])[0] or '').strip()
+            spec_keyword = (query_params.get('spec', [''])[0] or '').strip()
+            fabric_keyword = (query_params.get('fabric', [''])[0] or '').strip()
+
+        clauses = ["1=1"]
+        params = []
+        if sku_keyword:
+            clauses.append("(sp.platform_sku LIKE %s OR pf.sku_family LIKE %s)")
+            like_val = f"%{sku_keyword}%"
+            params.extend([like_val, like_val])
+        if spec_keyword:
+            clauses.append("v.spec_name LIKE %s")
+            params.append(f"%{spec_keyword}%")
+        if fabric_keyword:
+            clauses.append("(fm.fabric_code LIKE %s OR fm.fabric_name_en LIKE %s)")
+            like_val = f"%{fabric_keyword}%"
+            params.extend([like_val, like_val])
+
+        where_sql = ' AND '.join(clauses)
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT sp.id AS sales_product_id,
+                       sp.platform_sku,
+                       sp.product_status,
+                       sp.shop_id,
+                       sh.shop_name,
+                       sh.platform_type_id,
+                       v.id AS variant_id,
+                       v.sku_family_id,
+                       v.spec_name,
+                       v.fabric_id,
+                       pf.sku_family,
+                       fm.fabric_code,
+                       fm.fabric_name_en
+                FROM sales_products sp
+                JOIN sales_product_variants v ON v.id = sp.variant_id
+                LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id
+                LEFT JOIN shops sh ON sh.id = sp.shop_id
+                WHERE {where_sql}
+                ORDER BY pf.sku_family ASC, v.spec_name ASC, sp.platform_sku ASC, sp.id ASC
+                """,
+                tuple(params)
+            )
+            return [dict(row) for row in (cur.fetchall() or [])]
+
+    def _forecast_load_variant_dim(self, conn, query_params=None):
+        """加载规格+面料 维度行（variant 行）。"""
+        sku_keyword = ''
+        spec_keyword = ''
+        fabric_keyword = ''
+        if query_params:
+            sku_keyword = (query_params.get('sku', [''])[0] or '').strip()
+            spec_keyword = (query_params.get('spec', [''])[0] or '').strip()
+            fabric_keyword = (query_params.get('fabric', [''])[0] or '').strip()
+
+        clauses = ["1=1"]
+        params = []
+        if sku_keyword:
+            clauses.append("pf.sku_family LIKE %s")
+            params.append(f"%{sku_keyword}%")
+        if spec_keyword:
+            clauses.append("v.spec_name LIKE %s")
+            params.append(f"%{spec_keyword}%")
+        if fabric_keyword:
+            clauses.append("(fm.fabric_code LIKE %s OR fm.fabric_name_en LIKE %s)")
+            like_val = f"%{fabric_keyword}%"
+            params.extend([like_val, like_val])
+
+        where_sql = ' AND '.join(clauses)
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT v.id AS variant_id,
+                       v.sku_family_id,
+                       v.spec_name,
+                       v.fabric_id,
+                       pf.sku_family,
+                       fm.fabric_code,
+                       fm.fabric_name_en
+                FROM sales_product_variants v
+                LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id
+                WHERE {where_sql}
+                ORDER BY pf.sku_family ASC, v.spec_name ASC, v.id ASC
+                """,
+                tuple(params)
+            )
+            return [dict(row) for row in (cur.fetchall() or [])]
+
+    def _forecast_load_variant_platform_skus(self, conn, variant_ids):
+        """variant_id -> [{sales_product_id, platform_sku, shop_name}]"""
+        out = {}
+        if not variant_ids:
+            return out
+        placeholders = ','.join(['%s'] * len(variant_ids))
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT sp.id AS sales_product_id,
+                       sp.platform_sku,
+                       sp.variant_id,
+                       sh.shop_name
+                FROM sales_products sp
+                LEFT JOIN shops sh ON sh.id = sp.shop_id
+                WHERE sp.variant_id IN ({placeholders})
+                ORDER BY sp.platform_sku ASC, sp.id ASC
+                """,
+                tuple(variant_ids)
+            )
+            for row in (cur.fetchall() or []):
+                vid = self._parse_int(row.get('variant_id'))
+                if not vid:
+                    continue
+                out.setdefault(vid, []).append({
+                    'sales_product_id': self._parse_int(row.get('sales_product_id')),
+                    'platform_sku': row.get('platform_sku') or '',
+                    'shop_name': row.get('shop_name') or '',
+                })
+        return out
+
+    def _forecast_load_order_dim(self, conn, query_params=None):
+        """加载下单SKU 维度行 + 关联 variant/规格信息。"""
+        sku_keyword = ''
+        spec_keyword = ''
+        fabric_keyword = ''
+        if query_params:
+            sku_keyword = (query_params.get('sku', [''])[0] or '').strip()
+            spec_keyword = (query_params.get('spec', [''])[0] or '').strip()
+            fabric_keyword = (query_params.get('fabric', [''])[0] or '').strip()
+
+        clauses = ["1=1"]
+        params = []
+        if sku_keyword:
+            clauses.append("(op.sku LIKE %s OR pf.sku_family LIKE %s)")
+            like_val = f"%{sku_keyword}%"
+            params.extend([like_val, like_val])
+        if spec_keyword:
+            clauses.append("op.spec_qty_short LIKE %s")
+            params.append(f"%{spec_keyword}%")
+        if fabric_keyword:
+            clauses.append("(fm.fabric_code LIKE %s OR fm.fabric_name_en LIKE %s)")
+            like_val = f"%{fabric_keyword}%"
+            params.extend([like_val, like_val])
+
+        where_sql = ' AND '.join(clauses)
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT op.id AS order_product_id,
+                       op.sku,
+                       op.sku_family_id,
+                       op.spec_qty_short,
+                       op.contents_desc_en,
+                       op.is_on_market,
+                       op.is_iteration,
+                       pf.sku_family,
+                       fm.fabric_code,
+                       fm.fabric_name_en
+                FROM order_products op
+                LEFT JOIN product_families pf ON pf.id = op.sku_family_id
+                LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
+                WHERE {where_sql}
+                ORDER BY pf.sku_family ASC, op.sku ASC, op.id ASC
+                """,
+                tuple(params)
+            )
+            rows = [dict(row) for row in (cur.fetchall() or [])]
+
+            order_ids = [self._parse_int(r.get('order_product_id')) for r in rows if self._parse_int(r.get('order_product_id'))]
+            links_by_op = {}
+            if order_ids:
+                placeholders = ','.join(['%s'] * len(order_ids))
+                cur.execute(
+                    f"""
+                    SELECT l.order_product_id,
+                           l.variant_id,
+                           l.quantity,
+                           v.spec_name,
+                           pf.sku_family
+                    FROM sales_variant_order_links l
+                    LEFT JOIN sales_product_variants v ON v.id = l.variant_id
+                    LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                    WHERE l.order_product_id IN ({placeholders})
+                    """,
+                    tuple(order_ids)
+                )
+                for link in (cur.fetchall() or []):
+                    op_id = self._parse_int(link.get('order_product_id'))
+                    vid = self._parse_int(link.get('variant_id'))
+                    if not op_id or not vid:
+                        continue
+                    links_by_op.setdefault(op_id, []).append({
+                        'variant_id': vid,
+                        'quantity': max(1, self._parse_int(link.get('quantity')) or 1),
+                        'spec_name': link.get('spec_name') or '',
+                        'sku_family': link.get('sku_family') or '',
+                    })
+        for r in rows:
+            op_id = self._parse_int(r.get('order_product_id'))
+            r['variant_links'] = links_by_op.get(op_id, [])
+        return rows
+
+    def _forecast_load_platform_cells(self, conn, sales_product_ids, months):
+        if not sales_product_ids or not months:
+            return {}
+        placeholders_p = ','.join(['%s'] * len(sales_product_ids))
+        placeholders_m = ','.join(['%s'] * len(months))
+        params = list(sales_product_ids) + list(months)
+        out = {}
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT id, sales_product_id, forecast_month,
+                       initial_qty, prev_qty, latest_qty,
+                       created_at, prev_updated_at, latest_updated_at
+                FROM sales_forecast_platform_sku_monthly
+                WHERE sales_product_id IN ({placeholders_p})
+                  AND forecast_month IN ({placeholders_m})
+                """,
+                tuple(params)
+            )
+            for row in (cur.fetchall() or []):
+                spid = self._parse_int(row.get('sales_product_id'))
+                month_str = self._forecast_month_to_str(row.get('forecast_month'))
+                if not spid or not month_str:
+                    continue
+                out[(spid, month_str)] = self._forecast_serialize_cell(row, month_str, extra_keys={'sales_product_id': spid})
+        return out
+
     def _forecast_load_spec_cells(self, conn, variant_ids, months):
         if not variant_ids or not months:
             return {}
         placeholders_v = ','.join(['%s'] * len(variant_ids))
         placeholders_m = ','.join(['%s'] * len(months))
         params = list(variant_ids) + list(months)
-        result = {}
-        if not self._forecast_table_exists(conn, 'sales_forecast_spec_monthly'):
-            return result
+        out = {}
         with conn.cursor() as cur:
             cur.execute(
                 f"""
@@ -1440,127 +1712,98 @@ class SalesManagementMixin:
             )
             for row in (cur.fetchall() or []):
                 vid = self._parse_int(row.get('variant_id'))
-                month_val = row.get('forecast_month')
-                if hasattr(month_val, 'strftime'):
-                    month_str = month_val.strftime('%Y-%m-01')
-                else:
-                    month_str = str(month_val or '')[:7] + '-01' if month_val else None
+                month_str = self._forecast_month_to_str(row.get('forecast_month'))
                 if not vid or not month_str:
                     continue
-                result[(vid, month_str)] = {
-                    'id': self._parse_int(row.get('id')),
-                    'variant_id': vid,
-                    'forecast_month': month_str,
-                    'initial_qty': self._parse_int(row.get('initial_qty')) or 0,
-                    'prev_qty': None if row.get('prev_qty') is None else self._parse_int(row.get('prev_qty')),
-                    'latest_qty': self._parse_int(row.get('latest_qty')) or 0,
-                    'created_at': self._forecast_format_dt(row.get('created_at')),
-                    'prev_updated_at': self._forecast_format_dt(row.get('prev_updated_at')),
-                    'latest_updated_at': self._forecast_format_dt(row.get('latest_updated_at')),
-                }
-        return result
+                out[(vid, month_str)] = self._forecast_serialize_cell(row, month_str, extra_keys={'variant_id': vid})
+        return out
 
-    def _forecast_load_order_cells(self, conn, variant_ids, months):
-        if not variant_ids or not months:
+    def _forecast_load_order_cells(self, conn, order_product_ids, months):
+        if not order_product_ids or not months:
             return {}
-        placeholders_v = ','.join(['%s'] * len(variant_ids))
+        placeholders_o = ','.join(['%s'] * len(order_product_ids))
         placeholders_m = ','.join(['%s'] * len(months))
-        params = list(variant_ids) + list(months)
-        result = {}
-        if not self._forecast_table_exists(conn, 'sales_forecast_order_sku_monthly'):
-            return result
+        params = list(order_product_ids) + list(months)
+        out = {}
         with conn.cursor() as cur:
             cur.execute(
                 f"""
-                SELECT id, variant_id, order_product_id, forecast_month,
+                SELECT id, order_product_id, forecast_month,
                        initial_qty, prev_qty, latest_qty,
                        created_at, prev_updated_at, latest_updated_at
                 FROM sales_forecast_order_sku_monthly
-                WHERE variant_id IN ({placeholders_v})
+                WHERE order_product_id IN ({placeholders_o})
                   AND forecast_month IN ({placeholders_m})
                 """,
                 tuple(params)
             )
             for row in (cur.fetchall() or []):
-                vid = self._parse_int(row.get('variant_id'))
                 op_id = self._parse_int(row.get('order_product_id'))
-                month_val = row.get('forecast_month')
-                if hasattr(month_val, 'strftime'):
-                    month_str = month_val.strftime('%Y-%m-01')
-                else:
-                    month_str = str(month_val or '')[:7] + '-01' if month_val else None
-                if not vid or not op_id or not month_str:
+                month_str = self._forecast_month_to_str(row.get('forecast_month'))
+                if not op_id or not month_str:
                     continue
-                result[(vid, op_id, month_str)] = {
-                    'id': self._parse_int(row.get('id')),
-                    'variant_id': vid,
-                    'order_product_id': op_id,
-                    'forecast_month': month_str,
-                    'initial_qty': self._parse_int(row.get('initial_qty')) or 0,
-                    'prev_qty': None if row.get('prev_qty') is None else self._parse_int(row.get('prev_qty')),
-                    'latest_qty': self._parse_int(row.get('latest_qty')) or 0,
-                    'created_at': self._forecast_format_dt(row.get('created_at')),
-                    'prev_updated_at': self._forecast_format_dt(row.get('prev_updated_at')),
-                    'latest_updated_at': self._forecast_format_dt(row.get('latest_updated_at')),
-                }
-        return result
-
-    def _forecast_format_dt(self, value):
-        if value is None:
-            return None
-        if hasattr(value, 'strftime'):
-            try:
-                return value.strftime('%Y-%m-%d %H:%M:%S')
-            except Exception:
-                return str(value)
-        return str(value)
-
-    def _forecast_compute_auto_order(self, variants, spec_cells, months):
-        """根据每个 variant 的 latest_qty × order link.quantity 计算自动下单SKU需求。
-
-        返回 dict: { (variant_id, order_product_id, month): qty }
-        """
-        out = {}
-        for v in variants or []:
-            vid = self._parse_int(v.get('variant_id'))
-            if not vid:
-                continue
-            links = v.get('order_links') or []
-            if not links:
-                continue
-            for month_str in months:
-                cell = spec_cells.get((vid, month_str))
-                base = self._parse_int(cell.get('latest_qty')) if cell else 0
-                if not base:
-                    continue
-                for link in links:
-                    op_id = self._parse_int(link.get('order_product_id'))
-                    qty_per = max(1, self._parse_int(link.get('quantity')) or 1)
-                    if not op_id:
-                        continue
-                    out[(vid, op_id, month_str)] = (out.get((vid, op_id, month_str)) or 0) + base * qty_per
+                out[(op_id, month_str)] = self._forecast_serialize_cell(row, month_str, extra_keys={'order_product_id': op_id})
         return out
 
-    def _forecast_load_history_monthly_sales(self, conn, variant_ids, start_month, end_month):
-        """从 sales_perf_agg_month + sales_products 聚合 variant 的过去月销量。
+    def _forecast_serialize_cell(self, row, month_str, extra_keys=None):
+        payload = {
+            'id': self._parse_int(row.get('id')),
+            'forecast_month': month_str,
+            'initial_qty': self._parse_int(row.get('initial_qty')) or 0,
+            'prev_qty': None if row.get('prev_qty') is None else self._parse_int(row.get('prev_qty')),
+            'latest_qty': self._parse_int(row.get('latest_qty')) or 0,
+            'created_at': self._forecast_format_dt(row.get('created_at')),
+            'prev_updated_at': self._forecast_format_dt(row.get('prev_updated_at')),
+            'latest_updated_at': self._forecast_format_dt(row.get('latest_updated_at')),
+        }
+        if extra_keys:
+            payload.update(extra_keys)
+        return payload
 
-        返回 dict: { (variant_id, month_start_str): { sales_qty, net_sales_amount } }
-        """
-        result = {}
+    def _forecast_load_history_by_sales_product(self, conn, sales_product_ids, start_month, end_month):
+        out = {}
+        if not sales_product_ids or not start_month or not end_month:
+            return out
+        end_exclusive = self._forecast_history_end_exclusive(end_month)
+        if not end_exclusive:
+            return out
+        placeholders = ','.join(['%s'] * len(sales_product_ids))
+        params = list(sales_product_ids) + [start_month, end_exclusive]
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT sales_product_id, month_start,
+                       sales_qty, net_sales_amount, order_qty, session_total, refund_amount
+                FROM sales_perf_agg_month
+                WHERE sales_product_id IN ({placeholders})
+                  AND month_start >= %s
+                  AND month_start < %s
+                """,
+                tuple(params)
+            )
+            for row in (cur.fetchall() or []):
+                spid = self._parse_int(row.get('sales_product_id'))
+                month_str = self._forecast_month_to_str(row.get('month_start'))
+                if not spid or not month_str:
+                    continue
+                out[(spid, month_str)] = {
+                    'sales_product_id': spid,
+                    'month_start': month_str,
+                    'sales_qty': float(row.get('sales_qty') or 0),
+                    'net_sales_amount': float(row.get('net_sales_amount') or 0),
+                    'order_qty': float(row.get('order_qty') or 0),
+                    'session_total': float(row.get('session_total') or 0),
+                    'refund_amount': float(row.get('refund_amount') or 0),
+                }
+        return out
+
+    def _forecast_load_history_by_variant(self, conn, variant_ids, start_month, end_month):
+        out = {}
         if not variant_ids or not start_month or not end_month:
-            return result
-        if not self._forecast_table_exists(conn, 'sales_perf_agg_month'):
-            return result
-        try:
-            ed_dt = datetime.strptime(end_month, '%Y-%m-%d')
-            year = ed_dt.year
-            month = ed_dt.month + 1
-            if month > 12:
-                month = 1
-                year += 1
-            end_exclusive = f'{year:04d}-{month:02d}-01'
-        except Exception:
-            return result
+            return out
+        end_exclusive = self._forecast_history_end_exclusive(end_month)
+        if not end_exclusive:
+            return out
         placeholders = ','.join(['%s'] * len(variant_ids))
         params = list(variant_ids) + [start_month, end_exclusive]
         with conn.cursor() as cur:
@@ -1584,14 +1827,10 @@ class SalesManagementMixin:
             )
             for row in (cur.fetchall() or []):
                 vid = self._parse_int(row.get('variant_id'))
-                ms = row.get('month_start')
-                if hasattr(ms, 'strftime'):
-                    month_str = ms.strftime('%Y-%m-01')
-                else:
-                    month_str = str(ms or '')[:7] + '-01' if ms else None
+                month_str = self._forecast_month_to_str(row.get('month_start'))
                 if not vid or not month_str:
                     continue
-                result[(vid, month_str)] = {
+                out[(vid, month_str)] = {
                     'variant_id': vid,
                     'month_start': month_str,
                     'sales_qty': float(row.get('sales_qty') or 0),
@@ -1600,95 +1839,303 @@ class SalesManagementMixin:
                     'session_total': float(row.get('session_total') or 0),
                     'refund_amount': float(row.get('refund_amount') or 0),
                 }
-        return result
+        return out
 
     def handle_sales_forecast_api(self, environ, method, start_response):
         try:
-            query_params = parse_qs(environ.get('QUERY_STRING', ''))
-            mode = (query_params.get('mode', ['page_data'])[0] or 'page_data').strip().lower()
-
             if method != 'GET':
                 return self.send_error(405, 'Method not allowed', start_response)
 
-            if mode in ('page_data', ''):
-                months_raw = query_params.get('months') or []
-                months = self._forecast_parse_months(months_raw)
-                if not months:
-                    months = self._forecast_default_future_months(6)
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            forecast_mode = self._forecast_normalize_mode((query_params.get('forecast_mode', [''])[0] or ''))
 
-                hist_start_raw = (query_params.get('history_start', [''])[0] or '').strip()
-                hist_end_raw = (query_params.get('history_end', [''])[0] or '').strip()
-                hist_count = self._parse_int(query_params.get('history_count', ['12'])[0]) or 12
-                hist_start, hist_end = self._forecast_history_month_range(hist_start_raw, hist_end_raw, default_months=hist_count)
-                history_months = self._forecast_iter_months(hist_start, hist_end)
+            months_raw = query_params.get('months') or []
+            months = self._forecast_parse_months(months_raw)
+            if not months:
+                months = self._forecast_default_future_months(6)
 
-                with self._get_db_connection() as conn:
-                    variants, order_products_map = self._forecast_load_variants(conn, query_params)
-                    variant_ids = [self._parse_int(v.get('variant_id')) for v in variants if self._parse_int(v.get('variant_id'))]
+            hist_start_raw = (query_params.get('history_start', [''])[0] or '').strip()
+            hist_end_raw = (query_params.get('history_end', [''])[0] or '').strip()
+            hist_start, hist_end = self._forecast_history_month_range(hist_start_raw, hist_end_raw, default_months=12)
+            history_months = self._forecast_iter_months(hist_start, hist_end)
 
-                    spec_cells_map = self._forecast_load_spec_cells(conn, variant_ids, months)
-                    order_cells_map = self._forecast_load_order_cells(conn, variant_ids, months)
-                    auto_order_map = self._forecast_compute_auto_order(variants, spec_cells_map, months)
-                    history_map = self._forecast_load_history_monthly_sales(conn, variant_ids, hist_start, hist_end)
+            with self._get_db_connection() as conn:
+                if forecast_mode == 'platform':
+                    rows = self._forecast_build_platform_rows(conn, query_params, months, hist_start, hist_end)
+                elif forecast_mode == 'order':
+                    rows = self._forecast_build_order_rows(conn, query_params, months, hist_start, hist_end)
+                else:
+                    rows = self._forecast_build_spec_rows(conn, query_params, months, hist_start, hist_end)
 
-                spec_cells = list(spec_cells_map.values())
-                order_cells = list(order_cells_map.values())
-                auto_order_cells = [
-                    {
-                        'variant_id': key[0],
-                        'order_product_id': key[1],
-                        'forecast_month': key[2],
-                        'auto_qty': value,
-                    }
-                    for key, value in auto_order_map.items()
-                ]
-                history_cells = list(history_map.values())
-
-                payload = {
-                    'status': 'success',
-                    'months': months,
-                    'history_months': history_months,
-                    'history_range': {'start': hist_start, 'end': hist_end},
-                    'variants': variants,
-                    'order_products': list(order_products_map.values()),
-                    'spec_cells': spec_cells,
-                    'order_cells': order_cells,
-                    'auto_order_cells': auto_order_cells,
-                    'history_cells': history_cells,
-                }
-                return self.send_json(payload, start_response)
-
-            if mode == 'history_monthly_sales':
-                hist_start_raw = (query_params.get('history_start', [''])[0] or '').strip()
-                hist_end_raw = (query_params.get('history_end', [''])[0] or '').strip()
-                hist_count = self._parse_int(query_params.get('history_count', ['12'])[0]) or 12
-                hist_start, hist_end = self._forecast_history_month_range(hist_start_raw, hist_end_raw, default_months=hist_count)
-                history_months = self._forecast_iter_months(hist_start, hist_end)
-                with self._get_db_connection() as conn:
-                    variants, _ = self._forecast_load_variants(conn, query_params)
-                    variant_ids = [self._parse_int(v.get('variant_id')) for v in variants if self._parse_int(v.get('variant_id'))]
-                    history_map = self._forecast_load_history_monthly_sales(conn, variant_ids, hist_start, hist_end)
-                return self.send_json({
-                    'status': 'success',
-                    'history_range': {'start': hist_start, 'end': hist_end},
-                    'history_months': history_months,
-                    'history_cells': list(history_map.values()),
-                }, start_response)
-
-            return self.send_json({'status': 'error', 'message': f'未知 mode: {mode}'}, start_response)
+            return self.send_json({
+                'status': 'success',
+                'forecast_mode': forecast_mode,
+                'months': months,
+                'history_months': history_months,
+                'history_range': {'start': hist_start, 'end': hist_end},
+                'rows': rows,
+            }, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
-    def _forecast_upsert_spec_cell(self, cur, variant_id, forecast_month, latest_qty):
+    # ----- 三种模式的行装配 -----
+
+    def _forecast_build_platform_rows(self, conn, query_params, months, hist_start, hist_end):
+        dim_rows = self._forecast_load_platform_sku_dim(conn, query_params)
+        sales_product_ids = [self._parse_int(r.get('sales_product_id')) for r in dim_rows if self._parse_int(r.get('sales_product_id'))]
+        cells = self._forecast_load_platform_cells(conn, sales_product_ids, months)
+        history = self._forecast_load_history_by_sales_product(conn, sales_product_ids, hist_start, hist_end)
+
+        out = []
+        for r in dim_rows:
+            spid = self._parse_int(r.get('sales_product_id'))
+            if not spid:
+                continue
+            row = {
+                'row_key': str(spid),
+                'forecast_mode': 'platform',
+                'labels': {
+                    'sales_product_id': spid,
+                    'platform_sku': r.get('platform_sku') or '',
+                    'shop_name': r.get('shop_name') or '',
+                    'sku_family': r.get('sku_family') or '',
+                    'spec_name': r.get('spec_name') or '',
+                    'fabric_code': r.get('fabric_code') or '',
+                    'fabric_name_en': r.get('fabric_name_en') or '',
+                    'product_status': r.get('product_status') or '',
+                },
+                'history': {},
+                'forecasts': {},
+            }
+            for m in months:
+                cell = cells.get((spid, m))
+                stored_qty = cell.get('latest_qty') if cell else None
+                value_qty = stored_qty or 0
+                row['forecasts'][m] = {
+                    'stored_qty': stored_qty,
+                    'value_qty': value_qty,
+                    'is_inherited': False,
+                    'source': None,
+                    'cell_meta': cell,
+                }
+            for hm in self._forecast_iter_months(hist_start, hist_end):
+                h = history.get((spid, hm))
+                row['history'][hm] = h or {'sales_qty': 0, 'net_sales_amount': 0, 'order_qty': 0, 'session_total': 0, 'refund_amount': 0}
+            out.append(row)
+        return out
+
+    def _forecast_build_spec_rows(self, conn, query_params, months, hist_start, hist_end):
+        dim_rows = self._forecast_load_variant_dim(conn, query_params)
+        variant_ids = [self._parse_int(r.get('variant_id')) for r in dim_rows if self._parse_int(r.get('variant_id'))]
+        spec_cells = self._forecast_load_spec_cells(conn, variant_ids, months)
+        history = self._forecast_load_history_by_variant(conn, variant_ids, hist_start, hist_end)
+
+        platforms_by_variant = self._forecast_load_variant_platform_skus(conn, variant_ids)
+        all_sp_ids = sorted({
+            sp.get('sales_product_id')
+            for ps in platforms_by_variant.values()
+            for sp in ps
+            if sp.get('sales_product_id')
+        })
+        platform_cells = self._forecast_load_platform_cells(conn, all_sp_ids, months)
+
+        out = []
+        for r in dim_rows:
+            vid = self._parse_int(r.get('variant_id'))
+            if not vid:
+                continue
+            platform_skus = platforms_by_variant.get(vid, [])
+            row = {
+                'row_key': str(vid),
+                'forecast_mode': 'spec',
+                'labels': {
+                    'variant_id': vid,
+                    'sku_family': r.get('sku_family') or '',
+                    'spec_name': r.get('spec_name') or '',
+                    'fabric_code': r.get('fabric_code') or '',
+                    'fabric_name_en': r.get('fabric_name_en') or '',
+                    'platform_skus': platform_skus,
+                },
+                'history': {},
+                'forecasts': {},
+            }
+            for m in months:
+                cell = spec_cells.get((vid, m))
+                stored_qty = cell.get('latest_qty') if cell else None
+
+                inherited_items = []
+                inherited_total = 0
+                for ps in platform_skus:
+                    spid = ps.get('sales_product_id')
+                    if not spid:
+                        continue
+                    pc = platform_cells.get((spid, m))
+                    pq = pc.get('latest_qty') if pc else 0
+                    if pq:
+                        inherited_items.append({
+                            'id': spid,
+                            'label': ps.get('platform_sku') or f'SP#{spid}',
+                            'qty': pq,
+                        })
+                        inherited_total += pq
+
+                if stored_qty is None and inherited_total > 0:
+                    row['forecasts'][m] = {
+                        'stored_qty': None,
+                        'value_qty': inherited_total,
+                        'is_inherited': True,
+                        'source': {
+                            'type': 'platform_sku',
+                            'items': inherited_items,
+                            'total_qty': inherited_total,
+                        },
+                        'cell_meta': None,
+                    }
+                else:
+                    row['forecasts'][m] = {
+                        'stored_qty': stored_qty,
+                        'value_qty': stored_qty or 0,
+                        'is_inherited': False,
+                        'source': {
+                            'type': 'platform_sku',
+                            'items': inherited_items,
+                            'total_qty': inherited_total,
+                        } if inherited_items else None,
+                        'cell_meta': cell,
+                    }
+            for hm in self._forecast_iter_months(hist_start, hist_end):
+                h = history.get((vid, hm))
+                row['history'][hm] = h or {'sales_qty': 0, 'net_sales_amount': 0, 'order_qty': 0, 'session_total': 0, 'refund_amount': 0}
+            out.append(row)
+        return out
+
+    def _forecast_build_order_rows(self, conn, query_params, months, hist_start, hist_end):
+        dim_rows = self._forecast_load_order_dim(conn, query_params)
+        order_ids = [self._parse_int(r.get('order_product_id')) for r in dim_rows if self._parse_int(r.get('order_product_id'))]
+        order_cells = self._forecast_load_order_cells(conn, order_ids, months)
+
+        # spec 预测的覆盖（包含继承自 platform 的逻辑），用于推导默认值
+        all_variant_ids = sorted({
+            vl.get('variant_id')
+            for r in dim_rows
+            for vl in (r.get('variant_links') or [])
+            if vl.get('variant_id')
+        })
+        spec_cells = self._forecast_load_spec_cells(conn, all_variant_ids, months)
+        platforms_by_variant = self._forecast_load_variant_platform_skus(conn, all_variant_ids)
+        all_sp_ids = sorted({
+            sp.get('sales_product_id')
+            for ps in platforms_by_variant.values()
+            for sp in ps
+            if sp.get('sales_product_id')
+        })
+        platform_cells = self._forecast_load_platform_cells(conn, all_sp_ids, months)
+
+        def spec_effective_qty(vid, month):
+            cell = spec_cells.get((vid, month))
+            if cell:
+                return cell.get('latest_qty') or 0
+            total = 0
+            for ps in platforms_by_variant.get(vid, []):
+                spid = ps.get('sales_product_id')
+                pc = platform_cells.get((spid, month)) if spid else None
+                total += (pc.get('latest_qty') or 0) if pc else 0
+            return total
+
+        out = []
+        for r in dim_rows:
+            op_id = self._parse_int(r.get('order_product_id'))
+            if not op_id:
+                continue
+            links = r.get('variant_links') or []
+            row = {
+                'row_key': str(op_id),
+                'forecast_mode': 'order',
+                'labels': {
+                    'order_product_id': op_id,
+                    'sku': r.get('sku') or '',
+                    'sku_family': r.get('sku_family') or '',
+                    'spec_qty_short': r.get('spec_qty_short') or '',
+                    'contents_desc_en': r.get('contents_desc_en') or '',
+                    'fabric_code': r.get('fabric_code') or '',
+                    'fabric_name_en': r.get('fabric_name_en') or '',
+                    'is_on_market': self._parse_int(r.get('is_on_market')) or 0,
+                    'variant_links': [
+                        {
+                            'variant_id': vl.get('variant_id'),
+                            'sku_family': vl.get('sku_family'),
+                            'spec_name': vl.get('spec_name'),
+                            'quantity': vl.get('quantity'),
+                        }
+                        for vl in links
+                    ],
+                },
+                'history': {},
+                'forecasts': {},
+            }
+            for m in months:
+                cell = order_cells.get((op_id, m))
+                stored_qty = cell.get('latest_qty') if cell else None
+
+                inherited_items = []
+                inherited_total = 0
+                for vl in links:
+                    vid = vl.get('variant_id')
+                    qty_per = max(1, vl.get('quantity') or 1)
+                    spec_qty = spec_effective_qty(vid, m)
+                    if spec_qty:
+                        sub = spec_qty * qty_per
+                        inherited_items.append({
+                            'id': vid,
+                            'label': f"{vl.get('sku_family') or ''} {vl.get('spec_name') or ''}".strip() or f'V#{vid}',
+                            'qty': sub,
+                            'spec_qty': spec_qty,
+                            'ratio': qty_per,
+                        })
+                        inherited_total += sub
+
+                if stored_qty is None and inherited_total > 0:
+                    row['forecasts'][m] = {
+                        'stored_qty': None,
+                        'value_qty': inherited_total,
+                        'is_inherited': True,
+                        'source': {
+                            'type': 'spec',
+                            'items': inherited_items,
+                            'total_qty': inherited_total,
+                        },
+                        'cell_meta': None,
+                    }
+                else:
+                    row['forecasts'][m] = {
+                        'stored_qty': stored_qty,
+                        'value_qty': stored_qty or 0,
+                        'is_inherited': False,
+                        'source': {
+                            'type': 'spec',
+                            'items': inherited_items,
+                            'total_qty': inherited_total,
+                        } if inherited_items else None,
+                        'cell_meta': cell,
+                    }
+            # 下单SKU 没有自身的销售历史记录；保留空 dict 以保持结构
+            for hm in self._forecast_iter_months(hist_start, hist_end):
+                row['history'][hm] = {'sales_qty': 0, 'net_sales_amount': 0, 'order_qty': 0, 'session_total': 0, 'refund_amount': 0}
+            out.append(row)
+        return out
+
+    def _forecast_upsert_cell(self, cur, table, key_cols, key_values, latest_qty):
+        """通用 upsert：先 SELECT 看有无记录，再 UPDATE/INSERT。"""
+        where_sql = ' AND '.join([f"{c}=%s" for c in key_cols])
         cur.execute(
-            "SELECT id, latest_qty, latest_updated_at FROM sales_forecast_spec_monthly WHERE variant_id=%s AND forecast_month=%s LIMIT 1",
-            (variant_id, forecast_month)
+            f"SELECT id, latest_qty, latest_updated_at FROM {table} WHERE {where_sql} LIMIT 1",
+            tuple(key_values)
         )
         row = cur.fetchone() or None
         if row:
             cur.execute(
-                """
-                UPDATE sales_forecast_spec_monthly
+                f"""
+                UPDATE {table}
                 SET prev_qty = latest_qty,
                     prev_updated_at = latest_updated_at,
                     latest_qty = %s,
@@ -1698,116 +2145,77 @@ class SalesManagementMixin:
                 (latest_qty, self._parse_int(row.get('id')))
             )
             return self._parse_int(row.get('id')), False
+        col_list = ','.join(key_cols + ['initial_qty', 'prev_qty', 'latest_qty', 'created_at', 'prev_updated_at', 'latest_updated_at'])
+        placeholder_count = len(key_cols)
+        placeholders = ','.join(['%s'] * placeholder_count) + ', %s, NULL, %s, CURRENT_TIMESTAMP, NULL, CURRENT_TIMESTAMP'
         cur.execute(
-            """
-            INSERT INTO sales_forecast_spec_monthly
-                (variant_id, forecast_month, initial_qty, prev_qty, latest_qty,
-                 created_at, prev_updated_at, latest_updated_at)
-            VALUES (%s, %s, %s, NULL, %s, CURRENT_TIMESTAMP, NULL, CURRENT_TIMESTAMP)
-            """,
-            (variant_id, forecast_month, latest_qty, latest_qty)
+            f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})",
+            tuple(list(key_values) + [latest_qty, latest_qty])
         )
         return cur.lastrowid, True
 
-    def _forecast_upsert_order_cell(self, cur, variant_id, order_product_id, forecast_month, latest_qty):
+    def _forecast_select_cell(self, cur, table, key_cols, key_values):
+        where_sql = ' AND '.join([f"{c}=%s" for c in key_cols])
+        select_cols = ['id'] + [c for c in key_cols if c != 'forecast_month'] + [
+            'forecast_month', 'initial_qty', 'prev_qty', 'latest_qty',
+            'created_at', 'prev_updated_at', 'latest_updated_at'
+        ]
         cur.execute(
-            """
-            SELECT id, latest_qty, latest_updated_at FROM sales_forecast_order_sku_monthly
-            WHERE variant_id=%s AND order_product_id=%s AND forecast_month=%s LIMIT 1
-            """,
-            (variant_id, order_product_id, forecast_month)
+            f"SELECT {','.join(select_cols)} FROM {table} WHERE {where_sql} LIMIT 1",
+            tuple(key_values)
         )
-        row = cur.fetchone() or None
-        if row:
-            cur.execute(
-                """
-                UPDATE sales_forecast_order_sku_monthly
-                SET prev_qty = latest_qty,
-                    prev_updated_at = latest_updated_at,
-                    latest_qty = %s,
-                    latest_updated_at = CURRENT_TIMESTAMP
-                WHERE id = %s
-                """,
-                (latest_qty, self._parse_int(row.get('id')))
-            )
-            return self._parse_int(row.get('id')), False
-        cur.execute(
-            """
-            INSERT INTO sales_forecast_order_sku_monthly
-                (variant_id, order_product_id, forecast_month, initial_qty, prev_qty, latest_qty,
-                 created_at, prev_updated_at, latest_updated_at)
-            VALUES (%s, %s, %s, %s, NULL, %s, CURRENT_TIMESTAMP, NULL, CURRENT_TIMESTAMP)
-            """,
-            (variant_id, order_product_id, forecast_month, latest_qty, latest_qty)
-        )
-        return cur.lastrowid, True
+        return cur.fetchone() or None
 
     def handle_sales_forecast_bulk_update_api(self, environ, method, start_response):
         try:
             if method != 'POST':
                 return self.send_error(405, 'Method not allowed', start_response)
             data = self._read_json_body(environ) or {}
+            forecast_mode = self._forecast_normalize_mode(data.get('forecast_mode') if isinstance(data, dict) else None)
+            cells = data.get('cells') if isinstance(data, dict) else None
 
-            spec_cells = data.get('spec_cells') if isinstance(data, dict) else None
-            order_cells = data.get('order_cells') if isinstance(data, dict) else None
-
-            parsed_spec = []
-            for item in (spec_cells or []):
+            parsed = []
+            for item in (cells or []):
                 if not isinstance(item, dict):
                     continue
-                vid = self._parse_int(item.get('variant_id'))
+                row_key = self._parse_int(item.get('row_key'))
                 month_str = self._forecast_normalize_month(item.get('forecast_month'))
                 latest_qty = self._parse_int(item.get('latest_qty'))
-                if not vid or not month_str:
+                if not row_key or not month_str:
                     continue
                 if latest_qty is None:
                     latest_qty = 0
-                parsed_spec.append({
-                    'variant_id': vid,
+                parsed.append({
+                    'row_key': row_key,
                     'forecast_month': month_str,
                     'latest_qty': max(0, latest_qty),
                 })
 
-            parsed_order = []
-            for item in (order_cells or []):
-                if not isinstance(item, dict):
-                    continue
-                vid = self._parse_int(item.get('variant_id'))
-                op_id = self._parse_int(item.get('order_product_id'))
-                month_str = self._forecast_normalize_month(item.get('forecast_month'))
-                latest_qty = self._parse_int(item.get('latest_qty'))
-                if not vid or not op_id or not month_str:
-                    continue
-                if latest_qty is None:
-                    latest_qty = 0
-                parsed_order.append({
-                    'variant_id': vid,
-                    'order_product_id': op_id,
-                    'forecast_month': month_str,
-                    'latest_qty': max(0, latest_qty),
-                })
-
-            if not parsed_spec and not parsed_order:
+            if not parsed:
                 return self.send_json({'status': 'error', 'message': '没有有效的更新数据'}, start_response)
 
-            spec_keys = set()
-            order_keys = set()
+            if forecast_mode == 'platform':
+                table = 'sales_forecast_platform_sku_monthly'
+                key_cols = ['sales_product_id', 'forecast_month']
+            elif forecast_mode == 'order':
+                table = 'sales_forecast_order_sku_monthly'
+                key_cols = ['order_product_id', 'forecast_month']
+            else:
+                forecast_mode = 'spec'
+                table = 'sales_forecast_spec_monthly'
+                key_cols = ['variant_id', 'forecast_month']
+
+            saved_keys = []
             with self._get_db_connection() as conn:
-                if parsed_spec and not self._forecast_table_exists(conn, 'sales_forecast_spec_monthly'):
-                    return self.send_json({'status': 'error', 'message': '预测主表不存在，请先执行 SQL migration'}, start_response)
-                if parsed_order and not self._forecast_table_exists(conn, 'sales_forecast_order_sku_monthly'):
-                    return self.send_json({'status': 'error', 'message': '下单SKU调整表不存在，请先执行 SQL migration'}, start_response)
                 try:
                     with conn.cursor() as cur:
-                        for cell in parsed_spec:
-                            self._forecast_upsert_spec_cell(cur, cell['variant_id'], cell['forecast_month'], cell['latest_qty'])
-                            spec_keys.add((cell['variant_id'], cell['forecast_month']))
-                        for cell in parsed_order:
-                            self._forecast_upsert_order_cell(
-                                cur,
-                                cell['variant_id'], cell['order_product_id'], cell['forecast_month'], cell['latest_qty']
+                        for cell in parsed:
+                            self._forecast_upsert_cell(
+                                cur, table, key_cols,
+                                (cell['row_key'], cell['forecast_month']),
+                                cell['latest_qty']
                             )
-                            order_keys.add((cell['variant_id'], cell['order_product_id'], cell['forecast_month']))
+                            saved_keys.append((cell['row_key'], cell['forecast_month']))
                     conn.commit()
                 except Exception as inner:
                     try:
@@ -1816,70 +2224,25 @@ class SalesManagementMixin:
                         pass
                     return self.send_json({'status': 'error', 'message': str(inner)}, start_response)
 
-                refreshed_spec = []
-                refreshed_order = []
+                refreshed = []
                 with conn.cursor() as cur:
-                    if spec_keys:
-                        for vid, month_str in spec_keys:
-                            cur.execute(
-                                """
-                                SELECT id, variant_id, forecast_month, initial_qty, prev_qty, latest_qty,
-                                       created_at, prev_updated_at, latest_updated_at
-                                FROM sales_forecast_spec_monthly
-                                WHERE variant_id=%s AND forecast_month=%s LIMIT 1
-                                """,
-                                (vid, month_str)
-                            )
-                            row = cur.fetchone()
-                            if not row:
-                                continue
-                            month_val = row.get('forecast_month')
-                            month_str_out = month_val.strftime('%Y-%m-01') if hasattr(month_val, 'strftime') else month_str
-                            refreshed_spec.append({
-                                'id': self._parse_int(row.get('id')),
-                                'variant_id': vid,
-                                'forecast_month': month_str_out,
-                                'initial_qty': self._parse_int(row.get('initial_qty')) or 0,
-                                'prev_qty': None if row.get('prev_qty') is None else self._parse_int(row.get('prev_qty')),
-                                'latest_qty': self._parse_int(row.get('latest_qty')) or 0,
-                                'created_at': self._forecast_format_dt(row.get('created_at')),
-                                'prev_updated_at': self._forecast_format_dt(row.get('prev_updated_at')),
-                                'latest_updated_at': self._forecast_format_dt(row.get('latest_updated_at')),
-                            })
-                    if order_keys:
-                        for vid, op_id, month_str in order_keys:
-                            cur.execute(
-                                """
-                                SELECT id, variant_id, order_product_id, forecast_month,
-                                       initial_qty, prev_qty, latest_qty,
-                                       created_at, prev_updated_at, latest_updated_at
-                                FROM sales_forecast_order_sku_monthly
-                                WHERE variant_id=%s AND order_product_id=%s AND forecast_month=%s LIMIT 1
-                                """,
-                                (vid, op_id, month_str)
-                            )
-                            row = cur.fetchone()
-                            if not row:
-                                continue
-                            month_val = row.get('forecast_month')
-                            month_str_out = month_val.strftime('%Y-%m-01') if hasattr(month_val, 'strftime') else month_str
-                            refreshed_order.append({
-                                'id': self._parse_int(row.get('id')),
-                                'variant_id': vid,
-                                'order_product_id': op_id,
-                                'forecast_month': month_str_out,
-                                'initial_qty': self._parse_int(row.get('initial_qty')) or 0,
-                                'prev_qty': None if row.get('prev_qty') is None else self._parse_int(row.get('prev_qty')),
-                                'latest_qty': self._parse_int(row.get('latest_qty')) or 0,
-                                'created_at': self._forecast_format_dt(row.get('created_at')),
-                                'prev_updated_at': self._forecast_format_dt(row.get('prev_updated_at')),
-                                'latest_updated_at': self._forecast_format_dt(row.get('latest_updated_at')),
-                            })
+                    for row_key, month_str in saved_keys:
+                        row = self._forecast_select_cell(cur, table, key_cols, (row_key, month_str))
+                        if not row:
+                            continue
+                        month_str_out = self._forecast_month_to_str(row.get('forecast_month'), fallback=month_str)
+                        refreshed.append({
+                            'row_key': str(row_key),
+                            'forecast_month': month_str_out,
+                            'cell_meta': self._forecast_serialize_cell(row, month_str_out, extra_keys={
+                                key_cols[0]: row_key,
+                            }),
+                        })
 
             return self.send_json({
                 'status': 'success',
-                'spec_cells': refreshed_spec,
-                'order_cells': refreshed_order,
+                'forecast_mode': forecast_mode,
+                'cells': refreshed,
             }, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
