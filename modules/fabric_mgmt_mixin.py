@@ -370,8 +370,8 @@ class FabricManagementMixin:
                             if self._has_required_tables(['fabric_image_mappings']):
                                 cur.execute("SELECT COUNT(*) AS cnt FROM fabric_image_mappings WHERE image_asset_id=%s", (asset_id,))
                                 remain_fabric = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
-                            if self._has_required_tables(['sku_image_mappings']):
-                                cur.execute("SELECT COUNT(*) AS cnt FROM sku_image_mappings WHERE image_asset_id=%s", (asset_id,))
+                            if self._has_required_tables(['sales_variant_image_mappings']):
+                                cur.execute("SELECT COUNT(*) AS cnt FROM sales_variant_image_mappings WHERE image_asset_id=%s", (asset_id,))
                                 remain_sku = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
                             remain_total = remain_fabric + remain_sku
 

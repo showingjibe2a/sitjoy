@@ -136,6 +136,7 @@
             border-spacing: 0;
             width: 100%;
             font-size: 0.85rem;
+            table-layout: fixed;
         }
         table.sf-table thead th {
             position: sticky;
@@ -147,9 +148,12 @@
             text-align: left;
             white-space: nowrap;
             z-index: 4;
+            box-sizing: border-box;
         }
         table.sf-table thead tr.sf-thead-row-1 th { top: 0; background: #ece2cf; }
-        table.sf-table thead tr.sf-thead-row-2 th { top: 36px; background: #f5efe5; }
+        table.sf-table thead tr.sf-thead-row-2 th { top: var(--sf-thead-row1-height, 36px); background: #f5efe5; }
+        table.sf-table thead tr.sf-thead-row-1 th { z-index: 6; cursor: default; }
+        table.sf-table thead tr.sf-thead-row-2 th { z-index: 5; }
         table.sf-table thead tr.sf-thead-row-2 th.sf-th-spec { background: #f3ecdf; }
         table.sf-table thead tr.sf-thead-row-2 th.sf-th-history { background: #f0ece1; }
         table.sf-table thead tr.sf-thead-row-2 th.sf-th-month { background: #ede2cb; }
@@ -163,11 +167,12 @@
             border-bottom: 1px solid rgba(207, 199, 189, 0.42);
             vertical-align: middle;
             white-space: nowrap;
+            box-sizing: border-box;
         }
         table.sf-table tbody tr:nth-child(odd) td { background: #fdfbf6; }
         table.sf-table tbody tr:nth-child(even) td { background: #fbf6ec; }
         td.sf-cell-spec {
-            min-width: 200px;
+            min-width: 0;
             white-space: normal;
             line-height: 1.25;
         }
@@ -175,7 +180,7 @@
             color: var(--morandi-slate);
             font-size: 0.78rem;
         }
-        td.sf-cell-fabric { min-width: 150px; white-space: normal; line-height: 1.2; }
+        td.sf-cell-fabric { min-width: 0; white-space: normal; line-height: 1.2; }
         td.sf-cell-thumb,
         th.sf-th-thumb {
             width: 68px;
@@ -248,11 +253,11 @@
         }
 
         .sf-num-input {
-            width: 96px;
-            padding: 0.25rem 0.4rem;
+            width: 64px;
+            padding: 0.12rem 0.28rem;
             border: 1px solid rgba(207, 199, 189, 0.72);
-            border-radius: 5px;
-            font-size: 0.88rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
             background: #fff;
             text-align: right;
             font-variant-numeric: tabular-nums;
@@ -516,6 +521,8 @@
 
     <script>
         const FORECAST_MODES = ['platform', 'spec', 'order'];
+        const SF_PREF_HISTORY_EXPANDED_KEY = 'sales_forecast_history_expanded_v1';
+        const SF_PREF_FORECAST_EXPANDED_KEY = 'sales_forecast_forecast_expanded_v1';
 
         const state = {
             forecastMode: 'spec',
@@ -533,6 +540,19 @@
             collapsedPlatformGroups: new Set(),
             collapsedSkuGroups: new Set(),
         };
+
+        function readBoolPref(key, fallback) {
+            try {
+                const raw = String(localStorage.getItem(key) || '').trim().toLowerCase();
+                if (raw === '1' || raw === 'true') return true;
+                if (raw === '0' || raw === 'false') return false;
+            } catch (e) {}
+            return !!fallback;
+        }
+
+        function writeBoolPref(key, value) {
+            try { localStorage.setItem(key, value ? '1' : '0'); } catch (e) {}
+        }
 
         function pad2(n) { n = Number(n) || 0; return n < 10 ? ('0' + n) : ('' + n); }
 
@@ -878,12 +898,36 @@
         function renderForecastTable() {
             const thead = document.getElementById('forecastThead');
             const tbody = document.getElementById('forecastTbody');
-            if (!thead || !tbody) return;
+            const table = document.getElementById('forecastTable');
+            if (!thead || !tbody || !table) return;
             const cols = getColumnsForMode(state.forecastMode);
             const visibleHistMonths = state.historyExpanded ? state.historyMonths.slice() : [];
             const visibleFcMonths = state.forecastExpanded ? state.months.slice() : [];
             const histCols = state.historyMonths.length ? (state.historyExpanded ? visibleHistMonths.length : 1) : 0;
             const fcCols = state.months.length ? (state.forecastExpanded ? visibleFcMonths.length : 1) : 0;
+            const leafColWidths = [];
+            cols.forEach(col => {
+                if (col.key === 'thumb') leafColWidths.push(68);
+                else if (col.key === 'fabric_code') leafColWidths.push(136);
+                else if (col.key === 'platform_sku' || col.key === 'sku') leafColWidths.push(150);
+                else if (col.key === 'shop_name' || col.key === 'sku_family') leafColWidths.push(132);
+                else leafColWidths.push(128);
+            });
+            const monthWidth = 86;
+            for (let i = 0; i < histCols; i++) leafColWidths.push(monthWidth);
+            for (let i = 0; i < fcCols; i++) leafColWidths.push(monthWidth);
+            const totalWidth = leafColWidths.reduce((acc, n) => acc + Number(n || 0), 0);
+            table.style.minWidth = `${Math.max(960, totalWidth)}px`;
+            const oldColgroup = table.querySelector('colgroup#forecastColgroup');
+            if (oldColgroup && oldColgroup.parentNode) oldColgroup.parentNode.removeChild(oldColgroup);
+            const colgroup = document.createElement('colgroup');
+            colgroup.id = 'forecastColgroup';
+            leafColWidths.forEach(w => {
+                const c = document.createElement('col');
+                c.style.width = `${w}px`;
+                colgroup.appendChild(c);
+            });
+            table.insertBefore(colgroup, thead);
 
             const trTop = document.createElement('tr');
             trTop.className = 'sf-thead-row-1';
@@ -900,6 +944,8 @@
             thead.innerHTML = '';
             thead.appendChild(trTop);
             thead.appendChild(trBottom);
+            const row1Height = Math.max(32, trTop.getBoundingClientRect().height || trTop.offsetHeight || 36);
+            table.style.setProperty('--sf-thead-row1-height', `${Math.ceil(row1Height)}px`);
             bindHeaderEvents(thead, cols);
 
             const filteredRows = applyFilters(state.rows.slice(), cols);
@@ -997,8 +1043,14 @@
                     e.preventDefault();
                     e.stopPropagation();
                     const sec = el.dataset.section;
-                    if (sec === 'history') state.historyExpanded = !state.historyExpanded;
-                    if (sec === 'forecast') state.forecastExpanded = !state.forecastExpanded;
+                    if (sec === 'history') {
+                        state.historyExpanded = !state.historyExpanded;
+                        writeBoolPref(SF_PREF_HISTORY_EXPANDED_KEY, state.historyExpanded);
+                    }
+                    if (sec === 'forecast') {
+                        state.forecastExpanded = !state.forecastExpanded;
+                        writeBoolPref(SF_PREF_FORECAST_EXPANDED_KEY, state.forecastExpanded);
+                    }
                     renderForecastTable();
                 });
             });
@@ -1221,6 +1273,8 @@
 
         // ===== 初始化 =====
         document.addEventListener('DOMContentLoaded', () => {
+            state.historyExpanded = readBoolPref(SF_PREF_HISTORY_EXPANDED_KEY, true);
+            state.forecastExpanded = readBoolPref(SF_PREF_FORECAST_EXPANDED_KEY, true);
             // 历史范围默认：上个月起回溯 12 个月
             const today = new Date();
             let endY = today.getFullYear();

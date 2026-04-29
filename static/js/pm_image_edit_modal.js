@@ -408,6 +408,8 @@
         return `<button type="button" class="status-pill status-pill--yes ${isActive ? 'is-active' : ''}" data-value="${safe}">${safe}</button>`;
       });
       seg.innerHTML = btns.length ? btns.join('') : `<button type="button" class="status-pill status-pill--no is-active" data-value="">暂无可用类型</button>`;
+      // Type buttons are re-rendered each open/refresh, so we must re-bind click handlers.
+      seg.dataset._bound = '';
       bindSegment(seg, v => setTypeName(v, true));
       if (current) setTypeName(current, false);
     } catch (e) {

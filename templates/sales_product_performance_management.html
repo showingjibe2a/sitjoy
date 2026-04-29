@@ -1494,6 +1494,12 @@
             ].filter(k => state.metricMap[k]);
         }
 
+        function getDefaultGroupMetricOrder() {
+            const baseKeys = (state.metrics || []).map(x => String(x.key || '').trim()).filter(Boolean);
+            const derivedKeys = (DERIVED_METRICS || []).map(x => String(x.key || '').trim()).filter(Boolean);
+            return Array.from(new Set(baseKeys.concat(derivedKeys)));
+        }
+
         function renderMetricCheckboxBar() {
             const host = document.getElementById('metricCheckboxBar');
             if (!host) return;
@@ -1516,8 +1522,8 @@
                         state.metricOrder = getDefaultMetricOrder();
                         renderMetricCheckboxBar();
                     }
-                    // 分组明细默认始终显示全部字段，不跟“字段显示”勾选联动
-                    state.groupMetricOrder = (state.metrics || []).map(x => String(x.key || '').trim()).filter(Boolean);
+                    // 分组明细默认始终显示全部字段（含计算字段），不跟“字段显示”勾选联动
+                    state.groupMetricOrder = getDefaultGroupMetricOrder();
                     state.chartMetricOrder = state.metricOrder.slice();
                     saveMetricOrderToStorage();
                     renderPercentMetricBar();
@@ -1559,7 +1565,7 @@
             if (!state.metricOrder.length) {
                 state.metricOrder = getDefaultMetricOrder();
             }
-            state.groupMetricOrder = (state.metrics || []).map(x => String(x.key || '').trim()).filter(Boolean);
+            state.groupMetricOrder = getDefaultGroupMetricOrder();
             state.chartMetricOrder = state.metricOrder.slice();
             renderMetricCheckboxBar();
             renderPercentMetricBar();
@@ -2103,7 +2109,7 @@
         function renderGroups(groups) {
             state.lastGroups = Array.isArray(groups) ? groups : [];
             const host = document.getElementById('groupContainer');
-            const allMetricKeys = (state.metrics || []).map(x => String(x.key || '').trim()).filter(Boolean);
+            const allMetricKeys = getDefaultGroupMetricOrder();
             const metricKeys = (state.groupMetricOrder && state.groupMetricOrder.length ? state.groupMetricOrder : allMetricKeys).slice();
             const drill = state._chartDrillRange && state._chartDrillRange.active ? state._chartDrillRange : null;
             const rangeLabel = drill && drill.bucketKey

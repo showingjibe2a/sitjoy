@@ -1021,10 +1021,10 @@ CREATE TABLE `shops` (
 -- --------------------------------------------------------
 
 --
--- 表的结构 `sku_image_mappings`
+-- 表的结构 `sales_variant_image_mappings`
 --
 
-CREATE TABLE `sku_image_mappings` (
+CREATE TABLE `sales_variant_image_mappings` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `variant_id` int(10) UNSIGNED DEFAULT NULL,
   `image_asset_id` bigint(20) UNSIGNED NOT NULL,
@@ -1622,9 +1622,9 @@ ALTER TABLE `shops`
   ADD KEY `idx_shop_brand` (`brand_id`);
 
 --
--- 表的索引 `sku_image_mappings`
+-- 表的索引 `sales_variant_image_mappings`
 --
-ALTER TABLE `sku_image_mappings`
+ALTER TABLE `sales_variant_image_mappings`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `uniq_sim_variant_asset` (`variant_id`,`image_asset_id`),
   ADD KEY `idx_sku_images_asset` (`image_asset_id`),
@@ -1974,9 +1974,9 @@ ALTER TABLE `shops`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
--- 使用表AUTO_INCREMENT `sku_image_mappings`
+-- 使用表AUTO_INCREMENT `sales_variant_image_mappings`
 --
-ALTER TABLE `sku_image_mappings`
+ALTER TABLE `sales_variant_image_mappings`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
@@ -2298,9 +2298,9 @@ ALTER TABLE `shops`
   ADD CONSTRAINT `fk_shop_platform_type` FOREIGN KEY (`platform_type_id`) REFERENCES `platform_types` (`id`);
 
 --
--- 限制表 `sku_image_mappings`
+-- 限制表 `sales_variant_image_mappings`
 --
-ALTER TABLE `sku_image_mappings`
+ALTER TABLE `sales_variant_image_mappings`
   ADD CONSTRAINT `fk_sim_variant` FOREIGN KEY (`variant_id`) REFERENCES `sales_product_variants` (`id`) ON DELETE CASCADE,
   ADD CONSTRAINT `fk_sku_image_asset` FOREIGN KEY (`image_asset_id`) REFERENCES `image_assets` (`id`);
 

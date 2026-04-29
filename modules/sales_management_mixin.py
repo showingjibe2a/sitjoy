@@ -1685,7 +1685,7 @@ class SalesManagementMixin:
                        sim.sort_order,
                        sim.id AS sim_id,
                        COALESCE(it_ia.name, '') AS image_type_name
-                FROM sku_image_mappings sim
+                FROM sales_variant_image_mappings sim
                 JOIN image_assets ia ON ia.id = sim.image_asset_id
                 LEFT JOIN image_types it_ia ON it_ia.id = ia.image_type_id
                 WHERE sim.variant_id IN ({placeholders})

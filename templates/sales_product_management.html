@@ -773,6 +773,15 @@
             }
         }
 
+        function utf8ToB64(text) {
+            try {
+                const encoded = encodeURIComponent(String(text || ''));
+                return btoa(unescape(encoded));
+            } catch (e) {
+                try { return btoa(String(text || '')); } catch (_) { return ''; }
+            }
+        }
+
         function safeSetLocalStorage(key, value) {
             try { window.localStorage && window.localStorage.setItem(key, value); } catch (e) {}
         }
@@ -2376,7 +2385,15 @@
                     </div>
                 `;
                 const ok = window.showAppConfirmAsync
-                    ? window.showAppConfirmAsync({ title: '选择规格', description: html, confirmText: '确定', cancelText: '取消', html: true, maxWidth: 920 })
+                    ? window.showAppConfirmAsync({
+                        title: '选择规格',
+                        message: html,
+                        description: html,
+                        confirmText: '确定',
+                        cancelText: '取消',
+                        html: true,
+                        maxWidth: 920
+                    })
                     : Promise.resolve(false);
                 // 若没有全局 confirm 弹窗能力，则退化为不打开（避免重复造轮子）
                 if (!ok) return;

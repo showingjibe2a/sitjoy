@@ -85,6 +85,30 @@
             color: var(--morandi-slate);
             font-size: 0.9rem;
         }
+        .main-images-manager {
+            border: 2px solid var(--morandi-sand);
+            border-radius: 8px;
+            padding: 0.65rem;
+            background: #fff;
+            display: grid;
+            gap: 0.55rem;
+        }
+        .main-images-toolbar {
+            display: flex;
+            gap: 0.45rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .image-type-bar {
+            display: flex;
+            gap: 0.4rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .main-images-folder-tip {
+            color: var(--morandi-slate);
+            font-size: 0.86rem;
+        }
         .upload-progress {
             position: fixed;
             right: 18px;
@@ -615,6 +639,39 @@
                 </div>
 
                 <div class="pm-section">
+                    <h4>主图管理</h4>
+                    <div class="pm-section-body">
+                        <div class="form-group pm-form-full">
+                            <div style="display:flex; align-items:center; justify-content:space-between; gap:0.6rem; flex-wrap:wrap;">
+                                <label style="margin:0;">规格-面料主图</label>
+                                <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+                                    <div class="status-segment status-segment--inline" id="orderMainImagePromptDupSegment" style="margin-right:0.25rem;">
+                                        <button id="orderMainImagePromptDupOff" type="button" class="status-pill status-pill--no" onclick="setOrderMainImagePromptDuplicate(false)">重复提示：关</button>
+                                        <button id="orderMainImagePromptDupOn" type="button" class="status-pill status-pill--yes" onclick="setOrderMainImagePromptDuplicate(true)">重复提示：开</button>
+                                    </div>
+                                    <div class="status-segment status-segment--inline" id="orderMainImageShowFabricSegment" style="margin-right:0.25rem;">
+                                        <button id="orderMainImageShowFabricOff" type="button" class="status-pill status-pill--no" onclick="setOrderMainImageShowFabric(false)">面料图：关</button>
+                                        <button id="orderMainImageShowFabricOn" type="button" class="status-pill status-pill--yes" onclick="setOrderMainImageShowFabric(true)">面料图：开</button>
+                                    </div>
+                                    <button type="button" class="btn-accent" id="orderMainImageUploadBtn">新增主图</button>
+                                    <button type="button" class="btn-secondary" onclick="openNasMainImageImportModal()">从NAS选择并移动</button>
+                                </div>
+                            </div>
+                            <button type="button" class="btn-secondary" id="orderMainImageRefreshBtn">刷新</button>
+                            <input type="file" id="orderMainImageUploadInput" accept="image/*" multiple style="display:none;">
+                            <input type="hidden" id="orderMainImageTypeSelect" value="">
+                            <div class="main-images-manager" style="margin-top:0.55rem;">
+                                <div class="main-images-toolbar">
+                                    <div class="image-type-bar" id="orderMainImageTypeBar"></div>
+                                </div>
+                                <div id="orderMainImageFolderTip" class="main-images-folder-tip">保存后自动绑定到货号/配件图/规格与数量简称 子文件夹；同图复用会自动归入配件图/通用。</div>
+                                <div id="orderMainImageList" class="sj-media-image-grid sj-media-image-grid--tight"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pm-section">
                     <h4>成品尺寸 / 重量</h4>
                     <div class="pm-section-body">
                         <div class="form-group">
@@ -773,6 +830,66 @@
         </div>
     </div>
 
+    <div class="pm-modal" id="nas-main-image-import-modal">
+        <div class="pm-modal-content pm-modal-content--wide">
+            <div class="pm-modal-scroll">
+            <div class="nas-main-image-header">
+                <div class="nas-main-image-title">
+                    <h3 style="margin:0;">从NAS选择主图（移动绑定）</h3>
+                    <span class="help-dot" data-tip="提示：这是服务器侧NAS浏览，可真正移动源文件并绑定。"></span>
+                </div>
+                <div class="nas-main-image-header-actions">
+                    <div class="nas-header-control">
+                        <span class="nas-header-control-label">新增方式</span>
+                        <div class="status-segment status-segment--inline" id="nasActionModeSegment" data-value="multi">
+                            <button type="button" class="status-pill" data-value="double" title="双击图片立即导入">双击</button>
+                            <button type="button" class="status-pill" data-value="multi" title="多选后点击批量导入">多选</button>
+                        </div>
+                    </div>
+                    <div class="nas-header-control">
+                        <span class="nas-header-control-label">图标尺寸</span>
+                        <div class="status-segment status-segment--inline nas-thumb-segment" id="nasThumbSizeSegment" data-value="sm">
+                            <button type="button" class="status-pill status-pill--shipped" data-value="lg" title="大图标">大</button>
+                            <button type="button" class="status-pill status-pill--pending" data-value="sm" title="更小缩略图">小</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="pm-form">
+                <div class="form-group pm-form-full">
+                    <label>图片类型</label>
+                    <div class="pm-inline-panel">
+                        <div id="nasMainImageTypeBar" class="status-segment status-segment--inline"></div>
+                    </div>
+                </div>
+                <div class="form-group pm-form-full">
+                    <label>当前位置</label>
+                    <div class="pm-inline-panel">
+                        <nav id="nasMainImageBreadcrumbs" class="nas-main-image-breadcrumb" aria-label="NAS 路径"></nav>
+                    </div>
+                </div>
+                <div class="form-group pm-form-full">
+                    <div class="nas-main-image-grid-meta" id="nasMainImageGridMeta">
+                        <label class="nas-grid-select-all" id="nasMainImageSelectAllLabel">
+                            <input type="checkbox" id="nasMainImageSelectAllBox">
+                            <span>全选</span>
+                        </label>
+                        <div class="nas-grid-count" id="nasMainImageCountText">共 0 张图片</div>
+                    </div>
+                </div>
+                <div class="form-group pm-form-full">
+                    <div id="nasMainImageList" class="browser-grid nas-main-image-browser-grid"></div>
+                </div>
+            </div>
+            <div id="nasMainImageStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            </div>
+            <div class="pm-modal-actions nas-main-image-modal-actions">
+                <button class="btn-small" type="button" onclick="closeNasMainImageImportModal()">关闭</button>
+                <button class="btn-accent" type="button" onclick="nasMainImageImportSelected()">批量导入所选</button>
+            </div>
+        </div>
+    </div>
+
     <footer>
         <p>&copy; 2026 SITJOY | 内部使用</p>
     </footer>
@@ -886,6 +1003,24 @@
         let toastTimer = null;
         let selectedOrderProductIds = new Set();
         let orderProductItemsCache = [];
+        let orderMainImageItems = [];
+        let orderMainImageTypeOptions = [];
+        let orderMainImageTypeName = '';
+        let orderMainImagePromptDuplicate = true;
+        let orderMainImageShowFabric = false;
+        let nasMainImagePathB64 = '';
+        let nasMainImageNavStack = [];
+        let nasMainImageSelected = new Set();
+        let nasMainImageEntries = [];
+        let nasMainImageActionMode = 'multi';
+        let nasMainImageThumbSize = 'sm';
+        let nasSelectedImageType = '';
+        const ORDER_MAIN_IMAGE_PROMPT_DUP_KEY = 'sj.orderMainImage.promptDup.v1';
+        const ORDER_MAIN_IMAGE_SHOW_FABRIC_KEY = 'sj.orderMainImage.showFabric.v1';
+        const NAS_MAIN_IMAGE_LAST_PATH_KEY = 'sj.orderMainImage.lastPathB64.v1';
+        const NAS_MAIN_IMAGE_LAST_STACK_KEY = 'sj.orderMainImage.navStack.v1';
+        const NAS_MAIN_IMAGE_ACTION_MODE_KEY = 'sj.orderMainImage.actionMode.v1';
+        const NAS_MAIN_IMAGE_THUMB_SIZE_KEY = 'sj.orderMainImage.thumbSize.v1';
         let previewEditDraft = {};
         let editOriginalItem = null;
         let isEditModalMode = false;
@@ -984,6 +1119,559 @@
             const el = document.getElementById('modalStatus');
             el.style.display = 'none';
             el.innerText = '';
+        }
+
+        function decodeB64Utf8(b64) {
+            try {
+                const binary = atob(String(b64 || ''));
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                if (typeof TextDecoder !== 'undefined') return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+                return decodeURIComponent(escape(binary));
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function utf8ToB64(text) {
+            try {
+                const encoded = encodeURIComponent(String(text || ''));
+                return btoa(unescape(encoded));
+            } catch (e) {
+                try { return btoa(String(text || '')); } catch (_) { return ''; }
+            }
+        }
+
+        function safeSetLocalStorage(key, value) {
+            try { localStorage.setItem(key, String(value ?? '')); } catch (e) {}
+        }
+        function safeGetLocalStorage(key) {
+            try { return localStorage.getItem(key) || ''; } catch (e) { return ''; }
+        }
+        function readBoolSetting(key, fallback) {
+            const raw = safeGetLocalStorage(key);
+            if (!raw) return !!fallback;
+            const v = String(raw).trim().toLowerCase();
+            if (['1', 'true', 'yes', 'on'].includes(v)) return true;
+            if (['0', 'false', 'no', 'off'].includes(v)) return false;
+            return !!fallback;
+        }
+        function applyOrderMainImageSwitchUI() {
+            const dupOn = document.getElementById('orderMainImagePromptDupOn');
+            const dupOff = document.getElementById('orderMainImagePromptDupOff');
+            if (dupOn && dupOff) {
+                dupOn.classList.toggle('is-active', !!orderMainImagePromptDuplicate);
+                dupOff.classList.toggle('is-active', !orderMainImagePromptDuplicate);
+            }
+            const fabOn = document.getElementById('orderMainImageShowFabricOn');
+            const fabOff = document.getElementById('orderMainImageShowFabricOff');
+            if (fabOn && fabOff) {
+                fabOn.classList.toggle('is-active', !!orderMainImageShowFabric);
+                fabOff.classList.toggle('is-active', !orderMainImageShowFabric);
+            }
+        }
+        function setOrderMainImagePromptDuplicate(enabled) {
+            orderMainImagePromptDuplicate = !!enabled;
+            safeSetLocalStorage(ORDER_MAIN_IMAGE_PROMPT_DUP_KEY, orderMainImagePromptDuplicate ? '1' : '0');
+            applyOrderMainImageSwitchUI();
+        }
+        function setOrderMainImageShowFabric(enabled) {
+            orderMainImageShowFabric = !!enabled;
+            safeSetLocalStorage(ORDER_MAIN_IMAGE_SHOW_FABRIC_KEY, orderMainImageShowFabric ? '1' : '0');
+            renderOrderMainImageList();
+            applyOrderMainImageSwitchUI();
+        }
+
+        function renderOrderMainImageTypeOptions() {
+            const bar = document.getElementById('orderMainImageTypeBar');
+            const hidden = document.getElementById('orderMainImageTypeSelect');
+            if (!bar || !hidden) return;
+            if (orderMainImageTypeName && !(orderMainImageTypeOptions || []).some(it => String((it && it.name) || '').trim() === orderMainImageTypeName)) {
+                orderMainImageTypeName = '';
+            }
+            const chips = ['<button type="button" class="status-pill" data-name="">全部</button>'];
+            (orderMainImageTypeOptions || []).forEach(item => {
+                const name = String((item && item.name) || '').trim();
+                if (!name) return;
+                chips.push(`<button type="button" class="status-pill" data-name="${name.replace(/"/g, '&quot;')}">${escapeHtml(name)}</button>`);
+            });
+            bar.innerHTML = chips.join('');
+            hidden.value = orderMainImageTypeName || '';
+            bar.querySelectorAll('.status-pill[data-name]').forEach(btn => {
+                const name = String(btn.getAttribute('data-name') || '');
+                btn.classList.toggle('is-active', name === (orderMainImageTypeName || '') || (!name && !orderMainImageTypeName));
+                btn.addEventListener('click', () => {
+                    orderMainImageTypeName = name;
+                    hidden.value = orderMainImageTypeName || '';
+                    renderOrderMainImageTypeOptions();
+                });
+            });
+            renderNasMainImageTypeBar();
+        }
+
+        function loadOrderMainImageTypeOptions() {
+            return fetch('/api/image-type?usage=order_product', { credentials: 'include' })
+                .then(r => r.json())
+                .then(data => {
+                    orderMainImageTypeOptions = (data && data.status === 'success' && Array.isArray(data.items)) ? data.items : [];
+                    renderOrderMainImageTypeOptions();
+                })
+                .catch(() => {
+                    orderMainImageTypeOptions = [];
+                    renderOrderMainImageTypeOptions();
+                });
+        }
+
+        function renderNasMainImageTypeBar() {
+            const bar = document.getElementById('nasMainImageTypeBar');
+            if (!bar) return;
+            const chips = ['<button type="button" class="status-pill" data-name="">全部</button>'];
+            (orderMainImageTypeOptions || []).forEach(item => {
+                const name = String((item && item.name) || '').trim();
+                if (!name) return;
+                chips.push(`<button type="button" class="status-pill" data-name="${name.replace(/"/g, '&quot;')}">${name}</button>`);
+            });
+            bar.innerHTML = chips.join('');
+            bar.querySelectorAll('.status-pill').forEach(btn => {
+                const name = String(btn.getAttribute('data-name') || '');
+                btn.classList.toggle('is-active', name === nasSelectedImageType || (!name && !nasSelectedImageType));
+                btn.addEventListener('click', () => {
+                    nasSelectedImageType = name;
+                    renderNasMainImageTypeBar();
+                });
+            });
+        }
+        function getNasImportImageTypeName() {
+            return String(nasSelectedImageType || orderMainImageTypeName || '').trim();
+        }
+        function showNasMainImageStatus(message, isError) {
+            const el = document.getElementById('nasMainImageStatus');
+            if (!el) return;
+            el.textContent = message || '';
+            el.style.display = message ? 'block' : 'none';
+            el.classList.toggle('error', !!isError);
+            el.classList.toggle('success', !isError);
+        }
+
+        function applyNasSegmentState(rootId, value) {
+            const seg = document.getElementById(rootId);
+            if (!seg) return;
+            seg.dataset.value = value || '';
+            seg.querySelectorAll('.status-pill[data-value]').forEach(btn => {
+                btn.classList.toggle('is-active', String(btn.getAttribute('data-value') || '') === String(value || ''));
+            });
+        }
+        function updateNasCountText() {
+            const countEl = document.getElementById('nasMainImageCountText');
+            if (!countEl) return;
+            const imgCount = (nasMainImageEntries || []).filter(x => x && x.kind === 'file').length;
+            countEl.textContent = `共 ${imgCount} 张图片`;
+        }
+        function updateNasMainImageMeta(totalImages) {
+            const countEl = document.getElementById('nasMainImageCountText');
+            if (countEl) countEl.textContent = `共 ${Math.max(0, Number(totalImages || 0))} 张图片`;
+            const mode = String(nasMainImageActionMode || 'multi');
+            const meta = document.getElementById('nasMainImageGridMeta');
+            if (meta) meta.classList.toggle('is-mode-double', mode === 'double');
+            const box = document.getElementById('nasMainImageSelectAllBox');
+            if (!box) return;
+            if (mode === 'double') {
+                box.checked = false;
+                box.indeterminate = false;
+                return;
+            }
+            const list = document.getElementById('nasMainImageList');
+            const boxes = list ? Array.from(list.querySelectorAll('input[type="checkbox"][data-path]')) : [];
+            const checkedCount = boxes.filter(b => !!b.checked).length;
+            box.checked = boxes.length > 0 && checkedCount === boxes.length;
+            box.indeterminate = checkedCount > 0 && checkedCount < boxes.length;
+        }
+        function renderNasBreadcrumbs() {
+            const el = document.getElementById('nasMainImageBreadcrumbs');
+            if (!el) return;
+            const crumbs = ['<a href="#" class="nas-main-image-crumb" data-crumb-idx="-1">根目录</a>'];
+            (nasMainImageNavStack || []).forEach((seg, idx) => {
+                crumbs.push('<span class="nas-main-image-crumb-sep">›</span>');
+                crumbs.push(`<a href="#" class="nas-main-image-crumb" data-crumb-idx="${idx}">${escapeHtml(String(seg.name || ''))}</a>`);
+            });
+            el.innerHTML = crumbs.join('');
+            el.querySelectorAll('a.nas-main-image-crumb[data-crumb-idx]').forEach(a => {
+                a.addEventListener('click', function(ev) {
+                    ev.preventDefault();
+                    nasMainImageJumpTo(parseInt(this.getAttribute('data-crumb-idx') || '-1', 10));
+                });
+            });
+        }
+        async function nasMainImageBrowse(pathB64) {
+            const url = pathB64 ? `/api/browse?path=${encodeURIComponent(pathB64)}` : '/api/browse';
+            const resp = await fetch(url, { credentials: 'include' });
+            const data = await resp.json();
+            if (!data || data.status !== 'success') throw new Error((data && data.message) || '浏览失败');
+            return data;
+        }
+        async function renderNasMainImageList() {
+            const list = document.getElementById('nasMainImageList');
+            if (!list) return;
+            list.classList.toggle('is-thumb-sm', nasMainImageThumbSize === 'sm');
+            list.innerHTML = '<div class="pm-select-empty nas-main-image-grid-loading">加载中...</div>';
+            showNasMainImageStatus('', false);
+            try {
+                const data = await nasMainImageBrowse(nasMainImagePathB64);
+                const folders = Array.isArray(data.folders) ? data.folders : [];
+                const images = Array.isArray(data.images) ? data.images : [];
+                nasMainImageEntries = [];
+                folders.forEach(item => nasMainImageEntries.push({ kind: 'folder', item }));
+                images.forEach(item => nasMainImageEntries.push({ kind: 'file', item }));
+                renderNasBreadcrumbs();
+                updateNasMainImageMeta(images.length);
+                if (!nasMainImageEntries.length) {
+                    list.innerHTML = '<div class="pm-select-empty nas-main-image-grid-empty">当前目录暂无可用文件</div>';
+                    return;
+                }
+                list.innerHTML = '';
+                nasMainImageEntries.forEach(entry => {
+                    if (entry.kind === 'folder') {
+                        const folder = entry.item || {};
+                        const pathB64 = String(folder.path || '');
+                        const name = decodeB64Utf8(folder.name) || '未命名文件夹';
+                        const card = document.createElement('div');
+                        card.className = 'item-card item-card--folder item-card--nas-browse';
+                        card.setAttribute('role', 'button');
+                        card.tabIndex = 0;
+                        card.addEventListener('dblclick', () => nasMainImageEnterFolder(pathB64, name));
+                        card.addEventListener('click', () => nasMainImageEnterFolder(pathB64, name));
+                        const thumb = document.createElement('div');
+                        thumb.className = 'item-thumbnail folder';
+                        const icon = document.createElement('div');
+                        icon.className = 'folder-icon';
+                        icon.textContent = '📁';
+                        thumb.appendChild(icon);
+                        const info = document.createElement('div');
+                        info.className = 'item-info';
+                        const title = document.createElement('div');
+                        title.className = 'item-name';
+                        title.textContent = name;
+                        info.appendChild(title);
+                        card.appendChild(thumb);
+                        card.appendChild(info);
+                        list.appendChild(card);
+                    } else {
+                        const img = entry.item || {};
+                        const fullPathB64 = String(img.path || '');
+                        const name = decodeB64Utf8(img.name) || '';
+                        const isSelected = nasMainImageSelected.has(fullPathB64);
+                        const card = document.createElement('div');
+                        card.className = 'item-card item-card--nas-browse' + (isSelected ? ' item-card--selected' : '');
+                        const actionMode = String(nasMainImageActionMode || 'multi');
+                        const thumbUrl = `/api/image-preview?id=${encodeURIComponent(fullPathB64)}`;
+                        if (actionMode === 'double') card.addEventListener('dblclick', () => nasMainImageImport(fullPathB64));
+                        card.addEventListener('click', () => {
+                            if (actionMode === 'double') return;
+                            nasMainImageToggle(fullPathB64);
+                        });
+                        const selectWrap = document.createElement('div');
+                        selectWrap.className = 'item-select';
+                        selectWrap.addEventListener('click', (e) => e.stopPropagation());
+                        const cb = document.createElement('input');
+                        cb.type = 'checkbox';
+                        cb.dataset.path = fullPathB64;
+                        cb.checked = isSelected;
+                        cb.addEventListener('click', (e) => e.stopPropagation());
+                        cb.addEventListener('change', (e) => {
+                            if (String(nasMainImageActionMode || 'multi') === 'double') {
+                                e.target.checked = false;
+                                return;
+                            }
+                            nasMainImageToggle(fullPathB64, true, e.target.checked);
+                            card.classList.toggle('item-card--selected', !!e.target.checked);
+                            updateNasMainImageMeta(images.length);
+                        });
+                        selectWrap.appendChild(cb);
+                        const thumb = document.createElement('div');
+                        thumb.className = 'item-thumbnail';
+                        const im = document.createElement('img');
+                        im.src = thumbUrl;
+                        im.alt = name;
+                        im.loading = 'lazy';
+                        thumb.appendChild(im);
+                        const info = document.createElement('div');
+                        info.className = 'item-info';
+                        const title = document.createElement('div');
+                        title.className = 'item-name';
+                        title.textContent = name;
+                        info.appendChild(title);
+                        card.appendChild(selectWrap);
+                        card.appendChild(thumb);
+                        card.appendChild(info);
+                        list.appendChild(card);
+                    }
+                });
+            } catch (e) {
+                list.innerHTML = `<div class="pm-select-empty nas-main-image-grid-empty">${escapeHtml((e && e.message) || '加载失败')}</div>`;
+                showNasMainImageStatus('浏览失败: ' + ((e && e.message) || e), true);
+                updateNasMainImageMeta(0);
+            }
+        }
+        function openNasMainImageImportModal() {
+            if (!editId) {
+                showModalStatus('请先保存下单产品后再导入主图', true);
+                return;
+            }
+            nasMainImagePathB64 = safeGetLocalStorage(NAS_MAIN_IMAGE_LAST_PATH_KEY) || '';
+            try {
+                nasMainImageNavStack = JSON.parse(safeGetLocalStorage(NAS_MAIN_IMAGE_LAST_STACK_KEY) || '[]') || [];
+            } catch (e) { nasMainImageNavStack = []; }
+            nasMainImageSelected = new Set();
+            renderNasMainImageTypeBar();
+            const modal = document.getElementById('nas-main-image-import-modal');
+            if (modal) modal.classList.add('active');
+            if (window.syncModalScrollLock) window.syncModalScrollLock();
+            renderNasMainImageList();
+        }
+        function closeNasMainImageImportModal() {
+            safeSetLocalStorage(NAS_MAIN_IMAGE_LAST_PATH_KEY, nasMainImagePathB64 || '');
+            safeSetLocalStorage(NAS_MAIN_IMAGE_LAST_STACK_KEY, JSON.stringify(nasMainImageNavStack || []));
+            const modal = document.getElementById('nas-main-image-import-modal');
+            if (modal) modal.classList.remove('active');
+            if (window.syncModalScrollLock) window.syncModalScrollLock();
+            showNasMainImageStatus('', false);
+        }
+        async function nasMainImageEnterFolder(pathB64, name) {
+            nasMainImagePathB64 = String(pathB64 || '');
+            nasMainImageNavStack = Array.isArray(nasMainImageNavStack) ? nasMainImageNavStack : [];
+            const label = String(name || '').trim() || decodeB64Utf8(pathB64).split('/').filter(Boolean).pop() || '目录';
+            nasMainImageNavStack.push({ name: label, pathB64: nasMainImagePathB64 });
+            await renderNasMainImageList();
+        }
+        async function nasMainImageJumpTo(idx) {
+            const n = parseInt(idx, 10);
+            if (n < 0) {
+                nasMainImageNavStack = [];
+                nasMainImagePathB64 = '';
+            } else {
+                nasMainImageNavStack = (nasMainImageNavStack || []).slice(0, n + 1);
+                nasMainImagePathB64 = ((nasMainImageNavStack[n] || {}).pathB64) || '';
+            }
+            await renderNasMainImageList();
+        }
+        function nasMainImageToggle(pathB64, fromCheckbox, forcedChecked) {
+            const p = String(pathB64 || '');
+            if (!p) return;
+            if (fromCheckbox) {
+                if (forcedChecked) nasMainImageSelected.add(p); else nasMainImageSelected.delete(p);
+            } else {
+                if (nasMainImageSelected.has(p)) nasMainImageSelected.delete(p); else nasMainImageSelected.add(p);
+            }
+            renderNasMainImageList();
+        }
+        async function nasMainImageImport(filePathB64, allowDuplicate) {
+            const payload = {
+                order_product_id: editId,
+                source_path_b64: String(filePathB64 || ''),
+                image_type_name: getNasImportImageTypeName(),
+                prompt_duplicate: !!orderMainImagePromptDuplicate,
+                allow_duplicate: !!allowDuplicate,
+            };
+            const resp = await fetch('/api/order-product-main-images-import-by-path', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await resp.json();
+            if (data && data.status === 'duplicate') {
+                const ok = window.showAppConfirmAsync
+                    ? await window.showAppConfirmAsync({ title: '检测到重复图片', message: data.message || '检测到重复图片，是否继续复用？', confirmText: '继续导入' })
+                    : confirm(data.message || '检测到重复图片，是否继续导入？');
+                if (ok) return nasMainImageImport(filePathB64, true);
+                return;
+            }
+            if (!data || data.status !== 'success') throw new Error((data && data.message) || '导入失败');
+            await refreshOrderMainImageList();
+            await renderNasMainImageList();
+        }
+        async function nasMainImageImportSelected() {
+            const paths = Array.from(nasMainImageSelected || []);
+            if (!paths.length) {
+                showTimeoutToast('请先勾选图片');
+                return;
+            }
+            const payload = {
+                order_product_id: editId,
+                source_paths_b64: paths,
+                image_type_name: getNasImportImageTypeName(),
+                prompt_duplicate: !!orderMainImagePromptDuplicate,
+            };
+            const resp = await fetch('/api/order-product-main-images-import-by-path', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await resp.json();
+            if (data && data.status === 'duplicate') {
+                const ok = window.showAppConfirmAsync
+                    ? await window.showAppConfirmAsync({ title: '检测到重复图片', message: data.message || '检测到重复图片，是否继续复用？', confirmText: '继续导入' })
+                    : confirm(data.message || '检测到重复图片，是否继续导入？');
+                if (!ok) return;
+                payload.allow_duplicate = true;
+                const resp2 = await fetch('/api/order-product-main-images-import-by-path', {
+                    method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+                });
+                const data2 = await resp2.json();
+                if (!data2 || data2.status !== 'success') throw new Error((data2 && data2.message) || '导入失败');
+            } else if (!data || data.status !== 'success') {
+                throw new Error((data && data.message) || '导入失败');
+            }
+            nasMainImageSelected = new Set();
+            await refreshOrderMainImageList();
+            await renderNasMainImageList();
+            showTimeoutToast('导入完成');
+        }
+
+        function renderOrderMainImageList() {
+            const wrap = document.getElementById('orderMainImageList');
+            const tip = document.getElementById('orderMainImageFolderTip');
+            if (!wrap) return;
+            if (!editId) {
+                if (tip) tip.textContent = '保存后自动绑定到货号/配件图/规格与数量简称 子文件夹；同图复用会自动归入配件图/通用。';
+                wrap.innerHTML = '<div class="sj-media-image-empty">新增状态下暂无主图，保存后即可上传和管理</div>';
+                return;
+            }
+            const list = Array.isArray(orderMainImageItems) ? orderMainImageItems : [];
+            if (!list.length) {
+                wrap.innerHTML = '<div class="sj-media-image-empty">当前配件图子文件夹暂无图片，可点击“上传主图”新增</div>';
+                return;
+            }
+            wrap.innerHTML = list.map(item => {
+                const imageName = String(item.image_name || '').trim();
+                const b64 = String(item.image_b64 || '').trim();
+                const imageTypeName = String(item.image_type_name || '').trim();
+                const encodedName = encodeURIComponent(imageName);
+                const safeName = imageName.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const safeType = imageTypeName.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const safeDesc = String(item.description || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                return `
+                    <div class="sj-media-image-card" data-image-name-enc="${encodedName}">
+                        <div class="sj-media-image-remove-badge" onclick="deleteOrderMainImage('${encodedName}'); event.stopPropagation();"><span class="sj-media-image-remove-icon">×</span></div>
+                        <div class="sj-media-image-preview-wrap">
+                            ${b64
+                                ? `<img src="/api/image-preview?id=${encodeURIComponent(b64)}&mode=thumb&w=540&q=72" alt="${safeName}" class="sj-media-image-preview" loading="lazy">`
+                                : `<div style="width:100%;height:100%;border:1px dashed var(--morandi-sand);border-radius:12px;background:rgba(0,0,0,0.02);"></div>`
+                            }
+                        </div>
+                        <div class="sj-media-image-info">
+                            <div class="sj-media-image-type">类型：${safeType || '未设置类型'}</div>
+                            <div class="sj-media-image-desc">${safeDesc || '双击添加卖点描述'}</div>
+                            <div class="sj-media-image-name">${safeName || '-'}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            wrap.querySelectorAll('.sj-media-image-card').forEach(card => {
+                card.addEventListener('dblclick', () => {
+                    const encodedName = String(card.getAttribute('data-image-name-enc') || '').trim();
+                    if (encodedName) openOrderMainImageEditModal(encodedName);
+                });
+            });
+        }
+
+        function refreshOrderMainImageList() {
+            if (!editId) {
+                orderMainImageItems = [];
+                renderOrderMainImageList();
+                return Promise.resolve();
+            }
+            return fetch(`/api/order-product-main-images?order_product_id=${encodeURIComponent(String(editId))}`, { credentials: 'include' })
+                .then(r => r.json())
+                .then(data => {
+                    if (!data || data.status !== 'success') throw new Error((data && data.message) || '加载主图失败');
+                    orderMainImageItems = Array.isArray(data.items) ? data.items : [];
+                    renderOrderMainImageList();
+                })
+                .catch(err => {
+                    orderMainImageItems = [];
+                    renderOrderMainImageList();
+                    showModalStatus('加载主图失败: ' + (err && err.message ? err.message : err), true);
+                });
+        }
+
+        function handleOrderMainImageUpload(files) {
+            if (!editId) {
+                showModalStatus('请先保存下单产品后再上传主图', true);
+                return;
+            }
+            const selectedType = String((document.getElementById('orderMainImageTypeSelect') || {}).value || '').trim();
+            const picked = Array.from(files || []).filter(f => f && f.size > 0);
+            if (!picked.length) return;
+            const fd = new FormData();
+            fd.append('order_product_id', String(editId));
+            if (selectedType) fd.append('image_type_name', selectedType);
+            picked.forEach(f => fd.append('file', f, f.name || 'image.bin'));
+            fetch('/api/order-product-main-images-upload', { method: 'POST', credentials: 'include', body: fd })
+                .then(r => r.json())
+                .then(data => {
+                    if (!data || data.status !== 'success') throw new Error((data && data.message) || '上传失败');
+                    refreshOrderMainImageList();
+                })
+                .catch(err => showModalStatus('主图上传失败: ' + (err && err.message ? err.message : err), true));
+        }
+
+        async function deleteOrderMainImage(encodedName) {
+            const imageName = decodeURIComponent(String(encodedName || ''));
+            if (!editId || !imageName) return;
+            const ok = window.showAppConfirmAsync
+                ? await window.showAppConfirmAsync({ title: '删除确认', message: `确认删除图片：${imageName}？`, confirmText: '确认删除' })
+                : confirm(`确认删除图片：${imageName}？`);
+            if (!ok) return;
+            fetch('/api/order-product-main-images', {
+                method: 'DELETE',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ order_product_id: editId, image_name: imageName })
+            }).then(r => r.json()).then(data => {
+                if (!data || data.status !== 'success') throw new Error((data && data.message) || '删除失败');
+                refreshOrderMainImageList();
+            }).catch(err => showModalStatus('主图删除失败: ' + (err && err.message ? err.message : err), true));
+        }
+
+        function openOrderMainImageEditModal(encodedName) {
+            const imageName = decodeURIComponent(String(encodedName || ''));
+            if (!imageName || !window.PmImageEditModal || !window.PmImageEditModal.open) return;
+            const current = (orderMainImageItems || []).find(x => String(x.image_name || '') === imageName);
+            const pathB64 = String((current && current.image_b64) || '').trim();
+            if (!pathB64) return;
+            window.PmImageEditModal.init({
+                mode: 'order_product_management',
+                hooks: {
+                    prefillVariantLinks: false,
+                    onRenamed: ({ oldPathB64, newFilename }) => {
+                        const oldRel = decodeB64Utf8(oldPathB64);
+                        const folder = oldRel.includes('/') ? oldRel.slice(0, oldRel.lastIndexOf('/')) : '';
+                        const newRel = folder ? `${folder}/${newFilename}` : newFilename;
+                        return utf8ToB64(newRel);
+                    },
+                    onReplaceSelected: ({ file }) => {
+                        if (!file) return;
+                        const fd = new FormData();
+                        fd.append('order_product_id', String(editId));
+                        fd.append('image_name', imageName);
+                        fd.append('file', file, file.name || 'image.bin');
+                        fetch('/api/order-product-main-images-replace', { method: 'POST', credentials: 'include', body: fd })
+                            .then(r => r.json())
+                            .then(data => {
+                                if (!data || data.status !== 'success') throw new Error((data && data.message) || '替换失败');
+                                refreshOrderMainImageList();
+                                if (window.showAppToast) window.showAppToast(data.message || '替换成功', false, 2500);
+                            })
+                            .catch(err => {
+                                if (window.showAppToast) window.showAppToast('替换失败：' + (err && err.message ? err.message : err), true, 6000);
+                            });
+                    },
+                    onAfterSuccess: () => refreshOrderMainImageList()
+                }
+            });
+            window.PmImageEditModal.open({ pathB64, name: imageName, defaultVariantIds: [] });
         }
 
         function resetSearch() {
@@ -1119,6 +1807,12 @@
             setPickerSelected('cert', []);
             document.getElementById('modalSaveBtn').innerText = '保存';
             resetModalStatus();
+            orderMainImageItems = [];
+            orderMainImageTypeName = '';
+            const orderTypeInput = document.getElementById('orderMainImageTypeSelect');
+            if (orderTypeInput) orderTypeInput.value = '';
+            renderOrderMainImageTypeOptions();
+            renderOrderMainImageList();
             document.getElementById('pm-modal').classList.add('active');
             document.getElementById('modalSku').focus();
             autoCalcCartonQtyFromPackage();
@@ -1183,6 +1877,8 @@
             document.getElementById('factoryLinkSearch').value = '';
             document.getElementById('modalSaveBtn').innerText = '保存';
             resetModalStatus();
+            loadOrderMainImageTypeOptions();
+            refreshOrderMainImageList();
             document.getElementById('pm-modal').classList.add('active');
             document.getElementById('modalSku').focus();
             autoCalcCartonQtyFromPackage();
@@ -1204,6 +1900,12 @@
                 clearTimeout(modalSavePendingTimer);
                 modalSavePendingTimer = null;
             }
+            orderMainImageItems = [];
+            orderMainImageTypeName = '';
+            const orderTypeInput = document.getElementById('orderMainImageTypeSelect');
+            if (orderTypeInput) orderTypeInput.value = '';
+            renderOrderMainImageTypeOptions();
+            renderOrderMainImageList();
         }
 
         function normalizeIdListForCompare(values) {
@@ -3396,6 +4098,16 @@
         window.addEventListener('load', loadFrameMaterials);
         window.addEventListener('load', loadFeatures);
         window.addEventListener('load', loadCertifications);
+        window.addEventListener('load', loadOrderMainImageTypeOptions);
+        window.addEventListener('load', function() {
+            orderMainImagePromptDuplicate = readBoolSetting(ORDER_MAIN_IMAGE_PROMPT_DUP_KEY, true);
+            orderMainImageShowFabric = readBoolSetting(ORDER_MAIN_IMAGE_SHOW_FABRIC_KEY, false);
+            nasMainImageActionMode = safeGetLocalStorage(NAS_MAIN_IMAGE_ACTION_MODE_KEY) || 'multi';
+            nasMainImageThumbSize = safeGetLocalStorage(NAS_MAIN_IMAGE_THUMB_SIZE_KEY) || 'sm';
+            applyOrderMainImageSwitchUI();
+            applyNasSegmentState('nasActionModeSegment', nasMainImageActionMode);
+            applyNasSegmentState('nasThumbSizeSegment', nasMainImageThumbSize);
+        });
         document.getElementById('pm-modal').addEventListener('click', function(e) {
             if (e.target === this) {
                 closeModal();
@@ -3467,6 +4179,49 @@
             }
             this.value = '';
         });
+        document.getElementById('orderMainImageUploadBtn').addEventListener('click', function() {
+            const input = document.getElementById('orderMainImageUploadInput');
+            if (!input) return;
+            input.value = '';
+            input.click();
+        });
+        document.getElementById('orderMainImageUploadInput').addEventListener('change', function() {
+            handleOrderMainImageUpload(this.files || []);
+            this.value = '';
+        });
+        document.getElementById('orderMainImageRefreshBtn').addEventListener('click', function() {
+            refreshOrderMainImageList();
+        });
+        document.querySelectorAll('#nasActionModeSegment .status-pill[data-value]').forEach(btn => {
+            btn.addEventListener('click', function() {
+                nasMainImageActionMode = String(this.getAttribute('data-value') || 'multi');
+                safeSetLocalStorage(NAS_MAIN_IMAGE_ACTION_MODE_KEY, nasMainImageActionMode);
+                applyNasSegmentState('nasActionModeSegment', nasMainImageActionMode);
+            });
+        });
+        document.querySelectorAll('#nasThumbSizeSegment .status-pill[data-value]').forEach(btn => {
+            btn.addEventListener('click', function() {
+                nasMainImageThumbSize = String(this.getAttribute('data-value') || 'sm');
+                safeSetLocalStorage(NAS_MAIN_IMAGE_THUMB_SIZE_KEY, nasMainImageThumbSize);
+                applyNasSegmentState('nasThumbSizeSegment', nasMainImageThumbSize);
+                renderNasMainImageList();
+            });
+        });
+        document.getElementById('nasMainImageSelectAllBox')?.addEventListener('change', function() {
+            const checked = !!this.checked;
+            if (!checked) {
+                nasMainImageSelected = new Set();
+            } else {
+                (nasMainImageEntries || []).forEach(entry => {
+                    if (entry && entry.kind === 'file') {
+                        const file = entry.item || {};
+                        const p = String(file.path || '');
+                        if (p) nasMainImageSelected.add(p);
+                    }
+                });
+            }
+            renderNasMainImageList();
+        });
         document.getElementById('uploadDialogModal').addEventListener('click', function(e) {
             if (e.target === this) {
                 this.classList.remove('active');
@@ -3474,6 +4229,9 @@
                     window.syncModalScrollLock();
                 }
             }
+        });
+        document.getElementById('nas-main-image-import-modal')?.addEventListener('click', function(e) {
+            if (e.target === this) closeNasMainImageImportModal();
         });
         document.getElementById('shippingPlanModal').addEventListener('click', function(e) {
             if (e.target === this) {
@@ -3619,5 +4377,6 @@
     </script>
 </body>
     <script src="/static/js/header.js"></script>
+    <script src="/static/js/pm_image_edit_modal.js"></script>
 </html>
 

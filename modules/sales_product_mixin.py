@@ -333,13 +333,13 @@ class SalesProductMixin:
                             start_response,
                         )
 
-                    if not self._table_has_column(conn, 'sku_image_mappings', 'variant_id'):
-                        return self.send_json({'status': 'error', 'message': 'sku_image_mappings 缺少 variant_id'}, start_response)
+                    if not self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id'):
+                        return self.send_json({'status': 'error', 'message': 'sales_variant_image_mappings 缺少 variant_id'}, start_response)
 
                     cur.execute(
                         """
                         SELECT DISTINCT variant_id
-                        FROM sku_image_mappings
+                        FROM sales_variant_image_mappings
                         WHERE image_asset_id=%s AND variant_id IS NOT NULL AND variant_id>0
                         ORDER BY variant_id ASC
                         """,
@@ -511,7 +511,7 @@ class SalesProductMixin:
     def handle_gallery_apply_image_api(self, environ, method, start_response):
         """
         从 gallery 选择一张图片，一键应用到多个规格（variant_id）。
-        支持 copy/move 到目标文件夹；并写入 image_assets + sku_image_mappings。
+        支持 copy/move 到目标文件夹；并写入 image_assets + sales_variant_image_mappings。
         """
         try:
             if method != 'POST':
@@ -675,9 +675,9 @@ class SalesProductMixin:
                         return self.send_json({'status': 'error', 'message': f'写入数据库失败: {str(e)}'}, start_response)
 
                 # 批量去重提示：先查已存在的关联
-                has_var = self._table_has_column(conn, 'sku_image_mappings', 'variant_id')
+                has_var = self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id')
                 if not has_var:
-                    return self.send_json({'status': 'error', 'message': 'sku_image_mappings 缺少 variant_id，无法批量应用'}, start_response)
+                    return self.send_json({'status': 'error', 'message': 'sales_variant_image_mappings 缺少 variant_id，无法批量应用'}, start_response)
 
                 # 若是复用的旧 asset 且用户指定了类型：尽量补齐 image_assets.image_type_id
                 try:
@@ -720,7 +720,7 @@ class SalesProductMixin:
                 with conn.cursor() as cur:
                     placeholders = ','.join(['%s'] * len(vids))
                     cur.execute(
-                        f"SELECT variant_id FROM sku_image_mappings WHERE variant_id IN ({placeholders}) AND image_asset_id=%s",
+                        f"SELECT variant_id FROM sales_variant_image_mappings WHERE variant_id IN ({placeholders}) AND image_asset_id=%s",
                         tuple(vids + [aid])
                     )
                     for row in (cur.fetchall() or []):
@@ -731,7 +731,7 @@ class SalesProductMixin:
                 with conn.cursor() as cur:
                     placeholders = ','.join(['%s'] * len(vids))
                     cur.execute(
-                        f"SELECT variant_id, COALESCE(MAX(sort_order),0) AS max_sort FROM sku_image_mappings WHERE variant_id IN ({placeholders}) GROUP BY variant_id",
+                        f"SELECT variant_id, COALESCE(MAX(sort_order),0) AS max_sort FROM sales_variant_image_mappings WHERE variant_id IN ({placeholders}) GROUP BY variant_id",
                         tuple(vids)
                     )
                     for row in (cur.fetchall() or []):
@@ -741,8 +741,8 @@ class SalesProductMixin:
 
                 linked = 0
                 skipped = 0
-                has_sim_tid = self._table_has_column(conn, 'sku_image_mappings', 'image_type_id')
-                has_sim_created_by = self._table_has_column(conn, 'sku_image_mappings', 'created_by')
+                has_sim_tid = self._table_has_column(conn, 'sales_variant_image_mappings', 'image_type_id')
+                has_sim_created_by = self._table_has_column(conn, 'sales_variant_image_mappings', 'created_by')
                 cols = ['variant_id', 'image_asset_id']
                 if has_sim_tid:
                     cols.append('image_type_id')
@@ -754,7 +754,7 @@ class SalesProductMixin:
                 if has_sim_tid:
                     dup_parts.append('image_type_id=VALUES(image_type_id)')
                 upsert_sql = (
-                    f"INSERT INTO sku_image_mappings ({', '.join(cols)}) VALUES ({ph}) "
+                    f"INSERT INTO sales_variant_image_mappings ({', '.join(cols)}) VALUES ({ph}) "
                     f"ON DUPLICATE KEY UPDATE {', '.join(dup_parts)}"
                 )
                 batch_rows = []
@@ -930,12 +930,12 @@ class SalesProductMixin:
         aid = int(asset_id or 0)
         if aid <= 0:
             return []
-        if not self._table_has_column(conn, 'sku_image_mappings', 'variant_id'):
+        if not self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id'):
             return []
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT DISTINCT variant_id FROM sku_image_mappings WHERE image_asset_id=%s AND variant_id IS NOT NULL AND variant_id>0",
+                    "SELECT DISTINCT variant_id FROM sales_variant_image_mappings WHERE image_asset_id=%s AND variant_id IS NOT NULL AND variant_id>0",
                     (aid,),
                 )
                 vids = [self._parse_int(r.get('variant_id')) or 0 for r in (cur.fetchall() or [])]
@@ -968,9 +968,9 @@ class SalesProductMixin:
 
         try:
             with conn.cursor() as cur:
-                if self._table_has_column(conn, 'sku_image_mappings', 'variant_id'):
+                if self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id'):
                     cur.execute(
-                        "SELECT DISTINCT variant_id FROM sku_image_mappings WHERE image_asset_id=%s AND variant_id IS NOT NULL AND variant_id>0",
+                        "SELECT DISTINCT variant_id FROM sales_variant_image_mappings WHERE image_asset_id=%s AND variant_id IS NOT NULL AND variant_id>0",
                         (aid,),
                     )
                     variant_ids = [self._parse_int(r.get('variant_id')) for r in (cur.fetchall() or [])]
@@ -2411,7 +2411,7 @@ class SalesProductMixin:
                             preview_map = {}
                             if vid_list:
                                 with self._get_db_connection() as conn2:
-                                    preview_map = self._load_variant_first_image_preview(conn2, vid_list, type_name='白底图')
+                                    preview_map = self._load_variant_first_image_preview(conn2, vid_list, type_name='白底纯图')
                             for r in rows:
                                 vid = int(r.get('variant_id') or 0)
                                 r['preview_image_b64'] = preview_map.get(vid, '') if vid else ''
@@ -3636,6 +3636,7 @@ class SalesProductMixin:
                         usage_col = {
                             'sales': 'applies_sales',
                             'fabric': 'applies_fabric',
+                            'order_product': 'applies_order_product',
                             'aplus': 'applies_aplus',
                         }.get(usage)
                         if usage_col:
@@ -3655,7 +3656,7 @@ class SalesProductMixin:
                         cur.execute(
                             f"""
                             SELECT id, name, is_enabled,
-                                   applies_fabric, applies_sales, applies_aplus,
+                                   applies_fabric, applies_sales, applies_order_product, applies_aplus,
                                    required_width_px, required_height_px,
                                    aplus_layout_json_mobile, aplus_layout_json_desktop,
                                    created_at, updated_at
@@ -3684,6 +3685,7 @@ class SalesProductMixin:
 
                 applies_fabric = int(self._parse_bool_flag(data.get('applies_fabric'), default=True))
                 applies_sales = int(self._parse_bool_flag(data.get('applies_sales'), default=True))
+                applies_order_product = int(self._parse_bool_flag(data.get('applies_order_product'), default=True))
                 applies_aplus = int(self._parse_bool_flag(data.get('applies_aplus'), default=True))
                 required_width_px = data.get('required_width_px', None)
                 required_height_px = data.get('required_height_px', None)
@@ -3710,6 +3712,7 @@ class SalesProductMixin:
                                 SET is_enabled=1,
                                     applies_fabric=%s,
                                     applies_sales=%s,
+                                    applies_order_product=%s,
                                     applies_aplus=%s,
                                     required_width_px=%s,
                                     required_height_px=%s,
@@ -3717,7 +3720,7 @@ class SalesProductMixin:
                                     aplus_layout_json_desktop=%s
                                 WHERE id=%s
                                 """,
-                                (applies_fabric, applies_sales, applies_aplus, required_width_px, required_height_px, aplus_layout_json_mobile, aplus_layout_json_desktop, exists.get('id')),
+                                (applies_fabric, applies_sales, applies_order_product, applies_aplus, required_width_px, required_height_px, aplus_layout_json_mobile, aplus_layout_json_desktop, exists.get('id')),
                             )
                             self._set_image_type_platform_ids(conn, exists.get('id'), platform_type_ids)
                             return self.send_json({'status': 'success', 'id': exists.get('id'), 'reused': True}, start_response)
@@ -3725,13 +3728,13 @@ class SalesProductMixin:
                         cur.execute(
                             """
                             INSERT INTO image_types (
-                                name, is_enabled, applies_fabric, applies_sales, applies_aplus,
+                                name, is_enabled, applies_fabric, applies_sales, applies_order_product, applies_aplus,
                                 required_width_px, required_height_px,
                                 aplus_layout_json_mobile, aplus_layout_json_desktop
                             )
-                            VALUES (%s, 1, %s, %s, %s, %s, %s, %s, %s)
+                            VALUES (%s, 1, %s, %s, %s, %s, %s, %s, %s, %s)
                             """,
-                            (name, applies_fabric, applies_sales, applies_aplus, required_width_px, required_height_px, aplus_layout_json_mobile, aplus_layout_json_desktop),
+                            (name, applies_fabric, applies_sales, applies_order_product, applies_aplus, required_width_px, required_height_px, aplus_layout_json_mobile, aplus_layout_json_desktop),
                         )
                         new_id = cur.lastrowid
                     self._set_image_type_platform_ids(conn, new_id, platform_type_ids)
@@ -3744,7 +3747,7 @@ class SalesProductMixin:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
                 sets = []
                 vals = []
-                for key in ('is_enabled', 'applies_fabric', 'applies_sales', 'applies_aplus'):
+                for key in ('is_enabled', 'applies_fabric', 'applies_sales', 'applies_order_product', 'applies_aplus'):
                     if key in data:
                         sets.append(f"{key}=%s")
                         vals.append(int(self._parse_bool_flag(data.get(key), default=False)))
@@ -3837,18 +3840,18 @@ class SalesProductMixin:
         """
         Return the current max sort_order for the target sales product.
         Compatible with both schemas:
-        - legacy: sku_image_mappings.sales_product_id
-        - new:    sku_image_mappings.variant_id (sales_products.variant_id)
+        - legacy: sales_variant_image_mappings.sales_product_id
+        - new:    sales_variant_image_mappings.variant_id (sales_products.variant_id)
         """
         spid = int(sales_product_id or 0)
         if not spid:
             return 0
-        has_sim_spid = self._table_has_column(conn, 'sku_image_mappings', 'sales_product_id')
-        has_sim_vid = self._table_has_column(conn, 'sku_image_mappings', 'variant_id')
+        has_sim_spid = self._table_has_column(conn, 'sales_variant_image_mappings', 'sales_product_id')
+        has_sim_vid = self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id')
         with conn.cursor() as cur:
             if has_sim_spid:
                 cur.execute(
-                    "SELECT COALESCE(MAX(sort_order), 0) AS max_sort FROM sku_image_mappings WHERE sales_product_id=%s",
+                    "SELECT COALESCE(MAX(sort_order), 0) AS max_sort FROM sales_variant_image_mappings WHERE sales_product_id=%s",
                     (spid,)
                 )
                 row = cur.fetchone() or {}
@@ -3860,37 +3863,42 @@ class SalesProductMixin:
                 if not vid:
                     return 0
                 cur.execute(
-                    "SELECT COALESCE(MAX(sort_order), 0) AS max_sort FROM sku_image_mappings WHERE variant_id=%s",
+                    "SELECT COALESCE(MAX(sort_order), 0) AS max_sort FROM sales_variant_image_mappings WHERE variant_id=%s",
                     (vid,)
                 )
                 row = cur.fetchone() or {}
                 return max(0, self._parse_int(row.get('max_sort')) or 0)
         return 0
 
-    def _load_variant_first_image_preview(self, conn, variant_ids, type_name='白底图'):
+    def _load_variant_first_image_preview(self, conn, variant_ids, type_name='白底纯图'):
         """
         Return {variant_id: image_b64} for the first image (by sort_order) of a given type.
-        Uses image_assets.image_type_id if available; falls back to sku_image_mappings.image_type_id.
+        Uses image_assets.image_type_id if available; falls back to sales_variant_image_mappings.image_type_id.
         """
         vids = [int(v or 0) for v in (variant_ids or []) if int(v or 0) > 0]
         if not vids:
             return {}
 
-        has_variant = self._table_has_column(conn, 'sku_image_mappings', 'variant_id')
+        has_variant = self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id')
         if not has_variant:
             return {}
 
         has_ia_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
-        has_sim_tid = self._table_has_column(conn, 'sku_image_mappings', 'image_type_id')
+        has_sim_tid = self._table_has_column(conn, 'sales_variant_image_mappings', 'image_type_id')
         if not (has_ia_tid or has_sim_tid):
             return {}
 
         # Prefer matching image type name; fallback to first image if none match
         preferred_names = []
-        base_name = str(type_name or '').strip() or '白底图'
+        base_name = str(type_name or '').strip() or '白底纯图'
         preferred_names.append(base_name)
-        # Common legacy / renamed variants
-        for cand in ('主图·白底图', '主图白底图', '白底', 'White'):
+        # Keep aliases tight to avoid accidentally prioritizing non-target types.
+        if '白底纯图' in base_name:
+            alias_candidates = ('主图·白底纯图', '主图白底纯图', '纯白底图')
+        else:
+            # Backward-compatible aliases for non-pure white types.
+            alias_candidates = ('主图·白底图', '主图白底图', '白底', 'White')
+        for cand in alias_candidates:
             if cand not in preferred_names:
                 preferred_names.append(cand)
 
@@ -3912,7 +3920,7 @@ class SalesProductMixin:
         ofn_sel = "ia.original_filename" if has_ia_ofn else "'' AS original_filename"
         sql = f"""
             SELECT sim.variant_id, ia.storage_path, {ofn_sel}, sim.sort_order, sim.id
-            FROM sku_image_mappings sim
+            FROM sales_variant_image_mappings sim
             JOIN image_assets ia ON ia.id = sim.image_asset_id
             {join_it}
             WHERE sim.variant_id IN ({placeholders})
@@ -3927,7 +3935,7 @@ class SalesProductMixin:
         if not rows:
             sql2 = f"""
                 SELECT sim.variant_id, ia.storage_path, {ofn_sel}, sim.sort_order, sim.id
-                FROM sku_image_mappings sim
+                FROM sales_variant_image_mappings sim
                 JOIN image_assets ia ON ia.id = sim.image_asset_id
                 WHERE sim.variant_id IN ({placeholders})
                 ORDER BY sim.variant_id ASC, sim.sort_order ASC, sim.id ASC
@@ -4059,19 +4067,19 @@ class SalesProductMixin:
         return cur.lastrowid
 
     def _execute_sku_mapping_upsert(self, conn, cur, aid, sort_order, image_type_id, variant_id, sales_product_id, user_id):
-        """Upsert sku_image_mappings; image_type_id only included if column still exists (pre-migration)."""
-        has_var = bool(variant_id) and self._table_has_column(conn, 'sku_image_mappings', 'variant_id')
+        """Upsert sales_variant_image_mappings; image_type_id only included if column still exists (pre-migration)."""
+        has_var = bool(variant_id) and self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id')
         key_col = 'variant_id' if has_var else 'sales_product_id'
         key_val = int(variant_id if has_var else (sales_product_id or 0))
         cols = [key_col, 'image_asset_id']
         vals = [key_val, int(aid)]
-        has_sim_tid = self._table_has_column(conn, 'sku_image_mappings', 'image_type_id')
+        has_sim_tid = self._table_has_column(conn, 'sales_variant_image_mappings', 'image_type_id')
         if has_sim_tid:
             cols.append('image_type_id')
             vals.append(int(image_type_id or 0))
         cols.append('sort_order')
         vals.append(sort_order)
-        if self._table_has_column(conn, 'sku_image_mappings', 'created_by'):
+        if self._table_has_column(conn, 'sales_variant_image_mappings', 'created_by'):
             cols.append('created_by')
             vals.append(int(user_id) if user_id else None)
         dup_parts = ['sort_order=%s']
@@ -4081,7 +4089,7 @@ class SalesProductMixin:
             dup_vals.append(int(image_type_id or 0))
         ph = ', '.join(['%s'] * len(vals))
         sql = (
-            f"INSERT INTO sku_image_mappings ({', '.join(cols)}) VALUES ({ph}) "
+            f"INSERT INTO sales_variant_image_mappings ({', '.join(cols)}) VALUES ({ph}) "
             f"ON DUPLICATE KEY UPDATE {', '.join(dup_parts)}"
         )
         cur.execute(sql, tuple(vals + dup_vals))
@@ -4092,9 +4100,9 @@ class SalesProductMixin:
             )
 
     def _read_sales_product_image_items(self, conn, sales_product_id=None, variant_id=None):
-        has_variant = self._table_has_column(conn, 'sku_image_mappings', 'variant_id')
-        has_sales_product_id = self._table_has_column(conn, 'sku_image_mappings', 'sales_product_id')
-        has_sim_tid = self._table_has_column(conn, 'sku_image_mappings', 'image_type_id')
+        has_variant = self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id')
+        has_sales_product_id = self._table_has_column(conn, 'sales_variant_image_mappings', 'sales_product_id')
+        has_sim_tid = self._table_has_column(conn, 'sales_variant_image_mappings', 'image_type_id')
         has_ia_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
         has_ia_dep = self._table_has_column(conn, 'image_assets', 'is_deprecated')
         use_variant = bool(variant_id) and has_variant
@@ -4125,7 +4133,7 @@ class SalesProductMixin:
                        {type_id_expr} AS image_type_id,
                        {type_name_expr} AS image_type_name,
                        {dep_expr} AS is_deprecated
-                FROM sku_image_mappings sim
+                FROM sales_variant_image_mappings sim
                 JOIN image_assets ia ON ia.id = sim.image_asset_id
                 {join_types}
                 WHERE {where_col}=%s
@@ -4241,8 +4249,8 @@ class SalesProductMixin:
                             variant_id = self._parse_int(row.get('variant_id')) or 0
                     except Exception:
                         variant_id = 0
-                    has_variant_col = self._table_has_column(conn, 'sku_image_mappings', 'variant_id')
-                    has_spid_col = self._table_has_column(conn, 'sku_image_mappings', 'sales_product_id')
+                    has_variant_col = self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id')
+                    has_spid_col = self._table_has_column(conn, 'sales_variant_image_mappings', 'sales_product_id')
                     items = []
                     if variant_id and has_variant_col:
                         items = self._read_sales_product_image_items(conn, sales_product_id=None, variant_id=variant_id) or []
@@ -4330,8 +4338,8 @@ class SalesProductMixin:
                     with conn.cursor() as cur:
                         has_ia_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
                         has_ia_dep = self._table_has_column(conn, 'image_assets', 'is_deprecated')
-                        has_sim_vid = self._table_has_column(conn, 'sku_image_mappings', 'variant_id')
-                        has_sim_spid = self._table_has_column(conn, 'sku_image_mappings', 'sales_product_id')
+                        has_sim_vid = self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id')
+                        has_sim_spid = self._table_has_column(conn, 'sales_variant_image_mappings', 'sales_product_id')
                         if not has_sim_vid and not has_sim_spid:
                             return self.send_json({'status': 'error', 'message': '图片映射表缺少 variant_id / sales_product_id 字段，无法定位图片'}, start_response)
                         if has_sim_vid and variant_id:
@@ -4347,7 +4355,7 @@ class SalesProductMixin:
                         cur.execute(
                             f"""
                             SELECT sim.id, sim.image_asset_id, sim.sort_order, ia.storage_path, {old_type_sel}
-                            FROM sku_image_mappings sim
+                            FROM sales_variant_image_mappings sim
                             JOIN image_assets ia ON ia.id = sim.image_asset_id
                             {join_it}
                             WHERE {where_key}=%s AND (ia.storage_path=%s OR ia.storage_path LIKE %s)
@@ -4463,7 +4471,7 @@ class SalesProductMixin:
                                     )
                         if sort_order is not None:
                             cur.execute(
-                                "UPDATE sku_image_mappings SET sort_order=%s WHERE id=%s",
+                                "UPDATE sales_variant_image_mappings SET sort_order=%s WHERE id=%s",
                                 (max(1, sort_order), mapping.get('id')),
                             )
                 return self.send_json({'status': 'success'}, start_response)
@@ -4485,8 +4493,8 @@ class SalesProductMixin:
                     except Exception:
                         variant_id = 0
                     with conn.cursor() as cur:
-                        has_sim_vid = self._table_has_column(conn, 'sku_image_mappings', 'variant_id')
-                        has_sim_spid = self._table_has_column(conn, 'sku_image_mappings', 'sales_product_id')
+                        has_sim_vid = self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id')
+                        has_sim_spid = self._table_has_column(conn, 'sales_variant_image_mappings', 'sales_product_id')
                         if not has_sim_vid and not has_sim_spid:
                             return self.send_json({'status': 'error', 'message': '图片映射表缺少 variant_id / sales_product_id 字段，无法定位图片'}, start_response)
                         if has_sim_vid and variant_id:
@@ -4500,7 +4508,7 @@ class SalesProductMixin:
                         cur.execute(
                             """
                             SELECT sim.id, sim.image_asset_id, ia.storage_path
-                            FROM sku_image_mappings sim
+                            FROM sales_variant_image_mappings sim
                             JOIN image_assets ia ON ia.id = sim.image_asset_id
                             WHERE {where_key}=%s AND (ia.storage_path=%s OR ia.storage_path LIKE %s)
                             ORDER BY sim.sort_order ASC, sim.id ASC
@@ -4512,8 +4520,8 @@ class SalesProductMixin:
                         if not mapping.get('id'):
                             return self.send_json({'status': 'error', 'message': '图片文件不存在'}, start_response)
                         image_asset_id = mapping.get('image_asset_id')
-                        cur.execute("DELETE FROM sku_image_mappings WHERE id=%s", (mapping.get('id'),))
-                        cur.execute("SELECT COUNT(*) AS cnt FROM sku_image_mappings WHERE image_asset_id=%s", (image_asset_id,))
+                        cur.execute("DELETE FROM sales_variant_image_mappings WHERE id=%s", (mapping.get('id'),))
+                        cur.execute("SELECT COUNT(*) AS cnt FROM sales_variant_image_mappings WHERE image_asset_id=%s", (image_asset_id,))
                         remain_sku = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
                         remain_fabric = 0
                         if self._has_required_tables(['fabric_image_mappings']):
@@ -4556,6 +4564,537 @@ class SalesProductMixin:
             return self.send_error(405, 'Method not allowed', start_response)
         except RuntimeError as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def _resolve_order_product_main_image_folder(self, order_product_id, ensure_folder=False):
+        opid = int(order_product_id or 0)
+        if opid <= 0:
+            raise RuntimeError('Missing order_product_id')
+        with self._get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT op.id, op.sku, op.version_no, op.spec_qty_short, pf.sku_family,
+                           fm.fabric_name_en, fm.fabric_code
+                    FROM order_products op
+                    LEFT JOIN product_families pf ON pf.id = op.sku_family_id
+                    LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
+                    WHERE op.id=%s
+                    LIMIT 1
+                    """,
+                    (opid,),
+                )
+                row = cur.fetchone() or {}
+        if not row.get('id'):
+            raise RuntimeError('下单产品不存在')
+        sku_name = str(row.get('sku_family') or '').strip()
+        spec_part = self._derive_order_product_spec_folder_part(row)
+        if not sku_name:
+            raise RuntimeError('当前下单产品缺少货号，无法定位主图文件夹')
+        folder_name = spec_part or "通用"
+        base_folder = self._ensure_listing_folder()
+        folder_path = os.path.join(
+            base_folder,
+            self._safe_fsencode(sku_name),
+            self._safe_fsencode('配件图'),
+            self._safe_fsencode(folder_name),
+        )
+        if ensure_folder:
+            os.makedirs(folder_path, exist_ok=True)
+        return {
+            'order_product_id': opid,
+            'sku_family': sku_name,
+            'variant_folder': folder_name,
+            'folder_path': folder_path,
+        }
+
+    def _derive_order_product_spec_folder_part(self, order_row):
+        # 规格与数量简称优先；为空时从 SKU 结构中推断规格段（而不是回落成中文固定字符串）。
+        spec = str((order_row or {}).get('spec_qty_short') or '').strip()
+        if spec:
+            return spec.replace('/', '-').replace('\\', '-')
+        sku = str((order_row or {}).get('sku') or '').strip()
+        sku_family = str((order_row or {}).get('sku_family') or '').strip()
+        version_no = str((order_row or {}).get('version_no') or '').strip()
+        fabric_code = str((order_row or {}).get('fabric_code') or '').strip()
+        fabric_prefix = fabric_code.split('-', 1)[0].strip() if fabric_code else ''
+        if sku:
+            tokens = [t.strip() for t in sku.split('-') if t and t.strip()]
+            if tokens and sku_family and tokens[0].lower() == sku_family.lower():
+                tokens = tokens[1:]
+            if tokens and version_no and tokens[-1].lower() == version_no.lower():
+                tokens = tokens[:-1]
+            if tokens and fabric_prefix and tokens[-1].lower() == fabric_prefix.lower():
+                tokens = tokens[:-1]
+            if tokens:
+                return tokens[0].replace('/', '-').replace('\\', '-')
+        return ''
+
+    def _ensure_order_product_common_folder(self, sku_family):
+        sku_name = str(sku_family or '').strip()
+        if not sku_name:
+            raise RuntimeError('Missing sku_family')
+        base_folder = self._ensure_listing_folder()
+        common_folder = os.path.join(
+            base_folder,
+            self._safe_fsencode(sku_name),
+            self._safe_fsencode('配件图'),
+            self._safe_fsencode('通用'),
+        )
+        os.makedirs(common_folder, exist_ok=True)
+        return common_folder
+
+    def _read_order_product_image_items(self, conn, order_product_id):
+        opid = int(order_product_id or 0)
+        if not opid:
+            return []
+        has_ia_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
+        has_ia_dep = self._table_has_column(conn, 'image_assets', 'is_deprecated')
+        has_ia_desc = self._table_has_column(conn, 'image_assets', 'description')
+        has_ia_ofn = self._table_has_column(conn, 'image_assets', 'original_filename')
+        join_it = "LEFT JOIN image_types it ON it.id = ia.image_type_id" if has_ia_tid else ""
+        type_sel = "COALESCE(it.name, '') AS image_type_name" if has_ia_tid else "'' AS image_type_name"
+        dep_sel = "COALESCE(ia.is_deprecated, 0) AS is_deprecated" if has_ia_dep else "0 AS is_deprecated"
+        desc_sel = "COALESCE(ia.description, '') AS description" if has_ia_desc else "'' AS description"
+        ofn_sel = "COALESCE(ia.original_filename, '') AS original_filename" if has_ia_ofn else "'' AS original_filename"
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT opim.id, opim.sort_order, ia.storage_path, ia.created_at, ia.updated_at,
+                       {type_sel}, {dep_sel}, {desc_sel}, {ofn_sel}
+                FROM order_product_image_mappings opim
+                JOIN image_assets ia ON ia.id = opim.image_asset_id
+                {join_it}
+                WHERE opim.order_product_id=%s
+                ORDER BY opim.sort_order ASC, opim.id ASC
+                """,
+                (opid,),
+            )
+            rows = cur.fetchall() or []
+        out = []
+        for row in rows:
+            storage_path = str(row.get('storage_path') or '').strip()
+            if not storage_path:
+                continue
+            rel_bytes = os.fsencode(storage_path)
+            image_b64 = base64.b64encode(rel_bytes).decode('ascii') if rel_bytes else ''
+            out.append({
+                'image_name': os.path.basename(storage_path),
+                'image_b64': image_b64,
+                'storage_path': storage_path,
+                'image_type_name': str(row.get('image_type_name') or '').strip(),
+                'is_deprecated': self._parse_int(row.get('is_deprecated')) or 0,
+                'description': str(row.get('description') or '').strip(),
+                'original_filename': str(row.get('original_filename') or '').strip(),
+                'sort_order': self._parse_int(row.get('sort_order')) or 100,
+                'created_at': row.get('created_at'),
+                'updated_at': row.get('updated_at'),
+            })
+        return out
+
+    def _get_order_product_image_sort_start(self, conn, order_product_id):
+        opid = int(order_product_id or 0)
+        if not opid:
+            return 0
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COALESCE(MAX(sort_order), 0) AS max_sort FROM order_product_image_mappings WHERE order_product_id=%s",
+                (opid,),
+            )
+            row = cur.fetchone() or {}
+        return max(0, self._parse_int(row.get('max_sort')) or 0)
+
+    def handle_order_product_main_images_api(self, environ, method, start_response):
+        try:
+            if method == 'GET':
+                query_params = parse_qs(environ.get('QUERY_STRING', ''))
+                order_product_id = self._parse_int(query_params.get('order_product_id', [''])[0] or query_params.get('id', [''])[0])
+                if not order_product_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing order_product_id'}, start_response)
+                folder_info = self._resolve_order_product_main_image_folder(order_product_id, ensure_folder=True)
+                with self._get_db_connection() as conn:
+                    items = self._read_order_product_image_items(conn, order_product_id)
+                return self.send_json({'status': 'success', 'items': items, 'folder': folder_info}, start_response)
+
+            if method == 'DELETE':
+                data = self._read_json_body(environ) or {}
+                order_product_id = self._parse_int(data.get('order_product_id'))
+                image_name = str(data.get('image_name') or '').strip()
+                if not order_product_id or not image_name:
+                    return self.send_json({'status': 'error', 'message': 'Missing order_product_id or image_name'}, start_response)
+                folder_info = self._resolve_order_product_main_image_folder(order_product_id, ensure_folder=True)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT opim.id AS mapping_id, opim.image_asset_id, ia.storage_path
+                            FROM order_product_image_mappings opim
+                            JOIN image_assets ia ON ia.id = opim.image_asset_id
+                            WHERE opim.order_product_id=%s
+                              AND (ia.storage_path=%s OR ia.storage_path LIKE %s)
+                            ORDER BY opim.sort_order ASC, opim.id ASC
+                            LIMIT 1
+                            """,
+                            (order_product_id, image_name, f'%/{image_name}'),
+                        )
+                        row = cur.fetchone() or {}
+                        mapping_id = self._parse_int(row.get('mapping_id')) or 0
+                        aid = self._parse_int(row.get('image_asset_id')) or 0
+                        storage_path = str(row.get('storage_path') or '').strip()
+                        if not mapping_id or not aid:
+                            return self.send_json({'status': 'error', 'message': '图片不存在'}, start_response)
+                        cur.execute("DELETE FROM order_product_image_mappings WHERE id=%s", (mapping_id,))
+                        cur.execute("SELECT COUNT(1) AS cnt FROM order_product_image_mappings WHERE image_asset_id=%s", (aid,))
+                        remain_order = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
+                        cur.execute("SELECT COUNT(1) AS cnt FROM sales_variant_image_mappings WHERE image_asset_id=%s", (aid,))
+                        remain_sku = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
+                        remain_fabric = 0
+                        if self._has_required_tables(['fabric_image_mappings']):
+                            cur.execute("SELECT COUNT(1) AS cnt FROM fabric_image_mappings WHERE image_asset_id=%s", (aid,))
+                            remain_fabric = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
+                        if (remain_order + remain_sku + remain_fabric) <= 0:
+                            if storage_path:
+                                try:
+                                    abs_path = self._join_resources(storage_path)
+                                    moved_ok, _dst, _err = self._move_file_to_listing_recycle_bin(abs_path, '删除')
+                                    if not moved_ok:
+                                        self._safe_unlink(abs_path)
+                                except Exception:
+                                    pass
+                            cur.execute("DELETE FROM image_assets WHERE id=%s", (aid,))
+                return self.send_json({'status': 'success'}, start_response)
+
+            return self.send_error(405, 'Method not allowed', start_response)
+        except RuntimeError as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_order_product_main_images_upload_api(self, environ, start_response):
+        try:
+            if environ.get('REQUEST_METHOD') != 'POST':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+            content_type = environ.get('CONTENT_TYPE', '')
+            if 'multipart/form-data' not in content_type:
+                return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
+            form = cgi.FieldStorage(fp=environ.get('wsgi.input'), environ=environ, keep_blank_values=True)
+            order_product_id = self._parse_int((form.getfirst('order_product_id', '') or '').strip()) if form else 0
+            image_type_name = str((form.getfirst('image_type_name', '') or '').strip()) if form else ''
+            if not order_product_id:
+                return self.send_json({'status': 'error', 'message': 'Missing order_product_id'}, start_response)
+            uploads = []
+            for p in getattr(form, 'list', []) or []:
+                if getattr(p, 'filename', None):
+                    content = p.file.read() if p.file else b''
+                    uploads.append({'filename': p.filename, 'content': content})
+            if not uploads:
+                return self.send_json({'status': 'error', 'message': 'No image uploaded'}, start_response)
+
+            folder_info = self._resolve_order_product_main_image_folder(order_product_id, ensure_folder=True)
+            folder_abs = folder_info.get('folder_path')
+            created = []
+            with self._get_db_connection() as conn:
+                type_id = self._get_image_type_id_by_name(conn, image_type_name) if image_type_name else 0
+                sort_start = self._get_order_product_image_sort_start(conn, order_product_id)
+                with conn.cursor() as cur:
+                    for idx, up in enumerate(uploads, start=1):
+                        fname = os.path.basename(str(up.get('filename') or '').strip())
+                        if not fname or not self._is_image_name(fname):
+                            continue
+                        payload = up.get('content') or b''
+                        if not payload:
+                            continue
+                        final_name = fname
+                        if image_type_name:
+                            pref = self._sanitize_filename_component(image_type_name, 32)
+                            if pref and not final_name.startswith(pref + '-'):
+                                final_name = f"{pref}-{final_name}"
+                        sha256 = hashlib.sha256(payload).hexdigest()
+                        file_size = len(payload)
+                        cur.execute("SELECT id, storage_path FROM image_assets WHERE sha256=%s LIMIT 1", (sha256,))
+                        exists = cur.fetchone() or {}
+                        aid = self._parse_int(exists.get('id')) or 0
+                        storage_path = str(exists.get('storage_path') or '').strip()
+                        if not aid:
+                            abs_target = os.path.join(folder_abs, final_name)
+                            i = 1
+                            while os.path.exists(abs_target):
+                                stem, ext = os.path.splitext(final_name)
+                                abs_target = os.path.join(folder_abs, f"{stem}_{i}{ext}")
+                                i += 1
+                            with open(abs_target, 'wb') as f:
+                                f.write(payload)
+                            storage_path = self._storage_path_from_abs(abs_target)
+                            cur.execute(
+                                """
+                                INSERT INTO image_assets (storage_path, sha256, file_size, image_type_id, is_deprecated, description, original_filename)
+                                VALUES (%s, %s, %s, %s, 0, '', %s)
+                                """,
+                                (storage_path, sha256, file_size, (type_id or None), os.path.basename(abs_target)),
+                            )
+                            aid = cur.lastrowid
+                        else:
+                            cur.execute("SELECT COUNT(1) AS cnt FROM order_product_image_mappings WHERE image_asset_id=%s", (aid,))
+                            order_refs = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
+                            if order_refs > 0 and folder_info.get('sku_family'):
+                                try:
+                                    common_folder = self._ensure_order_product_common_folder(folder_info.get('sku_family'))
+                                    old_abs = self._join_resources(storage_path)
+                                    base_name = os.path.basename(storage_path) or final_name
+                                    new_abs = os.path.join(common_folder, base_name)
+                                    if os.path.normpath(old_abs) != os.path.normpath(new_abs):
+                                        j = 1
+                                        stem, ext = os.path.splitext(base_name)
+                                        while os.path.exists(new_abs):
+                                            new_abs = os.path.join(common_folder, f"{stem}_{j}{ext}")
+                                            j += 1
+                                        os.replace(old_abs, new_abs)
+                                        storage_path = self._storage_path_from_abs(new_abs)
+                                        cur.execute("UPDATE image_assets SET storage_path=%s WHERE id=%s", (storage_path, aid))
+                                except Exception:
+                                    pass
+                            if type_id:
+                                cur.execute("UPDATE image_assets SET image_type_id=%s WHERE id=%s", (type_id, aid))
+                        cur.execute(
+                            """
+                            INSERT INTO order_product_image_mappings (order_product_id, image_asset_id, sort_order)
+                            VALUES (%s, %s, %s)
+                            ON DUPLICATE KEY UPDATE sort_order=VALUES(sort_order)
+                            """,
+                            (order_product_id, aid, sort_start + idx),
+                        )
+                        created.append(os.path.basename(storage_path or final_name))
+            return self.send_json({'status': 'success', 'files': created, 'linked': len(created)}, start_response)
+        except RuntimeError as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_order_product_main_images_import_by_path_api(self, environ, method, start_response):
+        """从 NAS 路径导入下单产品主图（支持双击单张与多选批量）。"""
+        try:
+            if method != 'POST':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+            data = self._read_json_body(environ) or {}
+            order_product_id = self._parse_int(data.get('order_product_id'))
+            image_type_name = str(data.get('image_type_name') or '').strip()
+            source_path_b64 = str(data.get('source_path_b64') or '').strip()
+            source_paths_b64 = data.get('source_paths_b64') or []
+            prompt_duplicate = str(data.get('prompt_duplicate') or '').strip().lower() in ('1', 'true', 'yes', 'on')
+            allow_duplicate = str(data.get('allow_duplicate') or '').strip().lower() in ('1', 'true', 'yes', 'on')
+            if not order_product_id:
+                return self.send_json({'status': 'error', 'message': 'Missing order_product_id'}, start_response)
+            if (not source_path_b64) and (not source_paths_b64):
+                return self.send_json({'status': 'error', 'message': 'Missing source_path'}, start_response)
+
+            source_files = []
+            if isinstance(source_paths_b64, (list, tuple)) and source_paths_b64:
+                for b64 in list(source_paths_b64)[:500]:
+                    try:
+                        raw = base64.b64decode(str(b64 or '').strip())
+                        path_b = self._normalize_nas_abs_path_bytes(raw)
+                        if path_b and os.path.isfile(path_b):
+                            name = os.path.basename(self._safe_fsdecode(path_b))
+                            if self._is_image_name(name):
+                                source_files.append(self._safe_fsdecode(path_b))
+                    except Exception:
+                        continue
+            if (not source_files) and source_path_b64:
+                try:
+                    raw = base64.b64decode(source_path_b64)
+                    path_b = self._normalize_nas_abs_path_bytes(raw)
+                except Exception:
+                    path_b = b''
+                if path_b and os.path.exists(path_b):
+                    if os.path.isfile(path_b):
+                        if self._is_image_name(os.path.basename(self._safe_fsdecode(path_b))):
+                            source_files = [self._safe_fsdecode(path_b)]
+                    else:
+                        for name in os.listdir(path_b):
+                            abs_file_b = os.path.join(path_b, name)
+                            if os.path.isfile(abs_file_b) and self._is_image_name(self._safe_fsdecode(name)):
+                                source_files.append(self._safe_fsdecode(abs_file_b))
+            source_files = sorted(set(source_files))
+            if not source_files:
+                return self.send_json({'status': 'error', 'message': '源路径下无图片文件'}, start_response)
+
+            folder_info = self._resolve_order_product_main_image_folder(order_product_id, ensure_folder=True)
+            folder_abs = folder_info.get('folder_path')
+            if not folder_abs or (not os.path.exists(folder_abs)):
+                return self.send_json({'status': 'error', 'message': '无法定位配件图文件夹'}, start_response)
+
+            with self._get_db_connection() as conn:
+                type_id = self._get_image_type_id_by_name(conn, image_type_name) if image_type_name else 0
+                if image_type_name and not type_id:
+                    return self.send_json({'status': 'error', 'message': f'未知图片类型: {image_type_name}'}, start_response)
+                sort_start = self._get_order_product_image_sort_start(conn, order_product_id)
+
+                prepared = []
+                duplicates = []
+                for idx, source_file in enumerate(source_files, start=1):
+                    source_file_b = self._safe_fsencode(source_file)
+                    try:
+                        with open(source_file_b, 'rb') as f:
+                            payload = f.read() or b''
+                    except Exception:
+                        payload = b''
+                    if not payload:
+                        continue
+                    sha256 = self._sha256_hex(payload)
+                    exists = self._find_image_asset_by_sha256(conn, sha256) or {}
+                    aid = self._parse_int(exists.get('id')) or 0
+                    prepared.append({
+                        'idx': idx,
+                        'source_file': source_file,
+                        'source_file_b': source_file_b,
+                        'filename': os.path.basename(source_file),
+                        'sha256': sha256,
+                        'payload': payload,
+                        'asset_id': aid,
+                    })
+                    if aid:
+                        duplicates.append({
+                            'source_file': source_file,
+                            'sha256': sha256,
+                            'image_asset_id': aid,
+                            'storage_path': str(exists.get('storage_path') or ''),
+                        })
+                if prompt_duplicate and duplicates and (not allow_duplicate):
+                    return self.send_json({
+                        'status': 'duplicate',
+                        'message': '检测到重复图片（SHA256 相同），是否继续复用并导入？',
+                        'duplicate_count': len(duplicates),
+                        'duplicates': duplicates[:200],
+                        'file_count': len(prepared),
+                    }, start_response)
+                if not prepared:
+                    return self.send_json({'status': 'error', 'message': '未检测到可导入图片'}, start_response)
+
+                linked = 0
+                created_assets = 0
+                moved = 0
+                with conn.cursor() as cur:
+                    for row in prepared:
+                        aid = int(row.get('asset_id') or 0)
+                        storage_path = ''
+                        if not aid:
+                            image_type_prefix = self._sanitize_filename_component(image_type_name, 32) if image_type_name else ''
+                            base_name = os.path.basename(str(row.get('filename') or ''))
+                            final_name = f"{image_type_prefix}-{base_name}" if image_type_prefix and (not base_name.startswith(image_type_prefix + '-')) else base_name
+                            final_name = self._next_available_filename(folder_abs, final_name)
+                            abs_target = os.path.join(folder_abs, self._safe_fsencode(final_name))
+                            moved_ok = False
+                            try:
+                                os.replace(row.get('source_file_b'), abs_target)
+                                moved_ok = True
+                            except Exception:
+                                try:
+                                    with open(abs_target, 'wb') as wf:
+                                        wf.write(row.get('payload') or b'')
+                                except Exception:
+                                    continue
+                            if moved_ok:
+                                moved += 1
+                            storage_path = self._storage_path_from_abs(abs_target)
+                            cur.execute(
+                                """
+                                INSERT INTO image_assets (storage_path, sha256, file_size, image_type_id, is_deprecated, description, original_filename)
+                                VALUES (%s, %s, %s, %s, 0, '', %s)
+                                """,
+                                (storage_path, row.get('sha256'), len(row.get('payload') or b''), (type_id or None), os.path.basename(final_name)),
+                            )
+                            aid = cur.lastrowid
+                            created_assets += 1
+                        else:
+                            if type_id:
+                                cur.execute("UPDATE image_assets SET image_type_id=%s WHERE id=%s", (type_id, aid))
+                        if not aid:
+                            continue
+                        cur.execute(
+                            """
+                            INSERT INTO order_product_image_mappings (order_product_id, image_asset_id, sort_order)
+                            VALUES (%s, %s, %s)
+                            ON DUPLICATE KEY UPDATE sort_order=VALUES(sort_order)
+                            """,
+                            (order_product_id, aid, sort_start + int(row.get('idx') or 0)),
+                        )
+                        linked += 1
+                return self.send_json({
+                    'status': 'success',
+                    'file_count': len(prepared),
+                    'created_assets': created_assets,
+                    'linked': linked,
+                    'moved': moved,
+                }, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_order_product_main_images_replace_api(self, environ, start_response):
+        try:
+            if environ.get('REQUEST_METHOD') != 'POST':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+            content_type = environ.get('CONTENT_TYPE', '')
+            if 'multipart/form-data' not in content_type:
+                return self.send_json({'status': 'error', 'message': 'Invalid content type'}, start_response)
+            form = cgi.FieldStorage(fp=environ.get('wsgi.input'), environ=environ, keep_blank_values=True)
+            order_product_id = self._parse_int((form.getfirst('order_product_id', '') or '').strip()) if form else 0
+            image_name = str((form.getfirst('image_name', '') or '').strip()) if form else ''
+            if not order_product_id or not image_name:
+                return self.send_json({'status': 'error', 'message': 'Missing order_product_id or image_name'}, start_response)
+            uploads = []
+            for p in getattr(form, 'list', []) or []:
+                if getattr(p, 'filename', None):
+                    content = p.file.read() if p.file else b''
+                    uploads.append({'filename': p.filename, 'content': content})
+            if not uploads:
+                return self.send_json({'status': 'error', 'message': 'No image uploaded'}, start_response)
+            item0 = uploads[0]
+            payload = item0.get('content') or b''
+            if not payload:
+                return self.send_json({'status': 'error', 'message': 'Empty upload'}, start_response)
+            new_sha = self._sha256_hex(payload)
+
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT opim.id AS mapping_id, opim.image_asset_id, ia.storage_path, ia.sha256
+                        FROM order_product_image_mappings opim
+                        JOIN image_assets ia ON ia.id = opim.image_asset_id
+                        WHERE opim.order_product_id=%s
+                          AND (ia.storage_path=%s OR ia.storage_path LIKE %s)
+                        ORDER BY opim.sort_order ASC, opim.id ASC
+                        LIMIT 1
+                        """,
+                        (order_product_id, image_name, f'%/{image_name}'),
+                    )
+                    row = cur.fetchone() or {}
+                    aid = self._parse_int(row.get('image_asset_id')) or 0
+                    storage_path = str(row.get('storage_path') or '').strip()
+                    old_sha = str(row.get('sha256') or '').strip()
+                    if not aid or not storage_path:
+                        return self.send_json({'status': 'error', 'message': '图片不存在'}, start_response)
+                    if old_sha and old_sha == new_sha:
+                        return self.send_json({'status': 'error', 'message': '替换文件内容与当前图片相同（sha256 未变化）'}, start_response)
+                    cur.execute("SELECT COUNT(1) AS cnt FROM order_product_image_mappings WHERE image_asset_id=%s", (aid,))
+                    remain_order = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
+                    cur.execute("SELECT COUNT(1) AS cnt FROM sales_variant_image_mappings WHERE image_asset_id=%s", (aid,))
+                    remain_sales = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
+                    remain_fabric = 0
+                    if self._has_required_tables(['fabric_image_mappings']):
+                        cur.execute("SELECT COUNT(1) AS cnt FROM fabric_image_mappings WHERE image_asset_id=%s", (aid,))
+                        remain_fabric = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
+                    if (remain_order + remain_sales + remain_fabric) > 1:
+                        return self.send_json({'status': 'error', 'message': '该图片被多个对象引用，请先解绑后再替换'}, start_response)
+                    abs_path = self._join_resources(storage_path)
+                    with open(abs_path, 'wb') as f:
+                        f.write(payload)
+                    cur.execute(
+                        "UPDATE image_assets SET sha256=%s, file_size=%s WHERE id=%s",
+                        (new_sha, len(payload), aid),
+                    )
+            return self.send_json({'status': 'success', 'message': '替换成功'}, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
@@ -4626,8 +5165,8 @@ class SalesProductMixin:
                 except Exception:
                     variant_id = 0
 
-                has_sim_vid = self._table_has_column(conn, 'sku_image_mappings', 'variant_id')
-                has_sim_spid = self._table_has_column(conn, 'sku_image_mappings', 'sales_product_id')
+                has_sim_vid = self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id')
+                has_sim_spid = self._table_has_column(conn, 'sales_variant_image_mappings', 'sales_product_id')
                 if not has_sim_vid and not has_sim_spid:
                     return self.send_json({'status': 'error', 'message': '图片映射表缺少 variant_id / sales_product_id 字段，无法定位图片'}, start_response)
                 if has_sim_vid and variant_id:
@@ -4640,7 +5179,7 @@ class SalesProductMixin:
                     return self.send_json({'status': 'error', 'message': '当前销售产品缺少 variant_id，无法定位图片'}, start_response)
 
                 with conn.cursor() as cur:
-                    has_sim_tid = self._table_has_column(conn, 'sku_image_mappings', 'image_type_id')
+                    has_sim_tid = self._table_has_column(conn, 'sales_variant_image_mappings', 'image_type_id')
                     join_it = "LEFT JOIN image_types it ON it.id = ia.image_type_id" if self._table_has_column(conn, 'image_assets', 'image_type_id') else ""
                     if has_sim_tid and join_it:
                         type_sel = "COALESCE(NULLIF(sim.image_type_id, 0), ia.image_type_id, it.id) AS image_type_id, it.name AS image_type_name"
@@ -4654,7 +5193,7 @@ class SalesProductMixin:
                         f"""
                         SELECT sim.id AS mapping_id, sim.sort_order, sim.image_asset_id, ia.storage_path, ia.sha256 AS old_sha256,
                                {type_sel}
-                        FROM sku_image_mappings sim
+                        FROM sales_variant_image_mappings sim
                         JOIN image_assets ia ON ia.id = sim.image_asset_id
                         {join_it}
                         WHERE {where_key}=%s AND (ia.storage_path=%s OR ia.storage_path LIKE %s)
@@ -4691,7 +5230,7 @@ class SalesProductMixin:
                         return self.send_json({'status': 'error', 'message': '无法解析图片类型，拒绝替换'}, start_response)
 
                     # Safety: only replace when the asset is uniquely referenced by this single mapping row.
-                    cur.execute("SELECT COUNT(1) AS cnt FROM sku_image_mappings WHERE image_asset_id=%s", (old_aid,))
+                    cur.execute("SELECT COUNT(1) AS cnt FROM sales_variant_image_mappings WHERE image_asset_id=%s", (old_aid,))
                     sku_refs = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
                     fab_refs = 0
                     if self._has_required_tables(['fabric_image_mappings']):
@@ -4743,7 +5282,7 @@ class SalesProductMixin:
                                 self._safe_unlink(new_abs)
                                 return self.send_json({'status': 'error', 'message': '新图片与库中已有图片重复（sha256 冲突），请换一张图'}, start_response)
 
-                            cur2.execute("DELETE FROM sku_image_mappings WHERE id=%s", (mapping.get('mapping_id'),))
+                            cur2.execute("DELETE FROM sales_variant_image_mappings WHERE id=%s", (mapping.get('mapping_id'),))
 
                             if existing and int(existing.get('id') or 0) == int(old_aid):
                                 sets = ['sha256=%s', 'storage_path=%s']

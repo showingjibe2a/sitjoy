@@ -93,6 +93,7 @@
                             <th style="min-width:160px;">适用平台</th>
                             <th style="width:120px;" class="switch-cell">适用面料</th>
                             <th style="width:140px;" class="switch-cell">适用销售产品</th>
+                            <th style="width:140px;" class="switch-cell">适用下单产品</th>
                             <th style="width:120px;" class="switch-cell">适用A+</th>
                             <th style="width:100px;" class="switch-cell">启用</th>
                             <th style="width:180px;">最后修改时间</th>
@@ -100,7 +101,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="10" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="11" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -140,6 +141,13 @@
                     <label>适用销售产品</label>
                     <label class="switch-wrap" aria-label="适用销售产品">
                         <input type="checkbox" id="modalApplySales" checked>
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label>适用下单产品</label>
+                    <label class="switch-wrap" aria-label="适用下单产品">
+                        <input type="checkbox" id="modalApplyOrderProduct" checked>
                         <span class="switch-slider"></span>
                     </label>
                 </div>
@@ -192,6 +200,13 @@
                     <label>适用销售产品</label>
                     <label class="switch-wrap" aria-label="适用销售产品">
                         <input type="checkbox" id="editApplySales">
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label>适用下单产品</label>
+                    <label class="switch-wrap" aria-label="适用下单产品">
+                        <input type="checkbox" id="editApplyOrderProduct">
                         <span class="switch-slider"></span>
                     </label>
                 </div>
@@ -305,7 +320,7 @@
             const tbody = document.querySelector('#imageTypeTable tbody');
             const list = Array.isArray(items) ? items : [];
             if (!list.length) {
-                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">暂无数据</td></tr>';
                 return;
             }
             tbody.innerHTML = list.map(item => `
@@ -316,6 +331,7 @@
                     <td>${escapeHtml(formatPlatformLabel(item.platform_type_ids || []))}</td>
                     <td class="switch-cell">${buildSwitchCell(item, 'applies_fabric', '适用面料')}</td>
                     <td class="switch-cell">${buildSwitchCell(item, 'applies_sales', '适用销售产品')}</td>
+                    <td class="switch-cell">${buildSwitchCell(item, 'applies_order_product', '适用下单产品')}</td>
                     <td class="switch-cell">${buildSwitchCell(item, 'applies_aplus', '适用A+')}</td>
                     <td class="switch-cell">${buildSwitchCell(item, 'is_enabled', '启用')}</td>
                     <td>${escapeHtml(formatTime(item.updated_at || item.created_at))}</td>
@@ -374,14 +390,14 @@
                 .then(data => {
                     if (data.status !== 'success') {
                         const tbody = document.querySelector('#imageTypeTable tbody');
-                        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:#a33;">${escapeHtml(data.message || '加载失败')}</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;color:#a33;">${escapeHtml(data.message || '加载失败')}</td></tr>`;
                         return;
                     }
                     renderImageTypeList(data.items || []);
                 })
                 .catch(err => {
                     const tbody = document.querySelector('#imageTypeTable tbody');
-                    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:#a33;">加载失败: ${escapeHtml(String(err || ''))}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;color:#a33;">加载失败: ${escapeHtml(String(err || ''))}</td></tr>`;
                 });
         }
 
@@ -410,6 +426,7 @@
             document.getElementById('modalTypeName').value = '';
             document.getElementById('modalApplyFabric').checked = true;
             document.getElementById('modalApplySales').checked = true;
+            document.getElementById('modalApplyOrderProduct').checked = true;
             document.getElementById('modalApplyAplus').checked = true;
             document.getElementById('modalRequiredWidth').value = '';
             document.getElementById('modalRequiredHeight').value = '';
@@ -442,6 +459,7 @@
                     platform_type_ids,
                     applies_fabric: document.getElementById('modalApplyFabric').checked,
                     applies_sales: document.getElementById('modalApplySales').checked,
+                    applies_order_product: document.getElementById('modalApplyOrderProduct').checked,
                     applies_aplus: document.getElementById('modalApplyAplus').checked
                 })
             })
@@ -473,6 +491,7 @@
             document.getElementById('editRequiredHeight').value = item.required_height_px == null ? '' : String(item.required_height_px);
             document.getElementById('editApplyFabric').checked = Number(item.applies_fabric || 0) === 1;
             document.getElementById('editApplySales').checked = Number(item.applies_sales || 0) === 1;
+            document.getElementById('editApplyOrderProduct').checked = Number(item.applies_order_product || 0) === 1;
             document.getElementById('editApplyAplus').checked = Number(item.applies_aplus || 0) === 1;
             document.getElementById('editEnabled').checked = Number(item.is_enabled || 0) === 1;
             document.getElementById('editAplusLayoutMobile').value = String(item.aplus_layout_json_mobile || '');
@@ -518,6 +537,7 @@
                     aplus_layout_json_desktop,
                     applies_fabric: document.getElementById('editApplyFabric').checked,
                     applies_sales: document.getElementById('editApplySales').checked,
+                    applies_order_product: document.getElementById('editApplyOrderProduct').checked,
                     applies_aplus: document.getElementById('editApplyAplus').checked,
                     is_enabled: document.getElementById('editEnabled').checked
                 })
