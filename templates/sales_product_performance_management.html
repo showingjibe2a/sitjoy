@@ -2098,6 +2098,20 @@
             host.innerHTML = `
                 <div class="perf-panel-caption">${rangeLabel || '-'} · 货号分组明细</div>
                 <div class="perf-group-meta" style="margin-bottom:0.35rem;">维度：货号 → 平台SKU（默认收起）</div>
+                <div class="perf-group-toolbar" id="perfGroupSortToolbar">
+                    <span class="perf-inline-help">外层排序</span>
+                    <select id="perfGroupOuterSortKey" class="optional-field" style="width:160px;"></select>
+                    <select id="perfGroupOuterSortDir" class="optional-field" style="width:110px;">
+                        <option value="desc">降序</option>
+                        <option value="asc">升序</option>
+                    </select>
+                    <span class="perf-inline-help">内层排序</span>
+                    <select id="perfGroupInnerSortKey" class="optional-field" style="width:160px;"></select>
+                    <select id="perfGroupInnerSortDir" class="optional-field" style="width:110px;">
+                        <option value="desc">降序</option>
+                        <option value="asc">升序</option>
+                    </select>
+                </div>
             `;
             if (!state.lastGroups.length) {
                 host.insertAdjacentHTML('beforeend', '<p class="status-tip">暂无符合筛选条件的数据</p>');
@@ -2222,10 +2236,10 @@
             });
 
             // 层级排序：绑定到 managed 生成的表头（显示箭头），并对子SKU应用同规则排序
-            bindPerfGroupHierSort(table);
+            bindPerfGroupHierSort(table, headKeys, headCols);
         }
 
-        function bindPerfGroupHierSort(table) {
+        function bindPerfGroupHierSort(table, headKeys, headCols) {
             if (!table) return;
             const tbody = table.tBodies && table.tBodies[0];
             const parentRows = () => Array.from(tbody.querySelectorAll('tr.perf-group-parent-row'));
@@ -2240,7 +2254,9 @@
                 return txt;
             };
 
-            const sortState = { key: '', dir: null }; // dir: 'asc'|'desc'|null
+            const validSortKeys = (headKeys || []).filter(k => k && k !== '__toggle');
+            const outerSortState = { key: '__rows', dir: 'desc' };
+            const innerSortState = { key: '__rows', dir: 'desc' };
 
             const findBodyColIndexByKey = (manageKey) => {
                 const head = table.tHead && table.tHead.rows && table.tHead.rows[0];
@@ -2259,15 +2275,29 @@
                     th.classList.remove('pm-sortable', 'pm-sort-asc', 'pm-sort-desc');
                     if (!k || k === '__toggle') return;
                     th.classList.add('pm-sortable');
-                    if (sortState.key !== k || !sortState.dir) return;
-                    if (sortState.dir === 'asc') th.classList.add('pm-sort-asc');
-                    if (sortState.dir === 'desc') th.classList.add('pm-sort-desc');
+                    if (outerSortState.key !== k || !outerSortState.dir) return;
+                    if (outerSortState.dir === 'asc') th.classList.add('pm-sort-asc');
+                    if (outerSortState.dir === 'desc') th.classList.add('pm-sort-desc');
                 });
             };
 
-            const applyHierSort = (manageKey) => {
-                const idx = findBodyColIndexByKey(manageKey);
-                if (idx < 0) return;
+            const compareRows = (a, b, idx, dir, fallbackA, fallbackB) => {
+                const av = readComparable(a, idx);
+                const bv = readComparable(b, idx);
+                if (av == null && bv == null) return fallbackA - fallbackB;
+                if (av == null) return 1;
+                if (bv == null) return -1;
+                if (typeof av === 'number' && typeof bv === 'number') return dir === 'asc' ? (av - bv) : (bv - av);
+                if (av === bv) return fallbackA - fallbackB;
+                return dir === 'asc'
+                    ? String(av).localeCompare(String(bv), 'zh-Hans-CN', { sensitivity: 'base' })
+                    : String(bv).localeCompare(String(av), 'zh-Hans-CN', { sensitivity: 'base' });
+            };
+
+            const applyHierSort = () => {
+                const outerIdx = findBodyColIndexByKey(outerSortState.key);
+                const innerIdx = findBodyColIndexByKey(innerSortState.key);
+                if (outerIdx < 0 || innerIdx < 0) return;
 
                 const parents = parentRows();
                 const origin = parents.map((tr, i) => [tr, i]);
@@ -2278,46 +2308,54 @@
                         const key = String(p.dataset.groupKey || '');
                         tbody.appendChild(p);
                         const kids = childRowsByKey(key).slice();
-                        if (!sortState.dir) {
-                            kids.sort((a, b) => Number(a.dataset.sortOrigin || '0') - Number(b.dataset.sortOrigin || '0'));
-                        } else {
-                            const dir = sortState.dir;
-                            kids.sort((a, b) => {
-                                const av = readComparable(a, idx);
-                                const bv = readComparable(b, idx);
-                                if (av == null && bv == null) return Number(a.dataset.sortOrigin || '0') - Number(b.dataset.sortOrigin || '0');
-                                if (av == null) return 1;
-                                if (bv == null) return -1;
-                                if (typeof av === 'number' && typeof bv === 'number') return dir === 'asc' ? (av - bv) : (bv - av);
-                                if (av === bv) return Number(a.dataset.sortOrigin || '0') - Number(b.dataset.sortOrigin || '0');
-                                return dir === 'asc'
-                                    ? String(av).localeCompare(String(bv), 'zh-Hans-CN', { sensitivity: 'base' })
-                                    : String(bv).localeCompare(String(av), 'zh-Hans-CN', { sensitivity: 'base' });
-                            });
-                        }
+                        const innerDir = innerSortState.dir === 'asc' ? 'asc' : 'desc';
+                        kids.sort((a, b) => compareRows(
+                            a, b, innerIdx, innerDir,
+                            Number(a.dataset.sortOrigin || '0'),
+                            Number(b.dataset.sortOrigin || '0')
+                        ));
                         kids.forEach(k => tbody.appendChild(k));
                     });
                 };
 
-                if (!sortState.dir) {
-                    const restored = parents.slice().sort((a, b) => (Number(a.dataset.sortOrigin || '0') - Number(b.dataset.sortOrigin || '0')));
-                    applyOrder(restored);
-                    return;
-                }
-                const dir = sortState.dir;
+                const dir = outerSortState.dir === 'asc' ? 'asc' : 'desc';
                 const sorted = parents.slice().sort((a, b) => {
-                    const av = readComparable(a, idx);
-                    const bv = readComparable(b, idx);
-                    if (av == null && bv == null) return (mapOrigin.get(a) ?? 0) - (mapOrigin.get(b) ?? 0);
-                    if (av == null) return 1;
-                    if (bv == null) return -1;
-                    if (typeof av === 'number' && typeof bv === 'number') return dir === 'asc' ? (av - bv) : (bv - av);
-                    if (av === bv) return (mapOrigin.get(a) ?? 0) - (mapOrigin.get(b) ?? 0);
-                    return dir === 'asc'
-                        ? String(av).localeCompare(String(bv), 'zh-Hans-CN', { sensitivity: 'base' })
-                        : String(bv).localeCompare(String(av), 'zh-Hans-CN', { sensitivity: 'base' });
+                    return compareRows(a, b, outerIdx, dir, (mapOrigin.get(a) ?? 0), (mapOrigin.get(b) ?? 0));
                 });
                 applyOrder(sorted);
+            };
+
+            const bindSortToolbar = () => {
+                const toolbar = document.getElementById('perfGroupSortToolbar');
+                const outerKeyEl = document.getElementById('perfGroupOuterSortKey');
+                const outerDirEl = document.getElementById('perfGroupOuterSortDir');
+                const innerKeyEl = document.getElementById('perfGroupInnerSortKey');
+                const innerDirEl = document.getElementById('perfGroupInnerSortDir');
+                if (!toolbar || !outerKeyEl || !outerDirEl || !innerKeyEl || !innerDirEl) return;
+                const optionsHtml = validSortKeys.map((k) => {
+                    const idx = (headKeys || []).indexOf(k);
+                    const label = (idx >= 0 && headCols && headCols[idx]) ? headCols[idx] : k;
+                    return `<option value="${k}">${label}</option>`;
+                }).join('');
+                outerKeyEl.innerHTML = optionsHtml;
+                innerKeyEl.innerHTML = optionsHtml;
+                outerKeyEl.value = outerSortState.key;
+                outerDirEl.value = outerSortState.dir;
+                innerKeyEl.value = innerSortState.key;
+                innerDirEl.value = innerSortState.dir;
+                const onToolbarChange = () => {
+                    outerSortState.key = validSortKeys.includes(outerKeyEl.value) ? outerKeyEl.value : '__rows';
+                    outerSortState.dir = outerDirEl.value === 'asc' ? 'asc' : 'desc';
+                    innerSortState.key = validSortKeys.includes(innerKeyEl.value) ? innerKeyEl.value : '__rows';
+                    innerSortState.dir = innerDirEl.value === 'asc' ? 'asc' : 'desc';
+                    const root = table.parentElement ? table.parentElement.parentElement : document;
+                    root.querySelectorAll('table.pm-managed-head-table thead tr, table#perfGroupTable thead tr').forEach(r => refreshHeaderArrows(r));
+                    applyHierSort();
+                };
+                outerKeyEl.addEventListener('change', onToolbarChange);
+                outerDirEl.addEventListener('change', onToolbarChange);
+                innerKeyEl.addEventListener('change', onToolbarChange);
+                innerDirEl.addEventListener('change', onToolbarChange);
             };
 
             const bindHeaderRow = (headerRowEl) => {
@@ -2330,20 +2368,22 @@
                     th.style.cursor = 'pointer';
                     th.addEventListener('click', (e) => {
                     if (e.target && e.target.closest && e.target.closest('button,input,select,textarea,a,label')) return;
-                    if (sortState.key !== manageKey) {
-                        sortState.key = manageKey;
-                        sortState.dir = 'desc';
-                    } else if (sortState.dir === 'desc') {
-                        sortState.dir = 'asc';
-                    } else if (sortState.dir === 'asc') {
-                        sortState.dir = null;
+                    if (outerSortState.key !== manageKey) {
+                        outerSortState.key = manageKey;
+                        outerSortState.dir = 'desc';
+                    } else if (outerSortState.dir === 'desc') {
+                        outerSortState.dir = 'asc';
                     } else {
-                        sortState.dir = 'desc';
+                        outerSortState.dir = 'desc';
                     }
                     // 同步所有表头（原表头 + detached 表头）
                     const root = table.parentElement ? table.parentElement.parentElement : document;
                     root.querySelectorAll('table.pm-managed-head-table thead tr, table#perfGroupTable thead tr').forEach(r => refreshHeaderArrows(r));
-                    applyHierSort(manageKey);
+                    const outerKeyEl = document.getElementById('perfGroupOuterSortKey');
+                    const outerDirEl = document.getElementById('perfGroupOuterSortDir');
+                    if (outerKeyEl) outerKeyEl.value = outerSortState.key;
+                    if (outerDirEl) outerDirEl.value = outerSortState.dir;
+                    applyHierSort();
                     });
                 });
             };
@@ -2360,6 +2400,18 @@
                 const r = headTable && headTable.tHead && headTable.tHead.rows && headTable.tHead.rows[0];
                 if (r) bindHeaderRow(r);
             }, 60);
+            bindSortToolbar();
+            applyHierSort();
+        }
+
+        function normalizePerfPageSize(rawValue, fallback) {
+            const allowed = [20, 50, 100, 300, 500, 1000];
+            const raw = String(rawValue == null ? '' : rawValue).trim();
+            const parsed = Number(raw);
+            if (allowed.includes(parsed)) return parsed;
+            const fb = Number(fallback);
+            if (allowed.includes(fb)) return fb;
+            return 50;
         }
 
         function renderDashboardPayload(data) {
@@ -2883,7 +2935,7 @@
                 delete pageSizeSelect.dataset.searchableEnhanced;
                 pageSizeSelect.style.display = '';
                 const handlePageSizeChange = function(value) {
-                    const selectedSize = Math.max(10, Number(value || 50));
+                    const selectedSize = normalizePerfPageSize(value, state.performancePageSize || 50);
                     state.performancePageSize = selectedSize;
                     savePerfPageSizeToStorage(selectedSize);
                     loadSalesProductPerformanceList(1, { pageSize: selectedSize });
@@ -2903,7 +2955,7 @@
                     const optionBtn = e.target.closest('.feature-category-option.universal-select-option');
                     if (!optionBtn) return;
                     window.setTimeout(() => {
-                        const sizeFromSelect = Math.max(10, Number(pageSizeSelect.value || 50));
+                        const sizeFromSelect = normalizePerfPageSize(pageSizeSelect.value, state.performancePageSize || 50);
                         if (sizeFromSelect !== Number(state.performancePageSize || 50)) {
                             state.performancePageSize = sizeFromSelect;
                             savePerfPageSizeToStorage(sizeFromSelect);
@@ -2936,9 +2988,9 @@
             pageSizeSelect2.style.display = '';
 
             if (!state.performancePageSize || Number(state.performancePageSize) <= 0) {
-                state.performancePageSize = Math.max(10, Number(pageSizeSelect2.value || 50));
+                state.performancePageSize = normalizePerfPageSize(pageSizeSelect2.value, 50);
             }
-            pageSizeSelect2.value = String(state.performancePageSize || 50);
+            pageSizeSelect2.value = String(normalizePerfPageSize(state.performancePageSize, 50));
             const total = Number(state.performanceTotal || 0);
             const page = Number(state.performancePage || 1);
             const totalPages = Math.max(1, Number(state.performanceTotalPages || 1));
@@ -2975,11 +3027,11 @@
                 ? Math.max(10, Number(options.pageSize))
                 : null;
             if (forcedPageSize) {
-                state.performancePageSize = forcedPageSize;
+                state.performancePageSize = normalizePerfPageSize(forcedPageSize, state.performancePageSize || 50);
             } else {
-                let effective = Math.max(10, Number(state.performancePageSize || 50));
-                if (toolbarSelect && Number(toolbarSelect.value) > 0) {
-                    effective = Math.max(10, Number(toolbarSelect.value));
+                let effective = normalizePerfPageSize(state.performancePageSize || 50, 50);
+                if (toolbarSelect) {
+                    effective = normalizePerfPageSize(toolbarSelect.value, effective);
                 }
                 state.performancePageSize = effective;
             }

@@ -427,11 +427,11 @@
             border-radius: 10px;
             background: rgba(255, 255, 255, 0.86);
         }
-        #todoTable th, #todoTable td { font-size: 12px; }
+        #todoTable th, #todoTable td { font-size: 13px; }
         #todoTable thead th { position: sticky; top: 0; z-index: 2; background: #f5efe5; }
         #todoTable .pm-actions { display: inline-flex; gap: 0.35rem; }
         .todo-title-cell { min-width: 140px; word-break: break-word; }
-        .todo-mini-sub { font-size: 11px; color: #888; margin-top: 2px; }
+        .todo-mini-sub { font-size: 12px; color: #888; margin-top: 2px; }
         /* todo-complete-pop removed */
         /* Todo modal - yellow priority pill */
         .status-pill--warning.is-active { background: #b6912f !important; } /* warm yellow, similar saturation */
@@ -461,14 +461,17 @@
                                 <tr>
                                     <th style="width:120px;">完成状态</th>
                                     <th style="width:120px;">类型</th>
-                                    <th>事项</th>
-                                    <th style="width:130px;">开始/截止</th>
+                                    <th style="width:56px;">优先级</th>
+                                    <th style="min-width:180px;">事项</th>
+                                    <th style="min-width:180px;">详情/备注</th>
+                                    <th style="width:120px;">开始日期</th>
+                                    <th style="width:120px;">截止日期</th>
                                     <th style="width:190px;">完成时间</th>
                                     <th style="width:120px;">操作</th>
                                 </tr>
                             </thead>
                             <tbody id="todoTableBody">
-                                <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
+                                <tr><td colspan="9" style="text-align:center;">加载中...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -631,6 +634,10 @@
                             <label>提醒间隔（天，循环任务必填）</label>
                             <input type="number" id="todoModalReminderInterval" value="1" min="1" max="365">
                         </div>
+                        <div class="form-group pm-form-full" id="todoModalDueDateWrap">
+                            <label>截止日期（非循环任务必填）</label>
+                            <input type="date" id="todoModalDueDate">
+                        </div>
                         <div class="form-group pm-form-full">
                             <label>关联货号（可多选）</label>
                             <div class="feature-category-picker is-multi-check" id="todoSkuFamilyPicker">
@@ -662,10 +669,6 @@
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                        <div class="form-group" id="todoModalDueDateWrap">
-                            <label>截止日期（非循环任务必填）</label>
-                            <input type="date" id="todoModalDueDate">
                         </div>
                         <div class="form-group pm-form-full">
                             <label>分配给（可多选）</label>
@@ -1247,14 +1250,47 @@
         function syncTodoRecurringUi() {
             const seg = document.getElementById('todoModalRecurringSegment');
             const isRecurring = !!(seg && String(seg.dataset.value || '0') === '1');
-            const dueWrap = document.getElementById('todoModalDueDateWrap');
             const dueEl = document.getElementById('todoModalDueDate');
             const intervalEl = document.getElementById('todoModalReminderInterval');
             const reminderWrap = document.getElementById('todoModalReminderWrap');
-            if (dueWrap) dueWrap.style.display = isRecurring ? 'none' : '';
             if (dueEl) dueEl.disabled = isRecurring;
             if (reminderWrap) reminderWrap.style.display = isRecurring ? '' : 'none';
             if (intervalEl) intervalEl.disabled = !isRecurring;
+            if (isRecurring) {
+                syncRecurringDueDate();
+            }
+        }
+
+        function parseDateInputValue(value) {
+            const s = String(value || '').trim();
+            const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (!m) return null;
+            const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+            if (Number.isNaN(d.getTime())) return null;
+            return d;
+        }
+
+        function formatDateInputValue(dt) {
+            if (!dt || Number.isNaN(dt.getTime())) return '';
+            return String(dt.getFullYear()).padStart(4, '0')
+                + '-' + String(dt.getMonth() + 1).padStart(2, '0')
+                + '-' + String(dt.getDate()).padStart(2, '0');
+        }
+
+        function syncRecurringDueDate() {
+            const seg = document.getElementById('todoModalRecurringSegment');
+            const isRecurring = !!(seg && String(seg.dataset.value || '0') === '1');
+            if (!isRecurring) return;
+            const startEl = document.getElementById('todoModalStartDate');
+            const intervalEl = document.getElementById('todoModalReminderInterval');
+            const dueEl = document.getElementById('todoModalDueDate');
+            if (!startEl || !intervalEl || !dueEl) return;
+            const startDate = parseDateInputValue(startEl.value);
+            const intervalDays = Math.max(1, parseInt(intervalEl.value || '1', 10) || 1);
+            if (!startDate) return;
+            const nextDate = new Date(startDate.getTime());
+            nextDate.setDate(nextDate.getDate() + intervalDays);
+            dueEl.value = formatDateInputValue(nextDate);
         }
 
         function closeTodoModal() {
@@ -1890,7 +1926,7 @@
                 return (parseInt(b.id, 10) || 0) - (parseInt(a.id, 10) || 0);
             });
             if (!list.length) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无待办</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">暂无待办</td></tr>';
                 return;
             }
             tbody.innerHTML = list.map(todo => {
@@ -1898,7 +1934,7 @@
                 const typeName = todo.todo_type_name || '-';
                 const start = todo.start_date || '';
                 const due = todo.due_date || '';
-                const dateText = (start && due && start !== due) ? (start + ' ~ ' + due) : (start || due || '-');
+                const detailText = todo.detail ? String(todo.detail).slice(0, 80) : '-';
                 const completedAt = todo.my_completed_at ? String(todo.my_completed_at) : '';
                 return `
                     <tr data-todo-id="${todo.id}">
@@ -1923,9 +1959,10 @@
                         <td>${escapeHtml(priorityLabel(todo.priority))}</td>
                         <td class="todo-title-cell">
                             <div style="font-weight:600;">${escapeHtml(todo.title || '')}</div>
-                            ${todo.detail ? `<div class="todo-mini-sub">${escapeHtml(String(todo.detail).slice(0, 60))}</div>` : ''}
                         </td>
-                        <td>${escapeHtml(dateText)}</td>
+                        <td class="todo-mini-sub">${escapeHtml(detailText)}</td>
+                        <td>${escapeHtml(start || '-')}</td>
+                        <td>${escapeHtml(due || '-')}</td>
                         <td>
                             ${
                                 status === 'done'
@@ -2069,6 +2106,7 @@
             if (seg.id === 'todoModalRecurringSegment') {
                 const hid = document.getElementById('todoModalIsRecurringVal');
                 if (hid) hid.value = v;
+                syncTodoRecurringUi();
             }
             if (seg.id === 'todoModalTypeSegment') {
                 const hid = document.getElementById('todoModalTypeId');
@@ -2772,6 +2810,15 @@
             // bind segments
             bindSegmentButtons(document.getElementById('todoModalPrioritySegment'));
             bindSegmentButtons(document.getElementById('todoModalRecurringSegment'));
+            const todoModalStartDate = document.getElementById('todoModalStartDate');
+            if (todoModalStartDate) {
+                todoModalStartDate.addEventListener('change', syncRecurringDueDate);
+            }
+            const todoModalReminderInterval = document.getElementById('todoModalReminderInterval');
+            if (todoModalReminderInterval) {
+                todoModalReminderInterval.addEventListener('input', syncRecurringDueDate);
+                todoModalReminderInterval.addEventListener('change', syncRecurringDueDate);
+            }
 
             const pendingUsersTable = document.getElementById('pendingUsersTable');
             if (pendingUsersTable) {
