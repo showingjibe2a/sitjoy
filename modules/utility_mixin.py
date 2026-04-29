@@ -588,15 +588,60 @@ class UtilityMixin:
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':
-                data = self._read_json_body(environ)
+                data = self._read_json_body(environ) or {}
                 item_id = self._parse_int(data.get('id'))
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                delete_scope = str(data.get('delete_scope') or '').strip().lower()
 
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("DELETE FROM todos WHERE id=%s AND created_by=%s", (item_id, user_id))
-                return self.send_json({'status': 'success'}, start_response)
+                        cur.execute(
+                            """
+                            SELECT
+                                t.id,
+                                t.created_by,
+                                EXISTS(
+                                    SELECT 1
+                                    FROM todo_assignments ta
+                                    WHERE ta.todo_id=t.id AND ta.assignee_id=%s
+                                ) AS is_assignee
+                            FROM todos t
+                            WHERE t.id=%s
+                            LIMIT 1
+                            """,
+                            (user_id, item_id)
+                        )
+                        row = cur.fetchone() or {}
+                        if not row:
+                            return self.send_json({'status': 'error', 'message': '任务不存在'}, start_response)
+
+                        created_by = self._parse_int(row.get('created_by'))
+                        is_creator = (created_by == user_id)
+                        is_assignee = int(row.get('is_assignee') or 0) == 1
+
+                        # 创建人可选择删除整条任务（包含所有被指派人）
+                        if is_creator and delete_scope in ('all', 'full', 'task'):
+                            cur.execute("DELETE FROM todos WHERE id=%s AND created_by=%s", (item_id, user_id))
+                            return self.send_json({'status': 'success', 'delete_scope': 'all'}, start_response)
+
+                        # 其余情况仅允许删除“自己的任务视图”（assignment）
+                        if not is_assignee:
+                            return self.send_json({'status': 'error', 'message': '仅可删除自己的任务'}, start_response)
+
+                        cur.execute(
+                            "DELETE FROM todo_assignments WHERE todo_id=%s AND assignee_id=%s",
+                            (item_id, user_id)
+                        )
+
+                        # 若由创建人删除自己的 assignment 且任务已无人接收，顺带删除空任务
+                        if is_creator:
+                            cur.execute("SELECT COUNT(1) AS cnt FROM todo_assignments WHERE todo_id=%s", (item_id,))
+                            left_row = cur.fetchone() or {}
+                            if self._parse_int(left_row.get('cnt')) == 0:
+                                cur.execute("DELETE FROM todos WHERE id=%s AND created_by=%s", (item_id, user_id))
+
+                return self.send_json({'status': 'success', 'delete_scope': 'self'}, start_response)
 
             return self.send_error(405, 'Method not allowed', start_response)
         except Exception as e:

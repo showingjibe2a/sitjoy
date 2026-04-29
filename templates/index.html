@@ -1367,7 +1367,7 @@
                         已完成
                     </button>
                     <button type="button"
-                            class="status-pill ${status === 'open' ? 'status-pill--enabled is-active' : 'status-pill--paused'}"
+                            class="status-pill ${status === 'open' ? 'status-pill--paused is-active' : 'status-pill--paused'}"
                             data-todo-action="set-open"
                             data-id="${todoId}">
                         未完成
@@ -2331,6 +2331,38 @@
             }
         }
 
+        async function confirmTodoDelete(todoItem) {
+            const isCreator = Number(todoItem && todoItem.created_by || 0) > 0
+                && Number(todoItem.created_by || 0) === Number(window.currentUserId || 0);
+            const title = todoItem && todoItem.title ? String(todoItem.title) : '该任务';
+            const ask = async (message, confirmText) => {
+                if (window.showAppConfirmAsync) {
+                    return !!(await window.showAppConfirmAsync({
+                        title: '删除确认',
+                        message,
+                        confirmText: confirmText || '确认删除'
+                    }));
+                }
+                return confirm(message);
+            };
+            if (!isCreator) {
+                const okSelf = await ask(`确认删除「${title}」吗？\n\n此操作只会删除你自己的任务记录，不会影响其他被指派人。`, '删除我的任务');
+                return { ok: okSelf, delete_scope: 'self' };
+            }
+
+            const removeAll = await ask(
+                `你是该任务的指派人。\n\n是否删除整个任务（包含所有被指派人的任务）？\n\n任务：${title}`,
+                '删除整个任务'
+            );
+            if (removeAll) return { ok: true, delete_scope: 'all' };
+
+            const removeSelf = await ask(
+                `是否仅删除你自己的任务记录？\n\n其他被指派人的任务会保留。`,
+                '仅删除我的任务'
+            );
+            return { ok: removeSelf, delete_scope: 'self' };
+        }
+
         function loadPendingUsers() {
             if (!isAdmin) {
                 const section = document.getElementById('pendingUsersSection');
@@ -2860,16 +2892,33 @@
                     const id = parseInt(actionEl.dataset.id || '0', 10) || 0;
                     if (!action || !id) return;
                     if (action === 'delete') {
-                        fetch('/api/todo', {
-                            method: 'DELETE',
-                            credentials: 'include',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ id: id })
-                        })
-                            .then(() => {
-                                loadTodos();
-                                loadCalendar({ forceReload: true });
-                            });
+                        const todoItem = (window.homeTodosCache || []).find(x => (parseInt(x.id, 10) || 0) === id) || { id: id };
+                        confirmTodoDelete(todoItem).then(choice => {
+                            if (!choice || !choice.ok) return;
+                            return fetch('/api/todo', {
+                                method: 'DELETE',
+                                credentials: 'include',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ id: id, delete_scope: choice.delete_scope || 'self' })
+                            })
+                                .then(r => r.json())
+                                .then(data => {
+                                    if (!data || data.status !== 'success') {
+                                        throw new Error((data && data.message) || '删除失败');
+                                    }
+                                    if (window.showAppToast) {
+                                        const msg = String(data.delete_scope || choice.delete_scope) === 'all'
+                                            ? '任务已删除（含所有被指派人）'
+                                            : '已删除你自己的任务';
+                                        window.showAppToast(msg, false, 1800);
+                                    }
+                                    loadTodos();
+                                    loadCalendar({ forceReload: true });
+                                })
+                                .catch(err => {
+                                    if (window.showAppToast) window.showAppToast(err && err.message ? err.message : '删除失败', true, 0);
+                                });
+                        });
                         return;
                     }
                     if (action === 'edit') {
