@@ -433,6 +433,35 @@
         #todoTable tbody tr.todo-overdue td { background: rgba(179, 83, 83, 0.1) !important; }
         .todo-title-cell { min-width: 140px; word-break: break-word; }
         .todo-mini-sub { font-size: 12px; color: #888; margin-top: 2px; }
+        .todo-completed-at-input {
+            height: 30px;
+            min-height: 30px;
+            padding: 4px 8px;
+            font-size: 12px;
+            border-radius: 6px;
+        }
+        .todo-completed-at-compact {
+            height: 34px;
+            min-height: 34px;
+            padding: 6px 10px;
+            font-size: 12px;
+            background: #fff;
+            cursor: pointer;
+        }
+        .todo-completed-at-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 0.45rem;
+            align-items: center;
+        }
+        .todo-datetime-picker-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+        }
+        .todo-datetime-picker-grid .form-group {
+            margin-bottom: 0;
+        }
         /* todo-complete-pop removed */
         /* Todo modal - yellow priority pill */
         .status-pill--warning.is-active { background: #d2bf82 !important; } /* lighter yellow */
@@ -649,7 +678,11 @@
                         </div>
                         <div class="form-group" id="todoModalCompletedAtWrap" style="display:none;">
                             <label>完成时间</label>
-                            <input type="datetime-local" id="todoModalCompletedAtInput">
+                            <input type="hidden" id="todoModalCompletedAtInput">
+                            <div class="todo-completed-at-row">
+                                <input type="text" id="todoModalCompletedAtDisplay" class="todo-completed-at-compact" readonly placeholder="请选择完成时间">
+                                <button type="button" class="btn-secondary" id="todoModalCompletedAtPickBtn">选择</button>
+                            </div>
                         </div>
                         <div class="form-group pm-form-full">
                             <label>关联货号（可多选）</label>
@@ -737,7 +770,34 @@
         </div>
     </div>
 
-    <!-- 完成时间小弹窗已移除：点击“已完成”直接写入当前时间 -->
+    <div id="todoDateTimePickerModal" class="pm-modal">
+        <div class="pm-modal-content" style="max-width:520px;">
+            <div class="pm-modal-scroll">
+                <h3 style="margin-top:0;">选择完成时间</h3>
+                <div class="pm-form">
+                    <div class="todo-datetime-picker-grid">
+                        <div class="form-group">
+                            <label>日期</label>
+                            <input type="date" id="todoDateTimePickerDate">
+                        </div>
+                        <div class="form-group">
+                            <label>时间</label>
+                            <div style="display:grid; grid-template-columns:1fr auto 1fr; gap:0.35rem; align-items:center;">
+                                <select id="todoDateTimePickerHour"></select>
+                                <span style="text-align:center; color:#7e7165;">:</span>
+                                <select id="todoDateTimePickerMinute"></select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="pm-modal-actions">
+                <button type="button" class="btn-secondary" onclick="closeTodoDateTimePickerModal()">取消</button>
+                <button type="button" class="btn-danger" onclick="clearTodoDateTimePickerModal()">清空</button>
+                <button type="button" class="btn-primary" onclick="confirmTodoDateTimePickerModal()">确定</button>
+            </div>
+        </div>
+    </div>
 
     <!-- 新增员工弹窗 -->
     <div id="employeeCreateModal" class="pm-modal">
@@ -1211,6 +1271,7 @@
                 window.todoModalCurrentCompletedAt = '';
                 const completedInput = document.getElementById('todoModalCompletedAtInput');
                 if (completedInput) completedInput.value = '';
+                refreshTodoModalCompletedAtDisplay();
                 // default assignee: self
                 setTodoSelectedAssigneeIds(currentUser && Number(currentUser.id || 0) > 0 ? [Number(currentUser.id)] : []);
                 const assigneeSearch = document.getElementById('todoModalAssigneeSearch');
@@ -1234,6 +1295,7 @@
                     window.todoModalCurrentCompletedAt = todo.my_completed_at || '';
                     const completedInput = document.getElementById('todoModalCompletedAtInput');
                     if (completedInput) completedInput.value = toDatetimeLocalValue(todo.my_completed_at || '');
+                    refreshTodoModalCompletedAtDisplay();
                     setTodoSelectedAssigneeIds((todo.assignees || []).map(a => a.assignee_id));
                     updateAssigneeSelected();
                     setSegmentValue(document.getElementById('todoModalPrioritySegment'), String(todo.priority || 2));
@@ -1260,6 +1322,7 @@
                     window.todoModalCurrentCompletedAt = '';
                     const completedInput = document.getElementById('todoModalCompletedAtInput');
                     if (completedInput) completedInput.value = '';
+                    refreshTodoModalCompletedAtDisplay();
                     setSegmentValue(document.getElementById('todoModalPrioritySegment'), '2');
                     setSegmentValue(document.getElementById('todoModalRecurringSegment'), '0');
                     setSegmentValue(document.getElementById('todoModalCompleteStatusSegment'), '0');
@@ -1306,7 +1369,89 @@
                 completedInput.value = `${y}-${m}-${d}T${hh}:${mm}`;
                 window.todoModalCurrentCompletedAt = `${y}-${m}-${d} ${hh}:${mm}:00`;
             }
+            refreshTodoModalCompletedAtDisplay();
             syncRecurringDueDate();
+        }
+
+        function formatTodoDateTimeDisplay(datetimeLocalValue) {
+            const v = String(datetimeLocalValue || '').trim();
+            const m = v.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})$/);
+            if (!m) return '';
+            return `${m[1]} ${m[2]}:${m[3]}`;
+        }
+
+        function refreshTodoModalCompletedAtDisplay() {
+            const hiddenInput = document.getElementById('todoModalCompletedAtInput');
+            const displayInput = document.getElementById('todoModalCompletedAtDisplay');
+            if (!displayInput) return;
+            const text = formatTodoDateTimeDisplay(hiddenInput ? hiddenInput.value : '');
+            displayInput.value = text || '';
+            displayInput.placeholder = '请选择完成时间';
+        }
+
+        function closeTodoDateTimePickerModal() {
+            const modal = document.getElementById('todoDateTimePickerModal');
+            if (modal) modal.classList.remove('active');
+        }
+
+        function openTodoDateTimePickerModal() {
+            const modal = document.getElementById('todoDateTimePickerModal');
+            const dateEl = document.getElementById('todoDateTimePickerDate');
+            const hourEl = document.getElementById('todoDateTimePickerHour');
+            const minuteEl = document.getElementById('todoDateTimePickerMinute');
+            const targetInput = document.getElementById('todoModalCompletedAtInput');
+            if (!modal || !dateEl || !hourEl || !minuteEl || !targetInput) return;
+            if (!hourEl.options.length) {
+                hourEl.innerHTML = Array.from({ length: 24 }).map((_, i) => {
+                    const vv = String(i).padStart(2, '0');
+                    return `<option value="${vv}">${vv}</option>`;
+                }).join('');
+            }
+            if (!minuteEl.options.length) {
+                minuteEl.innerHTML = Array.from({ length: 60 }).map((_, i) => {
+                    const vv = String(i).padStart(2, '0');
+                    return `<option value="${vv}">${vv}</option>`;
+                }).join('');
+            }
+            const v = String(targetInput.value || '').trim();
+            const now = new Date();
+            const defaultDate = `${String(now.getFullYear()).padStart(4, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            const defaultHour = String(now.getHours()).padStart(2, '0');
+            const defaultMinute = String(now.getMinutes()).padStart(2, '0');
+            const m = v.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})$/);
+            dateEl.value = m ? m[1] : defaultDate;
+            hourEl.value = m ? m[2] : defaultHour;
+            minuteEl.value = m ? m[3] : defaultMinute;
+            modal.classList.add('active');
+        }
+
+        function confirmTodoDateTimePickerModal() {
+            const dateEl = document.getElementById('todoDateTimePickerDate');
+            const hourEl = document.getElementById('todoDateTimePickerHour');
+            const minuteEl = document.getElementById('todoDateTimePickerMinute');
+            const targetInput = document.getElementById('todoModalCompletedAtInput');
+            if (!dateEl || !hourEl || !minuteEl || !targetInput) return;
+            const d = String(dateEl.value || '').trim();
+            const hh = String(hourEl.value || '').padStart(2, '0');
+            const mm = String(minuteEl.value || '').padStart(2, '0');
+            if (!d) {
+                if (window.showAppToast) window.showAppToast('请选择日期', true, 1800);
+                return;
+            }
+            targetInput.value = `${d}T${hh}:${mm}`;
+            window.todoModalCurrentCompletedAt = `${d} ${hh}:${mm}:00`;
+            refreshTodoModalCompletedAtDisplay();
+            syncRecurringDueDate();
+            closeTodoDateTimePickerModal();
+        }
+
+        function clearTodoDateTimePickerModal() {
+            const targetInput = document.getElementById('todoModalCompletedAtInput');
+            if (targetInput) targetInput.value = '';
+            window.todoModalCurrentCompletedAt = '';
+            refreshTodoModalCompletedAtDisplay();
+            syncRecurringDueDate();
+            closeTodoDateTimePickerModal();
         }
 
         function parseDateInputValue(value) {
@@ -2982,10 +3127,19 @@
                 const onCompletedAtChange = () => {
                     const v = String(todoModalCompletedAtInput.value || '').trim();
                     window.todoModalCurrentCompletedAt = v ? (v.replace('T', ' ') + ':00') : '';
+                    refreshTodoModalCompletedAtDisplay();
                     syncRecurringDueDate();
                 };
                 todoModalCompletedAtInput.addEventListener('input', onCompletedAtChange);
                 todoModalCompletedAtInput.addEventListener('change', onCompletedAtChange);
+            }
+            const todoModalCompletedAtDisplay = document.getElementById('todoModalCompletedAtDisplay');
+            if (todoModalCompletedAtDisplay) {
+                todoModalCompletedAtDisplay.addEventListener('click', openTodoDateTimePickerModal);
+            }
+            const todoModalCompletedAtPickBtn = document.getElementById('todoModalCompletedAtPickBtn');
+            if (todoModalCompletedAtPickBtn) {
+                todoModalCompletedAtPickBtn.addEventListener('click', openTodoDateTimePickerModal);
             }
 
             const pendingUsersTable = document.getElementById('pendingUsersTable');

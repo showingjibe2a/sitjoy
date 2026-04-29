@@ -85,6 +85,23 @@
             color: var(--morandi-slate);
             font-size: 0.9rem;
         }
+        .order-preview-thumb-cell {
+            width: 64px;
+            text-align: center;
+        }
+        .order-preview-thumb {
+            width: 42px;
+            height: 42px;
+            object-fit: contain;
+            border-radius: 8px;
+            border: 1px solid rgba(207, 199, 189, 0.8);
+            background: #fff;
+            display: inline-block;
+        }
+        .order-preview-thumb-empty {
+            color: var(--morandi-slate);
+            font-size: 0.8rem;
+        }
         .main-images-manager {
             border: 2px solid var(--morandi-sand);
             border-radius: 8px;
@@ -482,6 +499,7 @@
                             <th class="yesno-col">是否迭代款</th>
                             <th class="yesno-col">是否大健云仓</th>
                             <th style="width: 100px;">货号</th>
+                            <th style="width: 64px; text-align:center;">图片</th>
                             <th>SKU</th>
                             <th>规格简称</th>
                             <th>内含物英文描述</th>
@@ -504,7 +522,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="25" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="26" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -657,7 +675,6 @@
                                     <button type="button" class="btn-secondary" onclick="openNasMainImageImportModal()">从NAS选择并移动</button>
                                 </div>
                             </div>
-                            <button type="button" class="btn-secondary" id="orderMainImageRefreshBtn">刷新</button>
                             <input type="file" id="orderMainImageUploadInput" accept="image/*" multiple style="display:none;">
                             <input type="hidden" id="orderMainImageTypeSelect" value="">
                             <div class="main-images-manager" style="margin-top:0.55rem;">
@@ -3372,7 +3389,7 @@
             });
             selectedOrderProductIds = new Set(Array.from(selectedOrderProductIds).filter(id => availableIdSet.has(String(id))));
             if (safeItems.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="25" style="text-align:center;">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="26" style="text-align:center;">暂无数据</td></tr>';
                 syncSelectAllCheckbox();
                 syncPreviewSaveBar();
                 return;
@@ -3394,6 +3411,11 @@
                         const lastMileText = getPreviewEffectiveValue(item, 'last_mile_avg_freight_usd');
                         const onMarketText = Number(getPreviewEffectiveValue(item, 'is_on_market') || 0) === 1 ? '1' : '0';
                         const reshipText = Number(getPreviewEffectiveValue(item, 'is_reship_accessory') || 0) === 1 ? '1' : '0';
+                        const previewPath = String(item.preview_image_path || '').trim();
+                        const previewB64 = previewPath ? utf8ToB64(previewPath) : '';
+                        const previewHtml = previewB64
+                            ? `<img class="order-preview-thumb" src="/api/image-preview?id=${encodeURIComponent(previewB64)}&mode=thumb&w=120&q=72" alt="图片" loading="lazy">`
+                            : '<span class="order-preview-thumb-empty">-</span>';
                         const checked = selectedOrderProductIds.has(String(item.id)) ? 'checked' : '';
                         return `
                             <tr>
@@ -3403,6 +3425,7 @@
                                 <td class="yesno-col">${renderReadonlyYesNoSwitch(item.is_iteration)}</td>
                                 <td class="yesno-col">${renderReadonlyYesNoSwitch(item.is_dachene_product)}</td>
                                 <td>${item.sku_family || ''}</td>
+                                <td class="order-preview-thumb-cell">${previewHtml}</td>
                                 <td>${item.sku || ''}</td>
                                 <td>${item.spec_qty_short || ''}</td>
                                 <td>${item.contents_desc_en || ''}</td>
@@ -3445,7 +3468,7 @@
                 .then(data => {
                     const tbody = document.querySelector('#orderProductTable tbody');
                     if (data.status !== 'success') {
-                        tbody.innerHTML = `<tr><td colspan="25" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="26" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                         return;
                     }
                     orderProductItemsCache = data.items || [];
@@ -3453,7 +3476,7 @@
                 })
                 .catch(err => {
                     const tbody = document.querySelector('#orderProductTable tbody');
-                    tbody.innerHTML = `<tr><td colspan="25" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="26" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
                 });
         }
 
@@ -4188,9 +4211,6 @@
         document.getElementById('orderMainImageUploadInput').addEventListener('change', function() {
             handleOrderMainImageUpload(this.files || []);
             this.value = '';
-        });
-        document.getElementById('orderMainImageRefreshBtn').addEventListener('click', function() {
-            refreshOrderMainImageList();
         });
         document.querySelectorAll('#nasActionModeSegment .status-pill[data-value]').forEach(btn => {
             btn.addEventListener('click', function() {

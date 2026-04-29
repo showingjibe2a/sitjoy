@@ -26,6 +26,15 @@
             <button class="btn-secondary" onclick="resetSearch()">清空</button>
           </div>
           <span class="pm-divider"></span>
+          <div class="form-group" style="margin:0; display:flex; align-items:center; gap:.45rem;">
+            <span class="pm-search-title" style="margin:0;">汇总维度</span>
+            <div class="status-segment status-segment--inline" id="wipAggregateSegment" data-value="none">
+              <button type="button" class="status-pill" data-value="order">订单号</button>
+              <button type="button" class="status-pill" data-value="family">货号</button>
+              <button type="button" class="status-pill is-active" data-value="none">不汇总</button>
+            </div>
+          </div>
+          <span class="pm-divider"></span>
           <button class="btn-accent" onclick="openCreateModal()">新增</button>
           <button class="btn-secondary" onclick="downloadTemplate()">下载模板</button>
           <button class="btn-secondary" onclick="downloadAllUnfinishedWipData()">下载所有未完工数据</button>
@@ -40,20 +49,20 @@
         <thead>
           <tr>
             <th style="width:54px; text-align:center;"><input type="checkbox" id="wipSelectAll"></th>
-            <th>工厂</th>
-            <th style="width:160px;">订单号</th>
-            <th style="width:160px;">合同编号</th>
-            <th style="width:120px;">颜色</th>
-            <th>SKU</th>
+            <th data-sort-key="factory_name">工厂</th>
+            <th style="width:160px;" data-sort-key="order_no">订单号</th>
+            <th style="width:160px;" data-sort-key="contract_no">合同编号</th>
+            <th style="width:120px;" data-sort-key="representative_color">颜色</th>
+            <th data-sort-key="sku">SKU</th>
             <th style="width:150px;">在市状态</th>
-            <th style="width:120px;">数量</th>
-            <th style="width:140px;">预计完工日期</th>
-            <th style="width:170px;">最初预计完工日期</th>
+            <th style="width:120px;" data-sort-key="quantity">数量</th>
+            <th style="width:140px;" data-sort-key="expected_completion_date">预计完工日期</th>
+            <th style="width:170px;" data-sort-key="initial_expected_completion_date">最初预计完工日期</th>
             <th style="width:160px;">是否完工</th>
-            <th style="width:140px;">实际完工时间</th>
-            <th>备注</th>
-            <th style="width:180px;">创建时间</th>
-            <th style="width:180px;">更新时间</th>
+            <th style="width:140px;" data-sort-key="actual_completion_date">实际完工时间</th>
+            <th data-sort-key="notes">备注</th>
+            <th style="width:180px;" data-sort-key="created_at">创建时间</th>
+            <th style="width:180px;" data-sort-key="update_time">更新时间</th>
             <th style="width:160px;">操作</th>
           </tr>
         </thead>
@@ -163,6 +172,23 @@
   .sku-color-empty { color: var(--morandi-slate); }
   .history-text { min-height: 38px; border: 1px solid rgba(207,199,189,.55); border-radius: 8px; padding: .5rem .65rem; background: transparent; color: var(--morandi-slate); display: flex; align-items: center; }
   .pm-form-full { grid-column: 1 / -1; }
+  .wip-group-row td {
+    background: #f3ece0 !important;
+    color: #5a4f42;
+    font-weight: 700;
+    border-top: 1px solid rgba(207,199,189,.75);
+    border-bottom: 1px solid rgba(207,199,189,.75);
+    cursor: pointer;
+  }
+  .wip-group-toggle {
+    display: inline-block;
+    width: 18px;
+    text-align: center;
+    margin-right: 0.25rem;
+    color: #6f6659;
+    font-weight: 700;
+  }
+  .wip-row-hidden { display: none; }
 </style>
 
 <script>
@@ -179,6 +205,10 @@ let selectedWipIds = new Set();
 let factoryWipEditDraft = {};
 let modalInitialExpectedLocked = '';
 let factoryWipColumnFilters = {};
+let wipAggregateMode = 'none';
+let wipCollapsedOrderGroups = new Set();
+let wipCollapsedFamilyGroups = new Set();
+let wipGroupSort = { key: '', dir: 'asc' };
 
 const WIP_FILTER_COLUMNS = {
   1: { key: 'factory_name', label: '工厂', finite: true },
@@ -1096,7 +1126,50 @@ function renderFactoryWipTable(items){
     return;
   }
   const html = [];
-  rows.forEach(item => {
+  const activeCollapsedSet = wipAggregateMode === 'order'
+    ? wipCollapsedOrderGroups
+    : (wipAggregateMode === 'family' ? wipCollapsedFamilyGroups : null);
+  const skuFamilyOf = (item) => {
+    const familyId = Number(item && item.sku_family_id || 0);
+    const familyName = String(item && item.sku_family || '').trim();
+    if (familyId > 0 && familyName) {
+      return { key: `family:${familyId}`, label: familyName };
+    }
+    if (familyName) {
+      return { key: `family-name:${familyName}`, label: familyName };
+    }
+    return { key: 'family:unknown', label: '（无货号）' };
+  };
+  const compareBySortKey = (a, b) => {
+    const key = String(wipGroupSort.key || '').trim();
+    if (!key) return 0;
+    const dir = wipGroupSort.dir === 'desc' ? -1 : 1;
+    const dateKeys = new Set(['expected_completion_date', 'initial_expected_completion_date', 'actual_completion_date', 'created_at', 'update_time']);
+    const numberKeys = new Set(['quantity']);
+    let av = a && a[key];
+    let bv = b && b[key];
+    if (key === 'update_time') {
+      av = av || (a && a.updated_at) || '';
+      bv = bv || (b && b.updated_at) || '';
+    }
+    if (numberKeys.has(key)) {
+      const na = Number(av || 0);
+      const nb = Number(bv || 0);
+      if (na === nb) return 0;
+      return (na > nb ? 1 : -1) * dir;
+    }
+    if (dateKeys.has(key)) {
+      const ta = Date.parse(String(av || '')) || 0;
+      const tb = Date.parse(String(bv || '')) || 0;
+      if (ta === tb) return 0;
+      return (ta > tb ? 1 : -1) * dir;
+    }
+    const sa = String(av || '').trim().toLowerCase();
+    const sb = String(bv || '').trim().toLowerCase();
+    if (sa === sb) return 0;
+    return (sa > sb ? 1 : -1) * dir;
+  };
+  const renderDataRow = (item, groupKey, hidden) => {
     const quantity = getWipMergedValue(item, 'quantity');
     const expectedCompletionDate = getWipMergedValue(item, 'expected_completion_date');
     const initialExpectedCompletionDate = formatDate(item.initial_expected_completion_date);
@@ -1108,8 +1181,9 @@ function renderFactoryWipTable(items){
     const colorHtml = colorValue
       ? `<span class="sku-color-chip-wrap"><span class="sku-color-chip" style="background:${colorValue};"></span></span>`
       : '<span class="sku-color-empty">-</span>';
-    html.push(`
-      <tr>
+    const safeGroupKeyAttr = String(groupKey || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return `
+      <tr class="${hidden ? 'wip-row-hidden' : ''}" data-group-key="${safeGroupKeyAttr}">
         <td style="text-align:center;"><input type="checkbox" class="wip-row-checkbox" data-id="${item.id}" ${selectedWipIds.has(Number(item.id)) ? 'checked' : ''}></td>
         <td>${item.factory_name || ''}</td>
         <td class="preview-edit-cell"><input type="text" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="order_no" value="${String(item.order_no || '').replace(/"/g, '&quot;')}" placeholder="可选"></td>
@@ -1142,8 +1216,45 @@ function renderFactoryWipTable(items){
           </div>
         </td>
       </tr>
-    `);
-  });
+    `;
+  };
+
+  if (wipAggregateMode === 'none') {
+    rows.forEach(item => {
+      html.push(renderDataRow(item, '', false));
+    });
+  } else {
+    const groups = new Map();
+    rows.forEach(item => {
+      if (wipAggregateMode === 'order') {
+        const rawKey = String(item.order_no || '').trim();
+        const key = rawKey || '（无订单号）';
+        if (!groups.has(key)) groups.set(key, { label: key, items: [] });
+        groups.get(key).items.push(item);
+      } else {
+        const family = skuFamilyOf(item);
+        if (!groups.has(family.key)) groups.set(family.key, { label: family.label, items: [] });
+        groups.get(family.key).items.push(item);
+      }
+    });
+    if (activeCollapsedSet && activeCollapsedSet.size === 0) {
+      Array.from(groups.keys()).forEach(k => activeCollapsedSet.add(k));
+    }
+    Array.from(groups.entries()).forEach(([groupKey, groupData]) => {
+      const groupLabel = String((groupData && groupData.label) || groupKey || '').trim() || '（无货号）';
+      const groupItems = (groupData && Array.isArray(groupData.items)) ? groupData.items : [];
+      const sorted = wipGroupSort.key ? groupItems.slice().sort(compareBySortKey) : groupItems.slice();
+      const collapsed = activeCollapsedSet ? activeCollapsedSet.has(groupKey) : false;
+      html.push(`
+        <tr class="wip-group-row" data-group-key="${String(groupKey).replace(/"/g, '&quot;')}">
+          <td colspan="16"><span class="wip-group-toggle">${collapsed ? '▶' : '▼'}</span>${groupLabel}（${sorted.length}）</td>
+        </tr>
+      `);
+      sorted.forEach(item => {
+        html.push(renderDataRow(item, groupKey, collapsed));
+      });
+    });
+  }
 
   tbody.innerHTML = html.join('');
   installWipColumnFilterButtons();
@@ -1151,6 +1262,98 @@ function renderFactoryWipTable(items){
   bindRowSelectionEvents();
   bindFactoryWipEditEvents();
   syncWipSelectAll();
+  bindWipGroupEvents();
+}
+
+function bindWipGroupEvents(){
+  const tbody = document.querySelector('#mainTable tbody');
+  if(!tbody || tbody.dataset.groupBound === '1') return;
+  tbody.dataset.groupBound = '1';
+  tbody.addEventListener('click', function(e){
+    const row = e.target && e.target.closest ? e.target.closest('tr.wip-group-row[data-group-key]') : null;
+    if(!row) return;
+    const key = String(row.dataset.groupKey || '');
+    if(!key) return;
+    const targetSet = wipAggregateMode === 'order' ? wipCollapsedOrderGroups : wipCollapsedFamilyGroups;
+    if(targetSet.has(key)) targetSet.delete(key);
+    else targetSet.add(key);
+    renderFactoryWipTable(applyWipColumnFilters(listCache));
+    syncFactoryWipSaveBar();
+  });
+}
+
+function bindWipAggregateSegment(){
+  const seg = document.getElementById('wipAggregateSegment');
+  if(!seg) return;
+  const resetManagedTableSortState = () => {
+    const host = document.querySelector('.pm-managed-head-table') || document.querySelector('#mainTable thead');
+    if(!host) return;
+    const sortedCell = host.querySelector('th.pm-sort-asc, th.pm-sort-desc');
+    if(!sortedCell) return;
+    const clickCell = (cell) => {
+      if(!cell) return;
+      cell.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+    };
+    if (sortedCell.classList.contains('pm-sort-asc')) {
+      clickCell(sortedCell); // asc -> none
+      return;
+    }
+    if (sortedCell.classList.contains('pm-sort-desc')) {
+      clickCell(sortedCell); // desc -> asc
+      clickCell(sortedCell); // asc -> none
+    }
+  };
+  seg.querySelectorAll('button.status-pill[data-value]').forEach(btn => {
+    btn.addEventListener('click', function(){
+      const val = String(this.getAttribute('data-value') || 'none');
+      const nextMode = ['order', 'family', 'none'].includes(val) ? val : 'none';
+      if(wipAggregateMode === 'none' && nextMode !== 'none'){
+        resetManagedTableSortState();
+      }
+      wipAggregateMode = nextMode;
+      seg.setAttribute('data-value', wipAggregateMode);
+      seg.querySelectorAll('button.status-pill[data-value]').forEach(b => {
+        b.classList.toggle('is-active', String(b.getAttribute('data-value') || '') === wipAggregateMode);
+      });
+      if(wipAggregateMode === 'order') wipCollapsedOrderGroups = new Set();
+      if(wipAggregateMode === 'family') wipCollapsedFamilyGroups = new Set();
+      renderFactoryWipTable(applyWipColumnFilters(listCache));
+      syncFactoryWipSaveBar();
+    });
+  });
+}
+
+function bindWipHeaderGroupSort(){
+  const table = document.getElementById('mainTable');
+  if(!table || table.dataset.groupSortBound === '1') return;
+  table.dataset.groupSortBound = '1';
+  const thead = table.querySelector('thead');
+  if(!thead) return;
+  thead.addEventListener('click', function(e){
+    if(wipAggregateMode === 'none') return;
+    if(e.target && e.target.closest && e.target.closest('.pm-column-filter-btn')) return;
+    const th = e.target && e.target.closest ? e.target.closest('th[data-sort-key]') : null;
+    if(!th) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+    const key = String(th.getAttribute('data-sort-key') || '').trim();
+    if(!key) return;
+    if(wipGroupSort.key === key){
+      wipGroupSort.dir = wipGroupSort.dir === 'asc' ? 'desc' : 'asc';
+    }else{
+      wipGroupSort.key = key;
+      wipGroupSort.dir = 'asc';
+    }
+    renderFactoryWipTable(applyWipColumnFilters(listCache));
+    // Managed-table sorter may still run on header click; render again in next tick
+    // so group header rows always stay above their member rows.
+    setTimeout(() => {
+      renderFactoryWipTable(applyWipColumnFilters(listCache));
+      syncFactoryWipSaveBar();
+    }, 0);
+    syncFactoryWipSaveBar();
+  }, true);
 }
 
 function resetSearch(){
@@ -1216,6 +1419,8 @@ window.addEventListener('load', () => {
     });
   }
   installWipColumnFilterButtons();
+  bindWipAggregateSegment();
+  bindWipHeaderGroupSort();
   loadOptions().finally(loadList);
   setTimeout(installWipColumnFilterButtons, 200);
 });

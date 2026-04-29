@@ -2349,7 +2349,7 @@
                     <div style="display:grid; gap:0.6rem;">
                         <div class="helper-text" style="margin:0;">可分别搜索：货号 / 规格 / 面料（支持多选）</div>
                         <div style="border:1px solid rgba(207,199,189,0.7); border-radius:10px; background:#fff; overflow:hidden;">
-                            <table class="pm-table" style="margin:0;">
+                            <table class="pm-table" data-disable-table-manage="1" style="margin:0;">
                                 <thead style="position:sticky; top:0; z-index:1;">
                                     <tr>
                                         <th style="width:68px; text-align:center;">
@@ -2384,25 +2384,41 @@
                         <div class="helper-text" style="margin:0;">提示：输入框会在本地记忆（同一次访问）以节省重复筛选时间。</div>
                     </div>
                 `;
-                const ok = window.showAppConfirmAsync
-                    ? window.showAppConfirmAsync({
+                const openPickerDialog = (window.showHtmlConfirmCompat
+                    ? window.showHtmlConfirmCompat({
                         title: '选择规格',
-                        message: html,
-                        description: html,
+                        htmlText: html,
                         confirmText: '确定',
                         cancelText: '取消',
-                        html: true,
                         maxWidth: 920
                     })
-                    : Promise.resolve(false);
+                    : (window.showAppConfirmAsync
+                        ? window.showAppConfirmAsync({
+                            title: '选择规格',
+                            message: html,
+                            description: html,
+                            confirmText: '确定',
+                            cancelText: '取消',
+                            html: true,
+                            maxWidth: 920
+                        })
+                        : Promise.resolve(false)));
+                const ok = openPickerDialog;
                 // 若没有全局 confirm 弹窗能力，则退化为不打开（避免重复造轮子）
                 if (!ok) return;
 
-                setTimeout(() => {
+                const bindPickerUi = (retryCount) => {
                     const state = loadSearchState();
                     const skuEl = document.getElementById('galleryVariantSearchSku');
                     const specEl = document.getElementById('galleryVariantSearchSpec');
                     const fabEl = document.getElementById('galleryVariantSearchFabric');
+                    const tbodyReady = document.getElementById('galleryVariantPickerTbody');
+                    if (!skuEl || !specEl || !fabEl || !tbodyReady) {
+                        if ((retryCount || 0) < 12) {
+                            setTimeout(() => bindPickerUi((retryCount || 0) + 1), 30);
+                        }
+                        return;
+                    }
                     if (skuEl) skuEl.value = String(state.sku || '');
                     if (specEl) specEl.value = String(state.spec || '');
                     if (fabEl) fabEl.value = String(state.fabric || '');
@@ -2466,7 +2482,8 @@
                         });
                     }
                     render();
-                }, 0);
+                };
+                bindPickerUi(0);
 
                 Promise.resolve(ok).then(confirmed => {
                     if (!confirmed) return;

@@ -820,15 +820,16 @@ class LogisticsWarehouseMixin:
                                         fw.notes, fw.created_at, fw.updated_at, fw.update_time,
                                     fc.order_no,
                                         fc.contract_no,
-                                        op.sku, op.is_on_market, f.factory_name,
+                                        op.sku, op.sku_family_id, pf.sku_family, op.is_on_market, f.factory_name,
                                         fm.representative_color
                                 FROM factory_wip_inventory fw
                                 JOIN order_products op ON op.id = fw.order_product_id
+                                LEFT JOIN product_families pf ON pf.id = op.sku_family_id
                                 JOIN logistics_factories f ON f.id = fw.factory_id
                                     LEFT JOIN factory_contracts fc ON fc.id = fw.contract_id
                                     LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
                                 WHERE (op.sku LIKE %s OR f.factory_name LIKE %s){scope_clause}
-                                ORDER BY op.sku ASC, f.factory_name ASC, fw.expected_completion_date ASC
+                                ORDER BY pf.sku_family ASC, op.sku ASC, f.factory_name ASC, fw.expected_completion_date ASC
                                 """,
                                 (f"%{keyword}%", f"%{keyword}%") + scope_params
                             )
@@ -841,15 +842,16 @@ class LogisticsWarehouseMixin:
                                         fw.notes, fw.created_at, fw.updated_at, fw.update_time,
                                     fc.order_no,
                                         fc.contract_no,
-                                        op.sku, op.is_on_market, f.factory_name,
+                                        op.sku, op.sku_family_id, pf.sku_family, op.is_on_market, f.factory_name,
                                         fm.representative_color
                                 FROM factory_wip_inventory fw
                                 JOIN order_products op ON op.id = fw.order_product_id
+                                LEFT JOIN product_families pf ON pf.id = op.sku_family_id
                                 JOIN logistics_factories f ON f.id = fw.factory_id
                                     LEFT JOIN factory_contracts fc ON fc.id = fw.contract_id
                                     LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
                                 WHERE 1=1 {scope_clause}
-                                ORDER BY op.sku ASC, f.factory_name ASC, fw.expected_completion_date ASC
+                                ORDER BY pf.sku_family ASC, op.sku ASC, f.factory_name ASC, fw.expected_completion_date ASC
                                 """,
                                 scope_params
                             )

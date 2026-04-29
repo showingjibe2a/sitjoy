@@ -150,8 +150,15 @@
             z-index: 4;
             box-sizing: border-box;
         }
-        table.sf-table thead tr.sf-thead-row-1 th { top: 0; background: #ece2cf; }
-        table.sf-table thead tr.sf-thead-row-2 th { top: var(--sf-thead-row1-height, 36px); background: #f5efe5; }
+        table.sf-table thead tr.sf-thead-row-1 th {
+            top: 0;
+            background: #ece2cf;
+            white-space: nowrap;
+            height: 34px;
+            padding-top: 0.3rem;
+            padding-bottom: 0.3rem;
+        }
+        table.sf-table thead tr.sf-thead-row-2 th { top: var(--sf-thead-row1-height, 34px); background: #f5efe5; }
         table.sf-table thead tr.sf-thead-row-1 th { z-index: 6; cursor: default; }
         table.sf-table thead tr.sf-thead-row-2 th { z-index: 5; }
         table.sf-table thead tr.sf-thead-row-2 th.sf-th-spec { background: #f3ecdf; }
@@ -490,6 +497,7 @@
                 <span class="sf-divider" aria-hidden="true"></span>
                 <div class="sf-toolbar-group">
                     <label>筛选：</label>
+                    <input type="text" id="filterShop" placeholder="店铺">
                     <input type="text" id="filterSku" placeholder="货号/平台SKU">
                     <input type="text" id="filterSpec" placeholder="规格">
                     <input type="text" id="filterFabric" placeholder="面料">
@@ -737,6 +745,7 @@
             const monthsParam = (state.months || []).map(m => m.slice(0, 7)).join(',');
             const histStartEl = document.getElementById('historyStart');
             const histEndEl = document.getElementById('historyEnd');
+            const shopEl = document.getElementById('filterShop');
             const skuEl = document.getElementById('filterSku');
             const specEl = document.getElementById('filterSpec');
             const fabricEl = document.getElementById('filterFabric');
@@ -746,6 +755,7 @@
             if (monthsParam) params.set('months', monthsParam);
             if (histStartEl && histStartEl.value) params.set('history_start', histStartEl.value);
             if (histEndEl && histEndEl.value) params.set('history_end', histEndEl.value);
+            if (shopEl && shopEl.value.trim()) params.set('shop', shopEl.value.trim());
             if (skuEl && skuEl.value.trim()) params.set('sku', skuEl.value.trim());
             if (specEl && specEl.value.trim()) params.set('spec', specEl.value.trim());
             if (fabricEl && fabricEl.value.trim()) params.set('fabric', fabricEl.value.trim());
@@ -944,8 +954,13 @@
             thead.innerHTML = '';
             thead.appendChild(trTop);
             thead.appendChild(trBottom);
-            const row1Height = Math.max(32, trTop.getBoundingClientRect().height || trTop.offsetHeight || 36);
-            table.style.setProperty('--sf-thead-row1-height', `${Math.ceil(row1Height)}px`);
+            const applyHeadOffset = () => {
+                const row1Height = Math.max(34, trTop.getBoundingClientRect().height || trTop.offsetHeight || 34);
+                table.style.setProperty('--sf-thead-row1-height', `${Math.ceil(row1Height)}px`);
+            };
+            applyHeadOffset();
+            if (typeof requestAnimationFrame === 'function') requestAnimationFrame(applyHeadOffset);
+            setTimeout(applyHeadOffset, 0);
             bindHeaderEvents(thead, cols);
 
             const filteredRows = applyFilters(state.rows.slice(), cols);
@@ -1031,9 +1046,7 @@
         function buildBottomHeaderHtml(col) {
             const sortMark = state.sortKey === col.key ? (state.sortDir === 'asc' ? '▲' : '▼') : '';
             const filterValue = state.colFilters[col.key] || '';
-            const filterInput = col.filter
-                ? `<input type="text" class="sf-th-filter" data-filter-key="${col.key}" placeholder="筛选" value="${escapeHtml(filterValue)}">`
-                : '';
+            const filterInput = '';
             return `<th class="sf-th-spec ${col.thClass || ''}" data-col-key="${col.key}"><div class="sf-th-cell"><span class="sf-th-title-row ${col.sort ? '' : 'is-disabled'}" data-sort-key="${col.sort ? col.key : ''}"><span>${escapeHtml(col.label)}</span><span class="sf-sort-arrow">${sortMark}</span></span>${filterInput}</div></th>`;
         }
 
@@ -1324,6 +1337,20 @@
             document.querySelectorAll('button[data-future]').forEach(btn => {
                 btn.addEventListener('click', () => setForecastMonthsFuture(parseInt(btn.dataset.future, 10) || 6));
             });
+            const bindTopFilter = (id, key) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.addEventListener('input', () => {
+                    const v = String(el.value || '').trim();
+                    if (v) state.colFilters[key] = v;
+                    else delete state.colFilters[key];
+                    renderForecastTable();
+                });
+            };
+            bindTopFilter('filterShop', 'shop_name');
+            bindTopFilter('filterSku', 'sku_family');
+            bindTopFilter('filterSpec', 'spec_name');
+            bindTopFilter('filterFabric', 'fabric_code');
 
             // 弹窗
             document.getElementById('sfBatchSaveBtn').addEventListener('click', saveAllChanges);

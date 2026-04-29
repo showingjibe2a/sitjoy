@@ -82,6 +82,58 @@
     return el ? String(el.value || fallback || '') : String(fallback || '');
   }
 
+  // Single compatibility entry for HTML confirm dialogs.
+  // `showAppConfirmAsync` in header.js only renders plain text (textContent),
+  // so HTML dialogs must use this custom renderer.
+  function showHtmlConfirmCompat(opts) {
+    const conf = opts || {};
+    const htmlText = String(conf.htmlText || conf.message || conf.description || '').trim();
+    if (!htmlText) return Promise.resolve(false);
+    const title = String(conf.title || '确认');
+    const confirmText = String(conf.confirmText || '确定');
+    const cancelText = String(conf.cancelText || '取消');
+    const maxWidth = Number(conf.maxWidth || 920);
+
+    return new Promise((resolve) => {
+      const modal = document.createElement('div');
+      modal.className = 'pm-modal active';
+      modal.innerHTML = `
+        <div class="pm-modal-content" style="max-width:${maxWidth}px;">
+          <h3 style="margin-top:0;">${escapeHtml(title)}</h3>
+          <div class="pm-modal-scroll"><div id="appHtmlConfirmBody"></div></div>
+          <div class="pm-modal-actions">
+            <button type="button" class="btn-secondary" id="appHtmlConfirmCancel">${escapeHtml(cancelText)}</button>
+            <button type="button" class="btn-primary" id="appHtmlConfirmOk">${escapeHtml(confirmText)}</button>
+          </div>
+        </div>
+      `;
+      const bodyEl = modal.querySelector('#appHtmlConfirmBody');
+      if (bodyEl) bodyEl.innerHTML = htmlText;
+      const okBtn = modal.querySelector('#appHtmlConfirmOk');
+      const cancelBtn = modal.querySelector('#appHtmlConfirmCancel');
+
+      const cleanup = (result) => {
+        document.removeEventListener('keydown', onEsc);
+        if (modal && modal.parentNode) modal.parentNode.removeChild(modal);
+        if (window.syncModalScrollLock) window.syncModalScrollLock();
+        resolve(!!result);
+      };
+      const onEsc = (e) => { if (e.key === 'Escape') cleanup(false); };
+
+      okBtn && okBtn.addEventListener('click', () => cleanup(true));
+      cancelBtn && cancelBtn.addEventListener('click', () => cleanup(false));
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) cleanup(false);
+      });
+      document.addEventListener('keydown', onEsc);
+      document.body.appendChild(modal);
+      if (window.syncModalScrollLock) window.syncModalScrollLock();
+    });
+  }
+  if (!window.showHtmlConfirmCompat) {
+    window.showHtmlConfirmCompat = showHtmlConfirmCompat;
+  }
+
   function bindSegment(segEl, onPick) {
     if (!segEl || segEl.dataset._bound === '1') return;
     segEl.dataset._bound = '1';
@@ -273,7 +325,7 @@
         <div style="display:grid; gap:0.6rem;">
           <div class="helper-text" style="margin:0;">可分别搜索：货号 / 规格 / 面料（支持多选）</div>
           <div style="border:1px solid rgba(207,199,189,0.7); border-radius:10px; background:#fff; overflow:hidden;">
-            <table class="pm-table" style="margin:0;">
+            <table class="pm-table" data-disable-table-manage="1" style="margin:0;">
               <thead style="position:sticky; top:0; z-index:1;">
                 <tr>
                   <th style="width:68px; text-align:center;">
@@ -314,13 +366,26 @@
         return;
       }
 
-      const p = window.showAppConfirmAsync({ title: '选择规格', description: html, confirmText: '确定', cancelText: '取消', html: true, maxWidth: 920 });
+      const p = showHtmlConfirmCompat({
+        title: '选择规格',
+        htmlText: html,
+        confirmText: '确定',
+        cancelText: '取消',
+        maxWidth: 920
+      });
 
-      setTimeout(() => {
+      const bindPickerUi = (retryCount) => {
         const state = loadSearchState();
         const skuEl = $('pmVariantSearchSku');
         const specEl = $('pmVariantSearchSpec');
         const fabEl = $('pmVariantSearchFabric');
+        const tbody = $('pmVariantTbody');
+        if (!skuEl || !specEl || !fabEl || !tbody) {
+          if ((retryCount || 0) < 12) {
+            setTimeout(() => bindPickerUi((retryCount || 0) + 1), 30);
+          }
+          return;
+        }
         if (skuEl) skuEl.value = String(state.sku || '');
         if (specEl) specEl.value = String(state.spec || '');
         if (fabEl) fabEl.value = String(state.fabric || '');
@@ -382,7 +447,8 @@
           });
         }
         render();
-      }, 0);
+      };
+      bindPickerUi(0);
 
       Promise.resolve(p).then(ok => {
         if (!ok) return;

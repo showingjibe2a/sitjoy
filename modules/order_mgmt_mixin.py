@@ -1794,7 +1794,15 @@ class OrderManagementMixin:
                         pf.category,
                         fm.fabric_code,
                         fm.fabric_name_en,
-                        fm.representative_color
+                        fm.representative_color,
+                        (
+                            SELECT ia.storage_path
+                            FROM order_product_image_mappings opim
+                            JOIN image_assets ia ON ia.id = opim.image_asset_id
+                            WHERE opim.order_product_id = op.id
+                            ORDER BY opim.sort_order ASC, opim.id ASC
+                            LIMIT 1
+                        ) AS preview_image_path
                     FROM order_products op
                     LEFT JOIN product_families pf ON pf.id = op.sku_family_id
                     LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
@@ -1813,7 +1821,15 @@ class OrderManagementMixin:
                         pf.category,
                         fm.fabric_code,
                         fm.fabric_name_en,
-                        fm.representative_color
+                        fm.representative_color,
+                        (
+                            SELECT ia.storage_path
+                            FROM order_product_image_mappings opim
+                            JOIN image_assets ia ON ia.id = opim.image_asset_id
+                            WHERE opim.order_product_id = op.id
+                            ORDER BY opim.sort_order ASC, opim.id ASC
+                            LIMIT 1
+                        ) AS preview_image_path
                     FROM order_products op
                     LEFT JOIN product_families pf ON pf.id = op.sku_family_id
                     LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
@@ -1837,7 +1853,15 @@ class OrderManagementMixin:
                         pf.category,
                         fm.fabric_code,
                         fm.fabric_name_en,
-                        fm.representative_color
+                        fm.representative_color,
+                        (
+                            SELECT ia.storage_path
+                            FROM order_product_image_mappings opim
+                            JOIN image_assets ia ON ia.id = opim.image_asset_id
+                            WHERE opim.order_product_id = op.id
+                            ORDER BY opim.sort_order ASC, opim.id ASC
+                            LIMIT 1
+                        ) AS preview_image_path
                     FROM order_products op
                     LEFT JOIN product_families pf ON pf.id = op.sku_family_id
                     LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id

@@ -245,14 +245,20 @@ class UtilityMixin:
                     (todo_id, sf_id)
                 )
 
-    def _replace_todo_assignees(self, conn, todo_id, assignee_ids):
+    def _replace_todo_assignees(self, conn, todo_id, assignee_ids, assignee_status_map=None):
         with conn.cursor() as cur:
             cur.execute("DELETE FROM todo_assignments WHERE todo_id=%s", (todo_id,))
             ids = sorted(set([self._parse_int(x) for x in (assignee_ids or []) if self._parse_int(x)]))
+            status_map = assignee_status_map or {}
             for aid in ids:
+                st = status_map.get(aid) or {}
+                is_completed = 1 if int(st.get('is_completed') or 0) == 1 else 0
+                completed_at = self._todo_parse_datetime(st.get('completed_at')) if st.get('completed_at') is not None else None
+                if is_completed == 1 and not completed_at:
+                    completed_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 cur.execute(
                     "INSERT INTO todo_assignments (todo_id, assignee_id, is_completed, completed_at) VALUES (%s, %s, %s, %s)",
-                    (todo_id, aid, 0, None)
+                    (todo_id, aid, is_completed, completed_at if is_completed == 1 else None)
                 )
 
     def handle_todo_api(self, environ, method, start_response):
@@ -412,6 +418,10 @@ class UtilityMixin:
                 assignee_ids = data.get('assignee_ids') or []
                 related_sales_product_ids = data.get('related_sales_product_ids') or []
                 related_sku_family_ids = data.get('related_sku_family_ids') or []
+                is_completed = 1 if str(data.get('is_completed', 0)).strip().lower() in ('1', 'true', 'yes', 'on') else 0
+                completed_at = self._todo_parse_datetime(data.get('completed_at'))
+                if is_completed == 1 and not completed_at:
+                    completed_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
                 with self._get_db_connection() as conn:
                     if not todo_type_id:
@@ -459,7 +469,13 @@ class UtilityMixin:
                         assignee_ids = []
                     if not assignee_ids:
                         assignee_ids = [user_id]
-                    self._replace_todo_assignees(conn, new_id, assignee_ids)
+                    assignee_status_map = {
+                        int(user_id): {
+                            'is_completed': is_completed,
+                            'completed_at': completed_at if is_completed == 1 else None
+                        }
+                    }
+                    self._replace_todo_assignees(conn, new_id, assignee_ids, assignee_status_map=assignee_status_map)
                     self._replace_todo_sales_links(conn, new_id, related_sales_product_ids, related_sku_family_ids)
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
@@ -596,7 +612,32 @@ class UtilityMixin:
                     if related_sales_product_ids is not None or related_sku_family_ids is not None:
                         self._replace_todo_sales_links(conn, item_id, related_sales_product_ids or [], related_sku_family_ids or [])
                     if assignee_ids is not None:
-                        self._replace_todo_assignees(conn, item_id, assignee_ids)
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "SELECT assignee_id, is_completed, completed_at FROM todo_assignments WHERE todo_id=%s",
+                                (item_id,)
+                            )
+                            assignee_rows = cur.fetchall() or []
+                        assignee_status_map = {}
+                        for row in assignee_rows:
+                            aid = self._parse_int(row.get('assignee_id'))
+                            if not aid:
+                                continue
+                            assignee_status_map[aid] = {
+                                'is_completed': 1 if int(row.get('is_completed') or 0) == 1 else 0,
+                                'completed_at': self._todo_parse_datetime(row.get('completed_at'))
+                            }
+                        if is_completed is not None:
+                            assignee_status_map[int(user_id)] = {
+                                'is_completed': 1 if is_completed == 1 else 0,
+                                'completed_at': completed_at if is_completed == 1 else None
+                            }
+                        elif completed_at is not None:
+                            base = assignee_status_map.get(int(user_id)) or {}
+                            if int(base.get('is_completed') or 0) == 1:
+                                base['completed_at'] = completed_at
+                            assignee_status_map[int(user_id)] = base
+                        self._replace_todo_assignees(conn, item_id, assignee_ids, assignee_status_map=assignee_status_map)
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':
