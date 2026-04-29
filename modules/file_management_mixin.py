@@ -892,6 +892,7 @@ class FileManagementMixin:
             if not path_b64:
                 return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
 
+            raw_rel = base64.b64decode(path_b64)
             rel_path = self._fs_from_b64(path_b64)
             if '..' in rel_path or rel_path.startswith('/'):
                 return self.send_json({'status': 'error', 'message': 'Invalid path'}, start_response)
@@ -933,7 +934,61 @@ class FileManagementMixin:
 
             cur_rel = rel_path.replace('\\', '/').lstrip('/')
             can_rel = str((canonical or {}).get('storage_path') or '').replace('\\', '/').lstrip('/')
-            is_dup = bool(canonical and canonical.get('storage_path') and can_rel and can_rel != cur_rel)
+
+            def _path_key(abs_path):
+                try:
+                    if isinstance(abs_path, (bytes, bytearray)):
+                        real_abs = os.path.realpath(abs_path)
+                    else:
+                        real_abs = os.path.realpath(str(abs_path))
+                    norm_abs = os.path.normcase(os.path.normpath(real_abs))
+                    return self._safe_fsencode(norm_abs)
+                except Exception:
+                    try:
+                        return self._safe_fsencode(abs_path)
+                    except Exception:
+                        return b''
+
+            def _display_rel_from_raw(raw_bytes, fallback):
+                if not isinstance(raw_bytes, (bytes, bytearray)) or not raw_bytes:
+                    return str(fallback or '')
+                for enc in ('utf-8', 'gb18030'):
+                    try:
+                        s = bytes(raw_bytes).decode(enc, errors='strict')
+                        if s:
+                            return s.replace('\\', '/').lstrip('/')
+                    except Exception:
+                        continue
+                try:
+                    return os.fsdecode(raw_bytes).replace('\\', '/').lstrip('/')
+                except Exception:
+                    return str(fallback or '')
+
+            current_key = _path_key(full_path)
+            canonical_same_file = False
+            if can_rel and current_key:
+                can_raw_variants = []
+                try:
+                    can_raw_variants.append(self._safe_fsencode(can_rel))
+                except Exception:
+                    pass
+                for enc in ('utf-8', 'gb18030'):
+                    try:
+                        b = can_rel.encode(enc, errors='strict')
+                        if b not in can_raw_variants:
+                            can_raw_variants.append(b)
+                    except Exception:
+                        continue
+                for rel_b in can_raw_variants:
+                    try:
+                        can_full = os.path.join(RESOURCES_PATH_BYTES, rel_b)
+                        if os.path.isfile(can_full) and _path_key(can_full) == current_key:
+                            canonical_same_file = True
+                            break
+                    except Exception:
+                        continue
+
+            is_dup = bool(canonical and canonical.get('storage_path') and can_rel and (not canonical_same_file) and can_rel != cur_rel)
 
             def dirname(p):
                 if not p:
@@ -941,13 +996,15 @@ class FileManagementMixin:
                 return p.rsplit('/', 1)[0] if '/' in p else ''
 
             same_folder = (dirname(cur_rel) == dirname(can_rel)) if (cur_rel and can_rel) else False
+            if canonical_same_file:
+                same_folder = True
 
             return self.send_json({
                 'status': 'success',
                 'sha256': sha256,
                 'duplicate': bool(is_dup),
                 'same_folder': bool(same_folder),
-                'current_path': cur_rel,
+                'current_path': _display_rel_from_raw(raw_rel, cur_rel),
                 'canonical': canonical or None,
             }, start_response)
         except Exception as e:

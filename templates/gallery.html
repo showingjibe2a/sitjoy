@@ -299,12 +299,6 @@
                 };
                 card.ondblclick = (e) => {
                     e && e.preventDefault && e.preventDefault();
-                    if (!selectedItems.has(image.path)) {
-                        toggleSelection(image.path, 'image', true);
-                        card.classList.add('item-card--selected');
-                        const checkbox = card.querySelector('input[type="checkbox"][data-path]');
-                        if (checkbox) checkbox.checked = true;
-                    }
                     openRenameDialog(image.path, name);
                 };
                 const thumbnailUrl = `/api/image-preview?id=${encodeURIComponent(image.path)}`;

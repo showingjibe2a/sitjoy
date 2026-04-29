@@ -44,16 +44,17 @@ class OrderManagementMixin:
 
             if method == 'GET':
                 keyword = query_params.get('q', [''])[0].strip()
+                exclude_reship_accessory = str((query_params.get('exclude_reship_accessory', ['0'])[0] or '0')).strip().lower() in ('1', 'true', 'yes', 'on')
                 with self._get_db_connection() as conn:
                     item_id = self._parse_int((query_params.get('id', [''])[0] or '').strip())
                     if item_id:
-                        rows = self._load_order_product_rows(conn, keyword=keyword, include_relations=False, limit_rows=1, item_id=item_id)
+                        rows = self._load_order_product_rows(conn, keyword=keyword, include_relations=False, limit_rows=1, item_id=item_id, exclude_reship_accessory=exclude_reship_accessory)
                         item = rows[0] if rows else None
                         if item:
                             self._attach_order_product_relations(conn, [item])
                             self._attach_order_product_factory_links(conn, [item])
                         return self.send_json({'status': 'success', 'item': item}, start_response)
-                    rows = self._load_order_product_rows(conn, keyword=keyword)
+                    rows = self._load_order_product_rows(conn, keyword=keyword, exclude_reship_accessory=exclude_reship_accessory)
                     self._attach_order_product_factory_links(conn, rows)
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
@@ -74,6 +75,7 @@ class OrderManagementMixin:
 
                 is_iteration = 1 if self._parse_int(data.get('is_iteration')) else 0
                 is_on_market = 1 if self._parse_int(data.get('is_on_market')) else 0
+                is_reship_accessory = 1 if self._parse_int(data.get('is_reship_accessory')) else 0
                 is_dachene_product = 1 if self._parse_int(data.get('is_dachene_product')) else 0
 
                 source_order_product_id = self._parse_int(data.get('source_order_product_id'))
@@ -87,7 +89,7 @@ class OrderManagementMixin:
                             INSERT INTO order_products (
                                 sku, sku_family_id, version_no, fabric_id,
                                 spec_qty_short, contents_desc_en,
-                                is_iteration, is_dachene_product, is_on_market,
+                                is_iteration, is_dachene_product, is_on_market, is_reship_accessory,
                                 source_order_product_id,
                                 finished_length_in, finished_width_in, finished_height_in,
                                 net_weight_lbs,
@@ -97,7 +99,7 @@ class OrderManagementMixin:
                             ) VALUES (
                                 %s, %s, %s, %s,
                                 %s, %s,
-                                %s, %s, %s,
+                                %s, %s, %s, %s,
                                 %s,
                                 %s, %s, %s,
                                 %s,
@@ -116,6 +118,7 @@ class OrderManagementMixin:
                                 is_iteration,
                                 is_dachene_product,
                                 is_on_market,
+                                is_reship_accessory,
                                 source_order_product_id,
                                 self._parse_float(data.get('finished_length_in')),
                                 self._parse_float(data.get('finished_width_in')),
@@ -177,6 +180,7 @@ class OrderManagementMixin:
                             self._parse_int(item.get('carton_qty')),
                             self._parse_float(item.get('last_mile_avg_freight_usd')),
                             1 if self._parse_int(item.get('is_on_market')) else 0,
+                            1 if self._parse_int(item.get('is_reship_accessory')) else 0,
                             item_id
                         ))
 
@@ -186,7 +190,7 @@ class OrderManagementMixin:
                     with self._get_db_connection() as conn:
                         with conn.cursor() as cur:
                             row_map = {}
-                            for finished_length_in, finished_width_in, finished_height_in, package_length_in, package_width_in, package_height_in, cost_usd, package_size_class, carton_qty, last_mile_avg_freight_usd, is_on_market, item_id in updates:
+                            for finished_length_in, finished_width_in, finished_height_in, package_length_in, package_width_in, package_height_in, cost_usd, package_size_class, carton_qty, last_mile_avg_freight_usd, is_on_market, is_reship_accessory, item_id in updates:
                                 row_map[int(item_id)] = {
                                     'finished_length_in': finished_length_in,
                                     'finished_width_in': finished_width_in,
@@ -199,6 +203,7 @@ class OrderManagementMixin:
                                     'carton_qty': carton_qty,
                                     'last_mile_avg_freight_usd': last_mile_avg_freight_usd,
                                     'is_on_market': is_on_market,
+                                    'is_reship_accessory': is_reship_accessory,
                                 }
 
                             ids = list(row_map.keys())
@@ -223,6 +228,7 @@ class OrderManagementMixin:
                                 f"carton_qty = {build_case('carton_qty')}",
                                 f"last_mile_avg_freight_usd = {build_case('last_mile_avg_freight_usd')}",
                                 f"is_on_market = {build_case('is_on_market')}",
+                                f"is_reship_accessory = {build_case('is_reship_accessory')}",
                             ]
                             where_placeholders = ','.join(['%s'] * len(ids))
                             sql = f"UPDATE order_products SET {', '.join(set_clause)} WHERE id IN ({where_placeholders})"
@@ -296,7 +302,7 @@ class OrderManagementMixin:
                         updates.append(f"{field}=%s")
                         params.append(self._parse_float(data.get(field)))
 
-                bool_fields = ['is_iteration', 'is_dachene_product', 'is_on_market']
+                bool_fields = ['is_iteration', 'is_dachene_product', 'is_on_market', 'is_reship_accessory']
                 for field in bool_fields:
                     if field in data:
                         updates.append(f"{field}=%s")
@@ -614,6 +620,8 @@ class OrderManagementMixin:
                                 fm.fabric_code,
                                 op.spec_qty_short,
                                 op.contents_desc_en,
+                                op.is_on_market,
+                                op.is_reship_accessory,
                                 op.is_iteration,
                                 op.is_dachene_product,
                                 src.sku AS source_sku,
@@ -732,6 +740,8 @@ class OrderManagementMixin:
                     'title': '基础信息',
                     'bg_color': 'F5F1ED',
                     'fields': [
+                        ('is_on_market', '是否在市', 'dropdown', ['否', '是']),
+                        ('is_reship_accessory', '是否为补发用配件', 'dropdown', ['否', '是']),
                         ('sku', '下单SKU *', 'text', None),
                         ('sku_family', '归属货号 *', 'dropdown', sku_families),
                         ('fabric_code', '面料 *', 'dropdown', fabrics),
@@ -864,6 +874,10 @@ class OrderManagementMixin:
                     example_row_data.append(('是否为大健云仓产品（在下单SKU处填写大健云仓Item Code）', 0, '否'))
                 elif field_base == 'sku':
                     example_row_data.append(('下单SKU', 0, 'MS01A-Brown'))
+                elif field_base == 'is_on_market':
+                    example_row_data.append(('是否在市', 0, '是'))
+                elif field_base == 'is_reship_accessory':
+                    example_row_data.append(('是否为补发用配件', 0, '否'))
                 elif field_base == 'sku_family':
                     example_row_data.append(('归属货号', 0, 'MS01'))
                 elif field_base == 'fabric_code':
@@ -938,7 +952,7 @@ class OrderManagementMixin:
             ws.add_data_validation(yes_no_validation)
             max_validation_row = 400
             
-            for bool_field in ('is_iteration', 'is_dachene_product'):
+            for bool_field in ('is_iteration', 'is_dachene_product', 'is_on_market', 'is_reship_accessory'):
                 if bool_field in header_to_column:
                     col_letter = col_idx_to_letter(header_to_column[bool_field])
                     for row in range(4, max_validation_row + 1):
@@ -973,6 +987,8 @@ class OrderManagementMixin:
                     direct_values = {
                         'is_iteration': '是' if str(item.get('is_iteration') or '0') in ('1', 'True', 'true') else '否',
                         'is_dachene_product': '是' if str(item.get('is_dachene_product') or '0') in ('1', 'True', 'true') else '否',
+                        'is_on_market': '是' if str(item.get('is_on_market') or '0') in ('1', 'True', 'true') else '否',
+                        'is_reship_accessory': '是' if str(item.get('is_reship_accessory') or '0') in ('1', 'True', 'true') else '否',
                         'source_sku': item.get('source_sku') or '',
                         'version_no': item.get('version_no') or '',
                         'sku': item.get('sku') or '',
@@ -1094,6 +1110,8 @@ class OrderManagementMixin:
             label_to_code = {
                 '是否迭代款': 'is_iteration',
                 '是否为大健云仓产品（在下单SKU处填写大健云仓Item Code）': 'is_dachene_product',
+                '是否在市': 'is_on_market',
+                '是否为补发用配件': 'is_reship_accessory',
                 '来源下单SKU': 'source_sku',
                 '版本号': 'version_no',
                 '下单SKU *': 'sku',
@@ -1123,7 +1141,7 @@ class OrderManagementMixin:
 
             multi_base_fields = {'filling_materials', 'frame_materials', 'features', 'certifications', 'factories'}
             single_fields = {
-                'sku', 'sku_family', 'fabric_code', 'spec_qty_short', 'is_iteration', 'is_dachene_product', 'source_sku', 'version_no',
+                'sku', 'sku_family', 'fabric_code', 'spec_qty_short', 'is_iteration', 'is_dachene_product', 'is_on_market', 'is_reship_accessory', 'source_sku', 'version_no',
                 'contents_desc_en',
                 'finished_length_in', 'finished_width_in', 'finished_height_in', 'net_weight_lbs',
                 'package_length_in', 'package_width_in', 'package_height_in', 'gross_weight_lbs',
@@ -1340,6 +1358,8 @@ class OrderManagementMixin:
                     is_iteration = parse_bool(get_cell(row, 'is_iteration'))
                     source_sku = (get_cell(row, 'source_sku') or '').strip()
                     is_dachene_product = parse_bool(get_cell(row, 'is_dachene_product'))
+                    is_on_market = parse_bool(get_cell(row, 'is_on_market')) if header_map.get('is_on_market') is not None else 1
+                    is_reship_accessory = parse_bool(get_cell(row, 'is_reship_accessory'))
 
                     if not sku or not sku_family or not fabric_code:
                         errors.append({'row': row_idx, 'error': 'Missing required fields'})
@@ -1370,6 +1390,8 @@ class OrderManagementMixin:
                         'contents_desc_en': contents_desc_en or None,
                         'is_iteration': is_iteration,
                         'is_dachene_product': is_dachene_product,
+                        'is_on_market': is_on_market,
+                        'is_reship_accessory': is_reship_accessory,
                         'source_order_product_id': source_order_product_id,
                         'finished_length_in': self._parse_float(get_cell(row, 'finished_length_in')),
                         'finished_width_in': self._parse_float(get_cell(row, 'finished_width_in')),
@@ -1413,7 +1435,7 @@ class OrderManagementMixin:
                     relation_deleted += len(old_factory_ids - dedup_factory_ids)
 
                     payload_keys = [
-                        'sku_family_id', 'version_no', 'fabric_id', 'spec_qty_short', 'contents_desc_en', 'is_iteration', 'is_dachene_product', 'source_order_product_id',
+                        'sku_family_id', 'version_no', 'fabric_id', 'spec_qty_short', 'contents_desc_en', 'is_iteration', 'is_dachene_product', 'is_on_market', 'is_reship_accessory', 'source_order_product_id',
                         'finished_length_in', 'finished_width_in', 'finished_height_in', 'net_weight_lbs',
                         'package_length_in', 'package_width_in', 'package_height_in', 'gross_weight_lbs',
                         'cost_usd', 'carton_qty', 'package_size_class', 'last_mile_avg_freight_usd'
@@ -1466,6 +1488,8 @@ class OrderManagementMixin:
                                         contents_desc_en=%(contents_desc_en)s,
                                         is_iteration=%(is_iteration)s,
                                         is_dachene_product=%(is_dachene_product)s,
+                                        is_on_market=%(is_on_market)s,
+                                        is_reship_accessory=%(is_reship_accessory)s,
                                         source_order_product_id=%(source_order_product_id)s,
                                         finished_length_in=%(finished_length_in)s,
                                         finished_width_in=%(finished_width_in)s,
@@ -1489,13 +1513,13 @@ class OrderManagementMixin:
                                     """
                                     INSERT INTO order_products (
                                         sku, sku_family_id, version_no, fabric_id, spec_qty_short, contents_desc_en,
-                                        is_iteration, is_dachene_product, source_order_product_id,
+                                        is_iteration, is_dachene_product, is_on_market, is_reship_accessory, source_order_product_id,
                                         finished_length_in, finished_width_in, finished_height_in,
                                         net_weight_lbs, package_length_in, package_width_in, package_height_in,
                                         gross_weight_lbs, cost_usd, carton_qty, package_size_class, last_mile_avg_freight_usd
                                     ) VALUES (
                                         %(sku)s, %(sku_family_id)s, %(version_no)s, %(fabric_id)s, %(spec_qty_short)s, %(contents_desc_en)s,
-                                        %(is_iteration)s, %(is_dachene_product)s, %(source_order_product_id)s,
+                                        %(is_iteration)s, %(is_dachene_product)s, %(is_on_market)s, %(is_reship_accessory)s, %(source_order_product_id)s,
                                         %(finished_length_in)s, %(finished_width_in)s, %(finished_height_in)s,
                                         %(net_weight_lbs)s, %(package_length_in)s, %(package_width_in)s, %(package_height_in)s,
                                         %(gross_weight_lbs)s, %(cost_usd)s, %(carton_qty)s, %(package_size_class)s, %(last_mile_avg_freight_usd)s
@@ -1757,12 +1781,13 @@ class OrderManagementMixin:
             out.append(item_id)
         return out
 
-    def _load_order_product_rows(self, conn, keyword='', include_relations=False, limit_rows=1200, item_id=None):
+    def _load_order_product_rows(self, conn, keyword='', include_relations=False, limit_rows=1200, item_id=None, exclude_reship_accessory=False):
         max_rows = max(1, self._parse_int(limit_rows) or 1200)
+        accessory_filter = " AND COALESCE(op.is_reship_accessory, 0)=0" if exclude_reship_accessory else ""
         with conn.cursor() as cur:
             if item_id:
                 cur.execute(
-                    """
+                    f"""
                     SELECT
                         op.*,
                         pf.sku_family,
@@ -1773,7 +1798,7 @@ class OrderManagementMixin:
                     FROM order_products op
                     LEFT JOIN product_families pf ON pf.id = op.sku_family_id
                     LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
-                    WHERE op.id=%s
+                    WHERE op.id=%s{accessory_filter}
                     LIMIT 1
                     """,
                     (item_id,)
@@ -1781,7 +1806,7 @@ class OrderManagementMixin:
             elif keyword:
                 like_val = f"%{keyword}%"
                 cur.execute(
-                    """
+                    f"""
                     SELECT
                         op.*,
                         pf.sku_family,
@@ -1797,6 +1822,7 @@ class OrderManagementMixin:
                        OR fm.fabric_code LIKE %s
                        OR fm.fabric_name_en LIKE %s
                        OR op.version_no LIKE %s
+                      {accessory_filter}
                     ORDER BY op.id DESC
                     LIMIT %s
                     """,
@@ -1804,7 +1830,7 @@ class OrderManagementMixin:
                 )
             else:
                 cur.execute(
-                    """
+                    f"""
                     SELECT
                         op.*,
                         pf.sku_family,
@@ -1815,6 +1841,7 @@ class OrderManagementMixin:
                     FROM order_products op
                     LEFT JOIN product_families pf ON pf.id = op.sku_family_id
                     LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
+                    WHERE 1=1 {accessory_filter}
                     ORDER BY op.id DESC
                     LIMIT %s
                     """,

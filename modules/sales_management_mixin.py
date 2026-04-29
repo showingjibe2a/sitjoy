@@ -454,7 +454,7 @@ class SalesManagementMixin:
                             if scope == 'all':
                                 cur.execute("SELECT id, platform_sku FROM sales_products ORDER BY platform_sku ASC LIMIT %s", (limit,))
                                 payload['sales_products'] = cur.fetchall() or []
-                                cur.execute("SELECT id, sku FROM order_products ORDER BY sku ASC LIMIT %s", (limit,))
+                                cur.execute("SELECT id, sku FROM order_products WHERE COALESCE(is_reship_accessory, 0)=0 ORDER BY sku ASC LIMIT %s", (limit,))
                                 payload['order_products'] = cur.fetchall() or []
                                 try:
                                     cur.execute(
@@ -462,6 +462,7 @@ class SalesManagementMixin:
                                         SELECT ops.id, op.sku AS order_sku, ops.plan_name
                                         FROM order_product_shipping_plans ops
                                         JOIN order_products op ON op.id = ops.order_product_id
+                                        WHERE COALESCE(op.is_reship_accessory, 0)=0
                                         ORDER BY op.sku ASC, ops.plan_name ASC
                                         LIMIT %s
                                         """,
@@ -1494,7 +1495,8 @@ class SalesManagementMixin:
                        v.fabric_id,
                        pf.sku_family,
                        fm.fabric_code,
-                       fm.fabric_name_en
+                       fm.fabric_name_en,
+                       fm.representative_color
                 FROM sales_products sp
                 JOIN sales_product_variants v ON v.id = sp.variant_id
                 LEFT JOIN product_families pf ON pf.id = v.sku_family_id
@@ -1540,7 +1542,8 @@ class SalesManagementMixin:
                        v.fabric_id,
                        pf.sku_family,
                        fm.fabric_code,
-                       fm.fabric_name_en
+                       fm.fabric_name_en,
+                       fm.representative_color
                 FROM sales_product_variants v
                 LEFT JOIN product_families pf ON pf.id = v.sku_family_id
                 LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id
@@ -1617,13 +1620,16 @@ class SalesManagementMixin:
                        op.contents_desc_en,
                        op.is_on_market,
                        op.is_iteration,
+                       op.fabric_id,
                        pf.sku_family,
                        fm.fabric_code,
-                       fm.fabric_name_en
+                       fm.fabric_name_en,
+                       fm.representative_color
                 FROM order_products op
                 LEFT JOIN product_families pf ON pf.id = op.sku_family_id
                 LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
                 WHERE {where_sql}
+                  AND COALESCE(op.is_reship_accessory, 0) = 0
                 ORDER BY pf.sku_family ASC, op.sku ASC, op.id ASC
                 """,
                 tuple(params)
@@ -1663,6 +1669,57 @@ class SalesManagementMixin:
             op_id = self._parse_int(r.get('order_product_id'))
             r['variant_links'] = links_by_op.get(op_id, [])
         return rows
+
+    def _forecast_load_variant_thumb_b64(self, conn, variant_ids):
+        """variant_id -> 预览图 b64（优先白底纯图，其次白底图，再次任意图）"""
+        out = {}
+        ids = [self._parse_int(x) for x in (variant_ids or []) if self._parse_int(x)]
+        if not ids:
+            return out
+        placeholders = ','.join(['%s'] * len(ids))
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT sim.variant_id,
+                       ia.storage_path,
+                       sim.sort_order,
+                       sim.id AS sim_id,
+                       COALESCE(it_ia.name, '') AS image_type_name
+                FROM sku_image_mappings sim
+                JOIN image_assets ia ON ia.id = sim.image_asset_id
+                LEFT JOIN image_types it_ia ON it_ia.id = ia.image_type_id
+                WHERE sim.variant_id IN ({placeholders})
+                ORDER BY sim.variant_id ASC, sim.sort_order ASC, sim.id ASC
+                """,
+                tuple(ids)
+            )
+            rows = cur.fetchall() or []
+
+        best = {}
+        for row in rows:
+            vid = self._parse_int(row.get('variant_id'))
+            if not vid:
+                continue
+            storage_path = str(row.get('storage_path') or '').strip()
+            if not storage_path:
+                continue
+            tname = str(row.get('image_type_name') or '').strip()
+            if tname == '白底纯图':
+                score = 0
+            elif tname == '白底图':
+                score = 1
+            else:
+                score = 2
+            sort_order = self._parse_int(row.get('sort_order')) or 0
+            sim_id = self._parse_int(row.get('sim_id')) or 0
+            key = (score, sort_order, sim_id)
+            if vid not in best or key < best[vid][0]:
+                b64 = self._b64_from_fs(storage_path.replace('\\', '/').lstrip('/'))
+                best[vid] = (key, b64)
+
+        for vid, pair in best.items():
+            out[vid] = pair[1]
+        return out
 
     def _forecast_load_platform_cells(self, conn, sales_product_ids, months):
         if not sales_product_ids or not months:
@@ -1883,6 +1940,8 @@ class SalesManagementMixin:
     def _forecast_build_platform_rows(self, conn, query_params, months, hist_start, hist_end):
         dim_rows = self._forecast_load_platform_sku_dim(conn, query_params)
         sales_product_ids = [self._parse_int(r.get('sales_product_id')) for r in dim_rows if self._parse_int(r.get('sales_product_id'))]
+        variant_ids = [self._parse_int(r.get('variant_id')) for r in dim_rows if self._parse_int(r.get('variant_id'))]
+        thumb_by_variant = self._forecast_load_variant_thumb_b64(conn, variant_ids)
         cells = self._forecast_load_platform_cells(conn, sales_product_ids, months)
         history = self._forecast_load_history_by_sales_product(conn, sales_product_ids, hist_start, hist_end)
 
@@ -1896,12 +1955,15 @@ class SalesManagementMixin:
                 'forecast_mode': 'platform',
                 'labels': {
                     'sales_product_id': spid,
+                    'variant_id': self._parse_int(r.get('variant_id')),
                     'platform_sku': r.get('platform_sku') or '',
                     'shop_name': r.get('shop_name') or '',
                     'sku_family': r.get('sku_family') or '',
                     'spec_name': r.get('spec_name') or '',
                     'fabric_code': r.get('fabric_code') or '',
                     'fabric_name_en': r.get('fabric_name_en') or '',
+                    'representative_color': r.get('representative_color') or '',
+                    'variant_thumb_b64': thumb_by_variant.get(self._parse_int(r.get('variant_id')) or 0, ''),
                     'product_status': r.get('product_status') or '',
                 },
                 'history': {},
@@ -1927,6 +1989,7 @@ class SalesManagementMixin:
     def _forecast_build_spec_rows(self, conn, query_params, months, hist_start, hist_end):
         dim_rows = self._forecast_load_variant_dim(conn, query_params)
         variant_ids = [self._parse_int(r.get('variant_id')) for r in dim_rows if self._parse_int(r.get('variant_id'))]
+        thumb_by_variant = self._forecast_load_variant_thumb_b64(conn, variant_ids)
         spec_cells = self._forecast_load_spec_cells(conn, variant_ids, months)
         history = self._forecast_load_history_by_variant(conn, variant_ids, hist_start, hist_end)
 
@@ -1954,6 +2017,8 @@ class SalesManagementMixin:
                     'spec_name': r.get('spec_name') or '',
                     'fabric_code': r.get('fabric_code') or '',
                     'fabric_name_en': r.get('fabric_name_en') or '',
+                    'representative_color': r.get('representative_color') or '',
+                    'variant_thumb_b64': thumb_by_variant.get(vid, ''),
                     'platform_skus': platform_skus,
                 },
                 'history': {},
@@ -2059,6 +2124,7 @@ class SalesManagementMixin:
                     'contents_desc_en': r.get('contents_desc_en') or '',
                     'fabric_code': r.get('fabric_code') or '',
                     'fabric_name_en': r.get('fabric_name_en') or '',
+                    'representative_color': r.get('representative_color') or '',
                     'is_on_market': self._parse_int(r.get('is_on_market')) or 0,
                     'variant_links': [
                         {

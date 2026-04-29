@@ -3831,7 +3831,7 @@
 
 
         function loadOrderSkuOptions() {
-            return fetch('/api/order-product').then(r => r.json()).then(data => {
+            return fetch('/api/order-product?exclude_reship_accessory=1').then(r => r.json()).then(data => {
                 orderSkuOptions = data.status === 'success' ? (data.items || []) : [];
                 renderSelectedOrderSkuRows();
             }).catch(() => { orderSkuOptions = []; });

@@ -2068,8 +2068,10 @@ class SalesProductMixin:
                     cur.execute("SELECT id, shop_name FROM shops")
                     shop_map = {str(row['shop_name']).strip(): row['id'] for row in (cur.fetchall() or []) if row.get('shop_name')}
 
+                    has_reship_accessory = self._table_has_column(conn, 'order_products', 'is_reship_accessory')
+                    accessory_filter_sql = "WHERE COALESCE(op.is_reship_accessory, 0) = 0" if has_reship_accessory else ""
                     cur.execute(
-                        """
+                        f"""
                         SELECT op.id, op.sku, op.sku_family_id, op.spec_qty_short,
                                op.cost_usd, op.last_mile_avg_freight_usd,
                                op.finished_length_in, op.finished_width_in, op.finished_height_in,
@@ -2078,6 +2080,7 @@ class SalesProductMixin:
                                fm.fabric_code, fm.fabric_name_en
                         FROM order_products op
                         LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
+                        {accessory_filter_sql}
                         """
                     )
                     order_rows = cur.fetchall() or []

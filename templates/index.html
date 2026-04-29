@@ -430,6 +430,7 @@
         #todoTable th, #todoTable td { font-size: 13px; }
         #todoTable thead th { position: sticky; top: 0; z-index: 2; background: #f5efe5; }
         #todoTable .pm-actions { display: inline-flex; gap: 0.35rem; }
+        #todoTable tbody tr.todo-overdue td { background: rgba(179, 83, 83, 0.1) !important; }
         .todo-title-cell { min-width: 140px; word-break: break-word; }
         .todo-mini-sub { font-size: 12px; color: #888; margin-top: 2px; }
         /* todo-complete-pop removed */
@@ -1330,7 +1331,9 @@
             if (!isRecurring) return;
             const startEl = document.getElementById('todoModalStartDate');
             const dueEl = document.getElementById('todoModalDueDate');
+            const intervalEl = document.getElementById('todoModalReminderInterval');
             if (!startEl || !dueEl) return;
+            const intervalDays = Math.max(1, parseInt((intervalEl && intervalEl.value) || '1', 10) || 1);
             const completedAtText = String(window.todoModalCurrentCompletedAt || '').trim();
             let baseDate = null;
             if (completedAtText) {
@@ -1341,7 +1344,7 @@
             }
             if (!baseDate) return;
             const nextDate = new Date(baseDate.getTime());
-            nextDate.setDate(nextDate.getDate() + 1);
+            nextDate.setDate(nextDate.getDate() + intervalDays);
             dueEl.value = formatDateInputValue(nextDate);
         }
 
@@ -1767,7 +1770,7 @@
                 if (!baseDate) baseDate = parseDateInputValue(start_date);
                 if (!baseDate) return '';
                 const d = new Date(baseDate.getTime());
-                d.setDate(d.getDate() + 1);
+                d.setDate(d.getDate() + Math.max(1, reminder_interval_days));
                 return formatDateInputValue(d);
             })();
             
@@ -2028,6 +2031,7 @@
                 tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">暂无待办</td></tr>';
                 return;
             }
+            const todayStr = formatDateInputValue(new Date());
             tbody.innerHTML = list.map(todo => {
                 const status = (Number(todo.my_is_completed || 0) === 1) ? 'done' : 'open';
                 const typeName = todo.todo_type_name || '-';
@@ -2035,8 +2039,10 @@
                 const due = todo.due_date || '';
                 const detailText = todo.detail ? String(todo.detail).slice(0, 80) : '-';
                 const completedAt = todo.my_completed_at ? String(todo.my_completed_at) : '';
+                const dueForCompare = String(due || start || '').slice(0, 10);
+                const isOverdue = status !== 'done' && !!dueForCompare && dueForCompare <= todayStr;
                 return `
-                    <tr data-todo-id="${todo.id}">
+                    <tr data-todo-id="${todo.id}" class="${isOverdue ? 'todo-overdue' : ''}">
                         <td>${escapeHtml(typeName)}</td>
                         <td>${prioritySegmentHtml(todo.priority)}</td>
                         <td class="todo-title-cell">

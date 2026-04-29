@@ -57,6 +57,17 @@ class UtilityMixin:
         except Exception:
             return None
 
+    def _todo_plus_days_date(self, base_text, days):
+        base_date = self._todo_parse_date(base_text)
+        if not base_date:
+            return None
+        step = max(1, self._parse_int(days) or 1)
+        try:
+            dt = datetime.strptime(base_date, '%Y-%m-%d')
+            return (dt + timedelta(days=step)).strftime('%Y-%m-%d')
+        except Exception:
+            return None
+
     def _todo_apply_recurring_resets(self, conn, assignee_id, todo_type_id=None):
         """循环任务自动复位：
 
@@ -418,7 +429,7 @@ class UtilityMixin:
                         if not reminder_interval_days or int(reminder_interval_days or 0) <= 0:
                             return self.send_json({'status': 'error', 'message': '循环任务必须设置 reminder_interval_days'}, start_response)
                         reminder_interval_days = max(1, int(reminder_interval_days))
-                        due_date = self._todo_plus_one_date(start_date) or start_date
+                        due_date = self._todo_plus_days_date(start_date, reminder_interval_days) or start_date
                     else:
                         if not due_date:
                             return self.send_json({'status': 'error', 'message': '非循环任务必须设置 due_date'}, start_response)
@@ -484,7 +495,7 @@ class UtilityMixin:
                     with conn.cursor() as cur:
                         cur.execute(
                             """
-                            SELECT t.start_date, t.is_recurring, ta.completed_at AS my_completed_at
+                            SELECT t.start_date, t.is_recurring, t.reminder_interval_days, ta.completed_at AS my_completed_at
                             FROM todos t
                             LEFT JOIN todo_assignments ta ON ta.todo_id=t.id AND ta.assignee_id=%s
                             WHERE t.id=%s
@@ -520,7 +531,7 @@ class UtilityMixin:
                                 sets.append('reminder_interval_days=%s')
                                 params.append(rid)
                                 sets.append('due_date=%s')
-                                params.append(self._todo_plus_one_date(start_date or current_start_date) or (start_date or current_start_date))
+                                params.append(self._todo_plus_days_date(start_date or current_start_date, rid) or (start_date or current_start_date))
                             else:
                                 if not due_date:
                                     return self.send_json({'status': 'error', 'message': '非循环任务必须设置 due_date'}, start_response)
@@ -572,6 +583,7 @@ class UtilityMixin:
 
                         next_is_recurring = current_is_recurring if is_recurring is None else (1 if is_recurring else 0)
                         if next_is_recurring == 1:
+                            final_interval = max(1, int(reminder_interval_days or current_row.get('reminder_interval_days') or 1))
                             final_start_date = start_date or current_start_date
                             final_completed_at = completed_at or current_completed_at
                             if is_completed == 1 and completed_at:
@@ -579,7 +591,7 @@ class UtilityMixin:
                             if is_completed == 0:
                                 final_completed_at = None
                             base_for_due = final_completed_at or final_start_date
-                            auto_due_date = self._todo_plus_one_date(base_for_due) or final_start_date
+                            auto_due_date = self._todo_plus_days_date(base_for_due, final_interval) or final_start_date
                             cur.execute("UPDATE todos SET due_date=%s WHERE id=%s", (auto_due_date, item_id))
                     if related_sales_product_ids is not None or related_sku_family_ids is not None:
                         self._replace_todo_sales_links(conn, item_id, related_sales_product_ids or [], related_sku_family_ids or [])

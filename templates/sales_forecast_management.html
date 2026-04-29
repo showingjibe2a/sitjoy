@@ -176,6 +176,67 @@
             font-size: 0.78rem;
         }
         td.sf-cell-fabric { min-width: 150px; white-space: normal; line-height: 1.2; }
+        td.sf-cell-thumb,
+        th.sf-th-thumb {
+            width: 68px;
+            min-width: 68px;
+            text-align: center;
+        }
+        .sf-variant-thumb {
+            width: 44px;
+            height: 44px;
+            object-fit: contain;
+            display: inline-block;
+            background: #fff;
+            border: 1px solid rgba(207, 199, 189, 0.8);
+            border-radius: 8px;
+        }
+        .sf-thumb-empty {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 44px;
+            height: 44px;
+            border: 1px dashed rgba(207, 199, 189, 0.8);
+            border-radius: 8px;
+            color: #9a8f7e;
+            font-size: 11px;
+        }
+        .sf-fabric-dot {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(42, 36, 32, 0.28);
+            vertical-align: middle;
+        }
+        .sf-group-row td {
+            background: #efe7d9 !important;
+            color: #4f463b;
+            font-weight: 700;
+            border-top: 1px solid rgba(207, 199, 189, 0.85);
+            cursor: pointer;
+        }
+        .sf-group-toggle {
+            display: inline-flex;
+            width: 18px;
+            justify-content: center;
+            color: #7a7269;
+            margin-right: 4px;
+        }
+        .sf-row-hidden {
+            display: none;
+        }
+        .sf-th-section-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            cursor: pointer;
+            user-select: none;
+        }
+        .sf-th-section-toggle .sf-group-toggle {
+            margin-right: 0;
+        }
         td.sf-cell-history {
             text-align: right;
             font-variant-numeric: tabular-nums;
@@ -234,10 +295,17 @@
         .sf-tooltip-wrap {
             position: relative;
             display: inline-block;
+            z-index: 1;
+            isolation: isolate;
+        }
+        .sf-tooltip-wrap:hover,
+        .sf-tooltip-wrap:focus-within,
+        .sf-tooltip-wrap.is-pinned {
+            z-index: 1200;
         }
         .sf-tooltip-bubble {
             position: absolute;
-            z-index: 30;
+            z-index: 1201;
             top: 100%;
             right: 0;
             min-width: 240px;
@@ -306,6 +374,12 @@
         .sf-th-title-row .sf-sort-arrow {
             font-size: 10px;
             color: #8b7c63;
+        }
+        .sf-th-title-row.is-disabled {
+            cursor: default;
+        }
+        .sf-th-title-row.is-disabled .sf-sort-arrow {
+            visibility: hidden;
         }
         .sf-th-filter {
             width: 100%;
@@ -454,6 +528,10 @@
             sortDir: 'asc',
             colFilters: {},                 // colKey -> string
             monthPickerYear: new Date().getFullYear(),
+            historyExpanded: true,
+            forecastExpanded: true,
+            collapsedPlatformGroups: new Set(),
+            collapsedSkuGroups: new Set(),
         };
 
         function pad2(n) { n = Number(n) || 0; return n < 10 ? ('0' + n) : ('' + n); }
@@ -671,6 +749,8 @@
             state.historyMonths = Array.isArray(data.history_months) ? data.history_months.slice() : [];
             state.historyRange = data.history_range || { start: '', end: '' };
             state.rows = Array.isArray(data.rows) ? data.rows : [];
+            if (state.forecastMode === 'platform') state.collapsedPlatformGroups.clear();
+            else state.collapsedSkuGroups.clear();
             state.dirty.clear();
             refreshBatchPopup();
             renderMonthChips();
@@ -684,211 +764,41 @@
         function getColumnsForMode(mode) {
             if (mode === 'platform') {
                 return [
-                    { key: 'platform_sku', label: '销售平台SKU', filter: true, sort: true, get: r => r.labels.platform_sku || '' },
-                    { key: 'sku_family',    label: '货号',        filter: true, sort: true, get: r => r.labels.sku_family || '' },
-                    { key: 'spec_name',     label: '规格',        filter: true, sort: true, get: r => r.labels.spec_name || '' },
-                    { key: 'fabric_code',   label: '面料',        filter: true, sort: true, get: r => r.labels.fabric_code || r.labels.fabric_name_en || '' },
-                    { key: 'shop_name',     label: '店铺',        filter: true, sort: true, get: r => r.labels.shop_name || '' },
+                    { key: 'shop_name', label: '店铺', filter: true, sort: false, cellClass: 'sf-cell-spec', get: r => r.labels.shop_name || '' },
+                    { key: 'sku_family', label: '货号', filter: true, sort: false, cellClass: 'sf-cell-spec', get: r => r.labels.sku_family || '' },
+                    { key: 'thumb', label: '缩略图', filter: false, sort: false, thClass: 'sf-th-thumb', cellClass: 'sf-cell-thumb', get: r => r.labels.variant_thumb_b64 || '' },
+                    { key: 'platform_sku', label: 'SKU', filter: true, sort: false, cellClass: 'sf-cell-spec', get: r => r.labels.platform_sku || '' },
+                    { key: 'spec_name', label: '规格', filter: true, sort: true, cellClass: 'sf-cell-spec', get: r => r.labels.spec_name || '' },
+                    { key: 'fabric_code', label: '面料代表色', filter: true, sort: true, cellClass: 'sf-cell-fabric', get: r => r.labels.fabric_code || r.labels.fabric_name_en || '' },
                 ];
             }
             if (mode === 'order') {
                 return [
-                    { key: 'sku',           label: '下单SKU', filter: true, sort: true, get: r => r.labels.sku || '' },
-                    { key: 'sku_family',    label: '货号',    filter: true, sort: true, get: r => r.labels.sku_family || '' },
-                    { key: 'spec_qty_short',label: '规格描述', filter: true, sort: true, get: r => r.labels.spec_qty_short || '' },
-                    { key: 'fabric_code',   label: '面料',    filter: true, sort: true, get: r => r.labels.fabric_code || r.labels.fabric_name_en || '' },
+                    { key: 'sku_family', label: '货号', filter: true, sort: false, cellClass: 'sf-cell-spec', get: r => r.labels.sku_family || '' },
+                    { key: 'sku', label: '下单SKU', filter: true, sort: true, cellClass: 'sf-cell-spec', get: r => r.labels.sku || '' },
+                    { key: 'spec_qty_short', label: '规格', filter: true, sort: true, cellClass: 'sf-cell-spec', get: r => r.labels.spec_qty_short || '' },
+                    { key: 'fabric_code', label: '面料', filter: true, sort: true, cellClass: 'sf-cell-fabric', get: r => r.labels.fabric_code || r.labels.fabric_name_en || '' },
                 ];
             }
-            // spec
             return [
-                { key: 'sku_family',    label: '货号',     filter: true, sort: true, get: r => r.labels.sku_family || '' },
-                { key: 'spec_name',     label: '规格',     filter: true, sort: true, get: r => r.labels.spec_name || '' },
-                { key: 'fabric_code',   label: '面料',     filter: true, sort: true, get: r => r.labels.fabric_code || r.labels.fabric_name_en || '' },
+                { key: 'sku_family', label: '货号', filter: true, sort: false, cellClass: 'sf-cell-spec', get: r => r.labels.sku_family || '' },
+                { key: 'thumb', label: '缩略图', filter: false, sort: false, thClass: 'sf-th-thumb', cellClass: 'sf-cell-thumb', get: r => r.labels.variant_thumb_b64 || '' },
+                { key: 'spec_name', label: '规格', filter: true, sort: true, cellClass: 'sf-cell-spec', get: r => r.labels.spec_name || '' },
+                { key: 'fabric_code', label: '面料', filter: true, sort: true, cellClass: 'sf-cell-fabric', get: r => r.labels.fabric_code || r.labels.fabric_name_en || '' },
             ];
         }
 
-        // ===== 表格渲染 =====
-        function renderForecastTable() {
-            const thead = document.getElementById('forecastThead');
-            const tbody = document.getElementById('forecastTbody');
-            if (!thead || !tbody) return;
-
-            const cols = getColumnsForMode(state.forecastMode);
-            const monthCount = state.months.length;
-            const histCount = state.historyMonths.length;
-
-            // 上层（区块）表头
-            const trTop = document.createElement('tr');
-            trTop.className = 'sf-thead-row-1';
-            trTop.innerHTML =
-                `<th class="sf-th-section" colspan="${cols.length}">规格信息</th>` +
-                (histCount > 0 ? `<th class="sf-th-section" colspan="${histCount}">历史月销量 <span class="help-dot" data-tip="数据来自“产品表现”看板按月聚合"></span></th>` : '') +
-                (monthCount > 0 ? `<th class="sf-th-section" colspan="${monthCount}">预测月份</th>` : '');
-
-            // 下层表头（可筛选/排序）
-            const trBottom = document.createElement('tr');
-            trBottom.className = 'sf-thead-row-2';
-            trBottom.innerHTML = cols.map(col => buildBottomHeaderHtml(col, 'spec')).join('') +
-                state.historyMonths.map(m => `<th class="sf-th-history">${monthShortLabel(m)}</th>`).join('') +
-                state.months.map(m => `<th class="sf-th-month">${monthShortLabel(m)}</th>`).join('');
-
-            thead.innerHTML = '';
-            thead.appendChild(trTop);
-            thead.appendChild(trBottom);
-            bindHeaderEvents(thead, cols);
-
-            tbody.innerHTML = '';
-
-            const filteredRows = applyFiltersAndSort(state.rows.slice(), cols);
-            if (!filteredRows.length) {
-                const tr = document.createElement('tr');
-                const td = document.createElement('td');
-                td.colSpan = cols.length + monthCount + histCount;
-                td.className = 'sf-empty';
-                td.textContent = '没有匹配的数据';
-                tr.appendChild(td);
-                tbody.appendChild(tr);
-                return;
-            }
-
-            filteredRows.forEach(row => {
-                const tr = document.createElement('tr');
-                tr.dataset.rowKey = row.row_key;
-
-                cols.forEach(col => {
-                    const td = document.createElement('td');
-                    td.className = 'sf-cell-spec';
-                    if (col.key === 'fabric_code') td.className = 'sf-cell-fabric';
-                    const text = String(col.get(row) || '');
-                    td.innerHTML = `<div>${escapeHtml(text || '—')}</div>`;
-                    tr.appendChild(td);
-                });
-
-                state.historyMonths.forEach(monthKey => {
-                    const td = document.createElement('td');
-                    td.className = 'sf-cell-history';
-                    const cell = (row.history && row.history[monthKey]) || null;
-                    const text = cell ? formatNumber(cell.sales_qty) : '0';
-                    if (cell) {
-                        const wrap = makeTooltipWrap(buildHistoryTooltip(cell, monthKey), document.createTextNode(text));
-                        td.appendChild(wrap);
-                    } else {
-                        td.textContent = text;
-                    }
-                    tr.appendChild(td);
-                });
-
-                state.months.forEach(monthKey => {
-                    const td = document.createElement('td');
-                    td.className = 'sf-cell-forecast';
-                    td.appendChild(buildForecastCell(row, monthKey));
-                    tr.appendChild(td);
-                });
-
-                tbody.appendChild(tr);
-            });
+        function normalizeColorHex(text) {
+            const s = String(text || '').trim();
+            if (!s) return '';
+            if (/^#[0-9a-fA-F]{6}$/.test(s)) return s;
+            if (/^[0-9a-fA-F]{6}$/.test(s)) return `#${s}`;
+            return '';
         }
 
-        function buildBottomHeaderHtml(col, kind) {
-            const sortMark = state.sortKey === col.key
-                ? (state.sortDir === 'asc' ? '▲' : '▼')
-                : '';
-            const filterValue = state.colFilters[col.key] || '';
-            const filterInput = col.filter
-                ? `<input type="text" class="sf-th-filter" data-filter-key="${col.key}" placeholder="筛选" value="${escapeHtml(filterValue)}">`
-                : '';
-            return `
-                <th class="sf-th-spec" data-col-key="${col.key}">
-                    <div class="sf-th-cell">
-                        <span class="sf-th-title-row" data-sort-key="${col.key}">
-                            <span>${escapeHtml(col.label)}</span>
-                            <span class="sf-sort-arrow">${sortMark}</span>
-                        </span>
-                        ${filterInput}
-                    </div>
-                </th>
-            `;
-        }
-
-        function bindHeaderEvents(thead, cols) {
-            thead.querySelectorAll('.sf-th-title-row[data-sort-key]').forEach(el => {
-                el.addEventListener('click', () => {
-                    const key = el.dataset.sortKey;
-                    if (state.sortKey === key) {
-                        state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
-                    } else {
-                        state.sortKey = key;
-                        state.sortDir = 'asc';
-                    }
-                    renderForecastTable();
-                });
-            });
-            thead.querySelectorAll('input.sf-th-filter[data-filter-key]').forEach(el => {
-                el.addEventListener('input', () => {
-                    const key = el.dataset.filterKey;
-                    const v = String(el.value || '').trim();
-                    if (v) state.colFilters[key] = v;
-                    else delete state.colFilters[key];
-                    renderForecastTableBodyOnly();
-                });
-            });
-        }
-
-        function renderForecastTableBodyOnly() {
-            const tbody = document.getElementById('forecastTbody');
-            if (!tbody) return;
-            const cols = getColumnsForMode(state.forecastMode);
-            const filteredRows = applyFiltersAndSort(state.rows.slice(), cols);
-            const monthCount = state.months.length;
-            const histCount = state.historyMonths.length;
-            tbody.innerHTML = '';
-            if (!filteredRows.length) {
-                const tr = document.createElement('tr');
-                const td = document.createElement('td');
-                td.colSpan = cols.length + monthCount + histCount;
-                td.className = 'sf-empty';
-                td.textContent = '没有匹配的数据';
-                tr.appendChild(td);
-                tbody.appendChild(tr);
-                return;
-            }
-            filteredRows.forEach(row => {
-                const tr = document.createElement('tr');
-                tr.dataset.rowKey = row.row_key;
-                cols.forEach(col => {
-                    const td = document.createElement('td');
-                    td.className = col.key === 'fabric_code' ? 'sf-cell-fabric' : 'sf-cell-spec';
-                    const text = String(col.get(row) || '');
-                    td.innerHTML = `<div>${escapeHtml(text || '—')}</div>`;
-                    tr.appendChild(td);
-                });
-                state.historyMonths.forEach(monthKey => {
-                    const td = document.createElement('td');
-                    td.className = 'sf-cell-history';
-                    const cell = (row.history && row.history[monthKey]) || null;
-                    const text = cell ? formatNumber(cell.sales_qty) : '0';
-                    if (cell) {
-                        const wrap = makeTooltipWrap(buildHistoryTooltip(cell, monthKey), document.createTextNode(text));
-                        td.appendChild(wrap);
-                    } else {
-                        td.textContent = text;
-                    }
-                    tr.appendChild(td);
-                });
-                state.months.forEach(monthKey => {
-                    const td = document.createElement('td');
-                    td.className = 'sf-cell-forecast';
-                    td.appendChild(buildForecastCell(row, monthKey));
-                    tr.appendChild(td);
-                });
-                tbody.appendChild(tr);
-            });
-        }
-
-        function applyFiltersAndSort(rows, cols) {
+        function applyFilters(rows, cols) {
             const colByKey = Object.fromEntries(cols.map(c => [c.key, c]));
-
-            let result = rows.filter(row => {
+            return rows.filter(row => {
                 for (const key in state.colFilters) {
                     const value = state.colFilters[key];
                     if (!value) continue;
@@ -899,18 +809,238 @@
                 }
                 return true;
             });
+        }
 
-            if (state.sortKey && colByKey[state.sortKey]) {
-                const col = colByKey[state.sortKey];
-                const dir = state.sortDir === 'desc' ? -1 : 1;
-                result.sort((a, b) => {
-                    const av = String(col.get(a) || '');
-                    const bv = String(col.get(b) || '');
-                    if (av === bv) return 0;
-                    return av.localeCompare(bv, 'zh-Hans-CN', { sensitivity: 'base' }) * dir;
+        function buildGroups(rows) {
+            if (state.forecastMode === 'platform') {
+                const map = new Map();
+                rows.forEach(row => {
+                    const shop = String(row.labels && row.labels.shop_name || '-').trim() || '-';
+                    const family = String(row.labels && row.labels.sku_family || '-').trim() || '-';
+                    const key = `${shop}||${family}`;
+                    if (!map.has(key)) map.set(key, { key, title: `${shop} / ${family}`, items: [] });
+                    map.get(key).items.push(row);
+                });
+                return Array.from(map.values());
+            }
+            const map = new Map();
+            rows.forEach(row => {
+                const family = String(row.labels && row.labels.sku_family || '-').trim() || '-';
+                if (!map.has(family)) map.set(family, { key: family, title: family, items: [] });
+                map.get(family).items.push(row);
+            });
+            return Array.from(map.values());
+        }
+
+        function sortGroupItems(items, cols) {
+            if (!state.sortKey) return items.slice();
+            const col = cols.find(c => c.key === state.sortKey);
+            if (!col || !col.sort) return items.slice();
+            const dir = state.sortDir === 'desc' ? -1 : 1;
+            return items.slice().sort((a, b) => {
+                const av = String(col.get(a) || '');
+                const bv = String(col.get(b) || '');
+                if (av === bv) return 0;
+                return av.localeCompare(bv, 'zh-Hans-CN', { sensitivity: 'base' }) * dir;
+            });
+        }
+
+        function getCollapsedSet() {
+            return state.forecastMode === 'platform' ? state.collapsedPlatformGroups : state.collapsedSkuGroups;
+        }
+
+        function initCollapsedGroups(groups) {
+            const target = getCollapsedSet();
+            target.clear();
+            groups.forEach(g => target.add(g.key));
+        }
+
+        function renderSpecCell(td, col, row) {
+            if (col.key === 'thumb') {
+                const b64 = String(col.get(row) || '').trim();
+                if (b64) {
+                    td.innerHTML = `<img class="sf-variant-thumb" src="/api/image-preview?id=${encodeURIComponent(b64)}&mode=thumb&w=120&q=60" alt="thumb" loading="lazy">`;
+                } else {
+                    td.innerHTML = '<span class="sf-thumb-empty">暂无</span>';
+                }
+                return;
+            }
+            if (col.key === 'fabric_code') {
+                const color = normalizeColorHex(row.labels && row.labels.representative_color);
+                const txt = String(col.get(row) || '');
+                if (color) td.innerHTML = `<span class="sf-fabric-dot" style="background:${color};" title="${escapeHtml(txt || '面料')}"></span>`;
+                else td.innerHTML = `<span>${escapeHtml(txt || '—')}</span>`;
+                return;
+            }
+            td.innerHTML = `<div>${escapeHtml(String(col.get(row) || '—') || '—')}</div>`;
+        }
+
+        function renderForecastTable() {
+            const thead = document.getElementById('forecastThead');
+            const tbody = document.getElementById('forecastTbody');
+            if (!thead || !tbody) return;
+            const cols = getColumnsForMode(state.forecastMode);
+            const visibleHistMonths = state.historyExpanded ? state.historyMonths.slice() : [];
+            const visibleFcMonths = state.forecastExpanded ? state.months.slice() : [];
+            const histCols = state.historyMonths.length ? (state.historyExpanded ? visibleHistMonths.length : 1) : 0;
+            const fcCols = state.months.length ? (state.forecastExpanded ? visibleFcMonths.length : 1) : 0;
+
+            const trTop = document.createElement('tr');
+            trTop.className = 'sf-thead-row-1';
+            trTop.innerHTML =
+                `<th class="sf-th-section" colspan="${cols.length}">规格信息</th>` +
+                (histCols ? `<th class="sf-th-section" colspan="${histCols}"><span class="sf-th-section-toggle" data-section="history"><span class="sf-group-toggle">${state.historyExpanded ? '▼' : '▶'}</span><span>历史月销量 <span class="help-dot" data-tip="数据来自“产品表现”看板按月聚合"></span></span></span></th>` : '') +
+                (fcCols ? `<th class="sf-th-section" colspan="${fcCols}"><span class="sf-th-section-toggle" data-section="forecast"><span class="sf-group-toggle">${state.forecastExpanded ? '▼' : '▶'}</span><span>预测月份</span></span></th>` : '');
+
+            const trBottom = document.createElement('tr');
+            trBottom.className = 'sf-thead-row-2';
+            trBottom.innerHTML = cols.map(col => buildBottomHeaderHtml(col)).join('')
+                + (state.historyExpanded ? visibleHistMonths.map(m => `<th class="sf-th-history">${monthShortLabel(m)}</th>`).join('') : (histCols ? '<th class="sf-th-history">历史合计</th>' : ''))
+                + (state.forecastExpanded ? visibleFcMonths.map(m => `<th class="sf-th-month">${monthShortLabel(m)}</th>`).join('') : (fcCols ? '<th class="sf-th-month">预测合计</th>' : ''));
+            thead.innerHTML = '';
+            thead.appendChild(trTop);
+            thead.appendChild(trBottom);
+            bindHeaderEvents(thead, cols);
+
+            const filteredRows = applyFilters(state.rows.slice(), cols);
+            const groups = buildGroups(filteredRows);
+            const collapsedSet = getCollapsedSet();
+            if (collapsedSet.size === 0 && groups.length) initCollapsedGroups(groups);
+
+            const totalCols = cols.length + histCols + fcCols;
+            tbody.innerHTML = '';
+            if (!groups.length) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td colspan="${totalCols}" class="sf-empty">没有匹配的数据</td>`;
+                tbody.appendChild(tr);
+                return;
+            }
+
+            groups.forEach(group => {
+                const isCollapsed = collapsedSet.has(group.key);
+                const gtr = document.createElement('tr');
+                gtr.className = 'sf-group-row';
+                gtr.dataset.groupKey = group.key;
+                gtr.innerHTML = `<td colspan="${totalCols}"><span class="sf-group-toggle">${isCollapsed ? '▶' : '▼'}</span>${escapeHtml(group.title)}</td>`;
+                tbody.appendChild(gtr);
+
+                const sortedItems = sortGroupItems(group.items, cols);
+                sortedItems.forEach(row => {
+                    const tr = document.createElement('tr');
+                    if (isCollapsed) tr.classList.add('sf-row-hidden');
+                    tr.dataset.groupKey = group.key;
+                    tr.dataset.rowKey = row.row_key;
+                    cols.forEach(col => {
+                        const td = document.createElement('td');
+                        td.className = col.cellClass || 'sf-cell-spec';
+                        renderSpecCell(td, col, row);
+                        tr.appendChild(td);
+                    });
+                    if (histCols) {
+                        if (state.historyExpanded) {
+                            visibleHistMonths.forEach(monthKey => {
+                                const td = document.createElement('td');
+                                td.className = 'sf-cell-history';
+                                const cell = (row.history && row.history[monthKey]) || null;
+                                const text = cell ? formatNumber(cell.sales_qty) : '0';
+                                if (cell) td.appendChild(makeTooltipWrap(buildHistoryTooltip(cell, monthKey), document.createTextNode(text)));
+                                else td.textContent = text;
+                                tr.appendChild(td);
+                            });
+                        } else {
+                            const sum = state.historyMonths.reduce((acc, m) => acc + Number((((row.history || {})[m] || {}).sales_qty) || 0), 0);
+                            const td = document.createElement('td');
+                            td.className = 'sf-cell-history';
+                            td.textContent = formatNumber(sum || 0);
+                            tr.appendChild(td);
+                        }
+                    }
+                    if (fcCols) {
+                        if (state.forecastExpanded) {
+                            visibleFcMonths.forEach(monthKey => {
+                                const td = document.createElement('td');
+                                td.className = 'sf-cell-forecast';
+                                td.appendChild(buildForecastCell(row, monthKey));
+                                tr.appendChild(td);
+                            });
+                        } else {
+                            const sum = state.months.reduce((acc, m) => {
+                                const forecast = (row.forecasts && row.forecasts[m]) || null;
+                                const dirtyKey = row.row_key + '|' + m;
+                                const dirtyVal = state.dirty.has(dirtyKey) ? Number(state.dirty.get(dirtyKey).latest_qty) : null;
+                                const value = dirtyVal !== null ? dirtyVal : Number(forecast && forecast.value_qty || 0);
+                                return acc + value;
+                            }, 0);
+                            const td = document.createElement('td');
+                            td.className = 'sf-cell-history';
+                            td.textContent = formatNumber(sum || 0);
+                            tr.appendChild(td);
+                        }
+                    }
+                    tbody.appendChild(tr);
+                });
+            });
+        }
+
+        function buildBottomHeaderHtml(col) {
+            const sortMark = state.sortKey === col.key ? (state.sortDir === 'asc' ? '▲' : '▼') : '';
+            const filterValue = state.colFilters[col.key] || '';
+            const filterInput = col.filter
+                ? `<input type="text" class="sf-th-filter" data-filter-key="${col.key}" placeholder="筛选" value="${escapeHtml(filterValue)}">`
+                : '';
+            return `<th class="sf-th-spec ${col.thClass || ''}" data-col-key="${col.key}"><div class="sf-th-cell"><span class="sf-th-title-row ${col.sort ? '' : 'is-disabled'}" data-sort-key="${col.sort ? col.key : ''}"><span>${escapeHtml(col.label)}</span><span class="sf-sort-arrow">${sortMark}</span></span>${filterInput}</div></th>`;
+        }
+
+        function bindHeaderEvents(thead, cols) {
+            thead.querySelectorAll('.sf-th-section-toggle[data-section]').forEach(el => {
+                el.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const sec = el.dataset.section;
+                    if (sec === 'history') state.historyExpanded = !state.historyExpanded;
+                    if (sec === 'forecast') state.forecastExpanded = !state.forecastExpanded;
+                    renderForecastTable();
+                });
+            });
+            thead.querySelectorAll('.sf-th-title-row[data-sort-key]').forEach(el => {
+                el.addEventListener('click', () => {
+                    const key = String(el.dataset.sortKey || '').trim();
+                    if (!key) return;
+                    if (state.sortKey === key) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+                    else {
+                        state.sortKey = key;
+                        state.sortDir = 'asc';
+                    }
+                    renderForecastTable();
+                });
+            });
+            thead.querySelectorAll('input.sf-th-filter[data-filter-key]').forEach(el => {
+                el.addEventListener('input', () => {
+                    const key = String(el.dataset.filterKey || '');
+                    const v = String(el.value || '').trim();
+                    if (v) state.colFilters[key] = v;
+                    else delete state.colFilters[key];
+                    renderForecastTable();
+                });
+            });
+            const tbody = document.getElementById('forecastTbody');
+            if (tbody && tbody.dataset.groupBound !== '1') {
+                tbody.dataset.groupBound = '1';
+                tbody.addEventListener('click', (e) => {
+                    const row = e.target && e.target.closest ? e.target.closest('tr.sf-group-row[data-group-key]') : null;
+                    if (!row) return;
+                    const key = String(row.dataset.groupKey || '');
+                    if (!key) return;
+                    const collapsedSet = getCollapsedSet();
+                    if (collapsedSet.has(key)) collapsedSet.delete(key);
+                    else collapsedSet.add(key);
+                    renderForecastTable();
                 });
             }
-            return result;
+        }
+
+        function renderForecastTableBodyOnly() {
+            renderForecastTable();
         }
 
         // ===== 单元格 =====
@@ -984,6 +1114,7 @@
                 input.classList.add('is-dirty');
             }
             refreshBatchPopup();
+            if (!state.forecastExpanded) renderForecastTableBodyOnly();
         }
 
         function makeTooltipWrap(html, contentNode) {
