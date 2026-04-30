@@ -793,7 +793,7 @@ class FileManagementMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_gallery_batch_delete_api(self, environ, start_response):
-        """gallery 批量删除：把选中项移动到“同目录/回收站”子文件夹。"""
+        """gallery 批量删除：把选中项移动到『上架资源』/回收站（与产品图删除一致）。"""
         try:
             if environ.get('REQUEST_METHOD') != 'POST':
                 return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
@@ -802,33 +802,6 @@ class FileManagementMixin:
             items = data.get('items', []) if isinstance(data, dict) else []
             if not isinstance(items, (list, tuple)) or not items:
                 return self.send_json({'status': 'error', 'message': 'No items selected'}, start_response)
-
-            def safe_reason_prefix():
-                return '删除__'
-
-            def ensure_local_recycle_dir(parent_dir):
-                # parent_dir: absolute bytes path
-                recycle = os.path.join(parent_dir, os.fsencode('回收站'))
-                try:
-                    os.makedirs(recycle, exist_ok=True)
-                except Exception:
-                    pass
-                return recycle
-
-            def next_available_path(dst_dir, base_name_b):
-                stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
-                name_root, ext = os.path.splitext(base_name_b)
-                for i in range(0, 200):
-                    suffix = f'__{stamp}' + (f'_{i}' if i else '')
-                    cand = name_root + os.fsencode(suffix) + ext
-                    dst = os.path.join(dst_dir, cand)
-                    try:
-                        if os.path.exists(dst):
-                            continue
-                    except Exception:
-                        continue
-                    return dst
-                return os.path.join(dst_dir, base_name_b)
 
             moved = 0
             skipped = 0
@@ -855,19 +828,13 @@ class FileManagementMixin:
                         skipped += 1
                         continue
 
-                    parent_dir = os.path.dirname(full_path)
-                    recycle_dir = ensure_local_recycle_dir(parent_dir)
-                    src_base = os.path.basename(full_path)
-                    try:
-                        base_b = src_base if isinstance(src_base, (bytes, bytearray)) else os.fsencode(src_base)
-                    except Exception:
-                        base_b = str(src_base).encode('utf-8', errors='surrogatepass')
-                    dst_name = os.fsencode(safe_reason_prefix()) + base_b
-                    dst = next_available_path(recycle_dir, dst_name)
-                    # Move file/folder into recycle
-                    import shutil
-                    shutil.move(full_path, dst)
-                    moved += 1
+                    if not hasattr(self, '_move_file_to_listing_recycle_bin'):
+                        return self.send_json({'status': 'error', 'message': '服务器未配置上架资源回收站逻辑'}, start_response)
+                    moved_ok, _dst, err = self._move_file_to_listing_recycle_bin(full_path, '删除')
+                    if moved_ok:
+                        moved += 1
+                    else:
+                        failures.append((err or 'move_failed')[:220])
                 except Exception as e:
                     failures.append(str(e)[:220])
 
@@ -876,7 +843,7 @@ class FileManagementMixin:
                 'moved': moved,
                 'skipped': skipped,
                 'failures': failures[:12],
-                'message': f'已移入同目录回收站：{moved} 项' + (f'（跳过 {skipped} 项）' if skipped else ''),
+                'message': f'已移入『上架资源』/回收站：{moved} 项' + (f'（跳过 {skipped} 项）' if skipped else ''),
             }, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)

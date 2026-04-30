@@ -9,6 +9,7 @@
     let activeResizeState = null;
     let activeHelpDotTooltip = null;
     let activeDatePickerState = null;
+    let activeDateTimePickerState = null;
     let activeGridSelection = null;
     let activeBatchConfirmState = null;
     let suppressSortUntil = 0;
@@ -524,6 +525,7 @@
         const message = String(opt.message || '确认继续执行该操作？').trim() || '确认继续执行该操作？';
         const confirmText = String(opt.confirmText || '确认').trim() || '确认';
         const cancelText = String(opt.cancelText || '取消').trim() || '取消';
+        const extraButtons = Array.isArray(opt.extraButtons) ? opt.extraButtons.filter(x => x && x.id && x.text) : [];
         const checkText = String(opt.confirmCheckText || '我已知晓此操作不可恢复，确认继续删除').trim() || '我已知晓此操作不可恢复，确认继续删除';
         const explicitRequireCheck = (typeof opt.requireConfirmCheck === 'boolean') ? opt.requireConfirmCheck : null;
         const autoDanger = /删除|移除|清空|永久|不可恢复|彻底/.test(`${title} ${message} ${confirmText}`);
@@ -537,6 +539,7 @@
         const checkRow = modal.querySelector('.app-confirm-check-row');
         const checkInput = modal.querySelector('.app-confirm-check-input');
         const checkTextEl = modal.querySelector('.app-confirm-check-text');
+        const actionsRow = modal.querySelector('.pm-modal-actions');
         if(titleEl) titleEl.textContent = title;
         if(msgEl) msgEl.textContent = message;
         if(confirmBtn) confirmBtn.textContent = confirmText;
@@ -544,6 +547,24 @@
         if(checkTextEl) checkTextEl.textContent = checkText;
         if(checkRow) checkRow.style.display = requireCheck ? '' : 'none';
         if(checkInput) checkInput.checked = false;
+
+        // rebuild extra buttons each time to avoid stale handlers
+        const extraCreated = [];
+        if(actionsRow){
+            actionsRow.querySelectorAll('[data-action="extra"]').forEach(node => node.parentNode && node.parentNode.removeChild(node));
+            extraButtons.forEach(btn => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.setAttribute('data-action', 'extra');
+                b.setAttribute('data-extra-id', String(btn.id));
+                b.className = btn.danger ? 'btn-danger' : 'btn-secondary';
+                b.textContent = String(btn.text || '').trim() || String(btn.id);
+                // insert before cancel button to keep confirm at the end
+                const anchor = cancelBtn && cancelBtn.parentNode === actionsRow ? cancelBtn : actionsRow.firstChild;
+                actionsRow.insertBefore(b, anchor);
+                extraCreated.push(b);
+            });
+        }
 
         const updateConfirmState = () => {
             if(!confirmBtn) return;
@@ -562,6 +583,7 @@
             if(checkInput) checkInput.removeEventListener('change', updateConfirmState);
             modal.removeEventListener('click', onBackdrop);
             document.removeEventListener('keydown', onEsc);
+            extraCreated.forEach(b => b && b.removeEventListener && b.removeEventListener('click', onExtra));
             syncModalScrollLock();
         };
 
@@ -578,6 +600,22 @@
             if(typeof opt.onClose === 'function') opt.onClose(false);
         };
 
+        const onExtra = (event) => {
+            if(event){
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            const btn = event && event.currentTarget ? event.currentTarget : null;
+            if(!btn) return;
+            const id = String(btn.getAttribute('data-extra-id') || '').trim();
+            if(!id) return;
+            cleanup();
+            if(typeof opt.onExtra === 'function') {
+                try { opt.onExtra(id); } catch(_) {}
+            }
+            if(typeof opt.onClose === 'function') opt.onClose({ id });
+        };
+
         const onBackdrop = (event) => {
             if(event.target === modal) onCancel();
         };
@@ -589,6 +627,7 @@
         if(confirmBtn) confirmBtn.addEventListener('click', onConfirm);
         if(cancelBtn) cancelBtn.addEventListener('click', onCancel);
         if(checkInput) checkInput.addEventListener('change', updateConfirmState);
+        extraCreated.forEach(b => b.addEventListener('click', onExtra));
         modal.addEventListener('click', onBackdrop);
         document.addEventListener('keydown', onEsc);
 
@@ -599,7 +638,7 @@
     function showAppConfirmAsync(options){
         return new Promise((resolve) => {
             showAppConfirm(Object.assign({}, (options || {}), {
-                onClose: (ok) => resolve(!!ok)
+                onClose: (result) => resolve(result)
             }));
         });
     }
@@ -3697,9 +3736,59 @@
         });
     }
 
+    function parseDateTimeTextValue(value){
+        const raw = String(value || '').trim();
+        if(!raw) return null;
+        const t = raw.replace('T', ' ').slice(0, 16);
+        const m = t.match(/^(\d{4})-(\d{2})-(\d{2})[ ](\d{2}):(\d{2})$/);
+        if(!m) return null;
+        const year = Number(m[1]);
+        const month = Number(m[2]);
+        const day = Number(m[3]);
+        const hour = Number(m[4]);
+        const minute = Number(m[5]);
+        if(!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day) || !Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+        if(month < 1 || month > 12 || day < 1 || day > 31 || hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+        const dt = new Date(year, month - 1, day, hour, minute, 0, 0);
+        if(dt.getFullYear() !== year || (dt.getMonth() + 1) !== month || dt.getDate() !== day) return null;
+        return { year, month, day, hour, minute };
+    }
+
+    function formatDateTimePartsText(parts){
+        if(!parts) return '';
+        const y = String(parts.year || '').padStart(4, '0');
+        const m = String(parts.month || '').padStart(2, '0');
+        const d = String(parts.day || '').padStart(2, '0');
+        const hh = String(parts.hour || '').padStart(2, '0');
+        const mm = String(parts.minute || '').padStart(2, '0');
+        return `${y}-${m}-${d} ${hh}:${mm}`;
+    }
+
+    function maskDateTimeTextInput(input){
+        if(!input) return;
+        const digits = String(input.value || '').replace(/[^\d]/g, '').slice(0, 12);
+        const y = digits.slice(0, 4);
+        const mo = digits.slice(4, 6);
+        const d = digits.slice(6, 8);
+        const hh = digits.slice(8, 10);
+        const mm = digits.slice(10, 12);
+        let out = '';
+        if(y) out += y;
+        if(digits.length > 4) out += '-' + mo;
+        else if(digits.length === 4) out += '-';
+        if(digits.length > 6) out += '-' + d;
+        else if(digits.length === 6) out += '-';
+        if(digits.length > 8) out += ' ' + hh;
+        else if(digits.length === 8) out += ' ';
+        if(digits.length > 10) out += ':' + mm;
+        else if(digits.length === 10) out += ':';
+        input.value = out;
+        try { input.setSelectionRange(out.length, out.length); } catch(_) {}
+    }
+
     function initOptionalDateInputs(root){
         const scope = root && root.querySelectorAll ? root : document;
-        scope.querySelectorAll('input.optional-field[type="date"], input.optional-field[type="datetime-local"], input[data-optional-date="1"]').forEach(input => {
+        scope.querySelectorAll('input.optional-field[type="date"], input.optional-field[type="datetime-local"], input[data-optional-date="1"], input.app-datetime-text-input, input[data-optional-datetime="1"]').forEach(input => {
             if(input.dataset.optionalDateEnhanced === '1') return;
             input.dataset.optionalDateEnhanced = '1';
             input.classList.add('optional-date-input');
@@ -3713,6 +3802,58 @@
             input.addEventListener('change', syncValueClass);
             input.addEventListener('input', syncValueClass);
             input.addEventListener('blur', syncValueClass);
+
+            const inputType = String(input.type || '').toLowerCase();
+            if(inputType === 'datetime-local'){
+                input.classList.add('app-datetime-input');
+                input.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openDateTimePickerForInput(input, input);
+                });
+                input.addEventListener('focus', () => openDateTimePickerForInput(input, input));
+                input.addEventListener('keydown', (event) => {
+                    if(event.key === 'ArrowDown' || event.key === 'Enter'){
+                        event.preventDefault();
+                        openDateTimePickerForInput(input, input);
+                    }
+                    if(event.key === 'Escape'){
+                        closeDateTimePicker();
+                    }
+                });
+                return;
+            }
+
+            const isDateTimeText = input.classList && input.classList.contains('app-datetime-text-input');
+            if(isDateTimeText){
+                input.classList.add('app-date-input');
+                input.addEventListener('input', () => {
+                    maskDateTimeTextInput(input);
+                    syncValueClass();
+                });
+                input.addEventListener('blur', () => {
+                    const parsed = parseDateTimeTextValue(input.value || '');
+                    if(!parsed && String(input.value || '').trim()){
+                        input.classList.add('app-date-invalid');
+                    } else {
+                        input.classList.remove('app-date-invalid');
+                        if(parsed) input.value = formatDateTimePartsText(parsed);
+                    }
+                    syncValueClass();
+                });
+                input.addEventListener('keydown', (event) => {
+                    if(event.key === 'ArrowDown' || event.key === 'Enter'){
+                        event.preventDefault();
+                        openDateTimePickerForInput(input, input);
+                    }
+                    if(event.key === 'Escape'){
+                        closeDateTimePicker();
+                    }
+                });
+                input.addEventListener('click', () => openDateTimePickerForInput(input, input));
+                return;
+            }
+
             input.addEventListener('click', () => {
                 if(typeof input.showPicker === 'function'){
                     try { input.showPicker(); } catch(_) {}
@@ -3874,6 +4015,296 @@
         return state;
     }
 
+    function parseDateTimeLocalValue(text){
+        const raw = String(text || '').trim();
+        const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+        if(!m) return null;
+        const year = Number(m[1]);
+        const month = Number(m[2]);
+        const day = Number(m[3]);
+        const hour = Number(m[4]);
+        const minute = Number(m[5]);
+        if(!Number.isFinite(year) || month < 1 || month > 12 || day < 1 || day > 31) return null;
+        if(!Number.isFinite(hour) || hour < 0 || hour > 23 || !Number.isFinite(minute) || minute < 0 || minute > 59) return null;
+        const d = new Date(year, month - 1, day);
+        if(d.getFullYear() !== year || (d.getMonth() + 1) !== month || d.getDate() !== day) return null;
+        return { year, month, day, hour, minute };
+    }
+
+    function formatDateTimeLocalParts(parts){
+        if(!parts) return '';
+        const y = String(parts.year).padStart(4, '0');
+        const mo = String(parts.month).padStart(2, '0');
+        const d = String(parts.day).padStart(2, '0');
+        const h = String(parts.hour).padStart(2, '0');
+        const mi = String(parts.minute).padStart(2, '0');
+        return `${y}-${mo}-${d}T${h}:${mi}`;
+    }
+
+    function positionFloatingNearAnchor(anchor, panel){
+        if(!anchor || !panel) return;
+        const rect = anchor.getBoundingClientRect();
+        const viewportW = window.innerWidth || document.documentElement.clientWidth || 0;
+        const viewportH = window.innerHeight || document.documentElement.clientHeight || 0;
+        panel.style.visibility = 'hidden';
+        panel.style.display = 'block';
+        const panelRect = panel.getBoundingClientRect();
+        let left = rect.left;
+        if(left + panelRect.width > viewportW - 8){
+            left = viewportW - panelRect.width - 8;
+        }
+        left = Math.max(8, left);
+        let top = rect.bottom + 8;
+        if(top + panelRect.height > viewportH - 8){
+            top = rect.top - panelRect.height - 8;
+        }
+        top = Math.max(8, top);
+        panel.style.left = `${left}px`;
+        panel.style.top = `${top}px`;
+        panel.style.visibility = 'visible';
+    }
+
+    function ensureDateTimePicker(){
+        if(activeDateTimePickerState && activeDateTimePickerState.panel && document.body.contains(activeDateTimePickerState.panel)){
+            return activeDateTimePickerState;
+        }
+        const panel = document.createElement('div');
+        panel.className = 'app-date-picker app-datetime-picker';
+        panel.style.display = 'none';
+        panel.setAttribute('role', 'dialog');
+        panel.innerHTML = [
+            '<div class="app-date-picker-head">',
+            '  <button type="button" class="app-date-nav" data-dt-nav="prev" aria-label="上个月">‹</button>',
+            '  <div class="app-date-title app-dt-title"></div>',
+            '  <button type="button" class="app-date-nav" data-dt-nav="next" aria-label="下个月">›</button>',
+            '</div>',
+            '<div class="app-date-week">',
+            '  <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>',
+            '</div>',
+            '<div class="app-date-grid app-dt-grid"></div>',
+            '<div class="app-datetime-time-row">',
+            '  <span class="app-datetime-time-label">时间</span>',
+            '  <select class="inline-input app-dt-hour" aria-label="小时"></select>',
+            '  <span class="app-datetime-sep">:</span>',
+            '  <select class="inline-input app-dt-minute" aria-label="分钟"></select>',
+            '</div>',
+            '<div class="app-date-actions app-datetime-actions">',
+            '  <button type="button" class="btn-secondary" data-dt-action="now">此刻</button>',
+            '  <button type="button" class="btn-secondary" data-dt-action="clear">清空</button>',
+            '  <button type="button" class="btn-primary" data-dt-action="ok">确定</button>',
+            '</div>'
+        ].join('');
+        document.body.appendChild(panel);
+        const hourSel = panel.querySelector('.app-dt-hour');
+        const minSel = panel.querySelector('.app-dt-minute');
+        for(let i = 0; i < 24; i += 1){
+            const o = document.createElement('option');
+            const v = String(i).padStart(2, '0');
+            o.value = v;
+            o.textContent = v;
+            hourSel.appendChild(o);
+        }
+        for(let i = 0; i < 60; i += 1){
+            const o = document.createElement('option');
+            const v = String(i).padStart(2, '0');
+            o.value = v;
+            o.textContent = v;
+            minSel.appendChild(o);
+        }
+        const state = {
+            panel,
+            anchor: null,
+            input: null,
+            title: panel.querySelector('.app-dt-title'),
+            grid: panel.querySelector('.app-dt-grid'),
+            hourSel,
+            minSel,
+            viewYear: 0,
+            viewMonth: 0,
+            pending: null
+        };
+        const reposition = () => positionFloatingNearAnchor(state.anchor, state.panel);
+
+        panel.querySelectorAll('[data-dt-nav]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const nav = btn.getAttribute('data-dt-nav');
+                if(nav === 'prev'){
+                    state.viewMonth -= 1;
+                    if(state.viewMonth < 1){
+                        state.viewMonth = 12;
+                        state.viewYear -= 1;
+                    }
+                } else {
+                    state.viewMonth += 1;
+                    if(state.viewMonth > 12){
+                        state.viewMonth = 1;
+                        state.viewYear += 1;
+                    }
+                }
+                renderDateTimePickerCalendar();
+            });
+        });
+
+        panel.querySelectorAll('[data-dt-action]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const action = btn.getAttribute('data-dt-action');
+                if(action === 'clear'){
+                    commitDateTimePickerValue('');
+                    return;
+                }
+                if(action === 'now'){
+                    const now = new Date();
+                    state.viewYear = now.getFullYear();
+                    state.viewMonth = now.getMonth() + 1;
+                    state.hourSel.value = String(now.getHours()).padStart(2, '0');
+                    state.minSel.value = String(now.getMinutes()).padStart(2, '0');
+                    state.pending = {
+                        year: state.viewYear,
+                        month: state.viewMonth,
+                        day: now.getDate(),
+                        hour: Number(state.hourSel.value) || 0,
+                        minute: Number(state.minSel.value) || 0
+                    };
+                    renderDateTimePickerCalendar();
+                    commitDateTimePickerValue(formatDateTimeLocalParts(state.pending));
+                    return;
+                }
+                if(action === 'ok'){
+                    if(!state.pending) return;
+                    const h = Number(state.hourSel.value) || 0;
+                    const mi = Number(state.minSel.value) || 0;
+                    const full = {
+                        year: state.pending.year,
+                        month: state.pending.month,
+                        day: state.pending.day,
+                        hour: h,
+                        minute: mi
+                    };
+                    commitDateTimePickerValue(formatDateTimeLocalParts(full));
+                }
+            });
+        });
+
+        state.grid.addEventListener('click', (e) => {
+            const dayBtn = e.target.closest('.app-date-day');
+            if(!dayBtn || dayBtn.disabled) return;
+            const y = Number(dayBtn.getAttribute('data-year') || '0');
+            const m = Number(dayBtn.getAttribute('data-month') || '0');
+            const d = Number(dayBtn.getAttribute('data-day') || '0');
+            if(!y || !m || !d) return;
+            state.pending = {
+                year: y,
+                month: m,
+                day: d,
+                hour: Number(state.hourSel.value) || 0,
+                minute: Number(state.minSel.value) || 0
+            };
+            renderDateTimePickerCalendar();
+        });
+
+        state.hourSel.addEventListener('change', () => {
+            if(state.pending){
+                state.pending.hour = Number(state.hourSel.value) || 0;
+            }
+        });
+        state.minSel.addEventListener('change', () => {
+            if(state.pending){
+                state.pending.minute = Number(state.minSel.value) || 0;
+            }
+        });
+
+        function renderDateTimePickerCalendar(){
+            const year = state.viewYear;
+            const month = state.viewMonth;
+            state.title.textContent = `${year}年${String(month).padStart(2, '0')}月`;
+            const selectedParts = state.pending;
+            const today = todayDateParts();
+            const firstDay = new Date(year, month - 1, 1);
+            const totalDays = new Date(year, month, 0).getDate();
+            const lead = (firstDay.getDay() + 6) % 7;
+            const html = [];
+            for(let i = 0; i < lead; i += 1){
+                html.push('<span class="app-date-blank"></span>');
+            }
+            for(let day = 1; day <= totalDays; day += 1){
+                const isToday = today.year === year && today.month === month && today.day === day;
+                const isSelected = selectedParts && selectedParts.year === year && selectedParts.month === month && selectedParts.day === day;
+                html.push(`<button type="button" class="app-date-day ${isToday ? 'is-today' : ''} ${isSelected ? 'is-selected' : ''}" data-year="${year}" data-month="${month}" data-day="${day}">${day}</button>`);
+            }
+            state.grid.innerHTML = html.join('');
+            reposition();
+        }
+
+        function commitDateTimePickerValue(value){
+            if(!state.input) return;
+            const inp = state.input;
+            const raw = String(value || '').trim();
+            const inputType = String(inp.type || '').toLowerCase();
+            const v = (inputType === 'datetime-local')
+                ? raw
+                : formatDateTimePartsText(parseDateTimeLocalValue(raw) || parseDateTimeTextValue(raw));
+            inp.value = String(v || '').trim();
+            if(inp.classList && inp.classList.toggle){
+                inp.classList.toggle('has-value', !!inp.value);
+            }
+            if(inp.classList && inp.classList.remove){
+                inp.classList.remove('app-date-invalid');
+            }
+            inp.dispatchEvent(new Event('input', { bubbles: true }));
+            inp.dispatchEvent(new Event('change', { bubbles: true }));
+            closeDateTimePicker();
+            try { inp.focus(); } catch(_) {}
+        }
+
+        state.renderDateTimePickerCalendar = renderDateTimePickerCalendar;
+        state.commitDateTimePickerValue = commitDateTimePickerValue;
+        state.reposition = reposition;
+        activeDateTimePickerState = state;
+        return state;
+    }
+
+    function closeDateTimePicker(){
+        if(!activeDateTimePickerState || !activeDateTimePickerState.panel) return;
+        activeDateTimePickerState.panel.classList.remove('open');
+        activeDateTimePickerState.panel.style.display = 'none';
+        activeDateTimePickerState.input = null;
+        activeDateTimePickerState.anchor = null;
+    }
+
+    function openDateTimePickerForInput(input, anchorEl){
+        if(!input || input.disabled) return;
+        const state = ensureDateTimePicker();
+        state.input = input;
+        state.anchor = anchorEl || input;
+        const inputType = String(input.type || '').toLowerCase();
+        const parsed = (inputType === 'datetime-local')
+            ? parseDateTimeLocalValue(input.value || '')
+            : parseDateTimeTextValue(input.value || '');
+        const now = new Date();
+        const base = parsed || {
+            year: now.getFullYear(),
+            month: now.getMonth() + 1,
+            day: now.getDate(),
+            hour: now.getHours(),
+            minute: now.getMinutes()
+        };
+        state.viewYear = base.year;
+        state.viewMonth = base.month;
+        state.hourSel.value = String(base.hour).padStart(2, '0');
+        state.minSel.value = String(base.minute).padStart(2, '0');
+        state.pending = {
+            year: base.year,
+            month: base.month,
+            day: base.day,
+            hour: base.hour,
+            minute: base.minute
+        };
+        state.renderDateTimePickerCalendar();
+        state.panel.style.display = 'block';
+        state.panel.classList.add('open');
+        state.reposition();
+    }
+
     function closeDatePicker(){
         if(!activeDatePickerState || !activeDatePickerState.panel) return;
         activeDatePickerState.panel.classList.remove('open');
@@ -3996,6 +4427,9 @@
         });
     }
 
+    window.openDateTimePicker = openDateTimePickerForInput;
+    window.closeDateTimePicker = closeDateTimePicker;
+
     window.initUniversalSingleSelects = initUniversalSingleSelects;
     window.refreshUniversalSingleSelect = refreshUniversalSingleSelect;
     window.refreshAllUniversalSingleSelects = function(){
@@ -4098,6 +4532,16 @@
         if(activeDatePickerState && activeDatePickerState.panel && !e.target.closest('.app-date-picker') && !e.target.closest('.app-date-input')) {
             closeDatePicker();
         }
+        if(activeDateTimePickerState && activeDateTimePickerState.panel){
+            const t = e.target;
+            if(!t.closest || (!t.closest('.app-datetime-picker') && !t.closest('.app-datetime-input'))){
+                const an = activeDateTimePickerState.anchor;
+                const onAnchor = !!(an && (an === t || (an.contains && an.contains(t))));
+                if(!onAnchor){
+                    closeDateTimePicker();
+                }
+            }
+        }
         if(!e.target.closest('.help-dot') && !e.target.closest('.app-help-floating-tip')) {
             hideHelpDotTooltip();
         }
@@ -4135,6 +4579,7 @@
             closeAllResetMenus();
             closeAllDropdowns();
             closeDatePicker();
+            closeDateTimePicker();
             closeBatchConfirmModal();
             clearGridSelection();
         }
@@ -4230,6 +4675,7 @@
     window.addEventListener('resize', () => {
         repositionOpenDropdowns();
         if(activeDatePickerState && activeDatePickerState.input) positionDatePicker(activeDatePickerState.input, activeDatePickerState);
+        if(activeDateTimePickerState && activeDateTimePickerState.reposition) activeDateTimePickerState.reposition();
         if(activeColumnsPanelState) repositionColumnsPanel(activeColumnsPanelState);
         repositionManagedBatchBars();
     });
@@ -4251,6 +4697,7 @@
     window.addEventListener('scroll', () => {
         repositionOpenDropdowns();
         if(activeDatePickerState && activeDatePickerState.input) positionDatePicker(activeDatePickerState.input, activeDatePickerState);
+        if(activeDateTimePickerState && activeDateTimePickerState.reposition) activeDateTimePickerState.reposition();
         hideHelpDotTooltip();
         if(activeColumnsPanelState) repositionColumnsPanel(activeColumnsPanelState);
         repositionManagedBatchBars();

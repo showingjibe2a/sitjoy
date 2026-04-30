@@ -8,6 +8,13 @@
   <link rel="stylesheet" href="/static/css/style.css">
   <style>
     .board-tools { display: flex; gap: .45rem; flex-wrap: wrap; align-items: center; }
+    .board-tools .board-sku-kind-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: .45rem;
+      font-size: .82rem;
+      color: var(--morandi-ink);
+    }
     .board-tools .board-search { min-width: 260px; }
     .board-tools .btn-secondary,
     .board-tools .btn-primary {
@@ -510,6 +517,15 @@
   <section class="pm-layout">
     <div class="card pm-card">
       <div class="board-tools">
+        <span class="board-sku-kind-wrap">
+          <span>可见 SKU 类型</span>
+          <input type="hidden" id="boardSkuKindVal" value="all">
+          <div class="status-segment status-segment--inline" id="boardSkuKindSegment" data-value="all">
+            <button type="button" class="status-pill status-pill--yes is-active" data-value="all">全部</button>
+            <button type="button" class="status-pill status-pill--enabled" data-value="sales">销售 SKU</button>
+            <button type="button" class="status-pill status-pill--warning" data-value="accessory">补发配件 SKU</button>
+          </div>
+        </span>
         <input id="boardSearchInput" class="board-search" type="text" placeholder="搜索货号/SKU" />
         <button class="btn-primary" onclick="loadBoard()">刷新</button>
         <button class="btn-secondary" onclick="expandAllGroups()">展开列表</button>
@@ -560,6 +576,8 @@ let fabricSortOrder = '';
 let filterPanelCollapsed = true;
 let wrapWarehouseShortName = false;
 const WRAP_SHORT_NAME_KEY = 'sitjoy:warehouse-short-wrap-enabled';
+const BOARD_SKU_KIND_KEY = 'sitjoy:warehouse-dashboard-sku-kind';
+let boardSkuKind = 'all';
 let boardColWidths = [];
 let suppressHeaderToggleUntil = 0;
 let boardCellUiBound = false;
@@ -1653,7 +1671,10 @@ function syncTopScrollbar(){
 }
 
 function loadBoard(){
-  fetch('/api/logistics-warehouse-dashboard')
+  const qs = new URLSearchParams();
+  if (boardSkuKind && boardSkuKind !== 'all') qs.set('sku_kind', boardSkuKind);
+  const url = '/api/logistics-warehouse-dashboard' + (qs.toString() ? ('?' + qs.toString()) : '');
+  fetch(url)
     .then(r => r.json())
     .then(d => {
       if (d.status !== 'success'){
@@ -1685,7 +1706,10 @@ function loadBoard(){
 }
 
 function downloadBoard(){
-  window.location.href = '/api/logistics-warehouse-dashboard?action=export';
+  const qs = new URLSearchParams();
+  qs.set('action', 'export');
+  if (boardSkuKind && boardSkuKind !== 'all') qs.set('sku_kind', boardSkuKind);
+  window.location.href = '/api/logistics-warehouse-dashboard?' + qs.toString();
 }
 
 function expandAllGroups(){
@@ -1738,6 +1762,26 @@ window.addEventListener('load', function(){
     const savedWrap = localStorage.getItem(WRAP_SHORT_NAME_KEY);
     wrapWarehouseShortName = savedWrap === '1';
   } catch(_) {}
+  try {
+    const sk = String(localStorage.getItem(BOARD_SKU_KIND_KEY) || 'all').trim().toLowerCase();
+    boardSkuKind = ['all', 'sales', 'accessory'].includes(sk) ? sk : 'all';
+  } catch(_) { boardSkuKind = 'all'; }
+  const kindSeg = document.getElementById('boardSkuKindSegment');
+  const kindHid = document.getElementById('boardSkuKindVal');
+  if (kindHid) kindHid.value = boardSkuKind;
+  setSegmentValue(kindSeg, boardSkuKind);
+  if (kindSeg) {
+    kindSeg.querySelectorAll('.status-pill[data-value]').forEach(btn => {
+      btn.addEventListener('click', function(){
+        const val = String(this.getAttribute('data-value') || 'all');
+        boardSkuKind = ['all', 'sales', 'accessory'].includes(val) ? val : 'all';
+        setSegmentValue(kindSeg, boardSkuKind);
+        if (kindHid) kindHid.value = boardSkuKind;
+        try { localStorage.setItem(BOARD_SKU_KIND_KEY, boardSkuKind); } catch(_) {}
+        loadBoard();
+      });
+    });
+  }
   const wrapSeg = document.getElementById('whWrapSegment');
   setSegmentValue(wrapSeg, wrapWarehouseShortName ? '1' : '0');
   if(wrapSeg){

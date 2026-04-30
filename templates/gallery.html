@@ -211,32 +211,21 @@
         async function galleryBatchDelete() {
             if (selectedItems.size === 0) return window.showAppToast && window.showAppToast('请先勾选要删除的内容', true, 4200);
             const count = selectedItems.size;
-            const firstOk = window.showAppConfirmAsync
+            const msg = `将把已勾选的 ${count} 项移入『上架资源』/回收站（不可从回收站自动还原到原路径）。\n\n请勾选下方确认框后点击「确认删除」。`;
+            const ok = window.showAppConfirmAsync
                 ? await window.showAppConfirmAsync({
-                    title: '批量删除（第 1 步 / 2 步）',
-                    description: `将把所选 ${count} 项移入“同目录/回收站”。确认继续？`,
-                    confirmText: '继续',
-                    cancelText: '取消',
-                    danger: true
-                })
-                : window.confirm(`将把所选 ${count} 项移入“同目录/回收站”。确认继续？`);
-            if (!firstOk) return;
-
-            const secondOk = window.showAppConfirmAsync
-                ? await window.showAppConfirmAsync({
-                    title: '批量删除（第 2 步 / 2 步）',
-                    description: '这是二次确认。确认执行批量删除？',
+                    title: '批量删除确认',
+                    message: msg,
                     confirmText: '确认删除',
-                    cancelText: '取消',
-                    danger: true
+                    cancelText: '取消'
                 })
-                : window.confirm('这是二次确认。确认执行批量删除？');
-            if (!secondOk) return;
+                : window.confirm(msg.replace(/\n\n/g, '\n'));
+            if (!ok) return;
 
             const payload = [];
             selectedItems.forEach((type, path) => payload.push({ type, path }));
             try {
-                window.showAppUploadProgress && window.showAppUploadProgress({ title: '批量删除', message: '移动到同目录回收站中…' });
+                window.showAppUploadProgress && window.showAppUploadProgress({ title: '批量删除', message: '正在移入『上架资源』/回收站…' });
                 const resp = await fetch('/api/gallery-batch-delete', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -342,7 +331,7 @@
                 const canonRel = String(dup.canonical.storage_path || '').trim().replace(/\\/g, '/').replace(/^\/+/, '');
                 const canonB64 = utf8ToB64(canonRel);
                 const curRel = String(dup.current_path || '').trim();
-                const msg = `检测到重复图片（SHA256 相同）。\n\n当前：${curRel}\n库中：${canonRel}\n\n请选择：\n- 取消：退出\n- 删除当前重复图片：把当前文件移入同目录回收站\n- 继续编辑已有图片：直接打开库中那张图片进行编辑（规格关联等将按数据库预填）`;
+                const msg = `检测到重复图片（SHA256 相同）。\n\n当前：${curRel}\n库中：${canonRel}\n\n请选择：\n- 取消：退出\n- 删除当前重复图片：仅删除当前副本，文件移入『上架资源』/回收站\n- 继续编辑已有图片：打开库中那张图片进行编辑（规格关联等将按数据库预填）`;
 
                 if (!window.showAppConfirmAsync) {
                     window.showAppToast && window.showAppToast(msg, true, 12000);
@@ -368,11 +357,23 @@
                         window.showAppToast && window.showAppToast('删除重复图片失败：' + ((dataDel && dataDel.message) ? dataDel.message : `HTTP ${respDel.status}`), true, 10000);
                         return;
                     }
-                    window.showAppToast && window.showAppToast('已移入同目录回收站（原因：重复）', false, 8000);
+                    window.showAppToast && window.showAppToast((dataDel && dataDel.message) ? dataDel.message : '已移入『上架资源』/回收站', false, 8000);
                     browse(currentPath || '');
-                    imagePath = canonB64;
-                    imageName = canonRel.split('/').pop() || imageName;
+                    return;
                 } else if (choice === true || (choice && choice.id === 'confirm')) {
+                    // 用户选择继续编辑“库中那张图”：同时把当前重复副本移入回收站（最佳努力）
+                    try {
+                        const respDel = await fetch('/api/gallery-batch-delete', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ items: [{ type: 'image', path: imagePath }] })
+                        });
+                        const dataDel = await respDel.json().catch(() => ({}));
+                        if (respDel.ok && dataDel && dataDel.status === 'success') {
+                            window.showAppToast && window.showAppToast((dataDel && dataDel.message) ? dataDel.message : '已自动清理当前重复副本（移入『上架资源』/回收站）', false, 6000);
+                            browse(currentPath || '');
+                        }
+                    } catch (_) {}
                     imagePath = canonB64;
                     imageName = canonRel.split('/').pop() || imageName;
                 } else {

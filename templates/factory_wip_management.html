@@ -1324,19 +1324,23 @@ function bindWipAggregateSegment(){
 }
 
 function bindWipHeaderGroupSort(){
-  const table = document.getElementById('mainTable');
-  if(!table || table.dataset.groupSortBound === '1') return;
-  table.dataset.groupSortBound = '1';
-  const thead = table.querySelector('thead');
-  if(!thead) return;
-  thead.addEventListener('click', function(e){
+  if(document.body.dataset.wipGroupSortBound === '1') return;
+  document.body.dataset.wipGroupSortBound = '1';
+  document.addEventListener('click', function(e){
     if(wipAggregateMode === 'none') return;
     if(e.target && e.target.closest && e.target.closest('.pm-column-filter-btn')) return;
     const th = e.target && e.target.closest ? e.target.closest('th[data-sort-key]') : null;
     if(!th) return;
+    const hostTable = th.closest ? th.closest('table') : null;
+    const mainTable = document.getElementById('mainTable');
+    const isMainHeader = !!(hostTable && mainTable && hostTable === mainTable);
+    const isManagedHeader = !!(hostTable && hostTable.classList && hostTable.classList.contains('pm-managed-head-table'));
+    if(!isMainHeader && !isManagedHeader) return;
+
     e.preventDefault();
     e.stopPropagation();
     if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+
     const key = String(th.getAttribute('data-sort-key') || '').trim();
     if(!key) return;
     if(wipGroupSort.key === key){
@@ -1346,12 +1350,6 @@ function bindWipHeaderGroupSort(){
       wipGroupSort.dir = 'asc';
     }
     renderFactoryWipTable(applyWipColumnFilters(listCache));
-    // Managed-table sorter may still run on header click; render again in next tick
-    // so group header rows always stay above their member rows.
-    setTimeout(() => {
-      renderFactoryWipTable(applyWipColumnFilters(listCache));
-      syncFactoryWipSaveBar();
-    }, 0);
     syncFactoryWipSaveBar();
   }, true);
 }

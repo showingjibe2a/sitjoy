@@ -196,6 +196,39 @@ input[type="month"] {
     gap: 0.36rem;
 }
 
+.app-datetime-picker .app-datetime-actions {
+    grid-template-columns: 1fr 1fr 1fr;
+}
+
+.app-datetime-time-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.app-datetime-time-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--morandi-slate);
+    min-width: 2.2rem;
+}
+
+.app-datetime-time-row .app-dt-hour,
+.app-datetime-time-row .app-dt-minute {
+    flex: 1 1 72px;
+    min-width: 64px;
+    max-width: 96px;
+    padding: 0.28rem 0.4rem;
+    font-size: 0.84rem;
+}
+
+.app-datetime-sep {
+    color: var(--morandi-slate);
+    font-weight: 700;
+    padding: 0 0.1rem;
+}
+
 .navbar {
     background: rgba(236, 231, 223, 0.92);
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
@@ -609,22 +642,29 @@ input[type="month"] {
 input.optional-date-input,
 input.app-date-input,
 input.optional-field[type="date"],
-input.optional-field[type="datetime-local"] {
+input.optional-field[type="datetime-local"],
+input[type="month"] {
     min-height: 42px;
     border: 2px solid var(--morandi-sand);
     border-radius: 6px;
     appearance: none;
     -webkit-appearance: none;
-    background-image: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(246,241,235,0.96));
+    background-image:
+        url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%2716%27%20height%3D%2716%27%20viewBox%3D%270%200%2016%2016%27%3E%3Crect%20x%3D%272%27%20y%3D%273%27%20width%3D%2712%27%20height%3D%2711%27%20rx%3D%272%27%20fill%3D%27%23ffffff%27%20stroke%3D%27%233b2f2a%27%20stroke-width%3D%271%27/%3E%3Crect%20x%3D%272%27%20y%3D%273%27%20width%3D%2712%27%20height%3D%273%27%20rx%3D%272%27%20fill%3D%27%23d54b4b%27/%3E%3Crect%20x%3D%275%27%20y%3D%271%27%20width%3D%272%27%20height%3D%273%27%20rx%3D%271%27%20fill%3D%27%233b2f2a%27/%3E%3Crect%20x%3D%279%27%20y%3D%271%27%20width%3D%272%27%20height%3D%273%27%20rx%3D%271%27%20fill%3D%27%233b2f2a%27/%3E%3Cline%20x1%3D%274%27%20y1%3D%278%27%20x2%3D%2712%27%20y2%3D%278%27%20stroke%3D%27%23cfc7bd%27%20stroke-width%3D%271%27/%3E%3Cline%20x1%3D%274%27%20y1%3D%2711%27%20x2%3D%2712%27%20y2%3D%2711%27%20stroke%3D%27%23cfc7bd%27%20stroke-width%3D%271%27/%3E%3C/svg%3E"),
+        linear-gradient(180deg, rgba(255,255,255,0.96), rgba(246,241,235,0.96));
+    background-repeat: no-repeat, repeat;
+    background-position: right 0.65rem center, 0 0;
+    background-size: 16px 16px, auto;
     padding-right: 2.2rem !important;
 }
 
 input.optional-date-input::-webkit-calendar-picker-indicator,
 input.app-date-input::-webkit-calendar-picker-indicator,
 input.optional-field[type="date"]::-webkit-calendar-picker-indicator,
-input.optional-field[type="datetime-local"]::-webkit-calendar-picker-indicator {
+input.optional-field[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="month"]::-webkit-calendar-picker-indicator {
     cursor: pointer;
-    opacity: 0.75;
+    opacity: 0;
 }
 
 input.optional-date-input:focus,

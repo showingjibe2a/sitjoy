@@ -120,6 +120,7 @@ class SalesProductMixin:
         try:
             if method not in ('GET', 'PUT'):
                 return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+            user_id = self._get_session_user(environ)
             data = None
             if method == 'PUT':
                 # PUT 请求体只能读取一次：提前读取并复用，避免后续读到空导致误判
@@ -201,7 +202,33 @@ class SalesProductMixin:
 
                         aid = self._parse_int(row.get('id')) or 0
                         if not aid:
-                            return self.send_json({'status': 'error', 'message': '图片未入库，无法保存类型'}, start_response)
+                            # 兼容：若该图片尚未入库，但文件存在且用户提交了可更新字段，
+                            # 自动补建 image_assets 记录，再继续保存类型/启用状态/备注。
+                            abs_path = self._abs_from_storage_path(rel_text)
+                            if not abs_path or (not os.path.exists(abs_path)) or (not os.path.isfile(abs_path)):
+                                return self.send_json({'status': 'error', 'message': '图片未入库，且源文件不存在，无法保存'}, start_response)
+                            try:
+                                with open(abs_path, 'rb') as f:
+                                    content = f.read() or b''
+                            except Exception:
+                                content = b''
+                            if not content:
+                                return self.send_json({'status': 'error', 'message': '图片文件读取失败，无法保存'}, start_response)
+                            sha256 = self._sha256_hex(content)
+                            existing = self._find_image_asset_by_sha256(conn, sha256)
+                            if existing and self._parse_int(existing.get('id')):
+                                aid = int(existing.get('id'))
+                            else:
+                                rec = {
+                                    'sha256': sha256,
+                                    'storage_path': rel_text,
+                                    'description': '',
+                                    'is_deprecated': 0,
+                                    'created_by': int(user_id) if user_id else None,
+                                }
+                                aid = int(self._insert_image_asset_dynamic(conn, cur, rec) or 0)
+                            if not aid:
+                                return self.send_json({'status': 'error', 'message': '自动入库失败，无法保存类型'}, start_response)
 
                         if image_type_name:
                             if not has_tid:
@@ -209,6 +236,9 @@ class SalesProductMixin:
                             tid = self._get_image_type_id_by_name(conn, image_type_name)
                             if not tid:
                                 return self.send_json({'status': 'error', 'message': f'未知图片类型: {image_type_name}'}, start_response)
+                            ok_scope, scope_msg = self._gallery_validate_asset_type_compatible(conn, int(aid), int(tid))
+                            if not ok_scope:
+                                return self.send_json({'status': 'error', 'message': scope_msg or '图片类型与现有关联冲突'}, start_response)
                             cur.execute("UPDATE image_assets SET image_type_id=%s WHERE id=%s", (int(tid), int(aid)))
 
                         if has_enabled_patch:
@@ -329,6 +359,10 @@ class SalesProductMixin:
                                 'image_type_name': '',
                                 'variants': [],
                                 'variant_ids': [],
+                                'fabric_ids': [],
+                                'fabrics': [],
+                                'order_product_ids': [],
+                                'order_products': [],
                             },
                             start_response,
                         )
@@ -388,6 +422,67 @@ class SalesProductMixin:
                                 'fabric_name_en': str(r.get('fabric_name_en') or '').strip(),
                             })
 
+                    fabric_ids = []
+                    fabrics = []
+                    order_product_ids = []
+                    order_products = []
+                    if self._has_required_tables(['fabric_image_mappings']):
+                        cur.execute(
+                            """
+                            SELECT DISTINCT fabric_id
+                            FROM fabric_image_mappings
+                            WHERE image_asset_id=%s AND fabric_id IS NOT NULL AND fabric_id>0
+                            ORDER BY fabric_id ASC
+                            """,
+                            (aid,),
+                        )
+                        fabric_ids = [self._parse_int(r.get('fabric_id')) or 0 for r in (cur.fetchall() or [])]
+                        fabric_ids = [f for f in fabric_ids if f > 0]
+                        if fabric_ids:
+                            ph = ','.join(['%s'] * len(fabric_ids))
+                            cur.execute(
+                                f"SELECT id, fabric_code, fabric_name_en FROM fabric_materials WHERE id IN ({ph}) ORDER BY fabric_code ASC",
+                                tuple(fabric_ids),
+                            )
+                            for r in (cur.fetchall() or []):
+                                fabrics.append({
+                                    'fabric_id': self._parse_int(r.get('id')) or 0,
+                                    'fabric_code': str(r.get('fabric_code') or '').strip(),
+                                    'fabric_name_en': str(r.get('fabric_name_en') or '').strip(),
+                                })
+
+                    if self._has_required_tables(['order_product_image_mappings']):
+                        cur.execute(
+                            """
+                            SELECT DISTINCT order_product_id
+                            FROM order_product_image_mappings
+                            WHERE image_asset_id=%s AND order_product_id IS NOT NULL AND order_product_id>0
+                            ORDER BY order_product_id ASC
+                            """,
+                            (aid,),
+                        )
+                        order_product_ids = [self._parse_int(r.get('order_product_id')) or 0 for r in (cur.fetchall() or [])]
+                        order_product_ids = [x for x in order_product_ids if x > 0]
+                        if order_product_ids:
+                            ph = ','.join(['%s'] * len(order_product_ids))
+                            cur.execute(
+                                f"""
+                                SELECT op.id, op.sku, op.spec_qty_short, pf.sku_family
+                                FROM order_products op
+                                LEFT JOIN product_families pf ON pf.id = op.sku_family_id
+                                WHERE op.id IN ({ph})
+                                ORDER BY pf.sku_family ASC, op.sku ASC, op.id ASC
+                                """,
+                                tuple(order_product_ids),
+                            )
+                            for r in (cur.fetchall() or []):
+                                order_products.append({
+                                    'order_product_id': self._parse_int(r.get('id')) or 0,
+                                    'sku': str(r.get('sku') or '').strip(),
+                                    'sku_family': str(r.get('sku_family') or '').strip(),
+                                    'spec_qty_short': str(r.get('spec_qty_short') or '').strip(),
+                                })
+
             return self.send_json(
                 {
                     'status': 'success',
@@ -398,6 +493,10 @@ class SalesProductMixin:
                     'image_type_name': (row.get('image_type_name') or '').strip(),
                     'variant_ids': vids,
                     'variants': variants,
+                    'fabric_ids': fabric_ids,
+                    'fabrics': fabrics,
+                    'order_product_ids': order_product_ids,
+                    'order_products': order_products,
                 },
                 start_response,
             )
@@ -508,10 +607,104 @@ class SalesProductMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def handle_gallery_image_types_api(self, environ, method, start_response):
+        """Gallery 弹窗：返回可用于关联面料/规格/下单产品的图片类型及适用范围（只读）。"""
+        try:
+            if method != 'GET':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT id, name, is_enabled,
+                               COALESCE(applies_fabric, 1) AS applies_fabric,
+                               COALESCE(applies_sales, 1) AS applies_sales,
+                               COALESCE(applies_order_product, 1) AS applies_order_product
+                        FROM image_types
+                        WHERE is_enabled = 1
+                          AND (
+                            COALESCE(applies_fabric, 1) = 1
+                            OR COALESCE(applies_sales, 1) = 1
+                            OR COALESCE(applies_order_product, 1) = 1
+                          )
+                        ORDER BY sort_order ASC, id ASC
+                        """
+                    )
+                    rows = cur.fetchall() or []
+            items = []
+            for r in rows or []:
+                items.append({
+                    'id': self._parse_int(r.get('id')) or 0,
+                    'name': str(r.get('name') or '').strip(),
+                    'applies_fabric': bool(int(r.get('applies_fabric') or 0)),
+                    'applies_sales': bool(int(r.get('applies_sales') or 0)),
+                    'applies_order_product': bool(int(r.get('applies_order_product') or 0)),
+                })
+            return self.send_json({'status': 'success', 'items': items}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_gallery_fabric_picker_api(self, environ, method, start_response):
+        """Gallery 弹窗：面料列表（搜索用）。"""
+        try:
+            if method != 'GET':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT id, fabric_code, fabric_name_en FROM fabric_materials ORDER BY fabric_code ASC, id ASC"
+                    )
+                    rows = cur.fetchall() or []
+            items = []
+            for r in rows or []:
+                fid = self._parse_int(r.get('id')) or 0
+                if not fid:
+                    continue
+                items.append({
+                    'fabric_id': fid,
+                    'fabric_code': str(r.get('fabric_code') or '').strip(),
+                    'fabric_name_en': str(r.get('fabric_name_en') or '').strip(),
+                })
+            return self.send_json({'status': 'success', 'items': items}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_gallery_order_product_picker_api(self, environ, method, start_response):
+        """Gallery 弹窗：下单产品列表（搜索用，条数上限以避免过大响应）。"""
+        try:
+            if method != 'GET':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT op.id, op.sku, op.spec_qty_short, pf.sku_family
+                        FROM order_products op
+                        LEFT JOIN product_families pf ON pf.id = op.sku_family_id
+                        ORDER BY pf.sku_family ASC, op.sku ASC, op.id ASC
+                        LIMIT 8000
+                        """
+                    )
+                    rows = cur.fetchall() or []
+            items = []
+            for r in rows or []:
+                oid = self._parse_int(r.get('id')) or 0
+                if not oid:
+                    continue
+                items.append({
+                    'order_product_id': oid,
+                    'sku': str(r.get('sku') or '').strip(),
+                    'sku_family': str(r.get('sku_family') or '').strip(),
+                    'spec_qty_short': str(r.get('spec_qty_short') or '').strip(),
+                })
+            return self.send_json({'status': 'success', 'items': items}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
     def handle_gallery_apply_image_api(self, environ, method, start_response):
         """
-        从 gallery 选择一张图片，一键应用到多个规格（variant_id）。
-        支持 copy/move 到目标文件夹；并写入 image_assets + sales_variant_image_mappings。
+        从 gallery 一键关联：面料（fabric_image_mappings）、销售规格（sales_variant_image_mappings）、
+        下单产品（order_product_image_mappings）。落盘优先级：『面料』 > 货号/主图/规格-面料 > 货号/配件图/…
         """
         try:
             if method != 'POST':
@@ -528,6 +721,8 @@ class SalesProductMixin:
             data = self._read_json_body(environ) or {}
             image_path_b64 = str(data.get('image_path_b64') or '').strip()
             variant_ids = data.get('variant_ids') or []
+            fabric_ids = data.get('fabric_ids') or []
+            order_product_ids = data.get('order_product_ids') or []
             action = str(data.get('action') or '').strip().lower() or 'copy'
             image_type_name = str(data.get('image_type_name') or '').strip()
             prompt_duplicate = str(data.get('prompt_duplicate') or '').strip().lower() in ('1', 'true', 'yes', 'on')
@@ -536,6 +731,7 @@ class SalesProductMixin:
                 return self.send_json({'status': 'error', 'message': '缺少图片路径'}, start_response)
             if not image_type_name:
                 return self.send_json({'status': 'error', 'message': '请选择图片类型'}, start_response)
+
             vids = []
             if isinstance(variant_ids, (list, tuple)):
                 for v in variant_ids:
@@ -543,8 +739,25 @@ class SalesProductMixin:
                     if vid > 0:
                         vids.append(vid)
             vids = sorted(set(vids))
-            if not vids:
-                return self.send_json({'status': 'error', 'message': '请先选择要应用的规格'}, start_response)
+
+            fids = []
+            if isinstance(fabric_ids, (list, tuple)):
+                for x in fabric_ids:
+                    fid = self._parse_int(x) or 0
+                    if fid > 0:
+                        fids.append(fid)
+            fids = sorted(set(fids))
+
+            opids = []
+            if isinstance(order_product_ids, (list, tuple)):
+                for x in order_product_ids:
+                    oid = self._parse_int(x) or 0
+                    if oid > 0:
+                        opids.append(oid)
+            opids = sorted(set(opids))
+
+            if not vids and not fids and not opids:
+                return self.send_json({'status': 'error', 'message': '请至少选择面料、规格或下单产品之一'}, start_response)
             if action not in ('copy', 'move'):
                 action = 'copy'
 
@@ -553,7 +766,6 @@ class SalesProductMixin:
             except Exception:
                 return self.send_json({'status': 'error', 'message': '图片路径不是合法 Base64'}, start_response)
 
-            # gallery 传入的是 resources 根目录下的相对 bytes 路径
             abs_source = os.path.join(self._resources_root(), rel_raw)
             abs_source = self._safe_fsencode(abs_source)
             try:
@@ -579,6 +791,11 @@ class SalesProductMixin:
                 image_type_id = self._get_image_type_id_by_name(conn, image_type_name)
                 if not image_type_id:
                     return self.send_json({'status': 'error', 'message': f'未知图片类型: {image_type_name}'}, start_response)
+                ok_t, err_t = self._gallery_validate_type_for_link_targets(
+                    conn, int(image_type_id), bool(fids), bool(vids), bool(opids),
+                )
+                if not ok_t:
+                    return self.send_json({'status': 'error', 'message': err_t or '图片类型与关联目标不匹配'}, start_response)
 
                 existing = self._find_image_asset_by_sha256(conn, sha256)
                 aid = int(existing.get('id') or 0) if existing else 0
@@ -587,15 +804,18 @@ class SalesProductMixin:
                 file_op_done = False
                 recycled_duplicate = False
 
-                # 计算最终引用范围（数据库已有 + 本次新增）
                 db_vids = self._get_asset_referenced_variant_ids(conn, aid) if aid else []
-                all_vids = sorted(set(list(vids) + list(db_vids)))
-                sku_families = self._detect_cross_sku_family_by_variant_ids(conn, all_vids)
-                is_cross_sku = len(sku_families) > 1
-                is_multi_variant_same_sku = (not is_cross_sku) and (len(all_vids) > 1) and (len(sku_families) == 1)
+                db_fids = self._get_asset_referenced_fabric_ids(conn, aid) if aid else []
+                db_opids = self._get_asset_referenced_order_product_ids(conn, aid) if aid else []
 
-                # 若 sha256 已存在：为了保证“只能有一张图”，把当前选中的重复文件移入回收站（最佳努力）。
-                # 注意：不能删除/移动 canonical 文件本体（storage_path 指向的那一份）。
+                variant_union = sorted(set(list(vids) + list(db_vids)))
+                fabric_union = sorted(set(list(fids) + list(db_fids)))
+                has_any_fabric = len(fabric_union) > 0
+
+                sku_families = self._detect_cross_sku_family_by_variant_ids(conn, variant_union)
+                is_cross_sku = len(sku_families) > 1
+                is_multi_variant_same_sku = (not is_cross_sku) and (len(variant_union) > 1) and (len(sku_families) == 1)
+
                 if aid and storage_path:
                     try:
                         canonical_abs = self._abs_from_storage_path(storage_path)
@@ -607,18 +827,10 @@ class SalesProductMixin:
                     except Exception:
                         pass
 
-                # 如果库里已有同 sha256 的记录，不能再复制/移动成另一份（sha256 唯一约束）。
-                # 直接复用已有 image_assets 记录并写关联即可。
                 if not aid:
-                    # 主图管理：目标目录固定为“货号/主图/规格-面料”
-                    if is_cross_sku:
-                        target_abs = self._ensure_listing_sales_global_common_folder()
-                    elif is_multi_variant_same_sku:
-                        target_abs = self._ensure_listing_sales_common_folder(sku_families[0])
-                    else:
-                        first_vid = vids[0]
-                        folder_info = self._resolve_sales_variant_folder_by_variant_id(first_vid, ensure_folder=True)
-                        target_abs = folder_info.get('folder_path')
+                    target_abs = self._gallery_resolve_new_asset_folder(conn, fids, vids, opids)
+                    if not target_abs:
+                        return self.send_json({'status': 'error', 'message': '无法计算目标文件夹'}, start_response)
                     if isinstance(target_abs, str):
                         target_abs = self._safe_fsencode(target_abs)
                     if not os.path.exists(target_abs):
@@ -632,7 +844,6 @@ class SalesProductMixin:
 
                     try:
                         if action == 'move':
-                            # 源已在目标目录内则不移动
                             if os.path.abspath(os.path.dirname(abs_source)) != os.path.abspath(target_abs):
                                 os.replace(abs_source, abs_target)
                                 file_op_done = True
@@ -666,20 +877,13 @@ class SalesProductMixin:
                         created_new_asset = True
                     except Exception as e:
                         self._tx_rollback(conn)
-                        # best-effort: 回滚文件
                         try:
-                            if created_new_asset and storage_path:
+                            if storage_path:
                                 self._safe_unlink(self._abs_from_storage_path(storage_path))
                         except Exception:
                             pass
                         return self.send_json({'status': 'error', 'message': f'写入数据库失败: {str(e)}'}, start_response)
 
-                # 批量去重提示：先查已存在的关联
-                has_var = self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id')
-                if not has_var:
-                    return self.send_json({'status': 'error', 'message': 'sales_variant_image_mappings 缺少 variant_id，无法批量应用'}, start_response)
-
-                # 若是复用的旧 asset 且用户指定了类型：尽量补齐 image_assets.image_type_id
                 try:
                     if self._table_has_column(conn, 'image_assets', 'image_type_id') and aid and image_type_id:
                         with conn.cursor() as cur:
@@ -690,10 +894,9 @@ class SalesProductMixin:
                 except Exception:
                     pass
 
-                # 归一化文件位置：跨货号 -> 『通用图片』/主图；同货号多规格 -> 货号/主图/通用
                 rehome_kind = ''
                 rehomed = False
-                if aid and storage_path and (is_cross_sku or is_multi_variant_same_sku):
+                if aid and storage_path and (not has_any_fabric) and (is_cross_sku or is_multi_variant_same_sku):
                     try:
                         if is_cross_sku:
                             rehome_kind = 'cross_sku'
@@ -713,81 +916,224 @@ class SalesProductMixin:
                                     cur.execute("UPDATE image_assets SET storage_path=%s WHERE id=%s", (storage_path, int(aid)))
                                 rehomed = True
                     except Exception:
-                        # best-effort: 不阻断关联写入
                         pass
 
-                already_linked = set()
-                with conn.cursor() as cur:
-                    placeholders = ','.join(['%s'] * len(vids))
-                    cur.execute(
-                        f"SELECT variant_id FROM sales_variant_image_mappings WHERE variant_id IN ({placeholders}) AND image_asset_id=%s",
-                        tuple(vids + [aid])
-                    )
-                    for row in (cur.fetchall() or []):
-                        already_linked.add(self._parse_int(row.get('variant_id')) or 0)
-
-                # 取每个 variant 当前 max(sort_order)
-                max_sort_map = {vid: 0 for vid in vids}
-                with conn.cursor() as cur:
-                    placeholders = ','.join(['%s'] * len(vids))
-                    cur.execute(
-                        f"SELECT variant_id, COALESCE(MAX(sort_order),0) AS max_sort FROM sales_variant_image_mappings WHERE variant_id IN ({placeholders}) GROUP BY variant_id",
-                        tuple(vids)
-                    )
-                    for row in (cur.fetchall() or []):
-                        vid = self._parse_int(row.get('variant_id')) or 0
-                        if vid:
-                            max_sort_map[vid] = max(0, self._parse_int(row.get('max_sort')) or 0)
+                if aid and storage_path and action == 'move' and (not has_any_fabric) and (not is_cross_sku) and (not is_multi_variant_same_sku) and len(variant_union) == 1:
+                    try:
+                        vid0 = int(variant_union[0])
+                        folder_info = self._resolve_sales_variant_folder_by_variant_id(vid0, ensure_folder=True)
+                        target_folder = folder_info.get('folder_path')
+                        if target_folder:
+                            cur_abs = self._abs_from_storage_path(storage_path)
+                            cur_b = cur_abs if isinstance(cur_abs, (bytes, bytearray)) else self._safe_fsencode(cur_abs)
+                            tf = target_folder if isinstance(target_folder, (bytes, bytearray)) else self._safe_fsencode(target_folder)
+                            if cur_b and os.path.exists(cur_b) and os.path.abspath(os.path.dirname(cur_b)) != os.path.abspath(tf):
+                                base_str = self._safe_fsdecode(os.path.basename(cur_b))
+                                new_name = self._next_available_filename(tf, base_str)
+                                dst_abs = os.path.join(tf, self._safe_fsencode(new_name))
+                                os.replace(cur_b, dst_abs)
+                                storage_path = self._storage_path_from_abs(dst_abs)
+                                with conn.cursor() as cur:
+                                    cur.execute("UPDATE image_assets SET storage_path=%s WHERE id=%s", (storage_path, int(aid)))
+                                rehomed = True
+                                file_op_done = True
+                                if not rehome_kind:
+                                    rehome_kind = 'single_variant'
+                    except Exception:
+                        pass
 
                 linked = 0
                 skipped = 0
-                has_sim_tid = self._table_has_column(conn, 'sales_variant_image_mappings', 'image_type_id')
-                has_sim_created_by = self._table_has_column(conn, 'sales_variant_image_mappings', 'created_by')
-                cols = ['variant_id', 'image_asset_id']
-                if has_sim_tid:
-                    cols.append('image_type_id')
-                cols.append('sort_order')
-                if has_sim_created_by:
-                    cols.append('created_by')
-                ph = ','.join(['%s'] * len(cols))
-                dup_parts = ['sort_order=VALUES(sort_order)']
-                if has_sim_tid:
-                    dup_parts.append('image_type_id=VALUES(image_type_id)')
-                upsert_sql = (
-                    f"INSERT INTO sales_variant_image_mappings ({', '.join(cols)}) VALUES ({ph}) "
-                    f"ON DUPLICATE KEY UPDATE {', '.join(dup_parts)}"
-                )
-                batch_rows = []
-                for vid in vids:
-                    if vid in already_linked:
-                        skipped += 1
-                        continue
-                    sort_order = (max_sort_map.get(vid) or 0) + 1
-                    row = [int(vid), int(aid)]
-                    if has_sim_tid:
-                        row.append(int(image_type_id))
-                    row.append(int(sort_order))
-                    if has_sim_created_by:
-                        row.append(int(user_id) if user_id else None)
-                    batch_rows.append(tuple(row))
-                if batch_rows:
-                    with conn.cursor() as cur:
-                        cur.executemany(upsert_sql, batch_rows)
-                    linked = len(batch_rows)
+                if vids:
+                    has_var = self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id')
+                    if not has_var:
+                        return self.send_json({'status': 'error', 'message': 'sales_variant_image_mappings 缺少 variant_id，无法关联规格'}, start_response)
 
-                msg_parts = [f'已应用到 {linked} 个规格']
-                if skipped and prompt_duplicate:
-                    msg_parts.append(f'（{skipped} 个规格已存在关联，已跳过）')
-                if is_cross_sku:
-                    msg_parts.append('；检测到跨货号引用，图片将放入『通用图片』/主图')
-                elif is_multi_variant_same_sku:
-                    msg_parts.append('；同货号多规格引用，图片将放入该货号 主图/通用')
+                    already_linked = set()
+                    with conn.cursor() as cur:
+                        placeholders = ','.join(['%s'] * len(vids))
+                        cur.execute(
+                            f"SELECT variant_id FROM sales_variant_image_mappings WHERE variant_id IN ({placeholders}) AND image_asset_id=%s",
+                            tuple(vids + [aid]),
+                        )
+                        for row in (cur.fetchall() or []):
+                            already_linked.add(self._parse_int(row.get('variant_id')) or 0)
+
+                    max_sort_map = {vid: 0 for vid in vids}
+                    with conn.cursor() as cur:
+                        placeholders = ','.join(['%s'] * len(vids))
+                        cur.execute(
+                            f"SELECT variant_id, COALESCE(MAX(sort_order),0) AS max_sort FROM sales_variant_image_mappings WHERE variant_id IN ({placeholders}) GROUP BY variant_id",
+                            tuple(vids),
+                        )
+                        for row in (cur.fetchall() or []):
+                            vid = self._parse_int(row.get('variant_id')) or 0
+                            if vid:
+                                max_sort_map[vid] = max(0, self._parse_int(row.get('max_sort')) or 0)
+
+                    has_sim_tid = self._table_has_column(conn, 'sales_variant_image_mappings', 'image_type_id')
+                    has_sim_created_by = self._table_has_column(conn, 'sales_variant_image_mappings', 'created_by')
+                    cols = ['variant_id', 'image_asset_id']
+                    if has_sim_tid:
+                        cols.append('image_type_id')
+                    cols.append('sort_order')
+                    if has_sim_created_by:
+                        cols.append('created_by')
+                    ph = ','.join(['%s'] * len(cols))
+                    dup_parts = ['sort_order=VALUES(sort_order)']
+                    if has_sim_tid:
+                        dup_parts.append('image_type_id=VALUES(image_type_id)')
+                    upsert_sql = (
+                        f"INSERT INTO sales_variant_image_mappings ({', '.join(cols)}) VALUES ({ph}) "
+                        f"ON DUPLICATE KEY UPDATE {', '.join(dup_parts)}"
+                    )
+                    batch_rows = []
+                    for vid in vids:
+                        if vid in already_linked:
+                            skipped += 1
+                            continue
+                        sort_order = (max_sort_map.get(vid) or 0) + 1
+                        row = [int(vid), int(aid)]
+                        if has_sim_tid:
+                            row.append(int(image_type_id))
+                        row.append(int(sort_order))
+                        if has_sim_created_by:
+                            row.append(int(user_id) if user_id else None)
+                        batch_rows.append(tuple(row))
+                    if batch_rows:
+                        with conn.cursor() as cur:
+                            cur.executemany(upsert_sql, batch_rows)
+                        linked = len(batch_rows)
+
+                linked_fab = 0
+                skipped_fab = 0
+                if fids and self._has_required_tables(['fabric_image_mappings']):
+                    fim_has_cb = self._table_has_column(conn, 'fabric_image_mappings', 'created_by')
+                    already_f = set()
+                    with conn.cursor() as cur:
+                        placeholders = ','.join(['%s'] * len(fids))
+                        cur.execute(
+                            f"SELECT fabric_id FROM fabric_image_mappings WHERE fabric_id IN ({placeholders}) AND image_asset_id=%s",
+                            tuple(fids + [aid]),
+                        )
+                        for row in (cur.fetchall() or []):
+                            already_f.add(self._parse_int(row.get('fabric_id')) or 0)
+                    max_f_sort = {fid: 0 for fid in fids}
+                    with conn.cursor() as cur:
+                        placeholders = ','.join(['%s'] * len(fids))
+                        cur.execute(
+                            f"SELECT fabric_id, COALESCE(MAX(sort_order),0) AS mx FROM fabric_image_mappings WHERE fabric_id IN ({placeholders}) GROUP BY fabric_id",
+                            tuple(fids),
+                        )
+                        for row in (cur.fetchall() or []):
+                            fid = self._parse_int(row.get('fabric_id')) or 0
+                            if fid:
+                                max_f_sort[fid] = max(0, self._parse_int(row.get('mx')) or 0)
+                    fab_rows = []
+                    for fid in fids:
+                        if fid in already_f:
+                            skipped_fab += 1
+                            continue
+                        so = (max_f_sort.get(fid) or 0) + 1
+                        if fim_has_cb:
+                            fab_rows.append((int(fid), int(aid), int(so), int(user_id) if user_id else None))
+                        else:
+                            fab_rows.append((int(fid), int(aid), int(so)))
+                    if fab_rows:
+                        with conn.cursor() as cur:
+                            if fim_has_cb:
+                                cur.executemany(
+                                    "INSERT INTO fabric_image_mappings (fabric_id, image_asset_id, sort_order, created_by) VALUES (%s,%s,%s,%s) "
+                                    "ON DUPLICATE KEY UPDATE sort_order=VALUES(sort_order)",
+                                    fab_rows,
+                                )
+                            else:
+                                cur.executemany(
+                                    "INSERT INTO fabric_image_mappings (fabric_id, image_asset_id, sort_order) VALUES (%s,%s,%s) "
+                                    "ON DUPLICATE KEY UPDATE sort_order=VALUES(sort_order)",
+                                    fab_rows,
+                                )
+                        linked_fab = len(fab_rows)
+
+                linked_op = 0
+                skipped_op = 0
+                if opids and self._has_required_tables(['order_product_image_mappings']):
+                    already_o = set()
+                    with conn.cursor() as cur:
+                        placeholders = ','.join(['%s'] * len(opids))
+                        cur.execute(
+                            f"SELECT order_product_id FROM order_product_image_mappings WHERE order_product_id IN ({placeholders}) AND image_asset_id=%s",
+                            tuple(opids + [aid]),
+                        )
+                        for row in (cur.fetchall() or []):
+                            already_o.add(self._parse_int(row.get('order_product_id')) or 0)
+                    max_o = {oid: 0 for oid in opids}
+                    with conn.cursor() as cur:
+                        placeholders = ','.join(['%s'] * len(opids))
+                        cur.execute(
+                            f"SELECT order_product_id, COALESCE(MAX(sort_order),0) AS mx FROM order_product_image_mappings WHERE order_product_id IN ({placeholders}) GROUP BY order_product_id",
+                            tuple(opids),
+                        )
+                        for row in (cur.fetchall() or []):
+                            oid = self._parse_int(row.get('order_product_id')) or 0
+                            if oid:
+                                max_o[oid] = max(0, self._parse_int(row.get('mx')) or 0)
+                    op_rows = []
+                    for oid in opids:
+                        if oid in already_o:
+                            skipped_op += 1
+                            continue
+                        so = (max_o.get(oid) or 0) + 1
+                        op_rows.append((int(oid), int(aid), int(so)))
+                    if op_rows:
+                        with conn.cursor() as cur:
+                            cur.executemany(
+                                "INSERT INTO order_product_image_mappings (order_product_id, image_asset_id, sort_order) VALUES (%s,%s,%s) "
+                                "ON DUPLICATE KEY UPDATE sort_order=VALUES(sort_order)",
+                                op_rows,
+                            )
+                        linked_op = len(op_rows)
+
+                if aid:
+                    try:
+                        self._rehome_image_asset_if_needed(conn, int(aid))
+                    except Exception:
+                        pass
+                    try:
+                        with conn.cursor() as cur:
+                            cur.execute("SELECT storage_path FROM image_assets WHERE id=%s LIMIT 1", (int(aid),))
+                            sp_row = cur.fetchone() or {}
+                            if (sp_row.get('storage_path') or '').strip():
+                                storage_path = str(sp_row.get('storage_path') or '').strip()
+                    except Exception:
+                        pass
+
+                msg_parts = []
+                if vids:
+                    msg_parts.append(f'已关联 {linked} 个规格')
+                    if skipped and prompt_duplicate:
+                        msg_parts.append(f'（{skipped} 个规格已有关联，已跳过）')
+                if fids:
+                    msg_parts.append(f'面料 {linked_fab} 条')
+                    if skipped_fab and prompt_duplicate:
+                        msg_parts.append(f'（面料跳过 {skipped_fab}）')
+                if opids:
+                    msg_parts.append(f'下单产品 {linked_op} 条')
+                    if skipped_op and prompt_duplicate:
+                        msg_parts.append(f'（下单产品跳过 {skipped_op}）')
+                if not msg_parts:
+                    msg_parts.append('未写入新关联')
+                if is_cross_sku and vids and (not has_any_fabric):
+                    msg_parts.append('；规格侧检测到跨货号引用')
+                elif is_multi_variant_same_sku and vids and (not has_any_fabric):
+                    msg_parts.append('；规格侧同货号多规格引用')
                 if rehome_kind:
-                    msg_parts.append('（已移动归一化）' if rehomed else '（归一化失败则保持原路径）')
+                    msg_parts.append('（已尝试归一化路径）' if rehomed else '（归一化失败则保持原路径）')
                 if existing:
-                    msg_parts.append('；图片已存在于数据库，已复用记录')
+                    msg_parts.append('；已复用数据库中的同图记录')
                 elif created_new_asset:
-                    msg_parts.append('；已写入数据库并建立关联')
+                    msg_parts.append('；已新建 image_assets')
+
                 return self.send_json({
                     'status': 'success',
                     'message': ''.join(msg_parts),
@@ -796,6 +1142,12 @@ class SalesProductMixin:
                     'created_new_asset': bool(created_new_asset),
                     'file_op_done': bool(file_op_done),
                     'recycled_duplicate': bool(recycled_duplicate),
+                    'linked_variants': int(linked),
+                    'already_linked_variants': int(skipped),
+                    'linked_fabrics': int(linked_fab),
+                    'skipped_fabrics': int(skipped_fab),
+                    'linked_order_products': int(linked_op),
+                    'skipped_order_products': int(skipped_op),
                     'linked': int(linked),
                     'already_linked': int(skipped),
                     'rehome_kind': rehome_kind,
@@ -944,12 +1296,183 @@ class SalesProductMixin:
         except Exception:
             return []
 
+    def _get_asset_referenced_fabric_ids(self, conn, asset_id):
+        """Return distinct fabric_ids already referencing this asset."""
+        aid = int(asset_id or 0)
+        if aid <= 0:
+            return []
+        if not self._has_required_tables(['fabric_image_mappings']):
+            return []
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT DISTINCT fabric_id FROM fabric_image_mappings WHERE image_asset_id=%s AND fabric_id IS NOT NULL AND fabric_id>0",
+                    (aid,),
+                )
+                fids = [self._parse_int(r.get('fabric_id')) or 0 for r in (cur.fetchall() or [])]
+            fids = [f for f in fids if f > 0]
+            return sorted(set(fids))
+        except Exception:
+            return []
+
+    def _get_asset_referenced_order_product_ids(self, conn, asset_id):
+        """Return distinct order_product_ids already referencing this asset."""
+        aid = int(asset_id or 0)
+        if aid <= 0:
+            return []
+        if not self._has_required_tables(['order_product_image_mappings']):
+            return []
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT DISTINCT order_product_id FROM order_product_image_mappings WHERE image_asset_id=%s AND order_product_id IS NOT NULL AND order_product_id>0",
+                    (aid,),
+                )
+                ids = [self._parse_int(r.get('order_product_id')) or 0 for r in (cur.fetchall() or [])]
+            ids = [v for v in ids if v > 0]
+            return sorted(set(ids))
+        except Exception:
+            return []
+
+    def _detect_cross_sku_family_by_order_product_ids(self, conn, order_product_ids):
+        """Return sorted distinct sku_family list for given order_product_ids."""
+        ids = [int(v or 0) for v in (order_product_ids or []) if int(v or 0) > 0]
+        ids = sorted(set(ids))
+        if not ids:
+            return []
+        placeholders = ','.join(['%s'] * len(ids))
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT DISTINCT pf.sku_family
+                    FROM order_products op
+                    LEFT JOIN product_families pf ON pf.id = op.sku_family_id
+                    WHERE op.id IN ({placeholders})
+                    """,
+                    tuple(ids),
+                )
+                sku_list = [str(r.get('sku_family') or '').strip() for r in (cur.fetchall() or [])]
+            sku_list = [s for s in sku_list if s]
+            sku_list = sorted(set(sku_list))
+            return sku_list
+        except Exception:
+            return []
+
+    def _read_image_type_scope_flags(self, conn, image_type_id):
+        tid = int(image_type_id or 0)
+        if not tid:
+            return {'applies_fabric': True, 'applies_sales': True, 'applies_order_product': True}
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        COALESCE(applies_fabric, 1) AS applies_fabric,
+                        COALESCE(applies_sales, 1) AS applies_sales,
+                        COALESCE(applies_order_product, 1) AS applies_order_product
+                    FROM image_types
+                    WHERE id=%s
+                    LIMIT 1
+                    """,
+                    (tid,),
+                )
+                row = cur.fetchone() or {}
+            if not row:
+                return {'applies_fabric': True, 'applies_sales': True, 'applies_order_product': True}
+            return {
+                'applies_fabric': bool(int(row.get('applies_fabric') or 0)),
+                'applies_sales': bool(int(row.get('applies_sales') or 0)),
+                'applies_order_product': bool(int(row.get('applies_order_product') or 0)),
+            }
+        except Exception:
+            return {'applies_fabric': True, 'applies_sales': True, 'applies_order_product': True}
+
+    def _gallery_validate_type_for_link_targets(self, conn, image_type_id, want_fabric, want_variant, want_op):
+        flags = self._read_image_type_scope_flags(conn, image_type_id)
+        if want_fabric and not flags['applies_fabric']:
+            return False, '当前图片类型不允许关联面料'
+        if want_variant and not flags['applies_sales']:
+            return False, '当前图片类型不允许关联销售规格'
+        if want_op and not flags['applies_order_product']:
+            return False, '当前图片类型不允许关联下单产品'
+        return True, ''
+
+    def _gallery_validate_asset_type_compatible(self, conn, asset_id, image_type_id):
+        """Ensure existing DB mappings are allowed for the chosen image type (e.g. after type change)."""
+        aid = int(asset_id or 0)
+        tid = int(image_type_id or 0)
+        if aid <= 0 or tid <= 0:
+            return True, ''
+        flags = self._read_image_type_scope_flags(conn, tid)
+        if not flags['applies_fabric']:
+            try:
+                if self._has_required_tables(['fabric_image_mappings']):
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT COUNT(1) AS c FROM fabric_image_mappings WHERE image_asset_id=%s", (aid,))
+                        c = self._parse_int((cur.fetchone() or {}).get('c')) or 0
+                    if c > 0:
+                        return False, '该图片已关联面料，但所选类型不适用面料'
+            except Exception:
+                pass
+        if not flags['applies_sales']:
+            try:
+                vids = self._get_asset_referenced_variant_ids(conn, aid) or []
+                if vids:
+                    return False, '该图片已关联销售规格，但所选类型不适用规格主图'
+            except Exception:
+                pass
+        if not flags['applies_order_product']:
+            try:
+                opids = self._get_asset_referenced_order_product_ids(conn, aid) or []
+                if opids:
+                    return False, '该图片已关联下单产品，但所选类型不适用下单产品主图'
+            except Exception:
+                pass
+        return True, ''
+
+    def _gallery_resolve_new_asset_folder(self, conn, fabric_ids, variant_ids, order_product_ids):
+        """Physical folder for a brand-new image_assets row (priority: 面料 > 规格主图 > 配件图). Returns absolute path (bytes) or None."""
+        fids = sorted(set(int(x or 0) for x in (fabric_ids or []) if int(x or 0) > 0))
+        vids = sorted(set(int(x or 0) for x in (variant_ids or []) if int(x or 0) > 0))
+        opids = sorted(set(int(x or 0) for x in (order_product_ids or []) if int(x or 0) > 0))
+        if fids:
+            return self._ensure_fabric_folder()
+        if vids:
+            sku_families = self._detect_cross_sku_family_by_variant_ids(conn, vids)
+            is_cross_sku = len(sku_families) > 1
+            is_multi_variant_same_sku = (not is_cross_sku) and (len(vids) > 1) and (len(sku_families) == 1)
+            if is_cross_sku:
+                return self._ensure_listing_sales_global_common_folder()
+            if is_multi_variant_same_sku:
+                return self._ensure_listing_sales_common_folder(sku_families[0])
+            folder_info = self._resolve_sales_variant_folder_by_variant_id(vids[0], ensure_folder=True)
+            return folder_info.get('folder_path')
+        if opids:
+            sku_families = self._detect_cross_sku_family_by_order_product_ids(conn, opids) or []
+            sku_families = [s for s in sku_families if s]
+            if len(opids) > 1:
+                if len(set(sku_families)) > 1:
+                    return self._ensure_listing_sales_global_common_folder()
+                if sku_families:
+                    return self._ensure_order_product_common_folder(sku_families[0])
+            info = self._resolve_order_product_main_image_folder(opids[0], ensure_folder=True)
+            return info.get('folder_path')
+        return None
+
     def _choose_rehome_target(self, conn, asset_id):
         """
         Decide where an asset should live based on references:
         - If referenced by any fabric -> 『面料』/
-        - Else if referenced by multiple variants -> <货号>/主图/通用/
-        - Else keep as-is (usually in <货号>/主图/<规格-面料>/)
+        - Else if referenced by both order_product and sales variants:
+          - If linked to exactly 1 variant -> <货号>/主图/<规格-面料>/
+          - If linked to 2+ variants:
+            - If variants span multiple sku_families -> 『通用图片』/主图/
+            - Else -> <货号>/主图/通用/
+        - Else if referenced by multiple variants:
+          - If variants span multiple sku_families -> 『通用图片』/主图/
+          - Else -> <货号>/主图/通用/
+        - Else keep as-is (usually in <货号>/主图/<规格-面料>/ or <货号>/配件图/<规格与数量简称>/)
         Returns absolute folder path (bytes) or None.
         """
         aid = int(asset_id or 0)
@@ -958,6 +1481,7 @@ class SalesProductMixin:
 
         fabric_ref = 0
         variant_ids = []
+        order_product_ids = []
         try:
             with conn.cursor() as cur:
                 if self._has_required_tables(['fabric_image_mappings']):
@@ -967,42 +1491,61 @@ class SalesProductMixin:
             fabric_ref = 0
 
         try:
-            with conn.cursor() as cur:
-                if self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id'):
-                    cur.execute(
-                        "SELECT DISTINCT variant_id FROM sales_variant_image_mappings WHERE image_asset_id=%s AND variant_id IS NOT NULL AND variant_id>0",
-                        (aid,),
-                    )
-                    variant_ids = [self._parse_int(r.get('variant_id')) for r in (cur.fetchall() or [])]
-                    variant_ids = [v for v in variant_ids if v]
-                else:
-                    variant_ids = []
+            variant_ids = self._get_asset_referenced_variant_ids(conn, aid) or []
         except Exception:
             variant_ids = []
+
+        try:
+            order_product_ids = self._get_asset_referenced_order_product_ids(conn, aid) or []
+        except Exception:
+            order_product_ids = []
 
         if fabric_ref > 0:
             return self._join_resources('『面料』')
 
-        if len(set(variant_ids)) > 1:
-            # Pick one sku_family from any referenced variant and use its 通用 folder
-            try:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        SELECT pf.sku_family
-                        FROM sales_product_variants v
-                        LEFT JOIN product_families pf ON pf.id = v.sku_family_id
-                        WHERE v.id=%s
-                        LIMIT 1
-                        """,
-                        (variant_ids[0],),
-                    )
-                    row = cur.fetchone() or {}
-                    sku_family = (row.get('sku_family') or '').strip()
-                    if sku_family:
-                        return self._ensure_listing_sales_common_folder(sku_family)
-            except Exception:
-                pass
+        # If asset is shared between order_product and sales variants: always prefer main image folders.
+        if order_product_ids and variant_ids:
+            vids = sorted(set(int(v or 0) for v in variant_ids if int(v or 0) > 0))
+            if len(vids) == 1:
+                try:
+                    info = self._resolve_sales_variant_folder_by_variant_id(vids[0], ensure_folder=True)
+                    folder = info.get('folder_path')
+                    return folder if folder else None
+                except Exception:
+                    return None
+            # 2+ variants -> common; cross-sku -> global common
+            sku_list = self._detect_cross_sku_family_by_variant_ids(conn, vids) or []
+            sku_list = [s for s in sku_list if s]
+            if len(set(sku_list)) > 1:
+                return self._ensure_listing_sales_global_common_folder()
+            if sku_list:
+                return self._ensure_listing_sales_common_folder(sku_list[0])
+            # Fallback: infer from order_product sku_family
+            sku_list2 = self._detect_cross_sku_family_by_order_product_ids(conn, order_product_ids) or []
+            sku_list2 = [s for s in sku_list2 if s]
+            if len(set(sku_list2)) > 1:
+                return self._ensure_listing_sales_global_common_folder()
+            if sku_list2:
+                return self._ensure_listing_sales_common_folder(sku_list2[0])
+            return None
+
+        # Sales variants only: multi-variant -> common
+        vids = sorted(set(int(v or 0) for v in variant_ids if int(v or 0) > 0))
+        if len(vids) > 1:
+            sku_list = self._detect_cross_sku_family_by_variant_ids(conn, vids) or []
+            sku_list = [s for s in sku_list if s]
+            if len(set(sku_list)) > 1:
+                return self._ensure_listing_sales_global_common_folder()
+            if sku_list:
+                return self._ensure_listing_sales_common_folder(sku_list[0])
+
+        # Order products only: keep accessory logic (multiple -> 配件图/通用 under that sku_family when possible)
+        if order_product_ids and (not vids):
+            if len(set(int(x or 0) for x in order_product_ids if int(x or 0) > 0)) > 1:
+                sku_list2 = self._detect_cross_sku_family_by_order_product_ids(conn, order_product_ids) or []
+                sku_list2 = [s for s in sku_list2 if s]
+                if sku_list2:
+                    return self._ensure_order_product_common_folder(sku_list2[0])
         return None
 
     def _rehome_image_asset_if_needed(self, conn, asset_id):
@@ -4794,6 +5337,7 @@ class SalesProductMixin:
             folder_info = self._resolve_order_product_main_image_folder(order_product_id, ensure_folder=True)
             folder_abs = folder_info.get('folder_path')
             created = []
+            touched_asset_ids = []
             with self._get_db_connection() as conn:
                 type_id = self._get_image_type_id_by_name(conn, image_type_name) if image_type_name else 0
                 sort_start = self._get_order_product_image_sort_start(conn, order_product_id)
@@ -4834,6 +5378,8 @@ class SalesProductMixin:
                                 (storage_path, sha256, file_size, (type_id or None), os.path.basename(abs_target)),
                             )
                             aid = cur.lastrowid
+                            if aid:
+                                touched_asset_ids.append(int(aid))
                         else:
                             cur.execute("SELECT COUNT(1) AS cnt FROM order_product_image_mappings WHERE image_asset_id=%s", (aid,))
                             order_refs = self._parse_int((cur.fetchone() or {}).get('cnt')) or 0
@@ -4856,6 +5402,8 @@ class SalesProductMixin:
                                     pass
                             if type_id:
                                 cur.execute("UPDATE image_assets SET image_type_id=%s WHERE id=%s", (type_id, aid))
+                            if aid:
+                                touched_asset_ids.append(int(aid))
                         cur.execute(
                             """
                             INSERT INTO order_product_image_mappings (order_product_id, image_asset_id, sort_order)
@@ -4865,6 +5413,12 @@ class SalesProductMixin:
                             (order_product_id, aid, sort_start + idx),
                         )
                         created.append(os.path.basename(storage_path or final_name))
+                # After commit: apply rehome rules (e.g. when this asset is also linked to sales variants)
+                try:
+                    for aid in sorted(set(touched_asset_ids)):
+                        self._rehome_image_asset_if_needed(conn, aid)
+                except Exception:
+                    pass
             return self.send_json({'status': 'success', 'files': created, 'linked': len(created)}, start_response)
         except RuntimeError as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
@@ -4974,6 +5528,7 @@ class SalesProductMixin:
                 linked = 0
                 created_assets = 0
                 moved = 0
+                touched_asset_ids = []
                 with conn.cursor() as cur:
                     for row in prepared:
                         aid = int(row.get('asset_id') or 0)
@@ -5006,9 +5561,13 @@ class SalesProductMixin:
                             )
                             aid = cur.lastrowid
                             created_assets += 1
+                            if aid:
+                                touched_asset_ids.append(int(aid))
                         else:
                             if type_id:
                                 cur.execute("UPDATE image_assets SET image_type_id=%s WHERE id=%s", (type_id, aid))
+                            if aid:
+                                touched_asset_ids.append(int(aid))
                         if not aid:
                             continue
                         cur.execute(
@@ -5020,6 +5579,12 @@ class SalesProductMixin:
                             (order_product_id, aid, sort_start + int(row.get('idx') or 0)),
                         )
                         linked += 1
+                # Rehome based on combined references (order_product + sales variants) best-effort.
+                try:
+                    for aid in sorted(set(touched_asset_ids)):
+                        self._rehome_image_asset_if_needed(conn, aid)
+                except Exception:
+                    pass
                 return self.send_json({
                     'status': 'success',
                     'file_count': len(prepared),

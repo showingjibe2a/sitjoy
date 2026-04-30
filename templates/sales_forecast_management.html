@@ -58,10 +58,6 @@
             align-items: center;
             gap: 0.25rem;
         }
-        .sf-month-picker {
-            position: relative;
-            display: inline-block;
-        }
         .sf-month-picker-btn {
             min-width: 120px;
             justify-content: space-between;
@@ -74,20 +70,6 @@
             font-size: 0.65rem;
             color: #6f6456;
         }
-        .sf-month-picker-panel {
-            position: absolute;
-            top: calc(100% + 6px);
-            left: 0;
-            z-index: 20;
-            width: 260px;
-            background: #fff;
-            border: 1px solid rgba(207, 199, 189, 0.8);
-            border-radius: 10px;
-            box-shadow: 0 10px 24px rgba(35, 28, 20, 0.15);
-            padding: 0.6rem;
-            display: none;
-        }
-        .sf-month-picker-panel.open { display: block; }
         .sf-month-picker-head {
             display: flex;
             align-items: center;
@@ -102,20 +84,62 @@
         .sf-month-picker-grid {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 0.35rem;
+            gap: 0.6rem 0.7rem;
         }
         .sf-month-picker-opt {
             border: 1px solid rgba(207, 199, 189, 0.75);
             background: #f8f3e9;
             border-radius: 8px;
             height: 34px;
+            min-width: 56px;
+            width: 100%;
             font-size: 0.84rem;
             color: #4f463b;
             cursor: pointer;
+            text-align: center;
         }
         .sf-month-picker-opt:hover {
             background: #f0e7d7;
             border-color: #cabda9;
+        }
+        .sf-month-picker-popover {
+            position: fixed;
+            z-index: 5900;
+            width: 268px;
+            padding: 0.62rem;
+            background: rgba(243, 240, 236, 0.98);
+            border: 1px solid rgba(207, 199, 189, 0.9);
+            border-radius: 12px;
+            box-shadow: 0 16px 34px rgba(15, 23, 42, 0.2);
+            display: none;
+            opacity: 0;
+            transform: translateY(6px);
+            transition: opacity 0.16s ease, transform 0.16s ease;
+            pointer-events: none;
+            box-sizing: border-box;
+        }
+        .sf-month-picker-popover.is-open {
+            display: block;
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+        .sf-month-picker-popover .sf-month-picker-head {
+            margin-bottom: 0.45rem;
+        }
+        .sf-month-picker-opt.is-active {
+            background: #ede2cb;
+            border-color: #b7a78c;
+            font-weight: 700;
+        }
+        .sf-month-input-wrap {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+        }
+        .sf-month-input-wrap input[type="month"] {
+            padding-right: 1.6rem;
+            cursor: pointer;
         }
         .sf-divider {
             width: 1px;
@@ -470,17 +494,7 @@
                     <div id="forecastMonthChips" class="sf-month-chip-row"></div>
                     <div class="sf-month-chip-add">
                         <input type="hidden" id="addMonthInput">
-                        <div class="sf-month-picker" id="addMonthPicker">
-                            <button type="button" class="btn-secondary sf-month-picker-btn" id="addMonthPickerBtn">选择月份</button>
-                            <div class="sf-month-picker-panel" id="addMonthPickerPanel">
-                                <div class="sf-month-picker-head">
-                                    <button type="button" class="btn-ghost" id="addMonthPickerPrevYear">&#9664;</button>
-                                    <span class="sf-month-picker-year" id="addMonthPickerYearLabel"></span>
-                                    <button type="button" class="btn-ghost" id="addMonthPickerNextYear">&#9654;</button>
-                                </div>
-                                <div class="sf-month-picker-grid" id="addMonthPickerMonths"></div>
-                            </div>
-                        </div>
+                        <button type="button" class="btn-secondary sf-month-picker-btn" id="addMonthPickerBtn">选择月份</button>
                         <button class="btn-secondary" id="addMonthAddBtn" type="button">添加</button>
                     </div>
                     <button class="btn-secondary" type="button" data-future="3">未来3月</button>
@@ -490,9 +504,9 @@
                 <span class="sf-divider" aria-hidden="true"></span>
                 <div class="sf-toolbar-group">
                     <label>历史销量范围：</label>
-                    <input type="month" id="historyStart">
+                    <span class="sf-month-input-wrap"><input type="month" id="historyStart" readonly></span>
                     <span>至</span>
-                    <input type="month" id="historyEnd">
+                    <span class="sf-month-input-wrap"><input type="month" id="historyEnd" readonly></span>
                 </div>
                 <span class="sf-divider" aria-hidden="true"></span>
                 <div class="sf-toolbar-group">
@@ -510,7 +524,7 @@
         </div>
 
         <div class="sf-table-wrap" id="forecastTableWrap">
-            <table class="sf-table" id="forecastTable">
+            <table class="sf-table" id="forecastTable" data-disable-table-manage="1">
                 <thead id="forecastThead"></thead>
                 <tbody id="forecastTbody"></tbody>
             </table>
@@ -641,35 +655,147 @@
         }
 
         function renderAddMonthPicker() {
-            const yearLabel = document.getElementById('addMonthPickerYearLabel');
-            const monthsWrap = document.getElementById('addMonthPickerMonths');
-            if (!yearLabel || !monthsWrap) return;
-            const year = Number(state.monthPickerYear || new Date().getFullYear());
-            state.monthPickerYear = year;
-            yearLabel.textContent = String(year);
-            const monthNames = ['01月','02月','03月','04月','05月','06月','07月','08月','09月','10月','11月','12月'];
-            monthsWrap.innerHTML = monthNames.map((label, idx) => (
-                `<button type="button" class="sf-month-picker-opt" data-month="${idx + 1}">${label}</button>`
-            )).join('');
-            monthsWrap.querySelectorAll('.sf-month-picker-opt').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const month = Math.max(1, Math.min(12, parseInt(btn.dataset.month || '1', 10) || 1));
-                    const ymd = String(year).padStart(4, '0') + '-' + pad2(month) + '-01';
-                    const hidden = document.getElementById('addMonthInput');
-                    if (hidden) hidden.value = ymd.slice(0, 7);
-                    const pickerBtn = document.getElementById('addMonthPickerBtn');
-                    if (pickerBtn) pickerBtn.textContent = ymd.slice(0, 7);
-                    toggleAddMonthPicker(false);
+            // compat noop: replaced by global month dialog
+        }
+
+        function positionSfMonthPopoverNear(anchor, panel) {
+            if (!anchor || !panel) return;
+            const rect = anchor.getBoundingClientRect();
+            const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+            const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+            panel.style.visibility = 'hidden';
+            panel.style.display = 'block';
+            const pr = panel.getBoundingClientRect();
+            let left = rect.left;
+            if (left + pr.width > vw - 8) left = vw - pr.width - 8;
+            left = Math.max(8, left);
+            let top = rect.bottom + 8;
+            if (top + pr.height > vh - 8) top = rect.top - pr.height - 8;
+            top = Math.max(8, top);
+            panel.style.left = `${left}px`;
+            panel.style.top = `${top}px`;
+            panel.style.visibility = 'visible';
+        }
+
+        function ensureGlobalMonthPickerDialog() {
+            if (window.__sfGlobalMonthPickerReady) return;
+            window.__sfGlobalMonthPickerReady = true;
+            window.__sfGlobalMonthPickerState = { year: new Date().getFullYear(), selected: '', anchor: null };
+            const panel = document.createElement('div');
+            panel.id = 'sfGlobalMonthPickerPopover';
+            panel.className = 'sf-month-picker-popover';
+            panel.innerHTML = `
+                <div class="sf-month-picker-head">
+                    <button type="button" class="btn-ghost" id="sfGlobalMonthPrevYear">&#9664;</button>
+                    <span class="sf-month-picker-year" id="sfGlobalMonthYearLabel"></span>
+                    <button type="button" class="btn-ghost" id="sfGlobalMonthNextYear">&#9654;</button>
+                </div>
+                <div class="sf-month-picker-grid" id="sfGlobalMonthGrid"></div>
+            `;
+            document.body.appendChild(panel);
+            const render = () => {
+                const st = window.__sfGlobalMonthPickerState || {};
+                const year = Number(st.year || new Date().getFullYear());
+                st.year = year;
+                window.__sfGlobalMonthPickerState = st;
+                const yearLabel = document.getElementById('sfGlobalMonthYearLabel');
+                const grid = document.getElementById('sfGlobalMonthGrid');
+                if (yearLabel) yearLabel.textContent = String(year);
+                if (!grid) return;
+                const selected = String(st.selected || '');
+                grid.innerHTML = Array.from({ length: 12 }).map((_, idx) => {
+                    const monthNo = idx + 1;
+                    const ymd = String(year).padStart(4, '0') + '-' + pad2(monthNo);
+                    const active = selected === ymd ? ' is-active' : '';
+                    return `<button type="button" class="sf-month-picker-opt${active}" data-month="${monthNo}">${pad2(monthNo)}月</button>`;
+                }).join('');
+                grid.querySelectorAll('.sf-month-picker-opt[data-month]').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const monthNo = Math.max(1, Math.min(12, parseInt(btn.dataset.month || '1', 10) || 1));
+                        const picked = String(year).padStart(4, '0') + '-' + pad2(monthNo);
+                        const cb = window.__sfGlobalMonthPickerState && window.__sfGlobalMonthPickerState.onPick;
+                        closeGlobalMonthPickerDialog();
+                        if (typeof cb === 'function') cb(picked);
+                    });
                 });
+                if (st.anchor) positionSfMonthPopoverNear(st.anchor, panel);
+            };
+            const open = (opts) => {
+                const conf = opts || {};
+                const anchor = conf.anchor;
+                if (!anchor || !anchor.getBoundingClientRect) return;
+                const st = window.__sfGlobalMonthPickerState || {};
+                st.anchor = anchor;
+                const initVal = String(conf.value || '').trim();
+                st.selected = /^\d{4}-\d{2}$/.test(initVal) ? initVal : '';
+                st.year = st.selected ? parseInt(st.selected.slice(0, 4), 10) : (Number(conf.year || new Date().getFullYear()) || new Date().getFullYear());
+                st.onPick = typeof conf.onPick === 'function' ? conf.onPick : null;
+                window.__sfGlobalMonthPickerState = st;
+                render();
+                panel.classList.add('is-open');
+                if (window.__sfMonthOutsideCloser) {
+                    document.removeEventListener('mousedown', window.__sfMonthOutsideCloser, true);
+                    window.__sfMonthOutsideCloser = null;
+                }
+                window.__sfMonthOutsideCloser = (ev) => {
+                    if (!panel.classList.contains('is-open')) return;
+                    const t = ev.target;
+                    if (panel.contains(t)) return;
+                    if (anchor === t || (anchor.contains && anchor.contains(t))) return;
+                    closeGlobalMonthPickerDialog();
+                };
+                window.requestAnimationFrame(() => {
+                    document.addEventListener('mousedown', window.__sfMonthOutsideCloser, true);
+                });
+            };
+            document.getElementById('sfGlobalMonthPrevYear').addEventListener('click', (e) => {
+                e.stopPropagation();
+                const st = window.__sfGlobalMonthPickerState || {};
+                st.year = Number(st.year || new Date().getFullYear()) - 1;
+                window.__sfGlobalMonthPickerState = st;
+                render();
+            });
+            document.getElementById('sfGlobalMonthNextYear').addEventListener('click', (e) => {
+                e.stopPropagation();
+                const st = window.__sfGlobalMonthPickerState || {};
+                st.year = Number(st.year || new Date().getFullYear()) + 1;
+                window.__sfGlobalMonthPickerState = st;
+                render();
+            });
+            window.showGlobalMonthPickerDialog = open;
+            window.addEventListener('scroll', () => {
+                const p = document.getElementById('sfGlobalMonthPickerPopover');
+                const st = window.__sfGlobalMonthPickerState;
+                if (p && p.classList.contains('is-open') && st && st.anchor) positionSfMonthPopoverNear(st.anchor, p);
+            }, true);
+            window.addEventListener('resize', () => {
+                const p = document.getElementById('sfGlobalMonthPickerPopover');
+                const st = window.__sfGlobalMonthPickerState;
+                if (p && p.classList.contains('is-open') && st && st.anchor) positionSfMonthPopoverNear(st.anchor, p);
+            });
+            document.addEventListener('keydown', (e) => {
+                if (e.key !== 'Escape') return;
+                const p = document.getElementById('sfGlobalMonthPickerPopover');
+                if (p && p.classList.contains('is-open')) {
+                    e.preventDefault();
+                    closeGlobalMonthPickerDialog();
+                }
             });
         }
 
-        function toggleAddMonthPicker(forceOpen) {
-            const panel = document.getElementById('addMonthPickerPanel');
+        function closeGlobalMonthPickerDialog() {
+            const panel = document.getElementById('sfGlobalMonthPickerPopover');
+            if (window.__sfMonthOutsideCloser) {
+                document.removeEventListener('mousedown', window.__sfMonthOutsideCloser, true);
+                window.__sfMonthOutsideCloser = null;
+            }
             if (!panel) return;
-            const nextOpen = typeof forceOpen === 'boolean' ? forceOpen : !panel.classList.contains('open');
-            panel.classList.toggle('open', nextOpen);
-            if (nextOpen) renderAddMonthPicker();
+            panel.classList.remove('is-open');
+            panel.style.display = 'none';
+            panel.style.visibility = '';
+            const st = window.__sfGlobalMonthPickerState || {};
+            st.anchor = null;
+            window.__sfGlobalMonthPickerState = st;
         }
 
         function setLoading(active) {
@@ -1304,26 +1430,50 @@
             setForecastMonthsFuture(6);
 
             // 月份选择器
+            ensureGlobalMonthPickerDialog();
             const pickerBtn = document.getElementById('addMonthPickerBtn');
-            const pickerPanel = document.getElementById('addMonthPickerPanel');
-            const prevYearBtn = document.getElementById('addMonthPickerPrevYear');
-            const nextYearBtn = document.getElementById('addMonthPickerNextYear');
             if (pickerBtn) {
-                pickerBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleAddMonthPicker(); });
+                pickerBtn.addEventListener('click', () => {
+                    if (typeof window.showGlobalMonthPickerDialog !== 'function') return;
+                    const hidden = document.getElementById('addMonthInput');
+                    window.showGlobalMonthPickerDialog({
+                        anchor: pickerBtn,
+                        value: hidden && hidden.value ? String(hidden.value).slice(0, 7) : '',
+                        year: state.monthPickerYear,
+                        onPick: (pickedMonth) => {
+                            if (hidden) hidden.value = pickedMonth;
+                            pickerBtn.textContent = pickedMonth;
+                            state.monthPickerYear = parseInt(String(pickedMonth).slice(0, 4), 10) || state.monthPickerYear;
+                        }
+                    });
+                });
             }
-            if (prevYearBtn) {
-                prevYearBtn.addEventListener('click', () => { state.monthPickerYear = Number(state.monthPickerYear || new Date().getFullYear()) - 1; renderAddMonthPicker(); });
-            }
-            if (nextYearBtn) {
-                nextYearBtn.addEventListener('click', () => { state.monthPickerYear = Number(state.monthPickerYear || new Date().getFullYear()) + 1; renderAddMonthPicker(); });
-            }
-            document.addEventListener('click', (e) => {
-                if (!pickerPanel) return;
-                const pickerRoot = document.getElementById('addMonthPicker');
-                if (!pickerRoot) return;
-                if (pickerRoot.contains(e.target)) return;
-                toggleAddMonthPicker(false);
-            });
+            const bindHistoryMonthPicker = (id) => {
+                const input = document.getElementById(id);
+                if (!input) return;
+                const openPicker = (e) => {
+                    if (e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }
+                    if (typeof window.showGlobalMonthPickerDialog !== 'function') return;
+                    const currentVal = String(input.value || '').trim();
+                    window.showGlobalMonthPickerDialog({
+                        anchor: input,
+                        value: /^\d{4}-\d{2}$/.test(currentVal) ? currentVal : '',
+                        onPick: (pickedMonth) => {
+                            input.value = pickedMonth;
+                        }
+                    });
+                };
+                input.addEventListener('click', openPicker);
+                input.addEventListener('focus', openPicker);
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') openPicker(e);
+                });
+            };
+            bindHistoryMonthPicker('historyStart');
+            bindHistoryMonthPicker('historyEnd');
             document.addEventListener('click', (e) => {
                 if (e.target && e.target.closest && e.target.closest('.sf-tooltip-wrap')) return;
                 document.querySelectorAll('.sf-tooltip-wrap.is-pinned').forEach(node => {

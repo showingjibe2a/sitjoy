@@ -2901,6 +2901,9 @@ class LogisticsWarehouseMixin:
         try:
             query_params = parse_qs(environ.get('QUERY_STRING', ''))
             action = (query_params.get('action', [''])[0] or '').strip().lower()
+            sku_kind = str((query_params.get('sku_kind', [''])[0] or '')).strip().lower()
+            if sku_kind not in ('all', 'sales', 'accessory'):
+                sku_kind = 'all'
 
             if method != 'GET':
                 return self.send_error(405, 'Method not allowed', start_response)
@@ -2916,6 +2919,16 @@ class LogisticsWarehouseMixin:
 
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
+                    has_reship_col = self._table_has_column(conn, 'order_products', 'is_reship_accessory')
+                    if sku_kind == 'sales' and has_reship_col:
+                        op_kind_sql = ' AND COALESCE(op.is_reship_accessory, 0) = 0'
+                    elif sku_kind == 'accessory' and has_reship_col:
+                        op_kind_sql = ' AND COALESCE(op.is_reship_accessory, 0) = 1'
+                    elif sku_kind == 'accessory' and not has_reship_col:
+                        op_kind_sql = ' AND 1=0'
+                    else:
+                        op_kind_sql = ''
+
                     cur.execute("SELECT id, region_name, sort_order FROM logistics_destination_regions ORDER BY sort_order ASC, id ASC")
                     destination_region_rows = cur.fetchall() or []
                     for idx, rr in enumerate(destination_region_rows, start=1):
@@ -2937,12 +2950,13 @@ class LogisticsWarehouseMixin:
                     warehouse_rows = cur.fetchall() or []
 
                     cur.execute(
-                        """
+                        f"""
                         SELECT op.id, op.sku, pf.sku_family, op.is_iteration, op.is_on_market, op.source_order_product_id,
                                fm.fabric_name_en, fm.representative_color
                         FROM order_products op
                         LEFT JOIN product_families pf ON pf.id = op.sku_family_id
                         LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
+                        WHERE 1=1 {op_kind_sql}
                         ORDER BY op.sku DESC
                         """
                     )

@@ -61,7 +61,30 @@
 
       <div class="pm-section" style="margin-top: 1rem;">
         <div class="pm-section-body pm-form" style="grid-template-columns: 1fr;">
-          <h4 class="pm-section-title">批量应用到规格</h4>
+          <h4 class="pm-section-title">批量关联（面料 / 规格 / 下单产品）</h4>
+          <p class="helper-text" style="margin:0 0 0.5rem 0;">请先选择<strong>图片类型</strong>，再勾选面料、规格或下单产品。落盘优先级：『面料』目录 &gt; 货号/主图/规格-面料 &gt; 货号/配件图。</p>
+          <div class="form-group pm-form-full" style="margin:0;">
+            <label>已选面料</label>
+            <div style="margin-top:0.45rem;">
+              <table class="pm-table pm-table--compact" style="margin:0;">
+                <thead>
+                  <tr>
+                    <th style="width:160px;">面料代码</th>
+                    <th>英文名称</th>
+                    <th style="width:90px; text-align:right;">
+                      <button class="btn-secondary" type="button" id="pmImageEditFabricClearBtn" style="padding:0.28rem 0.55rem; font-size:0.82rem; min-height:28px;">清空</button>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody id="pmImageEditSelectedFabricTbody">
+                  <tr><td colspan="3" class="helper-text" style="text-align:center;">未选择</td></tr>
+                </tbody>
+              </table>
+              <div class="pm-actions" style="justify-content:flex-end; margin-top:0.45rem;">
+                <button class="btn-add" type="button" id="pmImageEditPickFabricBtn">选择面料</button>
+              </div>
+            </div>
+          </div>
           <div class="form-group pm-form-full" style="margin:0;">
             <label>已选规格</label>
             <div style="margin-top:0.45rem;">
@@ -82,6 +105,30 @@
               </table>
               <div class="pm-actions" style="justify-content:flex-end; margin-top:0.45rem;">
                 <button class="btn-add" type="button" id="pmImageEditPickVariantBtn">选择规格</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group pm-form-full" style="margin:0;">
+            <label>已选下单产品</label>
+            <div style="margin-top:0.45rem;">
+              <table class="pm-table pm-table--compact" style="margin:0;">
+                <thead>
+                  <tr>
+                    <th style="width:140px;">货号</th>
+                    <th style="width:220px;">SKU</th>
+                    <th>规格简称</th>
+                    <th style="width:90px; text-align:right;">
+                      <button class="btn-secondary" type="button" id="pmImageEditOrderProductClearBtn" style="padding:0.28rem 0.55rem; font-size:0.82rem; min-height:28px;">清空</button>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody id="pmImageEditSelectedOrderProductTbody">
+                  <tr><td colspan="4" class="helper-text" style="text-align:center;">未选择</td></tr>
+                </tbody>
+              </table>
+              <div class="pm-actions" style="justify-content:flex-end; margin-top:0.45rem;">
+                <button class="btn-add" type="button" id="pmImageEditPickOrderProductBtn">选择下单产品</button>
               </div>
             </div>
           </div>
@@ -108,9 +155,10 @@
 
     </div>
 
-    <div class="pm-modal-actions">
-      <button class="btn-secondary" type="button" id="pmImageEditCancelBtn">取消</button>
-      <button class="btn-primary" type="button" id="pmImageEditSubmitBtn">关联规格并提交修改</button>
+    <div class="pm-modal-actions" style="position:relative; flex-wrap:wrap; gap:0.5rem;">
+      <div id="pmImageEditApplyHint" style="flex:1 1 100%; order:3; color:#c0392b; font-size:0.86rem; line-height:1.35; min-height:1.2em;"></div>
+      <button class="btn-secondary" type="button" id="pmImageEditCancelBtn" style="order:1;">取消</button>
+      <button class="btn-primary" type="button" id="pmImageEditSubmitBtn" style="order:2;">保存并关联提交</button>
     </div>
   </div>
 </div>
