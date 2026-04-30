@@ -671,7 +671,7 @@
                         <div class="form-group" id="todoModalCompletedAtWrap" style="display:none;">
                             <label>完成时间</label>
                             <div class="todo-completed-at-row">
-                                <input type="datetime-local" id="todoModalCompletedAtInput" class="optional-field todo-completed-at-compact app-date-input" step="60" placeholder="YYYY-MM-DDTHH:MM">
+                                <input type="text" id="todoModalCompletedAtInput" class="optional-field todo-completed-at-compact app-datetime-text-input" placeholder="YYYY-MM-DD HH:MM">
                                 <button type="button" class="btn-secondary" id="todoModalCompletedAtPickBtn">选择</button>
                             </div>
                         </div>
@@ -1325,20 +1325,28 @@
                 const d = String(now.getDate()).padStart(2, '0');
                 const hh = String(now.getHours()).padStart(2, '0');
                 const mm = String(now.getMinutes()).padStart(2, '0');
-                completedInput.value = `${y}-${m}-${d}T${hh}:${mm}`;
-                window.todoModalCurrentCompletedAt = toCompletedAtSeconds(`${y}-${m}-${d}T${hh}:${mm}`);
+                completedInput.value = `${y}-${m}-${d} ${hh}:${mm}`;
+                window.todoModalCurrentCompletedAt = `${y}-${m}-${d} ${hh}:${mm}:00`;
             }
             syncRecurringDueDate();
         }
 
         function formatTodoDateTimeTextFromServer(text) {
-            return toDatetimeLocalValue(text || '');
+            const v = String(text || '').trim().replace('T', ' ');
+            const m = v.match(/^(\d{4}-\d{2}-\d{2})[ ](\d{2}):(\d{2})/);
+            if (!m) return '';
+            return `${m[1]} ${m[2]}:${m[3]}`;
         }
 
         function normalizeTodoCompletedAtInputValue(raw) {
-            const v = String(raw || '').trim().replace('T', ' ');
-            if (!v) return '';
-            const m = v.match(/^(\d{4})-(\d{2})-(\d{2})[ ](\d{2}):(\d{2})$/);
+            const v0 = String(raw || '').trim().replace('T', ' ');
+            if (!v0) return '';
+
+            // Flexible accept:
+            // - separators: "-", "/", ".", whitespace
+            // - month/day/hour/minute allow 1-2 digits (auto pad to 2)
+            // Examples: "2026-4-3 6:1" -> "2026-04-03 06:01"
+            const m = v0.match(/^(\d{4})\D*(\d{1,2})\D*(\d{1,2})\D+(\d{1,2})\D*(\d{1,2})$/);
             if (!m) return '';
             const y = parseInt(m[1], 10), mo = parseInt(m[2], 10), d = parseInt(m[3], 10);
             const hh = parseInt(m[4], 10), mm = parseInt(m[5], 10);
@@ -1354,19 +1362,27 @@
             return norm ? (norm + ':00') : '';
         }
 
-        function guardTodoCompletedAtInput(el) {
+        function guardTodoCompletedAtInput(el, opts) {
             if (!el) return true;
+            const conf = opts || {};
             const raw = String(el.value || '').trim();
             if (!raw) {
                 if (el.classList) el.classList.remove('app-date-invalid');
                 el.dataset.lastValid = '';
                 return true;
             }
-            const completedAt = toCompletedAtSeconds(raw);
-            if (completedAt) {
+            const norm = normalizeTodoCompletedAtInputValue(raw);
+            if (norm) {
                 if (el.classList) el.classList.remove('app-date-invalid');
-                el.dataset.lastValid = raw;
+                // normalize to padded form for better UX
+                el.value = norm;
+                el.dataset.lastValid = norm;
                 return true;
+            }
+            if (conf.soft) {
+                // during typing: do not interrupt, only mark invalid
+                if (el.classList) el.classList.add('app-date-invalid');
+                return false;
             }
             if (el.classList) el.classList.add('app-date-invalid');
             const fallback = String(el.dataset.lastValid || '').trim();
@@ -2148,7 +2164,7 @@
                         <td>
                             ${
                                 status === 'done'
-                                    ? `<input type="datetime-local" class="optional-field todo-completed-at-input app-date-input" data-todo-id="${todo.id}" value="${toDatetimeLocalValue(completedAt)}" step="60" placeholder="YYYY-MM-DDTHH:MM" title="编辑完成时间（自动保存）">`
+                                    ? `<input type="text" class="optional-field todo-completed-at-input app-datetime-text-input" data-todo-id="${todo.id}" value="${formatTodoDateTimeTextFromServer(completedAt)}" placeholder="YYYY-MM-DD HH:MM" title="编辑完成时间（自动保存）">`
                                     : `<span style="color:#999;">—</span>`
                             }
                         </td>
@@ -3079,7 +3095,8 @@
                 // Initialize last valid value
                 todoModalCompletedAtInput.dataset.lastValid = String(todoModalCompletedAtInput.value || '').trim();
                 const onCompletedAtChange = () => {
-                    if (!guardTodoCompletedAtInput(todoModalCompletedAtInput)) return;
+                    // soft validation while typing: allow partial input without bouncing cursor
+                    guardTodoCompletedAtInput(todoModalCompletedAtInput, { soft: true });
                     const v = String(todoModalCompletedAtInput.value || '').trim();
                     const completedAt = toCompletedAtSeconds(v);
                     if (completedAt) {

@@ -289,6 +289,22 @@
 
         function displayItems(folders, images) {
             const grid = document.getElementById('browser-grid');
+            // Prune selection: after move/delete/rename, old paths may no longer exist in current listing.
+            // Keep selection state consistent with what the user can actually see.
+            try {
+                const visible = new Set();
+                (folders || []).forEach(f => visible.add(String(f.path || '')));
+                (images || []).forEach(i => visible.add(String(i.path || '')));
+                let changed = false;
+                Array.from(selectedItems.keys()).forEach(p => {
+                    if (!visible.has(String(p || ''))) {
+                        selectedItems.delete(p);
+                        changed = true;
+                    }
+                });
+                if (changed) syncGalleryBatchBar();
+            } catch (_) {}
+
             if ((folders || []).length === 0 && (images || []).length === 0) {
                 grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: white;">此文件夹为空</p>';
                 return;

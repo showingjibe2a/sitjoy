@@ -1209,6 +1209,49 @@ input.optional-field[type="datetime-local"]:focus {
     line-height: 1;
 }
 
+.pm-table-columns-pin{
+    appearance: none;
+    border: 1px solid rgba(207, 199, 189, 0.75);
+    background: #fff;
+    color: rgba(79, 70, 59, 0.85);
+    border-radius: 999px;
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    line-height: 1;
+    font-size: 0.95rem;
+}
+.pm-table-columns-pin:hover{
+    background: rgba(236, 231, 223, 0.8);
+    border-color: rgba(207, 199, 189, 0.95);
+}
+.pm-table-columns-pin.is-active{
+    background: rgba(123, 154, 176, 0.16);
+    border-color: rgba(123, 154, 176, 0.65);
+    color: rgba(41, 78, 105, 0.92);
+}
+.pm-table-columns-pin:disabled{
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* Freeze-pane: pinned columns stay on the left while horizontal scrolling */
+.pm-table.is-managed-table th.pm-table-pinned-cell,
+.pm-table.is-managed-table td.pm-table-pinned-cell{
+    background: inherit;
+}
+.pm-managed-body-wrap .pm-table.is-managed-table th.pm-table-pinned-cell,
+.pm-managed-body-wrap .pm-table.is-managed-table td.pm-table-pinned-cell{
+    box-shadow: 2px 0 0 rgba(207, 199, 189, 0.55);
+}
+.pm-managed-head-wrap .pm-table.is-managed-table th.pm-table-pinned-cell{
+    box-shadow: 2px 0 0 rgba(207, 199, 189, 0.55);
+}
+
 .pm-table-wrap {
     width: 100%;
     overflow-x: auto;

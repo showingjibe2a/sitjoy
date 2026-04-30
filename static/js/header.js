@@ -989,6 +989,32 @@
         } catch (_) {}
     }
 
+    function readPersistedPinned(table, headerMeta){
+        const validKeys = (Array.isArray(headerMeta) ? headerMeta : []).map(meta => String(meta.key || '').trim()).filter(Boolean);
+        const legacyKeyMap = new Map((Array.isArray(headerMeta) ? headerMeta : []).map(meta => [String(meta.origin), String(meta.key || '').trim()]));
+        try {
+            const raw = localStorage.getItem(makeStorageKey(table, 'pinned-columns'));
+            if(!raw) return new Set();
+            const arr = JSON.parse(raw);
+            const valid = Array.isArray(arr)
+                ? arr.map(v => {
+                    const key = String(v || '').trim();
+                    if(validKeys.includes(key)) return key;
+                    return legacyKeyMap.get(key) || '';
+                }).filter(key => !!key && validKeys.includes(key))
+                : [];
+            return new Set(valid);
+        } catch (_) {
+            return new Set();
+        }
+    }
+
+    function persistPinnedColumns(state){
+        try {
+            localStorage.setItem(makeStorageKey(state.table, 'pinned-columns'), JSON.stringify(Array.from(state.pinnedColumns || []).slice()));
+        } catch (_) {}
+    }
+
     function readPersistedPageSize(table){
         try {
             const raw = Number(localStorage.getItem(makeStorageKey(table, 'page-size')) || '50');
@@ -1703,6 +1729,92 @@
         });
     }
 
+    function applyPinnedColumns(state){
+        if(!state || !state.table) return;
+        const visible = state.visibleColumns || new Set();
+        const pinnedAll = new Set();
+        if(state.lockedColumns && state.lockedColumns.size){
+            state.lockedColumns.forEach(k => pinnedAll.add(String(k || '').trim()));
+        }
+        if(state.pinnedColumns && state.pinnedColumns.size){
+            state.pinnedColumns.forEach(k => pinnedAll.add(String(k || '').trim()));
+        }
+        const pinnedOrder = (state.columnOrder || []).filter(k => {
+            const key = String(k || '').trim();
+            return !!key && pinnedAll.has(key) && visible.has(key);
+        });
+
+        const clearSticky = (t) => {
+            if(!t) return;
+            Array.from(t.rows || []).forEach(row => {
+                Array.from(row.cells || []).forEach(cell => {
+                    if(!cell || !cell.classList || !cell.classList.contains('pm-table-pinned-cell')) return;
+                    cell.classList.remove('pm-table-pinned-cell');
+                    try {
+                        cell.style.position = '';
+                        cell.style.left = '';
+                        cell.style.zIndex = '';
+                    } catch (_) {}
+                });
+            });
+        };
+
+        if(!pinnedOrder.length){
+            clearSticky(state.table);
+            if(state.headerTable) clearSticky(state.headerTable);
+            return;
+        }
+
+        const widthByKey = (key) => {
+            const k = String(key || '').trim();
+            const w = Number((state.columnWidths || {})[k]);
+            if(Number.isFinite(w) && w > 0) return w;
+            const dw = Number((state.defaultColumnWidths || {})[k]);
+            if(Number.isFinite(dw) && dw > 0) return dw;
+            const meta = (state.headers || []).find(h => String(h.key || '').trim() === k);
+            return computeDefaultColumnWidth(state, meta);
+        };
+
+        const leftByKey = new Map();
+        let acc = 0;
+        pinnedOrder.forEach((k) => {
+            leftByKey.set(String(k || '').trim(), acc);
+            acc += Math.max(0, widthByKey(k));
+        });
+
+        const applyTo = (t) => {
+            if(!t) return;
+            Array.from(t.rows || []).forEach(row => {
+                Array.from(row.cells || []).forEach(cell => {
+                    const key = String((cell && cell.dataset && cell.dataset.manageColKey) ? cell.dataset.manageColKey : '').trim();
+                    if(!key) return;
+                    const isPinned = leftByKey.has(key);
+                    if(!isPinned){
+                        if(cell.classList && cell.classList.contains('pm-table-pinned-cell')){
+                            cell.classList.remove('pm-table-pinned-cell');
+                            try {
+                                cell.style.position = '';
+                                cell.style.left = '';
+                                cell.style.zIndex = '';
+                            } catch (_) {}
+                        }
+                        return;
+                    }
+                    cell.classList && cell.classList.add('pm-table-pinned-cell');
+                    try {
+                        cell.style.position = 'sticky';
+                        cell.style.left = `${leftByKey.get(key) || 0}px`;
+                        const isTh = String(cell.tagName || '').toUpperCase() === 'TH';
+                        cell.style.zIndex = isTh ? '35' : '18';
+                    } catch (_) {}
+                });
+            });
+        };
+
+        applyTo(state.table);
+        if(state.headerTable) applyTo(state.headerTable);
+    }
+
     function syncManagedColgroupOrder(state){
         if(!state || !state.table || !state.table.tHead || !state.table.tHead.rows || !state.table.tHead.rows.length) return;
         const colgroup = state.table.querySelector('colgroup');
@@ -1935,6 +2047,7 @@
             applyColumnVisibility(state);
             syncDetachedHeader(state);
             applyColumnWidths(state);
+            applyPinnedColumns(state);
             ensureSortableHeaders(state);
             ensureResizeHandles(state);
             refreshSortHeaderUi(state);
@@ -1981,6 +2094,7 @@
                 applyColumnVisibility(state);
                 syncDetachedHeader(state);
                 applyColumnWidths(state);
+                applyPinnedColumns(state);
                 ensureSortableHeaders(state);
                 ensureResizeHandles(state);
                 refreshSortHeaderUi(state);
@@ -1995,11 +2109,64 @@
             main.appendChild(checkbox);
             main.appendChild(text);
 
+            const pin = document.createElement('button');
+            pin.type = 'button';
+            pin.className = 'pm-table-columns-pin';
+            const k0 = String(key || '').trim();
+            const pinnedNow = !!(state.pinnedColumns && state.pinnedColumns.has(k0)) || isLocked;
+            pin.textContent = '📌';
+            pin.setAttribute('aria-label', pinnedNow ? '取消冻结' : '冻结到左侧');
+            pin.title = isLocked ? '复选列默认冻结' : (pinnedNow ? '点击取消冻结' : '点击冻结到左侧');
+            pin.disabled = isLocked;
+            pin.classList.toggle('is-active', pinnedNow);
+            pin.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                const k = String(key || '').trim();
+                if(!k || (state.lockedColumns && state.lockedColumns.has(k))) return;
+                state.pinnedColumns = state.pinnedColumns || new Set();
+                const willPin = !state.pinnedColumns.has(k);
+                if(willPin){
+                    state.pinnedColumns.add(k);
+                    // move into pinned region end
+                    const pinnedAll = new Set();
+                    (state.lockedColumns || new Set()).forEach(v => pinnedAll.add(String(v || '').trim()));
+                    (state.pinnedColumns || new Set()).forEach(v => pinnedAll.add(String(v || '').trim()));
+                    const pinnedOrder = (state.columnOrder || []).filter(x => pinnedAll.has(String(x || '').trim()) && String(x || '').trim() !== k);
+                    const toIdx = pinnedOrder.length;
+                    const fromIdx = state.columnOrder.indexOf(k);
+                    if(fromIdx >= 0){
+                        state.columnOrder.splice(fromIdx, 1);
+                        state.columnOrder.splice(Math.min(Math.max(0, toIdx), state.columnOrder.length), 0, k);
+                        persistColumnOrder(state);
+                    }
+                } else {
+                    state.pinnedColumns.delete(k);
+                }
+                (state.lockedColumns || new Set()).forEach(v => state.pinnedColumns.add(String(v || '').trim()));
+                persistPinnedColumns(state);
+                window.requestAnimationFrame(() => {
+                    applyColumnOrder(state);
+                    applyColumnVisibility(state);
+                    syncDetachedHeader(state);
+                    applyColumnWidths(state);
+                    applyPinnedColumns(state);
+                    ensureSortableHeaders(state);
+                    ensureResizeHandles(state);
+                    refreshSortHeaderUi(state);
+                    applySort(state);
+                    applyPagination(state);
+                    syncTopScroll(state);
+                    renderColumnPanel(state);
+                });
+            });
+
             const drag = document.createElement('span');
             drag.className = 'pm-table-columns-item-drag';
             drag.textContent = '⋮⋮';
 
             item.appendChild(main);
+            item.appendChild(pin);
             item.appendChild(drag);
 
             item.addEventListener('dragstart', () => {
@@ -3370,6 +3537,8 @@
                     .map(meta => String(meta.key || '').trim())
             );
             state.lockedColumns.forEach(key => state.visibleColumns.add(String(key || '').trim()));
+            state.pinnedColumns = readPersistedPinned(state.table, headerMeta) || new Set();
+            state.lockedColumns.forEach(key => state.pinnedColumns.add(String(key || '').trim()));
             validKeys.forEach(key => {
                 if(!state.columnOrder.includes(key)) state.columnOrder.push(key);
             });
@@ -3386,6 +3555,7 @@
             applyColumnVisibility(state);
             syncDetachedHeader(state);
             applyColumnWidths(state);
+            applyPinnedColumns(state);
         }
         ensureSortableHeaders(state);
         refreshSortHeaderUi(state);
@@ -3457,7 +3627,7 @@
                         </div>
                     </div>
                     <div class="pm-table-columns">
-                        <button type="button" class="pm-table-columns-trigger btn-secondary" aria-expanded="false">字段显示</button>
+                        <button type="button" class="pm-table-columns-trigger btn-secondary" aria-expanded="false">字段显示与冻结窗格</button>
                         <div class="pm-table-columns-panel"></div>
                     </div>
                     <div class="pm-table-pager">
@@ -3506,6 +3676,7 @@
             headers: [],
             visibleColumns: new Set(),
             lockedColumns: new Set(),
+            pinnedColumns: new Set(),
             columnOrder: [],
             columnWidths: {},
             defaultColumnWidths: {},
@@ -3583,6 +3754,7 @@
                     applyColumnVisibility(state);
                     syncDetachedHeader(state);
                     applyColumnWidths(state);
+                    applyPinnedColumns(state);
                     ensureSortableHeaders(state);
                     ensureResizeHandles(state);
                     refreshSortHeaderUi(state);
@@ -3625,6 +3797,11 @@
                     persistColumns(state);
                     applyColumnVisibility(state);
                     syncDetachedHeader(state);
+                    // Reset pins to locked columns only
+                    state.pinnedColumns = new Set();
+                    state.lockedColumns.forEach(key => state.pinnedColumns.add(String(key || '').trim()));
+                    persistPinnedColumns(state);
+                    applyPinnedColumns(state);
                     ensureSortableHeaders(state);
                     ensureResizeHandles(state);
                     refreshSortHeaderUi(state);
@@ -4560,7 +4737,18 @@
         if(!e.target.closest('.pm-table-reset-group')) {
             closeAllResetMenus();
         }
+        // If user enters an input inside a managed table, immediately release any grid selection
+        // to avoid paste/copy being applied to the previous selected cell range.
+        if(activeGridSelection && isEditableDomTarget(e.target) && e.target.closest('.is-managed-table')) {
+            clearGridSelection();
+        }
         if(activeGridSelection && !e.target.closest('.is-managed-table')) {
+            clearGridSelection();
+        }
+    });
+
+    document.addEventListener('focusin', (e) => {
+        if(activeGridSelection && isEditableDomTarget(e.target) && e.target.closest('.is-managed-table')) {
             clearGridSelection();
         }
     });

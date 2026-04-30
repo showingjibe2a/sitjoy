@@ -300,15 +300,17 @@
     const pv = $('pmImageEditPickVariantBtn');
     const po = $('pmImageEditPickOrderProductBtn');
     if (pf) {
-      pf.disabled = !typeOk || !sc.applies_fabric;
+      // Allow clicking when type not selected so we can toast "请选择图片类型".
+      // Still hard-disable when the chosen type doesn't apply to this link target.
+      pf.disabled = typeOk ? !sc.applies_fabric : false;
       pf.title = !typeOk ? '请先选择图片类型' : (!sc.applies_fabric ? '当前图片类型不适用面料' : '');
     }
     if (pv) {
-      pv.disabled = !typeOk || !sc.applies_sales;
+      pv.disabled = typeOk ? !sc.applies_sales : false;
       pv.title = !typeOk ? '请先选择图片类型' : (!sc.applies_sales ? '当前图片类型不适用规格主图' : '');
     }
     if (po) {
-      po.disabled = !typeOk || !sc.applies_order_product;
+      po.disabled = typeOk ? !sc.applies_order_product : false;
       po.title = !typeOk ? '请先选择图片类型' : (!sc.applies_order_product ? '当前图片类型不适用下单产品主图' : '');
     }
   }

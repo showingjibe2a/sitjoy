@@ -170,9 +170,30 @@
         table.sf-table {
             border-collapse: separate;
             border-spacing: 0;
-            width: 100%;
+            width: max-content;
             font-size: 0.85rem;
             table-layout: fixed;
+        }
+        .sf-month-two-line{
+            display: grid;
+            grid-template-rows: auto auto;
+            gap: 0.05rem;
+            line-height: 1.05;
+            text-align: center;
+        }
+        .sf-month-two-line .sf-month-y{
+            font-size: 0.76rem;
+            color: rgba(79, 70, 59, 0.85);
+            font-weight: 700;
+        }
+        .sf-month-two-line .sf-month-m{
+            font-size: 0.82rem;
+            color: #4f463b;
+            font-weight: 700;
+        }
+        table.sf-table thead tr.sf-thead-row-2 th.sf-th-history,
+        table.sf-table thead tr.sf-thead-row-2 th.sf-th-month{
+            text-align: center;
         }
         table.sf-table thead th {
             position: sticky;
@@ -332,18 +353,33 @@
         td.sf-cell-forecast {
             text-align: right;
             position: relative;
+            padding: 0.22rem 0.30rem !important;
         }
 
         .sf-num-input {
-            width: 64px;
-            padding: 0.12rem 0.28rem;
+            height: 26px;
+            min-width: 42px;
+            width: 100%;
+            max-width: 64px;
+            padding: 0 0.35rem;
             border: 1px solid rgba(207, 199, 189, 0.72);
             border-radius: 4px;
             font-size: 0.8rem;
             background: #fff;
             text-align: right;
             font-variant-numeric: tabular-nums;
+            box-sizing: border-box;
+            line-height: 1;
+            outline: none;
         }
+        .sf-num-input:focus{
+            border-color: rgba(123, 154, 176, 0.95);
+            box-shadow: 0 0 0 2px rgba(123, 154, 176, 0.18);
+        }
+        /* Defensive: if any number input remains, remove spinners */
+        .sf-num-input[type="number"]::-webkit-outer-spin-button,
+        .sf-num-input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .sf-num-input[type="number"] { -moz-appearance: textfield; }
         .sf-num-input.is-dirty {
             border-color: #b67f7f;
             background: #fff6ee;
@@ -716,6 +752,14 @@
 
         function monthShortLabel(monthKey) {
             return monthKey ? monthKey.slice(0, 7) : '';
+        }
+
+        function monthHeaderTwoLineHtml(monthKey) {
+            const s = monthShortLabel(monthKey);
+            if (!s || s.length < 7) return escapeHtml(s || '');
+            const y = s.slice(0, 4);
+            const m = s.slice(5, 7);
+            return `<div class="sf-month-two-line"><div class="sf-month-y">${escapeHtml(y)}</div><div class="sf-month-m">${escapeHtml(m)}月</div></div>`;
         }
 
         function todayMonthKey() {
@@ -1190,7 +1234,9 @@
             state._sfColMeta = meta;
             state._sfLeafColWidths = leafColWidths;
             const totalWidth = leafColWidths.reduce((acc, n) => acc + Number(n || 0), 0);
-            table.style.minWidth = `${Math.max(960, totalWidth)}px`;
+            const wpx = Math.max(960, totalWidth);
+            table.style.width = `${wpx}px`;
+            table.style.minWidth = `${wpx}px`;
             const oldColgroup = table.querySelector('colgroup#forecastColgroup');
             if (oldColgroup && oldColgroup.parentNode) oldColgroup.parentNode.removeChild(oldColgroup);
             const colgroup = document.createElement('colgroup');
@@ -1212,8 +1258,8 @@
             const trBottom = document.createElement('tr');
             trBottom.className = 'sf-thead-row-2';
             trBottom.innerHTML = cols.map(col => buildBottomHeaderHtml(col)).join('')
-                + (state.historyExpanded ? visibleHistMonths.map(m => `<th class="sf-th-history" data-month="${m}">${monthShortLabel(m)}</th>`).join('') : (histCols ? '<th class="sf-th-history">历史合计</th>' : ''))
-                + (state.forecastExpanded ? visibleFcMonths.map(m => `<th class="sf-th-month">${monthShortLabel(m)}</th>`).join('') : (fcCols ? '<th class="sf-th-month">预测合计</th>' : ''));
+                + (state.historyExpanded ? visibleHistMonths.map(m => `<th class="sf-th-history" data-month="${m}">${monthHeaderTwoLineHtml(m)}</th>`).join('') : (histCols ? '<th class="sf-th-history">历史合计</th>' : ''))
+                + (state.forecastExpanded ? visibleFcMonths.map(m => `<th class="sf-th-month">${monthHeaderTwoLineHtml(m)}</th>`).join('') : (fcCols ? '<th class="sf-th-month">预测合计</th>' : ''));
             thead.innerHTML = '';
             thead.appendChild(trTop);
             thead.appendChild(trBottom);
@@ -1549,7 +1595,9 @@
                 cols[i].style.width = `${w}px`;
             }
             const totalWidth = (leafColWidths || []).reduce((acc, n) => acc + Number(n || 0), 0);
-            t.style.minWidth = `${Math.max(960, totalWidth)}px`;
+            const wpx = Math.max(960, totalWidth);
+            t.style.width = `${wpx}px`;
+            t.style.minWidth = `${wpx}px`;
         }
 
         function annotateForecastHeaderColumns(thead, totalCols) {
@@ -1868,9 +1916,12 @@
             const value = dirtyVal !== null ? dirtyVal : baseValue;
 
             const input = document.createElement('input');
-            input.type = 'number';
-            input.min = '0';
-            input.step = '1';
+            // Use text+numeric inputmode to avoid number spinners wasting width.
+            input.type = 'text';
+            input.inputMode = 'numeric';
+            input.autocomplete = 'off';
+            input.spellcheck = false;
+            input.pattern = '\\\\d*';
             input.className = 'sf-num-input';
             if (forecast && forecast.is_inherited) input.classList.add('is-inherited');
             if (dirtyVal !== null) input.classList.add('is-dirty');
@@ -1879,6 +1930,13 @@
             input.dataset.month = monthKey;
             input.dataset.original = String(baseValue || 0);
             input.addEventListener('input', onForecastInputChange);
+            input.addEventListener('beforeinput', (ev) => {
+                // Block non-digit insertions early when supported.
+                if (!ev || !ev.data) return;
+                if (/^\\d+$/.test(ev.data)) return;
+                if (ev.inputType && String(ev.inputType).startsWith('delete')) return;
+                try { ev.preventDefault(); } catch (_) {}
+            });
 
             wrap.appendChild(input);
 
@@ -1913,6 +1971,9 @@
 
         function onForecastInputChange(e) {
             const input = e.target;
+            // sanitize to digits only (handles paste)
+            const cleaned = String(input.value || '').replace(/[^0-9]/g, '');
+            if (cleaned !== input.value) input.value = cleaned;
             const rowKey = input.dataset.rowKey;
             const month = input.dataset.month;
             const original = Number(input.dataset.original || 0);

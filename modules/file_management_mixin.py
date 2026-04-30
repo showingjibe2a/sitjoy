@@ -820,12 +820,38 @@ class FileManagementMixin:
         if not abs_dir_root:
             return subfolders, images, others
         try:
+            def _is_ignored_dirname(name):
+                try:
+                    n = name if isinstance(name, (bytes, bytearray)) else os.fsencode(str(name))
+                except Exception:
+                    return False
+                # Synology / NAS thumbnail cache & common system dirs
+                if n in (b'@eaDir', b'__MACOSX', b'#recycle'):
+                    return True
+                # dot dirs (e.g. ".git") are usually not user-visible in gallery listing
+                if n.startswith(b'.'):
+                    return True
+                return False
+
+            def _is_ignored_filename(name):
+                try:
+                    n = name if isinstance(name, (bytes, bytearray)) else os.fsencode(str(name))
+                except Exception:
+                    return False
+                return n in (b'.DS_Store', b'Thumbs.db', b'desktop.ini')
+
             root_b = self._safe_fsencode(abs_dir_root)
             if not os.path.isdir(root_b):
                 return subfolders, images, others
             for _dirpath, dirnames, filenames in os.walk(root_b):
-                subfolders += len(dirnames or [])
+                # Prune ignored dirs so they are not walked nor counted.
+                if dirnames:
+                    kept = [d for d in dirnames if not _is_ignored_dirname(d)]
+                    subfolders += len(kept)
+                    dirnames[:] = kept
                 for fn in filenames or []:
+                    if _is_ignored_filename(fn):
+                        continue
                     if self._is_image_name(fn):
                         images += 1
                     else:
