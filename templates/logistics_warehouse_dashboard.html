@@ -426,6 +426,17 @@
       padding-left: 1.2rem;
       color: rgba(92, 86, 79, .72);
     }
+    .sku-row.child-row > td {
+      color: rgba(92, 86, 79, .62);
+    }
+    .sku-row.child-row .inv-main-text {
+      color: rgba(92, 86, 79, .62);
+    }
+    .derived-sku.is-origin {
+      padding-left: 1.2rem;
+      font-weight: 400;
+      color: rgba(92, 86, 79, .72);
+    }
     .col-resize-handle {
       position: absolute;
       top: 0;
@@ -461,13 +472,13 @@
       transition: background-color .12s ease, box-shadow .12s ease;
     }
     #boardBodyTable tbody tr.sku-row:hover > td {
-      background: rgba(154, 163, 168, .22) !important;
+      background: rgba(154, 163, 168, .10) !important;
     }
     #boardBodyTable td.board-hover-col {
-      background: rgba(154, 163, 168, .16) !important;
+      background: rgba(154, 163, 168, .08) !important;
     }
     #boardBodyTable tbody tr.sku-row:hover > td.board-hover-col {
-      background: rgba(154, 163, 168, .26) !important;
+      background: rgba(154, 163, 168, .12) !important;
     }
     #boardBodyTable td.board-selectable-cell {
       cursor: cell;
@@ -475,34 +486,41 @@
     }
     #boardBodyTable tr.board-hover-row > td,
     #boardBodyTable tr.board-fixed-row > td {
-      background: rgba(154, 163, 168, .18) !important;
+      background: rgba(154, 163, 168, .08) !important;
     }
     #boardBodyTable tr.board-fixed-row > td {
-      background: rgba(154, 163, 168, .24) !important;
+      background: rgba(154, 163, 168, .12) !important;
     }
     #boardBodyTable td.board-hover-col,
     #boardHeadTable th.board-hover-head {
-      background: rgba(154, 163, 168, .20) !important;
+      background: rgba(154, 163, 168, .10) !important;
     }
     #boardBodyTable td.board-fixed-col,
     #boardHeadTable th.board-fixed-head {
-      background: rgba(154, 163, 168, .28) !important;
+      background: rgba(154, 163, 168, .14) !important;
     }
     #boardBodyTable td.board-hover-anchor {
-      background: rgba(154, 163, 168, .30) !important;
-      box-shadow: inset 0 0 0 2px rgba(95, 90, 83, .24);
+      background: rgba(154, 163, 168, .16) !important;
+      box-shadow: inset 0 0 0 2px rgba(95, 90, 83, .18);
     }
     #boardBodyTable td.board-fixed-anchor {
-      background: rgba(154, 163, 168, .38) !important;
-      box-shadow: inset 0 0 0 2px rgba(82, 78, 72, .48);
+      background: rgba(154, 163, 168, .22) !important;
+      box-shadow: inset 0 0 0 2px rgba(82, 78, 72, .30);
     }
     #boardBodyTable td.board-cell-selected {
-      background: rgba(154, 163, 168, .22) !important;
-      box-shadow: inset 0 0 0 1px rgba(95, 90, 83, .22);
+      background: rgba(154, 163, 168, .14) !important;
+      box-shadow: inset 0 0 0 1px rgba(95, 90, 83, .18);
     }
     #boardBodyTable td.board-cell-anchor {
-      background: rgba(154, 163, 168, .30) !important;
-      box-shadow: inset 0 0 0 2px rgba(82, 78, 72, .42);
+      background: rgba(154, 163, 168, .20) !important;
+      box-shadow: inset 0 0 0 2px rgba(82, 78, 72, .28);
+    }
+    /* When there is an active selection, disable hover spotlight following mouse */
+    #boardBodyTable.has-board-selection tbody tr.sku-row:hover > td {
+      background: inherit !important;
+    }
+    #boardBodyTable.has-board-selection tbody tr.sku-row:hover > td.board-hover-col {
+      background: inherit !important;
     }
   </style>
 </head>
@@ -578,6 +596,8 @@ let wrapWarehouseShortName = false;
 const WRAP_SHORT_NAME_KEY = 'sitjoy:warehouse-short-wrap-enabled';
 const BOARD_SKU_KIND_KEY = 'sitjoy:warehouse-dashboard-sku-kind';
 let boardSkuKind = 'all';
+const BOARD_COL_WIDTHS_KEY = 'sitjoy:warehouse-dashboard-col-widths-v1';
+let boardColKeys = [];
 let boardColWidths = [];
 let suppressHeaderToggleUntil = 0;
 let boardCellUiBound = false;
@@ -811,6 +831,8 @@ function clearBoardSelectionVisual(){
 
 function clearBoardSelection(){
   clearBoardSelectionVisual();
+  const bodyTable = document.getElementById('boardBodyTable');
+  if(bodyTable) bodyTable.classList.remove('has-board-selection');
   boardSelectionAnchor = null;
   boardSelectionFocus = null;
   boardSelectionBounds = null;
@@ -837,6 +859,8 @@ function getCellByPos(row, col){
 function applyBoardSelectionUi(){
   clearBoardSelectionVisual();
   clearHoverState();
+  const bodyTable = document.getElementById('boardBodyTable');
+  if(bodyTable) bodyTable.classList.toggle('has-board-selection', !!boardSelectionBounds);
   if(!boardSelectionBounds) return;
   const minRow = Number(boardSelectionBounds.minRow);
   const maxRow = Number(boardSelectionBounds.maxRow);
@@ -1040,13 +1064,22 @@ function toggleFilterPanel(){
 }
 
 function initColumnWidths(totalCols){
-  if(Array.isArray(boardColWidths) && boardColWidths.length === totalCols) return;
+  const want = Number(totalCols || 0);
+  if(want <= 0) return;
+  // rebuild when schema changes (keys differ)
+  if(Array.isArray(boardColWidths) && boardColWidths.length === want && Array.isArray(boardColKeys) && boardColKeys.length === want) return;
+  let persisted = {};
+  try { persisted = JSON.parse(localStorage.getItem(BOARD_COL_WIDTHS_KEY) || '{}') || {}; } catch(_) { persisted = {}; }
   boardColWidths = [];
-  for(let idx = 0; idx < totalCols; idx += 1){
-    if(idx === 0) boardColWidths.push(92);
-    else if(idx === 1) boardColWidths.push(132);
-    else if(idx === 2) boardColWidths.push(56);
-    else boardColWidths.push(60);
+  for(let idx = 0; idx < want; idx += 1){
+    let w = 60;
+    if(idx === 0) w = 92;
+    else if(idx === 1) w = 132;
+    else if(idx === 2) w = 56;
+    const k = String((boardColKeys || [])[idx] || '').trim();
+    const stored = k ? Number(persisted[k]) : NaN;
+    if(Number.isFinite(stored) && stored > 0) w = stored;
+    boardColWidths.push(w);
   }
 }
 
@@ -1085,14 +1118,29 @@ function ensureCollapsedSectionTitleWidth(fixedCols, overseasColspan, stockColsp
 
 function applyColWidths(){
   const normalized = boardColWidths.map(w => Math.max(46, Number(w || 60)));
-  const html = normalized.map(w => `<col style="width:${w}px;">`).join('');
   const totalWidth = normalized.reduce((sum, width) => sum + width, 0);
   const headColgroup = document.getElementById('boardHeadColgroup');
   const bodyColgroup = document.getElementById('boardBodyColgroup');
   const headTable = document.getElementById('boardHeadTable');
   const bodyTable = document.getElementById('boardBodyTable');
-  if(headColgroup) headColgroup.innerHTML = html;
-  if(bodyColgroup) bodyColgroup.innerHTML = html;
+  const syncColgroup = (cg) => {
+    if(!cg) return;
+    const wanted = normalized.length;
+    // ensure exact number of <col>
+    while(cg.children.length < wanted){
+      cg.appendChild(document.createElement('col'));
+    }
+    while(cg.children.length > wanted){
+      cg.removeChild(cg.lastChild);
+    }
+    Array.from(cg.children).forEach((col, idx) => {
+      if(!col) return;
+      col.style.width = `${normalized[idx]}px`;
+      col.style.minWidth = `${normalized[idx]}px`;
+    });
+  };
+  syncColgroup(headColgroup);
+  syncColgroup(bodyColgroup);
   if(headTable){
     headTable.style.width = `${totalWidth}px`;
     headTable.style.minWidth = `${totalWidth}px`;
@@ -1101,6 +1149,20 @@ function applyColWidths(){
     bodyTable.style.width = `${totalWidth}px`;
     bodyTable.style.minWidth = `${totalWidth}px`;
   }
+}
+
+function persistBoardColWidths(){
+  try {
+    const out = {};
+    const keys = Array.isArray(boardColKeys) ? boardColKeys : [];
+    const widths = Array.isArray(boardColWidths) ? boardColWidths : [];
+    for(let i = 0; i < keys.length && i < widths.length; i += 1){
+      const k = String(keys[i] || '').trim();
+      const w = Math.max(46, Number(widths[i] || 0));
+      if(k) out[k] = w;
+    }
+    localStorage.setItem(BOARD_COL_WIDTHS_KEY, JSON.stringify(out));
+  } catch(_) {}
 }
 
 function annotateHeaderColumns(){
@@ -1178,6 +1240,7 @@ function attachColumnResizeHandles(totalCols){
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
         suppressHeaderToggleUntil = Date.now() + (moved ? 320 : 160);
+        if(moved) persistBoardColWidths();
       };
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
@@ -1376,6 +1439,24 @@ function renderBoard(){
   const stockColspan = factoryStockExpanded ? Math.max(1, boardFactories.length) : 1;
   const fixedCols = 3;
   const totalCols = fixedCols + overseasColspan + stockColspan;
+  // Build stable column keys for width persistence.
+  boardColKeys = [];
+  boardColKeys.push('fixed:family');
+  boardColKeys.push('fixed:sku');
+  boardColKeys.push('fixed:fabric');
+  if(overseasExpanded){
+    leafColumns.forEach(col => {
+      if(col.type === 'warehouse') boardColKeys.push(`overseas:wh:${col.warehouse.id}`);
+      else boardColKeys.push(`overseas:region:${String(col.regionName || '-')}`);
+    });
+  } else {
+    boardColKeys.push('overseas:total');
+  }
+  if(factoryStockExpanded && boardFactories.length > 0){
+    boardFactories.forEach(f => boardColKeys.push(`factory:${f.id}`));
+  } else {
+    boardColKeys.push('factory:total');
+  }
   initColumnWidths(totalCols);
   ensureCollapsedSectionTitleWidth(fixedCols, overseasColspan, stockColspan, overseasExpanded, factoryStockExpanded, totalCols);
   applyColWidths();
@@ -1574,6 +1655,54 @@ function renderBoard(){
     return overseasCell + stockCells;
   };
 
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const subtractMap = (base, subs, minZero) => {
+    const out = {};
+    const keys = new Set();
+    Object.keys(base || {}).forEach(k => keys.add(String(k)));
+    (subs || []).forEach(m => Object.keys(m || {}).forEach(k => keys.add(String(k))));
+    keys.forEach(k => {
+      const bv = num((base || {})[k]);
+      const sv = (subs || []).reduce((acc, m) => acc + num((m || {})[k]), 0);
+      const vv = bv - sv;
+      out[k] = (minZero ? Math.max(0, vv) : vv);
+    });
+    return out;
+  };
+  const subtractWipMap = (base, children) => {
+    const out = {};
+    const keys = new Set();
+    Object.keys(base || {}).forEach(k => keys.add(String(k)));
+    (children || []).forEach(ch => Object.keys((ch && ch.factory_wip_by_factory) || {}).forEach(k => keys.add(String(k))));
+    keys.forEach(k => {
+      const bv = num(((base || {})[k] || {}).quantity);
+      const sv = (children || []).reduce((acc, ch) => acc + num((((ch || {}).factory_wip_by_factory || {})[k] || {}).quantity), 0);
+      out[k] = { quantity: Math.max(0, bv - sv) };
+    });
+    return out;
+  };
+  const buildIterationOriginRow = (parent, children) => {
+    const kids = Array.isArray(children) ? children : [];
+    if(!kids.length) return null;
+    const origin = Object.assign({}, parent || {});
+    // Compute "origin sku itself" by subtracting iteration children from the parent total buckets.
+    origin.available_total = Math.max(0, num(parent.available_total) - kids.reduce((a, c) => a + num(c.available_total), 0));
+    origin.in_transit_total = Math.max(0, num(parent.in_transit_total) - kids.reduce((a, c) => a + num(c.in_transit_total), 0));
+    origin.factory_stock_total = Math.max(0, num(parent.factory_stock_total) - kids.reduce((a, c) => a + num(c.factory_stock_total), 0));
+    origin.factory_wip_total = Math.max(0, num(parent.factory_wip_total) - kids.reduce((a, c) => a + num(c.factory_wip_total), 0));
+    origin.warehouse_qty = subtractMap(parent.warehouse_qty || {}, kids.map(k => k.warehouse_qty || {}), true);
+    origin.in_transit_by_warehouse = subtractMap(parent.in_transit_by_warehouse || {}, kids.map(k => k.in_transit_by_warehouse || {}), true);
+    origin.in_transit_by_region = subtractMap(parent.in_transit_by_region || {}, kids.map(k => k.in_transit_by_region || {}), true);
+    origin.factory_stock_by_factory = subtractMap(parent.factory_stock_by_factory || {}, kids.map(k => k.factory_stock_by_factory || {}), true);
+    origin.factory_wip_by_factory = subtractWipMap(parent.factory_wip_by_factory || {}, kids);
+    // Tips are not subtractable; keep empty to avoid misleading badge titles.
+    origin.in_transit_tip = '';
+    origin.in_transit_tip_by_warehouse = {};
+    origin.in_transit_tip_by_region = {};
+    origin.factory_wip_tip_by_factory = {};
+    return origin;
+  };
+
   const familyMap = new Map();
   filteredRows.forEach(row => {
     const familyKey = String(row.sku_family || '-').trim() || '-';
@@ -1604,6 +1733,21 @@ function renderBoard(){
       html += `<td class="fabric-dot-cell"><span class="fabric-dot-wrap">${mainDot}</span></td>`;
       html += buildCellsForRow(row, false);
       html += `</tr>`;
+
+      // Expanded iteration breakdown: show origin SKU itself + each iteration SKU.
+      if(childRows.length){
+        const originRow = buildIterationOriginRow(row, childRows);
+        if(originRow){
+          const originColor = normalizeColorHex(originRow.representative_color);
+          const originDot = originColor ? `<span class="fabric-dot" style="background:${originColor};" title="${esc(originRow.fabric_name_en || '')}"></span>` : '';
+          html += `<tr class="sku-row child-row origin-row ${groupClass} ${(isCollapsed || familyCollapsed) ? 'hidden-row' : ''}" data-family="${familyKey.replace(/"/g,'&quot;')}" data-parent-source="${sourceKey.replace(/"/g,'&quot;')}">`;
+          html += `<td>${familyKey}</td>`;
+          html += `<td class="sku-cell"><span class="derived-sku is-origin">${originRow.sku || ''}</span></td>`;
+          html += `<td class="fabric-dot-cell"><span class="fabric-dot-wrap">${originDot}</span></td>`;
+          html += buildCellsForRow(originRow, true);
+          html += `</tr>`;
+        }
+      }
 
       childRows.forEach(child => {
         const childColor = normalizeColorHex(child.representative_color);
