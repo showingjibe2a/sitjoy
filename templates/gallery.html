@@ -50,6 +50,7 @@
 
     <div class="pm-batch-float-bar" id="galleryBatchBar" aria-live="polite">
         <span class="pm-batch-float-count" id="galleryBatchCountText">已勾选 0 项</span>
+        <button type="button" class="btn-secondary" onclick="clearGallerySelection()">取消选择</button>
         <button type="button" class="btn-primary" onclick="downloadSelected()">下载选中</button>
         <button type="button" class="btn-danger" onclick="galleryBatchDelete()">批量删除</button>
     </div>
@@ -59,7 +60,7 @@
     </footer>
 
     <script>
-        // gallery 页面最小版：浏览/上传/勾选/下载/批量删除 + 双击打开共享编辑弹窗（含 sha256 重复提示）。
+        // gallery：单击卡片勾选；双击文件夹进入目录；双击图片打开共享编辑弹窗（含 sha256 重复提示）；右下角批量栏可取消选择。
 
         let currentPath = '';
         const selectedItems = new Map();
@@ -177,6 +178,16 @@
             bar.classList.toggle('active', n > 0);
         }
 
+        function clearGallerySelection() {
+            selectedItems.clear();
+            syncGalleryBatchBar();
+            document.querySelectorAll('#browser-grid .item-card').forEach(card => {
+                card.classList.remove('item-card--selected');
+                const cb = card.querySelector('input[type="checkbox"][data-path]');
+                if (cb) cb.checked = false;
+            });
+        }
+
         async function downloadSelected() {
             if (selectedItems.size === 0) {
                 if (window.showAppToast) window.showAppToast('请先勾选要下载的内容', true, 4200);
@@ -211,7 +222,41 @@
         async function galleryBatchDelete() {
             if (selectedItems.size === 0) return window.showAppToast && window.showAppToast('请先勾选要删除的内容', true, 4200);
             const count = selectedItems.size;
-            const msg = `将把已勾选的 ${count} 项移入『上架资源』/回收站（不可从回收站自动还原到原路径）。\n\n请勾选下方确认框后点击「确认删除」。`;
+            const payload = [];
+            selectedItems.forEach((type, path) => payload.push({ type, path }));
+
+            let summaryLine = '';
+            try {
+                const pr = await fetch('/api/gallery-batch-delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ items: payload, preview_only: true })
+                });
+                const pd = await pr.json().catch(() => ({}));
+                if (pr.ok && pd && pd.status === 'success' && pd.preview_only) {
+                    const di = Number(pd.direct_images || 0);
+                    const df = Number(pd.direct_folders || 0);
+                    const dot = Number(pd.direct_other_files || 0);
+                    const tree = pd.tree || {};
+                    const ts = Number(tree.subfolders || 0);
+                    const ti = Number(tree.images || 0);
+                    const to = Number(tree.other_files || 0);
+                    const tt = Number(tree.total_entries != null ? tree.total_entries : (ts + ti + to));
+                    let head = `此次删除 ${di} 张图片和 ${df} 个文件夹`;
+                    if (dot > 0) head += `，另含 ${dot} 个其他文件`;
+                    head += '。';
+                    summaryLine = head;
+                    if (df > 0) {
+                        summaryLine += `\n\n文件夹中共包含 ${tt} 个子文件（${ts} 个文件夹 + ${ti} 张图片 + ${to} 个其他文件）。`;
+                    }
+                }
+            } catch (_) {}
+
+            const baseWarn = '将移入『上架资源』/回收站（不可从回收站自动还原到原路径）。';
+            const msg = summaryLine
+                ? (summaryLine + '\n\n' + baseWarn + '\n\n请勾选下方确认框后点击「确认删除」。')
+                : (`将把已勾选的 ${count} 项移入『上架资源』/回收站（不可从回收站自动还原到原路径）。\n\n请勾选下方确认框后点击「确认删除」。`);
+
             const ok = window.showAppConfirmAsync
                 ? await window.showAppConfirmAsync({
                     title: '批量删除确认',
@@ -222,8 +267,6 @@
                 : window.confirm(msg.replace(/\n\n/g, '\n'));
             if (!ok) return;
 
-            const payload = [];
-            selectedItems.forEach((type, path) => payload.push({ type, path }));
             try {
                 window.showAppUploadProgress && window.showAppUploadProgress({ title: '批量删除', message: '正在移入『上架资源』/回收站…' });
                 const resp = await fetch('/api/gallery-batch-delete', {
@@ -257,7 +300,6 @@
                 const card = document.createElement('div');
                 const isSelected = selectedItems.has(folder.path);
                 card.className = 'item-card item-card--compact' + (isSelected ? ' item-card--selected' : '');
-                card.onclick = () => browse(folder.path);
                 card.innerHTML = `
                     <div class="item-select" onclick="event.stopPropagation();">
                         <input type="checkbox" data-path="${folder.path}" data-type="folder" ${isSelected ? 'checked' : ''}>
@@ -271,6 +313,24 @@
                     toggleSelection(folder.path, 'folder', e.target.checked);
                     card.classList.toggle('item-card--selected', e.target.checked);
                 });
+                let folderClickTimer = null;
+                card.addEventListener('click', (e) => {
+                    if (e.target.closest('.item-select')) return;
+                    clearTimeout(folderClickTimer);
+                    folderClickTimer = setTimeout(() => {
+                        folderClickTimer = null;
+                        const nextChecked = !selectedItems.has(folder.path);
+                        toggleSelection(folder.path, 'folder', nextChecked);
+                        card.classList.toggle('item-card--selected', nextChecked);
+                        if (checkbox) checkbox.checked = nextChecked;
+                    }, 280);
+                });
+                card.addEventListener('dblclick', (e) => {
+                    e.preventDefault();
+                    clearTimeout(folderClickTimer);
+                    folderClickTimer = null;
+                    browse(folder.path);
+                });
                 grid.appendChild(card);
             });
 
@@ -279,17 +339,6 @@
                 const card = document.createElement('div');
                 const isSelected = selectedItems.has(image.path);
                 card.className = 'item-card item-card--compact' + (isSelected ? ' item-card--selected' : '');
-                card.onclick = () => {
-                    const nextChecked = !selectedItems.has(image.path);
-                    toggleSelection(image.path, 'image', nextChecked);
-                    card.classList.toggle('item-card--selected', nextChecked);
-                    const checkbox = card.querySelector('input[type="checkbox"][data-path]');
-                    if (checkbox) checkbox.checked = nextChecked;
-                };
-                card.ondblclick = (e) => {
-                    e && e.preventDefault && e.preventDefault();
-                    openRenameDialog(image.path, name);
-                };
                 const thumbnailUrl = `/api/image-preview?id=${encodeURIComponent(image.path)}`;
                 card.innerHTML = `
                     <div class="item-select" onclick="event.stopPropagation();">
@@ -303,6 +352,24 @@
                 checkbox.addEventListener('change', (e) => {
                     toggleSelection(image.path, 'image', e.target.checked);
                     card.classList.toggle('item-card--selected', e.target.checked);
+                });
+                let imageClickTimer = null;
+                card.addEventListener('click', (e) => {
+                    if (e.target.closest('.item-select')) return;
+                    clearTimeout(imageClickTimer);
+                    imageClickTimer = setTimeout(() => {
+                        imageClickTimer = null;
+                        const nextChecked = !selectedItems.has(image.path);
+                        toggleSelection(image.path, 'image', nextChecked);
+                        card.classList.toggle('item-card--selected', nextChecked);
+                        if (checkbox) checkbox.checked = nextChecked;
+                    }, 280);
+                });
+                card.addEventListener('dblclick', (e) => {
+                    e.preventDefault();
+                    clearTimeout(imageClickTimer);
+                    imageClickTimer = null;
+                    openRenameDialog(image.path, name);
                 });
                 grid.appendChild(card);
             });

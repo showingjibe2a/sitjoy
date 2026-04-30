@@ -792,6 +792,116 @@ class FileManagementMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def _gallery_outermost_abs_dirs(self, abs_paths):
+        """若同时选中父文件夹与子文件夹，仅保留最外层路径（用于统计树内容，避免重复计数）。"""
+        norm = []
+        for p in abs_paths or []:
+            if not p:
+                continue
+            try:
+                ap = os.path.normpath(os.path.abspath(os.fsdecode(p) if isinstance(p, (bytes, bytearray)) else p))
+                if ap:
+                    norm.append(ap)
+            except Exception:
+                continue
+        norm = sorted(set(norm), key=lambda x: len(x))
+        out = []
+        for p in norm:
+            if any(p == r or p.startswith(r + os.sep) for r in out):
+                continue
+            out.append(p)
+        return out
+
+    def _gallery_count_folder_tree(self, abs_dir_root):
+        """统计某目录树下：子文件夹个数、图片文件数、其他文件数（不含根目录自身）。"""
+        subfolders = 0
+        images = 0
+        others = 0
+        if not abs_dir_root:
+            return subfolders, images, others
+        try:
+            root_b = self._safe_fsencode(abs_dir_root)
+            if not os.path.isdir(root_b):
+                return subfolders, images, others
+            for _dirpath, dirnames, filenames in os.walk(root_b):
+                subfolders += len(dirnames or [])
+                for fn in filenames or []:
+                    if self._is_image_name(fn):
+                        images += 1
+                    else:
+                        others += 1
+        except Exception:
+            pass
+        return subfolders, images, others
+
+    def _gallery_batch_delete_preview_payload(self, items, abs_resources):
+        """批量删除前统计：直接选中的图片/文件夹/其他文件，以及所选文件夹内的树形汇总。"""
+        direct_images = 0
+        direct_folders = 0
+        direct_other_files = 0
+        folder_abs_list = []
+        skipped = 0
+
+        for item in items[:800]:
+            try:
+                path_b64 = item.get('path', '') if isinstance(item, dict) else ''
+                if not path_b64:
+                    skipped += 1
+                    continue
+                rel_path = self._fs_from_b64(path_b64)
+                if '..' in rel_path or rel_path.startswith('/'):
+                    skipped += 1
+                    continue
+                full_path = self._join_resources(rel_path)
+                abs_path = os.path.abspath(full_path)
+                if not abs_path.startswith(abs_resources):
+                    skipped += 1
+                    continue
+                if not os.path.exists(full_path):
+                    skipped += 1
+                    continue
+                if os.path.isdir(full_path):
+                    direct_folders += 1
+                    folder_abs_list.append(abs_path)
+                elif os.path.isfile(full_path):
+                    try:
+                        dec = os.fsdecode(full_path) if isinstance(full_path, (bytes, bytearray)) else str(full_path)
+                        base = os.path.basename(dec)
+                    except Exception:
+                        base = ''
+                    if self._is_image_name(base) or self._is_image_name(rel_path):
+                        direct_images += 1
+                    else:
+                        direct_other_files += 1
+                else:
+                    skipped += 1
+            except Exception:
+                skipped += 1
+
+        tree_subfolders = 0
+        tree_images = 0
+        tree_other = 0
+        outer_dirs = self._gallery_outermost_abs_dirs(folder_abs_list)
+        for root in outer_dirs:
+            sf, im, ot = self._gallery_count_folder_tree(root)
+            tree_subfolders += sf
+            tree_images += im
+            tree_other += ot
+
+        total_tree_entries = tree_subfolders + tree_images + tree_other
+        return {
+            'direct_images': int(direct_images),
+            'direct_folders': int(direct_folders),
+            'direct_other_files': int(direct_other_files),
+            'skipped': int(skipped),
+            'tree': {
+                'subfolders': int(tree_subfolders),
+                'images': int(tree_images),
+                'other_files': int(tree_other),
+                'total_entries': int(total_tree_entries),
+            },
+        }
+
     def handle_gallery_batch_delete_api(self, environ, start_response):
         """gallery 批量删除：把选中项移动到『上架资源』/回收站（与产品图删除一致）。"""
         try:
@@ -803,11 +913,17 @@ class FileManagementMixin:
             if not isinstance(items, (list, tuple)) or not items:
                 return self.send_json({'status': 'error', 'message': 'No items selected'}, start_response)
 
+            abs_resources = os.path.abspath(RESOURCES_PATH_BYTES)
+
+            preview_raw = data.get('preview_only', data.get('preview'))
+            preview_only = str(preview_raw).strip().lower() in ('1', 'true', 'yes', 'on')
+            if preview_only:
+                stats = self._gallery_batch_delete_preview_payload(items, abs_resources)
+                return self.send_json({'status': 'success', 'preview_only': True, **stats}, start_response)
+
             moved = 0
             skipped = 0
             failures = []
-
-            abs_resources = os.path.abspath(RESOURCES_PATH_BYTES)
 
             for item in items[:800]:
                 try:

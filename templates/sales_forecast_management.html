@@ -39,6 +39,18 @@
             font-size: 0.88rem;
             min-width: 0;
         }
+        /* Compact month input (smaller height) */
+        .sf-toolbar input.sf-compact-month[type="month"]{
+            min-height: 28px;
+            height: 28px;
+            padding: 0.2rem 0.45rem !important;
+            border-radius: 10px;
+            font-size: 0.82rem;
+            border-width: 1px;
+            padding-right: 1.6rem !important;
+            background-position: right 0.4rem center, 0 0;
+            background-size: 14px 14px, auto;
+        }
         .sf-toolbar input[type="text"] { min-width: 120px; }
         .sf-toolbar .btn-secondary,
         .sf-toolbar .btn-primary,
@@ -193,6 +205,31 @@
             font-weight: 700;
             color: #4f463b;
         }
+        /* Column resize handle (like warehouse dashboard) */
+        table.sf-table thead th { position: sticky; }
+        .sf-col-resize-handle{
+            position: absolute;
+            top: 0;
+            right: -6px;
+            width: 12px;
+            height: 100%;
+            cursor: col-resize;
+            z-index: 30;
+        }
+        .sf-col-resize-handle::after{
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 18%;
+            width: 3px;
+            height: 64%;
+            transform: translateX(-50%);
+            border-radius: 2px;
+            background: rgba(123, 109, 92, 0.55);
+            opacity: 0.25;
+            transition: opacity 0.15s ease;
+        }
+        th:hover .sf-col-resize-handle::after{ opacity: 0.95; }
         table.sf-table tbody td {
             padding: 0.4rem 0.55rem;
             border-bottom: 1px solid rgba(207, 199, 189, 0.42);
@@ -278,6 +315,20 @@
             font-variant-numeric: tabular-nums;
             color: #5b5346;
         }
+        /* Excel-like selection spotlight */
+        td.sf-cell-history.sf-cell-selected{
+            box-shadow: inset 0 0 0 2px rgba(80, 120, 170, 0.85);
+            background: rgba(80, 120, 170, 0.10) !important;
+        }
+        tr.sf-spotlight-row td{
+            background: rgba(80, 120, 170, 0.04);
+        }
+        td.sf-spotlight-col{
+            background: rgba(80, 120, 170, 0.04) !important;
+        }
+        th.sf-spotlight-col{
+            box-shadow: inset 0 -2px 0 rgba(80, 120, 170, 0.75);
+        }
         td.sf-cell-forecast {
             text-align: right;
             position: relative;
@@ -330,9 +381,15 @@
 
         .sf-tooltip-wrap {
             position: relative;
-            display: inline-block;
+            display: block;
+            width: 100%;
             z-index: 1;
             isolation: isolate;
+        }
+        .sf-tooltip-content{
+            display: block;
+            width: 100%;
+            text-align: right;
         }
         .sf-tooltip-wrap:hover,
         .sf-tooltip-wrap:focus-within,
@@ -504,9 +561,9 @@
                 <span class="sf-divider" aria-hidden="true"></span>
                 <div class="sf-toolbar-group">
                     <label>历史销量范围：</label>
-                    <span class="sf-month-input-wrap"><input type="month" id="historyStart" readonly></span>
+                    <span class="sf-month-input-wrap"><input type="month" id="historyStart" class="sf-compact-month" readonly></span>
                     <span>至</span>
-                    <span class="sf-month-input-wrap"><input type="month" id="historyEnd" readonly></span>
+                    <span class="sf-month-input-wrap"><input type="month" id="historyEnd" class="sf-compact-month" readonly></span>
                 </div>
                 <span class="sf-divider" aria-hidden="true"></span>
                 <div class="sf-toolbar-group">
@@ -529,6 +586,11 @@
                 <tbody id="forecastTbody"></tbody>
             </table>
             <div class="sf-loading-overlay" id="forecastLoading">数据加载中…</div>
+            <div class="sf-selection-hint" id="sfSelectionHint" style="display:none;">
+                已选 <span id="sfSelectionCount">0</span> 个历史单元格。
+                <button type="button" class="btn-secondary btn-small" id="sfSelectionClearBtn" style="margin-left:0.4rem;">清空选择</button>
+                <button type="button" class="btn-secondary btn-small" id="sfSelectionShowPerfBtn" style="margin-left:0.35rem;">查看产品表现</button>
+            </div>
         </div>
     </div>
 
@@ -545,6 +607,7 @@
         const FORECAST_MODES = ['platform', 'spec', 'order'];
         const SF_PREF_HISTORY_EXPANDED_KEY = 'sales_forecast_history_expanded_v1';
         const SF_PREF_FORECAST_EXPANDED_KEY = 'sales_forecast_forecast_expanded_v1';
+        const SF_PREF_COL_WIDTHS_PREFIX = 'sales_forecast_col_widths_v1_';
 
         const state = {
             forecastMode: 'spec',
@@ -561,6 +624,8 @@
             forecastExpanded: true,
             collapsedPlatformGroups: new Set(),
             collapsedSkuGroups: new Set(),
+            selectedHistoryCells: new Set(), // key: row_key|monthKey
+            selectionAnchor: null,           // { rowKey, monthKey }
         };
 
         function readBoolPref(key, fallback) {
@@ -574,6 +639,66 @@
 
         function writeBoolPref(key, value) {
             try { localStorage.setItem(key, value ? '1' : '0'); } catch (e) {}
+        }
+
+        function readJsonPref(key, fallback) {
+            try {
+                const raw = String(localStorage.getItem(key) || '').trim();
+                if (!raw) return fallback;
+                const obj = JSON.parse(raw);
+                return (obj && typeof obj === 'object') ? obj : fallback;
+            } catch (e) { return fallback; }
+        }
+
+        function writeJsonPref(key, value) {
+            try { localStorage.setItem(key, JSON.stringify(value || {})); } catch (e) {}
+        }
+
+        function colWidthPrefKey(mode) {
+            const m = String(mode || '').trim().toLowerCase();
+            return SF_PREF_COL_WIDTHS_PREFIX + (FORECAST_MODES.includes(m) ? m : 'spec');
+        }
+
+        function getDefaultColWidthByKey(key) {
+            const k = String(key || '').trim();
+            if (k === 'thumb') return 68;
+            if (k === 'fabric_code') return 136;
+            if (k === 'platform_sku' || k === 'sku') return 150;
+            if (k === 'shop_name' || k === 'sku_family') return 132;
+            return 128;
+        }
+
+        function loadColWidthPrefs(mode) {
+            const pref = readJsonPref(colWidthPrefKey(mode), {}) || {};
+            const spec = (pref && pref.spec && typeof pref.spec === 'object') ? pref.spec : {};
+            const history = Number(pref && pref.history);
+            const forecast = Number(pref && pref.forecast);
+            return {
+                spec,
+                history: Number.isFinite(history) && history > 30 ? history : 86,
+                forecast: Number.isFinite(forecast) && forecast > 30 ? forecast : 86,
+            };
+        }
+
+        function saveColWidthPrefs(mode, cols, meta, leafColWidths) {
+            const pref = loadColWidthPrefs(mode);
+            const spec = Object.assign({}, pref.spec || {});
+            const specCount = Number(meta && meta.specCount) || 0;
+            for (let i = 0; i < Math.min(specCount, cols.length); i++) {
+                const key = String(cols[i].key || '').trim();
+                if (!key) continue;
+                const w = Number(leafColWidths[i] || 0);
+                if (Number.isFinite(w) && w > 30) spec[key] = Math.round(w);
+            }
+            let history = pref.history;
+            let forecast = pref.forecast;
+            if (meta && meta.historyStart != null && meta.historyStart >= 0 && meta.histCols > 0) {
+                history = Math.round(Number(leafColWidths[meta.historyStart] || history));
+            }
+            if (meta && meta.forecastStart != null && meta.forecastStart >= 0 && meta.fcCols > 0) {
+                forecast = Math.round(Number(leafColWidths[meta.forecastStart] || forecast));
+            }
+            writeJsonPref(colWidthPrefKey(mode), { v: 1, spec, history, forecast, updated_at: Date.now() });
         }
 
         function pad2(n) { n = Number(n) || 0; return n < 10 ? ('0' + n) : ('' + n); }
@@ -1041,17 +1166,29 @@
             const visibleFcMonths = state.forecastExpanded ? state.months.slice() : [];
             const histCols = state.historyMonths.length ? (state.historyExpanded ? visibleHistMonths.length : 1) : 0;
             const fcCols = state.months.length ? (state.forecastExpanded ? visibleFcMonths.length : 1) : 0;
+            const pref = loadColWidthPrefs(state.forecastMode);
             const leafColWidths = [];
             cols.forEach(col => {
-                if (col.key === 'thumb') leafColWidths.push(68);
-                else if (col.key === 'fabric_code') leafColWidths.push(136);
-                else if (col.key === 'platform_sku' || col.key === 'sku') leafColWidths.push(150);
-                else if (col.key === 'shop_name' || col.key === 'sku_family') leafColWidths.push(132);
-                else leafColWidths.push(128);
+                const key = String(col.key || '').trim();
+                const w = Number((pref.spec || {})[key]);
+                leafColWidths.push((Number.isFinite(w) && w > 30) ? w : getDefaultColWidthByKey(key));
             });
-            const monthWidth = 86;
-            for (let i = 0; i < histCols; i++) leafColWidths.push(monthWidth);
-            for (let i = 0; i < fcCols; i++) leafColWidths.push(monthWidth);
+            // Month columns: ensure each month within the same group has the same width
+            const historyWidth = Number(pref.history || 86);
+            const forecastWidth = Number(pref.forecast || 86);
+            for (let i = 0; i < histCols; i++) leafColWidths.push(historyWidth);
+            for (let i = 0; i < fcCols; i++) leafColWidths.push(forecastWidth);
+            const meta = {
+                specCount: cols.length,
+                histCols,
+                fcCols,
+                historyStart: cols.length,
+                historyEnd: cols.length + Math.max(0, histCols - 1),
+                forecastStart: cols.length + histCols,
+                forecastEnd: cols.length + histCols + Math.max(0, fcCols - 1),
+            };
+            state._sfColMeta = meta;
+            state._sfLeafColWidths = leafColWidths;
             const totalWidth = leafColWidths.reduce((acc, n) => acc + Number(n || 0), 0);
             table.style.minWidth = `${Math.max(960, totalWidth)}px`;
             const oldColgroup = table.querySelector('colgroup#forecastColgroup');
@@ -1075,7 +1212,7 @@
             const trBottom = document.createElement('tr');
             trBottom.className = 'sf-thead-row-2';
             trBottom.innerHTML = cols.map(col => buildBottomHeaderHtml(col)).join('')
-                + (state.historyExpanded ? visibleHistMonths.map(m => `<th class="sf-th-history">${monthShortLabel(m)}</th>`).join('') : (histCols ? '<th class="sf-th-history">历史合计</th>' : ''))
+                + (state.historyExpanded ? visibleHistMonths.map(m => `<th class="sf-th-history" data-month="${m}">${monthShortLabel(m)}</th>`).join('') : (histCols ? '<th class="sf-th-history">历史合计</th>' : ''))
                 + (state.forecastExpanded ? visibleFcMonths.map(m => `<th class="sf-th-month">${monthShortLabel(m)}</th>`).join('') : (fcCols ? '<th class="sf-th-month">预测合计</th>' : ''));
             thead.innerHTML = '';
             thead.appendChild(trTop);
@@ -1088,6 +1225,8 @@
             if (typeof requestAnimationFrame === 'function') requestAnimationFrame(applyHeadOffset);
             setTimeout(applyHeadOffset, 0);
             bindHeaderEvents(thead, cols);
+            annotateForecastHeaderColumns(thead, cols.length + histCols + fcCols);
+            attachForecastColumnResizeHandles(thead, cols, meta, leafColWidths);
 
             const filteredRows = applyFilters(state.rows.slice(), cols);
             const groups = buildGroups(filteredRows);
@@ -1128,6 +1267,8 @@
                             visibleHistMonths.forEach(monthKey => {
                                 const td = document.createElement('td');
                                 td.className = 'sf-cell-history';
+                                td.dataset.rowKey = row.row_key;
+                                td.dataset.month = monthKey;
                                 const cell = (row.history && row.history[monthKey]) || null;
                                 const text = cell ? formatNumber(cell.sales_qty) : '0';
                                 if (cell) td.appendChild(makeTooltipWrap(buildHistoryTooltip(cell, monthKey), document.createTextNode(text)));
@@ -1167,6 +1308,8 @@
                     tbody.appendChild(tr);
                 });
             });
+            bindHistoryCellSelection(tbody);
+            applyHistorySelectionStyles();
         }
 
         function buildBottomHeaderHtml(col) {
@@ -1179,6 +1322,7 @@
         function bindHeaderEvents(thead, cols) {
             thead.querySelectorAll('.sf-th-section-toggle[data-section]').forEach(el => {
                 el.addEventListener('click', (e) => {
+                    if (state._sfSuppressHeaderClickUntil && Date.now() < state._sfSuppressHeaderClickUntil) return;
                     e.preventDefault();
                     e.stopPropagation();
                     const sec = el.dataset.section;
@@ -1195,6 +1339,7 @@
             });
             thead.querySelectorAll('.sf-th-title-row[data-sort-key]').forEach(el => {
                 el.addEventListener('click', () => {
+                    if (state._sfSuppressHeaderClickUntil && Date.now() < state._sfSuppressHeaderClickUntil) return;
                     const key = String(el.dataset.sortKey || '').trim();
                     if (!key) return;
                     if (state.sortKey === key) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
@@ -1230,8 +1375,484 @@
             }
         }
 
+        function clearHistorySelection() {
+            state.selectedHistoryCells.clear();
+            state.selectionAnchor = null;
+            applyHistorySelectionStyles();
+        }
+
+        function selectedCellsArray() {
+            const out = [];
+            state.selectedHistoryCells.forEach(k => out.push(k));
+            return out;
+        }
+
+        function applyHistorySelectionStyles() {
+            const tbody = document.getElementById('forecastTbody');
+            const thead = document.getElementById('forecastThead');
+            const hint = document.getElementById('sfSelectionHint');
+            const cnt = document.getElementById('sfSelectionCount');
+            const showBtn = document.getElementById('sfSelectionShowPerfBtn');
+            const n = state.selectedHistoryCells.size || 0;
+            if (cnt) cnt.textContent = String(n);
+            if (hint) hint.style.display = n > 0 ? '' : 'none';
+            if (tbody) {
+                tbody.querySelectorAll('td.sf-cell-history').forEach(td => {
+                    td.classList.remove('sf-cell-selected', 'sf-spotlight-col');
+                });
+                tbody.querySelectorAll('tr.sf-spotlight-row').forEach(tr => tr.classList.remove('sf-spotlight-row'));
+            }
+            if (thead) {
+                thead.querySelectorAll('th.sf-spotlight-col').forEach(th => th.classList.remove('sf-spotlight-col'));
+            }
+            if (!n || !tbody) {
+                if (showBtn) showBtn.disabled = true;
+                return;
+            }
+
+            const selectedRows = new Set();
+            const selectedMonths = new Set();
+            state.selectedHistoryCells.forEach(k => {
+                const parts = String(k).split('|');
+                if (parts.length < 2) return;
+                selectedRows.add(parts[0]);
+                selectedMonths.add(parts.slice(1).join('|'));
+            });
+
+            tbody.querySelectorAll('tr[data-row-key]').forEach(tr => {
+                const rk = String(tr.dataset.rowKey || '');
+                if (rk && selectedRows.has(rk)) tr.classList.add('sf-spotlight-row');
+            });
+            tbody.querySelectorAll('td.sf-cell-history[data-month][data-row-key]').forEach(td => {
+                const rk = String(td.dataset.rowKey || '');
+                const mk = String(td.dataset.month || '');
+                if (rk && mk && state.selectedHistoryCells.has(`${rk}|${mk}`)) {
+                    td.classList.add('sf-cell-selected');
+                }
+                if (mk && selectedMonths.has(mk)) td.classList.add('sf-spotlight-col');
+            });
+            if (thead && state.historyExpanded) {
+                thead.querySelectorAll('tr.sf-thead-row-2 th.sf-th-history[data-month]').forEach(th => {
+                    const mk = String(th.dataset.month || '');
+                    if (mk && selectedMonths.has(mk)) th.classList.add('sf-spotlight-col');
+                });
+            }
+
+            // enable perf dialog only when all selections are in the same row
+            let rowOnly = '';
+            selectedRows.forEach(r => { if (!rowOnly) rowOnly = r; else rowOnly = '__multi__'; });
+            if (showBtn) showBtn.disabled = !(rowOnly && rowOnly !== '__multi__' && selectedMonths.size > 0);
+        }
+
+        function bindHistoryCellSelection(tbody) {
+            if (!tbody || tbody.dataset.historySelectBound === '1') return;
+            tbody.dataset.historySelectBound = '1';
+
+            const getCellKeyFromTd = (td) => {
+                if (!td) return '';
+                const rk = String(td.dataset.rowKey || '');
+                const mk = String(td.dataset.month || '');
+                if (!rk || !mk) return '';
+                return `${rk}|${mk}`;
+            };
+
+            const selectRect = (a, b, replace) => {
+                if (!a || !b) return;
+                const aRow = String(a.rowKey || '');
+                const bRow = String(b.rowKey || '');
+                const aMonth = String(a.monthKey || '');
+                const bMonth = String(b.monthKey || '');
+                if (!aRow || !bRow || !aMonth || !bMonth) return;
+                // current implementation focuses on same-row multi-month selection (most common)
+                if (aRow !== bRow) return;
+                const months = state.historyMonths.slice();
+                const i1 = months.indexOf(aMonth);
+                const i2 = months.indexOf(bMonth);
+                if (i1 < 0 || i2 < 0) return;
+                const lo = Math.min(i1, i2);
+                const hi = Math.max(i1, i2);
+                if (replace) state.selectedHistoryCells.clear();
+                for (let i = lo; i <= hi; i++) {
+                    state.selectedHistoryCells.add(`${aRow}|${months[i]}`);
+                }
+            };
+
+            let dragging = false;
+            let dragStart = null;
+
+            tbody.addEventListener('mousedown', (e) => {
+                const td = e.target && e.target.closest ? e.target.closest('td.sf-cell-history[data-month][data-row-key]') : null;
+                if (!td) return;
+                if (!state.historyExpanded) return;
+                dragging = true;
+                dragStart = { rowKey: String(td.dataset.rowKey || ''), monthKey: String(td.dataset.month || '') };
+                state.selectionAnchor = dragStart;
+                if (!(e.ctrlKey || e.metaKey || e.shiftKey)) {
+                    state.selectedHistoryCells.clear();
+                }
+                const key = getCellKeyFromTd(td);
+                if (key) state.selectedHistoryCells.add(key);
+                applyHistorySelectionStyles();
+                e.preventDefault();
+            }, true);
+
+            document.addEventListener('mousemove', (e) => {
+                if (!dragging || !dragStart) return;
+                const td = e.target && e.target.closest ? e.target.closest('td.sf-cell-history[data-month][data-row-key]') : null;
+                if (!td) return;
+                const cur = { rowKey: String(td.dataset.rowKey || ''), monthKey: String(td.dataset.month || '') };
+                selectRect(dragStart, cur, true);
+                applyHistorySelectionStyles();
+            }, true);
+
+            document.addEventListener('mouseup', () => {
+                if (!dragging) return;
+                dragging = false;
+                dragStart = null;
+            }, true);
+
+            tbody.addEventListener('click', (e) => {
+                const td = e.target && e.target.closest ? e.target.closest('td.sf-cell-history[data-month][data-row-key]') : null;
+                if (!td || !state.historyExpanded) return;
+                if (e.target && e.target.closest && e.target.closest('.sf-tooltip-wrap')) return;
+                const key = getCellKeyFromTd(td);
+                if (!key) return;
+                const rowKey = String(td.dataset.rowKey || '');
+                const monthKey = String(td.dataset.month || '');
+                const isCtrl = e.ctrlKey || e.metaKey;
+                const isShift = e.shiftKey;
+                if (isShift && state.selectionAnchor) {
+                    selectRect(state.selectionAnchor, { rowKey, monthKey }, !isCtrl);
+                } else if (isCtrl) {
+                    if (state.selectedHistoryCells.has(key)) state.selectedHistoryCells.delete(key);
+                    else state.selectedHistoryCells.add(key);
+                    state.selectionAnchor = { rowKey, monthKey };
+                } else {
+                    state.selectedHistoryCells.clear();
+                    state.selectedHistoryCells.add(key);
+                    state.selectionAnchor = { rowKey, monthKey };
+                }
+                applyHistorySelectionStyles();
+            });
+        }
+
         function renderForecastTableBodyOnly() {
             renderForecastTable();
+        }
+
+        function applyForecastColgroupWidths(table, leafColWidths) {
+            const t = table || document.getElementById('forecastTable');
+            if (!t) return;
+            const cols = Array.from((t.querySelector('colgroup#forecastColgroup') || {}).children || []);
+            for (let i = 0; i < cols.length && i < (leafColWidths || []).length; i++) {
+                const w = Math.max(46, Number(leafColWidths[i] || 0));
+                cols[i].style.width = `${w}px`;
+            }
+            const totalWidth = (leafColWidths || []).reduce((acc, n) => acc + Number(n || 0), 0);
+            t.style.minWidth = `${Math.max(960, totalWidth)}px`;
+        }
+
+        function annotateForecastHeaderColumns(thead, totalCols) {
+            const rows = Array.from((thead || {}).querySelectorAll ? thead.querySelectorAll('tr') : []);
+            const occupied = [];
+            rows.forEach((row, rowIndex) => {
+                occupied[rowIndex] = occupied[rowIndex] || [];
+                let colIndex = 0;
+                Array.from(row.children).forEach(cell => {
+                    while (occupied[rowIndex][colIndex]) colIndex += 1;
+                    const colspan = Number(cell.getAttribute('colspan') || 1) || 1;
+                    const rowspan = Number(cell.getAttribute('rowspan') || 1) || 1;
+                    const start = colIndex;
+                    const end = colIndex + colspan - 1;
+                    cell.dataset.colStart = String(start);
+                    cell.dataset.colEnd = String(end);
+                    for (let r = rowIndex; r < rowIndex + rowspan; r += 1) {
+                        occupied[r] = occupied[r] || [];
+                        for (let c = start; c <= end; c += 1) occupied[r][c] = true;
+                    }
+                    colIndex = end + 1;
+                });
+            });
+            // best-effort validate ranges
+            rows.forEach(r => {
+                Array.from(r.children).forEach(cell => {
+                    const s = Number(cell.dataset.colStart);
+                    const e = Number(cell.dataset.colEnd);
+                    if (!Number.isFinite(s) || !Number.isFinite(e) || s < 0 || e < s || e >= totalCols) {
+                        delete cell.dataset.colStart;
+                        delete cell.dataset.colEnd;
+                    }
+                });
+            });
+        }
+
+        function attachForecastColumnResizeHandles(thead, cols, meta, leafColWidths) {
+            if (!thead) return;
+            const table = document.getElementById('forecastTable');
+            const totalCols = Number(meta && meta.specCount || 0) + Number(meta && meta.histCols || 0) + Number(meta && meta.fcCols || 0);
+            thead.querySelectorAll('.sf-col-resize-handle').forEach(el => el.remove());
+            thead.querySelectorAll('th').forEach(cell => {
+                const colStart = Number(cell.dataset.colStart);
+                const colEnd = Number(cell.dataset.colEnd);
+                if (!Number.isFinite(colStart) || !Number.isFinite(colEnd) || colStart < 0 || colEnd < colStart || colEnd >= totalCols) return;
+                cell.style.position = 'relative';
+                const handle = document.createElement('span');
+                handle.className = 'sf-col-resize-handle';
+                handle.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                });
+                handle.addEventListener('mousedown', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    state._sfSuppressHeaderClickUntil = Date.now() + 1200;
+                    const startX = event.clientX;
+                    const startWidths = leafColWidths.slice();
+                    const spanCount = (colEnd - colStart + 1);
+                    const minTotal = 46 * spanCount;
+                    const startTotal = startWidths.slice(colStart, colEnd + 1).reduce((sum, w) => sum + Math.max(46, Number(w || 60)), 0);
+                    let moved = false;
+
+                    const inRange = (idx, start, end) => idx >= start && idx <= end;
+                    const isHistorySpan = meta && meta.histCols > 0
+                        && inRange(colStart, meta.historyStart, meta.historyEnd)
+                        && inRange(colEnd, meta.historyStart, meta.historyEnd);
+                    const isForecastSpan = meta && meta.fcCols > 0
+                        && inRange(colStart, meta.forecastStart, meta.forecastEnd)
+                        && inRange(colEnd, meta.forecastStart, meta.forecastEnd);
+
+                    const applyMonthGroupWidth = (kind, newPerWidth) => {
+                        const w = Math.max(46, Math.round(Number(newPerWidth || 0)));
+                        if (kind === 'history') {
+                            for (let i = meta.historyStart; i <= meta.historyEnd; i++) leafColWidths[i] = w;
+                        } else {
+                            for (let i = meta.forecastStart; i <= meta.forecastEnd; i++) leafColWidths[i] = w;
+                        }
+                    };
+
+                    const onMove = (moveEvent) => {
+                        const delta = moveEvent.clientX - startX;
+                        if (Math.abs(delta) > 2) moved = true;
+
+                        if (isHistorySpan) {
+                            const targetTotal = Math.max(minTotal, startTotal + delta);
+                            const per = Math.max(46, Math.round(targetTotal / Math.max(1, spanCount)));
+                            applyMonthGroupWidth('history', per);
+                        } else if (isForecastSpan) {
+                            const targetTotal = Math.max(minTotal, startTotal + delta);
+                            const per = Math.max(46, Math.round(targetTotal / Math.max(1, spanCount)));
+                            applyMonthGroupWidth('forecast', per);
+                        } else if (spanCount <= 1) {
+                            leafColWidths[colEnd] = Math.max(46, Number(startWidths[colEnd] || 60) + delta);
+                        } else {
+                            const targetTotal = Math.max(minTotal, startTotal + delta);
+                            const factor = targetTotal / Math.max(1, startTotal);
+                            let allocated = 0;
+                            for (let idx = colStart; idx <= colEnd; idx += 1) {
+                                const base = Math.max(46, Number(startWidths[idx] || 60));
+                                const scaled = Math.max(46, Math.round(base * factor));
+                                leafColWidths[idx] = scaled;
+                                allocated += scaled;
+                            }
+                            const remainder = Math.round(targetTotal - allocated);
+                            leafColWidths[colEnd] = Math.max(46, Number(leafColWidths[colEnd] || 60) + remainder);
+                        }
+
+                        applyForecastColgroupWidths(table, leafColWidths);
+                    };
+                    const onUp = () => {
+                        document.removeEventListener('mousemove', onMove);
+                        document.removeEventListener('mouseup', onUp);
+                        state._sfSuppressHeaderClickUntil = Date.now() + (moved ? 320 : 160);
+                        saveColWidthPrefs(state.forecastMode, cols, meta, leafColWidths);
+                    };
+                    document.addEventListener('mousemove', onMove);
+                    document.addEventListener('mouseup', onUp);
+                });
+                cell.appendChild(handle);
+            });
+        }
+
+        // ===== Multi-month performance dialog (history cells) =====
+        const SF_PREF_PERF_FIELDS_KEY = 'sales_forecast_perf_fields_v1';
+
+        function getPerfFieldCatalog() {
+            return [
+                { key: 'month', label: '月份' },
+                { key: 'sales_qty', label: '销量' },
+                { key: 'net_sales_amount', label: '销售额(净)' },
+                { key: 'order_qty', label: '订单数' },
+                { key: 'session_total', label: '会话数' },
+                { key: 'refund_amount', label: '退款金额' },
+                { key: 'aov', label: '客单价(净)/单' },
+                { key: 'conversion_rate', label: '转化率(订单/会话)' },
+                { key: 'refund_rate', label: '退款率(退款额/净销售额)' },
+            ];
+        }
+
+        function readPerfFieldsPref() {
+            const fallback = ['month', 'sales_qty', 'net_sales_amount', 'order_qty', 'session_total', 'refund_amount'];
+            try {
+                const raw = String(localStorage.getItem(SF_PREF_PERF_FIELDS_KEY) || '').trim();
+                if (!raw) return fallback;
+                const arr = JSON.parse(raw);
+                if (!Array.isArray(arr) || !arr.length) return fallback;
+                return arr.map(x => String(x || '').trim()).filter(Boolean);
+            } catch (e) {
+                return fallback;
+            }
+        }
+
+        function writePerfFieldsPref(keys) {
+            try { localStorage.setItem(SF_PREF_PERF_FIELDS_KEY, JSON.stringify(keys || [])); } catch (e) {}
+        }
+
+        function computePerfValue(cell, key, monthKey) {
+            if (!cell) return '';
+            if (key === 'month') return monthShortLabel(monthKey);
+            const num = (v) => (v == null ? 0 : Number(v || 0));
+            const fmtNum = (v) => formatNumber(num(v));
+            if (key === 'sales_qty') return fmtNum(cell.sales_qty);
+            if (key === 'net_sales_amount') return fmtNum(cell.net_sales_amount);
+            if (key === 'order_qty') return fmtNum(cell.order_qty);
+            if (key === 'session_total') return fmtNum(cell.session_total);
+            if (key === 'refund_amount') return fmtNum(cell.refund_amount);
+            if (key === 'aov') {
+                const orders = num(cell.order_qty);
+                const net = num(cell.net_sales_amount);
+                if (!orders) return '0';
+                return (net / orders).toLocaleString('en-US', { maximumFractionDigits: 2 });
+            }
+            if (key === 'conversion_rate') {
+                const orders = num(cell.order_qty);
+                const sess = num(cell.session_total);
+                if (!sess) return '0%';
+                return ((orders / sess) * 100).toFixed(2) + '%';
+            }
+            if (key === 'refund_rate') {
+                const net = num(cell.net_sales_amount);
+                const r = num(cell.refund_amount);
+                if (!net) return '0%';
+                return ((r / net) * 100).toFixed(2) + '%';
+            }
+            // unknown raw key (fallback)
+            const raw = cell[key];
+            if (typeof raw === 'number') return fmtNum(raw);
+            if (raw == null) return '';
+            return String(raw);
+        }
+
+        function getSelectedHistoryCellsForSingleRow() {
+            const keys = selectedCellsArray();
+            const rowSet = new Set();
+            const months = [];
+            keys.forEach(k => {
+                const [rowKey, monthKey] = String(k).split('|');
+                if (!rowKey || !monthKey) return;
+                rowSet.add(rowKey);
+                months.push(monthKey);
+            });
+            if (rowSet.size !== 1) return null;
+            const rowKey = Array.from(rowSet)[0];
+            months.sort();
+            return { rowKey, months: Array.from(new Set(months)) };
+        }
+
+        function resolveRowByKey(rowKey) {
+            const rk = String(rowKey || '').trim();
+            if (!rk) return null;
+            const rows = state.rows || [];
+            return rows.find(r => String(r.row_key || '') === rk) || null;
+        }
+
+        function ensurePerfModal() {
+            let modal = document.getElementById('sfPerfModal');
+            if (modal) return modal;
+            modal = document.createElement('div');
+            modal.id = 'sfPerfModal';
+            modal.className = 'pm-modal';
+            modal.innerHTML = `
+                <div class="pm-modal-content pm-modal-content--wide">
+                    <div class="pm-modal-scroll">
+                        <h3 style="margin-top:0;">历史月销量 · 产品表现</h3>
+                        <div class="helper-text" id="sfPerfModalTitle"></div>
+                        <div style="margin-top:0.65rem; display:grid; grid-template-columns: 280px 1fr; gap: 0.8rem; align-items:start;">
+                            <div>
+                                <div style="font-weight:700; margin-bottom:0.35rem;">显示字段（本地记忆）</div>
+                                <div id="sfPerfFieldList" style="display:grid; gap:0.25rem;"></div>
+                            </div>
+                            <div>
+                                <div style="font-weight:700; margin-bottom:0.35rem;">数据</div>
+                                <div style="border:1px solid rgba(207, 199, 189, 0.6); border-radius:10px; overflow:auto; max-height:60vh; background:#fff;">
+                                    <table class="pm-table" data-disable-table-manage="1" style="margin:0;">
+                                        <thead><tr id="sfPerfHeadRow"></tr></thead>
+                                        <tbody id="sfPerfBody"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="pm-modal-actions">
+                        <button type="button" class="btn-secondary" id="sfPerfCloseBtn">关闭</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            modal.addEventListener('click', (e) => { if (e.target === modal) closePerfModal(); });
+            modal.querySelector('#sfPerfCloseBtn')?.addEventListener('click', closePerfModal);
+            return modal;
+        }
+
+        function closePerfModal() {
+            const modal = document.getElementById('sfPerfModal');
+            if (modal) modal.classList.remove('active');
+        }
+
+        function renderPerfModal() {
+            const sel = getSelectedHistoryCellsForSingleRow();
+            if (!sel) {
+                showToast('请先在同一行选择多个历史月份单元格', true);
+                return;
+            }
+            const row = resolveRowByKey(sel.rowKey);
+            if (!row) {
+                showToast('未找到对应行数据', true);
+                return;
+            }
+            const modal = ensurePerfModal();
+            const title = modal.querySelector('#sfPerfModalTitle');
+            if (title) title.textContent = `已选月份：${sel.months.map(m => monthShortLabel(m)).join('、')}`;
+
+            const catalog = getPerfFieldCatalog();
+            const saved = new Set(readPerfFieldsPref());
+            const fieldList = modal.querySelector('#sfPerfFieldList');
+            if (fieldList) {
+                fieldList.innerHTML = catalog.map(f => {
+                    const ck = saved.has(f.key) ? 'checked' : '';
+                    return `<label style="display:flex; gap:0.45rem; align-items:center;"><input type="checkbox" data-field="${escapeHtml(f.key)}" ${ck}> <span>${escapeHtml(f.label)}</span></label>`;
+                }).join('');
+                fieldList.querySelectorAll('input[type="checkbox"][data-field]').forEach(cb => {
+                    cb.addEventListener('change', () => {
+                        const picked = Array.from(fieldList.querySelectorAll('input[type="checkbox"][data-field]:checked')).map(x => String(x.dataset.field || '').trim()).filter(Boolean);
+                        writePerfFieldsPref(picked);
+                        renderPerfModal();
+                    });
+                });
+            }
+
+            const pickedKeys = readPerfFieldsPref();
+            const pickedFields = pickedKeys.map(k => catalog.find(x => x.key === k)).filter(Boolean);
+            const headRow = modal.querySelector('#sfPerfHeadRow');
+            if (headRow) headRow.innerHTML = pickedFields.map(f => `<th>${escapeHtml(f.label)}</th>`).join('');
+            const body = modal.querySelector('#sfPerfBody');
+            if (body) {
+                body.innerHTML = sel.months.map(mk => {
+                    const cell = (row.history && row.history[mk]) || null;
+                    return `<tr>${pickedFields.map(f => `<td>${escapeHtml(computePerfValue(cell, f.key, mk) || '0')}</td>`).join('')}</tr>`;
+                }).join('');
+            }
+
+            modal.classList.add('active');
         }
 
         // ===== 单元格 =====
@@ -1312,7 +1933,10 @@
             const wrap = document.createElement('span');
             wrap.className = 'sf-tooltip-wrap';
             wrap.tabIndex = 0;
-            wrap.appendChild(contentNode);
+            const content = document.createElement('span');
+            content.className = 'sf-tooltip-content';
+            content.appendChild(contentNode);
+            wrap.appendChild(content);
             const bubble = document.createElement('span');
             bubble.className = 'sf-tooltip-bubble';
             bubble.innerHTML = html;
@@ -1507,6 +2131,20 @@
             document.getElementById('sfBatchDiscardBtn').addEventListener('click', discardAllChanges);
 
             loadForecastData();
+        });
+
+        // Selection hint buttons
+        document.addEventListener('DOMContentLoaded', () => {
+            const clearBtn = document.getElementById('sfSelectionClearBtn');
+            const showBtn = document.getElementById('sfSelectionShowPerfBtn');
+            if (clearBtn && clearBtn.dataset.bound !== '1') {
+                clearBtn.dataset.bound = '1';
+                clearBtn.addEventListener('click', clearHistorySelection);
+            }
+            if (showBtn && showBtn.dataset.bound !== '1') {
+                showBtn.dataset.bound = '1';
+                showBtn.addEventListener('click', renderPerfModal);
+            }
         });
     </script>
 </body>

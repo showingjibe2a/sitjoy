@@ -513,7 +513,7 @@
                 <tr>
                   <th style="width:68px; text-align:center;">
                     <label style="display:inline-flex; align-items:center; gap:0.35rem; user-select:none; cursor:pointer;">
-                      <input type="checkbox" id="pmVariantSelectAll">
+                      <input type="checkbox" id="pmVariantSelectAll" data-pm-picker-select-all="variant">
                       <span style="font-size:0.86rem;">全选</span>
                     </label>
                   </th>
@@ -573,6 +573,15 @@
         if (specEl) specEl.value = String(state.spec || '');
         if (fabEl) fabEl.value = String(state.fabric || '');
 
+        const syncVariantSelectAll = () => {
+          const selAll = $('pmVariantSelectAll');
+          const tb = $('pmVariantTbody');
+          if (!selAll || !tb) return;
+          const boxes = Array.from(tb.querySelectorAll('input.pmVariantPickBox'));
+          const vids = boxes.map(b => Number(b.getAttribute('data-vid') || 0)).filter(v => v > 0);
+          selAll.checked = vids.length > 0 && vids.every(vid => selectedVariantIds.has(vid));
+        };
+
         const render = () => {
           const skuQ = String(skuEl?.value || '').trim().toLowerCase();
           const specQ = String(specEl?.value || '').trim().toLowerCase();
@@ -593,7 +602,7 @@
             const vid = Number(it.variant_id || 0);
             const checked = selectedVariantIds.has(vid) ? 'checked' : '';
             return `
-              <tr>
+              <tr class="pm-picker-click-row" style="cursor:pointer;">
                 <td style="text-align:center;"><input type="checkbox" class="pmVariantPickBox" data-vid="${vid}" ${checked}></td>
                 <td>${escapeHtml(it.sku_family || '')}</td>
                 <td>${escapeHtml(it.spec_name || '')}</td>
@@ -607,19 +616,29 @@
               if (!vid) return;
               if (box.checked) selectedVariantIds.add(vid);
               else selectedVariantIds.delete(vid);
+              syncVariantSelectAll();
             });
           });
-          const selAll = $('pmVariantSelectAll');
-          if (selAll) selAll.checked = rows.length > 0 && rows.every(r => selectedVariantIds.has(Number(r.variant_id || 0)));
+          tbody.querySelectorAll('tr.pm-picker-click-row').forEach(tr => {
+            tr.addEventListener('click', (e) => {
+              if (e.target.closest('input[type="checkbox"]')) return;
+              const box = tr.querySelector('input.pmVariantPickBox');
+              if (!box) return;
+              box.checked = !box.checked;
+              box.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+          });
+          syncVariantSelectAll();
         };
 
         [skuEl, specEl, fabEl].forEach(el => el && el.addEventListener('input', render));
         const selAll = $('pmVariantSelectAll');
-        if (selAll) {
+        if (selAll && selAll.dataset.pmPickerSelectAllBound !== '1') {
+          selAll.dataset.pmPickerSelectAllBound = '1';
           selAll.addEventListener('change', () => {
-            const tbody = $('pmVariantTbody');
-            if (!tbody) return;
-            const boxes = Array.from(tbody.querySelectorAll('input.pmVariantPickBox'));
+            const tb = $('pmVariantTbody');
+            if (!tb) return;
+            const boxes = Array.from(tb.querySelectorAll('input.pmVariantPickBox'));
             boxes.forEach(box => {
               const vid = Number(box.getAttribute('data-vid') || 0);
               if (!vid) return;
@@ -627,6 +646,7 @@
               else selectedVariantIds.delete(vid);
               box.checked = selAll.checked;
             });
+            syncVariantSelectAll();
           });
         }
         render();
@@ -661,7 +681,12 @@
             <table class="pm-table" data-disable-table-manage="1" style="margin:0;">
               <thead style="position:sticky; top:0; z-index:1;">
                 <tr>
-                  <th style="width:68px; text-align:center;">选</th>
+                  <th style="width:68px; text-align:center;">
+                    <label style="display:inline-flex; align-items:center; gap:0.35rem; user-select:none; cursor:pointer;">
+                      <input type="checkbox" id="pmFabricSelectAll" data-pm-picker-select-all="fabric">
+                      <span style="font-size:0.86rem;">全选</span>
+                    </label>
+                  </th>
                   <th style="width:200px;"><div style="font-size:0.82rem;">代码</div><input type="text" id="pmFabricSearchCode" class="pm-select-search" placeholder="搜索" style="margin:0;"></th>
                   <th><div style="font-size:0.82rem;">英文名称</div><input type="text" id="pmFabricSearchName" class="pm-select-search" placeholder="搜索" style="margin:0;"></th>
                 </tr>
@@ -680,6 +705,16 @@
           if ((n || 0) < 12) setTimeout(() => bindUi((n || 0) + 1), 30);
           return;
         }
+
+        const syncFabricSelectAll = () => {
+          const selAll = $('pmFabricSelectAll');
+          const tb = $('pmFabricTbody');
+          if (!selAll || !tb) return;
+          const boxes = Array.from(tb.querySelectorAll('input.pmFabricPickBox'));
+          const fids = boxes.map(b => Number(b.getAttribute('data-fid') || 0)).filter(x => x > 0);
+          selAll.checked = fids.length > 0 && fids.every(fid => selectedFabricIds.has(fid));
+        };
+
         const render = () => {
           const cq = String(cEl.value || '').trim().toLowerCase();
           const nq = String(nEl.value || '').trim().toLowerCase();
@@ -693,7 +728,7 @@
           tbody.innerHTML = rows.map(it => {
             const fid = Number(it.fabric_id || 0);
             const ck = selectedFabricIds.has(fid) ? 'checked' : '';
-            return `<tr><td style="text-align:center;"><input type="checkbox" class="pmFabricPickBox" data-fid="${fid}" ${ck}></td><td>${escapeHtml(it.fabric_code || '')}</td><td>${escapeHtml(it.fabric_name_en || '')}</td></tr>`;
+            return `<tr class="pm-picker-click-row" style="cursor:pointer;"><td style="text-align:center;"><input type="checkbox" class="pmFabricPickBox" data-fid="${fid}" ${ck}></td><td>${escapeHtml(it.fabric_code || '')}</td><td>${escapeHtml(it.fabric_name_en || '')}</td></tr>`;
           }).join('');
           tbody.querySelectorAll('input.pmFabricPickBox').forEach(box => {
             box.addEventListener('change', () => {
@@ -701,10 +736,38 @@
               if (!fid) return;
               if (box.checked) selectedFabricIds.add(fid);
               else selectedFabricIds.delete(fid);
+              syncFabricSelectAll();
             });
           });
+          tbody.querySelectorAll('tr.pm-picker-click-row').forEach(tr => {
+            tr.addEventListener('click', (e) => {
+              if (e.target.closest('input[type="checkbox"]')) return;
+              const box = tr.querySelector('input.pmFabricPickBox');
+              if (!box) return;
+              box.checked = !box.checked;
+              box.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+          });
+          syncFabricSelectAll();
         };
         [cEl, nEl].forEach(el => el && el.addEventListener('input', render));
+        const fabSelAll = $('pmFabricSelectAll');
+        if (fabSelAll && fabSelAll.dataset.pmPickerSelectAllBound !== '1') {
+          fabSelAll.dataset.pmPickerSelectAllBound = '1';
+          fabSelAll.addEventListener('change', () => {
+            const tb = $('pmFabricTbody');
+            if (!tb) return;
+            const boxes = Array.from(tb.querySelectorAll('input.pmFabricPickBox'));
+            boxes.forEach(box => {
+              const fid = Number(box.getAttribute('data-fid') || 0);
+              if (!fid) return;
+              if (fabSelAll.checked) selectedFabricIds.add(fid);
+              else selectedFabricIds.delete(fid);
+              box.checked = fabSelAll.checked;
+            });
+            syncFabricSelectAll();
+          });
+        }
         render();
       };
       bindUi(0);
@@ -729,6 +792,10 @@
       return;
     }
     ensureOrderProductOptions().then(items => {
+      const OP_SEARCH_KEY = 'sitjoy_gallery_order_product_search_v1';
+      const loadOpSearchState = () => { try { return JSON.parse(localStorage.getItem(OP_SEARCH_KEY) || '{}') || {}; } catch (_) { return {}; } };
+      const saveOpSearchState = (next) => { try { localStorage.setItem(OP_SEARCH_KEY, JSON.stringify(next || {})); } catch (_) {} };
+
       const html = `
         <div style="display:grid; gap:0.6rem;">
           <div class="helper-text" style="margin:0;">搜索货号 / SKU / 规格简称（支持多选；列表最多约 8000 条）</div>
@@ -736,7 +803,12 @@
             <table class="pm-table" data-disable-table-manage="1" style="margin:0;">
               <thead style="position:sticky; top:0; z-index:1;">
                 <tr>
-                  <th style="width:68px; text-align:center;">选</th>
+                  <th style="width:68px; text-align:center;">
+                    <label style="display:inline-flex; align-items:center; gap:0.35rem; user-select:none; cursor:pointer;">
+                      <input type="checkbox" id="pmOpSelectAll" data-pm-picker-select-all="order_product">
+                      <span style="font-size:0.86rem;">全选</span>
+                    </label>
+                  </th>
                   <th style="width:140px;"><div style="font-size:0.82rem;">货号</div><input type="text" id="pmOpSearchFam" class="pm-select-search" placeholder="搜索" style="margin:0;"></th>
                   <th style="width:220px;"><div style="font-size:0.82rem;">SKU</div><input type="text" id="pmOpSearchSku" class="pm-select-search" placeholder="搜索" style="margin:0;"></th>
                   <th><div style="font-size:0.82rem;">规格简称</div><input type="text" id="pmOpSearchSpec" class="pm-select-search" placeholder="搜索" style="margin:0;"></th>
@@ -745,6 +817,7 @@
               <tbody id="pmOpTbody"></tbody>
             </table>
           </div>
+          <div class="helper-text" style="margin:0;">提示：三个搜索框会在本地记忆，下次打开仍会保留。</div>
         </div>
       `;
       const p = showHtmlConfirmCompat({ title: '选择下单产品', htmlText: html, confirmText: '确定', cancelText: '取消', maxWidth: 920 });
@@ -757,7 +830,22 @@
           if ((n || 0) < 12) setTimeout(() => bindUi((n || 0) + 1), 30);
           return;
         }
+        const opState = loadOpSearchState();
+        if (a) a.value = String(opState.fam || '');
+        if (b) b.value = String(opState.sku || '');
+        if (c) c.value = String(opState.spec || '');
+
+        const syncOpSelectAll = () => {
+          const selAll = $('pmOpSelectAll');
+          const tb = $('pmOpTbody');
+          if (!selAll || !tb) return;
+          const boxes = Array.from(tb.querySelectorAll('input.pmOpPickBox'));
+          const oids = boxes.map(b => Number(b.getAttribute('data-opid') || 0)).filter(x => x > 0);
+          selAll.checked = oids.length > 0 && oids.every(oid => selectedOrderProductIds.has(oid));
+        };
+
         const render = () => {
+          saveOpSearchState({ fam: a.value || '', sku: b.value || '', spec: c.value || '' });
           const fq = String(a.value || '').trim().toLowerCase();
           const sq = String(b.value || '').trim().toLowerCase();
           const pq = String(c.value || '').trim().toLowerCase();
@@ -773,7 +861,7 @@
           tbody.innerHTML = rows.map(it => {
             const oid = Number(it.order_product_id || 0);
             const ck = selectedOrderProductIds.has(oid) ? 'checked' : '';
-            return `<tr><td style="text-align:center;"><input type="checkbox" class="pmOpPickBox" data-opid="${oid}" ${ck}></td><td>${escapeHtml(it.sku_family || '')}</td><td>${escapeHtml(it.sku || '')}</td><td>${escapeHtml(it.spec_qty_short || '')}</td></tr>`;
+            return `<tr class="pm-picker-click-row" style="cursor:pointer;"><td style="text-align:center;"><input type="checkbox" class="pmOpPickBox" data-opid="${oid}" ${ck}></td><td>${escapeHtml(it.sku_family || '')}</td><td>${escapeHtml(it.sku || '')}</td><td>${escapeHtml(it.spec_qty_short || '')}</td></tr>`;
           }).join('');
           tbody.querySelectorAll('input.pmOpPickBox').forEach(box => {
             box.addEventListener('change', () => {
@@ -781,10 +869,38 @@
               if (!oid) return;
               if (box.checked) selectedOrderProductIds.add(oid);
               else selectedOrderProductIds.delete(oid);
+              syncOpSelectAll();
             });
           });
+          tbody.querySelectorAll('tr.pm-picker-click-row').forEach(tr => {
+            tr.addEventListener('click', (e) => {
+              if (e.target.closest('input[type="checkbox"]')) return;
+              const box = tr.querySelector('input.pmOpPickBox');
+              if (!box) return;
+              box.checked = !box.checked;
+              box.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+          });
+          syncOpSelectAll();
         };
         [a, b, c].forEach(el => el && el.addEventListener('input', render));
+        const opSelAll = $('pmOpSelectAll');
+        if (opSelAll && opSelAll.dataset.pmPickerSelectAllBound !== '1') {
+          opSelAll.dataset.pmPickerSelectAllBound = '1';
+          opSelAll.addEventListener('change', () => {
+            const tb = $('pmOpTbody');
+            if (!tb) return;
+            const boxes = Array.from(tb.querySelectorAll('input.pmOpPickBox'));
+            boxes.forEach(box => {
+              const oid = Number(box.getAttribute('data-opid') || 0);
+              if (!oid) return;
+              if (opSelAll.checked) selectedOrderProductIds.add(oid);
+              else selectedOrderProductIds.delete(oid);
+              box.checked = opSelAll.checked;
+            });
+            syncOpSelectAll();
+          });
+        }
         render();
       };
       bindUi(0);

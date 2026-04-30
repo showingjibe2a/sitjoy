@@ -441,9 +441,9 @@
             border-radius: 6px;
         }
         .todo-completed-at-compact {
-            height: 34px;
-            min-height: 34px;
-            padding: 6px 10px;
+            height: 30px;
+            min-height: 30px;
+            padding: 4px 8px;
             font-size: 12px;
             background: #fff;
             cursor: pointer;
@@ -671,7 +671,7 @@
                         <div class="form-group" id="todoModalCompletedAtWrap" style="display:none;">
                             <label>完成时间</label>
                             <div class="todo-completed-at-row">
-                                <input type="text" id="todoModalCompletedAtInput" class="optional-field todo-completed-at-compact app-datetime-text-input" placeholder="YYYY-MM-DD HH:MM">
+                                <input type="datetime-local" id="todoModalCompletedAtInput" class="optional-field todo-completed-at-compact app-date-input" step="60" placeholder="YYYY-MM-DDTHH:MM">
                                 <button type="button" class="btn-secondary" id="todoModalCompletedAtPickBtn">选择</button>
                             </div>
                         </div>
@@ -1325,17 +1325,14 @@
                 const d = String(now.getDate()).padStart(2, '0');
                 const hh = String(now.getHours()).padStart(2, '0');
                 const mm = String(now.getMinutes()).padStart(2, '0');
-                completedInput.value = `${y}-${m}-${d} ${hh}:${mm}`;
-                window.todoModalCurrentCompletedAt = `${y}-${m}-${d} ${hh}:${mm}:00`;
+                completedInput.value = `${y}-${m}-${d}T${hh}:${mm}`;
+                window.todoModalCurrentCompletedAt = toCompletedAtSeconds(`${y}-${m}-${d}T${hh}:${mm}`);
             }
             syncRecurringDueDate();
         }
 
         function formatTodoDateTimeTextFromServer(text) {
-            const v = String(text || '').trim().replace('T', ' ');
-            const m = v.match(/^(\d{4}-\d{2}-\d{2})[ ](\d{2}):(\d{2})/);
-            if (!m) return '';
-            return `${m[1]} ${m[2]}:${m[3]}`;
+            return toDatetimeLocalValue(text || '');
         }
 
         function normalizeTodoCompletedAtInputValue(raw) {
@@ -1355,6 +1352,26 @@
         function toCompletedAtSeconds(text) {
             const norm = normalizeTodoCompletedAtInputValue(text);
             return norm ? (norm + ':00') : '';
+        }
+
+        function guardTodoCompletedAtInput(el) {
+            if (!el) return true;
+            const raw = String(el.value || '').trim();
+            if (!raw) {
+                if (el.classList) el.classList.remove('app-date-invalid');
+                el.dataset.lastValid = '';
+                return true;
+            }
+            const completedAt = toCompletedAtSeconds(raw);
+            if (completedAt) {
+                if (el.classList) el.classList.remove('app-date-invalid');
+                el.dataset.lastValid = raw;
+                return true;
+            }
+            if (el.classList) el.classList.add('app-date-invalid');
+            const fallback = String(el.dataset.lastValid || '').trim();
+            el.value = fallback;
+            return false;
         }
 
         function closeTodoDateTimePickerModal() {
@@ -1865,6 +1882,11 @@
                 else alert('循环任务必须填写提醒间隔（天）');
                 return;
             }
+            if (is_completed && String(completed_at_local || '').trim() && !completed_at) {
+                if (window.showAppToast) window.showAppToast('完成时间无效，请重新选择或清空', true, 0);
+                else alert('完成时间无效，请重新选择或清空');
+                return;
+            }
             
             const payload = {
                 title,
@@ -2126,7 +2148,7 @@
                         <td>
                             ${
                                 status === 'done'
-                                    ? `<input type="text" class="optional-field todo-completed-at-input app-datetime-text-input" data-todo-id="${todo.id}" value="${formatTodoDateTimeTextFromServer(completedAt)}" placeholder="YYYY-MM-DD HH:MM" title="编辑完成时间（自动保存）">`
+                                    ? `<input type="datetime-local" class="optional-field todo-completed-at-input app-date-input" data-todo-id="${todo.id}" value="${toDatetimeLocalValue(completedAt)}" step="60" placeholder="YYYY-MM-DDTHH:MM" title="编辑完成时间（自动保存）">`
                                     : `<span style="color:#999;">—</span>`
                             }
                         </td>
@@ -3029,6 +3051,10 @@
                     if (!input) return;
                     const id = parseInt(input.dataset.todoId || '0', 10) || 0;
                     if (!id) return;
+                    if (!guardTodoCompletedAtInput(input)) {
+                        window.showAppToast && window.showAppToast('无效完成时间，已回退', true, 3200);
+                        return;
+                    }
                     updateTodoCompletedAtAuto(id, input.value || '');
                 });
             }
@@ -3050,7 +3076,10 @@
             }
             const todoModalCompletedAtInput = document.getElementById('todoModalCompletedAtInput');
             if (todoModalCompletedAtInput) {
+                // Initialize last valid value
+                todoModalCompletedAtInput.dataset.lastValid = String(todoModalCompletedAtInput.value || '').trim();
                 const onCompletedAtChange = () => {
+                    if (!guardTodoCompletedAtInput(todoModalCompletedAtInput)) return;
                     const v = String(todoModalCompletedAtInput.value || '').trim();
                     const completedAt = toCompletedAtSeconds(v);
                     if (completedAt) {
