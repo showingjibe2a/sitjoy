@@ -1,5 +1,6 @@
 ﻿import cgi
 import csv
+import base64
 import io
 import os
 import re
@@ -91,6 +92,77 @@ class LogisticsWarehouseMixin:
             state = bucket.get(row_id) or {'ids': [], 'skus': []}
             row['order_product_ids'] = state['ids']
             row['order_product_skus'] = state['skus']
+
+    def _load_order_product_first_image_preview(self, conn, order_product_ids, type_name='白底纯图'):
+        """Return {order_product_id: image_b64} for first preferred main image."""
+        opids = [self._parse_int(v) for v in (order_product_ids or []) if self._parse_int(v)]
+        if not opids:
+            return {}
+        if not self._has_required_tables(['order_product_image_mappings', 'image_assets']):
+            return {}
+
+        base_name = str(type_name or '').strip() or '白底纯图'
+        alias_candidates = ()
+        if '白底纯图' in base_name:
+            alias_candidates = ('主图·白底纯图', '主图白底纯图', '纯白底图')
+        elif '白底' in base_name:
+            alias_candidates = ('主图·白底图', '主图白底图', '白底', 'White')
+        preferred = set([base_name, *alias_candidates])
+
+        has_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
+        has_dep = self._table_has_column(conn, 'image_assets', 'is_deprecated')
+        join_it = "LEFT JOIN image_types it ON it.id = ia.image_type_id" if has_tid else ""
+        type_sel = "COALESCE(it.name, '') AS image_type_name" if has_tid else "'' AS image_type_name"
+        dep_sel = "COALESCE(ia.is_deprecated, 0) AS is_deprecated" if has_dep else "0 AS is_deprecated"
+
+        placeholders = ','.join(['%s'] * len(opids))
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT opim.order_product_id, ia.storage_path, opim.sort_order, opim.id,
+                       {type_sel}, {dep_sel}
+                FROM order_product_image_mappings opim
+                JOIN image_assets ia ON ia.id = opim.image_asset_id
+                {join_it}
+                WHERE opim.order_product_id IN ({placeholders})
+                ORDER BY opim.order_product_id ASC, opim.sort_order ASC, opim.id ASC
+                """,
+                tuple(opids),
+            )
+            rows = cur.fetchall() or []
+
+        bucket = {}
+        for r in rows:
+            opid = self._parse_int(r.get('order_product_id'))
+            sp = str(r.get('storage_path') or '').strip()
+            if not opid or not sp:
+                continue
+            is_dep = self._parse_int(r.get('is_deprecated')) or 0
+            if is_dep:
+                continue
+            bucket.setdefault(opid, []).append(r)
+
+        out = {}
+        for opid, items in bucket.items():
+            picked = None
+            for r in items:
+                nm = str(r.get('image_type_name') or '').strip()
+                if nm and nm in preferred:
+                    picked = r
+                    break
+            if not picked and items:
+                picked = items[0]
+            if not picked:
+                continue
+            sp = str(picked.get('storage_path') or '').strip()
+            rel = sp.replace('\\', '/').lstrip('/')
+            try:
+                b64 = base64.b64encode(os.fsencode(rel)).decode('ascii') if rel else ''
+            except Exception:
+                b64 = ''
+            if b64:
+                out[int(opid)] = b64
+        return out
 
     def handle_factory_stock_api(self, environ, method, start_response):
         """工厂在库库存 CRUD"""
@@ -328,6 +400,15 @@ class LogisticsWarehouseMixin:
                                 scope_params
                             )
                         rows = cur.fetchall() or []
+                try:
+                    opids = [self._parse_int(r.get('order_product_id')) for r in rows if self._parse_int(r.get('order_product_id'))]
+                    preview_map = self._load_order_product_first_image_preview(conn, opids, type_name='白底纯图')
+                    for r in rows:
+                        opid = self._parse_int(r.get('order_product_id'))
+                        r['preview_image_b64'] = preview_map.get(opid, '') if opid else ''
+                except Exception:
+                    for r in rows:
+                        r['preview_image_b64'] = ''
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             data = self._read_json_body(environ)
@@ -856,6 +937,15 @@ class LogisticsWarehouseMixin:
                                 scope_params
                             )
                         rows = cur.fetchall() or []
+                try:
+                    opids = [self._parse_int(r.get('order_product_id')) for r in rows if self._parse_int(r.get('order_product_id'))]
+                    preview_map = self._load_order_product_first_image_preview(conn, opids, type_name='白底纯图')
+                    for r in rows:
+                        opid = self._parse_int(r.get('order_product_id'))
+                        r['preview_image_b64'] = preview_map.get(opid, '') if opid else ''
+                except Exception:
+                    for r in rows:
+                        r['preview_image_b64'] = ''
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             data = self._read_json_body(environ)

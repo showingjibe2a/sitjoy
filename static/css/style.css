@@ -1209,21 +1209,53 @@ input.optional-field[type="datetime-local"]:focus {
     line-height: 1;
 }
 
+.pm-table-columns-item{
+    padding: 0.22rem 0.30rem;
+}
+.pm-table-columns-item-main{
+    flex: 1 1 auto;
+}
+.pm-table-columns-item-drag{
+    width: 18px;
+    text-align: right;
+}
+
 .pm-table-columns-pin{
     appearance: none;
     border: 1px solid rgba(207, 199, 189, 0.75);
-    background: #fff;
-    color: rgba(79, 70, 59, 0.85);
-    border-radius: 999px;
-    width: 28px;
-    height: 28px;
-    min-width: 28px;
+    background: transparent;
+    border-radius: 7px;
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    line-height: 1;
-    font-size: 0.95rem;
+    padding: 0;
+    margin: 0;
+    position: relative;
+}
+.pm-table-columns-pin::before{
+    content: '';
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: transparent;
+    border: 2px solid rgba(111, 100, 86, 0.78);
+    box-sizing: border-box;
+    display: block;
+}
+.pm-table-columns-pin::after{
+    content: '';
+    position: absolute;
+    width: 2px;
+    height: 10px;
+    background: rgba(111, 100, 86, 0.78);
+    border-radius: 2px;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
 }
 .pm-table-columns-pin:hover{
     background: rgba(236, 231, 223, 0.8);
@@ -1232,7 +1264,11 @@ input.optional-field[type="datetime-local"]:focus {
 .pm-table-columns-pin.is-active{
     background: rgba(123, 154, 176, 0.16);
     border-color: rgba(123, 154, 176, 0.65);
-    color: rgba(41, 78, 105, 0.92);
+}
+.pm-table-columns-pin.is-active::before,
+.pm-table-columns-pin.is-active::after{
+    border-color: rgba(41, 78, 105, 0.92);
+    background: rgba(41, 78, 105, 0.92);
 }
 .pm-table-columns-pin:disabled{
     opacity: 0.55;
@@ -1242,14 +1278,26 @@ input.optional-field[type="datetime-local"]:focus {
 /* Freeze-pane: pinned columns stay on the left while horizontal scrolling */
 .pm-table.is-managed-table th.pm-table-pinned-cell,
 .pm-table.is-managed-table td.pm-table-pinned-cell{
-    background: inherit;
+    background: linear-gradient(0deg, rgba(248, 244, 236, 0.92), rgba(248, 244, 236, 0.92));
+    background-clip: padding-box;
 }
 .pm-managed-body-wrap .pm-table.is-managed-table th.pm-table-pinned-cell,
 .pm-managed-body-wrap .pm-table.is-managed-table td.pm-table-pinned-cell{
-    box-shadow: 2px 0 0 rgba(207, 199, 189, 0.55);
+    box-shadow:
+        2px 0 0 rgba(207, 199, 189, 0.65),
+        8px 0 18px rgba(35, 28, 20, 0.06);
 }
 .pm-managed-head-wrap .pm-table.is-managed-table th.pm-table-pinned-cell{
-    box-shadow: 2px 0 0 rgba(207, 199, 189, 0.55);
+    box-shadow:
+        2px 0 0 rgba(207, 199, 189, 0.65),
+        8px 0 18px rgba(35, 28, 20, 0.06);
+}
+
+/* Sticky columns require separate border model and no overflow clipping */
+.pm-table.is-managed-table{
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+    overflow: visible !important;
 }
 
 .pm-table-wrap {
@@ -1526,6 +1574,30 @@ input.optional-field[type="datetime-local"]:focus {
     }
     .pm-modal-content--wide:has(.feature-category-dropdown.open) > .pm-modal-scroll {
         overflow: visible;
+    }
+}
+
+/* 通用弹窗：若采用 .pm-modal-scroll + .pm-modal-actions 结构，则让中间滚动，底部操作栏始终可见 */
+@supports selector(:has(*)) {
+    .pm-modal-content:has(> .pm-modal-scroll) {
+        max-height: calc(100vh - 64px);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    .pm-modal-content:has(> .pm-modal-scroll) > .pm-modal-scroll {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .pm-modal-content:has(> .pm-modal-scroll) > .pm-modal-actions {
+        flex: 0 0 auto;
+        margin-top: 0.75rem;
+        padding-top: 0.9rem;
+        padding-bottom: 0;
+        background: var(--morandi-cream);
+        border-top: 1px solid rgba(207, 199, 189, 0.6);
     }
 }
 
@@ -4154,7 +4226,7 @@ textarea:focus,
 }
 
 /* 按钮统一（排除明显的图标圆形微按钮） */
-button:not(.shop-type-add):not(.material-type-add):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option) {
+button:not(.shop-type-add):not(.material-type-add):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin) {
     min-height: var(--ui-control-height);
     height: var(--ui-control-height);
     padding: 0.58rem 1rem;
@@ -4197,11 +4269,11 @@ table td .btn-danger {
     border-radius: 8px !important;
 }
 
-button:not(.shop-type-add):not(.material-type-add):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-column-filter-btn):not(.wip-col-filter-btn):hover {
+button:not(.shop-type-add):not(.material-type-add):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.pm-column-filter-btn):not(.wip-col-filter-btn):hover {
     transform: translateY(-1px);
 }
 
-button:not(.shop-type-add):not(.material-type-add):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-column-filter-btn):not(.wip-col-filter-btn):active {
+button:not(.shop-type-add):not(.material-type-add):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.pm-column-filter-btn):not(.wip-col-filter-btn):active {
     transform: translateY(0);
 }
 

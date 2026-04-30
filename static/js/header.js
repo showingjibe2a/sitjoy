@@ -2114,7 +2114,7 @@
             pin.className = 'pm-table-columns-pin';
             const k0 = String(key || '').trim();
             const pinnedNow = !!(state.pinnedColumns && state.pinnedColumns.has(k0)) || isLocked;
-            pin.textContent = '📌';
+            pin.textContent = '';
             pin.setAttribute('aria-label', pinnedNow ? '取消冻结' : '冻结到左侧');
             pin.title = isLocked ? '复选列默认冻结' : (pinnedNow ? '点击取消冻结' : '点击冻结到左侧');
             pin.disabled = isLocked;
@@ -3781,12 +3781,48 @@
                 }
 
                 if(mode === 'order'){
-                    try { localStorage.removeItem(makeStorageKey(state.table, 'column-order')); } catch (_) {}
-                    state.columnOrder = (state.headers || []).map(h => String(h.key || '').trim()).filter(Boolean);
-                    persistColumnOrder(state);
-                    refreshLayout();
-                    showAppToast('字段排序已重置', false, 1200);
-                    if(state.resetWrap) state.resetWrap.classList.remove('is-open');
+                    const doReset = async () => {
+                        // Reset order always clears custom freeze-pane to avoid subtle sticky offset bugs.
+                        const locked = new Set();
+                        (state.lockedColumns || new Set()).forEach(k => locked.add(String(k || '').trim()));
+                        const pinnedNow = state.pinnedColumns || new Set();
+                        const hasCustomPinned = Array.from(pinnedNow.values()).some(k => k && !locked.has(String(k || '').trim()));
+
+                        if(hasCustomPinned){
+                            const msg = '重置字段排序会取消对「冻结窗格」的保存（仅保留复选列默认冻结）。\n\n是否继续重置？';
+                            let ok = true;
+                            if(window.showAppConfirmAsync){
+                                const res = await window.showAppConfirmAsync({
+                                    title: '确认重置字段排序',
+                                    message: msg,
+                                    confirmText: '继续重置',
+                                    cancelText: '取消'
+                                }).catch(() => false);
+                                ok = (res === true) || (res && res.id === 'confirm');
+                            } else {
+                                ok = window.confirm(msg.replace(/\n\n/g, '\n'));
+                            }
+                            if(!ok){
+                                if(state.resetWrap) state.resetWrap.classList.remove('is-open');
+                                return;
+                            }
+                        }
+
+                        try { localStorage.removeItem(makeStorageKey(state.table, 'column-order')); } catch (_) {}
+                        try { localStorage.removeItem(makeStorageKey(state.table, 'pinned-columns')); } catch (_) {}
+                        state.pinnedColumns = new Set();
+                        locked.forEach(k => state.pinnedColumns.add(String(k || '').trim()));
+                        persistPinnedColumns(state);
+
+                        state.columnOrder = (state.headers || []).map(h => String(h.key || '').trim()).filter(Boolean);
+                        persistColumnOrder(state);
+                        refreshLayout();
+                        showAppToast('字段排序已重置', false, 1200);
+                        if(state.resetWrap) state.resetWrap.classList.remove('is-open');
+                    };
+
+                    // fire-and-forget async
+                    doReset();
                     return;
                 }
 

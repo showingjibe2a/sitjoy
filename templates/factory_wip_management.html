@@ -53,6 +53,7 @@
             <th style="width:160px;" data-sort-key="order_no">订单号</th>
             <th style="width:160px;" data-sort-key="contract_no">合同编号</th>
             <th style="width:120px;" data-sort-key="representative_color">颜色</th>
+            <th style="width:64px;" class="cell-center">图片</th>
             <th data-sort-key="sku">SKU</th>
             <th style="width:150px;">在市状态</th>
             <th style="width:120px;" data-sort-key="quantity">数量</th>
@@ -67,7 +68,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr><td colspan="16" style="text-align:center;">加载中...</td></tr>
+          <tr><td colspan="17" style="text-align:center;">加载中...</td></tr>
         </tbody>
       </table>
     </div>
@@ -1087,7 +1088,7 @@ function loadList(){
     .then(d => {
       const tbody = document.querySelector('#mainTable tbody');
       if(d.status !== 'success'){
-        tbody.innerHTML = `<tr><td colspan="16" style="text-align:center;color:#a33;">${d.message || '加载失败'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="17" style="text-align:center;color:#a33;">${d.message || '加载失败'}</td></tr>`;
         selectedWipIds = new Set();
         syncWipSelectAll();
         syncFactoryWipSaveBar();
@@ -1099,7 +1100,7 @@ function loadList(){
       const availableIds = new Set(listCache.map(item => Number(item.id || 0)).filter(v => v > 0));
       selectedWipIds = new Set(Array.from(selectedWipIds).filter(id => availableIds.has(id)));
       if(!listCache.length){
-        tbody.innerHTML = '<tr><td colspan="16" style="text-align:center;">暂无数据</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="17" style="text-align:center;">暂无数据</td></tr>';
         installWipColumnFilterButtons();
         syncWipSelectAll();
         syncFactoryWipSaveBar();
@@ -1110,7 +1111,7 @@ function loadList(){
     })
     .catch(err => {
       const tbody = document.querySelector('#mainTable tbody');
-      tbody.innerHTML = `<tr><td colspan="16" style="text-align:center;color:#a33;">${err.message || '加载失败'}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="17" style="text-align:center;color:#a33;">${err.message || '加载失败'}</td></tr>`;
       selectedWipIds = new Set();
       syncWipSelectAll();
       syncFactoryWipSaveBar();
@@ -1122,7 +1123,7 @@ function renderFactoryWipTable(items){
   const rows = Array.isArray(items) ? items : [];
   if(!tbody) return;
   if(!rows.length){
-    tbody.innerHTML = '<tr><td colspan="16" style="text-align:center;">暂无数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="17" style="text-align:center;">暂无数据</td></tr>';
     return;
   }
   const html = [];
@@ -1181,6 +1182,10 @@ function renderFactoryWipTable(items){
     const colorHtml = colorValue
       ? `<span class="sku-color-chip-wrap"><span class="sku-color-chip" style="background:${colorValue};"></span></span>`
       : '<span class="sku-color-empty">-</span>';
+    const thumbB64 = String(item.preview_image_b64 || '').trim();
+    const thumbHtml = thumbB64
+      ? `<img class="fabric-table-thumb" src="/api/image-preview?id=${encodeURIComponent(thumbB64)}" alt="thumb" loading="lazy">`
+      : `<span class="fabric-thumb-empty"></span>`;
     const safeGroupKeyAttr = String(groupKey || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     return `
       <tr class="${hidden ? 'wip-row-hidden' : ''}" data-group-key="${safeGroupKeyAttr}">
@@ -1189,6 +1194,7 @@ function renderFactoryWipTable(items){
         <td class="preview-edit-cell"><input type="text" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="order_no" value="${String(item.order_no || '').replace(/"/g, '&quot;')}" placeholder="可选"></td>
         <td class="preview-edit-cell"><input type="text" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="contract_no" value="${String(item.contract_no || '').replace(/"/g, '&quot;')}" placeholder="可选"></td>
         <td>${colorHtml}</td>
+        <td class="cell-center">${thumbHtml}</td>
         <td>${item.sku || ''}</td>
         <td>
           <div class="status-segment status-segment--inline readonly-segment market-status-segment" data-value="${isOnMarket ? '1' : '0'}">
@@ -1247,7 +1253,7 @@ function renderFactoryWipTable(items){
       const collapsed = activeCollapsedSet ? activeCollapsedSet.has(groupKey) : false;
       html.push(`
         <tr class="wip-group-row" data-group-key="${String(groupKey).replace(/"/g, '&quot;')}">
-          <td colspan="16"><span class="wip-group-toggle">${collapsed ? '▶' : '▼'}</span>${groupLabel}（${sorted.length}）</td>
+          <td colspan="17"><span class="wip-group-toggle">${collapsed ? '▶' : '▼'}</span>${groupLabel}（${sorted.length}）</td>
         </tr>
       `);
       sorted.forEach(item => {
