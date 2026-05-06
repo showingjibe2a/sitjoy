@@ -480,9 +480,10 @@
             if (e.key === 'Enter') loadImageTypeList();
         });
 
-        document.getElementById('create-modal').addEventListener('click', function(e) {
-            if (e.target === this) closeCreateModal();
-        });
+        window.setTimeout(function() {
+            var el = document.getElementById('create-modal');
+            if (el && typeof window.bindPmModalBackdropClose === 'function') window.bindPmModalBackdropClose(el, closeCreateModal);
+        }, 0);
 
         function openEditModal(item) {
             currentEditItem = item || null;
@@ -565,13 +566,14 @@
             });
         }
 
-        document.getElementById('edit-modal').addEventListener('click', function(e) {
-            if (e.target === this) closeEditModal();
-        });
-
-        document.getElementById('aplus-json-preview-modal').addEventListener('click', function(e) {
-            if (e.target === this) closeAplusJsonPreview();
-        });
+        window.setTimeout(function() {
+            var b = window.bindPmModalBackdropClose;
+            if (typeof b !== 'function') return;
+            var em = document.getElementById('edit-modal');
+            if (em) b(em, closeEditModal);
+            var ap = document.getElementById('aplus-json-preview-modal');
+            if (ap) b(ap, closeAplusJsonPreview);
+        }, 0);
 
         function closeAplusJsonPreview() {
             document.getElementById('aplus-json-preview-modal').classList.remove('active');

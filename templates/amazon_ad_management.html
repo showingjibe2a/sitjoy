@@ -986,9 +986,10 @@
             if (!file) return;
             uploadAdTemplate(file);
         });
-        document.getElementById('ad-modal').addEventListener('click', function(e) {
-            if (e.target === this) closeAdModal();
-        });
+        window.setTimeout(function() {
+            var el = document.getElementById('ad-modal');
+            if (el && typeof window.bindPmModalBackdropClose === 'function') window.bindPmModalBackdropClose(el, closeAdModal);
+        }, 0);
 
         window.addEventListener('load', function() {
             initData();

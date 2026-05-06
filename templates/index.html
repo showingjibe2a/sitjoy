@@ -2083,21 +2083,14 @@
             if (modal) modal.classList.remove('active');
         }
 
-        // 关闭弹窗时的外层点击
-        document.getElementById('todoModal').addEventListener('click', e => {
-            if (e.target === document.getElementById('todoModal')) {
-                closeTodoModal();
-            }
-        });
-
-        const todoTypeModalEl = document.getElementById('todoTypeModal');
-        if (todoTypeModalEl) {
-            todoTypeModalEl.addEventListener('click', e => {
-                if (e.target === todoTypeModalEl) {
-                    closeTodoTypeModal();
-                }
-            });
-        }
+        window.setTimeout(() => {
+            const bindBackdrop = window.bindPmModalBackdropClose;
+            if (typeof bindBackdrop !== 'function') return;
+            const todoModalEl = document.getElementById('todoModal');
+            if (todoModalEl) bindBackdrop(todoModalEl, closeTodoModal);
+            const todoTypeModalEl = document.getElementById('todoTypeModal');
+            if (todoTypeModalEl) bindBackdrop(todoTypeModalEl, closeTodoTypeModal);
+        }, 0);
 
         function loadTodos() {
             const params = new URLSearchParams();
@@ -3360,22 +3353,12 @@
                 });
             }
 
-            const employeeCreateModal = document.getElementById('employeeCreateModal');
-            if (employeeCreateModal) {
-                employeeCreateModal.addEventListener('click', e => {
-                    if (e.target === employeeCreateModal) {
-                        closeEmployeeCreateModal();
-                    }
-                });
-            }
-
-            const employeeEditModal = document.getElementById('employeeEditModal');
-            if (employeeEditModal) {
-                employeeEditModal.addEventListener('click', e => {
-                    if (e.target === employeeEditModal) {
-                        closeEmployeeEditModal();
-                    }
-                });
+            const bindBackdrop = window.bindPmModalBackdropClose;
+            if (typeof bindBackdrop === 'function') {
+                const employeeCreateModal = document.getElementById('employeeCreateModal');
+                if (employeeCreateModal) bindBackdrop(employeeCreateModal, closeEmployeeCreateModal);
+                const employeeEditModal = document.getElementById('employeeEditModal');
+                if (employeeEditModal) bindBackdrop(employeeEditModal, closeEmployeeEditModal);
             }
 
             document.addEventListener('click', e => {

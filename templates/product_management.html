@@ -584,16 +584,14 @@
         window.addEventListener('load', loadCategories);
         window.addEventListener('load', loadFabrics);
 
-        document.getElementById('pm-modal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeModal();
-            }
-        });
-        document.getElementById('category-modal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeCategoryModal();
-            }
-        });
+        window.setTimeout(function() {
+            var b = window.bindPmModalBackdropClose;
+            if (typeof b !== 'function') return;
+            var pm = document.getElementById('pm-modal');
+            if (pm) b(pm, closeModal);
+            var cm = document.getElementById('category-modal');
+            if (cm) b(cm, closeCategoryModal);
+        }, 0);
         document.getElementById('searchInput').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
                 loadSkuList();

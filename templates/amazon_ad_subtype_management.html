@@ -951,12 +951,14 @@
         document.getElementById('searchInput').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') loadSubtypeList();
         });
-        document.getElementById('subtype-modal').addEventListener('click', function(e) {
-            if (e.target === this) closeSubtypeModal();
-        });
-        document.getElementById('optype-modal').addEventListener('click', function(e) {
-            if (e.target === this) closeOpTypeModal();
-        });
+        window.setTimeout(function() {
+            var b = window.bindPmModalBackdropClose;
+            if (typeof b !== 'function') return;
+            var sm = document.getElementById('subtype-modal');
+            if (sm) b(sm, closeSubtypeModal);
+            var om = document.getElementById('optype-modal');
+            if (om) b(om, closeOpTypeModal);
+        }, 0);
 
         window.addEventListener('load', initData);
     </script>

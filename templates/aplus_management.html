@@ -512,7 +512,7 @@
             if (s) document.getElementById('newSkuFamilySelect').value = s;
         }
         function closeCreateVersionModal(){ document.getElementById('createVersionModal').classList.remove('active'); }
-        document.getElementById('createVersionModal').addEventListener('click', function(e){ if (e.target===this) closeCreateVersionModal(); });
+        window.setTimeout(function(){ var el=document.getElementById('createVersionModal'); if(el&&typeof window.bindPmModalBackdropClose==='function')window.bindPmModalBackdropClose(el,closeCreateVersionModal); },0);
 
         function createVersion(){
             const name = String(document.getElementById('newVersionName').value||'').trim();

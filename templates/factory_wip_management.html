@@ -1409,9 +1409,10 @@ document.addEventListener('input', function(e){
   }
 });
 
-$('#pm-modal').addEventListener('click', (e) => {
-  if(e.target === e.currentTarget) closeModal();
-});
+window.setTimeout(function(){
+  var el=document.getElementById('pm-modal');
+  if(el&&typeof window.bindPmModalBackdropClose==='function')window.bindPmModalBackdropClose(el,closeModal);
+},0);
 
 window.addEventListener('load', () => {
   const importInput = document.getElementById('importFileInput');

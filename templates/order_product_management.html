@@ -4131,11 +4131,10 @@
             applyNasSegmentState('nasActionModeSegment', nasMainImageActionMode);
             applyNasSegmentState('nasThumbSizeSegment', nasMainImageThumbSize);
         });
-        document.getElementById('pm-modal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeModal();
-            }
-        });
+        window.setTimeout(function() {
+            var el = document.getElementById('pm-modal');
+            if (el && typeof window.bindPmModalBackdropClose === 'function') window.bindPmModalBackdropClose(el, closeModal);
+        }, 0);
         document.getElementById('searchInput').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
                 loadOrderProductList();
@@ -4242,32 +4241,23 @@
             }
             renderNasMainImageList();
         });
-        document.getElementById('uploadDialogModal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                this.classList.remove('active');
-                if (window.syncModalScrollLock) {
-                    window.syncModalScrollLock();
-                }
-            }
-        });
-        document.getElementById('nas-main-image-import-modal')?.addEventListener('click', function(e) {
-            if (e.target === this) closeNasMainImageImportModal();
-        });
-        document.getElementById('shippingPlanModal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeShippingPlanModal();
-            }
-        });
-        document.getElementById('shippingPlanEditorModal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeShippingPlanEditorModal();
-            }
-        });
-        document.getElementById('copy-modal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeCopyModal();
-            }
-        });
+        window.setTimeout(function() {
+            var b = window.bindPmModalBackdropClose;
+            if (typeof b !== 'function') return;
+            var ud = document.getElementById('uploadDialogModal');
+            if (ud) b(ud, function() {
+                ud.classList.remove('active');
+                if (window.syncModalScrollLock) window.syncModalScrollLock();
+            });
+            var nas = document.getElementById('nas-main-image-import-modal');
+            if (nas) b(nas, closeNasMainImageImportModal);
+            var sp = document.getElementById('shippingPlanModal');
+            if (sp) b(sp, closeShippingPlanModal);
+            var spe = document.getElementById('shippingPlanEditorModal');
+            if (spe) b(spe, closeShippingPlanEditorModal);
+            var cm = document.getElementById('copy-modal');
+            if (cm) b(cm, closeCopyModal);
+        }, 0);
         document.getElementById('uploadDialogCopyBtn').addEventListener('click', function() {
             const lines = (uploadDialogErrorRows || []).map(item => `行 ${item.row || '-'}: ${item.error || ''}`);
             const text = lines.join('\n') || '无失败明细';

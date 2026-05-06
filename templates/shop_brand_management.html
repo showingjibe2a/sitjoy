@@ -726,21 +726,16 @@
         window.addEventListener('load', loadPlatformTypes);
         window.addEventListener('load', loadBrands);
         window.addEventListener('load', loadShopList);
-        document.getElementById('pm-modal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeModal();
-            }
-        });
-        document.getElementById('pm-platform-modal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closePlatformTypeModal();
-            }
-        });
-        document.getElementById('pm-brand-modal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeBrandModal();
-            }
-        });
+        window.setTimeout(function() {
+            var bindBackdrop = window.bindPmModalBackdropClose;
+            if (typeof bindBackdrop !== 'function') return;
+            var pm = document.getElementById('pm-modal');
+            if (pm) bindBackdrop(pm, closeModal);
+            var plat = document.getElementById('pm-platform-modal');
+            if (plat) bindBackdrop(plat, closePlatformTypeModal);
+            var brand = document.getElementById('pm-brand-modal');
+            if (brand) bindBackdrop(brand, closeBrandModal);
+        }, 0);
         document.getElementById('searchInput').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
                 loadShopList();

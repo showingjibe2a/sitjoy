@@ -326,7 +326,7 @@
                 tbody.innerHTML = items.map(item => `<tr><td>${item.factory_name||''}</td><td>${item.created_at?new Date(item.created_at).toLocaleString('zh-CN'):''}</td><td><div class="pm-actions"><button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button><button class="btn-danger" onclick='removeItem(${item.id})'>删除</button></div></td></tr>`).join('');
             }).catch(err=>{ document.querySelector('#mainTable tbody').innerHTML = `<tr><td colspan="3" style="text-align:center;color:#a33;">加载失败: ${err}</td></tr>`; });
         }
-        document.getElementById('pm-modal').addEventListener('click', function(e){ if(e.target===this) closeModal(); });
+        window.setTimeout(function(){ var el=document.getElementById('pm-modal'); if(el&&typeof window.bindPmModalBackdropClose==='function')window.bindPmModalBackdropClose(el,closeModal); },0);
         document.getElementById('searchInput').addEventListener('keydown', function(e){ if(e.key==='Enter') loadList(); });
         document.getElementById('factorySkuToggle').addEventListener('click', function(){
             openOrderProductDropdown();

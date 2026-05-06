@@ -1456,11 +1456,10 @@
                 setTimeout(() => openCreateModal(), 120);
             }
         });
-        document.getElementById('pm-modal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeModal();
-            }
-        });
+        window.setTimeout(function() {
+            var el = document.getElementById('pm-modal');
+            if (el && typeof window.bindPmModalBackdropClose === 'function') window.bindPmModalBackdropClose(el, closeModal);
+        }, 0);
         document.getElementById('searchInput').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
                 loadFabricList();
@@ -1470,11 +1469,10 @@
         document.getElementById('modalImageUpload').addEventListener('change', handleImageUpload);
         document.getElementById('modalSkuFilter').addEventListener('input', renderSkuFamilyPicker);
         document.getElementById('skuAdd').addEventListener('click', toggleSkuMenu);
-        document.getElementById('fabric-image-edit-modal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeFabricImageEditModal();
-            }
-        });
+        window.setTimeout(function() {
+            var el = document.getElementById('fabric-image-edit-modal');
+            if (el && typeof window.bindPmModalBackdropClose === 'function') window.bindPmModalBackdropClose(el, closeFabricImageEditModal);
+        }, 0);
         
         function handleImageUpload() {
             const files = document.getElementById('modalImageUpload').files;

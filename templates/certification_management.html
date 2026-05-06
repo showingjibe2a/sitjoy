@@ -108,7 +108,10 @@
             });
         }
         window.addEventListener('load', loadCertificationList);
-        document.getElementById('pm-modal').addEventListener('click', function(e) { if (e.target === this) closeModal(); });
+        window.setTimeout(function() {
+            var el = document.getElementById('pm-modal');
+            if (el && typeof window.bindPmModalBackdropClose === 'function') window.bindPmModalBackdropClose(el, closeModal);
+        }, 0);
         document.getElementById('searchInput').addEventListener('keydown', function(e) { if (e.key === 'Enter') loadCertificationList(); });
     </script>
 </body>

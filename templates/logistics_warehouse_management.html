@@ -509,9 +509,13 @@
             setSegmentValue(seg, newVal);
             toggleWarehouseEnabled(id, newVal === '1');
         });
-        document.getElementById('pm-modal').addEventListener('click', function(e){ if(e.target===this) closeModal(); });
-        document.getElementById('supplier-modal').addEventListener('click', function(e){ if(e.target===this) closeSupplierModal(); });
-        document.getElementById('region-modal').addEventListener('click', function(e){ if(e.target===this) closeRegionModal(); });
+        window.setTimeout(function(){
+            var b=window.bindPmModalBackdropClose;
+            if(typeof b!=='function')return;
+            var a=document.getElementById('pm-modal');if(a)b(a,closeModal);
+            var s=document.getElementById('supplier-modal');if(s)b(s,closeSupplierModal);
+            var r=document.getElementById('region-modal');if(r)b(r,closeRegionModal);
+        },0);
         window.addEventListener('load', function(){ bindSegment('warehouseEnabledSegment'); Promise.all([loadSuppliers(), loadDestinationRegions()]).then(loadList); });
     </script>
 </body>

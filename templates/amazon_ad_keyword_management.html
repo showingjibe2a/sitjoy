@@ -903,15 +903,16 @@
         document.getElementById('categorySelect').addEventListener('change', onCategoryChanged);
         document.getElementById('currentSkuFamily').addEventListener('change', loadKeywordList);
         document.getElementById('tagFilter').addEventListener('change', loadKeywordList);
-        document.getElementById('keywordModal').addEventListener('click', function(e) {
-            if (e.target === this) closeModal();
-        });
-        document.getElementById('tagWalkerModal').addEventListener('click', function(e) {
-            if (e.target === this) closeTagWalker();
-        });
-        document.getElementById('relevanceWalkerModal').addEventListener('click', function(e) {
-            if (e.target === this) closeRelevanceWalker();
-        });
+        window.setTimeout(function() {
+            var b = window.bindPmModalBackdropClose;
+            if (typeof b !== 'function') return;
+            var km = document.getElementById('keywordModal');
+            if (km) b(km, closeModal);
+            var tw = document.getElementById('tagWalkerModal');
+            if (tw) b(tw, closeTagWalker);
+            var rw = document.getElementById('relevanceWalkerModal');
+            if (rw) b(rw, closeRelevanceWalker);
+        }, 0);
         document.getElementById('modalTags').addEventListener('input', () => renderTagPool('modalTagPool', 'modalTags'));
         document.getElementById('tagWalkerTags').addEventListener('input', () => renderTagPool('tagWalkerTagPool', 'tagWalkerTags'));
         document.getElementById('uploadInput').addEventListener('change', function() {

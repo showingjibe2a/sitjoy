@@ -423,9 +423,10 @@
         document.getElementById('searchInput').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') loadList();
         });
-        document.getElementById('delivery-modal').addEventListener('click', function(e) {
-            if (e.target === this) closeModal();
-        });
+        window.setTimeout(function() {
+            var el = document.getElementById('delivery-modal');
+            if (el && typeof window.bindPmModalBackdropClose === 'function') window.bindPmModalBackdropClose(el, closeModal);
+        }, 0);
         document.getElementById('modalAdItem').addEventListener('change', function() {
             lastSelectedAdItemId = this.value ? String(this.value) : lastSelectedAdItemId;
         });

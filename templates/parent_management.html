@@ -552,12 +552,14 @@
         }
     }
 
-    document.getElementById('createModal').addEventListener('click', function(e) {
-        if (e.target === this) closeCreate();
-    });
-    document.getElementById('editModal').addEventListener('click', function(e) {
-        if (e.target === this) closeEdit();
-    });
+    window.setTimeout(function() {
+        var b = window.bindPmModalBackdropClose;
+        if (typeof b !== 'function') return;
+        var c = document.getElementById('createModal');
+        if (c) b(c, closeCreate);
+        var ed = document.getElementById('editModal');
+        if (ed) b(ed, closeEdit);
+    }, 0);
 
     document.getElementById('searchInput').addEventListener('keydown', function(e) {
         if (e.key === 'Enter') loadParents();

@@ -112,8 +112,20 @@
       const okBtn = modal.querySelector('#appHtmlConfirmOk');
       const cancelBtn = modal.querySelector('#appHtmlConfirmCancel');
 
+      let backdropArmed = false;
+      const onBackdropPointerDown = (e) => { backdropArmed = (e.target === modal); };
+      const onBackdropPointerUp = (e) => {
+        if (backdropArmed && e.target === modal) cleanup(false);
+        backdropArmed = false;
+      };
+      const onBackdropPointerReset = () => { backdropArmed = false; };
+
       const cleanup = (result) => {
         document.removeEventListener('keydown', onEsc);
+        modal.removeEventListener('pointerdown', onBackdropPointerDown);
+        modal.removeEventListener('pointerup', onBackdropPointerUp);
+        modal.removeEventListener('pointerleave', onBackdropPointerReset);
+        modal.removeEventListener('pointercancel', onBackdropPointerReset);
         if (modal && modal.parentNode) modal.parentNode.removeChild(modal);
         if (window.syncModalScrollLock) window.syncModalScrollLock();
         resolve(!!result);
@@ -122,9 +134,10 @@
 
       okBtn && okBtn.addEventListener('click', () => cleanup(true));
       cancelBtn && cancelBtn.addEventListener('click', () => cleanup(false));
-      modal.addEventListener('click', (e) => {
-        if (e.target === modal) cleanup(false);
-      });
+      modal.addEventListener('pointerdown', onBackdropPointerDown);
+      modal.addEventListener('pointerup', onBackdropPointerUp);
+      modal.addEventListener('pointerleave', onBackdropPointerReset);
+      modal.addEventListener('pointercancel', onBackdropPointerReset);
       document.addEventListener('keydown', onEsc);
       document.body.appendChild(modal);
       if (window.syncModalScrollLock) window.syncModalScrollLock();
@@ -228,6 +241,12 @@
   }
 
   function getCommonFabricName() {
+    try {
+      if (ctx && ctx.hooks && typeof ctx.hooks.resolveRecommendFabricName === 'function') {
+        const v = String(ctx.hooks.resolveRecommendFabricName() || '').trim();
+        if (v) return v;
+      }
+    } catch (e) {}
     const fids = Array.from(selectedFabricIds || []).map(v => Number(v)).filter(v => v > 0);
     if (fids.length) {
       const fmap = new Map((fabricOptions || []).map(it => [Number(it.fabric_id || 0), it]));
@@ -1146,12 +1165,18 @@
         if (!data2 || data2.status !== 'success') throw new Error((data2 && data2.message) ? data2.message : '关联失败');
       }
 
+      const didApply = !!(vids.length || fids.length || opids.length);
+      const toastParts = [];
+      if (didApply) toastParts.push('绑定成功');
+      if (renameNeeded) toastParts.push('已重命名');
+      if (!didApply && !renameNeeded && (descChanged || enabledChanged)) toastParts.push('属性已保存');
+      const toastMsg = toastParts.length ? toastParts.join('；') : '保存成功';
+
       showStatus(statusDiv, '✓ 已提交', 'success');
-      window.showAppToast && window.showAppToast('保存成功', false, 6000);
-      setTimeout(() => {
-        closeModal();
-        ctx && ctx.hooks && typeof ctx.hooks.onAfterSuccess === 'function' && ctx.hooks.onAfterSuccess();
-      }, 220);
+      window.hideAppUploadProgress && window.hideAppUploadProgress();
+      closeModal();
+      ctx && ctx.hooks && typeof ctx.hooks.onAfterSuccess === 'function' && ctx.hooks.onAfterSuccess();
+      window.showAppToast && window.showAppToast(toastMsg, false, 7000);
     } catch (e) {
       const msg = '✗ ' + (e && e.message ? e.message : e);
       showStatus(statusDiv, msg, 'error');
@@ -1214,7 +1239,11 @@
     const modal = $('pmImageEditModal');
     if (modal && modal.dataset._bound !== '1') {
       modal.dataset._bound = '1';
-      modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+      window.setTimeout(() => {
+        if (typeof window.bindPmModalBackdropClose === 'function') {
+          window.bindPmModalBackdropClose(modal, closeModal);
+        }
+      }, 0);
     }
 
     $('pmImageEditCancelBtn')?.addEventListener('click', closeModal);

@@ -3387,12 +3387,14 @@
             document.getElementById('performanceSearchInput').addEventListener('keydown', e => {
                 if (e.key === 'Enter') loadSalesProductPerformanceList(1);
             });
-            document.getElementById('performance-modal').addEventListener('click', function(e) {
-                if (e.target === this) closePerformanceModal();
-            });
-            document.getElementById('perf-dialog-modal').addEventListener('click', function(e) {
-                if (e.target === this) this.classList.remove('active');
-            });
+            (function() {
+                var b = window.bindPmModalBackdropClose;
+                if (typeof b !== 'function') return;
+                var perf = document.getElementById('performance-modal');
+                if (perf) b(perf, closePerformanceModal);
+                var dlg = document.getElementById('perf-dialog-modal');
+                if (dlg) b(dlg, function() { dlg.classList.remove('active'); });
+            })();
         }
 
         async function initPage() {

@@ -1846,7 +1846,9 @@
                 </div>
             `;
             document.body.appendChild(modal);
-            modal.addEventListener('click', (e) => { if (e.target === modal) closePerfModal(); });
+            if (typeof window.bindPmModalBackdropClose === 'function') {
+                window.bindPmModalBackdropClose(modal, closePerfModal);
+            }
             modal.querySelector('#sfPerfCloseBtn')?.addEventListener('click', closePerfModal);
             return modal;
         }

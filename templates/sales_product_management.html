@@ -605,7 +605,7 @@
                     <div id="nasMainImageList" class="browser-grid nas-main-image-browser-grid"></div>
                 </div>
             </div>
-            <div id="nasMainImageStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div id="nasMainImageStatus" class="nas-main-image-status status-message" style="display:none; margin-top:0.75rem;" role="status"></div>
             </div>
             <div class="pm-modal-actions nas-main-image-modal-actions">
                 <button class="btn-small" type="button" onclick="closeNasMainImageImportModal()">关闭</button>
@@ -2076,6 +2076,7 @@
                 mode: 'sales_product_management',
                 hooks: {
                     prefillVariantLinks: true,
+                    resolveRecommendFabricName: () => getMainImageCurrentFabricName(),
                     onRenamed: computeRenamedPathB64,
                     onAfterSuccess: () => refreshMainImageList(),
                     onReplaceSelected: ({ file, current }) => {
@@ -2678,8 +2679,14 @@
             if (!el) return;
             el.textContent = message || '';
             el.style.display = message ? 'block' : 'none';
-            el.classList.toggle('error', !!isError);
-            el.classList.toggle('success', !isError);
+            el.classList.toggle('error', !!message && !!isError);
+            el.classList.toggle('success', !!message && !isError);
+        }
+
+        function toastNasMainImageSuccess(msg) {
+            const text = String(msg || '').trim();
+            if (!text) return;
+            window.showAppToast && window.showAppToast(text, false, 7000);
         }
 
         async function nasMainImageBrowse(pathB64) {
@@ -2970,7 +2977,9 @@
                         showNasMainImageStatus((data2 && data2.message) ? data2.message : '导入失败', true);
                         return;
                     }
-                    showNasMainImageStatus(`导入成功：关联 ${Number(data2.linked || 0)}，移动 ${Number(data2.moved || 0)}，复制 ${Number(data2.copied || 0)}。`, false);
+                    const okMsg = `导入成功：关联 ${Number(data2.linked || 0)}，移动 ${Number(data2.moved || 0)}，复制 ${Number(data2.copied || 0)}。`;
+                    showNasMainImageStatus(okMsg, false);
+                    toastNasMainImageSuccess(okMsg);
                     refreshMainImageList();
                     await renderNasMainImageList();
                     return;
@@ -2979,7 +2988,9 @@
                     showNasMainImageStatus((data && data.message) ? data.message : '导入失败', true);
                     return;
                 }
-                showNasMainImageStatus(`导入成功：关联 ${Number(data.linked || 0)}，移动 ${Number(data.moved || 0)}，复制 ${Number(data.copied || 0)}。`, false);
+                const okMsg = `导入成功：关联 ${Number(data.linked || 0)}，移动 ${Number(data.moved || 0)}，复制 ${Number(data.copied || 0)}。`;
+                showNasMainImageStatus(okMsg, false);
+                toastNasMainImageSuccess(okMsg);
                 refreshMainImageList();
                 // refresh current folder list to reflect moved files
                 await renderNasMainImageList();
@@ -3142,7 +3153,9 @@
                         showNasMainImageStatus((data2 && data2.message) ? data2.message : '导入失败', true);
                         return;
                     }
-                    showNasMainImageStatus(`导入成功：关联 ${Number(data2.linked || 0)}，移动 ${Number(data2.moved || 0)}，复制 ${Number(data2.copied || 0)}。`, false);
+                    const okMsg2 = `导入成功：关联 ${Number(data2.linked || 0)}，移动 ${Number(data2.moved || 0)}，复制 ${Number(data2.copied || 0)}。`;
+                    showNasMainImageStatus(okMsg2, false);
+                    toastNasMainImageSuccess(okMsg2);
                     nasMainImageSelected = new Set();
                     refreshMainImageList();
                     await renderNasMainImageList();
@@ -3152,7 +3165,9 @@
                     showNasMainImageStatus((data && data.message) ? data.message : '导入失败', true);
                     return;
                 }
-                showNasMainImageStatus(`导入成功：关联 ${Number(data.linked || 0)}，移动 ${Number(data.moved || 0)}，复制 ${Number(data.copied || 0)}。`, false);
+                const okMsg3 = `导入成功：关联 ${Number(data.linked || 0)}，移动 ${Number(data.moved || 0)}，复制 ${Number(data.copied || 0)}。`;
+                showNasMainImageStatus(okMsg3, false);
+                toastNasMainImageSuccess(okMsg3);
                 nasMainImageSelected = new Set();
                 refreshMainImageList();
                 await renderNasMainImageList();
@@ -3757,9 +3772,10 @@
             document.getElementById('copy-modal').classList.remove('active');
         }
 
-        document.getElementById('nas-main-image-import-modal')?.addEventListener('click', function(e) {
-            if (e.target === this) closeNasMainImageImportModal();
-        });
+        window.setTimeout(function() {
+            var el = document.getElementById('nas-main-image-import-modal');
+            if (el && typeof window.bindPmModalBackdropClose === 'function') window.bindPmModalBackdropClose(el, closeNasMainImageImportModal);
+        }, 0);
 
         function renderCopyList() {
             const keyword = (document.getElementById('copySearchInput').value || '').trim().toLowerCase();
@@ -3979,24 +3995,18 @@
                 }
             }).catch(err => showModalStatus('主图预检失败: ' + err, true));
         });
-        document.getElementById('uploadDialogModal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                this.classList.remove('active');
-            }
-        });
-        document.getElementById('bulk-sku-modal').addEventListener('click', function(e) {
-            if (e.target === this) closeBulkSkuImportModal();
-        });
-        (function() {
-            const modal = document.getElementById('main-image-desc-modal');
-            if (!modal) return;
-            modal.addEventListener('click', function(e) {
-                if (e.target === this) closeMainImageDescModal();
-            });
-        })();
-        document.getElementById('sales-image-type-modal').addEventListener('click', function(e) {
-            if (e.target === this) closeSalesImageTypeCreateModal();
-        });
+        window.setTimeout(function() {
+            var b = window.bindPmModalBackdropClose;
+            if (typeof b !== 'function') return;
+            var ud = document.getElementById('uploadDialogModal');
+            if (ud) b(ud, function() { ud.classList.remove('active'); });
+            var bulk = document.getElementById('bulk-sku-modal');
+            if (bulk) b(bulk, closeBulkSkuImportModal);
+            var mid = document.getElementById('main-image-desc-modal');
+            if (mid) b(mid, closeMainImageDescModal);
+            var sit = document.getElementById('sales-image-type-modal');
+            if (sit) b(sit, closeSalesImageTypeCreateModal);
+        }, 0);
         function fallbackCopyText(text) {
             const ta = document.createElement('textarea');
             ta.value = text;
@@ -4038,16 +4048,18 @@
                 }
             }
         });
-        document.getElementById('pm-modal').addEventListener('click', function(e) {
-            if (e.target === this) closeModal();
-        });
+        window.setTimeout(function() {
+            var b = window.bindPmModalBackdropClose;
+            if (typeof b !== 'function') return;
+            var pm = document.getElementById('pm-modal');
+            if (pm) b(pm, closeModal);
+            var cm = document.getElementById('copy-modal');
+            if (cm) b(cm, closeCopyModal);
+        }, 0);
         document.addEventListener('click', function(e) {
             if (!e.target.closest('#modalSkuFamilySelect')) {
                 closeAllSelectPanels();
             }
-        });
-        document.getElementById('copy-modal').addEventListener('click', function(e) {
-            if (e.target === this) closeCopyModal();
         });
         const mainImageReplaceInput = document.getElementById('mainImageReplaceInput');
         if (mainImageReplaceInput) {

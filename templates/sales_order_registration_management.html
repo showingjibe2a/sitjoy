@@ -1613,12 +1613,14 @@
             listPage += 1;
             loadList();
         });
-        document.getElementById('pm-modal').addEventListener('click', function(e) {
-            if (e.target === this) closeModal();
-        });
-        document.getElementById('dialogModal').addEventListener('click', function(e) {
-            if (e.target === this) this.classList.remove('active');
-        });
+        window.setTimeout(function() {
+            var b = window.bindPmModalBackdropClose;
+            if (typeof b !== 'function') return;
+            var pm = document.getElementById('pm-modal');
+            if (pm) b(pm, closeModal);
+            var dm = document.getElementById('dialogModal');
+            if (dm) b(dm, function() { dm.classList.remove('active'); });
+        }, 0);
         document.getElementById('uploadInput').addEventListener('change', function() {
             const file = this.files && this.files[0];
             if (file) uploadTemplate(file);

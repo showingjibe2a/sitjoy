@@ -493,6 +493,28 @@
         window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
     }
 
+    /**
+     * 仅在遮罩层（.pm-modal 壳层自身）上完成一次完整的 pointer 按下并抬起时才触发关闭，
+     * 避免在弹窗内输入框拖选文字时，在壳层外松开鼠标被误判为点击遮罩而关闭。
+     */
+    function bindPmModalBackdropClose(modalEl, onClose){
+        if(!modalEl || typeof onClose !== 'function') return;
+        if(String(modalEl.dataset.pmBackdropCloseBound || '') === '1') return;
+        modalEl.dataset.pmBackdropCloseBound = '1';
+        let armed = false;
+        const hitShell = (e) => !!(e && e.target === modalEl);
+        const onPointerDown = (e) => { armed = hitShell(e); };
+        const onPointerUp = (e) => {
+            if(armed && hitShell(e)) onClose();
+            armed = false;
+        };
+        const resetArm = () => { armed = false; };
+        modalEl.addEventListener('pointerdown', onPointerDown);
+        modalEl.addEventListener('pointerup', onPointerUp);
+        modalEl.addEventListener('pointerleave', resetArm);
+        modalEl.addEventListener('pointercancel', resetArm);
+    }
+
     function ensureAppConfirmModal(){
         let modal = document.getElementById('app-confirm-modal');
         if(modal && document.body.contains(modal)) return modal;
@@ -581,7 +603,10 @@
             if(confirmBtn) confirmBtn.removeEventListener('click', onConfirm);
             if(cancelBtn) cancelBtn.removeEventListener('click', onCancel);
             if(checkInput) checkInput.removeEventListener('change', updateConfirmState);
-            modal.removeEventListener('click', onBackdrop);
+            modal.removeEventListener('pointerdown', onBackdropPointerDown);
+            modal.removeEventListener('pointerup', onBackdropPointerUp);
+            modal.removeEventListener('pointerleave', onBackdropPointerReset);
+            modal.removeEventListener('pointercancel', onBackdropPointerReset);
             document.removeEventListener('keydown', onEsc);
             extraCreated.forEach(b => b && b.removeEventListener && b.removeEventListener('click', onExtra));
             syncModalScrollLock();
@@ -616,9 +641,15 @@
             if(typeof opt.onClose === 'function') opt.onClose({ id });
         };
 
-        const onBackdrop = (event) => {
-            if(event.target === modal) onCancel();
+        let backdropArmed = false;
+        const onBackdropPointerDown = (event) => {
+            backdropArmed = (event.target === modal);
         };
+        const onBackdropPointerUp = (event) => {
+            if(backdropArmed && event.target === modal) onCancel();
+            backdropArmed = false;
+        };
+        const onBackdropPointerReset = () => { backdropArmed = false; };
 
         const onEsc = (event) => {
             if(event.key === 'Escape') onCancel();
@@ -628,7 +659,10 @@
         if(cancelBtn) cancelBtn.addEventListener('click', onCancel);
         if(checkInput) checkInput.addEventListener('change', updateConfirmState);
         extraCreated.forEach(b => b.addEventListener('click', onExtra));
-        modal.addEventListener('click', onBackdrop);
+        modal.addEventListener('pointerdown', onBackdropPointerDown);
+        modal.addEventListener('pointerup', onBackdropPointerUp);
+        modal.addEventListener('pointerleave', onBackdropPointerReset);
+        modal.addEventListener('pointercancel', onBackdropPointerReset);
         document.addEventListener('keydown', onEsc);
 
         modal.classList.add('active');
@@ -2220,6 +2254,7 @@
             allRows.forEach((row) => {
                 row.style.display = 'none';
             });
+            clearManagedBatchCheckboxesOnHiddenRows(state);
             return;
         }
 
@@ -2243,6 +2278,7 @@
             state.pageCurrent.textContent = `${state.currentPage} / ${totalPages}`;
             state.prevBtn.disabled = state.currentPage <= 1;
             state.nextBtn.disabled = state.currentPage >= totalPages;
+            clearManagedBatchCheckboxesOnHiddenRows(state);
             return;
         }
 
@@ -2262,6 +2298,7 @@
         state.pageCurrent.textContent = `${state.currentPage} / ${totalPages}`;
         state.prevBtn.disabled = state.currentPage <= 1;
         state.nextBtn.disabled = state.currentPage >= totalPages;
+        clearManagedBatchCheckboxesOnHiddenRows(state);
     }
 
     function isMultiSelectColumn(headerCell, label){
@@ -2998,6 +3035,38 @@
         return `__row_${idx + 1}`;
     }
 
+    /** 列筛选 / 客户端分页隐藏的行不应参与批量勾选统计与全选逻辑 */
+    function isManagedTableRowVisibleForSelection(row){
+        if(!row || String(row.tagName || '').toUpperCase() !== 'TR') return false;
+        if(String(row.dataset.pmFilterHidden || '0') === '1') return false;
+        if(row.style && row.style.display === 'none') return false;
+        return true;
+    }
+
+    function isManagedRowBatchCheckboxInput(cb){
+        if(!cb || cb.disabled || !cb.closest('tr')) return false;
+        if(cb.classList.contains('switch-input')) return false;
+        return cb.hasAttribute('data-id') || cb.classList.contains('row-check') || cb.name === 'row-check' || /select|check/i.test(String(cb.className || ''));
+    }
+
+    function clearManagedBatchCheckboxesOnHiddenRows(state){
+        if(!state || !state.tbody) return;
+        let cleared = false;
+        Array.from(state.tbody.rows || []).forEach(row => {
+            if(isManagedTableRowVisibleForSelection(row)) return;
+            row.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                if(!isManagedRowBatchCheckboxInput(cb)) return;
+                if(!cb.checked) return;
+                cb.checked = false;
+                cleared = true;
+                try{
+                    cb.dispatchEvent(new Event('change', { bubbles: true }));
+                } catch(_e){}
+            });
+        });
+        if(cleared) syncManagedBatchBarAsync(state);
+    }
+
     function getManagedSelectionCheckboxes(state){
         if(!state || !state.tbody) return [];
         const rows = Array.from(state.tbody.rows || []);
@@ -3005,6 +3074,7 @@
 
         if(state.lockedColumns && state.lockedColumns.size){
             rows.forEach(row => {
+                if(!isManagedTableRowVisibleForSelection(row)) return;
                 const byKey = mapRowByKey(row);
                 state.lockedColumns.forEach(key => {
                     const cell = byKey.get(String(key || '').trim());
@@ -3019,9 +3089,10 @@
 
         return Array.from(state.tbody.querySelectorAll('input[type="checkbox"]')).filter(cb => {
             if(cb.disabled) return false;
-            if(!cb.closest('tr')) return false;
+            const row = cb.closest('tr');
+            if(!row || !isManagedTableRowVisibleForSelection(row)) return false;
             if(cb.classList.contains('switch-input')) return false;
-            return cb.hasAttribute('data-id') || cb.classList.contains('row-check') || cb.name === 'row-check' || /select|check/i.test(String(cb.className || ''));
+            return isManagedRowBatchCheckboxInput(cb);
         });
     }
 
@@ -3194,9 +3265,17 @@
                 current.onConfirm();
             });
         }
-        modal.addEventListener('click', (event) => {
-            if(event.target === modal) closeBatchConfirmModal();
-        });
+        let batchBackdropArmed = false;
+        const onBatchBackdropDown = (event) => { batchBackdropArmed = (event.target === modal); };
+        const onBatchBackdropUp = (event) => {
+            if(batchBackdropArmed && event.target === modal) closeBatchConfirmModal();
+            batchBackdropArmed = false;
+        };
+        const onBatchBackdropReset = () => { batchBackdropArmed = false; };
+        modal.addEventListener('pointerdown', onBatchBackdropDown);
+        modal.addEventListener('pointerup', onBatchBackdropUp);
+        modal.addEventListener('pointerleave', onBatchBackdropReset);
+        modal.addEventListener('pointercancel', onBatchBackdropReset);
         return modal;
     }
 
@@ -4644,6 +4723,7 @@
     window.closeDateTimePicker = closeDateTimePicker;
 
     window.initUniversalSingleSelects = initUniversalSingleSelects;
+    window.bindPmModalBackdropClose = bindPmModalBackdropClose;
     window.refreshUniversalSingleSelect = refreshUniversalSingleSelect;
     window.refreshAllUniversalSingleSelects = function(){
         initUniversalSingleSelects(document);

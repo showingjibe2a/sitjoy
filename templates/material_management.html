@@ -712,16 +712,14 @@
 
         window.addEventListener('load', loadMaterialTypes);
         window.addEventListener('load', loadMaterialList);
-        document.getElementById('pm-modal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeModal();
-            }
-        });
-        document.getElementById('pm-type-modal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeTypeModal();
-            }
-        });
+        window.setTimeout(function() {
+            var b = window.bindPmModalBackdropClose;
+            if (typeof b !== 'function') return;
+            var pm = document.getElementById('pm-modal');
+            if (pm) b(pm, closeModal);
+            var tm = document.getElementById('pm-type-modal');
+            if (tm) b(tm, closeTypeModal);
+        }, 0);
         document.getElementById('searchInput').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
                 loadMaterialList();
