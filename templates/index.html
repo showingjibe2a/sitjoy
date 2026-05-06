@@ -2083,15 +2083,6 @@
             if (modal) modal.classList.remove('active');
         }
 
-        window.setTimeout(() => {
-            const bindBackdrop = window.bindPmModalBackdropClose;
-            if (typeof bindBackdrop !== 'function') return;
-            const todoModalEl = document.getElementById('todoModal');
-            if (todoModalEl) bindBackdrop(todoModalEl, closeTodoModal);
-            const todoTypeModalEl = document.getElementById('todoTypeModal');
-            if (todoTypeModalEl) bindBackdrop(todoTypeModalEl, closeTodoTypeModal);
-        }, 0);
-
         function loadTodos() {
             const params = new URLSearchParams();
             params.set('with_links', '1');
@@ -3355,6 +3346,10 @@
 
             const bindBackdrop = window.bindPmModalBackdropClose;
             if (typeof bindBackdrop === 'function') {
+                const todoModalEl = document.getElementById('todoModal');
+                if (todoModalEl) bindBackdrop(todoModalEl, closeTodoModal);
+                const todoTypeModalEl = document.getElementById('todoTypeModal');
+                if (todoTypeModalEl) bindBackdrop(todoTypeModalEl, closeTodoTypeModal);
                 const employeeCreateModal = document.getElementById('employeeCreateModal');
                 if (employeeCreateModal) bindBackdrop(employeeCreateModal, closeEmployeeCreateModal);
                 const employeeEditModal = document.getElementById('employeeEditModal');

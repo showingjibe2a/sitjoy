@@ -494,25 +494,116 @@
     }
 
     /**
-     * 仅在遮罩层（.pm-modal 壳层自身）上完成一次完整的 pointer 按下并抬起时才触发关闭，
-     * 避免在弹窗内输入框拖选文字时，在壳层外松开鼠标被误判为点击遮罩而关闭。
+     * 点击遮罩关闭：用「坐标是否在所有 .pm-modal-content 的 border box 之外」判断，而不是仅靠 target.closest。
+     * 宽弹窗 content 的矩形常铺满视口（min-height/width:100%），视觉上深色边仍在矩形内，DOM 委托会误判为「点在卡片上」从而永远不关。
+     * 使用捕获阶段，避免子节点 stopPropagation 阻断冒泡到壳层。
+     * 手势：必须在 pointerdown 时主键就落在壳层遮罩（所有面板外），且 click/dblclick 时坐标仍在面板外才关闭；
+     * 避免「在卡片内按下、拖到遮罩上松开」误触关闭。
+     * 调试：刷新前执行 window.__SITJOY_DEBUG_MODAL_BACKDROP = true 或 localStorage.setItem('sj.debug.modalBackdrop','1')（setItem 返回 undefined 属正常），
+     * 再点弹窗区域，控制台过滤 [modalBackdrop] 可见 insidePanel / primDownOutside 等日志。
      */
     function bindPmModalBackdropClose(modalEl, onClose){
         if(!modalEl || typeof onClose !== 'function') return;
-        if(String(modalEl.dataset.pmBackdropCloseBound || '') === '1') return;
-        modalEl.dataset.pmBackdropCloseBound = '1';
-        let armed = false;
-        const hitShell = (e) => !!(e && e.target === modalEl);
-        const onPointerDown = (e) => { armed = hitShell(e); };
-        const onPointerUp = (e) => {
-            if(armed && hitShell(e)) onClose();
-            armed = false;
+
+        if(typeof modalEl._pmBackdropCloseCleanup === 'function'){
+            try { modalEl._pmBackdropCloseCleanup(); } catch(_e){}
+            modalEl._pmBackdropCloseCleanup = null;
+        }
+
+        for(let c = modalEl.firstElementChild; c; ){
+            const nx = c.nextElementSibling;
+            if(c.classList && c.classList.contains('pm-modal-backdrop')) c.remove();
+            c = nx;
+        }
+
+        let debugBackdrop = false;
+        try {
+            debugBackdrop = window.__SITJOY_DEBUG_MODAL_BACKDROP === true
+                || !!(window.localStorage && window.localStorage.getItem('sj.debug.modalBackdrop') === '1');
+        } catch(_e2){
+            debugBackdrop = window.__SITJOY_DEBUG_MODAL_BACKDROP === true;
+        }
+        const dbg = (...args) => {
+            if(!debugBackdrop) return;
+            try { console.log('[modalBackdrop]', ...args); } catch(_e3){}
         };
-        const resetArm = () => { armed = false; };
-        modalEl.addEventListener('pointerdown', onPointerDown);
-        modalEl.addEventListener('pointerup', onPointerUp);
-        modalEl.addEventListener('pointerleave', resetArm);
-        modalEl.addEventListener('pointercancel', resetArm);
+
+        const isPrimaryMouseButton = (e) => {
+            if(!e) return false;
+            const bt = Number(e.button);
+            if(Number.isFinite(bt) && bt !== 0) return false;
+            return true;
+        };
+
+        const pointInRect = (x, y, r) => {
+            if(!r) return false;
+            return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+        };
+
+        /** 点击点是否落在任一白卡片矩形内（与视觉深色是否在矩形内无关） */
+        const isPointInsideAnyContentPanel = (clientX, clientY) => {
+            const panels = modalEl.querySelectorAll('.pm-modal-content');
+            for(let i = 0; i < panels.length; i++){
+                const r = panels[i].getBoundingClientRect();
+                if(pointInRect(clientX, clientY, r)) return true;
+            }
+            return false;
+        };
+
+        /** 本次完整按压是否从遮罩（所有 .pm-modal-content 外）开始；由 pointerdown 写入，click 消费 */
+        let primDownOutside = false;
+
+        const onPointerDownPrimary = (e) => {
+            if(!modalEl.classList.contains('active')){
+                primDownOutside = false;
+                return;
+            }
+            if(!isPrimaryMouseButton(e)) return;
+            const x = Number(e.clientX);
+            const y = Number(e.clientY);
+            if(!Number.isFinite(x) || !Number.isFinite(y)){
+                primDownOutside = false;
+                return;
+            }
+            primDownOutside = !isPointInsideAnyContentPanel(x, y);
+            dbg(String(e.type), 'down', 'client', x, y, 'insidePanel', !primDownOutside, 'primDownOutside', primDownOutside, 'target', e.target && e.target.nodeName);
+        };
+
+        const onBackdropMouseActivate = (e) => {
+            if(!modalEl.classList.contains('active')) return;
+            if(!isPrimaryMouseButton(e)) return;
+            const x = Number(e.clientX);
+            const y = Number(e.clientY);
+            if(!Number.isFinite(x) || !Number.isFinite(y)) return;
+            const inside = isPointInsideAnyContentPanel(x, y);
+            dbg(String(e.type), 'up', 'client', x, y, 'insidePanel', inside, 'primDownOutside', primDownOutside, 'target', e.target && e.target.nodeName);
+            if(!primDownOutside || inside) return;
+            primDownOutside = false;
+            try { e.stopPropagation(); } catch(_err){}
+            onClose();
+        };
+
+        const onSelectStart = (ev) => {
+            if(!modalEl.classList.contains('active')) return;
+            const t = ev && ev.target;
+            if(!t || typeof t.closest !== 'function') return;
+            if(t.closest('.pm-modal-content')) return;
+            try { ev.preventDefault(); } catch(_e2){}
+        };
+
+        modalEl.addEventListener('pointerdown', onPointerDownPrimary, true);
+        modalEl.addEventListener('click', onBackdropMouseActivate, true);
+        modalEl.addEventListener('dblclick', onBackdropMouseActivate, true);
+        modalEl.addEventListener('selectstart', onSelectStart, true);
+
+        modalEl._pmBackdropCloseCleanup = () => {
+            modalEl.removeEventListener('pointerdown', onPointerDownPrimary, true);
+            modalEl.removeEventListener('click', onBackdropMouseActivate, true);
+            modalEl.removeEventListener('dblclick', onBackdropMouseActivate, true);
+            modalEl.removeEventListener('selectstart', onSelectStart, true);
+            modalEl._pmBackdropCloseCleanup = null;
+        };
+        modalEl.dataset.pmBackdropCloseBound = '1';
     }
 
     function ensureAppConfirmModal(){
@@ -2916,9 +3007,10 @@
             if(state.activeColumn == null) return;
             event.preventDefault();
             event.stopPropagation();
-            const value = String(button.dataset.value || '');
+            const rawOnly = button.getAttribute('data-value');
             const filterState = state.filters.get(state.activeColumn) || { query: '', exact: false, selected: [] };
-            filterState.selected = value ? [value] : [];
+            // data-value="" 表示筛「空」；不能用 truthy 判断否则会变成未选任何项
+            filterState.selected = rawOnly !== null ? [String(rawOnly)] : [];
             state.filters.set(state.activeColumn, filterState);
             applyFilters();
         });
@@ -2929,7 +3021,12 @@
             const filterState = state.filters.get(state.activeColumn) || { query: '', exact: false, selected: [] };
             const options = Array.from(popup.querySelectorAll('.pm-column-filter-options input[type="checkbox"][data-value]'));
             options.forEach(input => { input.checked = !!target.checked; });
-            filterState.selected = target.checked ? Array.from(new Set(options.map(input => String(input.dataset.value || '')).filter(Boolean))) : [];
+            filterState.selected = target.checked
+                ? Array.from(new Set(options.map(input => {
+                    const r = input.getAttribute('data-value');
+                    return r === null ? '' : String(r);
+                })))
+                : [];
             state.filters.set(state.activeColumn, filterState);
             syncSelectAllState();
         });

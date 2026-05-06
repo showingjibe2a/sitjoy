@@ -2119,6 +2119,160 @@ class SalesProductMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def handle_sales_product_spec_suggest_api(self, environ, method, start_response):
+        """GET /api/sales-product-spec-suggest — 当前货号下已有规格名称联想（模糊匹配已输入片段）。"""
+        try:
+            if method != 'GET':
+                return self.send_error(405, 'Method not allowed', start_response)
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            family_id = self._parse_int((query_params.get('sku_family_id', [''])[0] or '').strip())
+            if not family_id:
+                return self.send_json({'status': 'error', 'message': 'Missing sku_family_id'}, start_response)
+            q = (query_params.get('q', [''])[0] or '').strip()
+            q_lower = q.lower()
+            limit = min(80, max(10, self._parse_int((query_params.get('limit', ['60'])[0] or '60')) or 60))
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    if q_lower:
+                        cur.execute(
+                            """
+                            SELECT DISTINCT spec_name
+                            FROM sales_product_variants
+                            WHERE sku_family_id=%s
+                              AND spec_name IS NOT NULL
+                              AND TRIM(spec_name) <> ''
+                              AND LOCATE(%s, LOWER(spec_name)) > 0
+                            ORDER BY spec_name ASC
+                            LIMIT %s
+                            """,
+                            (family_id, q_lower, limit),
+                        )
+                    else:
+                        cur.execute(
+                            """
+                            SELECT DISTINCT spec_name
+                            FROM sales_product_variants
+                            WHERE sku_family_id=%s
+                              AND spec_name IS NOT NULL
+                              AND TRIM(spec_name) <> ''
+                            ORDER BY spec_name ASC
+                            LIMIT %s
+                            """,
+                            (family_id, limit),
+                        )
+                    rows = cur.fetchall() or []
+            items = []
+            seen = set()
+            for r in rows:
+                name = str((r.get('spec_name') if isinstance(r, dict) else (r[0] if r else '')) or '').strip()
+                if not name or name in seen:
+                    continue
+                seen.add(name)
+                items.append({'spec_name': name})
+            return self.send_json({'status': 'success', 'items': items}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_sales_product_variant_prefill_api(self, environ, method, start_response):
+        """GET /api/sales-product-variant-prefill — 若货号+规格(+面料)已对应销售变体，返回其关联下单 SKU 行。"""
+        try:
+            if method != 'GET':
+                return self.send_error(405, 'Method not allowed', start_response)
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            family_id = self._parse_int((query_params.get('sku_family_id', [''])[0] or '').strip())
+            spec = (query_params.get('spec_name', [''])[0] or '').strip()
+            fabric_id = self._parse_int((query_params.get('fabric_id', [''])[0] or '').strip())
+            fabric_text = (query_params.get('fabric', [''])[0] or '').strip()
+            if not family_id or not spec:
+                return self.send_json({'status': 'success', 'variant_id': 0, 'ambiguous': False, 'order_sku_links': []}, start_response)
+
+            with self._get_db_connection() as conn:
+                has_fid = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
+                has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+                variant_id = 0
+                ambiguous = False
+                with conn.cursor() as cur:
+                    if has_fid and fabric_id > 0:
+                        cur.execute(
+                            """
+                            SELECT id FROM sales_product_variants
+                            WHERE sku_family_id=%s AND spec_name=%s AND COALESCE(fabric_id,0)=%s
+                            ORDER BY id ASC
+                            LIMIT 2
+                            """,
+                            (family_id, spec, fabric_id),
+                        )
+                    elif has_fid:
+                        cur.execute(
+                            """
+                            SELECT id FROM sales_product_variants
+                            WHERE sku_family_id=%s AND spec_name=%s
+                            ORDER BY id ASC
+                            LIMIT 10
+                            """,
+                            (family_id, spec),
+                        )
+                    elif has_fabric_text:
+                        cur.execute(
+                            """
+                            SELECT id FROM sales_product_variants
+                            WHERE sku_family_id=%s AND spec_name=%s AND fabric=%s
+                            ORDER BY id ASC
+                            LIMIT 2
+                            """,
+                            (family_id, spec, fabric_text),
+                        )
+                    else:
+                        cur.execute(
+                            """
+                            SELECT id FROM sales_product_variants
+                            WHERE sku_family_id=%s AND spec_name=%s
+                            ORDER BY id ASC
+                            LIMIT 2
+                            """,
+                            (family_id, spec),
+                        )
+                    rows = cur.fetchall() or []
+                    ids = []
+                    for r in rows:
+                        rid = r.get('id') if isinstance(r, dict) else (r[0] if r else 0)
+                        vid = self._parse_int(rid)
+                        if vid:
+                            ids.append(vid)
+                    if len(ids) == 1:
+                        variant_id = ids[0]
+                    elif len(ids) > 1:
+                        ambiguous = True
+
+                if not variant_id:
+                    return self.send_json({
+                        'status': 'success',
+                        'variant_id': 0,
+                        'ambiguous': ambiguous,
+                        'order_sku_links': [],
+                    }, start_response)
+
+                metrics = self._load_sales_variant_metrics(conn, [variant_id], include_links=True) or {}
+                bucket = metrics.get(variant_id, {}) if variant_id else {}
+                raw_links = bucket.get('order_sku_links') or []
+                order_sku_links = []
+                for entry in raw_links:
+                    oid = self._parse_int(entry.get('order_product_id'))
+                    if not oid:
+                        continue
+                    order_sku_links.append({
+                        'order_product_id': oid,
+                        'quantity': max(1, self._parse_int(entry.get('quantity')) or 1),
+                    })
+
+            return self.send_json({
+                'status': 'success',
+                'variant_id': variant_id,
+                'ambiguous': ambiguous,
+                'order_sku_links': order_sku_links,
+            }, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_sales_product_template_api(self, environ, method, start_response):
         """销售产品模板下载"""

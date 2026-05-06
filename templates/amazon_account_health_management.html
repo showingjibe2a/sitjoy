@@ -1362,10 +1362,10 @@
         window.addEventListener('load', init);
         window.addEventListener('resize', () => loadChartData());
 
-        window.setTimeout(function() {
+        window.addEventListener('load', function wirePmModalBackdropClose() {
             var el = document.getElementById('pm-modal');
             if (el && typeof window.bindPmModalBackdropClose === 'function') window.bindPmModalBackdropClose(el, closeModal);
-        }, 0);
+        });
         document.getElementById('searchKeyword').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') handleSearchClick();
         });

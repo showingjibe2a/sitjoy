@@ -1433,6 +1433,23 @@ input.optional-field[type="datetime-local"]:focus {
 
 .pm-modal.active {
     display: flex;
+    /* 壳层默认不可选，避免遮罩操作（含 capture 边界竞态）时选区落到子树第一个文本（常见为标题） */
+    user-select: none;
+    -webkit-user-select: none;
+    /* 点击委托在壳层：深色区命中 .pm-modal 本体时显示手型；白卡片内恢复默认光标 */
+    cursor: pointer;
+}
+
+.pm-modal > .pm-modal-content {
+    position: relative;
+    z-index: 1;
+}
+
+/* 白卡片：恢复光标与可选中文本（壳层 user-select:none / cursor:pointer 不污染卡片内） */
+.pm-modal.active .pm-modal-content {
+    cursor: auto;
+    user-select: text;
+    -webkit-user-select: text;
 }
 
 .pm-modal-content {
@@ -3284,6 +3301,11 @@ body {
     background: rgba(255, 255, 255, 0.55);
     border-radius: 12px;
     padding: 0.5rem 0.65rem;
+}
+
+/* 叠在「主编辑」等同级 pm-modal 之上，避免同 z-index 下事件/命中异常 */
+#nas-main-image-import-modal.pm-modal.active {
+    z-index: 3100;
 }
 
 #nas-main-image-import-modal .pm-form label {

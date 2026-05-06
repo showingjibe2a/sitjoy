@@ -177,6 +177,47 @@
             display: block;
             word-break: break-all;
         }
+        .sales-spec-field-wrap {
+            position: relative;
+        }
+        .sales-spec-suggest-list {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: calc(100% + 2px);
+            z-index: 50;
+            max-height: 240px;
+            overflow-y: auto;
+            background: #fff;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 8px;
+            box-shadow: 0 10px 26px rgba(15, 23, 42, 0.14);
+            display: none;
+        }
+        .sales-spec-suggest-list.open {
+            display: block;
+        }
+        .sales-spec-suggest-item {
+            display: block;
+            width: 100%;
+            text-align: left;
+            padding: 0.48rem 0.65rem;
+            font-size: 0.9rem;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            color: var(--morandi-ink);
+        }
+        .sales-spec-suggest-item:hover,
+        .sales-spec-suggest-item:focus {
+            background: rgba(207, 199, 189, 0.4);
+            outline: none;
+        }
+        .sales-spec-suggest-empty {
+            padding: 0.48rem 0.65rem;
+            font-size: 0.86rem;
+            color: var(--morandi-slate);
+        }
         .percent-input {
             position: relative;
             width: 100%;
@@ -281,6 +322,21 @@
             color: var(--morandi-slate);
             font-size: 0.86rem;
         }
+        .sales-parent-group-row td {
+            background: #f3ece0 !important;
+            color: #5a4f42;
+            font-weight: 700;
+            border-top: 1px solid rgba(207, 199, 189, 0.75);
+            cursor: pointer;
+            user-select: none;
+        }
+        .sales-parent-group-toggle {
+            display: inline-block;
+            width: 1.1em;
+            margin-right: 0.35rem;
+            text-align: center;
+        }
+        .sales-row-hidden { display: none; }
     </style>
 </head>
 <body>
@@ -303,6 +359,14 @@
                             <button class="btn-secondary" onclick="resetSearch()">清空</button>
                         </div>
                         <span class="pm-divider" aria-hidden="true"></span>
+                        <div class="form-group" style="margin:0; display:flex; align-items:center; gap:.45rem;">
+                            <span class="pm-search-title" style="margin:0;">汇总维度</span>
+                            <div class="status-segment status-segment--inline" id="salesProductAggregateSegment" data-value="none">
+                                <button type="button" class="status-pill is-active" data-value="none">不汇总</button>
+                                <button type="button" class="status-pill" data-value="parent">按父体汇总</button>
+                            </div>
+                        </div>
+                        <span class="pm-divider" aria-hidden="true"></span>
                         <button class="btn-secondary" onclick="downloadSalesProductTemplate()">下载模板</button>
                         <button class="btn-secondary" onclick="triggerSalesProductUpload()">批量上传</button>
                         <input type="file" id="salesProductUploadInput" accept=".xlsx" style="display:none;">
@@ -317,15 +381,15 @@
                         <tr>
                             <th style="width:54px; text-align:center;"><input type="checkbox" id="salesSelectAll"></th>
                             <th style="width:76px;">图片</th>
-                            <th>状态</th>
-                            <th>货号</th>
-                            <th>面料</th>
-                            <th>规格名称</th>
-                            <th>销售平台SKU</th>
-                            <th>子体编号</th>
+                            <th data-sort-key="product_status">状态</th>
+                            <th data-sort-key="sku_family">货号</th>
+                            <th data-sort-key="fabric">面料</th>
+                            <th data-sort-key="spec_name">规格名称</th>
+                            <th data-sort-key="platform_sku">销售平台SKU</th>
+                            <th data-sort-key="child_code">子体编号</th>
                             <th>下单SKU</th>
-                            <th>售价</th>
-                            <th>创建时间</th>
+                            <th data-sort-key="sale_price_usd">售价</th>
+                            <th data-sort-key="created_at">创建时间</th>
                             <th style="width:160px;">操作</th>
                         </tr>
                     </thead>
@@ -398,9 +462,10 @@
                                 </div>
                                 <select id="modalSkuFamily" class="optional-field" style="display:none;"></select>
                             </div>
-                            <div class="form-group pm-span-1">
-                                <label for="modalSpecName">规格名称</label>
-                                <input type="text" id="modalSpecName" class="optional-field" placeholder="自动计算，可编辑">
+                            <div class="form-group pm-span-1 sales-spec-field-wrap">
+                                <label for="modalSpecName" class="label-help">规格名称<span class="help-dot" data-tip="在已选货号下联想已有规格名称（支持模糊）；当规格+货号+面料与系统中已有变体一致时，会自动带出关联下单SKU及数量（在下方关联区操作不会触发带出）。"></span></label>
+                                <input type="text" id="modalSpecName" class="optional-field" placeholder="自动计算，可编辑" autocomplete="off">
+                                <div id="modalSpecSuggest" class="sales-spec-suggest-list" role="listbox" aria-label="规格联想"></div>
                             </div>
                             <div class="form-group pm-span-1">
                                 <label for="modalFabricId" class="label-help">面料<span class="help-dot" data-tip="先选择货号后，这里只显示该货号允许的面料；选择单个下单SKU时会自动带出"></span></label>
@@ -660,6 +725,9 @@
         let manualFabric = false;
         let manualSpecName = false;
         let manualPlatformSku = false;
+        let insideAutoComputeFabricSpec = false;
+        let variantPrefillTimer = null;
+        let specSuggestTimer = null;
         let uploadProcessingTimer = null;
         let uploadDialogErrorRows = [];
         let toastTimer = null;
@@ -669,6 +737,10 @@
         let originalFabric = '';
         const salesProductDetailCache = {};
         let selectedSalesProductIds = new Set();
+        const SALES_PRODUCT_AGGREGATE_MODE_KEY = 'sj.salesProduct.aggregateMode.v1';
+        let salesProductAggregateMode = 'none';
+        let salesProductGroupSort = { key: '', dir: 'asc' };
+        let salesProductCollapsedParentGroups = new Set();
         let currentProductStatus = 'enabled';
         let mainImageItems = [];
         let fabricImageItems = [];
@@ -1116,6 +1188,9 @@
                     renderFabricSelectBySkuFamily(document.getElementById('modalFabricId')?.value || '');
                     closeSelectPanel('sku');
                     autoComputeFabricSpec();
+                    hideSpecSuggestPanel();
+                    scheduleSpecSuggestFetch();
+                    scheduleVariantPrefillFromDb();
                 });
             });
         }
@@ -1210,37 +1285,79 @@
             }
         }
 
-        function renderSalesGroupedTable(items) {
-            const tbody = document.querySelector('#salesProductTable tbody');
-            if (!(items || []).length) {
-                tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;">暂无数据</td></tr>';
-                syncSalesSelectAllCheckbox();
-                return;
+        function salesParentGroupMetaOf(item) {
+            const raw = String(item && item.parent_code || '').trim();
+            const key = raw ? `parent:${raw}` : 'parent:__none__';
+            const label = raw || '（未关联父体）';
+            return { key, label };
+        }
+
+        function compareSalesItemsByGroupSortKey(a, b) {
+            const key = String(salesProductGroupSort.key || '').trim();
+            if (!key) return 0;
+            const dir = salesProductGroupSort.dir === 'desc' ? -1 : 1;
+            const dateKeys = new Set(['created_at']);
+            const numberKeys = new Set(['sale_price_usd']);
+            if (key === 'product_status') {
+                const orderRank = (v) => {
+                    const n = normalizeProductStatus(v);
+                    return n === 'enabled' ? 0 : n === 'retained' ? 1 : n === 'discarded' ? 2 : 3;
+                };
+                const ra = orderRank(a && a.product_status);
+                const rb = orderRank(b && b.product_status);
+                if (ra === rb) return 0;
+                return (ra > rb ? 1 : -1) * dir;
             }
+            const av = a && a[key];
+            const bv = b && b[key];
+            if (numberKeys.has(key)) {
+                const na = Number(av || 0);
+                const nb = Number(bv || 0);
+                if (na === nb) return 0;
+                return (na > nb ? 1 : -1) * dir;
+            }
+            if (dateKeys.has(key)) {
+                const ta = Date.parse(String(av || '')) || 0;
+                const tb = Date.parse(String(bv || '')) || 0;
+                if (ta === tb) return 0;
+                return (ta > tb ? 1 : -1) * dir;
+            }
+            const sa = String(av || '').trim().toLowerCase();
+            const sb = String(bv || '').trim().toLowerCase();
+            if (sa === sb) return 0;
+            return (sa > sb ? 1 : -1) * dir;
+        }
 
-            const availableIdSet = new Set((items || []).map(x => String(x.id)));
-            selectedSalesProductIds = new Set(Array.from(selectedSalesProductIds).filter(id => availableIdSet.has(String(id))));
+        function escapeSalesGroupKeyAttr(groupKey) {
+            return String(groupKey || '')
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
 
-            tbody.innerHTML = (items || []).map(item => {
-                const orderSkuDisplay = (() => {
-                    const links = Array.isArray(item.order_sku_links) ? item.order_sku_links : [];
-                    if (!links.length) return '-';
-                    const lines = links
-                        .filter(x => x && x.sku)
-                        .map(x => {
-                            const qty = Math.max(1, Number(x.quantity || 1));
-                            return `<span class="sales-order-sku-line">${escapeHtml(x.sku)} × ${qty}</span>`;
-                        });
-                    if (!lines.length) return '-';
-                    return `<div class="sales-order-sku-lines">${lines.join('')}</div>`;
-                })();
-                const previewB64 = String(item.preview_image_b64 || '').trim();
-                const previewCell = previewB64
-                    ? `<img src="/api/image-preview?id=${encodeURIComponent(previewB64)}&mode=thumb&w=120&q=60" alt="预览" loading="lazy" style="width:56px;height:56px;object-fit:contain;background:#fff;border:1px solid var(--morandi-sand);border-radius:8px;display:block;margin:0 auto;">`
-                    : `<div style="width:56px;height:56px;border:1px dashed var(--morandi-sand);border-radius:8px;background:rgba(0,0,0,0.02);margin:0 auto;"></div>`;
-                const createdDateStr = item.created_at ? new Date(item.created_at).toLocaleDateString('zh-CN') : '-';
-                return `
-                <tr>
+        function renderSalesDataRowHtml(item, groupKey, hidden) {
+            const orderSkuDisplay = (() => {
+                const links = Array.isArray(item.order_sku_links) ? item.order_sku_links : [];
+                if (!links.length) return '-';
+                const lines = links
+                    .filter(x => x && x.sku)
+                    .map(x => {
+                        const qty = Math.max(1, Number(x.quantity || 1));
+                        return `<span class="sales-order-sku-line">${escapeHtml(x.sku)} × ${qty}</span>`;
+                    });
+                if (!lines.length) return '-';
+                return `<div class="sales-order-sku-lines">${lines.join('')}</div>`;
+            })();
+            const previewB64 = String(item.preview_image_b64 || '').trim();
+            const previewCell = previewB64
+                ? `<img src="/api/image-preview?id=${encodeURIComponent(previewB64)}&mode=thumb&w=120&q=60" alt="预览" loading="lazy" style="width:56px;height:56px;object-fit:contain;background:#fff;border:1px solid var(--morandi-sand);border-radius:8px;display:block;margin:0 auto;">`
+                : `<div style="width:56px;height:56px;border:1px dashed var(--morandi-sand);border-radius:8px;background:rgba(0,0,0,0.02);margin:0 auto;"></div>`;
+            const createdDateStr = item.created_at ? new Date(item.created_at).toLocaleDateString('zh-CN') : '-';
+            const gk = escapeSalesGroupKeyAttr(groupKey);
+            const rowCls = hidden ? 'sales-row-hidden' : '';
+            return `
+                <tr class="${rowCls}" data-group-key="${gk}">
                     <td style="text-align:center;"><input type="checkbox" class="sales-row-checkbox" data-id="${item.id}" ${selectedSalesProductIds.has(String(item.id)) ? 'checked' : ''}></td>
                     <td style="text-align:center;">${previewCell}</td>
                     <td>${renderInlineProductStatus(item)}</td>
@@ -1260,8 +1377,159 @@
                     </td>
                 </tr>
             `;
-            }).join('');
+        }
+
+        function refreshSalesProductTableHeaderSortUi() {
+            const headRow = document.querySelector('#salesProductTable thead tr');
+            if (!headRow) return;
+            headRow.querySelectorAll('th[data-sort-key]').forEach(th => {
+                th.classList.remove('pm-sortable', 'pm-sort-asc', 'pm-sort-desc');
+                th.removeAttribute('title');
+            });
+            if (salesProductAggregateMode !== 'parent') return;
+            headRow.querySelectorAll('th[data-sort-key]').forEach(th => {
+                th.classList.add('pm-sortable');
+                th.title = '组内排序';
+            });
+            const sk = String(salesProductGroupSort.key || '').trim();
+            if (!sk) return;
+            headRow.querySelectorAll('th[data-sort-key]').forEach(th => {
+                if (String(th.getAttribute('data-sort-key') || '').trim() !== sk) return;
+                th.classList.add(salesProductGroupSort.dir === 'desc' ? 'pm-sort-desc' : 'pm-sort-asc');
+            });
+        }
+
+        function bindSalesParentGroupEvents() {
+            const tbody = document.querySelector('#salesProductTable tbody');
+            if (!tbody || tbody.dataset.salesGroupBound === '1') return;
+            tbody.dataset.salesGroupBound = '1';
+            tbody.addEventListener('click', function(e) {
+                const row = e.target && e.target.closest ? e.target.closest('tr.sales-parent-group-row[data-group-key]') : null;
+                if (!row) return;
+                const key = String(row.dataset.groupKey || '');
+                if (!key) return;
+                if (salesProductCollapsedParentGroups.has(key)) salesProductCollapsedParentGroups.delete(key);
+                else salesProductCollapsedParentGroups.add(key);
+                renderSalesGroupedTable(salesProductItems || []);
+            });
+        }
+
+        function bindSalesAggregateSegment() {
+            const seg = document.getElementById('salesProductAggregateSegment');
+            if (!seg || seg.dataset.bound === '1') return;
+            seg.dataset.bound = '1';
+            seg.querySelectorAll('button.status-pill[data-value]').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const val = String(this.getAttribute('data-value') || 'none');
+                    const nextMode = val === 'parent' ? 'parent' : 'none';
+                    if (salesProductAggregateMode !== nextMode) {
+                        salesProductGroupSort = { key: '', dir: 'asc' };
+                        if (nextMode === 'parent') salesProductCollapsedParentGroups = new Set();
+                    }
+                    salesProductAggregateMode = nextMode;
+                    safeSetLocalStorage(SALES_PRODUCT_AGGREGATE_MODE_KEY, salesProductAggregateMode);
+                    seg.setAttribute('data-value', salesProductAggregateMode);
+                    seg.querySelectorAll('button.status-pill[data-value]').forEach(b => {
+                        b.classList.toggle('is-active', String(b.getAttribute('data-value') || '') === salesProductAggregateMode);
+                    });
+                    renderSalesGroupedTable(salesProductItems || []);
+                });
+            });
+        }
+
+        function bindSalesHeaderGroupSort() {
+            if (document.body.dataset.salesGroupSortBound === '1') return;
+            document.body.dataset.salesGroupSortBound = '1';
+            document.addEventListener('click', function(e) {
+                if (salesProductAggregateMode !== 'parent') return;
+                if (e.target && e.target.closest && e.target.closest('.pm-column-filter-btn')) return;
+                const th = e.target && e.target.closest ? e.target.closest('#salesProductTable thead th[data-sort-key]') : null;
+                if (!th) return;
+                const hostTable = th.closest ? th.closest('table') : null;
+                const mainTable = document.getElementById('salesProductTable');
+                if (!hostTable || !mainTable || hostTable !== mainTable) return;
+
+                e.preventDefault();
+                e.stopPropagation();
+                if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+
+                const key = String(th.getAttribute('data-sort-key') || '').trim();
+                if (!key) return;
+                if (salesProductGroupSort.key === key) {
+                    salesProductGroupSort.dir = salesProductGroupSort.dir === 'asc' ? 'desc' : 'asc';
+                } else {
+                    salesProductGroupSort.key = key;
+                    salesProductGroupSort.dir = 'asc';
+                }
+                renderSalesGroupedTable(salesProductItems || []);
+            }, true);
+        }
+
+        function syncSalesAggregateSegmentUi() {
+            const seg = document.getElementById('salesProductAggregateSegment');
+            if (!seg) return;
+            seg.setAttribute('data-value', salesProductAggregateMode);
+            seg.querySelectorAll('button.status-pill[data-value]').forEach(b => {
+                b.classList.toggle('is-active', String(b.getAttribute('data-value') || '') === salesProductAggregateMode);
+            });
+        }
+
+        function restoreSalesProductAggregateModeFromStorage() {
+            const raw = String(safeGetLocalStorage(SALES_PRODUCT_AGGREGATE_MODE_KEY) || '').trim();
+            salesProductAggregateMode = raw === 'parent' ? 'parent' : 'none';
+        }
+
+        function renderSalesGroupedTable(items) {
+            const tbody = document.querySelector('#salesProductTable tbody');
+            if (!tbody) return;
+            if (!(items || []).length) {
+                tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;">暂无数据</td></tr>';
+                refreshSalesProductTableHeaderSortUi();
+                syncSalesSelectAllCheckbox();
+                return;
+            }
+
+            const availableIdSet = new Set((items || []).map(x => String(x.id)));
+            selectedSalesProductIds = new Set(Array.from(selectedSalesProductIds).filter(id => availableIdSet.has(String(id))));
+
+            const rows = Array.isArray(items) ? items : [];
+            const html = [];
+            const activeCollapsedSet = salesProductAggregateMode === 'parent' ? salesProductCollapsedParentGroups : null;
+
+            if (salesProductAggregateMode === 'none') {
+                rows.forEach(item => {
+                    html.push(renderSalesDataRowHtml(item, '', false));
+                });
+            } else {
+                const groups = new Map();
+                rows.forEach(item => {
+                    const meta = salesParentGroupMetaOf(item);
+                    if (!groups.has(meta.key)) groups.set(meta.key, { label: meta.label, items: [] });
+                    groups.get(meta.key).items.push(item);
+                });
+                Array.from(groups.entries()).forEach(([groupKey, groupData]) => {
+                    const groupLabel = String((groupData && groupData.label) || '').trim() || '（未关联父体）';
+                    const groupItems = (groupData && Array.isArray(groupData.items)) ? groupData.items : [];
+                    const sorted = salesProductGroupSort.key
+                        ? groupItems.slice().sort(compareSalesItemsByGroupSortKey)
+                        : groupItems.slice();
+                    const collapsed = activeCollapsedSet ? activeCollapsedSet.has(groupKey) : false;
+                    const safeKey = escapeSalesGroupKeyAttr(groupKey);
+                    html.push(`
+                <tr class="sales-parent-group-row" data-group-key="${safeKey}">
+                    <td colspan="12"><span class="sales-parent-group-toggle">${collapsed ? '▶' : '▼'}</span>${escapeHtml(groupLabel)}（${sorted.length}）</td>
+                </tr>
+            `);
+                    sorted.forEach(item => {
+                        html.push(renderSalesDataRowHtml(item, groupKey, collapsed));
+                    });
+                });
+            }
+
+            tbody.innerHTML = html.join('');
+            refreshSalesProductTableHeaderSortUi();
             bindSalesRowSelectionEvents();
+            bindSalesParentGroupEvents();
             syncSalesSelectAllCheckbox();
         }
 
@@ -1280,7 +1548,14 @@
         function syncSalesSelectAllCheckbox() {
             const master = document.getElementById('salesSelectAll');
             if (!master) return;
-            const checkboxes = Array.from(document.querySelectorAll('.sales-row-checkbox'));
+            const checkboxes = Array.from(document.querySelectorAll('.sales-row-checkbox')).filter(cb => {
+                const tr = cb.closest('tr');
+                if (!tr) return false;
+                if (tr.classList.contains('sales-row-hidden')) return false;
+                if (String(tr.dataset.pmFilterHidden || '0') === '1') return false;
+                if (tr.style && tr.style.display === 'none') return false;
+                return true;
+            });
             if (!checkboxes.length) {
                 master.checked = false;
                 master.indeterminate = false;
@@ -1294,6 +1569,7 @@
         function toggleSelectAllSalesRows(checked) {
             document.querySelectorAll('.sales-row-checkbox').forEach(el => {
                 const tr = el.closest('tr');
+                if (tr && tr.classList.contains('sales-row-hidden')) return;
                 if (tr && String(tr.dataset.pmFilterHidden || '0') === '1') return;
                 if (tr && tr.style && tr.style.display === 'none') return;
                 const id = String(el.getAttribute('data-id') || '');
@@ -3190,7 +3466,104 @@
             return option ? String(option.textContent || '').trim() : '';
         }
 
+        function hideSpecSuggestPanel() {
+            const el = document.getElementById('modalSpecSuggest');
+            if (!el) return;
+            el.classList.remove('open');
+            el.innerHTML = '';
+        }
+
+        function renderSpecSuggestItems(items) {
+            const el = document.getElementById('modalSpecSuggest');
+            if (!el) return;
+            const list = Array.isArray(items) ? items : [];
+            if (!list.length) {
+                el.innerHTML = '<div class="sales-spec-suggest-empty">无匹配规格（仅显示当前货号下已有规格）</div>';
+                el.classList.add('open');
+                return;
+            }
+            el.innerHTML = list.map(it => {
+                const name = String(it.spec_name || '').trim();
+                const safe = escapeHtml(name);
+                const enc = encodeURIComponent(name);
+                return `<button type="button" class="sales-spec-suggest-item" role="option" data-spec-enc="${enc}">${safe}</button>`;
+            }).join('');
+            el.querySelectorAll('.sales-spec-suggest-item').forEach(btn => {
+                btn.addEventListener('click', (ev) => {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    let raw = '';
+                    try { raw = decodeURIComponent(String(btn.getAttribute('data-spec-enc') || '')); } catch (err) { raw = ''; }
+                    const inp = document.getElementById('modalSpecName');
+                    if (inp) inp.value = raw;
+                    manualSpecName = !!String(raw || '').trim();
+                    hideSpecSuggestPanel();
+                    scheduleVariantPrefillFromDb();
+                });
+            });
+            el.classList.add('open');
+        }
+
+        function scheduleSpecSuggestFetch() {
+            window.clearTimeout(specSuggestTimer);
+            specSuggestTimer = window.setTimeout(fetchSpecSuggestList, 220);
+        }
+
+        async function fetchSpecSuggestList() {
+            const pm = document.getElementById('pm-modal');
+            if (!pm || !pm.classList.contains('active')) return;
+            const skuFamilyId = String(document.getElementById('modalSkuFamily').value || '').trim();
+            const q = String(document.getElementById('modalSpecName').value || '').trim();
+            if (!skuFamilyId) {
+                hideSpecSuggestPanel();
+                return;
+            }
+            try {
+                const qs = new URLSearchParams({ sku_family_id: skuFamilyId, q });
+                const resp = await fetch('/api/sales-product-spec-suggest?' + qs.toString());
+                const data = await resp.json();
+                if (!data || data.status !== 'success') return;
+                renderSpecSuggestItems(data.items || []);
+            } catch (e) {
+                hideSpecSuggestPanel();
+            }
+        }
+
+        function scheduleVariantPrefillFromDb() {
+            window.clearTimeout(variantPrefillTimer);
+            variantPrefillTimer = window.setTimeout(() => { tryPrefillOrderSkusFromExistingVariant(); }, 400);
+        }
+
+        async function tryPrefillOrderSkusFromExistingVariant() {
+            if (insideAutoComputeFabricSpec) return;
+            const pm = document.getElementById('pm-modal');
+            if (!pm || !pm.classList.contains('active')) return;
+            const skuFamilyId = String(document.getElementById('modalSkuFamily').value || '').trim();
+            const spec = String(document.getElementById('modalSpecName').value || '').trim();
+            if (!skuFamilyId || !spec) return;
+            const fabricId = String(document.getElementById('modalFabricId').value || '').trim();
+            const fabricHidden = String(document.getElementById('modalFabric').value || '').trim();
+            const qs = new URLSearchParams({ sku_family_id: skuFamilyId, spec_name: spec, fabric: fabricHidden });
+            if (fabricId) qs.set('fabric_id', fabricId);
+            try {
+                const resp = await fetch('/api/sales-product-variant-prefill?' + qs.toString());
+                const data = await resp.json();
+                if (!data || data.status !== 'success') return;
+                const links = Array.isArray(data.order_sku_links) ? data.order_sku_links : [];
+                if (!links.length) return;
+                selectedOrderSkus = links.map(x => ({
+                    order_product_id: Number(x.order_product_id) || null,
+                    quantity: Math.max(1, Number(x.quantity) || 1)
+                })).filter(x => x.order_product_id);
+                if (!selectedOrderSkus.length) return;
+                renderSelectedOrderSkuRows();
+                autoComputeFabricSpec();
+            } catch (e) {}
+        }
+
         function autoComputeFabricSpec() {
+            insideAutoComputeFabricSpec = true;
+            try {
             const selected = selectedOrderSkus.map(link => {
                 const source = orderSkuOptions.find(x => String(x.id) === String(link.order_product_id));
                 return { link, source };
@@ -3268,6 +3641,9 @@
             document.getElementById('modalNetWeight').value = netWeight.toFixed(2);
             document.getElementById('modalGrossWeight').value = grossWeight.toFixed(2);
             updateCostWarning();
+            } finally {
+                insideAutoComputeFabricSpec = false;
+            }
         }
 
         function renderFabricSelectBySkuFamily(selectedFabricId) {
@@ -3305,6 +3681,9 @@
         // fabric images will be merged into main image grid (readonly, non-deletable)
 
         async function openCreateModal() {
+            window.clearTimeout(variantPrefillTimer);
+            window.clearTimeout(specSuggestTimer);
+            hideSpecSuggestPanel();
             editId = null;
             manualFabric = false;
             manualSpecName = false;
@@ -3355,6 +3734,9 @@
         }
 
         async function openEditModal(id) {
+            window.clearTimeout(variantPrefillTimer);
+            window.clearTimeout(specSuggestTimer);
+            hideSpecSuggestPanel();
             await Promise.all([ensureOrderSkuOptionsLoaded(), ensureFabricOptionsLoaded()]);
             mainImagePromptDuplicate = readBoolSetting(MAIN_IMAGE_PROMPT_DUP_KEY, true);
             mainImageShowFabric = readBoolSetting(MAIN_IMAGE_SHOW_FABRIC_KEY, true);
@@ -3412,6 +3794,9 @@
 
         function closeModal() {
             document.getElementById('pm-modal').classList.remove('active');
+            window.clearTimeout(variantPrefillTimer);
+            window.clearTimeout(specSuggestTimer);
+            hideSpecSuggestPanel();
             closeBulkSkuImportModal();
             closeMainImageDescModal();
             editId = null;
@@ -3888,6 +4273,10 @@
         }
 
         function initPage() {
+            restoreSalesProductAggregateModeFromStorage();
+            syncSalesAggregateSegmentUi();
+            bindSalesAggregateSegment();
+            bindSalesHeaderGroupSort();
             loadSalesProductList();
             Promise.all([
                 loadShopOptions(),
@@ -3916,6 +4305,15 @@
                 descEl.dataset._bound = '1';
                 descEl.addEventListener('input', () => { mainImageDescTouched = true; });
             }
+            // load 时 header.js 已就绪；若此前 setTimeout(0) 早于 header 执行导致未绑定，此处补绑
+            (function bindPmModalsWhenReady() {
+                var b = window.bindPmModalBackdropClose;
+                if (typeof b !== 'function') return;
+                var pm = document.getElementById('pm-modal');
+                if (pm) b(pm, closeModal);
+                var cm = document.getElementById('copy-modal');
+                if (cm) b(cm, closeCopyModal);
+            })();
         }
 
         document.getElementById('searchInput').addEventListener('keydown', function(e) {
@@ -3943,8 +4341,26 @@
             manualFabric = !!String(this.value || '').trim();
             syncFabricHiddenText();
             autoComputeFabricSpec();
+            scheduleVariantPrefillFromDb();
         });
-        document.getElementById('modalSpecName').addEventListener('input', function() { manualSpecName = this.value.trim() !== ''; });
+        (function bindSpecNameAssist() {
+            const specInp = document.getElementById('modalSpecName');
+            if (!specInp || specInp.dataset._specAssistBound === '1') return;
+            specInp.dataset._specAssistBound = '1';
+            specInp.addEventListener('input', function() {
+                manualSpecName = this.value.trim() !== '';
+                scheduleSpecSuggestFetch();
+                scheduleVariantPrefillFromDb();
+            });
+            specInp.addEventListener('focus', function() { scheduleSpecSuggestFetch(); });
+        })();
+        document.addEventListener('mousedown', function(e) {
+            const sugg = document.getElementById('modalSpecSuggest');
+            const wrap = document.querySelector('.sales-spec-field-wrap');
+            if (!sugg || !wrap || !sugg.classList.contains('open')) return;
+            if (wrap.contains(e.target)) return;
+            hideSpecSuggestPanel();
+        }, true);
         document.getElementById('modalPlatformSku').addEventListener('input', function() { manualPlatformSku = this.value.trim() !== ''; });
         document.getElementById('salesProductUploadInput').addEventListener('change', function() {
             const file = this.files && this.files[0];
