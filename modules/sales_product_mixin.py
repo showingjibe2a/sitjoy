@@ -140,7 +140,7 @@ class SalesProductMixin:
                 rel_text = os.fsdecode(raw)
             except Exception:
                 try:
-                    rel_text = raw.decode('utf-8', errors='surrogatepass')
+                    rel_text = raw.decode('utf-8', errors='surrogateescape')
                 except Exception:
                     rel_text = ''
             rel_text = (rel_text or '').strip().replace('\\', '/').lstrip('/')
@@ -307,7 +307,7 @@ class SalesProductMixin:
                 rel_text = os.fsdecode(raw)
             except Exception:
                 try:
-                    rel_text = raw.decode('utf-8', errors='surrogatepass')
+                    rel_text = raw.decode('utf-8', errors='surrogateescape')
                 except Exception:
                     rel_text = ''
             rel_text = (rel_text or '').strip().replace('\\', '/').lstrip('/')
@@ -3975,12 +3975,39 @@ class SalesProductMixin:
                     variant_id = 0
 
                 # ---- Stage files first (atomic batch) ----
-                staged_moves = []   # [(src, tmp)] source moved to tmp; rollback moves back
-                staged_files = []   # [(final_abs, tmp_abs_or_none, src_or_none)] used for cleanup
+                staged_moves = []   # [(src, tmp)] source moved to tmp; tmp still exists (not yet promoted)
+                rollback_restore_pairs = []   # (final_abs, orig_src): bytes; DB rollback / early exit must move final -> orig
+                rollback_unlink_only = []       # final_abs bytes: copy-only staging; rollback only deletes this duplicate
                 db_new_assets = []  # [{sha256, storage_path, filename, ext, file_size}]
                 reuse_assets = []   # [{asset_id, sha256, idx, source_file}]
                 move_failures = []  # [{src, reason}]
                 bound_source_files = []  # sources actually linked in this request (avoid deleting skipped files)
+
+                def _undo_import_by_path_disk():
+                    """Revert on-disk staging. Never unlink a path that is the sole remaining copy after a move-from-source."""
+                    for final_b, src_b in reversed(rollback_restore_pairs or []):
+                        try:
+                            if final_b and src_b and os.path.exists(final_b):
+                                try:
+                                    os.replace(final_b, src_b)
+                                except Exception:
+                                    shutil.move(final_b, src_b)
+                        except Exception:
+                            pass
+                    for src_b, tmp_b in reversed(staged_moves or []):
+                        try:
+                            if tmp_b and os.path.exists(tmp_b):
+                                try:
+                                    os.replace(tmp_b, src_b)
+                                except Exception:
+                                    shutil.move(tmp_b, src_b)
+                        except Exception:
+                            pass
+                    for p in reversed(rollback_unlink_only or []):
+                        try:
+                            self._safe_unlink(p)
+                        except Exception:
+                            pass
 
                 for idx, source_file in enumerate(source_files, start=1):
                     # Keep bytes path for filesystem operations
@@ -4008,16 +4035,18 @@ class SalesProductMixin:
                         # Stage: try move to a temp file first so we can rollback on DB failure.
                         tmp_abs = abs_path + self._safe_fsencode(f".__tmp__{int(time.time()*1000)}_{idx}")
                         wrote_final = False
+                        moved_source = False
                         try:
                             os.replace(source_file_b, tmp_abs)
                             staged_moves.append((source_file_b, tmp_abs))
+                            moved_source = True
                             moved_count += 1
                         except Exception as e_move1:
                             # Fallback 1: try shutil.move (copy+delete)
                             try:
-                                import shutil
                                 shutil.move(source_file_b, tmp_abs)
                                 staged_moves.append((source_file_b, tmp_abs))
+                                moved_source = True
                                 moved_count += 1
                             except Exception as e_move2:
                                 # Fallback 2: write temp by bytes (keep source intact)
@@ -4036,7 +4065,7 @@ class SalesProductMixin:
 
                         if require_move and copied_count > 0:
                             # We copied at least one file in this batch; enforce "must move" semantics.
-                            # Clean up the tmp file we just created (best-effort) and abort.
+                            _undo_import_by_path_disk()
                             try:
                                 self._safe_unlink(tmp_abs)
                             except Exception:
@@ -4054,20 +4083,23 @@ class SalesProductMixin:
                             os.replace(tmp_abs, abs_path)
                             wrote_final = True
                         except Exception:
-                            # Rollback staging for this file immediately
-                            self._safe_unlink(tmp_abs)
-                            # If we moved source to tmp_abs earlier, try move back
-                            for src, tmp in list(staged_moves):
-                                if tmp == tmp_abs:
-                                    try:
-                                        if os.path.exists(tmp):
-                                            os.replace(tmp, src)
-                                    except Exception:
-                                        pass
-                                    try:
-                                        staged_moves.remove((src, tmp))
-                                    except Exception:
-                                        pass
+                            # Never unlink tmp while it may be the only copy after a move-from-source.
+                            if moved_source:
+                                try:
+                                    if os.path.exists(tmp_abs):
+                                        try:
+                                            os.replace(tmp_abs, source_file_b)
+                                        except Exception:
+                                            shutil.move(tmp_abs, source_file_b)
+                                except Exception:
+                                    if os.path.exists(tmp_abs):
+                                        try:
+                                            self._move_file_to_listing_recycle_bin(tmp_abs, 'promote_failed')
+                                        except Exception:
+                                            pass
+                            else:
+                                self._safe_unlink(tmp_abs)
+                            staged_moves[:] = [(s, t) for (s, t) in staged_moves if t != tmp_abs]
                             continue
 
                         if not wrote_final or not os.path.exists(abs_path):
@@ -4076,7 +4108,11 @@ class SalesProductMixin:
                         # _storage_path_from_abs expects a resources-absolute path in the same type
                         # as resources root (bytes). abs_path here is str, so encode safely first.
                         storage_path = self._storage_path_from_abs(abs_path)
-                        staged_files.append((abs_path, None, source_file_b))
+                        if moved_source:
+                            staged_moves[:] = [(s, t) for (s, t) in staged_moves if t != tmp_abs]
+                            rollback_restore_pairs.append((abs_path, source_file_b))
+                        else:
+                            rollback_unlink_only.append(abs_path)
                         db_new_assets.append({
                             'sha256': sha256,
                             'storage_path': storage_path,
@@ -4107,6 +4143,8 @@ class SalesProductMixin:
                             })
                         except Exception:
                             continue
+                    # New files may already have been moved onto disk before we detect duplicates in-batch.
+                    _undo_import_by_path_disk()
                     return self.send_json({
                         'status': 'duplicate',
                         'message': '检测到重复图片（sha256 已存在），是否确认复用已有图片并继续导入？',
@@ -4167,16 +4205,9 @@ class SalesProductMixin:
                     self._tx_commit(conn)
                 except Exception as e:
                     self._tx_rollback(conn)
-                    # Cleanup files created in this batch (do not touch existing assets)
-                    for abs_path, _, _ in staged_files:
-                        self._safe_unlink(abs_path)
-                    # Restore moved sources when possible (best-effort)
-                    for src, tmp in reversed(staged_moves):
-                        try:
-                            if os.path.exists(tmp):
-                                os.replace(tmp, src)
-                        except Exception:
-                            pass
+                    # Move finals back to original paths for move-from-source; unlink copy-only duplicates.
+                    # (Historically unlink(abs) + stale staged_moves(tmp) destroyed the only on-disk copy.)
+                    _undo_import_by_path_disk()
                     return self.send_json({'status': 'error', 'message': f'导入失败，已回滚：{str(e)}'}, start_response)
 
                 # Optional: after commit, delete source files for those that were copied (best-effort).

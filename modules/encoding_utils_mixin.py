@@ -21,7 +21,7 @@ class EncodingUtilsMixin:
     def _fs_from_b64(self, value):
         """从 Base64 还原文件系统路径/名称"""
         raw = base64.b64decode(value)
-        return os.fsdecode(raw)
+        return self._safe_fsdecode(raw)
 
     def _safe_fsencode(self, value):
         """安全的文件系统路径编码"""
@@ -39,7 +39,20 @@ class EncodingUtilsMixin:
         try:
             return os.fsdecode(value)
         except Exception:
-            return bytes(value).decode('utf-8', errors='surrogatepass')
+            pass
+        try:
+            raw = bytes(value)
+        except Exception:
+            return ''
+        if not raw:
+            return ''
+        try:
+            return raw.decode('utf-8', errors='surrogateescape')
+        except Exception:
+            try:
+                return raw.decode('latin-1')
+            except Exception:
+                return ''
 
     def _listing_resources_root_abs_b(self):
         """

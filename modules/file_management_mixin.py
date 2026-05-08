@@ -320,7 +320,7 @@ class FileManagementMixin:
                     rel_path = os.fsdecode(raw)
                 except Exception:
                     try:
-                        rel_path = raw.decode('utf-8', errors='surrogatepass')
+                        rel_path = raw.decode('utf-8', errors='surrogateescape')
                     except Exception:
                         return self.send_error(400, 'Invalid id', start_response)
 

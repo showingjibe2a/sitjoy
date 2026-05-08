@@ -497,7 +497,7 @@
      * 点击遮罩关闭：用「坐标是否在所有 .pm-modal-content 的 border box 之外」判断，而不是仅靠 target.closest。
      * 宽弹窗 content 的矩形常铺满视口（min-height/width:100%），视觉上深色边仍在矩形内，DOM 委托会误判为「点在卡片上」从而永远不关。
      * 使用捕获阶段，避免子节点 stopPropagation 阻断冒泡到壳层。
-     * 手势：必须在 pointerdown 时主键就落在壳层遮罩（所有面板外），且 click/dblclick 时坐标仍在面板外才关闭；
+     * 手势：必须在 pointerdown/mousedown（捕获）时主键就落在壳层遮罩（所有面板外），且 click/dblclick 时坐标仍在面板外才关闭；
      * 避免「在卡片内按下、拖到遮罩上松开」误触关闭。
      * 调试：刷新前执行 window.__SITJOY_DEBUG_MODAL_BACKDROP = true 或 localStorage.setItem('sj.debug.modalBackdrop','1')（setItem 返回 undefined 属正常），
      * 再点弹窗区域，控制台过滤 [modalBackdrop] 可见 insidePanel / primDownOutside 等日志。
@@ -591,19 +591,70 @@
             try { ev.preventDefault(); } catch(_e2){}
         };
 
+        /* pointerdown + mousedown：部分环境/控件只稳定触发其一，缺一则 click 时 primDownOutside 一直为 false，遮罩永远不关 */
         modalEl.addEventListener('pointerdown', onPointerDownPrimary, true);
+        modalEl.addEventListener('mousedown', onPointerDownPrimary, true);
         modalEl.addEventListener('click', onBackdropMouseActivate, true);
         modalEl.addEventListener('dblclick', onBackdropMouseActivate, true);
         modalEl.addEventListener('selectstart', onSelectStart, true);
 
         modalEl._pmBackdropCloseCleanup = () => {
             modalEl.removeEventListener('pointerdown', onPointerDownPrimary, true);
+            modalEl.removeEventListener('mousedown', onPointerDownPrimary, true);
             modalEl.removeEventListener('click', onBackdropMouseActivate, true);
             modalEl.removeEventListener('dblclick', onBackdropMouseActivate, true);
             modalEl.removeEventListener('selectstart', onSelectStart, true);
             modalEl._pmBackdropCloseCleanup = null;
         };
         modalEl.dataset.pmBackdropCloseBound = '1';
+    }
+
+    /**
+     * 为未显式调用 bindPmModalBackdropClose 的 .pm-modal 补绑遮罩关闭（避免二级页/脚本顺序导致完全不响应）。
+     * 跳过 #confirm-modal（常见为内联 Promise 对话框，需页面自行处理取消逻辑）及 data-pm-backdrop-no-auto="1"。
+     */
+    function tryAutoBindPmModalBackdrop(el){
+        if(!el || el.nodeType !== 1) return;
+        if(!el.classList || !el.classList.contains('pm-modal')) return;
+        if(el.dataset.pmBackdropCloseBound === '1') return;
+        if(String(el.id || '') === 'confirm-modal') return;
+        if(String(el.dataset.pmBackdropNoAuto || '').trim() === '1') return;
+        bindPmModalBackdropClose(el, () => {
+            try {
+                el.classList.remove('active');
+            } catch(_e){}
+            if(typeof syncModalScrollLock === 'function'){
+                try { syncModalScrollLock(); } catch(_e2){}
+            }
+            try {
+                el.dispatchEvent(new CustomEvent('pm-modal-backdrop-close', { bubbles: false }));
+            } catch(_e3){}
+        });
+    }
+
+    function initPmModalBackdropAutoBind(){
+        if(document.documentElement.dataset.pmBackdropAutoInit === '1') return;
+        document.documentElement.dataset.pmBackdropAutoInit = '1';
+        const scan = (root) => {
+            if(!root || root.nodeType !== 1) return;
+            if(root.matches && root.matches('.pm-modal')) tryAutoBindPmModalBackdrop(root);
+            if(root.querySelectorAll) root.querySelectorAll('.pm-modal').forEach(tryAutoBindPmModalBackdrop);
+        };
+        if(document.body) scan(document.body);
+        const obs = new MutationObserver((muts) => {
+            muts.forEach((m) => {
+                (m.addedNodes || []).forEach((n) => {
+                    if(!n || n.nodeType !== 1) return;
+                    scan(n);
+                });
+            });
+        });
+        try {
+            if(document.body) obs.observe(document.body, { childList: true, subtree: true });
+        } catch(_e){}
+        window.addEventListener('load', () => {
+            window.setTimeout(() => scan(document.body), 0);
+        });
     }
 
     function ensureAppConfirmModal(){
@@ -4821,6 +4872,7 @@
 
     window.initUniversalSingleSelects = initUniversalSingleSelects;
     window.bindPmModalBackdropClose = bindPmModalBackdropClose;
+    initPmModalBackdropAutoBind();
     window.refreshUniversalSingleSelect = refreshUniversalSingleSelect;
     window.refreshAllUniversalSingleSelects = function(){
         initUniversalSingleSelects(document);
