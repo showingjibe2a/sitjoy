@@ -4932,6 +4932,218 @@
         return window.__sitjoyAuthStatePromise;
     }
 
+    let sitjoyUsageGuideEscapeInstalled = false;
+
+    function initSitjoyUsageGuide(){
+        const tickerBtn = document.getElementById('sitjoyUsageTicker');
+        const track = document.getElementById('sitjoyUsageTickerTrack');
+        if(!tickerBtn || !track) return;
+        if(tickerBtn.dataset.sitjoyUsageBound === '1') return;
+        tickerBtn.dataset.sitjoyUsageBound = '1';
+
+        const SHORT_ITEMS = [
+            '托管表：在单元格空白处拖选区域；Ctrl/Cmd 点击追加/取消；Shift 点击按矩形扩展选区',
+            'Ctrl/Cmd+C 将选中格复制为制表符分隔文本，可直接粘贴到 Excel / 表格',
+            '矩阵粘贴：从表格或「多行 × 多列」纯文本复制，在选区或单元格上粘贴可批量填入预览输入',
+            '点击表内输入框、下拉会清空格选区，避免粘贴到错误范围',
+            'Esc 可关闭列配置浮层、重置菜单、日期弹层并清除格选区',
+            '表头「字段显示与冻结窗格」可隐藏列、拖拽列顺序、冻结左侧列；列宽拖曳后会记忆',
+            '表头「重置」菜单可分别恢复列宽、字段顺序或字段显示',
+            '表底可改每页条数；部分表支持表头漏斗筛选与行勾选批量下载/删除',
+            '字段旁「?」为说明；业务页标题旁小圆点可查看本页简介（由副标题生成）',
+            '弹窗支持点击遮罩关闭（已绑定时）；全站日期/部分下拉有统一增强控件',
+            '图片编辑等场景支持共享弹窗：推荐命名、关联规格/面料、NAS 导入等依页面配置'
+        ];
+
+        const DETAIL_SECTIONS = [
+            {
+                title: '托管表格格选（多数列表页）',
+                lines: [
+                    '带「每页条数 / 字段显示与冻结窗格」工具栏的表格为托管表：表体与表头横向滚动可同步。',
+                    '在单元格的空白区域（避免点在输入框、按钮内部）按住左键拖动，可框选矩形区域。',
+                    '先单击锚点单元格后，Shift 再单击另一单元格，可选中两格之间的矩形。',
+                    'Ctrl（Windows）或 ⌘（Mac）单击单元格可追加或取消选中，实现不连续多选。',
+                    '在途物流等页面的复杂单元格内，若支持子网格，可在格内继续拖选局部明细再复制。'
+                ]
+            },
+            {
+                title: '复制为表格（Excel 友好）',
+                lines: [
+                    '选中一个或多个单元格后，按 Ctrl+C 或 ⌘+C，将按行列输出为制表符分隔（TSV）、换行分行。',
+                    '若单元格内有输入框，会优先导出框内值；部分列可用 data-export-value 指定导出文本。',
+                    '复制成功后会短暂 toast 提示「已复制选中区域」。'
+                ]
+            },
+            {
+                title: '批量粘贴（矩阵粘贴）',
+                lines: [
+                    '从 Excel 等复制多行多列后，剪贴板为「制表符分列、换行分行」的纯文本时，系统会解析为矩阵。',
+                    '若当前有格选区，会按选区左上角对齐粘贴到可见的预览输入/可编辑控件中。',
+                    '若仅在单个单元格内粘贴且为「多格矩阵」，会从该格起向右向下铺开；单个值仍走浏览器原生粘贴。',
+                    '粘贴成功会 toast「已粘贴到预览输入区域」；进入输入框焦点时会清除格选区以防误操作。'
+                ]
+            },
+            {
+                title: '列、分页与筛选',
+                lines: [
+                    '表头右侧竖条可拖列宽；宽度写入本地存储，下次进入页面保留。',
+                    '「字段显示与冻结窗格」中可勾选显示列、拖拽排序；多选列通常锁定不可隐藏。',
+                    '「重置」按钮展开菜单，可单独重置列宽、字段顺序或字段显示。',
+                    '部分业务表（如工厂在制）表头带漏斗图标，支持列筛选与选项面板。',
+                    '表底分页可切换每页条数；上一页 / 下一页浏览。'
+                ]
+            },
+            {
+                title: '批量下载与批量删除',
+                lines: [
+                    '若表格配置了行勾选与批量工具栏，可按页面说明勾选多行后触发批量下载或删除。',
+                    '页面可通过 data-batch-delete-handler 等属性接入自定义逻辑；未配置时会有 toast 提示。'
+                ]
+            },
+            {
+                title: '其它通用交互',
+                lines: [
+                    '表单字段旁 help-dot（?）悬停或点击可查看说明；首页与业务页 hero 区标题旁圆点可展示简介。',
+                    '许多 select 支持搜索过滤输入；日期类输入可使用统一的日期 / 日期时间选择器。',
+                    '确认类操作常使用 showAppConfirm / showAppConfirmAsync；上传过程可能有全屏进度提示。',
+                    '若某页未接入托管表或不展示某按钮，则以该页实际界面为准。'
+                ]
+            },
+            {
+                title: '如何汇报Bug？',
+                lines: [
+                    '联系『俞杨昆』进行Bug反馈，或添加微信『k2630983959』进行反馈。'
+                ]
+            }
+        ];
+
+        function escapeUsageHtml(s){
+            return String(s || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function ensureUsageModal(){
+            let modal = document.getElementById('sitjoyUsageTipsModal');
+            if(modal) return modal;
+            const sectionsHtml = DETAIL_SECTIONS.map((sec) => {
+                const lis = sec.lines.map((t) => `<li>${escapeUsageHtml(t)}</li>`).join('');
+                return `<section class="sitjoy-usage-section"><h4 class="sitjoy-usage-section-title">${escapeUsageHtml(sec.title)}</h4><ul class="sitjoy-usage-list">${lis}</ul></section>`;
+            }).join('');
+            modal = document.createElement('div');
+            modal.id = 'sitjoyUsageTipsModal';
+            modal.className = 'pm-modal';
+            modal.setAttribute('role', 'dialog');
+            modal.setAttribute('aria-modal', 'true');
+            modal.setAttribute('aria-labelledby', 'sitjoyUsageTipsTitle');
+            modal.innerHTML = `
+                <div class="pm-modal-content pm-modal-content--wide" style="max-width:720px;">
+                    <div class="pm-modal-scroll">
+                        <h3 id="sitjoyUsageTipsTitle" style="margin-top:0;">SITJOY 使用提示与隐藏功能</h3>
+                        <p class="helper-text" style="margin-top:0;">以下为全站通用能力说明。个别页面若未接入托管表或未展示某按钮，以实际界面为准。</p>
+                        <div class="sitjoy-usage-detail-body">${sectionsHtml}</div>
+                    </div>
+                    <div class="pm-modal-actions">
+                        <button type="button" class="btn-primary" id="sitjoyUsageTipsClose">关闭</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(modal);
+            modal.querySelector('#sitjoyUsageTipsClose').addEventListener('click', () => closeUsageTipsModal());
+            window.setTimeout(() => {
+                if(typeof window.bindPmModalBackdropClose === 'function'){
+                    try { window.bindPmModalBackdropClose(modal, () => closeUsageTipsModal()); } catch(_e) {}
+                }
+            }, 0);
+            return modal;
+        }
+
+        function openUsageTipsModal(){
+            const modal = ensureUsageModal();
+            modal.classList.add('active');
+            if(typeof window.syncModalScrollLock === 'function'){
+                try { window.syncModalScrollLock(); } catch(_e) {}
+            }
+        }
+
+        function closeUsageTipsModal(){
+            const modal = document.getElementById('sitjoyUsageTipsModal');
+            if(modal) modal.classList.remove('active');
+            if(typeof window.syncModalScrollLock === 'function'){
+                try { window.syncModalScrollLock(); } catch(_e) {}
+            }
+        }
+
+        if(window.__sitjoyUsageTickerTimerId){
+            clearTimeout(window.__sitjoyUsageTickerTimerId);
+            window.__sitjoyUsageTickerTimerId = null;
+        }
+
+        function dwellMsForTip(text){
+            const len = String(text || '').length;
+            return Math.min(26000, Math.max(6000, 4000 + len * 100));
+        }
+
+        const lineEl = document.createElement('p');
+        lineEl.className = 'sitjoy-usage-ticker-line';
+        lineEl.id = 'sitjoyUsageTickerLine';
+        lineEl.setAttribute('aria-live', 'polite');
+        lineEl.setAttribute('aria-atomic', 'true');
+        track.innerHTML = '';
+        track.appendChild(lineEl);
+
+        let tipIndex = 0;
+        let tipPaused = false;
+
+        function scheduleNextTip(){
+            if(tipPaused) return;
+            if(window.__sitjoyUsageTickerTimerId){
+                clearTimeout(window.__sitjoyUsageTickerTimerId);
+                window.__sitjoyUsageTickerTimerId = null;
+            }
+            const cur = SHORT_ITEMS[tipIndex % SHORT_ITEMS.length];
+            lineEl.textContent = cur;
+            const wait = dwellMsForTip(cur);
+            window.__sitjoyUsageTickerTimerId = window.setTimeout(() => {
+                window.__sitjoyUsageTickerTimerId = null;
+                if(tipPaused) return;
+                tipIndex = (tipIndex + 1) % SHORT_ITEMS.length;
+                scheduleNextTip();
+            }, wait);
+        }
+
+        scheduleNextTip();
+
+        tickerBtn.addEventListener('mouseenter', () => {
+            tipPaused = true;
+            if(window.__sitjoyUsageTickerTimerId){
+                clearTimeout(window.__sitjoyUsageTickerTimerId);
+                window.__sitjoyUsageTickerTimerId = null;
+            }
+        });
+        tickerBtn.addEventListener('mouseleave', () => {
+            tipPaused = false;
+            scheduleNextTip();
+        });
+
+        tickerBtn.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            openUsageTipsModal();
+        });
+
+        if(!sitjoyUsageGuideEscapeInstalled){
+            sitjoyUsageGuideEscapeInstalled = true;
+            document.addEventListener('keydown', (ev) => {
+                if(ev.key !== 'Escape') return;
+                const modal = document.getElementById('sitjoyUsageTipsModal');
+                if(modal && modal.classList.contains('active')){
+                    closeUsageTipsModal();
+                }
+            });
+        }
+    }
+
     function loadHeader(){
         Promise.all([
             fetch('/static/partials/header.html').then(r => r.text()),
@@ -4942,6 +5154,7 @@
                 if(!el) return;
                 el.innerHTML = html;
                 applyHeaderPermissions(authData);
+                initSitjoyUsageGuide();
 
                 // 设置当前激活的菜单样式
                 const path = location.pathname || '/';

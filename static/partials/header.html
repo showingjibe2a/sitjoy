@@ -1,6 +1,12 @@
 <nav class="navbar">
-    <div class="container">
+    <div class="container navbar-container">
         <h1 class="logo">SITJOY</h1>
+        <button type="button" class="sitjoy-usage-ticker" id="sitjoyUsageTicker" aria-label="使用提示，点击查看全部" title="点击查看全部使用提示">
+            <span class="sitjoy-usage-ticker-badge" aria-hidden="true">提示</span>
+            <div class="sitjoy-usage-ticker-viewport">
+                <div class="sitjoy-usage-ticker-track" id="sitjoyUsageTickerTrack"></div>
+            </div>
+        </button>
         <ul class="nav-menu">
             <li><a href="/" class="nav-home" data-page-key="home">首页</a></li>
             <li class="nav-item dropdown">

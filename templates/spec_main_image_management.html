@@ -20,6 +20,8 @@
     .specmi-table-wrap { margin-top: 0.9rem; }
     .specmi-actions { display: inline-flex; gap: 0.45rem; }
     .specmi-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; vertical-align: middle; }
+    .specmi-filter-lead { margin: 0 0 0.55rem 0; font-size: 0.88rem; line-height: 1.45; color: var(--morandi-ink); }
+    .specmi-field-hint { display: block; margin-top: 0.2rem; font-size: 0.78rem; font-weight: 400; color: var(--morandi-slate); line-height: 1.35; }
   </style>
 </head>
 <body>
@@ -34,21 +36,27 @@
   <div class="card pm-card">
     <div class="pm-toolbar">
       <div class="pm-toolbar-actions specmi-toolbar" style="width:100%;">
-        <div class="specmi-grid" style="flex:1;">
+        <div style="flex:1; min-width:min(100%, 520px);">
+          <p class="specmi-filter-lead">以下为<strong>前端过滤</strong>：在已加载的规格列表中按关键字筛选；留空的项不参与该维度。点「筛选」应用条件，「清空」恢复显示全部。</p>
+          <div class="specmi-grid">
           <div class="form-group">
-            <label>货号</label>
-            <input id="specmiSearchSku" class="optional-field" type="text" placeholder="例如：SKU_FAMILY">
+            <label for="specmiSearchSku">货号</label>
+            <span class="specmi-field-hint">对应字段 <code>sku_family</code>，部分匹配（不区分大小写）</span>
+            <input id="specmiSearchSku" class="optional-field" type="text" placeholder="例：ABC_FAMILY" autocomplete="off">
           </div>
           <div class="form-group">
-            <label>规格</label>
-            <input id="specmiSearchSpec" class="optional-field" type="text" placeholder="例如：King">
+            <label for="specmiSearchSpec">规格名称</label>
+            <span class="specmi-field-hint">对应字段 <code>spec_name</code>，部分匹配</span>
+            <input id="specmiSearchSpec" class="optional-field" type="text" placeholder="例：King、Queen" autocomplete="off">
           </div>
           <div class="form-group">
-            <label>面料</label>
-            <input id="specmiSearchFabric" class="optional-field" type="text" placeholder="英文名 / 代码">
+            <label for="specmiSearchFabric">面料</label>
+            <span class="specmi-field-hint">匹配 <code>fabric_name_en</code> 或 <code>fabric_code</code>，部分匹配</span>
+            <input id="specmiSearchFabric" class="optional-field" type="text" placeholder="英文名或代码" autocomplete="off">
           </div>
-          <div class="form-group">
+          <div class="form-group" style="align-self:end;">
             <button class="btn-primary" type="button" onclick="specmiApplyFilter()">筛选</button>
+          </div>
           </div>
         </div>
         <div class="specmi-actions">
@@ -86,15 +94,15 @@
       <h3 style="margin-top:0;">规格主图</h3>
       <div class="pm-form" style="grid-template-columns: 1fr 1fr 1fr;">
         <div class="form-group">
-          <label>货号</label>
+          <label for="specmiModalSku">货号</label>
           <input id="specmiModalSku" class="optional-field" type="text" readonly>
         </div>
         <div class="form-group">
-          <label>规格</label>
+          <label for="specmiModalSpec">规格</label>
           <input id="specmiModalSpec" class="optional-field" type="text" readonly>
         </div>
         <div class="form-group">
-          <label>面料</label>
+          <label for="specmiModalFabric">面料</label>
           <input id="specmiModalFabric" class="optional-field" type="text" readonly>
         </div>
       </div>
@@ -354,9 +362,12 @@
   }
 
   function specmiApplyFilter() {
-    const kwSku = String($('#specmiSearchSku').value || '').trim().toLowerCase();
-    const kwSpec = String($('#specmiSearchSpec').value || '').trim().toLowerCase();
-    const kwFab = String($('#specmiSearchFabric').value || '').trim().toLowerCase();
+    const elSku = document.getElementById('specmiSearchSku');
+    const elSpec = document.getElementById('specmiSearchSpec');
+    const elFab = document.getElementById('specmiSearchFabric');
+    const kwSku = String((elSku && elSku.value) || '').trim().toLowerCase();
+    const kwSpec = String((elSpec && elSpec.value) || '').trim().toLowerCase();
+    const kwFab = String((elFab && elFab.value) || '').trim().toLowerCase();
     specmiFiltered = (specmiAllVariants || []).filter(v => {
       const sku = String(v.sku_family || '').toLowerCase();
       const spec = String(v.spec_name || '').toLowerCase();
@@ -370,9 +381,12 @@
   }
 
   function specmiResetFilter() {
-    $('#specmiSearchSku').value = '';
-    $('#specmiSearchSpec').value = '';
-    $('#specmiSearchFabric').value = '';
+    const a = document.getElementById('specmiSearchSku');
+    const b = document.getElementById('specmiSearchSpec');
+    const c = document.getElementById('specmiSearchFabric');
+    if (a) a.value = '';
+    if (b) b.value = '';
+    if (c) c.value = '';
     specmiFiltered = specmiAllVariants.slice();
     renderTable(specmiFiltered);
   }
@@ -707,10 +721,16 @@
       return;
     }
     specmiEditingVid = vid;
-    $('#specmiModalSku').value = String(v.sku_family || '');
-    $('#specmiModalSpec').value = String(v.spec_name || '');
-    $('#specmiModalFabric').value = String(v.fabric_name_en || v.fabric_code || '');
-    $('#specmiEditModal').classList.add('active');
+    const skuEl = document.getElementById('specmiModalSku');
+    const specEl = document.getElementById('specmiModalSpec');
+    const fabEl = document.getElementById('specmiModalFabric');
+    if (skuEl) skuEl.value = String(v.sku_family || '');
+    if (specEl) specEl.value = String(v.spec_name || '');
+    if (fabEl) fabEl.value = String(v.fabric_name_en || v.fabric_code || '');
+    document.getElementById('specmiEditModal')?.classList.add('active');
+    if (typeof window.syncModalScrollLock === 'function') {
+      try { window.syncModalScrollLock(); } catch (_) {}
+    }
     specmiDupUi();
     try {
       await specmiLoadImageTypes();
@@ -725,7 +745,10 @@
   }
 
   function specmiCloseEdit() {
-    $('#specmiEditModal')?.classList.remove('active');
+    document.getElementById('specmiEditModal')?.classList.remove('active');
+    if (typeof window.syncModalScrollLock === 'function') {
+      try { window.syncModalScrollLock(); } catch (_) {}
+    }
     specmiEditingVid = 0;
     specmiMainItems = [];
     specmiFabricItems = [];
@@ -1107,21 +1130,56 @@
       specmiNasNavStack = JSON.parse(localStorage.getItem(SPECMI_LS_STACK) || '[]') || [];
     } catch (e) { specmiNasNavStack = []; }
     specmiNasSelected = new Set();
-    $('#specmi-nas-import-modal')?.classList.add('active');
+    document.getElementById('specmi-nas-import-modal')?.classList.add('active');
+    if (typeof window.syncModalScrollLock === 'function') {
+      try { window.syncModalScrollLock(); } catch (_) {}
+    }
     specmiInitNasModeSeg();
     specmiInitNasSelectAllBox();
     specmiRenderNasTypeBar();
     specmiRenderNasList();
   }
   function specmiCloseNasModal() {
-    $('#specmi-nas-import-modal')?.classList.remove('active');
+    document.getElementById('specmi-nas-import-modal')?.classList.remove('active');
+    if (typeof window.syncModalScrollLock === 'function') {
+      try { window.syncModalScrollLock(); } catch (_) {}
+    }
   }
+
+  window.specmiApplyFilter = specmiApplyFilter;
+  window.specmiResetFilter = specmiResetFilter;
+  window.specmiReload = specmiReload;
+  window.specmiOpenEdit = specmiOpenEdit;
+  window.specmiCloseEdit = specmiCloseEdit;
+  window.specmiTriggerUpload = specmiTriggerUpload;
+  window.specmiOpenNasModal = specmiOpenNasModal;
+  window.specmiCloseNasModal = specmiCloseNasModal;
+  window.specmiNasImportSelected = specmiNasImportSelected;
 
   window.addEventListener('load', () => {
     specmiDupUi();
     specmiInitNasSelectAllBox();
+    ['specmiSearchSku', 'specmiSearchSpec', 'specmiSearchFabric'].forEach((id) => {
+      document.getElementById(id)?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          specmiApplyFilter();
+        }
+      });
+    });
     specmiLoadImageTypes().finally(() => specmiReload());
   });
+
+  window.setTimeout(() => {
+    const editM = document.getElementById('specmiEditModal');
+    if (editM && typeof window.bindPmModalBackdropClose === 'function') {
+      window.bindPmModalBackdropClose(editM, specmiCloseEdit);
+    }
+    const nasM = document.getElementById('specmi-nas-import-modal');
+    if (nasM && typeof window.bindPmModalBackdropClose === 'function') {
+      window.bindPmModalBackdropClose(nasM, specmiCloseNasModal);
+    }
+  }, 0);
 })();
 </script>
 </body>

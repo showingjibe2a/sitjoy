@@ -237,17 +237,140 @@ input[type="month"] {
     z-index: 100;
 }
 
-.navbar .container {
+.navbar .container,
+.navbar .container.navbar-container {
     display: flex;
-    justify-content: space-between;
+    flex-wrap: nowrap;
     align-items: center;
+    justify-content: flex-start;
     padding: 1rem 2rem;
+    gap: 0.75rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+}
+
+/* 顶栏：SITJOY | 使用提示（中间自适应） | 主导航（靠右） */
+.navbar .container.navbar-container > .logo {
+    flex: 0 0 auto;
+}
+
+.navbar .container.navbar-container > .nav-menu {
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+
+/* 顶栏逐条使用提示（SITJOY 与导航之间） */
+.sitjoy-usage-ticker {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
+    flex: 1 1 0;
+    max-width: none;
+    margin: 0;
+    padding: 0.22rem 0.55rem 0.22rem 0.4rem;
+    border: 1px solid rgba(188, 180, 170, 0.85);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.55);
+    color: var(--morandi-ink);
+    font-size: 0.78rem;
+    line-height: 1.25;
+    cursor: pointer;
+    text-align: left;
+    box-shadow: 0 2px 8px rgba(35, 28, 20, 0.06);
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.sitjoy-usage-ticker:hover {
+    background: rgba(255, 255, 255, 0.88);
+    border-color: rgba(123, 128, 136, 0.45);
+}
+
+.sitjoy-usage-ticker:focus-visible {
+    outline: 2px solid rgba(74, 78, 87, 0.45);
+    outline-offset: 2px;
+}
+
+.sitjoy-usage-ticker-badge {
+    flex: 0 0 auto;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    color: #4a5d52;
+    background: rgba(127, 168, 139, 0.22);
+    padding: 0.12rem 0.38rem;
+    border-radius: 999px;
+}
+
+.sitjoy-usage-ticker-viewport {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.sitjoy-usage-ticker-track {
+    min-width: 0;
+}
+
+/* 当前一条提示：可多行截断，避免顶栏过高 */
+.sitjoy-usage-ticker-line {
+    margin: 0;
+    padding: 0;
+    color: var(--morandi-slate);
+    font-weight: 500;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+}
+
+.sitjoy-usage-section {
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(207, 199, 189, 0.65);
+}
+
+.sitjoy-usage-section:first-of-type {
+    margin-top: 0.35rem;
+    padding-top: 0;
+    border-top: none;
+}
+
+.sitjoy-usage-section-title {
+    margin: 0 0 0.45rem 0;
+    font-size: 1rem;
+    color: var(--morandi-ink);
+}
+
+.sitjoy-usage-list {
+    margin: 0;
+    padding-left: 1.15rem;
+    color: var(--morandi-ink);
+    font-size: 0.9rem;
+    line-height: 1.55;
+}
+
+.sitjoy-usage-list li {
+    margin: 0.25rem 0;
+}
+
+@media (max-width: 900px) {
+    .sitjoy-usage-ticker,
+    .sitjoy-usage-ticker-line {
+        font-size: 0.72rem;
+    }
 }
 
 .logo {
     font-size: 1.5rem;
     color: var(--morandi-ink);
     font-weight: bold;
+    flex: 0 0 auto;
 }
 
 .nav-menu {
@@ -1378,6 +1501,49 @@ input.optional-field[type="datetime-local"]:focus {
 
 .pm-table.is-managed-table th {
     position: relative;
+}
+
+/*
+ * 托管宽表：子元素（inline-input 的 min-width、status-segment 的 max-content）会撑破列宽，
+ * 在窄列下与右侧单元格视觉重叠。强制列内裁剪并让可收缩控件占满格而不溢出。
+ */
+.pm-table.is-managed-table > tbody > tr > td,
+.pm-managed-head-table.is-managed-table > thead > tr > th {
+    overflow: hidden;
+    vertical-align: middle;
+}
+
+.pm-table td .inline-input,
+.pm-table td input.inline-input {
+    min-width: 0 !important;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.pm-table td .status-segment {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    flex-wrap: wrap;
+    box-sizing: border-box;
+}
+
+.pm-table td .history-text {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pm-table td .pm-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
 }
 
 .pm-col-resizer {
