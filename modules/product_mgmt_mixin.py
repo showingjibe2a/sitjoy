@@ -617,7 +617,7 @@ class ProductManagementMixin:
         target = os.path.join(base_folder, enc(sku_family))
         os.makedirs(target, exist_ok=True)
 
-        subdirs = ('源文件', '配件图', '主图', 'A+', '关联文件', '视频', '上传模板')
+        subdirs = ('源文件', '配件图', '配件图（手动上传）', '主图', '主图（手动上传）', 'A+', 'A+（手动上传）', '关联文件', '视频', '视频（手动上传）', '上传模板')
         for sub in subdirs:
             os.makedirs(os.path.join(target, enc(sub)), exist_ok=True)
 
@@ -626,7 +626,7 @@ class ProductManagementMixin:
             os.makedirs(os.path.join(parent_path, enc('通用')), exist_ok=True)
 
         protected = '#该系统文件夹禁止手动修改任何内容'
-        for parent_sub in ('配件图', '主图', 'A+', '关联文件', '视频', '上传模板'):
+        for parent_sub in ('配件图', '主图', 'A+', '视频'):
             parent_path = os.path.join(target, enc(parent_sub))
             os.makedirs(os.path.join(parent_path, enc(protected)), exist_ok=True)
 
