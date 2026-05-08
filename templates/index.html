@@ -405,20 +405,6 @@
             margin: 0.6rem 0 0.35rem 0;
             font-weight: 600;
         }
-        #todoTypeBar.material-type-bar {
-            background-color: rgba(115, 115, 120, 0.32);
-            padding: 0.45rem 0.55rem;
-            border-radius: 10px;
-        }
-        #todoTypeBar .material-type-radio span {
-            padding: 0.34rem 0.55rem;
-            border-radius: 10px;
-            font-size: 0.82rem;
-        }
-        #todoTypeBar .material-type-add {
-            border-radius: 10px;
-            padding: 0.36rem 0.55rem;
-        }
         .todo-table-wrap {
             width: 100%;
             overflow: auto;
@@ -474,7 +460,7 @@
                         <button class="btn-add" onclick="showTodoModal('create')">+ 新增待办</button>
                     </div>
                     <div class="todo-type-bar-title">待办类型管理</div>
-                    <div class="supplier-manage-bar" id="todoTypeBar" style="margin-bottom: 0.7rem;">
+                    <div class="material-type-bar" id="todoTypeBar" style="margin-bottom: 0.7rem;">
                         <button class="material-type-add" type="button" aria-label="新增类型" onclick="openTodoTypeModal('create')">+</button>
                     </div>
                     <div class="todo-table-wrap">

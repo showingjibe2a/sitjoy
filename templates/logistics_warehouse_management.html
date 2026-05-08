@@ -46,21 +46,19 @@
                         <button class="btn-accent" onclick="openCreateModal()">新增</button>
                     </div>
                 </div>
-                <div class="pm-toolbar" style="margin-top: 0.85rem;">
-                    <div class="pm-toolbar-actions">
-                        <span class="pm-search-title">海外仓供应商管理</span>
+                <div class="pm-card-rail" aria-label="供应商与区域筛选">
+                    <div class="pm-card-sub">
+                        <span class="pm-card-sub__title" title="海外仓供应商管理">供应商</span>
+                        <div class="material-type-bar" id="supplierManageBar">
+                            <button class="material-type-add" type="button" aria-label="新增供应商" onclick="openSupplierManageModal()">+</button>
+                        </div>
                     </div>
-                </div>
-                <div class="supplier-manage-bar" id="supplierManageBar" style="margin-top: 0.6rem;">
-                    <button class="material-type-add" type="button" aria-label="新增供应商" onclick="openSupplierManageModal()">+</button>
-                </div>
-                <div class="pm-toolbar" style="margin-top: 0.85rem;">
-                    <div class="pm-toolbar-actions">
-                        <span class="pm-search-title">目的区域管理</span>
+                    <div class="pm-card-sub">
+                        <span class="pm-card-sub__title" title="目的区域管理">目的区域</span>
+                        <div class="material-type-bar" id="regionManageBar">
+                            <button class="material-type-add" type="button" aria-label="新增目的区域" onclick="openRegionManageModal()">+</button>
+                        </div>
                     </div>
-                </div>
-                <div class="supplier-manage-bar" id="regionManageBar" style="margin-top: 0.6rem;">
-                    <button class="material-type-add" type="button" aria-label="新增目的区域" onclick="openRegionManageModal()">+</button>
                 </div>
             </div>
 

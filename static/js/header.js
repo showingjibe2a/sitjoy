@@ -8,6 +8,8 @@
     let activeColumnsPanelState = null;
     let activeResizeState = null;
     let activeHelpDotTooltip = null;
+    let activeHelpDotAnchor = null;
+    let helpDotDelegationInstalled = false;
     let activeDatePickerState = null;
     let activeDateTimePickerState = null;
     let activeGridSelection = null;
@@ -823,6 +825,7 @@
         if(activeHelpDotTooltip && document.body.contains(activeHelpDotTooltip)) return activeHelpDotTooltip;
         const tooltip = document.createElement('div');
         tooltip.className = 'app-help-floating-tip';
+        tooltip.setAttribute('role', 'tooltip');
         tooltip.style.display = 'none';
         document.body.appendChild(tooltip);
         activeHelpDotTooltip = tooltip;
@@ -830,6 +833,7 @@
     }
 
     function hideHelpDotTooltip(){
+        activeHelpDotAnchor = null;
         if(!activeHelpDotTooltip) return;
         activeHelpDotTooltip.style.display = 'none';
         activeHelpDotTooltip.textContent = '';
@@ -866,25 +870,135 @@
         tooltip.style.top = `${top}px`;
     }
 
+    function repositionActiveHelpDotTip(){
+        if(!activeHelpDotAnchor || !activeHelpDotTooltip) return;
+        if(activeHelpDotTooltip.style.display === 'none') return;
+        positionHelpDotTooltip(activeHelpDotAnchor, activeHelpDotTooltip);
+    }
+
     function showHelpDotTooltip(dot){
         const text = resolveHelpDotTipText(dot);
         if(!text) return;
         const tooltip = ensureHelpDotTooltip();
+        activeHelpDotAnchor = dot;
         tooltip.textContent = text;
         tooltip.style.display = 'block';
-        positionHelpDotTooltip(dot, tooltip);
+        tooltip.style.visibility = 'hidden';
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                if(activeHelpDotAnchor !== dot) return;
+                positionHelpDotTooltip(dot, tooltip);
+                tooltip.style.visibility = 'visible';
+            });
+        });
+    }
+
+    /** 全站委托：任意 .help-dot 均使用挂到 body 的浮层，避免表格/顶栏裁剪与 z-index 叠层问题 */
+    function ensureGlobalHelpDotDelegation(){
+        if(helpDotDelegationInstalled) return;
+        helpDotDelegationInstalled = true;
+
+        document.addEventListener('pointerover', (e) => {
+            if(e.pointerType === 'touch') return;
+            const dot = e.target && e.target.closest ? e.target.closest('.help-dot') : null;
+            if(!dot) return;
+            showHelpDotTooltip(dot);
+        }, true);
+
+        document.addEventListener('pointerout', (e) => {
+            const dot = e.target && e.target.closest ? e.target.closest('.help-dot') : null;
+            if(!dot) return;
+            const rel = e.relatedTarget;
+            if(rel && dot.contains(rel)) return;
+            if(activeHelpDotTooltip && rel && (rel === activeHelpDotTooltip || activeHelpDotTooltip.contains(rel))) return;
+            hideHelpDotTooltip();
+        }, true);
+
+        document.addEventListener('focusin', (e) => {
+            const t = e.target;
+            if(t && t.classList && t.classList.contains('help-dot')){
+                showHelpDotTooltip(t);
+            }
+        }, true);
+
+        document.addEventListener('focusout', (e) => {
+            const t = e.target;
+            if(!t || !t.classList || !t.classList.contains('help-dot')) return;
+            const rel = e.relatedTarget;
+            if(rel && t.contains(rel)) return;
+            hideHelpDotTooltip();
+        }, true);
     }
 
     function bindFloatingHelpDots(root){
+        ensureGlobalHelpDotDelegation();
         const scope = root && root.querySelectorAll ? root : document;
         scope.querySelectorAll('.help-dot').forEach(dot => {
-            if(dot.dataset.helpFloatingBound === '1') return;
-            dot.dataset.helpFloatingBound = '1';
             dot.classList.add('help-dot--floating');
-            dot.addEventListener('mouseenter', () => showHelpDotTooltip(dot));
-            dot.addEventListener('mouseleave', hideHelpDotTooltip);
-            dot.addEventListener('focus', () => showHelpDotTooltip(dot));
-            dot.addEventListener('blur', hideHelpDotTooltip);
+        });
+    }
+
+    /**
+     * 将 .card.pm-card 内首个 .pm-toolbar 中、以 .pm-divider 分隔的工具条拆成多块分区（搜索 / 筛选 / 导入导出等），
+     * 样式由 .pm-card-zone* 承载；无分隔符的页面保持原单行布局。
+     */
+    function partitionPmCardToolbars(root){
+        const scope = root && root.querySelectorAll ? root : document;
+        scope.querySelectorAll('.card.pm-card, section.card.pm-card').forEach((card) => {
+            if(card.closest && card.closest('.pm-modal')) return;
+            const toolbars = Array.from(card.children || []).filter(ch => ch && ch.classList && ch.classList.contains('pm-toolbar'));
+            toolbars.forEach((toolbar) => {
+                if(toolbar.dataset.pmToolbarZoned === '1') return;
+                const actions = toolbar.querySelector(':scope > .pm-toolbar-actions');
+                if(!actions || actions.dataset.pmCardPartitioned === '1'){
+                    toolbar.dataset.pmToolbarZoned = '1';
+                    return;
+                }
+                const children = Array.from(actions.children || []).filter(ch => ch && ch.nodeType === 1);
+                if(!children.length){
+                    toolbar.dataset.pmToolbarZoned = '1';
+                    return;
+                }
+
+                const zones = [];
+                let bucket = [];
+                for(const el of children){
+                    if(el.classList && el.classList.contains('pm-divider')){
+                        if(bucket.length){
+                            zones.push(bucket);
+                            bucket = [];
+                        }
+                    } else {
+                        bucket.push(el);
+                    }
+                }
+                if(bucket.length) zones.push(bucket);
+                if(zones.length < 2){
+                    toolbar.dataset.pmToolbarZoned = '1';
+                    return;
+                }
+
+                while(actions.firstChild){
+                    actions.removeChild(actions.firstChild);
+                }
+                zones.forEach((nodes, idx) => {
+                    const z = document.createElement('div');
+                    let zoneClass = 'pm-card-zone';
+                    if(idx === 0){
+                        zoneClass += ' pm-card-zone--search';
+                    } else if(idx === zones.length - 1){
+                        zoneClass += ' pm-card-zone--bulk';
+                    } else {
+                        zoneClass += ' pm-card-zone--filters';
+                    }
+                    z.className = zoneClass;
+                    nodes.forEach((n) => z.appendChild(n));
+                    actions.appendChild(z);
+                });
+                toolbar.classList.add('pm-toolbar--zoned');
+                actions.dataset.pmCardPartitioned = '1';
+                toolbar.dataset.pmToolbarZoned = '1';
+            });
         });
     }
 
@@ -1004,43 +1118,117 @@
         return `sitjoy:${pathKey}:${tableKey}:${suffix}`;
     }
 
+    function enhanceHeroLikeBlock(block, opts){
+        const addStandardClass = opts && opts.addStandardClass;
+        const title = block.querySelector('h2') || block.querySelector('h1');
+        if(!title) return;
+        if(addStandardClass) block.classList.add('is-standard-page-hero');
+
+        let titleRow = block.querySelector('.hero-title-row');
+        if(!titleRow){
+            titleRow = document.createElement('div');
+            titleRow.className = 'hero-title-row';
+            title.parentNode.insertBefore(titleRow, title);
+            titleRow.appendChild(title);
+        }
+
+        const note = block.querySelector('p');
+        if(!note) return;
+
+        let dot = titleRow.querySelector('.hero-help-dot');
+        if(!dot){
+            dot = document.createElement('span');
+            dot.className = 'help-dot hero-help-dot';
+            titleRow.appendChild(dot);
+        }
+        dot.textContent = '';
+        dot.dataset.tip = (note.textContent || '').trim();
+        dot.style.display = dot.dataset.tip ? '' : 'none';
+
+        if(!note.dataset.heroNoteObserved){
+            note.dataset.heroNoteObserved = '1';
+            const observer = new MutationObserver(() => {
+                dot.dataset.tip = (note.textContent || '').trim();
+                dot.style.display = dot.dataset.tip ? '' : 'none';
+            });
+            observer.observe(note, { childList: true, subtree: true, characterData: true });
+        }
+    }
+
     function enhanceHeroSections(root){
         const scope = root && root.querySelectorAll ? root : document;
         scope.querySelectorAll('.hero').forEach(hero => {
-            const title = hero.querySelector('h2');
-            if(!title) return;
-            hero.classList.add('is-standard-page-hero');
-
-            let titleRow = hero.querySelector('.hero-title-row');
-            if(!titleRow){
-                titleRow = document.createElement('div');
-                titleRow.className = 'hero-title-row';
-                title.parentNode.insertBefore(titleRow, title);
-                titleRow.appendChild(title);
-            }
-
-            const note = hero.querySelector('p');
-            if(!note) return;
-
-            let dot = titleRow.querySelector('.hero-help-dot');
-            if(!dot){
-                dot = document.createElement('span');
-                dot.className = 'help-dot hero-help-dot';
-                titleRow.appendChild(dot);
-            }
-            dot.textContent = '';
-            dot.dataset.tip = (note.textContent || '').trim();
-            dot.style.display = dot.dataset.tip ? '' : 'none';
-
-            if(!note.dataset.heroNoteObserved){
-                note.dataset.heroNoteObserved = '1';
-                const observer = new MutationObserver(() => {
-                    dot.dataset.tip = (note.textContent || '').trim();
-                    dot.style.display = dot.dataset.tip ? '' : 'none';
-                });
-                observer.observe(note, { childList: true, subtree: true, characterData: true });
-            }
+            enhanceHeroLikeBlock(hero, { addStandardClass: true });
         });
+        scope.querySelectorAll('section.header.header-row').forEach(sec => {
+            const wrap = Array.from(sec.children || []).find(ch => ch && ch.tagName === 'DIV' && ch.querySelector && ch.querySelector('h2'));
+            if(!wrap) return;
+            enhanceHeroLikeBlock(wrap, { addStandardClass: false });
+            sec.classList.add('is-standard-page-hero');
+        });
+    }
+
+    function hoistPageHeroToNavbar(){
+        const inner = document.getElementById('navbarPageHeadingInner');
+        const wrap = document.getElementById('navbarPageHeading');
+        if(!inner || !wrap) return;
+
+        const hero = document.querySelector('section.hero');
+        const headerRow = !hero ? document.querySelector('section.header.header-row') : null;
+        const block = hero || headerRow;
+        if(!block || block.dataset.navbarTitleHoisted === '1') return;
+
+        let titleRow = null;
+        if(hero){
+            titleRow = hero.querySelector(':scope > .hero-title-row');
+            if(!titleRow){
+                const h = hero.querySelector(':scope > h1, :scope > h2');
+                if(h){
+                    titleRow = document.createElement('div');
+                    titleRow.className = 'hero-title-row';
+                    h.parentNode.insertBefore(titleRow, h);
+                    titleRow.appendChild(h);
+                }
+            }
+        } else if(headerRow){
+            const col = Array.from(headerRow.children || []).find(ch => ch && ch.tagName === 'DIV' && ch.querySelector && ch.querySelector('h2'));
+            if(col){
+                titleRow = col.querySelector('.hero-title-row');
+                if(!titleRow){
+                    const h = col.querySelector('h2') || col.querySelector('h1');
+                    if(h){
+                        titleRow = document.createElement('div');
+                        titleRow.className = 'hero-title-row';
+                        h.parentNode.insertBefore(titleRow, h);
+                        titleRow.appendChild(h);
+                    }
+                }
+            }
+        }
+
+        if(!titleRow) return;
+        const hasHeading = !!(titleRow.querySelector('h1') || titleRow.querySelector('h2'));
+        if(!hasHeading) return;
+
+        inner.appendChild(titleRow);
+        block.dataset.navbarTitleHoisted = '1';
+
+        if(hero){
+            hero.classList.add('page-hero--title-in-navbar');
+            const stillUseful = Array.from(hero.children || []).some(ch => {
+                if(!ch || ch.nodeType !== 1) return false;
+                if(ch.classList && ch.classList.contains('hero-title-row')) return false;
+                const cs = window.getComputedStyle(ch);
+                const txt = (ch.textContent || '').replace(/\s+/g, '').trim();
+                if(!txt) return false;
+                return cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
+            });
+            if(!stillUseful) hero.classList.add('page-hero--navbar-only');
+        } else if(headerRow){
+            headerRow.classList.add('header-row--title-in-navbar');
+        }
+
+        wrap.hidden = false;
     }
 
     function shouldManageTable(table){
@@ -5155,6 +5343,7 @@
                 el.innerHTML = html;
                 applyHeaderPermissions(authData);
                 initSitjoyUsageGuide();
+                hoistPageHeroToNavbar();
 
                 // 设置当前激活的菜单样式
                 const path = location.pathname || '/';
@@ -5248,6 +5437,7 @@
             closeDateTimePicker();
             closeBatchConfirmModal();
             clearGridSelection();
+            hideHelpDotTooltip();
         }
     });
 
@@ -5342,6 +5532,7 @@
         repositionOpenDropdowns();
         if(activeDatePickerState && activeDatePickerState.input) positionDatePicker(activeDatePickerState.input, activeDatePickerState);
         if(activeDateTimePickerState && activeDateTimePickerState.reposition) activeDateTimePickerState.reposition();
+        repositionActiveHelpDotTip();
         if(activeColumnsPanelState) repositionColumnsPanel(activeColumnsPanelState);
         repositionManagedBatchBars();
     });
@@ -5364,7 +5555,7 @@
         repositionOpenDropdowns();
         if(activeDatePickerState && activeDatePickerState.input) positionDatePicker(activeDatePickerState.input, activeDatePickerState);
         if(activeDateTimePickerState && activeDateTimePickerState.reposition) activeDateTimePickerState.reposition();
-        hideHelpDotTooltip();
+        repositionActiveHelpDotTip();
         if(activeColumnsPanelState) repositionColumnsPanel(activeColumnsPanelState);
         repositionManagedBatchBars();
     }, true);
@@ -5378,6 +5569,7 @@
         enhanceHeroSections(document);
         enhanceManagedTables(document);
         bindFloatingHelpDots(document);
+        partitionPmCardToolbars(document);
         bridgeLegacyResponseToToast(document);
         startUniversalSelectValueSync();
 
@@ -5416,6 +5608,7 @@
                 enhanceHeroSections(document);
                 enhanceManagedTables(document);
                 bindFloatingHelpDots(document);
+                partitionPmCardToolbars(document);
                 enhanceCustomDateInputs(document);
                 initOptionalDateInputs(document);
                 normalizeResetButtons(document);

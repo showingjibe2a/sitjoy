@@ -2148,6 +2148,43 @@ class SalesProductMixin:
         cache[key] = exists
         return exists
 
+    def _sales_variant_fabric_select_sql(self, conn, v_alias='v'):
+        """用于 SELECT：在仅有 fabric_id、仅有 fabric 文本、或两者并存时生成 JOIN 与面料编码表达式。"""
+        has_fabric_id = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
+        has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+        join_sql = f"LEFT JOIN fabric_materials fm ON fm.id = {v_alias}.fabric_id" if has_fabric_id else ""
+        if has_fabric_id and has_fabric_text:
+            expr = f"COALESCE(fm.fabric_code, {v_alias}.fabric)"
+        elif has_fabric_id:
+            expr = "COALESCE(NULLIF(TRIM(fm.fabric_code),''), '')"
+        elif has_fabric_text:
+            expr = f"{v_alias}.fabric"
+        else:
+            expr = "''"
+        return join_sql, expr
+
+    def _resolve_fabric_material_id_from_label(self, conn, label, cur=None):
+        """将 Excel/UI 中的面料编码或英文名解析为 fabric_materials.id（无则 None）。"""
+        text = str(label or '').strip()
+        if not text:
+            return None
+        code = self._code_before_dash(text)
+
+        def _lookup(c):
+            c.execute("SELECT id FROM fabric_materials WHERE fabric_code=%s LIMIT 1", (code,))
+            r = c.fetchone() or {}
+            fid = self._parse_int(r.get('id')) or None
+            if fid:
+                return fid
+            c.execute("SELECT id FROM fabric_materials WHERE fabric_name_en=%s LIMIT 1", (text,))
+            r = c.fetchone() or {}
+            return self._parse_int(r.get('id')) or None
+
+        if cur is not None:
+            return _lookup(cur)
+        with conn.cursor() as c:
+            return _lookup(c)
+
     def _sales_product_shop_expr(self, has_shop_col, sales_alias='sp', parent_alias='p'):
         if has_shop_col:
             return f"COALESCE({parent_alias}.shop_id, {sales_alias}.shop_id)"
@@ -2502,6 +2539,17 @@ class SalesProductMixin:
                         if self._table_has_column(conn, 'sales_product_variants', 'fabric'):
                             cur.execute("SELECT DISTINCT fabric FROM sales_product_variants WHERE fabric IS NOT NULL AND TRIM(fabric) <> '' ORDER BY fabric")
                             fabric_local = [str(row['fabric']).strip() for row in (cur.fetchall() or []) if row.get('fabric')]
+                        elif self._table_has_column(conn, 'sales_product_variants', 'fabric_id'):
+                            cur.execute(
+                                """
+                                SELECT DISTINCT fm.fabric_code AS fabric
+                                FROM sales_product_variants v
+                                INNER JOIN fabric_materials fm ON fm.id = v.fabric_id
+                                WHERE fm.fabric_code IS NOT NULL AND TRIM(fm.fabric_code) <> ''
+                                ORDER BY fm.fabric_code
+                                """
+                            )
+                            fabric_local = [str(row.get('fabric') or '').strip() for row in (cur.fetchall() or []) if row.get('fabric')]
                         else:
                             fabric_local = []
                     return (shop_options_local, parent_codes_local, sku_family_local, spec_name_local, fabric_local)
@@ -2972,7 +3020,14 @@ class SalesProductMixin:
                         )
                     sales_map = {(int(row.get('shop_id') or 0), str(row.get('platform_sku') or '').strip()): int(row.get('id') or 0) for row in (cur.fetchall() or []) if row.get('platform_sku')}
 
-                    cur.execute("SELECT id, sku_family_id, spec_name, fabric FROM sales_product_variants")
+                    vf_join, vf_expr = self._sales_variant_fabric_select_sql(conn, 'v')
+                    cur.execute(
+                        f"""
+                        SELECT v.id, v.sku_family_id, v.spec_name, ({vf_expr}) AS fabric
+                        FROM sales_product_variants v
+                        {vf_join}
+                        """
+                    )
                     variant_identity_map = {
                         (int(row.get('sku_family_id') or 0), str(row.get('spec_name') or '').strip(), str(row.get('fabric') or '').strip()): int(row.get('id') or 0)
                         for row in (cur.fetchall() or []) if row.get('id')
@@ -3090,6 +3145,13 @@ class SalesProductMixin:
                             errors.append({'row': row_idx, 'error': 'Platform SKU missing'})
                             continue
 
+                        resolved_fabric_id = None
+                        if self._table_has_column(conn, 'sales_product_variants', 'fabric_id'):
+                            resolved_fabric_id = self._resolve_fabric_material_id_from_label(conn, final_fabric)
+                            if not resolved_fabric_id:
+                                errors.append({'row': row_idx, 'error': '面料无效：无法匹配到面料主数据（fabric_materials），请检查「面料」列编码或英文名'})
+                                continue
+
                         variant_key = (int(sku_family_id), str(final_spec_name or '').strip(), str(final_fabric or '').strip())
                         if preview_mode:
                             if sales_map.get((int(shop_id), final_platform_sku)):
@@ -3101,7 +3163,7 @@ class SalesProductMixin:
                         try:
                             variant_id = variant_identity_map.get(variant_key)
                             if not variant_id:
-                                variant_id = self._get_or_create_sales_variant(conn, sku_family_id, final_spec_name, final_fabric, sale_price_usd)
+                                variant_id = self._get_or_create_sales_variant(conn, sku_family_id, final_spec_name, final_fabric, sale_price_usd, fabric_id=resolved_fabric_id)
                                 variant_identity_map[variant_key] = variant_id
                             else:
                                 with conn.cursor() as vcur:
@@ -9293,6 +9355,8 @@ class SalesProductMixin:
         with conn.cursor() as cur:
             has_fid = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
             has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+            if has_fid and not fid and fab:
+                fid = self._resolve_fabric_material_id_from_label(conn, fab, cur)
 
             # 1) Prefer selecting existing row first (prevents duplicates even if UNIQUE index is missing).
             if has_fid:
