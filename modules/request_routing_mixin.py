@@ -285,6 +285,20 @@ class RequestRoutingMixin:
         user_id = self._get_session_user(environ)
         if not user_id:
             return self.send_json({'status': 'error', 'message': '未登录'}, start_response)
+        # 规格主图管理（gallery）与销售产品管理共用主图 API，任一模块权限即可
+        dual_access = {
+            '/api/sales-product-main-images': ('gallery', 'sales_product_management'),
+            '/api/sales-product-main-images-upload': ('gallery', 'sales_product_management'),
+            '/api/sales-product-main-images-replace': ('gallery', 'sales_product_management'),
+            '/api/sales-product-main-images-import-by-path': ('gallery', 'sales_product_management'),
+            '/api/sales-image-type': ('gallery', 'sales_product_management'),
+        }
+        if path in dual_access:
+            keys = dual_access[path]
+            if any(self._user_has_page_access(user_id, k) for k in keys):
+                return None
+            return self.send_json({'status': 'error', 'message': '无权限访问该模块'}, start_response)
+
         permission_key = API_PERMISSION_MAP.get(path)
         if permission_key and not self._user_has_page_access(user_id, permission_key):
             return self.send_json({'status': 'error', 'message': '无权限访问该模块'}, start_response)

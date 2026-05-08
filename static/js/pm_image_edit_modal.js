@@ -199,6 +199,9 @@
     desc: '',
   };
 
+  /** 打开弹窗并预填后的绑定快照，用于判断「是否移除全部绑定」 */
+  let initialBindingsSnapshot = { vids: [], fids: [], opids: [] };
+
   function isRecommendNameEnabled() {
     return getSegmentValue($('pmImageEditRecommendNameSegment'), '1') === '1';
   }
@@ -238,6 +241,92 @@
     const el = $('pmImageEditDescInput');
     if (el) el.value = String(v || '');
     if (fromUser) touched.desc = true;
+  }
+
+  /** 用于从已命名文件中剥离前缀：所有可选图片类型名（越长越优先匹配） */
+  function collectImageTypePrefixCandidates() {
+    const out = new Set();
+    Object.keys(typeScopeByName || {}).forEach((k) => {
+      const s = String(k || '').trim();
+      if (s) out.add(s);
+    });
+    const sel = String(getSelectedTypeName() || '').trim();
+    if (sel) out.add(sel);
+    return Array.from(out).filter(Boolean);
+  }
+
+  /** 可能出现在文件名里的面料前缀（来自当前选项与 hook，越长越优先） */
+  function collectFabricPrefixCandidates() {
+    const out = new Set();
+    try {
+      if (ctx && ctx.hooks && typeof ctx.hooks.resolveRecommendFabricName === 'function') {
+        const v = String(ctx.hooks.resolveRecommendFabricName() || '').trim();
+        if (v) out.add(v);
+      }
+    } catch (e) {}
+    (fabricOptions || []).forEach((it) => {
+      const a = String(it.fabric_name_en || '').trim();
+      const b = String(it.fabric_code || '').trim();
+      if (a) out.add(a);
+      if (b) out.add(b);
+    });
+    (variantOptions || []).forEach((it) => {
+      const a = String(it.fabric_name_en || '').trim();
+      const b = String(it.fabric_code || '').trim();
+      if (a) out.add(a);
+      if (b) out.add(b);
+    });
+    return Array.from(out).filter(Boolean);
+  }
+
+  /**
+   * 从主图/图库文件名中解析「原文件名」stem。
+   * 支持：「图片类型-原文件名」「面料-图片类型-原文件名」；可多次剥离以修复历史误拼（如 面料-类型-类型-原文件名）。
+   */
+  function stripDecorativeImageBaseName(base, fabricCandidates, typeCandidates) {
+    const fabrics = (fabricCandidates || []).map((s) => String(s || '').trim()).filter(Boolean)
+      .sort((a, b) => b.length - a.length);
+    const types = (typeCandidates || []).map((s) => String(s || '').trim()).filter(Boolean)
+      .sort((a, b) => b.length - a.length);
+    let pairPrefixes = [];
+    fabrics.forEach((f) => {
+      types.forEach((t) => {
+        pairPrefixes.push(`${f}-${t}-`);
+      });
+    });
+    pairPrefixes = [...new Set(pairPrefixes)].sort((a, b) => b.length - a.length);
+
+    let rest = String(base || '').trim();
+    for (let i = 0; i < 48; i++) {
+      let changed = false;
+      for (const p of pairPrefixes) {
+        if (rest.startsWith(p) && rest.length > p.length) {
+          rest = rest.slice(p.length);
+          changed = true;
+          break;
+        }
+      }
+      if (changed) continue;
+      for (const t of types) {
+        const p = `${t}-`;
+        if (rest.startsWith(p) && rest.length > p.length) {
+          rest = rest.slice(p.length);
+          changed = true;
+          break;
+        }
+      }
+      if (changed) continue;
+      for (const f of fabrics) {
+        const p = `${f}-`;
+        if (rest.startsWith(p) && rest.length > p.length) {
+          rest = rest.slice(p.length);
+          changed = true;
+          break;
+        }
+      }
+      if (!changed) break;
+    }
+    return rest;
   }
 
   function getCommonFabricName() {
@@ -343,21 +432,18 @@
     const wantFabric = String(fabric || '').trim();
     if (!wantType) return '';
 
-    const alreadyOk = (() => {
-      if (wantFabric) {
-        const prefix = `${wantFabric}-${wantType}-`;
-        return base.startsWith(prefix) && base.length > prefix.length;
-      }
-      const prefix = `${wantType}-`;
-      return base.startsWith(prefix) && base.length > prefix.length;
-    })();
-    if (alreadyOk) return base;
+    const typeCandidates = collectImageTypePrefixCandidates();
+    const fabricCandidates = collectFabricPrefixCandidates();
+    let stem = stripDecorativeImageBaseName(base, fabricCandidates, typeCandidates);
+    if (!stem) stem = base;
 
     const parts = [];
     if (wantFabric) parts.push(wantFabric);
     parts.push(wantType);
-    parts.push(base || '');
-    return parts.filter(Boolean).join('-');
+    parts.push(stem || '');
+    const assembled = parts.filter(Boolean).join('-');
+    if (assembled === base) return base;
+    return assembled;
   }
 
   function applyRecommendedNameIfNeeded(force) {
@@ -1090,9 +1176,14 @@
     const fids = Array.from(selectedFabricIds || []).map(v => Number(v)).filter(v => v > 0);
     const opids = Array.from(selectedOrderProductIds || []).map(v => Number(v)).filter(v => v > 0);
 
+    const initHadBindings = (initialBindingsSnapshot.vids.length + initialBindingsSnapshot.fids.length + initialBindingsSnapshot.opids.length) > 0;
+    const clearedAllBindings = initHadBindings && !vids.length && !fids.length && !opids.length;
+
     if (!renameNeeded && !typeName && !enabledChanged && !descChanged && !vids.length && !fids.length && !opids.length) {
-      showStatus(statusDiv, '未做任何修改', 'error');
-      return;
+      if (!clearedAllBindings) {
+        showStatus(statusDiv, '未做任何修改', 'error');
+        return;
+      }
     }
 
     const scopeCheck = validateLinkSelectionVsType();
@@ -1101,9 +1192,37 @@
       return;
     }
 
-    if ((vids.length || fids.length || opids.length) && !typeName) {
+    if (((vids.length || fids.length || opids.length) || clearedAllBindings) && !typeName) {
       showStatus(statusDiv, '请选择图片类型后再提交', 'error');
       return;
+    }
+
+    let orphanFileAction = '';
+    if (clearedAllBindings) {
+      if (!window.showAppConfirmAsync) {
+        showStatus(statusDiv, '缺少通用确认弹窗（showAppConfirmAsync），无法提交', 'error');
+        return;
+      }
+      const choice = await window.showAppConfirmAsync({
+        title: '移除全部绑定',
+        message: '将移除该图片与面料、销售规格、下单产品的全部关联。\n\n请选择：「仅移除绑定（保留文件）」保留磁盘文件；「移除绑定并移入回收站」将把文件移入『上架资源』回收站并删除图片库记录（若仍被 A+ 等引用将无法删除）。',
+        confirmText: '仅移除绑定（保留文件）',
+        cancelText: '取消',
+        requireConfirmCheck: false,
+        extraButtons: [{ id: 'recycle', text: '移除绑定并移入回收站', danger: true }],
+      }).catch(() => false);
+      if (!choice) {
+        showStatus(statusDiv, '已取消', 'error');
+        return;
+      }
+      if (choice === true) {
+        orphanFileAction = 'keep';
+      } else if (choice && choice.id === 'recycle') {
+        orphanFileAction = 'recycle';
+      } else {
+        showStatus(statusDiv, '已取消', 'error');
+        return;
+      }
     }
 
     showStatus(statusDiv, '处理中...', 'info');
@@ -1142,8 +1261,8 @@
       initial.enabled = enabledVal;
       initial.desc = descVal;
 
-      // 3) apply image（规格 / 面料 / 下单产品）
-      if (vids.length || fids.length || opids.length) {
+      // 3) apply image（规格 / 面料 / 下单产品；link_sync 与后端「全量同步」一致以支持移除绑定）
+      if (vids.length || fids.length || opids.length || clearedAllBindings) {
         window.showAppUploadProgress && window.showAppUploadProgress({ title: '正在提交...', summary: '写入数据库并处理文件移动/复制', percent: 65 });
         const action = pickActiveRadioValue('pmImageEditApplyAction', 'move');
         const promptDup = !!$('pmImageEditPromptDuplicate')?.checked;
@@ -1154,8 +1273,12 @@
           order_product_ids: opids,
           action,
           image_type_name: typeName,
-          prompt_duplicate: promptDup ? 1 : 0
+          prompt_duplicate: promptDup ? 1 : 0,
+          link_sync: 1,
         };
+        if (clearedAllBindings && orphanFileAction) {
+          payload.orphan_file_action = orphanFileAction;
+        }
         const resp2 = await fetch('/api/gallery-apply-image', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1165,7 +1288,7 @@
         if (!data2 || data2.status !== 'success') throw new Error((data2 && data2.message) ? data2.message : '关联失败');
       }
 
-      const didApply = !!(vids.length || fids.length || opids.length);
+      const didApply = !!(vids.length || fids.length || opids.length || clearedAllBindings);
       const toastParts = [];
       if (didApply) toastParts.push('绑定成功');
       if (renameNeeded) toastParts.push('已重命名');
@@ -1197,6 +1320,7 @@
     current = { pathB64: String(opts?.pathB64 || ''), name: String(opts?.name || '') };
     touched = { type: false, enabled: false, desc: false, recommendName: false };
     initial = { enabled: 1, desc: '' };
+    initialBindingsSnapshot = { vids: [], fids: [], opids: [] };
 
     // reset UI
     setEnabledValue(1, false);
@@ -1228,6 +1352,11 @@
     await tryPrefillVariantLinksFromDbIfEnabled();
     await tryPrefillMetaFromDb();
     applyRecommendedNameIfNeeded(true);
+    initialBindingsSnapshot = {
+      vids: Array.from(selectedVariantIds || []).map(v => Number(v)).filter(v => v > 0),
+      fids: Array.from(selectedFabricIds || []).map(v => Number(v)).filter(v => v > 0),
+      opids: Array.from(selectedOrderProductIds || []).map(v => Number(v)).filter(v => v > 0),
+    };
     updateApplyHintUi();
     updatePickerButtonsState();
   }

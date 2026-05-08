@@ -769,6 +769,13 @@
         const NAS_MAIN_IMAGE_LAST_STACK_KEY = 'sj.nasMainImage.navStack.v1';
         const NAS_MAIN_IMAGE_ACTION_MODE_KEY = 'sj.nasMainImage.actionMode.v1';
         const NAS_MAIN_IMAGE_THUMB_SIZE_KEY = 'sj.nasMainImage.thumbSize.v1';
+
+        function persistNasMainImageBrowseLocation() {
+            try {
+                safeSetLocalStorage(NAS_MAIN_IMAGE_LAST_PATH_KEY, nasMainImagePathB64 || '');
+                safeSetLocalStorage(NAS_MAIN_IMAGE_LAST_STACK_KEY, JSON.stringify(Array.isArray(nasMainImageNavStack) ? nasMainImageNavStack : []));
+            } catch (e) {}
+        }
         const MAIN_IMAGE_PROMPT_DUP_KEY = 'sj.salesMainImage.promptDuplicate.v1';
         const MAIN_IMAGE_SHOW_FABRIC_KEY = 'sj.salesMainImage.showFabric.v1';
         let mainImagePromptDuplicate = true;
@@ -847,6 +854,12 @@
 
         function utf8ToB64(text) {
             try {
+                if (typeof TextEncoder !== 'undefined') {
+                    const bytes = new TextEncoder().encode(String(text || ''));
+                    let binary = '';
+                    bytes.forEach(b => { binary += String.fromCharCode(b); });
+                    return btoa(binary);
+                }
                 const encoded = encodeURIComponent(String(text || ''));
                 return btoa(unescape(encoded));
             } catch (e) {
@@ -2846,17 +2859,7 @@
             try {
                 // 1) rename
                 if (renameNeeded) {
-                    const newNameB64 = (function utf8ToB64(text){
-                        try {
-                            if (typeof TextEncoder !== 'undefined') {
-                                const bytes = new TextEncoder().encode(text);
-                                let binary = '';
-                                bytes.forEach(b => binary += String.fromCharCode(b));
-                                return btoa(binary);
-                            }
-                            return btoa(unescape(encodeURIComponent(text)));
-                        } catch (e) { return ''; }
-                    })(desiredBase);
+                    const newNameB64 = utf8ToB64(desiredBase);
                     const r = await fetch('/api/rename', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -2977,7 +2980,7 @@
 
         async function renderNasMainImageList() {
             const list = document.getElementById('nasMainImageList');
-            if (!list) return;
+            if (!list) return false;
             list.innerHTML = '';
             const loading = document.createElement('div');
             loading.className = 'pm-select-empty nas-main-image-grid-loading';
@@ -3001,7 +3004,7 @@
                     empty.className = 'pm-select-empty nas-main-image-grid-empty';
                     empty.textContent = '此目录为空';
                     list.appendChild(empty);
-                    return;
+                    return true;
                 }
 
                 folders.forEach(f => {
@@ -3100,6 +3103,7 @@
                     card.appendChild(info);
                     list.appendChild(card);
                 });
+                return true;
             } catch (e) {
                 list.innerHTML = '';
                 const err = document.createElement('div');
@@ -3108,6 +3112,7 @@
                 list.appendChild(err);
                 showNasMainImageStatus('浏览失败: ' + e, true);
                 updateNasMainImageMeta(0);
+                return false;
             }
         }
 
@@ -3135,26 +3140,31 @@
             document.getElementById('nas-main-image-import-modal').classList.add('active');
             nasMainImageSelected = new Set();
             initNasMainImageSelectAllBox();
-            // Validate restore path; if invalid, fall back to root
+            // Restore path/stack from localStorage; if browse fails, still show root but keep remembered path for close/save.
             (async () => {
                 try {
                     await loadSalesImageTypeOptions();
-                    renderNasMainImageTypeBar();
-                    initNasActionModeSegment();
-                    initNasThumbSizeSegment();
-                    if (nasMainImagePathB64) await nasMainImageBrowse(nasMainImagePathB64);
-                } catch (e) {
+                } catch (e) {}
+                renderNasMainImageTypeBar();
+                initNasActionModeSegment();
+                initNasThumbSizeSegment();
+                const savedPath = nasMainImagePathB64 || '';
+                const savedStack = Array.isArray(nasMainImageNavStack) ? nasMainImageNavStack.slice() : [];
+                const ok = await renderNasMainImageList();
+                if (!ok && (savedPath || (savedStack && savedStack.length))) {
+                    showNasMainImageStatus('上次记住的路径暂时无法访问，已显示根目录；关闭弹窗后仍会保留该路径。', true);
                     nasMainImagePathB64 = '';
                     nasMainImageNavStack = [];
+                    await renderNasMainImageList();
+                    nasMainImagePathB64 = savedPath;
+                    nasMainImageNavStack = savedStack;
                 }
-                await renderNasMainImageList();
             })();
         }
 
         function closeNasMainImageImportModal() {
             document.getElementById('nas-main-image-import-modal').classList.remove('active');
-            safeSetLocalStorage(NAS_MAIN_IMAGE_LAST_PATH_KEY, nasMainImagePathB64 || '');
-            safeSetLocalStorage(NAS_MAIN_IMAGE_LAST_STACK_KEY, JSON.stringify(nasMainImageNavStack || []));
+            persistNasMainImageBrowseLocation();
             nasMainImagePathB64 = '';
             nasMainImageNavStack = [];
             nasMainImageSelected = new Set();
@@ -3166,7 +3176,8 @@
             nasMainImageNavStack = Array.isArray(nasMainImageNavStack) ? nasMainImageNavStack : [];
             const label = String(folderName || '').replace(/^📁\s*/, '').trim() || decodeB64Utf8(pathB64).split('/').filter(Boolean).pop() || '文件夹';
             nasMainImageNavStack.push({ name: label, pathB64: nasMainImagePathB64 });
-            await renderNasMainImageList();
+            const ok = await renderNasMainImageList();
+            if (ok) persistNasMainImageBrowseLocation();
         }
 
         async function nasMainImageGoUp() {
@@ -3175,25 +3186,30 @@
             nasMainImageNavStack.pop();
             const last = nasMainImageNavStack.length ? nasMainImageNavStack[nasMainImageNavStack.length - 1] : null;
             nasMainImagePathB64 = last && last.pathB64 ? last.pathB64 : '';
-            await renderNasMainImageList();
+            const ok = await renderNasMainImageList();
+            if (ok) persistNasMainImageBrowseLocation();
         }
 
         async function nasMainImageJumpTo(stackIdx) {
             const idx = Number(stackIdx);
-            if (!idx || idx < 0) {
+            // Root crumb uses -1; do not use !idx — that would treat first folder (idx 0) as root.
+            if (idx < 0 || Number.isNaN(idx)) {
                 nasMainImageNavStack = [];
                 nasMainImagePathB64 = '';
-                await renderNasMainImageList();
+                const ok = await renderNasMainImageList();
+                if (ok) persistNasMainImageBrowseLocation();
                 return;
             }
             nasMainImageNavStack = Array.isArray(nasMainImageNavStack) ? nasMainImageNavStack.slice(0, idx + 1) : [];
             const last = nasMainImageNavStack.length ? nasMainImageNavStack[nasMainImageNavStack.length - 1] : null;
             nasMainImagePathB64 = last && last.pathB64 ? last.pathB64 : '';
-            await renderNasMainImageList();
+            const ok = await renderNasMainImageList();
+            if (ok) persistNasMainImageBrowseLocation();
         }
 
         async function nasMainImageReload() {
-            await renderNasMainImageList();
+            const ok = await renderNasMainImageList();
+            if (ok) persistNasMainImageBrowseLocation();
         }
 
         async function nasMainImageImport(filePathB64) {

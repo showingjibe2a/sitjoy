@@ -23,6 +23,22 @@ class EncodingUtilsMixin:
         raw = base64.b64decode(value)
         return self._safe_fsdecode(raw)
 
+    def _utf8_b64_to_str(self, value):
+        """
+        将 Base64 按 UTF-8 解码为 str（用于前端 TextEncoder / encodeURIComponent 发送的展示名）。
+        与 _fs_from_b64 不同：后者用于 browse 返回的「文件系统原始字节」路径 id，不能混用。
+        """
+        if value is None:
+            return ''
+        s = str(value).strip()
+        if not s:
+            return ''
+        raw = base64.b64decode(s)
+        try:
+            return raw.decode('utf-8', errors='strict').strip()
+        except UnicodeDecodeError:
+            return self._safe_fsdecode(raw).strip()
+
     def _safe_fsencode(self, value):
         """安全的文件系统路径编码"""
         if isinstance(value, (bytes, bytearray)):

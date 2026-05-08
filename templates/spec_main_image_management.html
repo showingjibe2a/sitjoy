@@ -7,12 +7,7 @@
   <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
   <link rel="stylesheet" href="/static/css/style.css">
   <style>
-    .specmi-toolbar {
-      display: flex;
-      gap: 0.8rem;
-      align-items: center;
-      flex-wrap: wrap;
-    }
+    .specmi-toolbar { display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap; }
     .specmi-toolbar .form-group { margin: 0; }
     .specmi-grid {
       display: grid;
@@ -24,50 +19,7 @@
     .specmi-muted { color: var(--morandi-slate); font-size: 0.9rem; }
     .specmi-table-wrap { margin-top: 0.9rem; }
     .specmi-actions { display: inline-flex; gap: 0.45rem; }
-    .specmi-mini-list {
-      display: grid;
-      gap: 0.35rem;
-      margin-top: 0.35rem;
-    }
-    .specmi-asset {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 0.5rem;
-      align-items: center;
-      padding: 0.45rem 0.55rem;
-      border: 1px solid rgba(207,199,189,.65);
-      border-radius: 10px;
-      background: #fff;
-    }
-    .specmi-asset code { font-size: 0.82rem; color: var(--morandi-ink); }
-    .specmi-picker-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-      gap: 0.6rem;
-    }
-    .specmi-picker-card {
-      border: 1px solid rgba(207,199,189,.65);
-      border-radius: 10px;
-      background: #fff;
-      overflow: hidden;
-      cursor: pointer;
-    }
-    .specmi-picker-card:hover { border-color: rgba(120,110,100,.75); }
-    .specmi-picker-thumb {
-      height: 120px;
-      background: rgba(236,231,223,.28);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .specmi-picker-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .specmi-picker-name {
-      padding: 0.45rem 0.55rem;
-      font-size: 0.86rem;
-      color: var(--morandi-ink);
-      word-break: break-all;
-    }
-    .specmi-folder-icon { font-size: 34px; }
+    .specmi-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; vertical-align: middle; }
   </style>
 </head>
 <body>
@@ -76,7 +28,7 @@
 <div class="container container--wide">
   <section class="hero" style="margin-bottom:1.1rem;">
     <h2>规格主图管理</h2>
-    <p class="specmi-muted">从“销售产品管理”抽离：仅管理已创建规格（货号/规格/面料只读），在此页面对规格关联/更换主图。</p>
+    <p class="specmi-muted">按规格维护主图：与销售产品管理主图模块相同的接口（上传、NAS 移动绑定、排序、删除、共享编辑弹窗）。</p>
   </section>
 
   <div class="card pm-card">
@@ -93,7 +45,7 @@
           </div>
           <div class="form-group">
             <label>面料</label>
-            <input id="specmiSearchFabric" class="optional-field" type="text" placeholder="例如：Linen / 1234">
+            <input id="specmiSearchFabric" class="optional-field" type="text" placeholder="英文名 / 代码">
           </div>
           <div class="form-group">
             <button class="btn-primary" type="button" onclick="specmiApplyFilter()">筛选</button>
@@ -112,26 +64,26 @@
       <thead>
       <tr>
         <th style="width:90px;">规格ID</th>
-        <th style="width:220px;">货号</th>
-        <th style="width:220px;">规格</th>
-        <th style="width:220px;">面料</th>
-        <th>已关联图片</th>
-        <th style="width:180px;">操作</th>
+        <th style="width:200px;">货号</th>
+        <th style="width:200px;">规格</th>
+        <th style="width:200px;">面料</th>
+        <th style="width:120px;">首图</th>
+        <th>说明</th>
+        <th style="width:160px;">操作</th>
       </tr>
       </thead>
       <tbody>
-      <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
+      <tr><td colspan="7" style="text-align:center;">加载中...</td></tr>
       </tbody>
     </table>
   </div>
 </div>
 
-<!-- 编辑关联弹窗 -->
+<!-- 主图编辑（与销售产品主图一致） -->
 <div class="pm-modal" id="specmiEditModal">
   <div class="pm-modal-content pm-modal-content--wide">
     <div class="pm-modal-scroll">
-      <h3 style="margin-top:0;">编辑规格图片关联</h3>
-
+      <h3 style="margin-top:0;">规格主图</h3>
       <div class="pm-form" style="grid-template-columns: 1fr 1fr 1fr;">
         <div class="form-group">
           <label>货号</label>
@@ -145,116 +97,214 @@
           <label>面料</label>
           <input id="specmiModalFabric" class="optional-field" type="text" readonly>
         </div>
-        <div class="form-group pm-form-full" style="grid-column: 1 / -1;">
-          <label>图片类型 <span class="required-asterisk">*</span></label>
-          <select id="specmiModalImageType" data-universal-no-search="0">
-            <option value="">请选择图片类型</option>
-          </select>
-          <div class="helper-text">关联时会写入数据库并复用/移动图片到规范目录（逻辑与 gallery 一键应用一致）。</div>
+      </div>
+
+      <div class="main-images-manager" style="margin-top:0.75rem;">
+        <div class="pm-section-body pm-form" style="display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center; justify-content:space-between;">
+          <div class="status-segment status-segment--inline">
+            <button type="button" class="status-pill status-pill--no" id="specmiDupOff">重复提示：关</button>
+            <button type="button" class="status-pill status-pill--yes is-active" id="specmiDupOn">重复提示：开</button>
+          </div>
+          <div class="status-segment status-segment--inline">
+            <button type="button" class="status-pill status-pill--no" id="specmiFabOff">面料图：关</button>
+            <button type="button" class="status-pill status-pill--yes is-active" id="specmiFabOn">面料图：开</button>
+          </div>
+          <div style="display:flex; gap:0.45rem; flex-wrap:wrap;">
+            <button type="button" class="btn-accent" onclick="specmiTriggerUpload()">新增主图</button>
+            <button type="button" class="btn-secondary" onclick="specmiOpenNasModal()">从NAS选择并移动</button>
+          </div>
         </div>
-      </div>
-
-      <div class="pm-section" style="margin-top:1rem;">
-        <h4 class="pm-section-title">已关联图片</h4>
-        <div id="specmiLinkedList" class="specmi-mini-list"></div>
-      </div>
-
-      <div class="pm-section" style="margin-top:1rem;">
-        <h4 class="pm-section-title">关联/更换图片</h4>
-        <div class="pm-section-body pm-form" style="grid-template-columns: 1fr auto;">
-          <div class="form-group" style="margin:0;">
-            <label>已选图片</label>
-            <input id="specmiChosenImageText" class="optional-field" type="text" readonly placeholder="未选择">
-          </div>
-          <div class="form-group" style="margin:0;">
-            <label>&nbsp;</label>
-            <button class="btn-secondary" type="button" onclick="specmiOpenPicker()">从图片管理选择</button>
-          </div>
-          <div class="form-group pm-form-full" style="grid-column:1/-1; margin:0;">
-            <button class="btn-accent" type="button" onclick="specmiApplyLink()">提交关联</button>
-          </div>
+        <input type="file" id="specmiFileUpload" accept="image/*" multiple style="display:none;">
+        <div class="main-images-toolbar" style="margin-top:0.5rem;">
+          <div class="image-type-bar" id="specmiMainImageTypeBar"></div>
+        </div>
+        <div id="specmiMainImageFolderTip" class="main-images-folder-tip">加载中…</div>
+        <div id="specmiMainImagesGrid" class="sj-media-image-grid sj-media-image-grid--tight">
+          <div class="sj-media-image-empty">暂无主图</div>
         </div>
       </div>
     </div>
-
     <div class="pm-modal-actions">
       <button class="btn-secondary" type="button" onclick="specmiCloseEdit()">关闭</button>
     </div>
   </div>
 </div>
 
-<!-- 图片选择器弹窗 -->
-<div class="pm-modal" id="specmiPickerModal">
+<!-- NAS 导入（与销售页结构一致，独立 id） -->
+<div class="pm-modal" id="specmi-nas-import-modal">
   <div class="pm-modal-content pm-modal-content--wide">
     <div class="pm-modal-scroll">
-      <h3 style="margin-top:0;">选择图片（双击即可选中）</h3>
-      <div class="helper-text" id="specmiPickerPathText" style="margin-top:-0.4rem;"></div>
-      <div class="pm-actions" style="justify-content:space-between; margin-top:0.6rem;">
-        <div class="pm-actions" style="margin:0;">
-          <button class="btn-secondary" type="button" onclick="specmiPickerUp()">返回上级</button>
-          <button class="btn-secondary" type="button" onclick="specmiPickerRoot()">回到货号主图目录</button>
+      <div class="nas-main-image-header">
+        <div class="nas-main-image-title">
+          <h3 style="margin:0;">从NAS选择主图（移动绑定）</h3>
         </div>
-        <div class="pm-actions" style="margin:0;">
-          <button class="btn-secondary" type="button" onclick="specmiClosePicker()">关闭</button>
+        <div class="nas-main-image-header-actions">
+          <div class="nas-header-control">
+            <span class="nas-header-control-label">新增方式</span>
+            <div class="status-segment status-segment--inline" id="specmiNasActionMode" data-value="multi">
+              <button type="button" class="status-pill" data-value="double">双击</button>
+              <button type="button" class="status-pill is-active" data-value="multi">多选</button>
+            </div>
+          </div>
         </div>
       </div>
-      <div id="specmiPickerGrid" class="specmi-picker-grid" style="margin-top:0.8rem;"></div>
+      <div class="pm-form">
+        <div class="form-group pm-form-full">
+          <label>图片类型</label>
+          <div id="specmiNasTypeBar" class="status-segment status-segment--inline"></div>
+        </div>
+        <div class="form-group pm-form-full">
+          <label>当前位置</label>
+          <nav id="specmiNasCrumbs" class="nas-main-image-breadcrumb" aria-label="NAS 路径"></nav>
+        </div>
+        <div class="form-group pm-form-full">
+          <div class="nas-main-image-grid-meta" id="specmiNasGridMeta">
+            <label class="nas-grid-select-all"><input type="checkbox" id="specmiNasSelectAll"><span>全选</span></label>
+            <div class="nas-grid-count" id="specmiNasCount">共 0 张图片</div>
+          </div>
+        </div>
+        <div class="form-group pm-form-full">
+          <div id="specmiNasList" class="browser-grid nas-main-image-browser-grid"></div>
+        </div>
+      </div>
+      <div id="specmiNasStatus" class="nas-main-image-status status-message" style="display:none;"></div>
+    </div>
+    <div class="pm-modal-actions nas-main-image-modal-actions">
+      <button class="btn-small" type="button" onclick="specmiCloseNasModal()">关闭</button>
+      <button class="btn-accent" type="button" onclick="specmiNasImportSelected()">批量导入所选</button>
     </div>
   </div>
 </div>
 
 <div class="app-toast-stack" id="specmiToastStack"></div>
-
 <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
 
+<script src="/static/js/header.js"></script>
+<script src="/static/js/pm_image_edit_modal.js"></script>
 <script>
+(function () {
   const $ = (s) => document.querySelector(s);
+  const SPECMI_LS_DUP = 'sj.specmi.promptDuplicate.v1';
+  const SPECMI_LS_FAB = 'sj.specmi.showFabric.v1';
+  const SPECMI_LS_NAS = 'sj.specmi.nasPathB64.v1';
+  const SPECMI_LS_STACK = 'sj.specmi.nasStack.v1';
 
   let specmiAllVariants = [];
   let specmiFiltered = [];
-  let specmiEditing = null; // { variant_id, sku_family, spec_name, fabric_name_en }
-  let specmiChosenImagePathB64 = '';
-  let specmiChosenImageLabel = '';
-  let specmiPickerBasePath = '';
-  let specmiPickerCurrentPath = '';
+  let specmiEditingVid = 0;
+  let specmiSkuFamily = '';
+  let specmiMainItems = [];
+  let specmiFabricItems = [];
+  let specmiSalesImageTypes = [];
+  let specmiSelectedMainImageFilterType = '全部';
+  let specmiPromptDuplicate = localStorage.getItem(SPECMI_LS_DUP) !== '0';
+  let specmiShowFabric = localStorage.getItem(SPECMI_LS_FAB) !== '0';
+  let specmiNasPathB64 = '';
+  let specmiNasNavStack = [];
+  let specmiNasSelected = new Set();
+  let specmiDragIdx = null;
+  let specmiDragInsert = null;
+
+  function decodeB64Utf8(b64) {
+    if (!b64) return '';
+    try {
+      const binary = atob(b64);
+      if (typeof TextDecoder !== 'undefined') {
+        const bytes = Uint8Array.from(binary, ch => ch.charCodeAt(0));
+        return new TextDecoder('utf-8').decode(bytes);
+      }
+      return decodeURIComponent(escape(binary));
+    } catch (e) {
+      try { return decodeURIComponent(escape(atob(b64))); } catch (_) { return ''; }
+    }
+  }
+  function utf8ToB64(text) {
+    try {
+      if (typeof TextEncoder !== 'undefined') {
+        const bytes = new TextEncoder().encode(String(text || ''));
+        let binary = '';
+        bytes.forEach(b => { binary += String.fromCharCode(b); });
+        return btoa(binary);
+      }
+      return btoa(unescape(encodeURIComponent(String(text || ''))));
+    } catch (e) { return ''; }
+  }
 
   function showToast(message, isError) {
     const stack = document.getElementById('specmiToastStack');
     if (!stack) return;
     const toast = document.createElement('div');
     toast.className = `app-toast ${isError ? 'error' : 'success'}`;
-    toast.innerHTML = `
-      <div class="app-toast-message"></div>
-      <div class="app-toast-actions">
-        <button type="button" class="app-toast-btn close">×</button>
-      </div>
-    `;
+    toast.innerHTML = `<div class="app-toast-message"></div><div class="app-toast-actions"><button type="button" class="app-toast-btn close">×</button></div>`;
     toast.querySelector('.app-toast-message').textContent = String(message || '');
-    const closeBtn = toast.querySelector('.app-toast-btn.close');
-    const close = () => {
-      toast.classList.remove('show');
-      setTimeout(() => toast.remove(), 180);
-    };
-    closeBtn.addEventListener('click', close);
+    const close = () => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 180); };
+    toast.querySelector('.app-toast-btn.close').addEventListener('click', close);
     stack.appendChild(toast);
     requestAnimationFrame(() => toast.classList.add('show'));
-    setTimeout(close, 4200);
+    setTimeout(close, 4500);
   }
 
-  async function ensureImageTypeOptions() {
-    const selectEl = document.getElementById('specmiModalImageType');
-    if (!selectEl) return;
+  function specmiDupUi() {
+    $('#specmiDupOn')?.classList.toggle('is-active', !!specmiPromptDuplicate);
+    $('#specmiDupOff')?.classList.toggle('is-active', !specmiPromptDuplicate);
+    $('#specmiFabOn')?.classList.toggle('is-active', !!specmiShowFabric);
+    $('#specmiFabOff')?.classList.toggle('is-active', !specmiShowFabric);
+  }
+  $('#specmiDupOn')?.addEventListener('click', () => { specmiPromptDuplicate = true; localStorage.setItem(SPECMI_LS_DUP, '1'); specmiDupUi(); });
+  $('#specmiDupOff')?.addEventListener('click', () => { specmiPromptDuplicate = false; localStorage.setItem(SPECMI_LS_DUP, '0'); specmiDupUi(); });
+  $('#specmiFabOn')?.addEventListener('click', () => { specmiShowFabric = true; localStorage.setItem(SPECMI_LS_FAB, '1'); specmiDupUi(); specmiRenderMainGrid(); });
+  $('#specmiFabOff')?.addEventListener('click', () => { specmiShowFabric = false; localStorage.setItem(SPECMI_LS_FAB, '0'); specmiDupUi(); specmiRenderMainGrid(); });
+
+  async function specmiLoadImageTypes() {
     try {
       const resp = await fetch('/api/sales-image-type?usage=sales');
       const data = await resp.json();
-      const items = (data && data.status === 'success' && Array.isArray(data.items)) ? data.items : [];
-      selectEl.innerHTML = ['<option value="">请选择图片类型</option>'].concat(
-        items.map(it => `<option value="${String(it.name || '').replace(/\"/g,'&quot;')}">${String(it.name || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</option>`)
-      ).join('');
-      if (window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(selectEl);
+      specmiSalesImageTypes = (data && data.status === 'success' && Array.isArray(data.items)) ? data.items : [];
     } catch (e) {
-      // ignore
+      specmiSalesImageTypes = [];
     }
+  }
+
+  function specmiNormalizeTypeName(name) {
+    const n = String(name || '').trim();
+    if (n && n !== '全部') return n;
+    const first = (specmiSalesImageTypes[0] && specmiSalesImageTypes[0].name) ? String(specmiSalesImageTypes[0].name) : '';
+    return first || '文字卖点图';
+  }
+
+  function specmiRenderTypeBar() {
+    const bar = $('#specmiMainImageTypeBar');
+    if (!bar) return;
+    const names = ['全部'].concat((specmiSalesImageTypes || []).map(x => String(x.name || '').trim()).filter(Boolean));
+    const cur = String(specmiSelectedMainImageFilterType || '全部').trim() || '全部';
+    bar.innerHTML = names.map(nm => {
+      const active = nm === cur ? ' is-active' : '';
+      return `<button type="button" class="status-pill${active}" data-type="${nm.replace(/"/g, '&quot;')}">${nm.replace(/</g, '&lt;')}</button>`;
+    }).join('');
+    bar.querySelectorAll('button[data-type]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        specmiSelectedMainImageFilterType = String(btn.getAttribute('data-type') || '全部');
+        specmiRenderTypeBar();
+        specmiRenderMainGrid();
+      });
+    });
+  }
+
+  function specmiRenderNasTypeBar() {
+    const bar = $('#specmiNasTypeBar');
+    if (!bar) return;
+    const names = (specmiSalesImageTypes || []).map(x => String(x.name || '').trim()).filter(Boolean);
+    const cur = specmiNormalizeTypeName(specmiSelectedMainImageFilterType);
+    bar.innerHTML = names.map(nm => {
+      const active = nm === cur ? ' is-active' : '';
+      return `<button type="button" class="status-pill${active}" data-nastype="${nm.replace(/"/g, '&quot;')}">${nm.replace(/</g, '&lt;')}</button>`;
+    }).join('');
+    bar.querySelectorAll('button[data-nastype]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        specmiSelectedMainImageFilterType = String(btn.getAttribute('data-nastype') || '');
+        specmiRenderNasTypeBar();
+      });
+    });
   }
 
   function renderTable(rows) {
@@ -262,29 +312,45 @@
     if (!tbody) return;
     const list = Array.isArray(rows) ? rows : [];
     if (!list.length) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">暂无数据</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">暂无数据</td></tr>';
       return;
     }
     tbody.innerHTML = list.map(v => {
       const vid = Number(v.variant_id || 0);
-      const sku = String(v.sku_family || '').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      const spec = String(v.spec_name || '').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      const fabric = String(v.fabric_name_en || v.fabric_code || '').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      const sku = String(v.sku_family || '').replace(/</g, '&lt;');
+      const spec = String(v.spec_name || '').replace(/</g, '&lt;');
+      const fabric = String(v.fabric_name_en || v.fabric_code || '').replace(/</g, '&lt;');
       return `
         <tr>
           <td>${vid || ''}</td>
           <td>${sku}</td>
           <td>${spec}</td>
           <td>${fabric}</td>
-          <td class="specmi-muted">点击“编辑关联”查看详情</td>
-          <td>
-            <div class="pm-actions">
-              <button class="btn-secondary" type="button" onclick="specmiOpenEdit(${vid})">编辑关联</button>
-            </div>
-          </td>
-        </tr>
-      `;
+          <td class="specmi-muted" id="specmiPrev_${vid}">—</td>
+          <td class="specmi-muted">双击卡片内图片可编辑关联/属性</td>
+          <td><button class="btn-secondary" type="button" onclick="specmiOpenEdit(${vid})">管理主图</button></td>
+        </tr>`;
     }).join('');
+    list.forEach(v => specmiPrefetchThumb(Number(v.variant_id || 0)));
+  }
+
+  async function specmiPrefetchThumb(vid) {
+    const cell = document.getElementById(`specmiPrev_${vid}`);
+    if (!cell || !vid) return;
+    try {
+      const resp = await fetch(`/api/sales-product-main-images?variant_id=${encodeURIComponent(String(vid))}`);
+      const data = await resp.json();
+      if (!data || data.status !== 'success' || !Array.isArray(data.items) || !data.items.length) {
+        cell.textContent = '—';
+        return;
+      }
+      const first = data.items[0];
+      const b64 = String(first.image_b64 || '');
+      if (!b64) { cell.textContent = '—'; return; }
+      cell.innerHTML = `<img class="specmi-thumb" src="/api/image-preview?id=${encodeURIComponent(b64)}&mode=thumb&w=88&q=70" alt="">`;
+    } catch (e) {
+      cell.textContent = '—';
+    }
   }
 
   function specmiApplyFilter() {
@@ -313,7 +379,7 @@
 
   async function specmiReload() {
     const tbody = document.querySelector('#specmiTable tbody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">加载中...</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">加载中...</td></tr>';
     try {
       const resp = await fetch('/api/gallery-variant-picker');
       const data = await resp.json();
@@ -322,8 +388,315 @@
       specmiFiltered = specmiAllVariants.slice();
       renderTable(specmiFiltered);
     } catch (e) {
-      if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#a33;">${e.message || '加载失败'}</td></tr>`;
+      if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#a33;">${e.message || '加载失败'}</td></tr>`;
     }
+  }
+
+  async function specmiRefreshMainImages() {
+    if (!specmiEditingVid) return;
+    const bust = `t=${Date.now()}`;
+    const resp = await fetch(`/api/sales-product-main-images?variant_id=${encodeURIComponent(String(specmiEditingVid))}&${bust}`, { cache: 'no-store' });
+    const data = await resp.json();
+    if (!data || data.status !== 'success') throw new Error(data.message || '主图加载失败');
+    specmiMainItems = Array.isArray(data.items) ? data.items : [];
+    specmiFabricItems = Array.isArray(data.fabric_items) ? data.fabric_items : [];
+    const folder = data.folder || {};
+    const tip = $('#specmiMainImageFolderTip');
+    if (tip) tip.textContent = `当前目录：${folder.sku_family || '-'} / 主图 / ${folder.variant_folder || '-'}`;
+    specmiSkuFamily = String(folder.sku_family || '').trim();
+    specmiRenderMainGrid();
+  }
+
+  function specmiRenderMainGrid() {
+    const grid = $('#specmiMainImagesGrid');
+    if (!grid) return;
+    const filterType = String(specmiSelectedMainImageFilterType || '全部').trim() || '全部';
+    const list = (specmiMainItems || []).slice()
+      .filter(x => filterType === '全部' || String(x.image_type_name || '').trim() === filterType)
+      .sort((a, b) => {
+        const ta = String(a.image_type_name || '').trim();
+        const tb = String(b.image_type_name || '').trim();
+        if (ta !== tb) return ta.localeCompare(tb, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+        const sa = Number(a.sort_order || 0);
+        const sb = Number(b.sort_order || 0);
+        if (sa !== sb) return sa - sb;
+        return String(a.image_name || '').localeCompare(String(b.image_name || ''), 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+      });
+
+    const hasFab = specmiShowFabric && Array.isArray(specmiFabricItems) && specmiFabricItems.length;
+    if (!list.length && !hasFab) {
+      grid.innerHTML = '<div class="sj-media-image-empty">当前规格暂无主图，可上传或从 NAS 导入</div>';
+      return;
+    }
+    grid.innerHTML = '';
+    const placeholder = document.createElement('div');
+    placeholder.className = 'sj-media-image-card placeholder';
+    placeholder.style.cssText = 'min-height:80px;border-style:dashed;opacity:0.6;display:none;';
+
+    list.forEach((item, index) => {
+      const rawName = String(item.image_name || '');
+      const enc = encodeURIComponent(rawName);
+      const safeName = rawName.replace(/</g, '&lt;').replace(/"/g, '&quot;');
+      const safeDesc = String(item.description || '').replace(/</g, '&lt;');
+      const safeType = String(item.image_type_name || '').replace(/</g, '&lt;');
+      const card = document.createElement('div');
+      card.className = 'sj-media-image-card';
+      card.style.cursor = 'move';
+      card.setAttribute('draggable', 'true');
+      card.dataset.imageName = rawName;
+      card.dataset.index = String(index);
+      card.innerHTML = `
+        <div class="sj-media-image-remove-badge" data-del="${enc}"><span class="sj-media-image-remove-icon">×</span></div>
+        <div class="sj-media-image-preview-wrap">
+          <img src="/api/image-preview?id=${encodeURIComponent(item.image_b64 || '')}&mode=thumb&w=540&q=72" alt="${safeName}" class="sj-media-image-preview" loading="lazy">
+        </div>
+        <div class="sj-media-image-info">
+          <div class="sj-media-image-type">类型：${safeType}</div>
+          <div class="sj-media-image-desc">${safeDesc || '双击添加卖点描述'}</div>
+          <div class="sj-media-image-name">${safeName}</div>
+        </div>`;
+      card.querySelector('[data-del]')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        specmiDeleteImage(decodeURIComponent(card.querySelector('[data-del]').getAttribute('data-del')));
+      });
+      card.addEventListener('dblclick', () => specmiOpenPmModal(rawName));
+      card.addEventListener('dragstart', specmiDragStart);
+      card.addEventListener('dragover', specmiDragOver);
+      card.addEventListener('drop', specmiDrop);
+      card.addEventListener('dragend', specmiDragEnd);
+      grid.appendChild(card);
+    });
+
+    if (hasFab) {
+      (specmiFabricItems || []).slice()
+        .filter(x => filterType === '全部' || String(x.image_type_name || '').trim() === filterType)
+        .forEach(item => {
+          const rawName = String(item.image_name || '');
+          const card = document.createElement('div');
+          card.className = 'sj-media-image-card';
+          card.style.cursor = 'default';
+          card.setAttribute('draggable', 'false');
+          card.innerHTML = `
+            <div style="position:absolute;left:8px;top:8px;z-index:11;"><span style="display:inline-flex;padding:.15rem .45rem;border-radius:999px;background:rgba(73,110,92,0.12);color:#3d6a52;font-weight:700;font-size:.72rem;">面料</span></div>
+            <div class="sj-media-image-preview-wrap">
+              <img src="/api/image-preview?id=${encodeURIComponent(item.image_b64 || '')}&mode=thumb&w=540&q=72" alt="" class="sj-media-image-preview" loading="lazy">
+            </div>
+            <div class="sj-media-image-info">
+              <div class="sj-media-image-type">类型：${String(item.image_type_name || '').replace(/</g, '&lt;')}</div>
+              <div class="sj-media-image-name">${rawName.replace(/</g, '&lt;')}</div>
+            </div>`;
+          grid.appendChild(card);
+        });
+    }
+    grid.appendChild(placeholder);
+    grid.ondragover = (e) => { e.preventDefault(); };
+  }
+
+  function specmiDragStart(e) {
+    const card = e.target.closest('.sj-media-image-card');
+    if (!card || card.classList.contains('placeholder')) return;
+    specmiDragIdx = parseInt(card.dataset.index || '0', 10);
+    specmiDragInsert = specmiDragIdx;
+    card.classList.add('dragging');
+    try { e.dataTransfer.setData('text/plain', String(specmiDragIdx)); } catch (_) {}
+  }
+  function specmiDragOver(e) { e.preventDefault(); }
+  function specmiBuildViewList() {
+    const filterType = String(specmiSelectedMainImageFilterType || '全部').trim() || '全部';
+    return (specmiMainItems || []).slice()
+      .filter(x => filterType === '全部' || String(x.image_type_name || '').trim() === filterType)
+      .sort((a, b) => {
+        const ta = String(a.image_type_name || '').trim();
+        const tb = String(b.image_type_name || '').trim();
+        if (ta !== tb) return ta.localeCompare(tb, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+        const sa = Number(a.sort_order || 0);
+        const sb = Number(b.sort_order || 0);
+        if (sa !== sb) return sa - sb;
+        return String(a.image_name || '').localeCompare(String(b.image_name || ''), 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+      });
+  }
+  function specmiDrop(e) {
+    e.preventDefault();
+    const target = e.target.closest('.sj-media-image-card');
+    if (!target || target.classList.contains('placeholder')) return;
+    if (!target.dataset.imageName) return;
+    let insertIndex = parseInt(target.dataset.index || '', 10);
+    if (Number.isNaN(insertIndex)) return;
+    const from = specmiDragIdx;
+    if (from === null || from === undefined || Number.isNaN(from)) return;
+    const viewList = specmiBuildViewList();
+    if (from < 0 || from >= viewList.length) return;
+    if (insertIndex < 0 || insertIndex > viewList.length) insertIndex = viewList.length;
+    const moved = viewList.splice(from, 1)[0];
+    if (insertIndex > from) insertIndex -= 1;
+    insertIndex = Math.max(0, Math.min(viewList.length, insertIndex));
+    viewList.splice(insertIndex, 0, moved);
+    const nameToIdx = new Map();
+    (specmiMainItems || []).forEach((it, idx) => nameToIdx.set(String(it.image_name || ''), idx));
+    viewList.forEach((it, idx) => {
+      const origIdx = nameToIdx.get(String(it.image_name || ''));
+      if (origIdx !== undefined) specmiMainItems[origIdx].sort_order = idx + 1;
+    });
+    specmiRenderMainGrid();
+    specmiAutosaveOrder();
+    specmiDragIdx = null;
+    specmiDragInsert = null;
+  }
+  function specmiDragEnd(e) {
+    const c = e.target.closest('.sj-media-image-card');
+    if (c) c.classList.remove('dragging');
+    specmiDragIdx = null;
+  }
+
+  function specmiAutosaveOrder() {
+    if (!specmiEditingVid) return;
+    const viewList = specmiBuildViewList();
+    if (!viewList.length) return;
+    let p = Promise.resolve();
+    viewList.forEach((it, idx) => {
+      const name = String(it.image_name || '').trim();
+      if (!name) return;
+      p = p.then(() => fetch('/api/sales-product-main-images', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ variant_id: specmiEditingVid, image_name: name, sort_order: idx + 1 }),
+      }).then(r => r.json()).then(d => {
+        if (!d || d.status !== 'success') throw new Error(d.message || '排序保存失败');
+      }));
+    });
+    p.catch((err) => showToast(String(err.message || err), true));
+  }
+
+  async function specmiDeleteImage(imageName) {
+    if (!specmiEditingVid || !imageName) return;
+    let ok = true;
+    if (window.showAppConfirmAsync) {
+      ok = await window.showAppConfirmAsync({
+        title: '解绑主图',
+        message: '确定从当前规格解绑该图片？若仍被其他规格引用，文件将保留。',
+        confirmText: '解绑',
+      }).catch(() => false);
+    } else {
+      ok = confirm('确定从当前规格解绑该主图？');
+    }
+    if (!ok) return;
+    try {
+      const resp = await fetch('/api/sales-product-main-images', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ variant_id: specmiEditingVid, image_name: String(imageName || '') }),
+      });
+      const data = await resp.json();
+      if (!data || data.status !== 'success') throw new Error(data.message || '删除失败');
+      showToast(data.message || '已删除', false);
+      await specmiRefreshMainImages();
+    } catch (err) {
+      showToast(err.message || String(err), true);
+    }
+  }
+
+  function specmiTriggerUpload() {
+    if (String(specmiSelectedMainImageFilterType || '').trim() === '全部') {
+      showToast('请先选择一个具体图片类型再上传', true);
+      return;
+    }
+    const inp = $('#specmiFileUpload');
+    if (inp) inp.click();
+  }
+
+  $('#specmiFileUpload')?.addEventListener('change', (e) => {
+    const files = e.target && e.target.files;
+    if (!files || !files.length || !specmiEditingVid) return;
+    const typeName = specmiNormalizeTypeName(specmiSelectedMainImageFilterType);
+    const fd = new FormData();
+    fd.append('variant_id', String(specmiEditingVid));
+    fd.append('image_type_name', typeName);
+    Array.from(files).forEach(f => fd.append('file', f));
+    const qs = new URLSearchParams();
+    qs.set('variant_id', String(specmiEditingVid));
+    qs.set('image_type_name', typeName);
+    window.showAppUploadProgress && window.showAppUploadProgress({ title: '上传主图', message: '正在上传…' });
+    fetch(`/api/sales-product-main-images-upload?${qs.toString()}`, { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.status === 'duplicate') {
+          return (window.showAppConfirmAsync
+            ? window.showAppConfirmAsync({ title: '重复图片', message: data.message || '检测到重复，是否仍要复用？', confirmText: '复用并上传' })
+            : Promise.resolve(false)
+          ).then((ok) => {
+            if (!ok) throw new Error('已取消');
+            const fd2 = new FormData();
+            fd2.append('variant_id', String(specmiEditingVid));
+            fd2.append('image_type_name', typeName);
+            Array.from(files).forEach(f => fd2.append('file', f));
+            const q2 = new URLSearchParams(qs);
+            q2.set('allow_duplicate', '1');
+            return fetch(`/api/sales-product-main-images-upload?${q2.toString()}`, { method: 'POST', body: fd2 }).then(r2 => r2.json());
+          });
+        }
+        return data;
+      })
+      .then(data => {
+        if (!data || data.status !== 'success') throw new Error((data && data.message) ? data.message : '上传失败');
+        showToast(data.message || '上传成功', false);
+        return specmiRefreshMainImages();
+      })
+      .catch(err => showToast(err.message || String(err), true))
+      .finally(() => { window.hideAppUploadProgress && window.hideAppUploadProgress(); e.target.value = ''; });
+  });
+
+  function specmiFabricNameForRecommend() {
+    const t = String($('#specmiModalFabric')?.value || '').trim();
+    const m = t.match(/（([^）]+)）/);
+    if (m && m[1]) return String(m[1]).trim();
+    return t;
+  }
+
+  function specmiOpenPmModal(imageName) {
+    if (!specmiEditingVid || !imageName) return;
+    if (!window.PmImageEditModal || !window.PmImageEditModal.open) {
+      showToast('共享编辑弹窗未加载，请刷新重试', true);
+      return;
+    }
+    const current = (specmiMainItems || []).find(x => String(x.image_name || '') === String(imageName));
+    const pathB64 = current ? String(current.image_b64 || '') : '';
+    if (!pathB64) {
+      showToast('未找到图片路径', true);
+      return;
+    }
+    const computeRenamedPathB64 = ({ oldPathB64, newFilename }) => {
+      const oldRel = decodeB64Utf8(oldPathB64);
+      const folder = oldRel.includes('/') ? oldRel.slice(0, oldRel.lastIndexOf('/')) : '';
+      const newRel = folder ? `${folder}/${newFilename}` : newFilename;
+      return utf8ToB64(newRel);
+    };
+    window.PmImageEditModal.init({
+      mode: 'spec_main_image_management',
+      hooks: {
+        prefillVariantLinks: true,
+        resolveRecommendFabricName: () => specmiFabricNameForRecommend(),
+        onRenamed: computeRenamedPathB64,
+        onAfterSuccess: () => { specmiRefreshMainImages().catch(() => {}); },
+        onReplaceSelected: ({ file, current }) => {
+          if (!file) return;
+          const fd = new FormData();
+          fd.append('variant_id', String(specmiEditingVid));
+          fd.append('image_name', String(current?.name || imageName));
+          fd.append('file', file, file.name || 'image.bin');
+          window.showAppUploadProgress && window.showAppUploadProgress({ title: '替换图片', message: '上传中…' });
+          fetch('/api/sales-product-main-images-replace', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(data => {
+              if (!data || data.status !== 'success') throw new Error(data.message || '替换失败');
+              showToast(data.message || '替换成功', false);
+              return specmiRefreshMainImages();
+            })
+            .catch(err => showToast('替换失败：' + (err.message || err), true))
+            .finally(() => window.hideAppUploadProgress && window.hideAppUploadProgress());
+        },
+      },
+    });
+    window.PmImageEditModal.open({ pathB64, name: imageName, defaultVariantIds: [Number(specmiEditingVid)] });
   }
 
   async function specmiOpenEdit(variantId) {
@@ -333,202 +706,423 @@
       showToast('规格不存在', true);
       return;
     }
-    specmiEditing = {
-      variant_id: vid,
-      sku_family: String(v.sku_family || '').trim(),
-      spec_name: String(v.spec_name || '').trim(),
-      fabric_name_en: String(v.fabric_name_en || v.fabric_code || '').trim()
-    };
-    $('#specmiModalSku').value = specmiEditing.sku_family;
-    $('#specmiModalSpec').value = specmiEditing.spec_name;
-    $('#specmiModalFabric').value = specmiEditing.fabric_name_en;
-    $('#specmiChosenImageText').value = '';
-    specmiChosenImagePathB64 = '';
-    specmiChosenImageLabel = '';
-
-    $('#specmiLinkedList').innerHTML = '<div class="specmi-muted">加载中...</div>';
+    specmiEditingVid = vid;
+    $('#specmiModalSku').value = String(v.sku_family || '');
+    $('#specmiModalSpec').value = String(v.spec_name || '');
+    $('#specmiModalFabric').value = String(v.fabric_name_en || v.fabric_code || '');
     $('#specmiEditModal').classList.add('active');
-
+    specmiDupUi();
     try {
-      const resp = await fetch(`/api/spec-main-images?variant_id=${encodeURIComponent(String(vid))}`);
-      const data = await resp.json();
-      if (!data || data.status !== 'success') throw new Error(data.message || '加载失败');
-      const items = Array.isArray(data.items) ? data.items : [];
-      if (!items.length) {
-        $('#specmiLinkedList').innerHTML = '<div class="specmi-muted">暂无已关联图片</div>';
-      } else {
-        $('#specmiLinkedList').innerHTML = items.slice(0, 20).map(it => {
-          const sp = String(it.storage_path || '').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-          const type = String(it.image_type_name || '').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-          return `
-            <div class="specmi-asset">
-              <div>
-                <div style="font-weight:700; color:var(--morandi-ink); font-size:0.9rem;">${type || '未分类'}</div>
-                <code>${sp}</code>
-              </div>
-              <button class="btn-secondary" type="button" onclick="window.open('/api/image-preview?id=${encodeURIComponent(String(it.gallery_id || it.path_b64 || ''))}', '_blank')">预览</button>
-            </div>
-          `;
-        }).join('');
+      await specmiLoadImageTypes();
+      if (!specmiSelectedMainImageFilterType || specmiSelectedMainImageFilterType === '全部') {
+        specmiSelectedMainImageFilterType = specmiNormalizeTypeName('');
       }
+      specmiRenderTypeBar();
+      await specmiRefreshMainImages();
     } catch (e) {
-      $('#specmiLinkedList').innerHTML = `<div class="specmi-muted" style="color:#a33;">加载失败：${e.message || ''}</div>`;
+      showToast(e.message || String(e), true);
     }
   }
 
   function specmiCloseEdit() {
-    $('#specmiEditModal').classList.remove('active');
-    specmiEditing = null;
-    specmiChosenImagePathB64 = '';
-    specmiChosenImageLabel = '';
+    $('#specmiEditModal')?.classList.remove('active');
+    specmiEditingVid = 0;
+    specmiMainItems = [];
+    specmiFabricItems = [];
   }
 
-  function specmiOpenPicker() {
-    if (!specmiEditing) return;
-    const sku = String(specmiEditing.sku_family || '').trim();
-    if (!sku) {
-      showToast('缺少货号，无法定位主图目录', true);
-      return;
-    }
-    specmiPickerBasePath = `${sku}/主图`;
-    specmiPickerCurrentPath = specmiPickerBasePath;
-    $('#specmiPickerModal').classList.add('active');
-    specmiPickerBrowse(specmiPickerCurrentPath);
+  function specmiNasMode() {
+    const seg = $('#specmiNasActionMode');
+    return seg ? String(seg.getAttribute('data-value') || 'multi') : 'multi';
+  }
+  function specmiInitNasModeSeg() {
+    const seg = $('#specmiNasActionMode');
+    if (!seg || seg.dataset.bound === '1') return;
+    seg.dataset.bound = '1';
+    seg.querySelectorAll('button[data-value]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const v = String(btn.getAttribute('data-value') || 'multi');
+        seg.setAttribute('data-value', v);
+        seg.querySelectorAll('button[data-value]').forEach(b => b.classList.toggle('is-active', b === btn));
+        specmiRenderNasList();
+      });
+    });
   }
 
-  function specmiClosePicker() {
-    $('#specmiPickerModal').classList.remove('active');
+  function specmiNasCrumbs() {
+    const nav = $('#specmiNasCrumbs');
+    if (!nav) return;
+    nav.innerHTML = '';
+    const root = document.createElement('a');
+    root.href = '#';
+    root.className = 'nas-main-image-crumb';
+    root.textContent = '根目录';
+    root.addEventListener('click', (e) => { e.preventDefault(); specmiNasJump(-1); });
+    nav.appendChild(root);
+    (specmiNasNavStack || []).forEach((cr, idx) => {
+      const sep = document.createElement('span');
+      sep.className = 'nas-main-image-crumb-sep';
+      sep.textContent = '/';
+      nav.appendChild(sep);
+      const a = document.createElement('a');
+      a.href = '#';
+      a.className = 'nas-main-image-crumb';
+      a.textContent = cr.name || '文件夹';
+      a.addEventListener('click', (e) => { e.preventDefault(); specmiNasJump(idx); });
+      nav.appendChild(a);
+    });
   }
 
-  function specmiPickerRoot() {
-    if (!specmiPickerBasePath) return;
-    specmiPickerCurrentPath = specmiPickerBasePath;
-    specmiPickerBrowse(specmiPickerCurrentPath);
-  }
-
-  function specmiPickerUp() {
-    const cur = String(specmiPickerCurrentPath || '').trim().replace(/\\+/g, '/').replace(/\/+$/g, '');
-    const base = String(specmiPickerBasePath || '').trim().replace(/\\+/g, '/').replace(/\/+$/g, '');
-    if (!cur || cur === base) return;
-    const parent = cur.includes('/') ? cur.slice(0, cur.lastIndexOf('/')) : '';
-    if (!parent || parent.length < base.length) {
-      specmiPickerCurrentPath = base;
+  async function specmiNasJump(idx) {
+    if (idx < 0) {
+      specmiNasNavStack = [];
+      specmiNasPathB64 = '';
     } else {
-      specmiPickerCurrentPath = parent;
+      specmiNasNavStack = (specmiNasNavStack || []).slice(0, idx + 1);
+      const last = specmiNasNavStack.length ? specmiNasNavStack[specmiNasNavStack.length - 1] : null;
+      specmiNasPathB64 = last ? last.pathB64 : '';
     }
-    specmiPickerBrowse(specmiPickerCurrentPath);
+    await specmiRenderNasList();
+    localStorage.setItem(SPECMI_LS_NAS, specmiNasPathB64 || '');
+    localStorage.setItem(SPECMI_LS_STACK, JSON.stringify(specmiNasNavStack || []));
   }
 
-  async function specmiPickerBrowse(path) {
-    $('#specmiPickerPathText').textContent = `当前目录：${path || '根目录'}`;
-    const grid = $('#specmiPickerGrid');
-    grid.innerHTML = '<div class="specmi-muted">加载中...</div>';
-    const url = path ? `/api/browse?path=${encodeURIComponent(path)}` : '/api/browse';
+  async function specmiRenderNasList() {
+    const list = $('#specmiNasList');
+    if (!list) return;
+    list.innerHTML = '<div class="pm-select-empty nas-main-image-grid-loading">加载中...</div>';
+    specmiNasCrumbs();
     try {
+      const url = specmiNasPathB64 ? `/api/browse?path=${encodeURIComponent(specmiNasPathB64)}` : '/api/browse';
       const resp = await fetch(url);
       const data = await resp.json();
-      if (!data || data.status !== 'success') throw new Error(data.message || '加载失败');
+      if (!data || data.status !== 'success') throw new Error(data.message || '浏览失败');
       const folders = Array.isArray(data.folders) ? data.folders : [];
       const images = Array.isArray(data.images) ? data.images : [];
-      if (!folders.length && !images.length) {
-        grid.innerHTML = '<div class="specmi-muted">此目录为空</div>';
-        return;
-      }
-      const html = [];
+      list.innerHTML = '';
+      const mode = specmiNasMode();
+      list.classList.toggle('is-mode-double', mode === 'double');
       folders.forEach(f => {
-        const name = (typeof decodeB64Utf8 === 'function') ? decodeB64Utf8(f.name) : (f.name || '');
-        html.push(`
-          <div class="specmi-picker-card" onclick="specmiPickerEnterFolder('${String(f.path).replace(/'/g, '&#39;')}')">
-            <div class="specmi-picker-thumb"><div class="specmi-folder-icon">📁</div></div>
-            <div class="specmi-picker-name">${String(name || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
-          </div>
-        `);
+        const card = document.createElement('div');
+        card.className = 'item-card item-card--folder item-card--nas-browse';
+        card.innerHTML = `<div class="item-thumbnail folder"><div class="folder-icon">📁</div></div><div class="item-info"><div class="item-name"></div></div>`;
+        card.querySelector('.item-name').textContent = decodeB64Utf8(f.name) || '';
+        card.addEventListener('click', () => {
+          const pathB64 = String(f.path || '');
+          specmiNasPathB64 = pathB64;
+          specmiNasNavStack.push({ name: decodeB64Utf8(f.name) || '文件夹', pathB64 });
+          specmiRenderNasList();
+          localStorage.setItem(SPECMI_LS_NAS, specmiNasPathB64 || '');
+          localStorage.setItem(SPECMI_LS_STACK, JSON.stringify(specmiNasNavStack || []));
+        });
+        list.appendChild(card);
       });
       images.forEach(img => {
-        const name = (typeof decodeB64Utf8 === 'function') ? decodeB64Utf8(img.name) : (img.name || '');
-        const thumb = `/api/image-preview?id=${encodeURIComponent(img.path)}`;
-        const safePath = String(img.path).replace(/'/g, '&#39;');
-        html.push(`
-          <div class="specmi-picker-card" ondblclick="specmiPickerChoose('${safePath}','${String(name||'').replace(/'/g,'&#39;')}')">
-            <div class="specmi-picker-thumb"><img src="${thumb}" alt=""></div>
-            <div class="specmi-picker-name">${String(name || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
-          </div>
-        `);
+        const fullPathB64 = String(img.path || '');
+        const displayName = decodeB64Utf8(img.name) || '';
+        const card = document.createElement('div');
+        card.className = 'item-card item-card--nas-browse' + (specmiNasSelected.has(fullPathB64) ? ' item-card--selected' : '');
+        const cbWrap = document.createElement('div');
+        cbWrap.className = 'item-select';
+        cbWrap.addEventListener('click', (e) => e.stopPropagation());
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.dataset.path = fullPathB64;
+        cb.checked = specmiNasSelected.has(fullPathB64);
+        cb.addEventListener('click', (e) => e.stopPropagation());
+        cb.addEventListener('change', (e) => {
+          if (specmiNasMode() === 'double') {
+            e.target.checked = false;
+            return;
+          }
+          if (e.target.checked) specmiNasSelected.add(fullPathB64);
+          else specmiNasSelected.delete(fullPathB64);
+          card.classList.toggle('item-card--selected', e.target.checked);
+          specmiUpdateNasMeta(images.length);
+        });
+        cbWrap.appendChild(cb);
+        const thumb = document.createElement('div');
+        thumb.className = 'item-thumbnail';
+        const im = document.createElement('img');
+        im.src = `/api/image-preview?id=${encodeURIComponent(fullPathB64)}`;
+        im.loading = 'lazy';
+        thumb.appendChild(im);
+        const info = document.createElement('div');
+        info.className = 'item-info';
+        const title = document.createElement('div');
+        title.className = 'item-name';
+        title.textContent = displayName;
+        info.appendChild(title);
+        card.appendChild(cbWrap);
+        card.appendChild(thumb);
+        card.appendChild(info);
+        if (mode === 'double') {
+          card.addEventListener('dblclick', () => specmiNasImportOne(fullPathB64));
+          card.addEventListener('click', (e) => e.preventDefault());
+        } else {
+          card.addEventListener('click', () => {
+            cb.checked = !cb.checked;
+            cb.dispatchEvent(new Event('change'));
+          });
+        }
+        list.appendChild(card);
       });
-      grid.innerHTML = html.join('');
+      if (!folders.length && !images.length) {
+        list.innerHTML = '<div class="pm-select-empty nas-main-image-grid-empty">此目录为空</div>';
+      }
+      specmiUpdateNasMeta(images.length);
     } catch (e) {
-      grid.innerHTML = `<div class="specmi-muted" style="color:#a33;">加载失败：${e.message || ''}</div>`;
+      list.innerHTML = '<div class="pm-select-empty nas-main-image-grid-empty">加载失败</div>';
+      specmiUpdateNasMeta(0);
     }
   }
 
-  function specmiPickerEnterFolder(folderPath) {
-    specmiPickerCurrentPath = String(folderPath || '').trim();
-    specmiPickerBrowse(specmiPickerCurrentPath);
+  function specmiNasSelectAll() {
+    const list = $('#specmiNasList');
+    if (!list) return;
+    const boxes = Array.from(list.querySelectorAll('input[type="checkbox"][data-path]'));
+    if (!boxes.length) return;
+    boxes.forEach((b) => {
+      const path = String(b.dataset.path || '');
+      if (!path) return;
+      specmiNasSelected.add(path);
+      b.checked = true;
+      const card = b.closest('.item-card');
+      if (card) card.classList.add('item-card--selected');
+    });
   }
 
-  function specmiPickerChoose(imagePathB64, imageName) {
-    specmiChosenImagePathB64 = String(imagePathB64 || '').trim();
-    specmiChosenImageLabel = String(imageName || '').trim();
-    $('#specmiChosenImageText').value = specmiChosenImageLabel || specmiChosenImagePathB64;
-    specmiClosePicker();
+  function specmiNasClearSelection() {
+    const list = $('#specmiNasList');
+    if (!list) return;
+    const boxes = Array.from(list.querySelectorAll('input[type="checkbox"][data-path]'));
+    specmiNasSelected.clear();
+    boxes.forEach((b) => {
+      b.checked = false;
+      const card = b.closest('.item-card');
+      if (card) card.classList.remove('item-card--selected');
+    });
   }
 
-  async function specmiApplyLink() {
-    if (!specmiEditing) return;
-    const typeName = String($('#specmiModalImageType').value || '').trim();
-    if (!typeName) {
-      showToast('请选择图片类型后再提交', true);
+  function specmiUpdateNasMeta(totalImages) {
+    const cnt = $('#specmiNasCount');
+    if (cnt) cnt.textContent = `共 ${Math.max(0, Number(totalImages || 0))} 张图片`;
+    const meta = $('#specmiNasGridMeta');
+    const list = $('#specmiNasList');
+    const mode = specmiNasMode();
+    if (meta) meta.classList.toggle('is-mode-double', mode === 'double');
+    const box = $('#specmiNasSelectAll');
+    if (!box) return;
+    if (mode === 'double') {
+      box.checked = false;
+      box.indeterminate = false;
       return;
     }
-    if (!specmiChosenImagePathB64) {
-      showToast('请先选择图片', true);
-      return;
-    }
-    try {
-      const payload = {
-        image_path_b64: specmiChosenImagePathB64,
-        variant_ids: [Number(specmiEditing.variant_id)],
-        action: 'copy',
+    const boxes = list ? Array.from(list.querySelectorAll('input[type="checkbox"][data-path]')) : [];
+    const checkedCount = boxes.filter((b) => !!b.checked).length;
+    box.checked = boxes.length > 0 && checkedCount === boxes.length;
+    box.indeterminate = checkedCount > 0 && checkedCount < boxes.length;
+  }
+
+  function specmiInitNasSelectAllBox() {
+    const box = $('#specmiNasSelectAll');
+    if (!box || box.dataset.bound === '1') return;
+    box.dataset.bound = '1';
+    box.addEventListener('change', function () {
+      const mode = specmiNasMode();
+      if (mode === 'double') {
+        this.checked = false;
+        this.indeterminate = false;
+        return;
+      }
+      if (this.checked) specmiNasSelectAll();
+      else specmiNasClearSelection();
+      const list = $('#specmiNasList');
+      const n = list ? list.querySelectorAll('.item-card.item-card--nas-browse:not(.item-card--folder)').length : 0;
+      specmiUpdateNasMeta(n);
+    });
+  }
+
+  function specmiNasImportOne(filePathB64) {
+    if (!specmiEditingVid) return;
+    const st = $('#specmiNasStatus');
+    const typeName = specmiNormalizeTypeName(specmiSelectedMainImageFilterType);
+    const run = (allowDup) => fetch('/api/sales-product-main-images-import-by-path', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        variant_id: specmiEditingVid,
+        source_path_b64: String(filePathB64 || ''),
         image_type_name: typeName,
-        prompt_duplicate: 1
-      };
-      const resp = await fetch('/api/gallery-apply-image', {
+        require_move: true,
+        prompt_duplicate: !!specmiPromptDuplicate,
+        allow_duplicate: !!allowDup,
+        debug_move: true,
+      }),
+    }).then(r => r.json());
+    if (st) { st.style.display = 'block'; st.className = 'nas-main-image-status status-message'; st.textContent = '正在导入…'; }
+    run(false).then((data) => {
+      if (data && data.status === 'duplicate') {
+        const list = Array.isArray(data.duplicates) ? data.duplicates : [];
+        const names = list.slice(0, 12).map((d) => {
+          const p = String(d.source_file || '');
+          const base = p.split('/').pop();
+          return base || p;
+        }).join('\n');
+        return (window.showAppConfirmAsync
+          ? window.showAppConfirmAsync({
+              title: '检测到重复图片',
+              message: `以下图片已存在（将复用已有图片继续导入）：\n${names}${list.length > 12 ? `\n…等共 ${list.length} 张` : ''}\n\n注意：复用后若该图片被多个规格引用，系统可能会自动移动到“货号/主图/通用”，并将旧位置的重复文件移入“回收站”。`,
+              confirmText: '确认复用并导入',
+              requireConfirmCheck: true,
+              confirmCheckText: '我已知晓：复用会影响图片归档位置（可能进入通用）',
+            })
+          : Promise.resolve(false)
+        ).then((ok) => {
+          if (!ok) throw new Error('cancel');
+          return run(true);
+        });
+      }
+      return data;
+    }).then((data) => {
+      if (!data || data.status !== 'success') throw new Error((data && data.message) ? data.message : '导入失败');
+      const okMsg = `导入成功：关联 ${Number(data.linked || 0)}，移动 ${Number(data.moved || 0)}，复制 ${Number(data.copied || 0)}。`;
+      if (st) { st.textContent = okMsg; st.classList.add('success'); }
+      showToast(okMsg, false);
+      return specmiRefreshMainImages();
+    }).catch((err) => {
+      if (String(err.message || err) === 'cancel') {
+        if (st) st.style.display = 'none';
+        return;
+      }
+      if (st) { st.textContent = String(err.message || err); st.classList.add('error'); }
+      showToast(String(err.message || err), true);
+    });
+  }
+
+  async function specmiNasImportSelected() {
+    if (!specmiEditingVid) return;
+    const selected = Array.from(specmiNasSelected || []);
+    if (!selected.length) {
+      showToast('请先勾选要导入的图片', true);
+      return;
+    }
+    const st = $('#specmiNasStatus');
+    const typeName = specmiNormalizeTypeName(specmiSelectedMainImageFilterType);
+    const showSt = (text, variant) => {
+      if (!st) return;
+      st.style.display = 'block';
+      st.className = 'nas-main-image-status status-message';
+      if (variant === 'error') st.classList.add('error');
+      else if (variant === 'success') st.classList.add('success');
+      st.textContent = text;
+    };
+    try {
+      showSt(`正在导入 ${selected.length} 张…`, 'info');
+      const resp = await fetch('/api/sales-product-main-images-import-by-path', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          variant_id: specmiEditingVid,
+          source_paths_b64: selected,
+          image_type_name: typeName,
+          require_move: true,
+          prompt_duplicate: !!specmiPromptDuplicate,
+          allow_duplicate: false,
+          debug_move: true,
+        }),
       });
       const data = await resp.json();
-      if (!data || data.status !== 'success') throw new Error(data.message || '关联失败');
-      const dupCount = Number(data.already_linked || 0);
-      const rehomeKind = String((data && data.rehome_kind) || '').trim();
-      showToast(data.message || '已关联', dupCount > 0 || !!rehomeKind);
-      // 重新加载已关联列表
-      await specmiOpenEdit(specmiEditing.variant_id);
+      if (data && data.status === 'duplicate') {
+        const list = Array.isArray(data.duplicates) ? data.duplicates : [];
+        const names = list.slice(0, 12).map((d) => {
+          const p = String(d.source_file || '');
+          const base = p.split('/').pop();
+          return base || p;
+        }).join('\n');
+        const ok = window.showAppConfirmAsync
+          ? await window.showAppConfirmAsync({
+              title: '检测到重复图片',
+              message: `以下图片已存在（将复用已有图片继续导入）：\n${names}${list.length > 12 ? `\n…等共 ${list.length} 张` : ''}\n\n注意：复用后若该图片被多个规格引用，系统可能会自动移动到“货号/主图/通用”，并将旧位置的重复文件移入“回收站”。`,
+              confirmText: '确认复用并导入',
+              requireConfirmCheck: true,
+              confirmCheckText: '我已知晓：复用会影响图片归档位置（可能进入通用）',
+            })
+          : false;
+        if (!ok) {
+          showSt('已取消导入。', 'error');
+          return;
+        }
+        const resp2 = await fetch('/api/sales-product-main-images-import-by-path', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            variant_id: specmiEditingVid,
+            source_paths_b64: selected,
+            image_type_name: typeName,
+            require_move: true,
+            prompt_duplicate: false,
+            allow_duplicate: true,
+            debug_move: true,
+          }),
+        });
+        const data2 = await resp2.json();
+        if (!data2 || data2.status !== 'success') {
+          showSt((data2 && data2.message) ? data2.message : '导入失败', 'error');
+          showToast((data2 && data2.message) ? data2.message : '导入失败', true);
+          return;
+        }
+        const okMsg2 = `导入成功：关联 ${Number(data2.linked || 0)}，移动 ${Number(data2.moved || 0)}，复制 ${Number(data2.copied || 0)}。`;
+        showSt(okMsg2, 'success');
+        showToast(okMsg2, false);
+        specmiNasSelected.clear();
+        await specmiRefreshMainImages();
+        await specmiRenderNasList();
+        return;
+      }
+      if (!data || data.status !== 'success') {
+        showSt((data && data.message) ? data.message : '导入失败', 'error');
+        showToast((data && data.message) ? data.message : '导入失败', true);
+        return;
+      }
+      const okMsg = `导入成功：关联 ${Number(data.linked || 0)}，移动 ${Number(data.moved || 0)}，复制 ${Number(data.copied || 0)}。`;
+      showSt(okMsg, 'success');
+      showToast(okMsg, false);
+      specmiNasSelected.clear();
+      await specmiRefreshMainImages();
+      await specmiRenderNasList();
     } catch (e) {
-      showToast(e.message || '关联失败', true);
+      showSt('导入失败: ' + (e && e.message ? e.message : String(e)), 'error');
+      showToast(String(e.message || e), true);
     }
   }
 
-  // gallery.html 里有 decodeB64Utf8，这里复制一份避免依赖顺序
-  function decodeB64Utf8(b64) {
-    if (!b64) return '';
-    try {
-      const binary = atob(b64);
-      if (typeof TextDecoder !== 'undefined') {
-        const bytes = Uint8Array.from(binary, ch => ch.charCodeAt(0));
-        return new TextDecoder('utf-8').decode(bytes);
-      }
-      return decodeURIComponent(escape(binary));
-    } catch (e) {
-      try { return decodeURIComponent(escape(atob(b64))); } catch (_) { return ''; }
+  function specmiOpenNasModal() {
+    if (!specmiEditingVid) {
+      showToast('请先打开规格', true);
+      return;
     }
+    specmiNasPathB64 = localStorage.getItem(SPECMI_LS_NAS) || '';
+    try {
+      specmiNasNavStack = JSON.parse(localStorage.getItem(SPECMI_LS_STACK) || '[]') || [];
+    } catch (e) { specmiNasNavStack = []; }
+    specmiNasSelected = new Set();
+    $('#specmi-nas-import-modal')?.classList.add('active');
+    specmiInitNasModeSeg();
+    specmiInitNasSelectAllBox();
+    specmiRenderNasTypeBar();
+    specmiRenderNasList();
+  }
+  function specmiCloseNasModal() {
+    $('#specmi-nas-import-modal')?.classList.remove('active');
   }
 
   window.addEventListener('load', () => {
-    ensureImageTypeOptions().finally(() => specmiReload());
+    specmiDupUi();
+    specmiInitNasSelectAllBox();
+    specmiLoadImageTypes().finally(() => specmiReload());
   });
+})();
 </script>
-<script src="/static/js/header.js"></script>
 </body>
 </html>
-

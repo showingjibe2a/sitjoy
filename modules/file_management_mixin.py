@@ -385,6 +385,55 @@ class FileManagementMixin:
         except Exception as e:
             print("Preview error: " + str(e))
             return self.send_error(500, str(e), start_response)
+
+    def _safe_build_rename_target_filename(self, new_name_stem, ext_bytes):
+        """
+        在真正 os.rename 之前校验「主文件名 + 扩展名」是否可作为单路径分量落盘。
+        返回 (ok, err_message, filename_bytes_or_None)。
+        """
+        s = (new_name_stem or '').strip()
+        if not s:
+            return False, '文件名为空', None
+        if s in ('.', '..'):
+            return False, '文件名不能使用 . 或 ..', None
+        if '..' in s:
+            return False, '文件名不能包含 ..', None
+        if '/' in s or '\\' in s:
+            return False, '文件名不能包含路径分隔符', None
+        if any(ord(c) < 32 for c in s):
+            return False, '文件名不能包含控制字符', None
+        if any(0xD800 <= ord(c) <= 0xDFFF for c in s):
+            return False, '文件名含有非法 Unicode 字符', None
+        if '\u2028' in s or '\u2029' in s:
+            return False, '文件名含有非法换行类字符', None
+
+        base_upper = s.upper()
+        if base_upper in ('CON', 'PRN', 'AUX', 'NUL'):
+            return False, '该文件名为系统保留名，请更换', None
+        if len(base_upper) == 4 and base_upper[:3] == 'COM' and base_upper[3].isdigit():
+            return False, '该文件名为系统保留名，请更换', None
+        if len(base_upper) == 4 and base_upper[:3] == 'LPT' and base_upper[3].isdigit():
+            return False, '该文件名为系统保留名，请更换', None
+
+        ext_b = ext_bytes if isinstance(ext_bytes, (bytes, bytearray)) else b''
+        ext_b = bytes(ext_b)
+        if b'\x00' in ext_b or b'/' in ext_b or b'\\' in ext_b:
+            return False, '扩展名非法', None
+
+        try:
+            root_b = self._safe_fsencode(s)
+        except Exception:
+            return False, '文件名无法按文件系统规则编码', None
+        if not root_b or b'\x00' in root_b or b'/' in root_b or b'\\' in root_b:
+            return False, '文件名编码后含有非法字节', None
+
+        new_fn = root_b + ext_b if (ext_b and not root_b.endswith(ext_b)) else root_b
+        max_component = 255
+        if len(new_fn) > max_component:
+            return False, f'文件名过长（含扩展名不超过 {max_component} 字节）', None
+
+        return True, '', new_fn
+
     
 
     def handle_rename_api(self, environ, start_response):
@@ -407,14 +456,20 @@ class FileManagementMixin:
             if not path_b64:
                 return self.send_error(400, 'Missing parameters', start_response)
 
-            # 解码路径和新名称
             try:
                 old_path = self._fs_from_b64(path_b64)
-                new_name = self._fs_from_b64(new_name_b64) if new_name_b64 else ''
-            except:
-                return self.send_error(400, 'Invalid parameters', start_response)
+            except Exception:
+                return self.send_error(400, 'Invalid id', start_response)
 
-            if '..' in old_path or ('..' in new_name if new_name else False):
+            # 新文件名来自前端 UTF-8 Base64，必须用 UTF-8 解码；勿用 _fs_from_b64（os.fsdecode 会误读 UTF-8 字节导致乱码）
+            try:
+                new_name = self._utf8_b64_to_str(new_name_b64) if new_name_b64 else ''
+            except Exception:
+                return self.send_error(400, 'Invalid new_name_b64', start_response)
+            if not new_name:
+                return self.send_error(400, 'Missing new file base name', start_response)
+
+            if '..' in old_path:
                 return self.send_error(403, 'Invalid path', start_response)
 
             full_old_path = self._join_resources(old_path)
@@ -428,26 +483,36 @@ class FileManagementMixin:
             if not os.path.exists(full_old_path):
                 return self.send_error(404, 'File not found', start_response)
 
-            # 获取扩展名
             folder = os.path.dirname(full_old_path)
-            ext = os.path.splitext(os.path.basename(full_old_path))[1]
-            new_name_bytes = os.fsencode(new_name)
-            new_filename = new_name_bytes + ext if not new_name_bytes.endswith(ext) else new_name_bytes
-            full_new_path = os.path.join(folder, new_filename)
+            old_basename = os.path.basename(full_old_path)
+            ext = os.path.splitext(old_basename)[1]
+            if isinstance(ext, str):
+                ext_b = self._safe_fsencode(ext) if ext else b''
+            else:
+                ext_b = ext if ext else b''
 
-            # 检查新名称是否已存在
+            ok_fn, err_fn, new_filename = self._safe_build_rename_target_filename(new_name, ext_b)
+            if not ok_fn:
+                return self.send_error(400, err_fn, start_response)
+
+            full_new_path = os.path.join(folder, new_filename)
+            abs_new = os.path.abspath(full_new_path)
+            if not abs_new.startswith(abs_resources):
+                return self.send_error(403, '目标路径无效', start_response)
+
             if os.path.exists(full_new_path):
                 return self.send_error(409, 'File already exists', start_response)
 
-            # 重命名
-            os.rename(full_old_path, full_new_path)
+            try:
+                os.rename(full_old_path, full_new_path)
+            except OSError as e:
+                return self.send_error(500, '重命名失败: ' + str(e), start_response)
 
-            # 若该文件已入库（image_assets.storage_path），同步更新数据库记录
             db_updated = 0
             try:
                 old_rel = str(old_path or '').strip().replace('\\', '/').lstrip('/')
                 folder_rel = str(os.path.dirname(old_path) or '').strip().replace('\\', '/').lstrip('/')
-                new_base = os.fsdecode(new_filename).replace('\\', '/')
+                new_base = self._safe_fsdecode(new_filename).replace('\\', '/')
                 new_rel = f"{folder_rel}/{new_base}".lstrip('/') if folder_rel else new_base.lstrip('/')
                 if old_rel and new_rel and hasattr(self, '_get_db_connection'):
                     with self._get_db_connection() as conn:
@@ -457,13 +522,19 @@ class FileManagementMixin:
                                 (new_rel, old_rel),
                             )
                             db_updated = int(cur.rowcount or 0)
-            except Exception:
-                db_updated = 0
+            except Exception as db_err:
+                try:
+                    if os.path.exists(full_new_path) and not os.path.exists(full_old_path):
+                        os.rename(full_new_path, full_old_path)
+                except Exception:
+                    pass
+                print('Rename DB sync error: ' + str(db_err))
+                return self.send_error(500, '数据库同步失败，已尝试将文件恢复为原文件名', start_response)
 
             resp = {
                 'status': 'success',
                 'message': 'Renamed',
-                'new_name': os.fsdecode(new_filename),
+                'new_name': self._safe_fsdecode(new_filename),
                 'db_updated': db_updated,
             }
             return self.send_json(resp, start_response)
@@ -495,11 +566,16 @@ class FileManagementMixin:
 
             try:
                 old_path = self._fs_from_b64(path_b64)
-                new_name = self._fs_from_b64(new_name_b64)
-            except:
+            except Exception:
                 return self.send_error(400, 'Invalid parameters', start_response)
+            try:
+                new_name = self._utf8_b64_to_str(new_name_b64)
+            except Exception:
+                return self.send_error(400, 'Invalid new_name_b64', start_response)
+            if not new_name:
+                return self.send_error(400, 'Invalid base name', start_response)
 
-            if '..' in old_path or '..' in new_name:
+            if '..' in old_path:
                 return self.send_error(403, 'Invalid path', start_response)
 
             if target_folder_b64:
@@ -532,12 +608,19 @@ class FileManagementMixin:
 
             old_basename = os.path.basename(full_old_path)
             ext = os.path.splitext(old_basename)[1]
-            if new_name:
-                new_name_bytes = os.fsencode(new_name)
-                new_filename = new_name_bytes + ext if not new_name_bytes.endswith(ext) else new_name_bytes
+            if isinstance(ext, str):
+                ext_b = self._safe_fsencode(ext) if ext else b''
             else:
-                new_filename = old_basename
+                ext_b = ext if ext else b''
+
+            ok_fn, err_fn, new_filename = self._safe_build_rename_target_filename(new_name, ext_b)
+            if not ok_fn:
+                return self.send_error(400, err_fn, start_response)
+
             full_new_path = os.path.join(dest_dir, new_filename)
+            abs_new = os.path.abspath(full_new_path)
+            if not abs_new.startswith(abs_resources):
+                return self.send_error(403, '目标路径无效', start_response)
 
             if os.path.abspath(full_new_path) == os.path.abspath(full_old_path):
                 return self.send_error(400, 'No changes', start_response)
@@ -545,12 +628,15 @@ class FileManagementMixin:
             if os.path.exists(full_new_path):
                 return self.send_error(409, 'File already exists', start_response)
 
-            os.rename(full_old_path, full_new_path)
+            try:
+                os.rename(full_old_path, full_new_path)
+            except OSError as e:
+                return self.send_error(500, '移动/重命名失败: ' + str(e), start_response)
 
             resp = {
                 'status': 'success',
                 'message': 'Moved',
-                'new_name': os.fsdecode(new_filename)
+                'new_name': self._safe_fsdecode(new_filename)
             }
             return self.send_json(resp, start_response)
         except Exception as e:
