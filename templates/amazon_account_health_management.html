@@ -53,13 +53,35 @@
             border-color: var(--morandi-ink);
             box-shadow: 0 0 0 3px rgba(42, 36, 32, 0.10);
         }
+        /* 限制宽度：避免 flex:1 与 universal-select width:100% 把控件拉满整行 */
         .health-row .health-keyword {
-            min-width: 220px;
-            flex: 1;
+            flex: 0 1 auto;
+            min-width: min(220px, 100%);
+            max-width: min(100%, 400px);
+            width: min(100%, 400px);
         }
-        .health-row .health-shop,
+        .health-row select.health-shop {
+            max-width: min(100%, 260px);
+        }
         .health-row .health-date {
-            min-width: 180px;
+            flex: 0 1 auto;
+            min-width: 140px;
+            max-width: min(100%, 200px);
+            width: 11.5rem;
+        }
+        .health-row #searchShopId + .feature-category-dropdown.universal-select-dropdown {
+            display: inline-block;
+            flex: 0 1 auto;
+            width: min(100%, 260px);
+            max-width: 100%;
+            vertical-align: middle;
+        }
+        .health-row #searchShopId + .feature-category-dropdown.universal-select-dropdown .universal-select-trigger {
+            width: 100%;
+            min-height: 40px;
+            height: 40px;
+            padding-top: 0.35rem;
+            padding-bottom: 0.35rem;
         }
         .health-import-status {
             display: none;

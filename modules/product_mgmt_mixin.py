@@ -605,40 +605,30 @@ class ProductManagementMixin:
                 )
 
     def _ensure_listing_sku_folder(self, sku_family):
+        """
+        确保 SKU 系列对应的 Listing 目录树完整（一级货号目录 + 标准子目录 + 通用/系统占位子目录）。
+        路径编码统一走 _safe_fsencode，减少重复 try/except；目录创建使用 exist_ok 幂等。
+        """
         if not sku_family:
             return
-        base_folder = self._ensure_listing_folder()
-        try:
-            sku_bytes = os.fsencode(sku_family)
-        except Exception:
-            sku_bytes = str(sku_family).encode('utf-8', errors='surrogatepass')
-        target = os.path.join(base_folder, sku_bytes)
-        if not os.path.exists(target):
-            os.makedirs(target, exist_ok=True)
-        # Create standard subfolders for the SKU
-        for sub in ('源文件', '主图', 'A+', '关联文件', '视频', '上传模板'):
-            try:
-                sub_bytes = os.fsencode(sub)
-            except Exception:
-                sub_bytes = str(sub).encode('utf-8', errors='surrogatepass')
-            sub_path = os.path.join(target, sub_bytes)
-            if not os.path.exists(sub_path):
-                os.makedirs(sub_path, exist_ok=True)
 
-        # Ensure default common folders under 主图 and A+
-        for parent_sub in ('主图', 'A+'):
-            try:
-                parent_sub_bytes = os.fsencode(parent_sub)
-            except Exception:
-                parent_sub_bytes = str(parent_sub).encode('utf-8', errors='surrogatepass')
-            parent_path = os.path.join(target, parent_sub_bytes)
-            try:
-                common_sub_bytes = os.fsencode('通用')
-            except Exception:
-                common_sub_bytes = '通用'.encode('utf-8', errors='surrogatepass')
-            common_path = os.path.join(parent_path, common_sub_bytes)
-            if not os.path.exists(common_path):
-                os.makedirs(common_path, exist_ok=True)
+        base_folder = self._ensure_listing_folder()
+        enc = self._safe_fsencode
+        target = os.path.join(base_folder, enc(sku_family))
+        os.makedirs(target, exist_ok=True)
+
+        subdirs = ('源文件', '配件图', '主图', 'A+', '关联文件', '视频', '上传模板')
+        for sub in subdirs:
+            os.makedirs(os.path.join(target, enc(sub)), exist_ok=True)
+
+        for parent_sub in ('配件图', '主图'):
+            parent_path = os.path.join(target, enc(parent_sub))
+            os.makedirs(os.path.join(parent_path, enc('通用')), exist_ok=True)
+
+        protected = '#该系统文件夹禁止手动修改任何内容'
+        for parent_sub in ('配件图', '主图', 'A+', '关联文件', '视频', '上传模板'):
+            parent_path = os.path.join(target, enc(parent_sub))
+            os.makedirs(os.path.join(parent_path, enc(protected)), exist_ok=True)
 
     def _rename_listing_sku_folder(self, old_sku_family, new_sku_family):
         old_name = (old_sku_family or '').strip()

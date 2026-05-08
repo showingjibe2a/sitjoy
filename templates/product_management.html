@@ -8,16 +8,6 @@
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
         .pm-form-full { grid-column: 1 / -1; }
-        .material-type-item {
-            border: 1px solid var(--morandi-sand);
-            background: var(--morandi-mist);
-            color: var(--morandi-ink);
-            border-radius: 8px;
-            padding: 0.45rem 0.8rem;
-            font-size: 0.9rem;
-            cursor: pointer;
-        }
-        .material-type-item:hover { background: rgba(207, 199, 189, 0.55); }
         .feature-category-create {
             height: 34px;
             margin-right: 0.45rem;
@@ -228,7 +218,7 @@
             editId = null;
         }
 
-        function saveSkuFromModal() {
+        async function saveSkuFromModal() {
             const skuFamily = document.getElementById('modalSkuInput').value.trim();
             const category = document.getElementById('modalCategorySelect').value.trim();
             if (!skuFamily || !category) {
@@ -247,13 +237,27 @@
                 method = 'PUT';
             }
 
-            fetch('/api/sku', {
-                method: method,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            })
-            .then(r => r.json())
-            .then(data => {
+            if (typeof window.showAppUploadProgress === 'function') {
+                window.showAppUploadProgress({
+                    title: method === 'POST' ? '正在创建货号…' : '正在保存…',
+                    summary: '创建 Listing 目录并写入数据库',
+                    percent: 15,
+                });
+            }
+            try {
+                const r = await fetch('/api/sku', {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await r.json();
+                if (typeof window.showAppUploadProgress === 'function') {
+                    window.showAppUploadProgress({
+                        title: '即将完成…',
+                        summary: '',
+                        percent: 88,
+                    });
+                }
                 if (data.status === 'success') {
                     showModalStatus(editId ? '更新成功' : '新增成功', false);
                     setTimeout(() => {
@@ -263,8 +267,13 @@
                 } else {
                     showModalStatus(data.message || '操作失败', true);
                 }
-            })
-            .catch(err => showModalStatus('请求失败: ' + err, true));
+            } catch (err) {
+                showModalStatus('请求失败: ' + err, true);
+            } finally {
+                if (typeof window.hideAppUploadProgress === 'function') {
+                    window.hideAppUploadProgress();
+                }
+            }
         }
 
         async function deleteSku(id) {
@@ -280,12 +289,25 @@
             .then(r => r.json())
             .then(data => {
                 if (data.status === 'success') {
+                    if (typeof window.showAppToast === 'function') {
+                        window.showAppToast('已删除该货号', false, 3200);
+                    }
                     loadSkuList();
                 } else {
-                    alert(data.message || '删除失败');
+                    if (typeof window.showAppToast === 'function') {
+                        window.showAppToast(data.message || '删除失败', true, 0);
+                    } else {
+                        alert(data.message || '删除失败');
+                    }
                 }
             })
-            .catch(err => alert('请求失败: ' + err));
+            .catch(err => {
+                if (typeof window.showAppToast === 'function') {
+                    window.showAppToast('请求失败: ' + err, true, 0);
+                } else {
+                    alert('请求失败: ' + err);
+                }
+            });
         }
 
         function loadSkuList() {
@@ -508,7 +530,7 @@
             categoryOptions.forEach(item => {
                 const btn = document.createElement('button');
                 btn.type = 'button';
-                btn.className = 'material-type-item';
+                btn.className = 'material-type-pill';
                 btn.textContent = `${item.category_cn} / ${item.category_en}`;
                 btn.addEventListener('click', () => openCategoryEditModalById(item.id));
                 bar.appendChild(btn);

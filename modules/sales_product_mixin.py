@@ -580,6 +580,70 @@ class SalesProductMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def handle_gallery_sku_family_picker_api(self, environ, method, start_response):
+        """货号（父体）下拉：供规格主图管理等页面新增规格时选择 product_families。"""
+        try:
+            if method != 'GET':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT id, sku_family FROM product_families ORDER BY sku_family ASC, id ASC"
+                    )
+                    rows = cur.fetchall() or []
+            items = []
+            for r in rows or []:
+                sid = self._parse_int(r.get('id')) or 0
+                if not sid:
+                    continue
+                items.append({
+                    'sku_family_id': sid,
+                    'sku_family': str(r.get('sku_family') or '').strip(),
+                })
+            return self.send_json({'status': 'success', 'items': items}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_spec_main_image_variant_create_api(self, environ, method, start_response):
+        """规格主图管理：按货号 + 规格名 + 面料创建或复用 sales_product_variants 行（与导入/销售产品逻辑共用）。"""
+        try:
+            if method != 'POST':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+            data = self._read_json_body(environ) or {}
+            sku_family_id = self._parse_int(data.get('sku_family_id'))
+            spec_name = str(data.get('spec_name') or '').strip()
+            fabric_id = self._parse_int(data.get('fabric_id')) or None
+            fabric = str(data.get('fabric') or '').strip()
+            sale_price_usd = None
+            if data.get('sale_price_usd') is not None and str(data.get('sale_price_usd')).strip() != '':
+                try:
+                    sale_price_usd = float(data.get('sale_price_usd'))
+                except (TypeError, ValueError):
+                    sale_price_usd = None
+            if not sku_family_id:
+                return self.send_json({'status': 'error', 'message': '请选择货号（父体）'}, start_response)
+            if not spec_name:
+                return self.send_json({'status': 'error', 'message': '请填写规格名称'}, start_response)
+            with self._get_db_connection() as conn:
+                has_fid = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
+                has_fab_txt = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+                if has_fid and not fabric_id:
+                    return self.send_json({'status': 'error', 'message': '请选择面料'}, start_response)
+                if not has_fid and has_fab_txt and not fabric:
+                    return self.send_json({'status': 'error', 'message': '请填写或选择面料'}, start_response)
+                variant_id = self._get_or_create_sales_variant(
+                    conn, sku_family_id, spec_name, fabric, sale_price_usd, fabric_id
+                )
+            return self.send_json({
+                'status': 'success',
+                'variant_id': int(variant_id or 0),
+                'message': '规格已就绪（若组合已存在则返回已有规格）',
+            }, start_response)
+        except ValueError as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
     def handle_gallery_variant_picker_api(self, environ, method, start_response):
         """给 gallery 弹窗提供规格选择数据（货号+面料+规格）。"""
         try:

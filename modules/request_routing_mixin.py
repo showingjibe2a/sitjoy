@@ -14,6 +14,7 @@ API_PERMISSION_MAP = {
     '/api/upload': 'gallery',
     '/api/download-zip': 'gallery',
     '/api/gallery-variant-picker': 'gallery',
+    '/api/gallery-sku-family-picker': 'gallery',
     '/api/gallery-fabric-picker': 'gallery',
     '/api/gallery-order-product-picker': 'gallery',
     '/api/gallery-image-types': 'gallery',
@@ -23,6 +24,7 @@ API_PERMISSION_MAP = {
     '/api/gallery-batch-delete': 'gallery',
     '/api/gallery-dup-check': 'gallery',
     '/api/spec-main-images': 'gallery',
+    '/api/spec-main-image-variant': 'gallery',
     '/api/image-type': 'image_type_management',
     '/api/sku': 'product_management',
     '/api/category': 'product_management',
@@ -153,6 +155,7 @@ API_ROUTE_MAP = {
     '/api/move': ('start', 'handle_move_api'),
     '/api/replace': ('start', 'handle_replace_api'),
     '/api/gallery-variant-picker': ('method', 'handle_gallery_variant_picker_api'),
+    '/api/gallery-sku-family-picker': ('method', 'handle_gallery_sku_family_picker_api'),
     '/api/gallery-fabric-picker': ('method', 'handle_gallery_fabric_picker_api'),
     '/api/gallery-order-product-picker': ('method', 'handle_gallery_order_product_picker_api'),
     '/api/gallery-image-types': ('method', 'handle_gallery_image_types_api'),
@@ -162,6 +165,7 @@ API_ROUTE_MAP = {
     '/api/gallery-batch-delete': ('start', 'handle_gallery_batch_delete_api'),
     '/api/gallery-dup-check': ('start', 'handle_gallery_duplicate_check_api'),
     '/api/spec-main-images': ('method', 'handle_spec_main_images_api'),
+    '/api/spec-main-image-variant': ('method', 'handle_spec_main_image_variant_create_api'),
     '/api/sku': ('method', 'handle_sku_api'),
     '/api/category': ('method', 'handle_category_api'),
     '/api/fabric': ('method', 'handle_fabric_api'),
@@ -292,6 +296,8 @@ class RequestRoutingMixin:
             '/api/sales-product-main-images-replace': ('gallery', 'sales_product_management'),
             '/api/sales-product-main-images-import-by-path': ('gallery', 'sales_product_management'),
             '/api/sales-image-type': ('gallery', 'sales_product_management'),
+            '/api/spec-main-image-variant': ('gallery', 'sales_product_management'),
+            '/api/gallery-sku-family-picker': ('gallery', 'sales_product_management'),
         }
         if path in dual_access:
             keys = dual_access[path]

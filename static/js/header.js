@@ -1088,17 +1088,25 @@
         const scope = root && root.querySelectorAll ? root : document;
         scope.querySelectorAll('.response').forEach(el => {
             if(responseToastState.has(el)) return;
-            const state = { lastSig: '' };
+            const state = { lastSig: '', lastToastAt: 0 };
             responseToastState.set(el, state);
             el.style.display = 'none';
 
             const flushToast = () => {
                 const text = String(el.textContent || '').trim();
-                if(!text) return;
+                if(!text){
+                    state.lastSig = '';
+                    return;
+                }
                 const isError = inferErrorFromResponseEl(el);
                 const sig = `${isError ? 'e' : 's'}:${text}`;
-                if(sig === state.lastSig) return;
+                const now = Date.now();
+                /* 仅抑制极短时间内的重复触发（同一轮 DOM 更新可能多次回调），不抑制用户多次操作后的相同文案 */
+                if(sig === state.lastSig && (now - state.lastToastAt) < 90){
+                    return;
+                }
                 state.lastSig = sig;
+                state.lastToastAt = now;
                 showAppToast(text, isError);
             };
 

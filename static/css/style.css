@@ -620,24 +620,24 @@ section.card.pm-card {
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.07);
 }
 
-.card.pm-card > .pm-toolbar,
-section.card.pm-card > .pm-toolbar {
-    gap: 0.42rem;
-}
-
 .card.pm-card > .pm-toolbar + .pm-toolbar,
 section.card.pm-card > .pm-toolbar + .pm-toolbar {
     margin-top: 0.42rem;
 }
 
-.card.pm-card > .pm-toolbar,
-section.card.pm-card > .pm-toolbar {
+/* 列表顶栏：整体左对齐，避免 space-between + actions 撑满造成的左右留白 */
+.card.pm-card .pm-toolbar,
+section.card.pm-card .pm-toolbar {
     gap: 0.32rem;
+    justify-content: flex-start;
+    align-items: flex-start;
 }
 
 .card.pm-card .pm-toolbar-actions,
 section.card.pm-card .pm-toolbar-actions {
     gap: 0.32rem 0.4rem;
+    flex: 0 1 auto;
+    justify-content: flex-start;
 }
 
 .card.pm-card .pm-divider,
@@ -646,8 +646,82 @@ section.card.pm-card .pm-divider {
     align-self: center;
 }
 
-.pm-card-sub .material-type-bar {
-    padding: 0.22rem 0.34rem;
+/* 规格主图管理：顶栏筛选与表格辅助 */
+.specmi-lead {
+    color: var(--morandi-slate);
+    font-size: 0.9rem;
+    margin: 0.35rem 0 0;
+    line-height: 1.5;
+}
+
+.specmi-filter-fields {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.35rem 0.55rem;
+}
+
+.specmi-filter-fields .form-group {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.12rem;
+    min-width: min(100%, 148px);
+}
+
+.specmi-filter-fields .form-group label {
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: rgba(42, 36, 32, 0.48);
+}
+
+.specmi-filter-fields .form-group input {
+    padding: 0.24rem 0.44rem;
+    min-height: 30px;
+    font-size: 0.82rem;
+    border-width: 1px;
+    border-radius: 8px;
+}
+
+.specmi-toolbar-note {
+    margin: 0.28rem 0 0;
+    font-size: 0.66rem;
+    line-height: 1.35;
+    color: rgba(74, 78, 87, 0.82);
+}
+
+.specmi-thumb {
+    width: 44px;
+    height: 44px;
+    object-fit: cover;
+    border-radius: 6px;
+    vertical-align: middle;
+}
+
+.specmi-muted {
+    color: var(--morandi-slate);
+    font-size: 0.9rem;
+}
+
+.specmi-table-wrap {
+    margin-top: 0.35rem;
+}
+
+.specmi-create-status {
+    display: none;
+    margin-top: 0.65rem;
+    font-size: 0.82rem;
+    line-height: 1.4;
+    color: var(--morandi-ink);
+}
+
+.specmi-create-status.is-visible {
+    display: block;
+}
+
+.specmi-create-status.is-error {
+    color: #8f2f2f;
 }
 
 /* 列表卡内分区：横向排列、可换行，避免纵向堆叠浪费高度 */
@@ -662,6 +736,7 @@ section.card.pm-card .pm-divider {
     flex-direction: row;
     flex-wrap: wrap;
     align-items: center;
+    justify-content: flex-start;
     gap: 0.35rem 0.45rem;
     width: 100%;
 }
@@ -674,7 +749,8 @@ section.card.pm-card .pm-divider {
 
 .card.pm-card .pm-card-zone--search,
 section.card.pm-card .pm-card-zone--search {
-    flex: 1 1 200px;
+    flex: 0 1 auto;
+    min-width: 0;
 }
 
 .pm-card-zone {
@@ -4685,8 +4761,8 @@ textarea:focus,
     font-weight: 700;
 }
 
-/* 按钮统一（排除明显的图标圆形微按钮） */
-button:not(.material-type-add):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin) {
+/* 按钮统一（排除明显的图标圆形微按钮与 material-type 条内 pill） */
+button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin) {
     min-height: var(--ui-control-height);
     height: var(--ui-control-height);
     padding: 0.58rem 1rem;
@@ -4729,11 +4805,11 @@ table td .btn-danger {
     border-radius: 8px !important;
 }
 
-button:not(.material-type-add):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.pm-column-filter-btn):not(.wip-col-filter-btn):hover {
+button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.pm-column-filter-btn):not(.wip-col-filter-btn):hover {
     transform: translateY(-1px);
 }
 
-button:not(.material-type-add):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.pm-column-filter-btn):not(.wip-col-filter-btn):active {
+button:not(.material-type-add):not(.material-type-pill):not(.feature-category-add):not(.feature-category-remove):not(.modal-close):not(.status-pill):not(.universal-select-trigger):not(.universal-select-option):not(.feature-category-option):not(.pm-table-columns-pin):not(.pm-column-filter-btn):not(.wip-col-filter-btn):active {
     transform: translateY(0);
 }
 
@@ -5003,18 +5079,18 @@ button:not(.material-type-add):not(.feature-category-add):not(.feature-category-
 
 .sj-media-image-remove-icon { position: relative; top: -1px; }
 
-/* 类型/标签条：与材料管理一致，紧凑 + 宽度随内容（不占满一行） */
+/* 类型/标签条：与材料管理一致，紧凑 + 宽度随内容（不占满一行）；字号与触控区略放大便于辨认 */
 .option-bar,
 .image-type-bar,
 .material-type-bar {
     display: inline-flex;
     flex-wrap: wrap;
-    gap: 0.28rem;
+    gap: 0.34rem;
     align-items: center;
     width: max-content;
     max-width: 100%;
     box-sizing: border-box;
-    padding: 0.3rem 0.42rem;
+    padding: 0.36rem 0.5rem;
     border-radius: 8px;
     background-color: rgba(115, 115, 120, 0.5);
     background-image: radial-gradient(circle at 15% 15%, rgba(255,255,255,0.02) 0%, transparent 35%);
@@ -5023,23 +5099,23 @@ button:not(.material-type-add):not(.feature-category-add):not(.feature-category-
 .material-type-group {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.28rem;
+    gap: 0.34rem;
     align-items: center;
 }
 
-/* 小号「+」与选项 pill */
+/* 「+」与选项 pill：略大于最早一版，保证条内可读性 */
 .option-add,
 .material-type-add,
 .image-type-add,
 .supplier-add {
-    padding: 0.18rem 0.38rem;
-    min-width: 1.55rem;
-    min-height: 1.55rem;
-    border-radius: 7px;
+    padding: 0.24rem 0.46rem;
+    min-width: 1.78rem;
+    min-height: 1.78rem;
+    border-radius: 8px;
     border: 1px solid #5a9b5a;
     background: #6ba86b;
     color: #fff;
-    font-size: 0.92rem;
+    font-size: 1.02rem;
     line-height: 1;
     display: inline-flex;
     align-items: center;
@@ -5073,15 +5149,41 @@ button:not(.material-type-add):not(.feature-category-add):not(.feature-category-
 .material-type-radio span {
     display: inline-flex;
     align-items: center;
-    padding: 0.24rem 0.46rem;
-    border-radius: 7px;
+    padding: 0.3rem 0.54rem;
+    border-radius: 8px;
     background: var(--morandi-mist);
     color: var(--morandi-ink);
     border: 1px solid var(--morandi-sand);
     cursor: pointer;
-    font-size: 0.76rem;
+    font-size: 0.84rem;
     user-select: none;
     transition: all 0.15s ease;
+}
+
+/* 品类条等：与 radio pill 同视觉的纯按钮（无 input）；显式覆盖全局 button 高度与 padding */
+.material-type-bar button.material-type-pill {
+    margin: 0;
+    min-height: 0;
+    height: auto;
+    min-width: 0;
+    padding: 0.26rem 0.48rem;
+    border-radius: 8px;
+    border: 1px solid var(--morandi-sand);
+    background: var(--morandi-mist);
+    color: var(--morandi-ink);
+    font-size: 0.8rem;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.15s ease;
+    box-shadow: none;
+}
+
+.material-type-bar button.material-type-pill:hover {
+    color: var(--morandi-ink);
+    background: rgba(207, 199, 189, 0.55);
+    border-color: var(--morandi-sand);
 }
 
 .option-radio span:hover,
