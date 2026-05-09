@@ -80,7 +80,8 @@ input[type="month"] {
     border: 1px solid rgba(207, 199, 189, 0.9);
     background: rgba(243, 240, 236, 0.98);
     box-shadow: 0 16px 34px rgba(15, 23, 42, 0.2);
-    z-index: 5800;
+    /* 高于 .pm-modal(15000)，与全站下拉浮层一致；低于 .app-toast-stack(16000) */
+    z-index: 15500;
     display: grid;
     gap: 0.48rem;
     opacity: 0;
@@ -234,7 +235,7 @@ input[type="month"] {
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
     position: sticky;
     top: 0;
-    /* 高于列筛选/日期(≈5800)、部分表单下拉(≈10000)；须低于 .pm-modal 与 .app-toast-stack */
+    /* 高于列筛选(≈5800)、部分表单下拉(≈10000)；须低于 .pm-modal 与 .app-date-picker 浮层 */
     z-index: 11000;
 }
 
@@ -704,7 +705,8 @@ section.card.pm-card .pm-divider {
     font-size: 0.9rem;
 }
 
-.specmi-table-wrap {
+/* 与父体管理等页一致：表格块与上方工具卡片留出间距（通用表格由 header.js 注入 pm-table-wrap / 工具栏） */
+.specmi-table-section {
     margin-top: 0.35rem;
 }
 
@@ -718,6 +720,28 @@ section.card.pm-card .pm-divider {
 
 .specmi-create-status.is-visible {
     display: block;
+}
+
+/* 表内复选框：点击单元格空白处也可切换（与 header.js 全局委托配合） */
+th.sj-toggle-cb-cell,
+td.sj-toggle-cb-cell {
+    cursor: pointer;
+    vertical-align: middle;
+}
+
+.specmi-ok {
+  color: #1a7f37;
+  font-weight: 600;
+}
+.specmi-warn {
+  color: #b42318;
+  font-weight: 600;
+}
+.specmi-sub {
+  font-size: 0.82rem;
+  font-weight: 400;
+  color: var(--pm-muted, #666);
+  margin-top: 0.15rem;
 }
 
 .specmi-create-status.is-error {
@@ -1087,11 +1111,14 @@ section.card.pm-card .pm-toolbar .btn-accent {
     box-shadow: 0 0 0 2px rgba(42, 36, 32, 0.1);
 }
 
-input.optional-date-input,
-input.app-date-input,
+/* 原生 date / datetime-local / month：较大触控区 */
 input.optional-field[type="date"],
 input.optional-field[type="datetime-local"],
-input[type="month"] {
+input[type="month"],
+input.optional-date-input[type="date"],
+input.optional-date-input[type="datetime-local"],
+input.app-date-input[type="date"],
+input.app-date-input[type="datetime-local"] {
     min-height: 42px;
     border: 2px solid var(--morandi-sand);
     border-radius: 6px;
@@ -1106,8 +1133,26 @@ input[type="month"] {
     padding-right: 2.2rem !important;
 }
 
-input.optional-date-input::-webkit-calendar-picker-indicator,
-input.app-date-input::-webkit-calendar-picker-indicator,
+/* 文本型日期时间（浮层选择）：与 .inline-input / preview-edit-input 一致，避免被上面 42px 规则抬高 */
+input.app-datetime-text-input,
+input.app-date-input[type="text"],
+input.optional-date-input[type="text"] {
+    min-height: 28px !important;
+    height: 28px !important;
+    padding: 0.18rem 0.45rem !important;
+    padding-right: 2rem !important;
+    font-size: 0.82rem !important;
+    line-height: 1.25;
+    border: 1px solid var(--morandi-sand) !important;
+    border-radius: 10px !important;
+    background-size: 14px 14px, auto;
+    background-position: right 0.45rem center, 0 0;
+}
+
+input.optional-date-input[type="date"]::-webkit-calendar-picker-indicator,
+input.optional-date-input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input.app-date-input[type="date"]::-webkit-calendar-picker-indicator,
+input.app-date-input[type="datetime-local"]::-webkit-calendar-picker-indicator,
 input.optional-field[type="date"]::-webkit-calendar-picker-indicator,
 input.optional-field[type="datetime-local"]::-webkit-calendar-picker-indicator,
 input[type="month"]::-webkit-calendar-picker-indicator {
@@ -1115,10 +1160,15 @@ input[type="month"]::-webkit-calendar-picker-indicator {
     opacity: 0;
 }
 
-input.optional-date-input:focus,
-input.app-date-input:focus,
+input.optional-date-input[type="date"]:focus,
+input.optional-date-input[type="datetime-local"]:focus,
+input.app-date-input[type="date"]:focus,
+input.app-date-input[type="datetime-local"]:focus,
 input.optional-field[type="date"]:focus,
-input.optional-field[type="datetime-local"]:focus {
+input.optional-field[type="datetime-local"]:focus,
+input.app-datetime-text-input:focus,
+input.app-date-input[type="text"]:focus,
+input.optional-date-input[type="text"]:focus {
     border-color: var(--morandi-ink);
 }
 
@@ -1844,6 +1894,31 @@ input.optional-field[type="datetime-local"]:focus {
 .pm-table td input.inline-input {
     min-width: 0 !important;
     max-width: 100%;
+    box-sizing: border-box;
+}
+
+/* 表格单元格内：与下单产品预览 .inline-input / .preview-edit-input 同规格（小字、28px 高；含嵌套在 div 内的控件） */
+.pm-table tbody tr td input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]):not([type="file"]),
+.pm-table tbody tr td select {
+    min-height: 28px !important;
+    height: 28px !important;
+    padding: 0.2rem 0.45rem !important;
+    font-size: 0.82rem !important;
+    line-height: 1.25;
+    border-width: 1px !important;
+    border-radius: 10px;
+    border-color: var(--morandi-sand);
+    box-sizing: border-box;
+}
+
+.pm-table tbody tr td textarea {
+    min-height: 52px;
+    height: auto !important;
+    padding: 0.28rem 0.45rem !important;
+    font-size: 0.82rem !important;
+    line-height: 1.35;
+    border-radius: 10px;
+    border-color: var(--morandi-sand);
     box-sizing: border-box;
 }
 

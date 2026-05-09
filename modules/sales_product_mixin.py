@@ -649,6 +649,111 @@ class SalesProductMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def _collect_spec_variant_delete_block_reasons(self, conn, cur, variant_id):
+        """与单条删除 API 一致：不可删时返回原因列表；空列表表示可删（下单产品侧 ON DELETE CASCADE 不拦截）。"""
+        blocks = []
+        variant_id = self._parse_int(variant_id)
+        if not variant_id:
+            return blocks
+        cur.execute(
+            "SELECT COUNT(*) AS c FROM sales_products WHERE variant_id=%s",
+            (variant_id,),
+        )
+        n_sp = int((cur.fetchone() or {}).get('c') or 0)
+        if n_sp:
+            blocks.append(f'已关联 {n_sp} 条销售平台SKU（sales_products）')
+
+        if self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id'):
+            cur.execute(
+                "SELECT COUNT(*) AS c FROM sales_variant_image_mappings WHERE variant_id=%s",
+                (variant_id,),
+            )
+            n_im = int((cur.fetchone() or {}).get('c') or 0)
+            if n_im:
+                blocks.append(f'仍有关联主图映射 {n_im} 条（sales_variant_image_mappings）')
+
+        if self._table_exists_simple(conn, 'sales_forecast_spec_monthly'):
+            cur.execute(
+                "SELECT COUNT(*) AS c FROM sales_forecast_spec_monthly WHERE variant_id=%s",
+                (variant_id,),
+            )
+            n_fc = int((cur.fetchone() or {}).get('c') or 0)
+            if n_fc:
+                blocks.append(f'存在销量预测（规格×月）{n_fc} 条（sales_forecast_spec_monthly）')
+
+        if self._table_exists_simple(conn, 'sales_forecast_order_sku_monthly'):
+            if self._table_has_column(conn, 'sales_forecast_order_sku_monthly', 'variant_id'):
+                cur.execute(
+                    "SELECT COUNT(*) AS c FROM sales_forecast_order_sku_monthly WHERE variant_id=%s",
+                    (variant_id,),
+                )
+                n_fc2 = int((cur.fetchone() or {}).get('c') or 0)
+                if n_fc2:
+                    blocks.append(
+                        f'存在销量预测（下单SKU×月，旧结构）{n_fc2} 条（sales_forecast_order_sku_monthly）'
+                    )
+        return blocks
+
+    def _collect_spec_variant_delete_block_reasons_bulk(self, conn, cur, variant_ids):
+        """按 variant_id 聚合不可删原因（与单条 _collect 文案一致），用于批量校验/删除。"""
+        out = {}
+        ids = []
+        for v in variant_ids or []:
+            vid = self._parse_int(v)
+            if vid:
+                ids.append(vid)
+                out[vid] = []
+        if not ids:
+            return out
+        ph = ','.join(['%s'] * len(ids))
+
+        cur.execute(
+            f'SELECT variant_id, COUNT(*) AS c FROM sales_products WHERE variant_id IN ({ph}) GROUP BY variant_id',
+            ids,
+        )
+        for row in cur.fetchall() or []:
+            vid = self._parse_int(row.get('variant_id'))
+            c = int((row or {}).get('c') or 0)
+            if vid and c:
+                out[vid].append(f'已关联 {c} 条销售平台SKU（sales_products）')
+
+        if self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id'):
+            cur.execute(
+                f'SELECT variant_id, COUNT(*) AS c FROM sales_variant_image_mappings WHERE variant_id IN ({ph}) GROUP BY variant_id',
+                ids,
+            )
+            for row in cur.fetchall() or []:
+                vid = self._parse_int(row.get('variant_id'))
+                c = int((row or {}).get('c') or 0)
+                if vid and c:
+                    out[vid].append(f'仍有关联主图映射 {c} 条（sales_variant_image_mappings）')
+
+        if self._table_exists_simple(conn, 'sales_forecast_spec_monthly'):
+            cur.execute(
+                f'SELECT variant_id, COUNT(*) AS c FROM sales_forecast_spec_monthly WHERE variant_id IN ({ph}) GROUP BY variant_id',
+                ids,
+            )
+            for row in cur.fetchall() or []:
+                vid = self._parse_int(row.get('variant_id'))
+                c = int((row or {}).get('c') or 0)
+                if vid and c:
+                    out[vid].append(f'存在销量预测（规格×月）{c} 条（sales_forecast_spec_monthly）')
+
+        if self._table_exists_simple(conn, 'sales_forecast_order_sku_monthly'):
+            if self._table_has_column(conn, 'sales_forecast_order_sku_monthly', 'variant_id'):
+                cur.execute(
+                    f'SELECT variant_id, COUNT(*) AS c FROM sales_forecast_order_sku_monthly WHERE variant_id IN ({ph}) GROUP BY variant_id',
+                    ids,
+                )
+                for row in cur.fetchall() or []:
+                    vid = self._parse_int(row.get('variant_id'))
+                    c = int((row or {}).get('c') or 0)
+                    if vid and c:
+                        out[vid].append(
+                            f'存在销量预测（下单SKU×月，旧结构）{c} 条（sales_forecast_order_sku_monthly）'
+                        )
+        return out
+
     def handle_spec_main_image_variant_delete_api(self, environ, method, start_response):
         """规格主图管理：删除销售变体行。
         无销售平台SKU、无主图、无销量预测占用时可删；关联下单SKU链接由库表 ON DELETE CASCADE 随变体一并删除。
@@ -661,46 +766,9 @@ class SalesProductMixin:
             if not variant_id:
                 return self.send_json({'status': 'error', 'message': 'Missing variant_id'}, start_response)
 
-            blocks = []
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT COUNT(*) AS c FROM sales_products WHERE variant_id=%s",
-                        (variant_id,),
-                    )
-                    n_sp = int((cur.fetchone() or {}).get('c') or 0)
-                    if n_sp:
-                        blocks.append(f'已关联 {n_sp} 条销售平台SKU（sales_products）')
-
-                    if self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id'):
-                        cur.execute(
-                            "SELECT COUNT(*) AS c FROM sales_variant_image_mappings WHERE variant_id=%s",
-                            (variant_id,),
-                        )
-                        n_im = int((cur.fetchone() or {}).get('c') or 0)
-                        if n_im:
-                            blocks.append(f'仍有关联主图映射 {n_im} 条（sales_variant_image_mappings）')
-
-                    if self._table_exists_simple(conn, 'sales_forecast_spec_monthly'):
-                        cur.execute(
-                            "SELECT COUNT(*) AS c FROM sales_forecast_spec_monthly WHERE variant_id=%s",
-                            (variant_id,),
-                        )
-                        n_fc = int((cur.fetchone() or {}).get('c') or 0)
-                        if n_fc:
-                            blocks.append(f'存在销量预测（规格×月）{n_fc} 条（sales_forecast_spec_monthly）')
-
-                    if self._table_exists_simple(conn, 'sales_forecast_order_sku_monthly'):
-                        if self._table_has_column(conn, 'sales_forecast_order_sku_monthly', 'variant_id'):
-                            cur.execute(
-                                "SELECT COUNT(*) AS c FROM sales_forecast_order_sku_monthly WHERE variant_id=%s",
-                                (variant_id,),
-                            )
-                            n_fc2 = int((cur.fetchone() or {}).get('c') or 0)
-                            if n_fc2:
-                                blocks.append(
-                                    f'存在销量预测（下单SKU×月，旧结构）{n_fc2} 条（sales_forecast_order_sku_monthly）'
-                                )
+                    blocks = self._collect_spec_variant_delete_block_reasons(conn, cur, variant_id)
 
                 if blocks:
                     return self.send_json(
@@ -718,6 +786,240 @@ class SalesProductMixin:
                         return self.send_json({'status': 'error', 'message': '规格不存在或已删除'}, start_response)
 
             return self.send_json({'status': 'success', 'message': '已删除规格'}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_spec_main_image_variants_batch_validate_api(self, environ, method, start_response):
+        """批量校验：货号×面料是否在 fabric_product_families 绑定，及是否与外键数据冲突（下单产品侧可级联，不拦截）。"""
+        try:
+            if method != 'POST':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+            data = self._read_json_body(environ) or {}
+            raw_ids = data.get('variant_ids') or data.get('ids') or []
+            if not isinstance(raw_ids, list):
+                return self.send_json({'status': 'error', 'message': 'variant_ids 须为数组'}, start_response)
+            variant_ids = []
+            seen = set()
+            for x in raw_ids:
+                vid = self._parse_int(x)
+                if vid and vid not in seen:
+                    seen.add(vid)
+                    variant_ids.append(vid)
+            if not variant_ids:
+                return self.send_json({'status': 'error', 'message': '请至少选择一个规格'}, start_response)
+            if len(variant_ids) > 800:
+                return self.send_json({'status': 'error', 'message': '一次最多校验 800 条'}, start_response)
+
+            rows_out = []
+            with self._get_db_connection() as conn:
+                has_fabric_id = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
+                has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+                ph = ','.join(['%s'] * len(variant_ids))
+                sel_cols = ['v.id', 'v.spec_name', 'v.sku_family_id', 'pf.sku_family']
+                join_fm = ''
+                if has_fabric_id:
+                    sel_cols.append('v.fabric_id')
+                    join_fm = 'LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id'
+                    sel_cols.append('fm.fabric_code AS fm_code')
+                    sel_cols.append('fm.fabric_name_en AS fm_name_en')
+                if has_fabric_text:
+                    sel_cols.append('v.fabric AS fabric_text')
+                with conn.cursor() as cur:
+                    blocks_map = self._collect_spec_variant_delete_block_reasons_bulk(conn, cur, variant_ids)
+                    cur.execute(
+                        f"""
+                        SELECT {', '.join(sel_cols)}
+                        FROM sales_product_variants v
+                        LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                        {join_fm}
+                        WHERE v.id IN ({ph})
+                        """,
+                        variant_ids,
+                    )
+                    by_id = {}
+                    for r in cur.fetchall() or []:
+                        iid = self._parse_int(r.get('id'))
+                        if iid:
+                            by_id[iid] = r
+
+                    fpf_pair_order = []
+                    fpf_seen = set()
+                    pre_meta = []
+                    for variant_id in variant_ids:
+                        r = by_id.get(variant_id)
+                        if not r:
+                            pre_meta.append((variant_id, None, None, None))
+                            continue
+                        sku_family_id = self._parse_int(r.get('sku_family_id')) or 0
+                        fabric_id_col = self._parse_int(r.get('fabric_id')) if has_fabric_id else 0
+                        fabric_text = str(r.get('fabric_text') or '').strip() if has_fabric_text else ''
+                        resolved_fabric_id = fabric_id_col if fabric_id_col else None
+                        if not resolved_fabric_id and fabric_text:
+                            resolved_fabric_id = self._resolve_fabric_material_id_from_label(
+                                conn, fabric_text, cur=cur
+                            )
+                        pre_meta.append((variant_id, sku_family_id, resolved_fabric_id, r))
+                        if sku_family_id and resolved_fabric_id:
+                            t = (sku_family_id, resolved_fabric_id)
+                            if t not in fpf_seen:
+                                fpf_seen.add(t)
+                                fpf_pair_order.append(t)
+
+                    fpf_linked = set()
+                    if fpf_pair_order:
+                        tpl = ','.join(['(%s,%s)'] * len(fpf_pair_order))
+                        flat = [x for pair in fpf_pair_order for x in pair]
+                        cur.execute(
+                            f'SELECT sku_family_id, fabric_id FROM fabric_product_families WHERE (sku_family_id, fabric_id) IN ({tpl})',
+                            flat,
+                        )
+                        for row in cur.fetchall() or []:
+                            sf = self._parse_int(row.get('sku_family_id')) or 0
+                            fd = self._parse_int(row.get('fabric_id')) or 0
+                            if sf and fd:
+                                fpf_linked.add((sf, fd))
+
+                    for variant_id, sku_family_id, resolved_fabric_id, r in pre_meta:
+                        if r is None:
+                            rows_out.append(
+                                {
+                                    'variant_id': variant_id,
+                                    'sku_family': '',
+                                    'spec_name': '',
+                                    'fabric_display': '',
+                                    'invalid_family_fabric': True,
+                                    'association_note': '规格不存在或已删除',
+                                    'can_delete': False,
+                                    'cannot_delete_reasons': ['记录不存在'],
+                                }
+                            )
+                            continue
+
+                        sku_family = str(r.get('sku_family') or '').strip()
+                        spec_name = str(r.get('spec_name') or '').strip()
+                        fabric_id_col = self._parse_int(r.get('fabric_id')) if has_fabric_id else 0
+                        fabric_text = str(r.get('fabric_text') or '').strip() if has_fabric_text else ''
+                        if has_fabric_id:
+                            code = str(r.get('fm_code') or '').strip()
+                            name_en = str(r.get('fm_name_en') or '').strip()
+                            fabric_display = ' / '.join([p for p in (code, name_en) if p]) or str(fabric_id_col or '')
+                        else:
+                            fabric_display = fabric_text
+
+                        family_fabric_linked = False
+                        invalid_family_fabric = False
+                        association_note = ''
+                        if not sku_family_id:
+                            invalid_family_fabric = True
+                            association_note = '缺少货号（sku_family_id）'
+                        elif not resolved_fabric_id:
+                            invalid_family_fabric = True
+                            association_note = '无法解析面料主数据 id，无法校验 fabric_product_families'
+                        else:
+                            family_fabric_linked = (sku_family_id, resolved_fabric_id) in fpf_linked
+                            if not family_fabric_linked:
+                                invalid_family_fabric = True
+                                association_note = '货号与面料未在 fabric_product_families 中绑定'
+
+                        del_blocks = list(blocks_map.get(variant_id) or [])
+                        can_delete = len(del_blocks) == 0
+
+                        rows_out.append(
+                            {
+                                'variant_id': variant_id,
+                                'sku_family': sku_family,
+                                'spec_name': spec_name,
+                                'fabric_display': fabric_display,
+                                'invalid_family_fabric': bool(invalid_family_fabric),
+                                'association_note': association_note,
+                                'can_delete': bool(can_delete),
+                                'cannot_delete_reasons': del_blocks,
+                            }
+                        )
+
+            problem_rows = [
+                row
+                for row in rows_out
+                if row.get('invalid_family_fabric') or not row.get('can_delete')
+            ]
+            valid_omitted = len(rows_out) - len(problem_rows)
+            return self.send_json(
+                {'status': 'success', 'rows': problem_rows, 'valid_omitted_count': valid_omitted},
+                start_response,
+            )
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_spec_main_image_variants_batch_delete_api(self, environ, method, start_response):
+        """批量删除：服务端再次校验每条可删后再 DELETE。"""
+        try:
+            if method != 'POST':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+            data = self._read_json_body(environ) or {}
+            if not data.get('delete_confirmed'):
+                return self.send_json({'status': 'error', 'message': '请先勾选二次确认'}, start_response)
+            raw_ids = data.get('variant_ids') or data.get('ids') or []
+            if not isinstance(raw_ids, list):
+                return self.send_json({'status': 'error', 'message': 'variant_ids 须为数组'}, start_response)
+            variant_ids = []
+            seen = set()
+            for x in raw_ids:
+                vid = self._parse_int(x)
+                if vid and vid not in seen:
+                    seen.add(vid)
+                    variant_ids.append(vid)
+            if not variant_ids:
+                return self.send_json({'status': 'error', 'message': '请选择要删除的规格'}, start_response)
+            if len(variant_ids) > 500:
+                return self.send_json({'status': 'error', 'message': '一次最多删除 500 条'}, start_response)
+
+            deleted = []
+            failed = []
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    blocks_map = self._collect_spec_variant_delete_block_reasons_bulk(conn, cur, variant_ids)
+                    for variant_id in variant_ids:
+                        bl = blocks_map.get(variant_id) or []
+                        if bl:
+                            failed.append({'variant_id': variant_id, 'reasons': bl})
+                    deletable = [vid for vid in variant_ids if not (blocks_map.get(vid) or [])]
+                    if deletable:
+                        ph_sel = ','.join(['%s'] * len(deletable))
+                        cur.execute(
+                            f'SELECT id FROM sales_product_variants WHERE id IN ({ph_sel})',
+                            deletable,
+                        )
+                        existing = {
+                            self._parse_int(row.get('id'))
+                            for row in (cur.fetchall() or [])
+                            if self._parse_int(row.get('id'))
+                        }
+                        for vid in deletable:
+                            if vid not in existing:
+                                failed.append({'variant_id': vid, 'reasons': ['规格不存在或已删除']})
+                        to_del = [vid for vid in deletable if vid in existing]
+                        if to_del:
+                            ph_del = ','.join(['%s'] * len(to_del))
+                            try:
+                                cur.execute(
+                                    f'DELETE FROM sales_product_variants WHERE id IN ({ph_del})',
+                                    to_del,
+                                )
+                                deleted = list(to_del)
+                            except Exception as ex:
+                                err = str(ex)
+                                for vid in to_del:
+                                    failed.append({'variant_id': vid, 'reasons': [err]})
+
+            return self.send_json(
+                {
+                    'status': 'success',
+                    'deleted_ids': deleted,
+                    'failed': failed,
+                    'message': f'已删除 {len(deleted)} 条' + (f'，{len(failed)} 条未删除' if failed else ''),
+                },
+                start_response,
+            )
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
@@ -1104,8 +1406,9 @@ class SalesProductMixin:
                         cur_abs = self._abs_from_storage_path(storage_path)
                         if cur_abs and os.path.exists(cur_abs):
                             if os.path.abspath(os.path.dirname(cur_abs)) != os.path.abspath(target_folder):
-                                base = os.path.basename(cur_abs)
-                                new_name = self._next_available_filename(target_folder, base)
+                                # cur_abs is often bytes; basename must be decoded before f-strings in _next_available_filename
+                                base_str = self._safe_fsdecode(os.path.basename(cur_abs))
+                                new_name = self._next_available_filename(target_folder, base_str)
                                 dst_abs = os.path.join(target_folder, self._safe_fsencode(new_name))
                                 os.replace(cur_abs, dst_abs)
                                 storage_path = self._storage_path_from_abs(dst_abs)
@@ -2048,7 +2351,9 @@ class SalesProductMixin:
         Ensure filename is unique inside folder_abs.
         Returns a filename (string) without path.
         """
-        base = os.path.basename(filename or '').strip()
+        if isinstance(filename, (bytes, bytearray)):
+            filename = self._safe_fsdecode(filename)
+        base = os.path.basename(str(filename or '').strip())
         if not base:
             base = 'image.jpg'
         name, ext = os.path.splitext(base)
@@ -5541,6 +5846,8 @@ class SalesProductMixin:
         where_col = "sim.variant_id" if use_variant else "sim.sales_product_id"
         where_val = int(variant_id) if use_variant else int(sales_product_id or 0)
         dep_expr = "COALESCE(ia.is_deprecated,0)" if has_ia_dep else "0"
+        has_ia_ofn = self._table_has_column(conn, 'image_assets', 'original_filename')
+        ofn_sel = "ia.original_filename AS original_filename" if has_ia_ofn else "NULL AS original_filename"
         if has_ia_tid:
             join_types = "LEFT JOIN image_types it ON it.id = ia.image_type_id"
             type_name_expr = "it.name"
@@ -5558,6 +5865,7 @@ class SalesProductMixin:
                 f"""
                 SELECT sim.id AS mapping_id, sim.sort_order,
                        ia.id AS image_asset_id, ia.sha256, ia.storage_path,
+                       {ofn_sel},
                        ia.description,
                        {type_id_expr} AS image_type_id,
                        {type_name_expr} AS image_type_name,
@@ -5574,7 +5882,9 @@ class SalesProductMixin:
         items = []
         for row in rows:
             storage_path = (row.get('storage_path') or '').strip()
-            image_name = os.path.basename(storage_path) if storage_path else ''
+            base_name = os.path.basename(storage_path) if storage_path else ''
+            orig_fn = (str(row.get('original_filename') or '').strip()) if has_ia_ofn else ''
+            image_name = orig_fn or base_name
             # On some Windows/Python setups, the filesystem encoding may effectively behave like ASCII.
             # Avoid crashing JSON responses when storage_path contains Chinese or other non-ASCII chars.
             if isinstance(storage_path, str):
@@ -5600,6 +5910,96 @@ class SalesProductMixin:
                 'file_size': 0,
             })
         return items
+
+    def _storage_rel_from_image_b64(self, image_b64):
+        """Decode UI `image_b64` / gallery id into a normalized relative storage path (UTF-8, forward slashes)."""
+        s = str(image_b64 or '').strip()
+        if not s:
+            return ''
+        try:
+            raw = base64.b64decode(s, validate=False)
+        except Exception:
+            return ''
+        if not raw:
+            return ''
+        try:
+            t = raw.decode('utf-8')
+        except UnicodeDecodeError:
+            try:
+                t = raw.decode('utf-8', errors='surrogatepass')
+            except Exception:
+                t = self._safe_fsdecode(raw)
+        return str(t or '').strip().replace('\\', '/')
+
+    def _select_sales_variant_mapping_for_api(self, conn, cur, where_key, where_val, data):
+        """
+        Resolve exactly one sales_variant_image_mappings row for PUT/DELETE/replace.
+        Prefer mapping_id / image_asset_id / exact storage_path (from image_b64) / sha256 over basename-only image_name.
+        Returns (row dict or None, error_message or None).
+        """
+        data = data or {}
+        mapping_id = self._parse_int(data.get('mapping_id')) or 0
+        image_asset_id = self._parse_int(data.get('image_asset_id')) or 0
+        sha256 = str(data.get('sha256') or '').strip().lower()
+        image_b64 = str(data.get('image_b64') or data.get('image_path_b64') or '').strip()
+        image_name = str(data.get('image_name') or '').strip()
+        rel_from_b64 = self._storage_rel_from_image_b64(image_b64) if image_b64 else ''
+
+        has_ia_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
+        join_it = "LEFT JOIN image_types it ON it.id = ia.image_type_id" if has_ia_tid else ""
+        old_type_sel = "it.name AS old_type_name" if has_ia_tid else "'' AS old_type_name"
+        sel = (
+            f"SELECT sim.id, sim.image_asset_id, sim.sort_order, ia.storage_path, ia.sha256 AS old_sha256, {old_type_sel} "
+            f"FROM sales_variant_image_mappings sim "
+            f"JOIN image_assets ia ON ia.id = sim.image_asset_id "
+            f"{join_it} "
+            f"WHERE {{where_clause}} "
+            f"ORDER BY sim.sort_order ASC, sim.id ASC"
+        )
+
+        def _one_row(sql, params):
+            cur.execute(sql, params)
+            return cur.fetchone() or {}
+
+        if mapping_id > 0:
+            row = _one_row(sel.format(where_clause=f"sim.id=%s AND {where_key}=%s"), (mapping_id, where_val))
+            if row.get('id'):
+                return row, None
+            return None, '图片不存在或已过期，请刷新后重试'
+
+        if image_asset_id > 0:
+            row = _one_row(sel.format(where_clause=f"sim.image_asset_id=%s AND {where_key}=%s"), (image_asset_id, where_val))
+            if row.get('id'):
+                return row, None
+            return None, '图片不存在或已过期，请刷新后重试'
+
+        if rel_from_b64:
+            row = _one_row(sel.format(where_clause=f"ia.storage_path=%s AND {where_key}=%s"), (rel_from_b64, where_val))
+            if row.get('id'):
+                return row, None
+            return None, '图片不存在或已过期，请刷新后重试'
+
+        if sha256:
+            row = _one_row(sel.format(where_clause=f"ia.sha256=%s AND {where_key}=%s"), (sha256, where_val))
+            if row.get('id'):
+                return row, None
+            return None, '图片不存在或已过期，请刷新后重试'
+
+        if not image_name:
+            return None, '缺少图片标识：请提供 mapping_id、image_b64、sha256 或 image_name'
+
+        cur.execute(
+            sel.format(
+                where_clause=f"{where_key}=%s AND (ia.storage_path=%s OR ia.storage_path LIKE %s)"
+            ),
+            (where_val, image_name, f'%/{image_name}'),
+        )
+        rows = cur.fetchall() or []
+        if len(rows) > 1:
+            return None, '存在多张同名文件，请刷新页面后重试；若仍出现，请携带 mapping_id 或 image_b64 以唯一标识图片'
+        if len(rows) == 1:
+            return rows[0], None
+        return None, None
 
     def _resolve_sales_product_variant_folder(self, sales_product_id, ensure_folder=False):
         if not sales_product_id:
@@ -5782,13 +6182,23 @@ class SalesProductMixin:
                 sales_product_id = self._parse_int(data.get('sales_product_id'))
                 variant_id_direct = self._parse_int(data.get('variant_id'))
                 image_name = str(data.get('image_name') or '').strip()
+                mapping_id_body = self._parse_int(data.get('mapping_id')) or 0
+                image_asset_body = self._parse_int(data.get('image_asset_id')) or 0
+                sha256_body = str(data.get('sha256') or '').strip()
+                image_b64_body = str(data.get('image_b64') or data.get('image_path_b64') or '').strip()
                 description = str(data.get('description') or '').strip()
                 image_type_name = str(data.get('image_type_name') or '').strip()
                 is_deprecated = self._parse_int(data.get('is_deprecated'))
                 sort_order = self._parse_int(data.get('sort_order'))
                 new_filename = str(data.get('new_filename') or data.get('new_image_name') or '').strip()
-                if (not sales_product_id and not variant_id_direct) or not image_name:
-                    return self.send_json({'status': 'error', 'message': 'Missing sales_product_id / variant_id 或 image_name'}, start_response)
+                has_image_pick = bool(
+                    image_name or mapping_id_body or image_asset_body or sha256_body or image_b64_body
+                )
+                if (not sales_product_id and not variant_id_direct) or not has_image_pick:
+                    return self.send_json(
+                        {'status': 'error', 'message': 'Missing sales_product_id / variant_id 或图片标识（image_name / mapping_id 等）'},
+                        start_response,
+                    )
 
                 with self._get_db_connection() as conn:
                     variant_id = 0
@@ -5817,22 +6227,17 @@ class SalesProductMixin:
                             where_val = sales_product_id
                         else:
                             return self.send_json({'status': 'error', 'message': '当前销售产品缺少 variant_id，无法定位图片'}, start_response)
-                        join_it = "LEFT JOIN image_types it ON it.id = ia.image_type_id" if has_ia_tid else ""
-                        old_type_sel = "it.name AS old_type_name" if has_ia_tid else "'' AS old_type_name"
-                        cur.execute(
-                            f"""
-                            SELECT sim.id, sim.image_asset_id, sim.sort_order, ia.storage_path, {old_type_sel}
-                            FROM sales_variant_image_mappings sim
-                            JOIN image_assets ia ON ia.id = sim.image_asset_id
-                            {join_it}
-                            WHERE {where_key}=%s AND (ia.storage_path=%s OR ia.storage_path LIKE %s)
-                            ORDER BY sim.sort_order ASC, sim.id ASC
-                            LIMIT 1
-                            """.format(where_key=where_key),
-                            (where_val, image_name, f'%/{image_name}')
-                        )
-                        mapping = cur.fetchone() or {}
-                        if not mapping.get('id'):
+                        pick = {
+                            'image_name': image_name,
+                            'mapping_id': mapping_id_body,
+                            'image_asset_id': image_asset_body,
+                            'sha256': sha256_body,
+                            'image_b64': image_b64_body,
+                        }
+                        mapping, map_err = self._select_sales_variant_mapping_for_api(conn, cur, where_key, where_val, pick)
+                        if map_err:
+                            return self.send_json({'status': 'error', 'message': map_err}, start_response)
+                        if not mapping or not mapping.get('id'):
                             return self.send_json({'status': 'error', 'message': '图片不存在'}, start_response)
 
                         aid = mapping.get('image_asset_id')
@@ -5948,8 +6353,18 @@ class SalesProductMixin:
                 sales_product_id = self._parse_int(data.get('sales_product_id'))
                 variant_id_direct = self._parse_int(data.get('variant_id'))
                 image_name = str(data.get('image_name') or '').strip()
-                if (not sales_product_id and not variant_id_direct) or not image_name:
-                    return self.send_json({'status': 'error', 'message': 'Missing sales_product_id / variant_id 或 image_name'}, start_response)
+                mapping_id_body = self._parse_int(data.get('mapping_id')) or 0
+                image_asset_body = self._parse_int(data.get('image_asset_id')) or 0
+                sha256_body = str(data.get('sha256') or '').strip()
+                image_b64_body = str(data.get('image_b64') or data.get('image_path_b64') or '').strip()
+                has_image_pick = bool(
+                    image_name or mapping_id_body or image_asset_body or sha256_body or image_b64_body
+                )
+                if (not sales_product_id and not variant_id_direct) or not has_image_pick:
+                    return self.send_json(
+                        {'status': 'error', 'message': 'Missing sales_product_id / variant_id 或图片标识（image_name / mapping_id 等）'},
+                        start_response,
+                    )
 
                 with self._get_db_connection() as conn:
                     variant_id = 0
@@ -5976,19 +6391,17 @@ class SalesProductMixin:
                             where_val = sales_product_id
                         else:
                             return self.send_json({'status': 'error', 'message': '当前销售产品缺少 variant_id，无法定位图片'}, start_response)
-                        cur.execute(
-                            """
-                            SELECT sim.id, sim.image_asset_id, ia.storage_path
-                            FROM sales_variant_image_mappings sim
-                            JOIN image_assets ia ON ia.id = sim.image_asset_id
-                            WHERE {where_key}=%s AND (ia.storage_path=%s OR ia.storage_path LIKE %s)
-                            ORDER BY sim.sort_order ASC, sim.id ASC
-                            LIMIT 1
-                            """.format(where_key=where_key),
-                            (where_val, image_name, f'%/{image_name}')
-                        )
-                        mapping = cur.fetchone() or {}
-                        if not mapping.get('id'):
+                        pick = {
+                            'image_name': image_name,
+                            'mapping_id': mapping_id_body,
+                            'image_asset_id': image_asset_body,
+                            'sha256': sha256_body,
+                            'image_b64': image_b64_body,
+                        }
+                        mapping, map_err = self._select_sales_variant_mapping_for_api(conn, cur, where_key, where_val, pick)
+                        if map_err:
+                            return self.send_json({'status': 'error', 'message': map_err}, start_response)
+                        if not mapping or not mapping.get('id'):
                             return self.send_json({'status': 'error', 'message': '图片文件不存在'}, start_response)
                         image_asset_id = mapping.get('image_asset_id')
                         cur.execute("DELETE FROM sales_variant_image_mappings WHERE id=%s", (mapping.get('id'),))
@@ -6610,8 +7023,16 @@ class SalesProductMixin:
             sales_product_id = self._parse_int((form.getfirst('sales_product_id', '') or '').strip()) if form else 0
             variant_replace = self._parse_int((form.getfirst('variant_id', '') or '').strip()) if form else 0
             image_name = str((form.getfirst('image_name', '') or '').strip()) if form else ''
-            if not image_name or (not sales_product_id and not variant_replace):
-                return self.send_json({'status': 'error', 'message': 'Missing sales_product_id / variant_id 或 image_name'}, start_response)
+            mapping_id_rep = self._parse_int((form.getfirst('mapping_id', '') or '').strip()) if form else 0
+            image_asset_rep = self._parse_int((form.getfirst('image_asset_id', '') or '').strip()) if form else 0
+            sha256_rep = str((form.getfirst('sha256', '') or '').strip()) if form else ''
+            image_b64_rep = str((form.getfirst('image_b64', '') or '').strip()) if form else ''
+            has_pick_rep = bool(image_name or mapping_id_rep or image_asset_rep or sha256_rep or image_b64_rep)
+            if not has_pick_rep or (not sales_product_id and not variant_replace):
+                return self.send_json(
+                    {'status': 'error', 'message': 'Missing sales_product_id / variant_id 或图片标识（image_name / mapping_id 等）'},
+                    start_response,
+                )
 
             uploads = []
             for p in getattr(form, 'list', []) or []:
@@ -6690,21 +7111,17 @@ class SalesProductMixin:
                         type_sel = "ia.image_type_id AS image_type_id, it.name AS image_type_name"
                     else:
                         type_sel = "0 AS image_type_id, '' AS image_type_name"
-                    cur.execute(
-                        f"""
-                        SELECT sim.id AS mapping_id, sim.sort_order, sim.image_asset_id, ia.storage_path, ia.sha256 AS old_sha256,
-                               {type_sel}
-                        FROM sales_variant_image_mappings sim
-                        JOIN image_assets ia ON ia.id = sim.image_asset_id
-                        {join_it}
-                        WHERE {where_key}=%s AND (ia.storage_path=%s OR ia.storage_path LIKE %s)
-                        ORDER BY sim.sort_order ASC, sim.id ASC
-                        LIMIT 1
-                        """.format(where_key=where_key),
-                        (where_val, image_name, f'%/{image_name}'),
-                    )
-                    mapping = cur.fetchone() or {}
-                    if not mapping.get('mapping_id'):
+                    pick_rep = {
+                        'image_name': image_name,
+                        'mapping_id': mapping_id_rep,
+                        'image_asset_id': image_asset_rep,
+                        'sha256': sha256_rep,
+                        'image_b64': image_b64_rep,
+                    }
+                    mapping, map_err = self._select_sales_variant_mapping_for_api(conn, cur, where_key, where_val, pick_rep)
+                    if map_err:
+                        return self.send_json({'status': 'error', 'message': map_err}, start_response)
+                    if not mapping or not mapping.get('id'):
                         return self.send_json({'status': 'error', 'message': '图片不存在'}, start_response)
 
                     old_aid = int(mapping.get('image_asset_id') or 0)
@@ -6783,7 +7200,7 @@ class SalesProductMixin:
                                 self._safe_unlink(new_abs)
                                 return self.send_json({'status': 'error', 'message': '新图片与库中已有图片重复（sha256 冲突），请换一张图'}, start_response)
 
-                            cur2.execute("DELETE FROM sales_variant_image_mappings WHERE id=%s", (mapping.get('mapping_id'),))
+                            cur2.execute("DELETE FROM sales_variant_image_mappings WHERE id=%s", (mapping.get('id'),))
 
                             if existing and int(existing.get('id') or 0) == int(old_aid):
                                 sets = ['sha256=%s', 'storage_path=%s']

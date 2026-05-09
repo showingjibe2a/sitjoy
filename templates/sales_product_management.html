@@ -749,6 +749,7 @@
         let currentEditingMainImageOriginalName = '';
         let currentEditingMainImageEnabled = true;
         let currentEditingMainImagePathB64 = '';
+        let lastMainImageEditRowKey = '';
         let currentSalesVariantId = 0;
         // 与 gallery 完全同一套“批量应用到规格”状态
         let galleryVariantOptions = [];
@@ -1793,6 +1794,24 @@
             autoComputeFabricSpec();
         }
 
+        function mainImageRowKey(it) {
+            const mid = Number(it && it.mapping_id);
+            if (mid > 0) return 'm:' + mid;
+            const aid = Number(it && it.image_asset_id);
+            if (aid > 0) return 'a:' + aid;
+            const h = String((it && it.sha256) || '').trim().toLowerCase();
+            if (h) return 'h:' + h;
+            const b = String((it && it.image_b64) || '').trim();
+            if (b) return 'b:' + b;
+            return 'n:' + String((it && it.image_name) || '').trim();
+        }
+
+        function findMainImageItemByRowKey(rowKey) {
+            const k = String(rowKey || '').trim();
+            if (!k) return null;
+            return (mainImageItems || []).find(x => mainImageRowKey(x) === k) || null;
+        }
+
         function renderMainImageGrid() {
             const grid = document.getElementById('mainImagesGrid');
             const tip = document.getElementById('mainImageFolderTip');
@@ -1834,18 +1853,20 @@
 
             list.forEach((item, index) => {
                 const rawName = String(item.image_name || '');
+                const rowKey = mainImageRowKey(item);
+                const encRowKey = encodeURIComponent(rowKey);
                 const safeName = rawName.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 const safeDesc = String(item.description || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                const encodedName = encodeURIComponent(rawName);
                 const safeType = String(item.image_type_name || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 const card = document.createElement('div');
                 card.className = 'sj-media-image-card';
                 card.style.cursor = 'move';
                 card.setAttribute('draggable', 'true');
                 card.dataset.imageName = rawName;
+                card.dataset.rowKey = rowKey;
                 card.dataset.index = String(index);
                 card.innerHTML = `
-                    <div class="sj-media-image-remove-badge" onclick="deleteMainImage(decodeURIComponent('${encodedName}')); event.stopPropagation();"><span class="sj-media-image-remove-icon">×</span></div>
+                    <div class="sj-media-image-remove-badge" onclick="deleteMainImage(decodeURIComponent('${encRowKey}')); event.stopPropagation();"><span class="sj-media-image-remove-icon">×</span></div>
                     <div class="sj-media-image-preview-wrap">
                         <img src="/api/image-preview?id=${encodeURIComponent(item.image_b64 || '')}&mode=thumb&w=540&q=72" alt="${safeName}" class="sj-media-image-preview" loading="lazy">
                     </div>
@@ -1855,7 +1876,7 @@
                         <div class="sj-media-image-name">${safeName}</div>
                     </div>
                 `;
-                card.addEventListener('dblclick', () => openMainImageDescModal(rawName));
+                card.addEventListener('dblclick', () => openMainImageDescModal(rowKey));
                 card.addEventListener('dragstart', handleMainImageDragStart);
                 card.addEventListener('dragenter', handleMainImageDragEnter);
                 card.addEventListener('dragover', handleMainImageDragOver);
@@ -2021,11 +2042,24 @@
             let p = Promise.resolve();
             viewList.forEach((it, idx) => {
                 const name = String(it.image_name || '').trim();
-                if (!name) return;
+                const mid = Number(it.mapping_id) || 0;
+                const aid = Number(it.image_asset_id) || 0;
+                const h = String(it.sha256 || '').trim();
+                const b64 = String(it.image_b64 || '').trim();
+                if (!name && !mid && !aid && !h && !b64) return;
+                const body = {
+                    sales_product_id: editId,
+                    sort_order: idx + 1,
+                    image_name: name || undefined,
+                    mapping_id: mid > 0 ? mid : undefined,
+                    image_asset_id: aid > 0 ? aid : undefined,
+                    sha256: h || undefined,
+                    image_b64: b64 || undefined
+                };
                 p = p.then(() => fetch('/api/sales-product-main-images', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ sales_product_id: editId, image_name: name, sort_order: idx + 1 })
+                    body: JSON.stringify(body)
                 }).then(r => r.json()).then(_ => {}).catch(_ => {}));
             });
         }
@@ -2314,12 +2348,16 @@
             });
         }
 
-        async function deleteMainImage(imageName) {
-            if (!editId || !imageName) return;
+        async function deleteMainImage(rowKeyEnc) {
+            const rowKey = decodeURIComponent(String(rowKeyEnc || '').trim());
+            const it = findMainImageItemByRowKey(rowKey);
+            const legacyBasename = (!it && rowKey.startsWith('n:')) ? rowKey.slice(2) : '';
+            const displayName = it ? String(it.image_name || '').trim() : (legacyBasename || rowKey);
+            if (!editId || !rowKey) return;
             const ok = window.showAppConfirmAsync
                 ? await window.showAppConfirmAsync({
                     title: '删除确认',
-                    message: `确认删除图片：${imageName}？\n若该图片仍被其他面料或规格引用，将仅解除当前关联，不会移动/删除磁盘文件。`,
+                    message: `确认删除图片：${displayName}？\n若该图片仍被其他面料或规格引用，将仅解除当前关联，不会移动/删除磁盘文件。`,
                     confirmText: '确认删除',
                     requireConfirmCheck: true,
                     confirmCheckText: '我已知晓：当图片不再被任何面料/规格引用时，系统会删除数据库记录，并将原文件移入『上架资源』/回收站（用于备份，不是应用内可访问路径）'
@@ -2330,7 +2368,14 @@
             fetch('/api/sales-product-main-images', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sales_product_id: editId, image_name: imageName })
+                body: JSON.stringify({
+                    sales_product_id: editId,
+                    image_name: it ? String(it.image_name || '').trim() : legacyBasename,
+                    mapping_id: it && Number(it.mapping_id) > 0 ? Number(it.mapping_id) : undefined,
+                    image_asset_id: it && Number(it.image_asset_id) > 0 ? Number(it.image_asset_id) : undefined,
+                    sha256: it && String(it.sha256 || '').trim() ? String(it.sha256 || '').trim() : undefined,
+                    image_b64: it && String(it.image_b64 || '').trim() ? String(it.image_b64 || '').trim() : undefined
+                })
             }).then(r => r.json()).then(data => {
                 if (data.status !== 'success') {
                     showModalStatus(data.message || '删除失败', true);
@@ -2342,14 +2387,17 @@
             }).catch(err => showModalStatus('删除失败: ' + err, true));
         }
 
-        function openMainImageDescModal(imageName) {
-            if (!editId || !imageName) return;
+        function openMainImageDescModal(rowKey) {
+            const k = String(rowKey || '').trim();
+            if (!editId || !k) return;
             if (!window.PmImageEditModal || !window.PmImageEditModal.open) {
                 window.showAppToast && window.showAppToast('共享编辑弹窗未加载，请刷新页面后重试', true, 8000);
                 return;
             }
-            const current = (mainImageItems || []).find(x => String(x.image_name || '') === String(imageName));
+            const current = findMainImageItemByRowKey(k);
+            lastMainImageEditRowKey = k;
             const pathB64 = current ? String(current.image_b64 || current.storage_path || '') : '';
+            const imageName = current ? String(current.image_name || '').trim() : '';
             if (!pathB64) {
                 window.showAppToast && window.showAppToast('未找到该图片的路径信息，无法打开编辑弹窗', true, 8000);
                 return;
@@ -2370,9 +2418,14 @@
                     onAfterSuccess: () => refreshMainImageList(),
                     onReplaceSelected: ({ file, current }) => {
                         if (!file) return;
+                        const row = lastMainImageEditRowKey ? findMainImageItemByRowKey(lastMainImageEditRowKey) : null;
                         const fd = new FormData();
                         fd.append('sales_product_id', String(editId));
-                        fd.append('image_name', String(current?.name || imageName));
+                        fd.append('image_name', String(current?.name || row?.image_name || ''));
+                        if (row && Number(row.mapping_id) > 0) fd.append('mapping_id', String(row.mapping_id));
+                        if (row && Number(row.image_asset_id) > 0) fd.append('image_asset_id', String(row.image_asset_id));
+                        if (row && String(row.sha256 || '').trim()) fd.append('sha256', String(row.sha256 || '').trim());
+                        if (row && String(row.image_b64 || '').trim()) fd.append('image_b64', String(row.image_b64 || '').trim());
                         fd.append('file', file, file.name || 'image.bin');
                         window.showAppUploadProgress && window.showAppUploadProgress({ title: '替换图片', message: '上传并替换中…' });
                         fetch('/api/sales-product-main-images-replace', { method: 'POST', body: fd })
@@ -2393,7 +2446,7 @@
         }
 
         function openMainImagePreviewZoom() {
-            const current = (mainImageItems || []).find(x => String(x.image_name || '') === String(currentEditingMainImageName));
+            const current = lastMainImageEditRowKey ? findMainImageItemByRowKey(lastMainImageEditRowKey) : null;
             const id = current ? (current.image_b64 || current.storage_path || '') : '';
             if (!id) return;
             window.open(`/api/image-preview?id=${encodeURIComponent(id)}`, '_blank');
@@ -2813,6 +2866,7 @@
             if (modal) modal.classList.remove('active');
             currentEditingMainImageName = '';
             currentEditingMainImageOriginalName = '';
+            lastMainImageEditRowKey = '';
             const repEl = document.getElementById('mainImageReplaceInput');
             if (repEl) repEl.value = '';
         }
@@ -2923,10 +2977,16 @@
         }
 
         async function uploadReplaceMainImage(file) {
-            if (!editId || !currentEditingMainImageName || !file) return;
+            const row = lastMainImageEditRowKey ? findMainImageItemByRowKey(lastMainImageEditRowKey) : null;
+            const nm = row ? String(row.image_name || '').trim() : String(currentEditingMainImageName || '').trim();
+            if (!editId || !nm || !file) return;
             const fd = new FormData();
             fd.append('sales_product_id', String(editId));
-            fd.append('image_name', String(currentEditingMainImageName));
+            fd.append('image_name', nm);
+            if (row && Number(row.mapping_id) > 0) fd.append('mapping_id', String(row.mapping_id));
+            if (row && Number(row.image_asset_id) > 0) fd.append('image_asset_id', String(row.image_asset_id));
+            if (row && String(row.sha256 || '').trim()) fd.append('sha256', String(row.sha256 || '').trim());
+            if (row && String(row.image_b64 || '').trim()) fd.append('image_b64', String(row.image_b64 || '').trim());
             fd.append('file', file, file.name || 'image.bin');
             try {
                 showModalStatus('正在替换图片…', false);

@@ -26,6 +26,8 @@ API_PERMISSION_MAP = {
     '/api/spec-main-images': 'gallery',
     '/api/spec-main-image-variant': 'gallery',
     '/api/spec-main-image-variant-delete': 'gallery',
+    '/api/spec-main-image-variants-batch-validate': 'gallery',
+    '/api/spec-main-image-variants-batch-delete': 'gallery',
     '/api/image-type': 'image_type_management',
     '/api/sku': 'product_management',
     '/api/category': 'product_management',
@@ -168,6 +170,8 @@ API_ROUTE_MAP = {
     '/api/spec-main-images': ('method', 'handle_spec_main_images_api'),
     '/api/spec-main-image-variant': ('method', 'handle_spec_main_image_variant_create_api'),
     '/api/spec-main-image-variant-delete': ('method', 'handle_spec_main_image_variant_delete_api'),
+    '/api/spec-main-image-variants-batch-validate': ('method', 'handle_spec_main_image_variants_batch_validate_api'),
+    '/api/spec-main-image-variants-batch-delete': ('method', 'handle_spec_main_image_variants_batch_delete_api'),
     '/api/sku': ('method', 'handle_sku_api'),
     '/api/category': ('method', 'handle_category_api'),
     '/api/fabric': ('method', 'handle_fabric_api'),
@@ -300,6 +304,8 @@ class RequestRoutingMixin:
             '/api/sales-image-type': ('gallery', 'sales_product_management'),
             '/api/spec-main-image-variant': ('gallery', 'sales_product_management'),
             '/api/spec-main-image-variant-delete': ('gallery', 'sales_product_management'),
+            '/api/spec-main-image-variants-batch-validate': ('gallery', 'sales_product_management'),
+            '/api/spec-main-image-variants-batch-delete': ('gallery', 'sales_product_management'),
             '/api/gallery-sku-family-picker': ('gallery', 'sales_product_management'),
         }
         if path in dual_access:

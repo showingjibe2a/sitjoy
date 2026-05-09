@@ -42,13 +42,14 @@
           <button class="btn-secondary" type="button" onclick="specmiReload()">刷新</button>
         </div>
       </div>
-      <p class="specmi-toolbar-note">以下为前端过滤：留空的维度不参与；点「筛选」应用条件，「清空」恢复全部已加载行。</p>
+      <p class="specmi-toolbar-note">以下为前端过滤：留空的维度不参与；点「筛选」应用条件，「清空」恢复全部已加载行。列表与父体管理等页相同，由通用表格托管（固定表头、列宽、每页条数、列显示与冻结等，设置按表持久化）。</p>
     </div>
 
-    <div class="specmi-table-wrap">
+    <div class="specmi-table-section">
     <table class="pm-table" id="specmiTable">
       <thead>
       <tr>
+        <th class="sj-toggle-cb-cell" style="width:44px;" title="多选（可点整格）"><input type="checkbox" class="specmi-select-all-page" id="specmiSelectAllPage" aria-label="全选当前列表"></th>
         <th style="width:90px;">规格ID</th>
         <th style="width:200px;">货号</th>
         <th style="width:200px;">规格</th>
@@ -59,11 +60,54 @@
       </tr>
       </thead>
       <tbody>
-      <tr><td colspan="7" style="text-align:center;">加载中...</td></tr>
+      <tr><td colspan="8" style="text-align:center;">加载中...</td></tr>
       </tbody>
     </table>
     </div>
   </section>
+</div>
+
+<div class="pm-batch-float-bar" id="specmiBatchFloatBar" aria-live="polite">
+  <span class="pm-batch-float-count" id="specmiBatchFloatCount">已勾选 0 条规格</span>
+  <button type="button" class="btn-secondary" onclick="specmiClearRowSelection()">取消选择</button>
+  <button type="button" class="btn-primary" onclick="specmiOpenBatchValidate()">批量校验合法性</button>
+</div>
+
+<!-- 批量校验 / 条件删除 -->
+<div class="pm-modal" id="specmiBatchValidateModal">
+  <div class="pm-modal-content pm-modal-content--wide">
+    <div class="pm-modal-scroll">
+      <h3 style="margin-top:0;">批量校验结果</h3>
+      <p class="specmi-toolbar-note" style="margin-top:0.25rem;">仅展示<strong>有问题</strong>的规格：货号×面料未在 <code>fabric_product_families</code> 绑定，或因外键无法删除（与下单产品关联可级联删除，不作为拦截）。合法且可删的规格不列出；可删行左侧可选，全选仅作用于可删除行。</p>
+      <p class="specmi-toolbar-note" id="specmiBvOmittedNote" style="display:none;margin-top:0.2rem;"></p>
+      <div style="overflow:auto;max-height:min(62vh,640px);margin-top:0.5rem;">
+        <table class="pm-table" id="specmiBvResultTable" data-disable-table-manage="1" style="min-width:820px;">
+          <thead>
+            <tr>
+              <th class="sj-toggle-cb-cell" style="width:44px;"><input type="checkbox" id="specmiBvSelectAllDeletable" aria-label="全选可删除行" title="仅选中可删除的行"></th>
+              <th style="width:88px;">规格ID</th>
+              <th style="width:140px;">货号</th>
+              <th style="width:120px;">规格</th>
+              <th style="width:160px;">面料</th>
+              <th style="width:88px;">可删除</th>
+              <th>说明</th>
+            </tr>
+          </thead>
+          <tbody id="specmiBvTableBody">
+            <tr><td colspan="7" style="text-align:center;">加载中…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="pm-modal-actions" style="flex-wrap:wrap;gap:0.5rem;align-items:center;">
+      <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer;margin-right:auto;">
+        <input type="checkbox" id="specmiBvDeleteAck">
+        <span>我已确认：仅删除上表勾选且服务端判定可删的规格（关联下单 SKU 将级联移除）。</span>
+      </label>
+      <button type="button" class="btn-secondary" onclick="specmiCloseBatchValidateModal()">关闭</button>
+      <button type="button" class="btn-danger" id="specmiBvDeleteBtn" onclick="specmiSubmitBatchDeleteFromModal()">确认删除所选</button>
+    </div>
+  </div>
 </div>
 
 <!-- 新增销售规格（变体） -->
@@ -219,6 +263,8 @@
   let specmiNasSelected = new Set();
   let specmiDragIdx = null;
   let specmiDragInsert = null;
+  const specmiRowSelected = new Set();
+  let specmiBvLastRows = [];
 
   function decodeB64Utf8(b64) {
     if (!b64) return '';
@@ -322,21 +368,70 @@
     });
   }
 
+  function specmiEscapeCell(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  }
+
+  function specmiUpdateMainBulkBar() {
+    const bar = document.getElementById('specmiBatchFloatBar');
+    const ct = document.getElementById('specmiBatchFloatCount');
+    const n = specmiRowSelected.size;
+    if (bar) bar.classList.toggle('active', n > 0);
+    if (ct) ct.textContent = `已勾选 ${n} 条规格`;
+  }
+
+  function specmiGetMasterSelectAll() {
+    return document.querySelector('#specmiTable thead .specmi-select-all-page');
+  }
+
+  function specmiSyncMainSelectAllCheckbox() {
+    const master = specmiGetMasterSelectAll();
+    const tbody = document.querySelector('#specmiTable tbody');
+    if (!master || !tbody) return;
+    const cbs = tbody.querySelectorAll('.specmi-row-select');
+    if (!cbs.length) {
+      master.checked = false;
+      master.indeterminate = false;
+      return;
+    }
+    let nSel = 0;
+    cbs.forEach((inp) => {
+      const id = Number(inp.dataset.vid || 0);
+      if (id && specmiRowSelected.has(id)) nSel += 1;
+    });
+    master.checked = nSel === cbs.length;
+    master.indeterminate = nSel > 0 && nSel < cbs.length;
+  }
+
+  function specmiClearRowSelection() {
+    specmiRowSelected.clear();
+    document.querySelectorAll('#specmiTable tbody .specmi-row-select').forEach((inp) => { inp.checked = false; });
+    const master = specmiGetMasterSelectAll();
+    if (master) {
+      master.checked = false;
+      master.indeterminate = false;
+    }
+    specmiUpdateMainBulkBar();
+  }
+
   function renderTable(rows) {
     const tbody = document.querySelector('#specmiTable tbody');
     if (!tbody) return;
     const list = Array.isArray(rows) ? rows : [];
     if (!list.length) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">暂无数据</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">暂无数据</td></tr>';
+      specmiUpdateMainBulkBar();
       return;
     }
     tbody.innerHTML = list.map(v => {
       const vid = Number(v.variant_id || 0);
-      const sku = String(v.sku_family || '').replace(/</g, '&lt;');
-      const spec = String(v.spec_name || '').replace(/</g, '&lt;');
-      const fabric = String(v.fabric_name_en || v.fabric_code || '').replace(/</g, '&lt;');
+      const sku = specmiEscapeCell(v.sku_family || '');
+      const spec = specmiEscapeCell(v.spec_name || '');
+      const fabric = specmiEscapeCell(v.fabric_name_en || v.fabric_code || '');
+      const sel = vid && specmiRowSelected.has(vid) ? ' checked' : '';
       return `
         <tr>
+          <td class="sj-toggle-cb-cell"><input type="checkbox" class="specmi-row-select" data-vid="${vid}" aria-label="选择规格 ${vid}"${sel}></td>
           <td>${vid || ''}</td>
           <td>${sku}</td>
           <td>${spec}</td>
@@ -351,6 +446,18 @@
           </td>
         </tr>`;
     }).join('');
+    tbody.querySelectorAll('.specmi-row-select').forEach((inp) => {
+      inp.addEventListener('change', () => {
+        const id = Number(inp.dataset.vid || 0);
+        if (!id) return;
+        if (inp.checked) specmiRowSelected.add(id);
+        else specmiRowSelected.delete(id);
+        specmiSyncMainSelectAllCheckbox();
+        specmiUpdateMainBulkBar();
+      });
+    });
+    specmiSyncMainSelectAllCheckbox();
+    specmiUpdateMainBulkBar();
     list.forEach(v => specmiPrefetchThumb(Number(v.variant_id || 0)));
   }
 
@@ -431,6 +538,8 @@
       if (kwFab && !fab.includes(kwFab)) return false;
       return true;
     });
+    const vis = new Set(specmiFiltered.map(v => Number(v.variant_id || 0)));
+    Array.from(specmiRowSelected).forEach((id) => { if (!vis.has(id)) specmiRowSelected.delete(id); });
     renderTable(specmiFiltered);
   }
 
@@ -442,12 +551,21 @@
     if (b) b.value = '';
     if (c) c.value = '';
     specmiFiltered = specmiAllVariants.slice();
+    const vis = new Set(specmiFiltered.map(v => Number(v.variant_id || 0)));
+    Array.from(specmiRowSelected).forEach((id) => { if (!vis.has(id)) specmiRowSelected.delete(id); });
     renderTable(specmiFiltered);
   }
 
   async function specmiReload() {
     const tbody = document.querySelector('#specmiTable tbody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">加载中...</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">加载中...</td></tr>';
+    specmiRowSelected.clear();
+    specmiUpdateMainBulkBar();
+    const master = specmiGetMasterSelectAll();
+    if (master) {
+      master.checked = false;
+      master.indeterminate = false;
+    }
     try {
       const resp = await fetch('/api/gallery-variant-picker');
       const data = await resp.json();
@@ -456,7 +574,173 @@
       specmiFiltered = specmiAllVariants.slice();
       renderTable(specmiFiltered);
     } catch (e) {
-      if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#a33;">${e.message || '加载失败'}</td></tr>`;
+      if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#a33;">${specmiEscapeCell(e.message || '加载失败')}</td></tr>`;
+    }
+  }
+
+  function specmiCloseBatchValidateModal() {
+    document.getElementById('specmiBatchValidateModal')?.classList.remove('active');
+    const omit = document.getElementById('specmiBvOmittedNote');
+    if (omit) {
+      omit.style.display = 'none';
+      omit.textContent = '';
+    }
+    if (typeof window.syncModalScrollLock === 'function') {
+      try { window.syncModalScrollLock(); } catch (_) {}
+    }
+  }
+
+  function specmiBvSyncSelectAllDeletable() {
+    const master = document.getElementById('specmiBvSelectAllDeletable');
+    const body = document.getElementById('specmiBvTableBody');
+    if (!master || !body) return;
+    const cbs = body.querySelectorAll('.specmi-bv-del-cb');
+    if (!cbs.length) {
+      master.checked = false;
+      master.indeterminate = false;
+      master.disabled = true;
+      return;
+    }
+    master.disabled = false;
+    let n = 0;
+    cbs.forEach((cb) => { if (cb.checked) n += 1; });
+    master.checked = n === cbs.length;
+    master.indeterminate = n > 0 && n < cbs.length;
+  }
+
+  function specmiRenderBatchValidateRows(rows, opts) {
+    const o = opts || {};
+    const omittedValid = Number(o.omittedValid || 0);
+    specmiBvLastRows = Array.isArray(rows) ? rows : [];
+    const body = document.getElementById('specmiBvTableBody');
+    if (!body) return;
+    if (!specmiBvLastRows.length) {
+      if (omittedValid > 0) {
+        body.innerHTML = `<tr><td colspan="7" class="specmi-muted" style="text-align:center;padding:1rem 0.75rem;">所选规格均未发现问题（共 ${omittedValid} 条），无需删除或调整绑定。</td></tr>`;
+      } else {
+        body.innerHTML = '<tr><td colspan="7" style="text-align:center;">无待展示数据</td></tr>';
+      }
+      specmiBvSyncSelectAllDeletable();
+      return;
+    }
+    body.innerHTML = specmiBvLastRows.map((r) => {
+      const vid = Number(r.variant_id || 0);
+      const canDel = !!r.can_delete;
+      const delCell = canDel ? '<span class="specmi-ok">是</span>' : '<span class="specmi-warn">否</span>';
+      const parts = [];
+      if (Array.isArray(r.cannot_delete_reasons) && r.cannot_delete_reasons.length) {
+        r.cannot_delete_reasons.forEach((x) => { if (x) parts.push(String(x)); });
+      }
+      if (r.invalid_family_fabric && r.association_note) {
+        parts.push(String(r.association_note));
+      }
+      const note = parts.length ? parts.join('；') : '—';
+      const chk = canDel
+        ? `<input type="checkbox" class="specmi-bv-del-cb" data-vid="${vid}" aria-label="选择删除 ${vid}">`
+        : '<span class="specmi-muted" title="不可删除">—</span>';
+      return `<tr>
+        <td class="${canDel ? 'sj-toggle-cb-cell' : ''}">${chk}</td>
+        <td>${vid || ''}</td>
+        <td>${specmiEscapeCell(r.sku_family)}</td>
+        <td>${specmiEscapeCell(r.spec_name)}</td>
+        <td>${specmiEscapeCell(r.fabric_display)}</td>
+        <td>${delCell}</td>
+        <td class="specmi-muted" style="white-space:normal;">${specmiEscapeCell(note)}</td>
+      </tr>`;
+    }).join('');
+    body.querySelectorAll('.specmi-bv-del-cb').forEach((cb) => {
+      cb.addEventListener('change', () => specmiBvSyncSelectAllDeletable());
+    });
+    const ack = document.getElementById('specmiBvDeleteAck');
+    if (ack) ack.checked = false;
+    specmiBvSyncSelectAllDeletable();
+  }
+
+  async function specmiOpenBatchValidate() {
+    const ids = Array.from(specmiRowSelected);
+    if (!ids.length) {
+      showToast('请先在列表中勾选规格', true);
+      return;
+    }
+    const modal = document.getElementById('specmiBatchValidateModal');
+    const body = document.getElementById('specmiBvTableBody');
+    const omit = document.getElementById('specmiBvOmittedNote');
+    if (!modal || !body) return;
+    if (omit) {
+      omit.style.display = 'none';
+      omit.textContent = '';
+    }
+    body.innerHTML = '<tr><td colspan="7" style="text-align:center;">校验中…</td></tr>';
+    modal.classList.add('active');
+    if (typeof window.syncModalScrollLock === 'function') {
+      try { window.syncModalScrollLock(); } catch (_) {}
+    }
+    try {
+      const resp = await fetch('/api/spec-main-image-variants-batch-validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ variant_ids: ids }),
+      });
+      const data = await resp.json();
+      if (!data || data.status !== 'success') throw new Error(data.message || '校验失败');
+      const omitted = Number(data.valid_omitted_count || 0);
+      if (omit) {
+        if (omitted > 0) {
+          omit.style.display = '';
+          omit.textContent = `另有 ${omitted} 条勾选规格未发现问题，已从本表省略。`;
+        } else {
+          omit.style.display = 'none';
+          omit.textContent = '';
+        }
+      }
+      specmiRenderBatchValidateRows(data.rows || [], { omittedValid: omitted });
+    } catch (e) {
+      body.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#a33;">${specmiEscapeCell(e.message || String(e))}</td></tr>`;
+      specmiBvLastRows = [];
+      specmiBvSyncSelectAllDeletable();
+    }
+  }
+
+  async function specmiSubmitBatchDeleteFromModal() {
+    const ack = document.getElementById('specmiBvDeleteAck');
+    if (!ack || !ack.checked) {
+      showToast('请先勾选二次确认', true);
+      return;
+    }
+    const body = document.getElementById('specmiBvTableBody');
+    const chosen = [];
+    body?.querySelectorAll('.specmi-bv-del-cb:checked').forEach((cb) => {
+      const id = Number(cb.dataset.vid || 0);
+      if (id) chosen.push(id);
+    });
+    if (!chosen.length) {
+      showToast('请勾选要删除的规格（仅可删除行可选）', true);
+      return;
+    }
+    const btn = document.getElementById('specmiBvDeleteBtn');
+    if (btn) btn.disabled = true;
+    try {
+      const resp = await fetch('/api/spec-main-image-variants-batch-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ variant_ids: chosen, delete_confirmed: true }),
+      });
+      const data = await resp.json();
+      if (!data || data.status !== 'success') throw new Error(data.message || '删除失败');
+      const failed = Array.isArray(data.failed) ? data.failed : [];
+      if (failed.length) {
+        const msg = (data.message || '') + '；未删除示例：' + failed.slice(0, 3).map(f => `${f.variant_id}`).join(', ');
+        showToast(msg, true);
+      } else {
+        showToast(data.message || '删除完成', false);
+      }
+      chosen.forEach((id) => specmiRowSelected.delete(id));
+      specmiCloseBatchValidateModal();
+      await specmiReload();
+    } catch (e) {
+      showToast(String(e.message || e), true);
+    } finally {
+      if (btn) btn.disabled = false;
     }
   }
 
@@ -1332,10 +1616,44 @@
   window.specmiOpenNasModal = specmiOpenNasModal;
   window.specmiCloseNasModal = specmiCloseNasModal;
   window.specmiNasImportSelected = specmiNasImportSelected;
+  window.specmiClearRowSelection = specmiClearRowSelection;
+  window.specmiOpenBatchValidate = specmiOpenBatchValidate;
+  window.specmiCloseBatchValidateModal = specmiCloseBatchValidateModal;
+  window.specmiSubmitBatchDeleteFromModal = specmiSubmitBatchDeleteFromModal;
+
+  function specmiAttachSpecTableDelegatedListeners() {
+    const tbl = document.getElementById('specmiTable');
+    if (!tbl || tbl.dataset.specmiDelegated === '1') return;
+    tbl.dataset.specmiDelegated = '1';
+    tbl.addEventListener('change', (e) => {
+      const t = e.target;
+      if (!(t instanceof HTMLInputElement) || t.type !== 'checkbox') return;
+      if (!t.classList.contains('specmi-select-all-page')) return;
+      const on = !!t.checked;
+      document.querySelectorAll('#specmiTable tbody .specmi-row-select').forEach((inp) => {
+        const id = Number(inp.dataset.vid || 0);
+        if (!id) return;
+        inp.checked = on;
+        if (on) specmiRowSelected.add(id);
+        else specmiRowSelected.delete(id);
+      });
+      specmiSyncMainSelectAllCheckbox();
+      specmiUpdateMainBulkBar();
+    });
+  }
+  specmiAttachSpecTableDelegatedListeners();
 
   window.addEventListener('load', () => {
     specmiDupUi();
     specmiInitNasSelectAllBox();
+    const bvMaster = document.getElementById('specmiBvSelectAllDeletable');
+    if (bvMaster) {
+      bvMaster.addEventListener('change', (e) => {
+        const on = !!e.target.checked;
+        document.querySelectorAll('#specmiBvTableBody .specmi-bv-del-cb').forEach((cb) => { cb.checked = on; });
+        specmiBvSyncSelectAllDeletable();
+      });
+    }
     ['specmiSearchSku', 'specmiSearchSpec', 'specmiSearchFabric'].forEach((id) => {
       document.getElementById(id)?.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
@@ -1359,6 +1677,10 @@
     const nasM = document.getElementById('specmi-nas-import-modal');
     if (nasM && typeof window.bindPmModalBackdropClose === 'function') {
       window.bindPmModalBackdropClose(nasM, specmiCloseNasModal);
+    }
+    const bvM = document.getElementById('specmiBatchValidateModal');
+    if (bvM && typeof window.bindPmModalBackdropClose === 'function') {
+      window.bindPmModalBackdropClose(bvM, specmiCloseBatchValidateModal);
     }
   }, 0);
 })();

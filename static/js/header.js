@@ -5569,8 +5569,34 @@
         repositionManagedBatchBars();
     }, true);
 
+    function initGlobalTableCheckboxCellToggle(){
+        if(initGlobalTableCheckboxCellToggle._on) return;
+        initGlobalTableCheckboxCellToggle._on = true;
+        document.addEventListener('click', (e) => {
+            if(!e || e.button !== 0) return;
+            if(!e.target || !e.target.closest) return;
+            if(e.target.closest('button, a, select, textarea')) return;
+            if(e.target.closest('input[type="checkbox"]')) return;
+            if(e.target.closest('label')) return;
+            const cell = e.target.closest('td, th');
+            if(!cell) return;
+            const kids = cell.children;
+            const autoSingle = kids && kids.length === 1 && kids[0] && kids[0].matches && kids[0].matches('input[type="checkbox"]');
+            const wantsToggle = (cell.classList && cell.classList.contains('sj-toggle-cb-cell')) || !!autoSingle;
+            if(!wantsToggle) return;
+            const cb = cell.querySelector('input[type="checkbox"]');
+            if(!cb || cb.disabled) return;
+            cb.checked = !cb.checked;
+            try {
+                cb.dispatchEvent(new Event('input', { bubbles: true }));
+                cb.dispatchEvent(new Event('change', { bubbles: true }));
+            } catch(_){}
+        }, false);
+    }
+
     const boot = () => {
         loadHeader();
+        initGlobalTableCheckboxCellToggle();
         initUniversalSingleSelects(document);
         enhanceCustomDateInputs(document);
         initOptionalDateInputs(document);
