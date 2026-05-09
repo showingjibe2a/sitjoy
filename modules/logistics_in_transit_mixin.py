@@ -503,25 +503,43 @@ class LogisticsInTransitMixin:
                             (item_id,)
                         )
                         rows = cur.fetchall() or []
+                        existing_ops = set()
                         updates = []
+                        final_listed = {}
                         for row in rows:
                             order_product_id = self._parse_int((row or {}).get('order_product_id'))
                             shipped_qty = self._parse_int((row or {}).get('shipped_qty')) or 0
                             if not order_product_id:
                                 continue
+                            existing_ops.add(order_product_id)
                             listed_qty = listed_by_order.get(order_product_id, shipped_qty)
-                            updates.append((listed_qty, item_id, order_product_id))
+                            nq = max(0, self._parse_int(listed_qty) or 0)
+                            final_listed[order_product_id] = nq
+                            updates.append((nq, item_id, order_product_id))
+
+                        inserts = []
+                        for op_id, lq in listed_by_order.items():
+                            if not op_id or op_id in existing_ops:
+                                continue
+                            nq = max(0, self._parse_int(lq) or 0)
+                            final_listed[op_id] = nq
+                            inserts.append((item_id, op_id, 0, nq))
 
                         if updates:
                             cur.executemany(
                                 "UPDATE logistics_in_transit_items SET listed_qty=%s WHERE transit_id=%s AND order_product_id=%s",
                                 updates
                             )
+                        if inserts:
+                            cur.executemany(
+                                "INSERT INTO logistics_in_transit_items (transit_id, order_product_id, shipped_qty, listed_qty) VALUES (%s, %s, %s, %s)",
+                                inserts
+                            )
 
                         added_stock_rows = 0
                         if apply_to_overseas_stock and warehouse_id:
-                            for listed_qty, _tid, order_product_id in updates:
-                                qty = max(0, self._parse_int(listed_qty) or 0)
+                            for order_product_id, qty in final_listed.items():
+                                qty = max(0, self._parse_int(qty) or 0)
                                 if not order_product_id or qty <= 0:
                                     continue
                                 cur.execute(
@@ -877,9 +895,9 @@ class LogisticsInTransitMixin:
                         'listed_qty': listed_qty
                     })
                 if not normalized_items:
-                    return self.send_json({'status': 'error', 'message': 'SKU及发货数量为必填'}, start_response)
-                if any((self._parse_int(x.get('shipped_qty')) or 0) <= 0 for x in normalized_items):
-                    return self.send_json({'status': 'error', 'message': 'SKU发货数量必须大于0'}, start_response)
+                    return self.send_json({'status': 'error', 'message': '至少维护一行有效的下单SKU'}, start_response)
+                if any((self._parse_int(x.get('shipped_qty')) or 0) < 0 for x in normalized_items):
+                    return self.send_json({'status': 'error', 'message': '发货数量不能为负数'}, start_response)
                 if payload.get('qty_verified') and not payload.get('inventory_registered'):
                     return self.send_json({'status': 'error', 'message': '需要先登记上架才能确认已核对上架数量'}, start_response)
 
