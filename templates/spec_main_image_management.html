@@ -55,7 +55,7 @@
         <th style="width:200px;">面料</th>
         <th style="width:120px;">首图</th>
         <th>说明</th>
-        <th style="width:160px;">操作</th>
+        <th style="width:200px;">操作</th>
       </tr>
       </thead>
       <tbody>
@@ -139,7 +139,8 @@
       </div>
     </div>
     <div class="pm-modal-actions">
-      <button class="btn-secondary" type="button" onclick="specmiCloseEdit()">关闭</button>
+      <button type="button" class="btn-secondary" onclick="specmiCloseEdit()">关闭</button>
+      <button type="button" class="btn-danger btn-small" id="specmiModalDeleteBtn" onclick="specmiDeleteVariantFromModal()">删除规格</button>
     </div>
   </div>
 </div>
@@ -342,10 +343,57 @@
           <td>${fabric}</td>
           <td class="specmi-muted" id="specmiPrev_${vid}">—</td>
           <td class="specmi-muted">双击卡片内图片可编辑关联/属性</td>
-          <td><button class="btn-secondary" type="button" onclick="specmiOpenEdit(${vid})">管理主图</button></td>
+          <td>
+            <div style="display:flex;flex-wrap:wrap;gap:0.35rem;align-items:center;">
+              <button type="button" class="btn-secondary btn-small" onclick="specmiOpenEdit(${vid})">管理主图</button>
+              <button type="button" class="btn-danger btn-small" onclick="specmiDeleteVariant(${vid})">删除</button>
+            </div>
+          </td>
         </tr>`;
     }).join('');
     list.forEach(v => specmiPrefetchThumb(Number(v.variant_id || 0)));
+  }
+
+  function specmiDeleteVariantFromModal() {
+    return specmiDeleteVariant(specmiEditingVid);
+  }
+
+  async function specmiDeleteVariant(variantId) {
+    const vid = Number(variantId || 0) || 0;
+    if (!vid) return;
+    const msg = [
+      '将永久删除该销售规格（变体）的数据库记录。',
+      '若仍存在「关联下单SKU」链接，删除时会由数据库级联一并移除，不再作为拦截条件。',
+      '若仍关联销售平台SKU、主图映射或销量预测数据，删除将被拒绝并在下方提示原因。',
+    ].join('\n');
+    let ok = false;
+    if (window.showAppConfirmAsync) {
+      ok = await window.showAppConfirmAsync({
+        title: '删除规格',
+        message: msg,
+        confirmText: '删除',
+        cancelText: '取消',
+        requireConfirmCheck: true,
+        confirmCheckText: '我已知晓：存在关联下单SKU链接时，删除本规格将同时移除这些链接；且须无销售平台SKU、无主图、无销量预测占用方可删除。',
+      }).catch(() => false);
+    } else {
+      ok = confirm(msg);
+    }
+    if (!ok) return;
+    try {
+      const resp = await fetch('/api/spec-main-image-variant-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ variant_id: vid }),
+      });
+      const data = await resp.json();
+      if (!data || data.status !== 'success') throw new Error(data.message || '删除失败');
+      showToast(data.message || '已删除', false);
+      if (specmiEditingVid === vid) specmiCloseEdit();
+      await specmiReload();
+    } catch (e) {
+      showToast(String(e.message || e), true);
+    }
   }
 
   async function specmiPrefetchThumb(vid) {
@@ -1278,6 +1326,8 @@
   window.specmiSubmitCreateVariant = specmiSubmitCreateVariant;
   window.specmiOpenEdit = specmiOpenEdit;
   window.specmiCloseEdit = specmiCloseEdit;
+  window.specmiDeleteVariant = specmiDeleteVariant;
+  window.specmiDeleteVariantFromModal = specmiDeleteVariantFromModal;
   window.specmiTriggerUpload = specmiTriggerUpload;
   window.specmiOpenNasModal = specmiOpenNasModal;
   window.specmiCloseNasModal = specmiCloseNasModal;

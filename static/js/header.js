@@ -155,7 +155,8 @@
         state.menu.style.width = `${width}px`;
         state.menu.style.minWidth = `${width}px`;
         state.menu.style.maxWidth = `${width}px`;
-        state.menu.style.zIndex = '5600';
+        /* 须高于 .pm-modal(15000) / 嵌套 NAS 弹窗(15100)，否则挂到 body 的下拉会被遮罩盖住；低于 .app-toast-stack(16000) */
+        state.menu.style.zIndex = '15600';
         if(openUpward){
             state.menu.style.top = 'auto';
             state.menu.style.bottom = `${Math.max(8, viewportHeight - triggerRect.top + 6)}px`;

@@ -3588,7 +3588,8 @@
             const fabrics = [];
             const fabricCodes = [];
             const fabricIds = [];
-            const specEntries = [];
+            /** 相同 spec_qty_short 合并：累加数量后生成「总数量+规格简写」，避免 1B1B3B → 期望 5B */
+            const specAgg = new Map();
             let warehouseCost = 0;
             let lastMileCost = 0;
             let packageLength = 0;
@@ -3605,10 +3606,11 @@
                 if (fid && !fabricIds.includes(fid)) fabricIds.push(fid);
                 const spec = (item.source.spec_qty_short || '').trim();
                 if (spec) {
-                    specEntries.push({
-                        key: String(spec).toUpperCase(),
-                        text: `${item.link.quantity}${spec}`
-                    });
+                    const rowQty = Math.max(1, Number(item.link.quantity) || 1);
+                    if (!specAgg.has(spec)) {
+                        specAgg.set(spec, { key: String(spec).toUpperCase(), label: spec, qty: 0 });
+                    }
+                    specAgg.get(spec).qty += rowQty;
                 }
 
                 const qty = Number(item.link.quantity) || 1;
@@ -3632,6 +3634,10 @@
                     syncFabricHiddenText();
                 }
             }
+            const specEntries = Array.from(specAgg.values()).map(v => ({
+                key: v.key,
+                text: `${v.qty}${v.label}`
+            }));
             specEntries.sort((a, b) => String(a.key || '').localeCompare(String(b.key || ''), 'en', { numeric: true, sensitivity: 'base' }));
             const specName = specEntries.map(x => x.text).join('');
             if (!manualSpecName) {

@@ -26,6 +26,11 @@ try:
 except Exception:
     pymysql = None
 
+try:
+    from decimal import Decimal
+except Exception:
+    Decimal = None  # pragma: no cover
+
 
 class SalesProductMixin:
     def _resources_root(self):
@@ -641,6 +646,78 @@ class SalesProductMixin:
             }, start_response)
         except ValueError as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_spec_main_image_variant_delete_api(self, environ, method, start_response):
+        """规格主图管理：删除销售变体行。
+        无销售平台SKU、无主图、无销量预测占用时可删；关联下单SKU链接由库表 ON DELETE CASCADE 随变体一并删除。
+        """
+        try:
+            if method != 'POST':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+            data = self._read_json_body(environ) or {}
+            variant_id = self._parse_int(data.get('variant_id'))
+            if not variant_id:
+                return self.send_json({'status': 'error', 'message': 'Missing variant_id'}, start_response)
+
+            blocks = []
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT COUNT(*) AS c FROM sales_products WHERE variant_id=%s",
+                        (variant_id,),
+                    )
+                    n_sp = int((cur.fetchone() or {}).get('c') or 0)
+                    if n_sp:
+                        blocks.append(f'已关联 {n_sp} 条销售平台SKU（sales_products）')
+
+                    if self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id'):
+                        cur.execute(
+                            "SELECT COUNT(*) AS c FROM sales_variant_image_mappings WHERE variant_id=%s",
+                            (variant_id,),
+                        )
+                        n_im = int((cur.fetchone() or {}).get('c') or 0)
+                        if n_im:
+                            blocks.append(f'仍有关联主图映射 {n_im} 条（sales_variant_image_mappings）')
+
+                    if self._table_exists_simple(conn, 'sales_forecast_spec_monthly'):
+                        cur.execute(
+                            "SELECT COUNT(*) AS c FROM sales_forecast_spec_monthly WHERE variant_id=%s",
+                            (variant_id,),
+                        )
+                        n_fc = int((cur.fetchone() or {}).get('c') or 0)
+                        if n_fc:
+                            blocks.append(f'存在销量预测（规格×月）{n_fc} 条（sales_forecast_spec_monthly）')
+
+                    if self._table_exists_simple(conn, 'sales_forecast_order_sku_monthly'):
+                        if self._table_has_column(conn, 'sales_forecast_order_sku_monthly', 'variant_id'):
+                            cur.execute(
+                                "SELECT COUNT(*) AS c FROM sales_forecast_order_sku_monthly WHERE variant_id=%s",
+                                (variant_id,),
+                            )
+                            n_fc2 = int((cur.fetchone() or {}).get('c') or 0)
+                            if n_fc2:
+                                blocks.append(
+                                    f'存在销量预测（下单SKU×月，旧结构）{n_fc2} 条（sales_forecast_order_sku_monthly）'
+                                )
+
+                if blocks:
+                    return self.send_json(
+                        {
+                            'status': 'error',
+                            'message': '无法删除：' + '；'.join(blocks),
+                            'blocks': blocks,
+                        },
+                        start_response,
+                    )
+
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM sales_product_variants WHERE id=%s", (variant_id,))
+                    if not cur.rowcount:
+                        return self.send_json({'status': 'error', 'message': '规格不存在或已删除'}, start_response)
+
+            return self.send_json({'status': 'success', 'message': '已删除规格'}, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
@@ -2227,19 +2304,76 @@ class SalesProductMixin:
             expr = "''"
         return join_sql, expr
 
-    def _resolve_fabric_material_id_from_label(self, conn, label, cur=None):
-        """将 Excel/UI 中的面料编码或英文名解析为 fabric_materials.id（无则 None）。"""
-        text = str(label or '').strip()
+    def _normalize_sales_import_fabric_cell(self, value):
+        """把 Excel 面料格统一成可与 fabric_code 比较的字符串（数字格、空白字符等）。"""
+        if value is None:
+            return ''
+        if isinstance(value, bool):
+            return ''
+        if isinstance(value, int):
+            return str(value)
+        if isinstance(value, float):
+            try:
+                iv = int(value)
+                if value == iv:
+                    return str(iv)
+            except (ValueError, OverflowError):
+                pass
+            return str(value).strip()
+        if Decimal is not None and isinstance(value, Decimal):
+            try:
+                if value == value.to_integral_value():
+                    return str(int(value))
+            except Exception:
+                pass
+            s = format(value, 'f').rstrip('0').rstrip('.')
+            return (s or str(value)).strip()
+        s = str(value).replace('\xa0', ' ').replace('\u200b', '').strip()
+        return s
+
+    def _fabric_product_family_linked(self, conn, sku_family_id, fabric_material_id, cur=None):
+        """货号(product_families.id) 与面料(fabric_materials.id) 是否在 fabric_product_families 中已关联。"""
+        if not sku_family_id or not fabric_material_id:
+            return False
+        run_cur = cur
+        close_after = False
+        if run_cur is None:
+            run_cur = conn.cursor()
+            close_after = True
+        try:
+            run_cur.execute(
+                "SELECT 1 FROM fabric_product_families WHERE sku_family_id=%s AND fabric_id=%s LIMIT 1",
+                (int(sku_family_id), int(fabric_material_id)),
+            )
+            return bool(run_cur.fetchone())
+        finally:
+            if close_after and run_cur is not None:
+                run_cur.close()
+
+    def _resolve_fabric_material_id_from_label(self, conn, label, cur=None, *, allow_name_match=True):
+        """将 Excel/UI 中的面料标签解析为 fabric_materials.id（无则 None）。
+
+        按 fabric_code 匹配时：先完整格值，再「-」前主码（与平台 SKU 习惯一致），避免主数据编号含「-」时误只查前半段。
+        再按需按 fabric_name_en 精确匹配（allow_name_match=True）。
+        """
+        text = self._normalize_sales_import_fabric_cell(label)
         if not text:
             return None
-        code = self._code_before_dash(text)
+        prefix = self._code_before_dash(text)
+        code_candidates = []
+        for cand in (text, prefix):
+            if cand and cand not in code_candidates:
+                code_candidates.append(cand)
 
         def _lookup(c):
-            c.execute("SELECT id FROM fabric_materials WHERE fabric_code=%s LIMIT 1", (code,))
-            r = c.fetchone() or {}
-            fid = self._parse_int(r.get('id')) or None
-            if fid:
-                return fid
+            for cand in code_candidates:
+                c.execute("SELECT id FROM fabric_materials WHERE fabric_code=%s LIMIT 1", (cand,))
+                r = c.fetchone() or {}
+                fid = self._parse_int(r.get('id')) or None
+                if fid:
+                    return fid
+            if not allow_name_match:
+                return None
             c.execute("SELECT id FROM fabric_materials WHERE fabric_name_en=%s LIMIT 1", (text,))
             r = c.fetchone() or {}
             return self._parse_int(r.get('id')) or None
@@ -2248,6 +2382,49 @@ class SalesProductMixin:
             return _lookup(cur)
         with conn.cursor() as c:
             return _lookup(c)
+
+    def _fabric_code_for_material_id(self, conn, fabric_id, cur=None):
+        fid = self._parse_int(fabric_id)
+        if not fid:
+            return ''
+
+        def _run(c):
+            c.execute("SELECT fabric_code FROM fabric_materials WHERE id=%s LIMIT 1", (fid,))
+            r = c.fetchone() or {}
+            return str(r.get('fabric_code') or '').strip()
+
+        if cur is not None:
+            return _run(cur)
+        with conn.cursor() as c:
+            return _run(c)
+
+    def _resolve_fabric_material_id_from_order_links_import(self, conn, link_entries, cur=None):
+        """销售导入专用：仅从关联 order_products.fabric_id 汇总，不做英文名解析。"""
+        id_list = [self._parse_int(e.get('order_product_id')) for e in (link_entries or [])]
+        id_list = [i for i in id_list if i]
+        if not id_list:
+            return None, 'missing'
+        placeholders = ','.join(['%s'] * len(id_list))
+        sql = f"SELECT DISTINCT fabric_id FROM order_products WHERE id IN ({placeholders})"
+
+        def _run(c):
+            c.execute(sql, id_list)
+            rows = c.fetchall() or []
+            fids = []
+            for r in rows:
+                fid = self._parse_int(r.get('fabric_id'))
+                if fid and fid not in fids:
+                    fids.append(fid)
+            if len(fids) == 1:
+                return fids[0], None
+            if not fids:
+                return None, 'missing'
+            return None, 'ambiguous'
+
+        if cur is not None:
+            return _run(cur)
+        with conn.cursor() as c:
+            return _run(c)
 
     def _sales_product_shop_expr(self, has_shop_col, sales_alias='sp', parent_alias='p'):
         if has_shop_col:
@@ -2546,6 +2723,77 @@ class SalesProductMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def _populate_sales_product_template_ref_sheet(self, ref_ws, bricks):
+        """写入隐藏表 _refs：全量店铺/父体/货号、规格、面料（各自一列下拉，无级联）。
+        返回各列末行号供数据验证公式引用（末行至少为 2）。"""
+        shop_options = bricks.get('shop_options') or []
+        parent_codes = [str(c or '').strip() for c in (bricks.get('parent_codes') or []) if str(c or '').strip()]
+        sku_families = [str(s or '').strip() for s in (bricks.get('sku_families') or []) if str(s or '').strip()]
+        all_specs = [str(s or '').strip() for s in (bricks.get('all_specs') or []) if str(s or '').strip()]
+        all_fabs = [str(f or '').strip() for f in (bricks.get('all_fabrics') or []) if str(f or '').strip()]
+        if not all_specs or not all_fabs:
+            spec_set = set(all_specs)
+            fab_set = set(all_fabs)
+            for tri in bricks.get('triples') or []:
+                if not isinstance(tri, (list, tuple)) or len(tri) < 2:
+                    continue
+                sp = str(tri[1] or '').strip()
+                fab = str(tri[2] or '').strip() if len(tri) > 2 else ''
+                if sp:
+                    spec_set.add(sp)
+                if fab:
+                    fab_set.add(fab)
+            if not all_specs:
+                all_specs = sorted(spec_set)
+            if not all_fabs:
+                all_fabs = sorted(fab_set)
+
+        ref_ws.cell(row=1, column=11, value='sku_family_all')
+        ref_ws.cell(row=1, column=13, value='spec_all')
+        ref_ws.cell(row=1, column=14, value='fabric_all')
+        ref_ws.cell(row=1, column=16, value='shop')
+        ref_ws.cell(row=1, column=17, value='parent_code')
+
+        r_shop = 2
+        for row in shop_options:
+            nm = str(row.get('shop_name') or '').strip()
+            if not nm:
+                continue
+            ref_ws.cell(row=r_shop, column=16, value=nm)
+            r_shop += 1
+        shop_end = max(2, r_shop - 1)
+
+        r_par = 2
+        for code in parent_codes:
+            ref_ws.cell(row=r_par, column=17, value=code)
+            r_par += 1
+        parent_end = max(2, r_par - 1)
+
+        r_k = 2
+        for sf in sku_families:
+            ref_ws.cell(row=r_k, column=11, value=sf)
+            r_k += 1
+        sku_end = max(2, r_k - 1)
+
+        r_m = 2
+        for sp in sorted(all_specs):
+            ref_ws.cell(row=r_m, column=13, value=sp)
+            r_m += 1
+        spec_all_end = max(2, r_m - 1)
+        r_n = 2
+        for fb in sorted(all_fabs):
+            ref_ws.cell(row=r_n, column=14, value=fb)
+            r_n += 1
+        fab_all_end = max(2, r_n - 1)
+
+        return {
+            'shop_end': shop_end,
+            'parent_end': parent_end,
+            'sku_end': sku_end,
+            'spec_all_end': spec_all_end,
+            'fab_all_end': fab_all_end,
+        }
+
     def handle_sales_product_template_api(self, environ, method, start_response):
         """销售产品模板下载"""
         try:
@@ -2584,45 +2832,98 @@ class SalesProductMixin:
             wb = Workbook()
             ws = wb.active
             ws.title = 'sales_products'
+            ref_ws = wb.create_sheet('_refs')
+            ref_ws.sheet_state = 'hidden'
 
-            # 获取可选项
+            # 获取可选项：全量店铺/父体/货号 + 全量规格/面料列表，供隐藏表与下拉（无级联）
             with self._get_db_connection() as conn:
                 sp_has_shop_col = self._table_has_column(conn, 'sales_products', 'shop_id')
                 shop_expr = self._sales_product_shop_expr(sp_has_shop_col, sales_alias='sp', parent_alias='pa')
 
-                def _load_sales_template_options():
+                def _load_sales_template_workbook_bricks():
                     with conn.cursor() as cur:
                         cur.execute("SELECT id, shop_name FROM shops ORDER BY shop_name")
                         shop_options_local = [row for row in (cur.fetchall() or []) if row.get('shop_name')]
                         cur.execute("SELECT parent_code FROM sales_parents ORDER BY parent_code")
-                        parent_codes_local = [row['parent_code'] for row in cur.fetchall()]
-                        cur.execute("SELECT sku_family FROM product_families ORDER BY sku_family")
-                        sku_family_local = [str(row['sku_family']).strip() for row in (cur.fetchall() or []) if row.get('sku_family')]
-                        cur.execute("SELECT DISTINCT spec_name FROM sales_product_variants WHERE spec_name IS NOT NULL AND TRIM(spec_name) <> '' ORDER BY spec_name")
-                        spec_name_local = [str(row.get('spec_name') or '').strip() for row in (cur.fetchall() or []) if str(row.get('spec_name') or '').strip()]
-                        if self._table_has_column(conn, 'sales_product_variants', 'fabric'):
-                            cur.execute("SELECT DISTINCT fabric FROM sales_product_variants WHERE fabric IS NOT NULL AND TRIM(fabric) <> '' ORDER BY fabric")
-                            fabric_local = [str(row['fabric']).strip() for row in (cur.fetchall() or []) if row.get('fabric')]
-                        elif self._table_has_column(conn, 'sales_product_variants', 'fabric_id'):
+                        parent_codes_local = [
+                            str(row['parent_code']).strip()
+                            for row in (cur.fetchall() or []) if row.get('parent_code')
+                        ]
+                        cur.execute(
+                            """
+                            SELECT sku_family FROM product_families
+                            WHERE sku_family IS NOT NULL AND TRIM(sku_family) <> ''
+                            ORDER BY sku_family
+                            """
+                        )
+                        sku_families_local = [
+                            str(row['sku_family']).strip()
+                            for row in (cur.fetchall() or []) if row.get('sku_family')
+                        ]
+                        has_fid = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
+                        has_ft = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+                        join_fm = "LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id" if has_fid else ""
+                        if has_fid and has_ft:
+                            fab_expr = "COALESCE(NULLIF(TRIM(fm.fabric_code),''), NULLIF(TRIM(v.fabric),''), '')"
+                        elif has_fid:
+                            fab_expr = "COALESCE(NULLIF(TRIM(fm.fabric_code),''), '')"
+                        elif has_ft:
+                            fab_expr = "COALESCE(NULLIF(TRIM(v.fabric),''), '')"
+                        else:
+                            fab_expr = "''"
+                        cur.execute(
+                            """
+                            SELECT DISTINCT TRIM(v.spec_name) AS spec_name
+                            FROM sales_product_variants v
+                            WHERE v.spec_name IS NOT NULL AND TRIM(v.spec_name) <> ''
+                            ORDER BY spec_name
+                            """
+                        )
+                        all_specs_local = [
+                            str(row['spec_name']).strip()
+                            for row in (cur.fetchall() or [])
+                            if row.get('spec_name') and str(row['spec_name']).strip()
+                        ]
+                        if has_fid:
                             cur.execute(
                                 """
-                                SELECT DISTINCT fm.fabric_code AS fabric
-                                FROM sales_product_variants v
-                                INNER JOIN fabric_materials fm ON fm.id = v.fabric_id
+                                SELECT DISTINCT TRIM(fm.fabric_code) AS fabric
+                                FROM fabric_materials fm
                                 WHERE fm.fabric_code IS NOT NULL AND TRIM(fm.fabric_code) <> ''
-                                ORDER BY fm.fabric_code
+                                ORDER BY fabric
                                 """
                             )
-                            fabric_local = [str(row.get('fabric') or '').strip() for row in (cur.fetchall() or []) if row.get('fabric')]
                         else:
-                            fabric_local = []
-                    return (shop_options_local, parent_codes_local, sku_family_local, spec_name_local, fabric_local)
+                            cur.execute(
+                                f"""
+                                SELECT DISTINCT TRIM({fab_expr}) AS fabric
+                                FROM sales_product_variants v
+                                {join_fm}
+                                WHERE TRIM({fab_expr}) <> ''
+                                ORDER BY fabric
+                                """
+                            )
+                        all_fabs_local = [
+                            str(row['fabric']).strip()
+                            for row in (cur.fetchall() or [])
+                            if row.get('fabric') and str(row['fabric']).strip()
+                        ]
+                    return {
+                        'shop_options': shop_options_local,
+                        'parent_codes': parent_codes_local,
+                        'sku_families': sku_families_local,
+                        'all_specs': all_specs_local,
+                        'all_fabrics': all_fabs_local,
+                    }
 
-                shop_options, parent_codes, sku_family_options, spec_name_options, fabric_options = self._get_cached_template_options(
-                    'sales_product_template_options_v2',
-                    _load_sales_template_options,
-                    ttl_seconds=180
-                )
+                bricks = self._get_cached_template_options(
+                    'sales_product_template_workbook_bricks_v2',
+                    _load_sales_template_workbook_bricks,
+                    ttl_seconds=1800,
+                ) or {}
+                shop_options = bricks.get('shop_options') or []
+                parent_codes = bricks.get('parent_codes') or []
+                sku_family_options = bricks.get('sku_families') or []
 
                 export_rows = []
                 if selected_ids:
@@ -2695,7 +2996,7 @@ class SalesProductMixin:
             cn_headers = [
                 '产品状态(启用/留用/弃用)',
                 '店铺(必填)', '父体编号', '新父体SKU标识(父体不存在时选填)',
-                '销售平台SKU', '子体编号', '货号', '规格名称', '面料',
+                '销售平台SKU', '子体编号',                 '货号', '规格名称', '面料(面料编号)',
                 '关联下单SKU及数量(必填，支持换行|;分隔，示例:MS01A-Brown*2)',
                 '售价(USD)'
             ]
@@ -2764,46 +3065,65 @@ class SalesProductMixin:
             if export_rows:
                 for row in export_rows:
                     ws.append(row)
-            
-            # 添加数据验证
+
+            ref_dims = self._populate_sales_product_template_ref_sheet(ref_ws, bricks)
+
+            # 添加数据验证：规格/面料为隐藏表 M、N 列全量列表（与货号无级联）
+            # 使用整块区域一次 add（勿对数千行逐格 add），否则 openpyxl 生成/保存极慢易触发网关 504
+            max_validation_row = 3000
+            sqref_main = f'A4:A{max_validation_row}'
+
             status_validation = DataValidation(type='list', formula1='"启用,留用,弃用"', allow_blank=True)
+            status_validation.add(sqref_main)
             ws.add_data_validation(status_validation)
-            max_validation_row = 400
-            for row in range(4, max_validation_row + 1):
-                status_validation.add(f'A{row}')
 
-            if shop_options:
-                shop_names = [str(row.get('shop_name')).strip() for row in shop_options if row.get('shop_name')]
-                shop_names = [name for name in shop_names if name]
-                if shop_names:
-                    shop_validation = DataValidation(type='list', formula1=f'"{",".join(shop_names[:100])}"', allow_blank=False)
-                    ws.add_data_validation(shop_validation)
-                    for row in range(4, max_validation_row + 1):
-                        shop_validation.add(f'B{row}')
+            p_end = ref_dims.get('shop_end') or 2
+            if shop_options and p_end >= 2:
+                shop_validation = DataValidation(
+                    type='list',
+                    formula1=f"'_refs'!$P$2:$P${p_end}",
+                    allow_blank=False,
+                )
+                shop_validation.add(f'B4:B{max_validation_row}')
+                ws.add_data_validation(shop_validation)
 
-            if sku_family_options:
-                sku_validation = DataValidation(type='list', formula1=f'"{",".join(sku_family_options[:100])}"', allow_blank=True)
+            k_end = ref_dims.get('sku_end') or 2
+            if sku_family_options and k_end >= 2:
+                sku_validation = DataValidation(
+                    type='list',
+                    formula1=f"'_refs'!$K$2:$K${k_end}",
+                    allow_blank=True,
+                )
+                sku_validation.add(f'G4:G{max_validation_row}')
                 ws.add_data_validation(sku_validation)
-                for row in range(4, max_validation_row + 1):
-                    sku_validation.add(f'G{row}')
 
-            if spec_name_options:
-                spec_validation = DataValidation(type='list', formula1=f'"{",".join(spec_name_options[:100])}"', allow_blank=True)
-                ws.add_data_validation(spec_validation)
-                for row in range(4, max_validation_row + 1):
-                    spec_validation.add(f'H{row}')
+            m_end = ref_dims.get('spec_all_end') or 2
+            spec_validation = DataValidation(
+                type='list',
+                formula1=f"'_refs'!$M$2:$M${m_end}",
+                allow_blank=True,
+            )
+            spec_validation.add(f'H4:H{max_validation_row}')
+            ws.add_data_validation(spec_validation)
 
-            if fabric_options:
-                fabric_validation = DataValidation(type='list', formula1=f'"{",".join(fabric_options[:100])}"', allow_blank=True)
-                ws.add_data_validation(fabric_validation)
-                for row in range(4, max_validation_row + 1):
-                    fabric_validation.add(f'I{row}')
+            n_end = ref_dims.get('fab_all_end') or 2
+            fabric_validation = DataValidation(
+                type='list',
+                formula1=f"'_refs'!$N$2:$N${n_end}",
+                allow_blank=True,
+            )
+            fabric_validation.add(f'I4:I{max_validation_row}')
+            ws.add_data_validation(fabric_validation)
 
-            if parent_codes:
-                parent_validation = DataValidation(type='list', formula1=f'"{",".join(parent_codes[:100])}"', allow_blank=True)
+            q_end = ref_dims.get('parent_end') or 2
+            if parent_codes and q_end >= 2:
+                parent_validation = DataValidation(
+                    type='list',
+                    formula1=f"'_refs'!$Q$2:$Q${q_end}",
+                    allow_blank=True,
+                )
+                parent_validation.add(f'C4:C{max_validation_row}')
                 ws.add_data_validation(parent_validation)
-                for row in range(4, max_validation_row + 1):
-                    parent_validation.add(f'C{row}')
             
             
             # 设置列宽
@@ -2926,6 +3246,7 @@ class SalesProductMixin:
                 '货号': 'sku_family',
                 '面料(选填)': 'fabric',
                 '规格名(选填)': 'spec_name',
+                '面料(面料编号)': 'fabric',
                 '面料': 'fabric',
                 '规格名称': 'spec_name',
                 '关联下单SKU\n(支持换行|;分隔)': 'order_sku_links',
@@ -3125,7 +3446,7 @@ class SalesProductMixin:
                         parent_sku_marker = (get_cell(row, 'parent_sku_marker') or '').strip() or None
                         child_code = (get_cell(row, 'child_code') or '').strip() or None
                         sku_family_name = (get_cell(row, 'sku_family') or '').strip() or None
-                        fabric = (get_cell(row, 'fabric') or '').strip()
+                        fabric = self._normalize_sales_import_fabric_cell(get_cell(row, 'fabric'))
                         spec_name = (get_cell(row, 'spec_name') or '').strip()
                         sale_price_usd = self._parse_float(get_cell(row, 'sale_price_usd'))
                         order_sku_links = (get_cell(row, 'order_sku_links') or '').strip()
@@ -3196,25 +3517,83 @@ class SalesProductMixin:
                             errors.append({'row': row_idx, 'error': '无法根据订单SKU推断归属货号'})
                             continue
 
-                        auto_platform_sku = ''
-                        sku_family_code = sku_family_code_map.get(sku_family_id) or ''
-                        if sku_family_code and auto_fabric and auto_spec_name:
-                            auto_platform_sku = self._build_sales_platform_sku(sku_family_code, auto_spec_name, auto_fabric)
-
-                        final_fabric = fabric or auto_fabric
                         final_spec_name = spec_name or auto_spec_name
+                        resolved_fabric_id = None
+                        final_fabric = fabric or auto_fabric
+                        has_fabric_id_col = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
+                        if has_fabric_id_col:
+                            if fabric:
+                                resolved_fabric_id = self._resolve_fabric_material_id_from_label(
+                                    conn, fabric, row_cur, allow_name_match=False
+                                )
+                                if not resolved_fabric_id:
+                                    errors.append({
+                                        'row': row_idx,
+                                        'error': '面料无效：请填写面料主数据中的面料编号（fabric_code），勿使用英文名或无效编码',
+                                    })
+                                    continue
+                                canonical = self._fabric_code_for_material_id(conn, resolved_fabric_id, row_cur)
+                                final_fabric = canonical or self._code_before_dash(fabric)
+                            else:
+                                resolved_fabric_id, link_fabric_err = self._resolve_fabric_material_id_from_order_links_import(
+                                    conn, link_entries, row_cur
+                                )
+                                if not resolved_fabric_id:
+                                    if link_fabric_err == 'ambiguous':
+                                        errors.append({
+                                            'row': row_idx,
+                                            'error': '关联下单SKU对应多种面料，请在本行「面料」列填写唯一面料编号',
+                                        })
+                                    else:
+                                        errors.append({
+                                            'row': row_idx,
+                                            'error': '「面料」列未填且关联下单SKU未绑定面料，请填写面料编号',
+                                        })
+                                    continue
+                                canonical = self._fabric_code_for_material_id(conn, resolved_fabric_id, row_cur)
+                                if not canonical:
+                                    errors.append({
+                                        'row': row_idx,
+                                        'error': '关联面料主数据缺少面料编号（fabric_code），请补全面料主数据或在本行填写编号',
+                                    })
+                                    continue
+                                final_fabric = canonical
+
+                        if has_fabric_id_col and resolved_fabric_id:
+                            if not self._fabric_product_family_linked(conn, sku_family_id, resolved_fabric_id, row_cur):
+                                errors.append({
+                                    'row': row_idx,
+                                    'error': '货号与面料未绑定：该组合未在货号-面料关联表中维护，请在规格主图管理或面料管理中补充关联后再导入',
+                                })
+                                continue
+                        elif (not has_fabric_id_col) and self._table_has_column(conn, 'sales_product_variants', 'fabric'):
+                            ft_chk = (final_fabric or '').strip()
+                            if ft_chk:
+                                fid_chk = self._resolve_fabric_material_id_from_label(
+                                    conn, ft_chk, row_cur, allow_name_match=False
+                                )
+                                if not fid_chk:
+                                    errors.append({
+                                        'row': row_idx,
+                                        'error': '面料无效：请填写面料主数据中的面料编号（fabric_code），以便校验货号-面料关联',
+                                    })
+                                    continue
+                                if not self._fabric_product_family_linked(conn, sku_family_id, fid_chk, row_cur):
+                                    errors.append({
+                                        'row': row_idx,
+                                        'error': '货号与面料未绑定：该组合未在货号-面料关联表中维护，请在规格主图管理或面料管理中补充关联后再导入',
+                                    })
+                                    continue
+
+                        sku_family_code = sku_family_code_map.get(sku_family_id) or ''
+                        auto_platform_sku = ''
+                        if sku_family_code and final_fabric and final_spec_name:
+                            auto_platform_sku = self._build_sales_platform_sku(sku_family_code, final_spec_name, final_fabric)
                         final_platform_sku = platform_sku or auto_platform_sku
 
                         if not final_platform_sku:
                             errors.append({'row': row_idx, 'error': 'Platform SKU missing'})
                             continue
-
-                        resolved_fabric_id = None
-                        if self._table_has_column(conn, 'sales_product_variants', 'fabric_id'):
-                            resolved_fabric_id = self._resolve_fabric_material_id_from_label(conn, final_fabric)
-                            if not resolved_fabric_id:
-                                errors.append({'row': row_idx, 'error': '面料无效：无法匹配到面料主数据（fabric_materials），请检查「面料」列编码或英文名'})
-                                continue
 
                         variant_key = (int(sku_family_id), str(final_spec_name or '').strip(), str(final_fabric or '').strip())
                         if preview_mode:
