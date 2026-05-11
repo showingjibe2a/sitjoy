@@ -464,6 +464,7 @@
                                 <tr>
                                     <th style="width:120px;">类型</th>
                                     <th style="width:100px;">优先级</th>
+                                    <th style="min-width:120px;">关联平台</th>
                                     <th style="min-width:180px;">事项</th>
                                     <th style="min-width:180px;">详情/备注</th>
                                     <th style="width:120px;">开始日期</th>
@@ -474,7 +475,7 @@
                                 </tr>
                             </thead>
                             <tbody id="todoTableBody">
-                                <tr><td colspan="9" style="text-align:center;">加载中...</td></tr>
+                                <tr><td colspan="10" style="text-align:center;">加载中...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -684,6 +685,22 @@
                                     <div class="feature-category-menu" id="todoSalesSkuMenu">
                                         <input type="text" id="todoSalesSkuSearch" class="universal-select-search" placeholder="搜索平台SKU/货号/规格">
                                         <div class="feature-category-list" id="todoSalesSkuList"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group pm-form-full">
+                            <label>关联平台（可多选）</label>
+                            <div class="feature-category-picker is-multi-check" id="todoPlatformTypePicker">
+                                <div class="feature-category-chips" id="todoPlatformTypeSelected"></div>
+                                <div class="feature-category-dropdown" id="todoPlatformTypeDropdown">
+                                    <button type="button" class="feature-category-add" id="todoPlatformTypeToggle">
+                                        <span class="feature-category-add-icon">+</span>
+                                        <span class="feature-category-add-text">添加平台</span>
+                                    </button>
+                                    <div class="feature-category-menu" id="todoPlatformTypeMenu">
+                                        <input type="text" id="todoPlatformTypeSearch" class="universal-select-search" placeholder="搜索平台名称">
+                                        <div class="feature-category-list" id="todoPlatformTypeList"></div>
                                     </div>
                                 </div>
                             </div>
@@ -1198,10 +1215,13 @@
             // reset link selections
             setTodoSelectedSkuFamilyIds([]);
             setTodoSelectedSalesProductIds([]);
+            setTodoSelectedPlatformTypeIds([]);
             window.todoEditingSkuFamilyNamesById = {};
             window.todoEditingSalesSkuNamesById = {};
+            window.todoEditingPlatformTypeNamesById = {};
             updateTodoSkuFamilySelected();
             updateTodoSalesSkuSelected();
+            updateTodoPlatformTypeSelected();
             
             if (action === 'create') {
                 document.getElementById('todoModalTitle').textContent = '新增待办';
@@ -1257,8 +1277,15 @@
                         const name = (todo.platform_skus || [])[idx] || '';
                         if (name) window.todoEditingSalesSkuNamesById[parseInt(id, 10)] = name;
                     });
+                    setTodoSelectedPlatformTypeIds(todo.platform_type_ids || []);
+                    window.todoEditingPlatformTypeNamesById = {};
+                    (todo.platform_type_ids || []).forEach((id, idx) => {
+                        const name = (todo.platform_type_names || [])[idx] || '';
+                        if (name) window.todoEditingPlatformTypeNamesById[parseInt(id, 10)] = name;
+                    });
                     updateTodoSkuFamilySelected();
                     updateTodoSalesSkuSelected();
+                    updateTodoPlatformTypeSelected();
                 } else {
                     window.todoModalCurrentCompletedAt = '';
                     const completedInput = document.getElementById('todoModalCompletedAtInput');
@@ -1272,6 +1299,7 @@
             loadAssigneeCheckboxes();
             // preload sku families for better UX
             loadTodoSkuFamilyOptions('').then(() => updateTodoSkuFamilySelected()).catch(() => {});
+            loadTodoPlatformTypeOptions('').then(() => updateTodoPlatformTypeSelected()).catch(() => {});
             syncTodoRecurringUi();
             syncTodoCompletionUi();
         }
@@ -1595,6 +1623,14 @@
             } else if (spDropdown && spDropdown.classList.contains('open') && !spDropdown.contains(e.target)) {
                 closeTodoSalesSkuDropdown();
             }
+
+            const ptToggle = document.getElementById('todoPlatformTypeToggle');
+            const ptDropdown = document.getElementById('todoPlatformTypeDropdown');
+            if (ptToggle && (e.target === ptToggle || (e.target && e.target.closest && e.target.closest('#todoPlatformTypeToggle')))) {
+                toggleTodoPlatformTypeDropdown();
+            } else if (ptDropdown && ptDropdown.classList.contains('open') && !ptDropdown.contains(e.target)) {
+                closeTodoPlatformTypeDropdown();
+            }
         });
 
         const todoSkuFamilySearch = document.getElementById('todoSkuFamilySearch');
@@ -1613,6 +1649,12 @@
                 }, 220);
             });
         }
+        const todoPlatformTypeSearch = document.getElementById('todoPlatformTypeSearch');
+        if (todoPlatformTypeSearch) {
+            todoPlatformTypeSearch.addEventListener('input', () => {
+                renderTodoPlatformTypeOptions(todoPlatformTypeSearch.value || '');
+            });
+        }
 
         // ===== Todo links: 关联货号 / 关联销售SKU =====
         function getTodoSelectedSkuFamilyIds() {
@@ -1628,6 +1670,13 @@
         }
         function setTodoSelectedSalesProductIds(ids) {
             window.todoSelectedSalesProductIds = Array.from(new Set((ids || []).map(v => parseInt(v, 10)).filter(v => Number.isFinite(v) && v > 0)));
+        }
+        function getTodoSelectedPlatformTypeIds() {
+            if (!Array.isArray(window.todoSelectedPlatformTypeIds)) window.todoSelectedPlatformTypeIds = [];
+            return window.todoSelectedPlatformTypeIds;
+        }
+        function setTodoSelectedPlatformTypeIds(ids) {
+            window.todoSelectedPlatformTypeIds = Array.from(new Set((ids || []).map(v => parseInt(v, 10)).filter(v => Number.isFinite(v) && v > 0)));
         }
 
         async function loadTodoSkuFamilyOptions(keyword = '') {
@@ -1688,6 +1737,21 @@
             dropdown.classList.remove('open');
             dropdown.classList.remove('expanded');
         }
+        function toggleTodoPlatformTypeDropdown() {
+            const dropdown = document.getElementById('todoPlatformTypeDropdown');
+            if (!dropdown) return;
+            dropdown.classList.toggle('open');
+            dropdown.classList.toggle('expanded');
+            if (dropdown.classList.contains('open')) {
+                renderTodoPlatformTypeOptions((document.getElementById('todoPlatformTypeSearch') || {}).value || '');
+            }
+        }
+        function closeTodoPlatformTypeDropdown() {
+            const dropdown = document.getElementById('todoPlatformTypeDropdown');
+            if (!dropdown) return;
+            dropdown.classList.remove('open');
+            dropdown.classList.remove('expanded');
+        }
 
         function updateTodoSkuFamilySelected() {
             const wrap = document.getElementById('todoSkuFamilySelected');
@@ -1737,6 +1801,90 @@
                 wrap.appendChild(tag);
             });
             if (toggleText) toggleText.textContent = `已选 ${selectedIds.length} 个`;
+        }
+
+        async function loadTodoPlatformTypeOptions(keyword = '') {
+            const q = (keyword || '').trim();
+            const params = new URLSearchParams();
+            if (q) params.set('q', q);
+            const url = '/api/platform-type' + (params.toString() ? ('?' + params.toString()) : '');
+            const resp = await fetch(url, { credentials: 'include' });
+            const data = await resp.json();
+            const items = (data && data.status === 'success' && Array.isArray(data.items)) ? data.items : [];
+            window.todoPlatformTypeOptions = items;
+            window.todoPlatformTypeMap = window.todoPlatformTypeMap || {};
+            (window.todoPlatformTypeOptions || []).forEach(x => {
+                const id = parseInt(x.id, 10) || 0;
+                if (id) window.todoPlatformTypeMap[id] = x;
+            });
+            return window.todoPlatformTypeOptions;
+        }
+
+        function updateTodoPlatformTypeSelected() {
+            const wrap = document.getElementById('todoPlatformTypeSelected');
+            const toggleText = document.querySelector('#todoPlatformTypeToggle .feature-category-add-text');
+            if (!wrap) return;
+            const selectedIds = getTodoSelectedPlatformTypeIds();
+            const map = window.todoPlatformTypeMap || {};
+            const textById = window.todoEditingPlatformTypeNamesById || {};
+            wrap.innerHTML = '';
+            if (selectedIds.length === 0) {
+                wrap.innerHTML = '<span class="assignee-empty">未关联平台</span>';
+                if (toggleText) toggleText.textContent = '添加平台';
+                return;
+            }
+            selectedIds.forEach(id => {
+                const row = map[id] || {};
+                const name = row.name || textById[id] || ('平台#' + id);
+                const tag = document.createElement('span');
+                tag.className = 'feature-category-chip';
+                tag.innerHTML = `<span>${escapeHtml(name)}</span><button type="button" class="feature-category-remove" data-remove-pt="${id}">×</button>`;
+                wrap.appendChild(tag);
+            });
+            if (toggleText) toggleText.textContent = `已选 ${selectedIds.length} 个`;
+        }
+
+        async function renderTodoPlatformTypeOptions(keyword = '') {
+            const list = document.getElementById('todoPlatformTypeList');
+            if (!list) return;
+            try {
+                await loadTodoPlatformTypeOptions(keyword);
+            } catch (e) {
+                window.todoPlatformTypeOptions = [];
+            }
+            const selectedIds = new Set(getTodoSelectedPlatformTypeIds().map(id => String(id)));
+            const query = String(keyword || '').trim().toLowerCase();
+            const options = (window.todoPlatformTypeOptions || []).filter(item => {
+                if (!query) return true;
+                const nm = String(item.name || '').toLowerCase();
+                return nm.includes(query);
+            }).slice(0, 800);
+            if (options.length === 0) {
+                list.innerHTML = '<div class="feature-category-empty">暂无可选平台</div>';
+                return;
+            }
+            list.innerHTML = options.map(item => {
+                const id = parseInt(item.id, 10) || 0;
+                const checked = selectedIds.has(String(id));
+                const title = item.name || ('平台#' + id);
+                return `
+                    <div class="feature-category-item ${checked ? 'is-selected' : ''}" data-pt-id="${id}">
+                        <span>${escapeHtml(title)}</span>
+                    </div>
+                `;
+            }).join('');
+            list.querySelectorAll('[data-pt-id]').forEach(row => {
+                row.addEventListener('click', () => {
+                    const id = parseInt(row.dataset.ptId || '0', 10) || 0;
+                    if (!id) return;
+                    const current = new Set(getTodoSelectedPlatformTypeIds());
+                    if (current.has(id)) current.delete(id);
+                    else current.add(id);
+                    setTodoSelectedPlatformTypeIds(Array.from(current));
+                    updateTodoPlatformTypeSelected();
+                    renderTodoPlatformTypeOptions((document.getElementById('todoPlatformTypeSearch') || {}).value || '');
+                });
+            });
         }
 
         async function renderTodoSkuFamilyOptions(keyword = '') {
@@ -1863,6 +2011,7 @@
             const assignee_ids = getTodoSelectedAssigneeIds();
             const related_sku_family_ids = getTodoSelectedSkuFamilyIds();
             const related_sales_product_ids = getTodoSelectedSalesProductIds();
+            const related_platform_type_ids = getTodoSelectedPlatformTypeIds();
             
             if (!title || !start_date || !todo_type_id) {
                 if (window.showAppToast) window.showAppToast('请填写事项标题、开始日期，并选择待办类型', true, 0);
@@ -1898,7 +2047,8 @@
                 completed_at: is_completed ? (completed_at || null) : null,
                 assignee_ids,
                 related_sku_family_ids,
-                related_sales_product_ids
+                related_sales_product_ids,
+                related_platform_type_ids
             };
             
             try {
@@ -2102,7 +2252,7 @@
                 return (parseInt(b.id, 10) || 0) - (parseInt(a.id, 10) || 0);
             });
             if (!list.length) {
-                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">暂无待办</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">暂无待办</td></tr>';
                 return;
             }
             const todayStr = formatDateInputValue(new Date());
@@ -2112,6 +2262,10 @@
                 const start = todo.start_date || '';
                 const due = todo.due_date || '';
                 const detailText = todo.detail ? String(todo.detail).slice(0, 80) : '-';
+                const platformNames = Array.isArray(todo.platform_type_names) ? todo.platform_type_names : [];
+                const platformCell = platformNames.length
+                    ? platformNames.map(n => escapeHtml(String(n))).join('、')
+                    : '<span style="color:#999;">—</span>';
                 const completedAt = todo.my_completed_at ? String(todo.my_completed_at) : '';
                 const dueForCompare = String(due || start || '').slice(0, 10);
                 const isOverdue = status !== 'done' && !!dueForCompare && dueForCompare <= todayStr;
@@ -2119,6 +2273,7 @@
                     <tr data-todo-id="${todo.id}" class="${isOverdue ? 'todo-overdue' : ''}">
                         <td>${escapeHtml(typeName)}</td>
                         <td>${prioritySegmentHtml(todo.priority)}</td>
+                        <td class="todo-mini-sub">${platformCell}</td>
                         <td class="todo-title-cell">
                             <div style="font-weight:600;">${escapeHtml(todo.title || '')}</div>
                         </td>
@@ -2648,7 +2803,10 @@
                 if (todoItems.length > 0) {
                     html += '<div style="padding:6px 8px"><strong>待办</strong><ul style="margin:6px 0 0;padding-left:16px;">';
                     todoItems.slice(0, 6).forEach(t => {
-                        html += `<li style="font-size:13px;line-height:1.3;color:#ece7df">${t.title}${t.detail ? '<div style="font-size:12px;color:#cfc7bd">'+(t.detail||'')+'</div>' : ''}</li>`;
+                        const pt = (Array.isArray(t.platform_type_names) && t.platform_type_names.length)
+                            ? `<div style="font-size:12px;color:#b8a990;margin-top:2px;">平台：${t.platform_type_names.map(x => escapeHtml(String(x || ''))).join('、')}</div>`
+                            : '';
+                        html += `<li style="font-size:13px;line-height:1.3;color:#ece7df">${t.title}${t.detail ? '<div style="font-size:12px;color:#cfc7bd">'+(t.detail||'')+'</div>' : ''}${pt}</li>`;
                     });
                     if (todoItems.length > 6) html += `<li style="font-size:12px;color:#cfc7bd">等 ${todoItems.length - 6} 项...</li>`;
                     html += '</ul></div>';
@@ -2907,6 +3065,17 @@
                     setTodoSelectedSalesProductIds(getTodoSelectedSalesProductIds().filter(v => v !== rid));
                     updateTodoSalesSkuSelected();
                     renderTodoSalesSkuOptions((document.getElementById('todoSalesSkuSearch') || {}).value || '');
+                });
+            }
+
+            const todoPlatformTypeSelected = document.getElementById('todoPlatformTypeSelected');
+            if (todoPlatformTypeSelected) {
+                todoPlatformTypeSelected.addEventListener('click', e => {
+                    const rid = parseInt(e.target.dataset.removePt || '0', 10) || 0;
+                    if (!rid) return;
+                    setTodoSelectedPlatformTypeIds(getTodoSelectedPlatformTypeIds().filter(v => v !== rid));
+                    updateTodoPlatformTypeSelected();
+                    renderTodoPlatformTypeOptions((document.getElementById('todoPlatformTypeSearch') || {}).value || '');
                 });
             }
 

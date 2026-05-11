@@ -314,6 +314,13 @@ class RequestRoutingMixin:
                 return None
             return self.send_json({'status': 'error', 'message': '无权限访问该模块'}, start_response)
 
+        method = (environ.get('REQUEST_METHOD') or 'GET').upper()
+        # 首页待办「关联平台」下拉：有首页或店铺管理权限即可只读获取平台类型列表；写操作仍走下方 shop_brand_management
+        if path == '/api/platform-type' and method == 'GET':
+            if self._user_has_page_access(user_id, 'home') or self._user_has_page_access(user_id, 'shop_brand_management'):
+                return None
+            return self.send_json({'status': 'error', 'message': '无权限访问该模块'}, start_response)
+
         permission_key = API_PERMISSION_MAP.get(path)
         if permission_key and not self._user_has_page_access(user_id, permission_key):
             return self.send_json({'status': 'error', 'message': '无权限访问该模块'}, start_response)

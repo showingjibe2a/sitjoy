@@ -229,37 +229,59 @@ class UtilityMixin:
             print(f'Todo type API error: {str(e)}')
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
-    def _replace_todo_sales_links(self, conn, todo_id, sales_product_ids, sku_family_ids):
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM todo_sales_links WHERE todo_id=%s", (todo_id,))
-            sp_ids = sorted(set([self._parse_int(x) for x in (sales_product_ids or []) if self._parse_int(x)]))
-            sf_ids = sorted(set([self._parse_int(x) for x in (sku_family_ids or []) if self._parse_int(x)]))
-            for sp_id in sp_ids:
-                cur.execute(
-                    "INSERT INTO todo_sales_links (todo_id, sales_product_id) VALUES (%s, %s)",
-                    (todo_id, sp_id)
-                )
-            for sf_id in sf_ids:
-                cur.execute(
-                    "INSERT INTO todo_sales_links (todo_id, sku_family_id) VALUES (%s, %s)",
-                    (todo_id, sf_id)
-                )
+    def _replace_todo_sales_links(self, cur, todo_id, sales_product_ids, sku_family_ids):
+        cur.execute("DELETE FROM todo_sales_links WHERE todo_id=%s", (todo_id,))
+        sp_ids = sorted(set([self._parse_int(x) for x in (sales_product_ids or []) if self._parse_int(x)]))
+        sf_ids = sorted(set([self._parse_int(x) for x in (sku_family_ids or []) if self._parse_int(x)]))
+        if sp_ids:
+            cur.executemany(
+                "INSERT INTO todo_sales_links (todo_id, sales_product_id) VALUES (%s, %s)",
+                [(todo_id, sp_id) for sp_id in sp_ids],
+            )
+        if sf_ids:
+            cur.executemany(
+                "INSERT INTO todo_sales_links (todo_id, sku_family_id) VALUES (%s, %s)",
+                [(todo_id, sf_id) for sf_id in sf_ids],
+            )
 
-    def _replace_todo_assignees(self, conn, todo_id, assignee_ids, assignee_status_map=None):
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM todo_assignments WHERE todo_id=%s", (todo_id,))
-            ids = sorted(set([self._parse_int(x) for x in (assignee_ids or []) if self._parse_int(x)]))
-            status_map = assignee_status_map or {}
-            for aid in ids:
-                st = status_map.get(aid) or {}
-                is_completed = 1 if int(st.get('is_completed') or 0) == 1 else 0
-                completed_at = self._todo_parse_datetime(st.get('completed_at')) if st.get('completed_at') is not None else None
-                if is_completed == 1 and not completed_at:
-                    completed_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                cur.execute(
-                    "INSERT INTO todo_assignments (todo_id, assignee_id, is_completed, completed_at) VALUES (%s, %s, %s, %s)",
-                    (todo_id, aid, is_completed, completed_at if is_completed == 1 else None)
-                )
+    def _replace_todo_platform_type_links(self, cur, todo_id, platform_type_ids):
+        cur.execute("DELETE FROM todo_platform_type_links WHERE todo_id=%s", (todo_id,))
+        pt_ids = sorted(set([self._parse_int(x) for x in (platform_type_ids or []) if self._parse_int(x)]))
+        if pt_ids:
+            cur.executemany(
+                "INSERT INTO todo_platform_type_links (todo_id, platform_type_id) VALUES (%s, %s)",
+                [(todo_id, pt_id) for pt_id in pt_ids],
+            )
+
+    @staticmethod
+    def _todo_link_details_empty():
+        return {
+            'sales_product_ids': [],
+            'platform_skus': [],
+            'sku_family_ids': [],
+            'sku_families': [],
+            'platform_type_ids': [],
+            'platform_type_names': [],
+        }
+
+    def _replace_todo_assignees(self, cur, todo_id, assignee_ids, assignee_status_map=None):
+        cur.execute("DELETE FROM todo_assignments WHERE todo_id=%s", (todo_id,))
+        ids = sorted(set([self._parse_int(x) for x in (assignee_ids or []) if self._parse_int(x)]))
+        status_map = assignee_status_map or {}
+        now_text = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        rows = []
+        for aid in ids:
+            st = status_map.get(aid) or {}
+            is_completed = 1 if int(st.get('is_completed') or 0) == 1 else 0
+            completed_at = self._todo_parse_datetime(st.get('completed_at')) if st.get('completed_at') is not None else None
+            if is_completed == 1 and not completed_at:
+                completed_at = now_text
+            rows.append((todo_id, aid, is_completed, completed_at if is_completed == 1 else None))
+        if rows:
+            cur.executemany(
+                "INSERT INTO todo_assignments (todo_id, assignee_id, is_completed, completed_at) VALUES (%s, %s, %s, %s)",
+                rows,
+            )
 
     def handle_todo_api(self, environ, method, start_response):
         """待办事项 API（CRUD）"""
@@ -343,12 +365,7 @@ class UtilityMixin:
                                     tid = self._parse_int(lk.get('todo_id'))
                                     if not tid:
                                         continue
-                                    link_map.setdefault(tid, {
-                                        'sales_product_ids': [],
-                                        'platform_skus': [],
-                                        'sku_family_ids': [],
-                                        'sku_families': []
-                                    })
+                                    link_map.setdefault(tid, self._todo_link_details_empty())
                                     sp_id = self._parse_int(lk.get('sales_product_id'))
                                     sf_id = self._parse_int(lk.get('sku_family_id'))
                                     sku = str(lk.get('platform_sku') or '').strip()
@@ -361,6 +378,29 @@ class UtilityMixin:
                                         link_map[tid]['sku_family_ids'].append(sf_id)
                                     if sf and sf not in link_map[tid]['sku_families']:
                                         link_map[tid]['sku_families'].append(sf)
+
+                                cur.execute(
+                                    f"""
+                                    SELECT tpl.todo_id, tpl.platform_type_id, pt.name AS platform_type_name
+                                    FROM todo_platform_type_links tpl
+                                    LEFT JOIN platform_types pt ON pt.id = tpl.platform_type_id
+                                    WHERE tpl.todo_id IN ({placeholders})
+                                    ORDER BY tpl.id ASC
+                                    """,
+                                    tuple(todo_ids)
+                                )
+                                pt_rows = cur.fetchall() or []
+                                for pr in pt_rows:
+                                    tid = self._parse_int(pr.get('todo_id'))
+                                    if not tid:
+                                        continue
+                                    link_map.setdefault(tid, self._todo_link_details_empty())
+                                    pid = self._parse_int(pr.get('platform_type_id'))
+                                    nm = str(pr.get('platform_type_name') or '').strip()
+                                    if pid and pid not in link_map[tid]['platform_type_ids']:
+                                        link_map[tid]['platform_type_ids'].append(pid)
+                                    if nm and nm not in link_map[tid]['platform_type_names']:
+                                        link_map[tid]['platform_type_names'].append(nm)
 
                                 cur.execute(
                                     f"""
@@ -389,12 +429,7 @@ class UtilityMixin:
 
                                 for r in rows:
                                     tid = self._parse_int(r.get('id'))
-                                    details = link_map.get(tid, {
-                                        'sales_product_ids': [],
-                                        'platform_skus': [],
-                                        'sku_family_ids': [],
-                                        'sku_families': []
-                                    })
+                                    details = link_map.get(tid, self._todo_link_details_empty())
                                     r.update(details)
                                     r['assignees'] = ass_map.get(tid, [])
 
@@ -418,65 +453,66 @@ class UtilityMixin:
                 assignee_ids = data.get('assignee_ids') or []
                 related_sales_product_ids = data.get('related_sales_product_ids') or []
                 related_sku_family_ids = data.get('related_sku_family_ids') or []
+                related_platform_type_ids = data.get('related_platform_type_ids') or []
                 is_completed = 1 if str(data.get('is_completed', 0)).strip().lower() in ('1', 'true', 'yes', 'on') else 0
                 completed_at = self._todo_parse_datetime(data.get('completed_at'))
                 if is_completed == 1 and not completed_at:
                     completed_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
                 with self._get_db_connection() as conn:
-                    if not todo_type_id:
-                        # 默认使用 todo_types 中 sort_order 最小的类型（一般为“默认”）
-                        try:
-                            with conn.cursor() as cur:
+                    with conn.cursor() as cur:
+                        if not todo_type_id:
+                            # 默认使用 todo_types 中 sort_order 最小的类型（一般为“默认”）
+                            try:
                                 cur.execute("SELECT id FROM todo_types ORDER BY sort_order ASC, id ASC LIMIT 1")
                                 row = cur.fetchone() or {}
                                 todo_type_id = self._parse_int(row.get('id')) or 0
-                        except Exception:
-                            todo_type_id = 0
+                            except Exception:
+                                todo_type_id = 0
 
-                    # 互斥：循环任务用 reminder_interval_days；非循环任务用 due_date
-                    if is_recurring:
-                        if not reminder_interval_days or int(reminder_interval_days or 0) <= 0:
-                            return self.send_json({'status': 'error', 'message': '循环任务必须设置 reminder_interval_days'}, start_response)
-                        reminder_interval_days = max(1, int(reminder_interval_days))
-                        due_date = self._todo_plus_days_date(start_date, reminder_interval_days) or start_date
-                    else:
-                        if not due_date:
-                            return self.send_json({'status': 'error', 'message': '非循环任务必须设置 due_date'}, start_response)
-                        reminder_interval_days = None
+                        # 互斥：循环任务用 reminder_interval_days；非循环任务用 due_date
+                        if is_recurring:
+                            if not reminder_interval_days or int(reminder_interval_days or 0) <= 0:
+                                return self.send_json({'status': 'error', 'message': '循环任务必须设置 reminder_interval_days'}, start_response)
+                            reminder_interval_days = max(1, int(reminder_interval_days))
+                            due_date = self._todo_plus_days_date(start_date, reminder_interval_days) or start_date
+                        else:
+                            if not due_date:
+                                return self.send_json({'status': 'error', 'message': '非循环任务必须设置 due_date'}, start_response)
+                            reminder_interval_days = None
 
-                    insert_cols = [
-                        'todo_type_id', 'title', 'detail',
-                        'start_date', 'due_date',
-                        'reminder_interval_days', 'is_recurring',
-                        'priority', 'created_by'
-                    ]
-                    insert_vals = [
-                        todo_type_id, title, detail,
-                        start_date, due_date,
-                        reminder_interval_days, is_recurring,
-                        priority, user_id
-                    ]
-                    placeholders = ','.join(['%s'] * len(insert_vals))
-                    col_sql = ','.join(insert_cols)
-                    with conn.cursor() as cur:
+                        insert_cols = [
+                            'todo_type_id', 'title', 'detail',
+                            'start_date', 'due_date',
+                            'reminder_interval_days', 'is_recurring',
+                            'priority', 'created_by'
+                        ]
+                        insert_vals = [
+                            todo_type_id, title, detail,
+                            start_date, due_date,
+                            reminder_interval_days, is_recurring,
+                            priority, user_id
+                        ]
+                        placeholders = ','.join(['%s'] * len(insert_vals))
+                        col_sql = ','.join(insert_cols)
                         cur.execute(
                             f'INSERT INTO todos ({col_sql}) VALUES ({placeholders})',
                             tuple(insert_vals)
                         )
                         new_id = cur.lastrowid
-                    if not isinstance(assignee_ids, list):
-                        assignee_ids = []
-                    if not assignee_ids:
-                        assignee_ids = [user_id]
-                    assignee_status_map = {
-                        int(user_id): {
-                            'is_completed': is_completed,
-                            'completed_at': completed_at if is_completed == 1 else None
+                        if not isinstance(assignee_ids, list):
+                            assignee_ids = []
+                        if not assignee_ids:
+                            assignee_ids = [user_id]
+                        assignee_status_map = {
+                            int(user_id): {
+                                'is_completed': is_completed,
+                                'completed_at': completed_at if is_completed == 1 else None
+                            }
                         }
-                    }
-                    self._replace_todo_assignees(conn, new_id, assignee_ids, assignee_status_map=assignee_status_map)
-                    self._replace_todo_sales_links(conn, new_id, related_sales_product_ids, related_sku_family_ids)
+                        self._replace_todo_assignees(cur, new_id, assignee_ids, assignee_status_map=assignee_status_map)
+                        self._replace_todo_sales_links(cur, new_id, related_sales_product_ids, related_sku_family_ids)
+                        self._replace_todo_platform_type_links(cur, new_id, related_platform_type_ids)
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
             if method == 'PUT':
@@ -495,6 +531,7 @@ class UtilityMixin:
                     completed_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 related_sales_product_ids = data.get('related_sales_product_ids') if isinstance(data.get('related_sales_product_ids'), list) else None
                 related_sku_family_ids = data.get('related_sku_family_ids') if isinstance(data.get('related_sku_family_ids'), list) else None
+                related_platform_type_ids = data.get('related_platform_type_ids') if isinstance(data.get('related_platform_type_ids'), list) else None
                 assignee_ids = data.get('assignee_ids') if isinstance(data.get('assignee_ids'), list) else None
                 title = (data.get('title') or '').strip() if 'title' in (data or {}) else None
                 detail = (data.get('detail') or '').strip() if 'detail' in (data or {}) else None
@@ -609,35 +646,36 @@ class UtilityMixin:
                             base_for_due = final_completed_at or final_start_date
                             auto_due_date = self._todo_plus_days_date(base_for_due, final_interval) or final_start_date
                             cur.execute("UPDATE todos SET due_date=%s WHERE id=%s", (auto_due_date, item_id))
-                    if related_sales_product_ids is not None or related_sku_family_ids is not None:
-                        self._replace_todo_sales_links(conn, item_id, related_sales_product_ids or [], related_sku_family_ids or [])
-                    if assignee_ids is not None:
-                        with conn.cursor() as cur:
+                        if related_sales_product_ids is not None or related_sku_family_ids is not None:
+                            self._replace_todo_sales_links(cur, item_id, related_sales_product_ids or [], related_sku_family_ids or [])
+                        if related_platform_type_ids is not None:
+                            self._replace_todo_platform_type_links(cur, item_id, related_platform_type_ids)
+                        if assignee_ids is not None:
                             cur.execute(
                                 "SELECT assignee_id, is_completed, completed_at FROM todo_assignments WHERE todo_id=%s",
                                 (item_id,)
                             )
                             assignee_rows = cur.fetchall() or []
-                        assignee_status_map = {}
-                        for row in assignee_rows:
-                            aid = self._parse_int(row.get('assignee_id'))
-                            if not aid:
-                                continue
-                            assignee_status_map[aid] = {
-                                'is_completed': 1 if int(row.get('is_completed') or 0) == 1 else 0,
-                                'completed_at': self._todo_parse_datetime(row.get('completed_at'))
-                            }
-                        if is_completed is not None:
-                            assignee_status_map[int(user_id)] = {
-                                'is_completed': 1 if is_completed == 1 else 0,
-                                'completed_at': completed_at if is_completed == 1 else None
-                            }
-                        elif completed_at is not None:
-                            base = assignee_status_map.get(int(user_id)) or {}
-                            if int(base.get('is_completed') or 0) == 1:
-                                base['completed_at'] = completed_at
-                            assignee_status_map[int(user_id)] = base
-                        self._replace_todo_assignees(conn, item_id, assignee_ids, assignee_status_map=assignee_status_map)
+                            assignee_status_map = {}
+                            for row in assignee_rows:
+                                aid = self._parse_int(row.get('assignee_id'))
+                                if not aid:
+                                    continue
+                                assignee_status_map[aid] = {
+                                    'is_completed': 1 if int(row.get('is_completed') or 0) == 1 else 0,
+                                    'completed_at': self._todo_parse_datetime(row.get('completed_at'))
+                                }
+                            if is_completed is not None:
+                                assignee_status_map[int(user_id)] = {
+                                    'is_completed': 1 if is_completed == 1 else 0,
+                                    'completed_at': completed_at if is_completed == 1 else None
+                                }
+                            elif completed_at is not None:
+                                base = assignee_status_map.get(int(user_id)) or {}
+                                if int(base.get('is_completed') or 0) == 1:
+                                    base['completed_at'] = completed_at
+                                assignee_status_map[int(user_id)] = base
+                            self._replace_todo_assignees(cur, item_id, assignee_ids, assignee_status_map=assignee_status_map)
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':

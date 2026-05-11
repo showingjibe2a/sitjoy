@@ -9841,6 +9841,68 @@ class SalesProductMixin:
                     fabric_expr = "fm.fabric_code"
                 else:
                     fabric_expr = ("v.fabric" if has_fabric_text else "''")
+                # --- 货号分组明细：预估成本（销售变体→下单SKU 链接表加权）；佣金统一按家具类目分段费率估算 ---
+                # estimated_product_cost_usd：下单产品 cost_usd 表示「产品至海外仓」成本（BOM），按链接数量加权汇总后再×周期销量。
+                # estimated_last_mile_freight_usd：下单产品 last_mile_avg_freight_usd 预估尾程，同样按链接数量加权汇总后再×周期销量。
+                # 佣金：统一按「家具类目」分段费率估算（不校验货号类目）。
+                has_op_reship = self._table_has_column(conn, 'order_products', 'is_reship_accessory')
+                has_op_last_mile = self._table_has_column(conn, 'order_products', 'last_mile_avg_freight_usd')
+                reship_clause = ' AND COALESCE(op.is_reship_accessory,0)=0 ' if has_op_reship else ''
+                lm_weighted_sum = (
+                    "SUM(COALESCE(op.last_mile_avg_freight_usd, 0) * COALESCE(svol.quantity, 1))"
+                    if has_op_last_mile else "0"
+                )
+                cost_join_variant = (
+                    "LEFT JOIN ("
+                    " SELECT v.id AS variant_id,"
+                    "   SUM(COALESCE(op.cost_usd, 0) * COALESCE(svol.quantity, 1)) AS unit_bom_cost_usd,"
+                    f"   {lm_weighted_sum} AS unit_last_mile_freight_usd"
+                    " FROM sales_product_variants v"
+                    " INNER JOIN sales_variant_order_links svol ON svol.variant_id = v.id"
+                    " INNER JOIN order_products op ON op.id = svol.order_product_id"
+                    f" WHERE 1=1{reship_clause}"
+                    " GROUP BY v.id"
+                    ") est_unit_cost ON est_unit_cost.variant_id = sp.variant_id"
+                )
+                commission_sql_day = (
+                    "LEAST(SUM(COALESCE(spp.net_sales_amount,0)), 200) * 0.15 "
+                    "+ GREATEST(SUM(COALESCE(spp.net_sales_amount,0)) - 200, 0) * 0.10 "
+                    "AS est_referral_commission_usd"
+                )
+                commission_sql_week = (
+                    "LEAST(SUM(COALESCE(a.net_sales_amount,0)), 200) * 0.15 "
+                    "+ GREATEST(SUM(COALESCE(a.net_sales_amount,0)) - 200, 0) * 0.10 "
+                    "AS est_referral_commission_usd"
+                )
+                # 销售额 = 销售变体售价(USD)×周期销量；折扣率=(销售额−净销售额)/销售额；退款率=退款金额/净销售额
+                gross_sales_sql_day = (
+                    "(COALESCE(v.sale_price_usd, 0) * SUM(COALESCE(spp.sales_qty, 0))) AS gross_sales_amount"
+                )
+                discount_rate_sql_day = (
+                    "CASE WHEN (COALESCE(v.sale_price_usd, 0) * SUM(COALESCE(spp.sales_qty, 0))) > 0 THEN "
+                    "((COALESCE(v.sale_price_usd, 0) * SUM(COALESCE(spp.sales_qty, 0))) - SUM(COALESCE(spp.net_sales_amount, 0))) "
+                    "/ (COALESCE(v.sale_price_usd, 0) * SUM(COALESCE(spp.sales_qty, 0))) "
+                    "ELSE 0 END AS discount_rate"
+                )
+                refund_rate_sql_day = (
+                    "CASE WHEN SUM(COALESCE(spp.net_sales_amount, 0)) > 0 THEN "
+                    "SUM(COALESCE(spp.refund_amount, 0)) / SUM(COALESCE(spp.net_sales_amount, 0)) "
+                    "ELSE 0 END AS refund_rate"
+                )
+                gross_sales_sql_week = (
+                    "(COALESCE(v.sale_price_usd, 0) * SUM(COALESCE(a.sales_qty, 0))) AS gross_sales_amount"
+                )
+                discount_rate_sql_week = (
+                    "CASE WHEN (COALESCE(v.sale_price_usd, 0) * SUM(COALESCE(a.sales_qty, 0))) > 0 THEN "
+                    "((COALESCE(v.sale_price_usd, 0) * SUM(COALESCE(a.sales_qty, 0))) - SUM(COALESCE(a.net_sales_amount, 0))) "
+                    "/ (COALESCE(v.sale_price_usd, 0) * SUM(COALESCE(a.sales_qty, 0))) "
+                    "ELSE 0 END AS discount_rate"
+                )
+                refund_rate_sql_week = (
+                    "CASE WHEN SUM(COALESCE(a.net_sales_amount, 0)) > 0 THEN "
+                    "SUM(COALESCE(a.refund_amount, 0)) / SUM(COALESCE(a.net_sales_amount, 0)) "
+                    "ELSE 0 END AS refund_rate"
+                )
                 params = []
                 sql = []
                 if granularity == 'day':
@@ -9857,6 +9919,8 @@ class SalesProductMixin:
                         "COUNT(1) AS `rows`",
                         "SUM(COALESCE(spp.sales_qty,0)) AS sales_qty",
                         "SUM(COALESCE(spp.net_sales_amount,0)) AS net_sales_amount",
+                        gross_sales_sql_day,
+                        discount_rate_sql_day,
                         "SUM(COALESCE(spp.order_qty,0)) AS order_qty",
                         "SUM(COALESCE(spp.session_total,0)) AS session_total",
                         "SUM(COALESCE(spp.ad_impressions,0)) AS ad_impressions",
@@ -9865,7 +9929,11 @@ class SalesProductMixin:
                         "SUM(COALESCE(spp.ad_spend,0)) AS ad_spend",
                         "SUM(COALESCE(spp.ad_sales_amount,0)) AS ad_sales_amount",
                         "SUM(COALESCE(spp.refund_amount,0)) AS refund_amount",
+                        refund_rate_sql_day,
                         "AVG(spp.sub_category_rank) AS sub_category_rank",
+                        "(MAX(COALESCE(est_unit_cost.unit_bom_cost_usd, 0)) * SUM(COALESCE(spp.sales_qty,0))) AS estimated_product_cost_usd",
+                        "(MAX(COALESCE(est_unit_cost.unit_last_mile_freight_usd, 0)) * SUM(COALESCE(spp.sales_qty,0))) AS estimated_last_mile_freight_usd",
+                        commission_sql_day,
                     ]
 
                     sql = [
@@ -9878,6 +9946,7 @@ class SalesProductMixin:
                         LEFT JOIN shops sh ON sh.id = sp.shop_id
                         LEFT JOIN platform_types pt ON pt.id = sh.platform_type_id
                         {fabric_join}
+                        {cost_join_variant}
                         WHERE 1=1
                         """
                     ]
@@ -9924,6 +9993,8 @@ class SalesProductMixin:
                         "SUM(COALESCE(a.source_rows,0)) AS `rows`",
                         "SUM(COALESCE(a.sales_qty,0)) AS sales_qty",
                         "SUM(COALESCE(a.net_sales_amount,0)) AS net_sales_amount",
+                        gross_sales_sql_week,
+                        discount_rate_sql_week,
                         "SUM(COALESCE(a.order_qty,0)) AS order_qty",
                         "SUM(COALESCE(a.session_total,0)) AS session_total",
                         "SUM(COALESCE(a.ad_impressions,0)) AS ad_impressions",
@@ -9932,7 +10003,11 @@ class SalesProductMixin:
                         "SUM(COALESCE(a.ad_spend,0)) AS ad_spend",
                         "SUM(COALESCE(a.ad_sales_amount,0)) AS ad_sales_amount",
                         "SUM(COALESCE(a.refund_amount,0)) AS refund_amount",
+                        refund_rate_sql_week,
                         "AVG(a.sub_category_rank_avg) AS sub_category_rank",
+                        "(MAX(COALESCE(est_unit_cost.unit_bom_cost_usd, 0)) * SUM(COALESCE(a.sales_qty,0))) AS estimated_product_cost_usd",
+                        "(MAX(COALESCE(est_unit_cost.unit_last_mile_freight_usd, 0)) * SUM(COALESCE(a.sales_qty,0))) AS estimated_last_mile_freight_usd",
+                        commission_sql_week,
                     ]
 
                     sql = [
@@ -9944,6 +10019,7 @@ class SalesProductMixin:
                         LEFT JOIN product_families pf ON pf.id = v.sku_family_id
                         LEFT JOIN shops sh ON sh.id = sp.shop_id
                         {fabric_join}
+                        {cost_join_variant}
                         WHERE 1=1
                         """
                     ]
@@ -9979,6 +10055,25 @@ class SalesProductMixin:
                     cur.execute(''.join(sql), tuple(params))
                     rows = cur.fetchall() or []
 
+                def _perf_group_item_derived_fields(bom, lm, net, comm, ad_spend, refund_amt, gross_sales):
+                    bom_f = float(bom or 0)
+                    lm_f = float(lm or 0)
+                    net_f = float(net or 0)
+                    comm_f = float(comm or 0)
+                    ad_f = float(ad_spend or 0)
+                    ref_f = float(refund_amt or 0)
+                    gross_f = float(gross_sales or 0)
+                    total = round(bom_f + lm_f, 2)
+                    rate = round((comm_f / net_f), 6) if net_f else 0.0
+                    profit = round(net_f - comm_f - total - ad_f - ref_f, 2)
+                    nmr = round((profit / gross_f), 6) if gross_f else 0.0
+                    return {
+                        'estimated_total_cost_usd': total,
+                        'commission_rate': rate,
+                        'estimated_net_profit_usd': profit,
+                        'net_margin_rate': nmr,
+                    }
+
                 group_map = {}
                 for row in rows:
                     sp_id = self._parse_int(row.get('sp_id'))
@@ -9991,7 +10086,10 @@ class SalesProductMixin:
                         'sku_family': sf_name,
                         'items': []
                     })
-                    group['items'].append({
+                    bom_u = round(float(row.get('estimated_product_cost_usd') or 0), 2)
+                    lm_u = round(float(row.get('estimated_last_mile_freight_usd') or 0), 2)
+                    comm_u = round(float(row.get('est_referral_commission_usd') or 0), 2)
+                    item_row = {
                         'sales_product_id': sp_id,
                         'platform_sku': sku,
                         'fabric': row.get('fabric') or '',
@@ -10001,6 +10099,8 @@ class SalesProductMixin:
                         'rows': self._parse_int(row.get('rows')) or 0,
                         'sales_qty': row.get('sales_qty') or 0,
                         'net_sales_amount': row.get('net_sales_amount') or 0,
+                        'gross_sales_amount': round(float(row.get('gross_sales_amount') or 0), 2),
+                        'discount_rate': round(float(row.get('discount_rate') or 0), 6),
                         'order_qty': row.get('order_qty') or 0,
                         'session_total': row.get('session_total') or 0,
                         'ad_impressions': row.get('ad_impressions') or 0,
@@ -10009,8 +10109,17 @@ class SalesProductMixin:
                         'ad_spend': row.get('ad_spend') or 0,
                         'ad_sales_amount': row.get('ad_sales_amount') or 0,
                         'refund_amount': row.get('refund_amount') or 0,
+                        'refund_rate': round(float(row.get('refund_rate') or 0), 6),
                         'sub_category_rank': row.get('sub_category_rank'),
-                    })
+                        'estimated_product_cost_usd': bom_u,
+                        'estimated_last_mile_freight_usd': lm_u,
+                        'est_referral_commission_usd': comm_u,
+                    }
+                    item_row.update(_perf_group_item_derived_fields(
+                        bom_u, lm_u, row.get('net_sales_amount'), comm_u,
+                        row.get('ad_spend'), row.get('refund_amount'),
+                        item_row.get('gross_sales_amount')))
+                    group['items'].append(item_row)
 
                 groups = list(group_map.values())
                 for g in groups:
@@ -10050,6 +10159,8 @@ class SalesProductMixin:
                                 "COUNT(1) AS `rows`",
                                 "SUM(COALESCE(spp.sales_qty,0)) AS sales_qty",
                                 "SUM(COALESCE(spp.net_sales_amount,0)) AS net_sales_amount",
+                                gross_sales_sql_day,
+                                discount_rate_sql_day,
                                 "SUM(COALESCE(spp.order_qty,0)) AS order_qty",
                                 "SUM(COALESCE(spp.session_total,0)) AS session_total",
                                 "SUM(COALESCE(spp.ad_impressions,0)) AS ad_impressions",
@@ -10058,7 +10169,11 @@ class SalesProductMixin:
                                 "SUM(COALESCE(spp.ad_spend,0)) AS ad_spend",
                                 "SUM(COALESCE(spp.ad_sales_amount,0)) AS ad_sales_amount",
                                 "SUM(COALESCE(spp.refund_amount,0)) AS refund_amount",
+                                refund_rate_sql_day,
                                 "AVG(spp.sub_category_rank) AS sub_category_rank",
+                                "(MAX(COALESCE(est_unit_cost.unit_bom_cost_usd, 0)) * SUM(COALESCE(spp.sales_qty,0))) AS estimated_product_cost_usd",
+                                "(MAX(COALESCE(est_unit_cost.unit_last_mile_freight_usd, 0)) * SUM(COALESCE(spp.sales_qty,0))) AS estimated_last_mile_freight_usd",
+                                commission_sql_day,
                             ]
                             local_sql = [
                                 f"""
@@ -10070,6 +10185,7 @@ class SalesProductMixin:
                                 LEFT JOIN shops sh ON sh.id = sp.shop_id
                                 LEFT JOIN platform_types pt ON pt.id = sh.platform_type_id
                                 {fabric_join}
+                                {cost_join_variant}
                                 WHERE 1=1
                                 """
                             ]
@@ -10115,7 +10231,10 @@ class SalesProductMixin:
                                     'sku_family': sf_name,
                                     'items': []
                                 })
-                                grp['items'].append({
+                                bom_r = round(float(r.get('estimated_product_cost_usd') or 0), 2)
+                                lm_r = round(float(r.get('estimated_last_mile_freight_usd') or 0), 2)
+                                comm_r = round(float(r.get('est_referral_commission_usd') or 0), 2)
+                                item_r = {
                                     'sales_product_id': sp_id,
                                     'platform_sku': sku,
                                     'fabric': r.get('fabric') or '',
@@ -10125,6 +10244,8 @@ class SalesProductMixin:
                                     'rows': self._parse_int(r.get('rows')) or 0,
                                     'sales_qty': r.get('sales_qty') or 0,
                                     'net_sales_amount': r.get('net_sales_amount') or 0,
+                                    'gross_sales_amount': round(float(r.get('gross_sales_amount') or 0), 2),
+                                    'discount_rate': round(float(r.get('discount_rate') or 0), 6),
                                     'order_qty': r.get('order_qty') or 0,
                                     'session_total': r.get('session_total') or 0,
                                     'ad_impressions': r.get('ad_impressions') or 0,
@@ -10133,8 +10254,17 @@ class SalesProductMixin:
                                     'ad_spend': r.get('ad_spend') or 0,
                                     'ad_sales_amount': r.get('ad_sales_amount') or 0,
                                     'refund_amount': r.get('refund_amount') or 0,
+                                    'refund_rate': round(float(r.get('refund_rate') or 0), 6),
                                     'sub_category_rank': r.get('sub_category_rank'),
-                                })
+                                    'estimated_product_cost_usd': bom_r,
+                                    'estimated_last_mile_freight_usd': lm_r,
+                                    'est_referral_commission_usd': comm_r,
+                                }
+                                item_r.update(_perf_group_item_derived_fields(
+                                    bom_r, lm_r, r.get('net_sales_amount'), comm_r,
+                                    r.get('ad_spend'), r.get('refund_amount'),
+                                    item_r.get('gross_sales_amount')))
+                                grp['items'].append(item_r)
                             local_groups = list(local_group_map.values())
                             for gg in local_groups:
                                 gg['items'].sort(key=lambda x: x.get('platform_sku') or '')

@@ -566,6 +566,43 @@
             font-size: 0.76rem;
             color: var(--morandi-slate);
         }
+        /* 货号分组明细：内外层排序下拉（不用 optional-field，更紧凑） */
+        #perfGroupSortToolbar {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.24rem 0.4rem;
+            margin: 0.32rem 0 0.48rem;
+            padding: 0.18rem 0.32rem;
+            border-radius: 6px;
+            background: rgba(247, 244, 239, 0.55);
+        }
+        #perfGroupSortToolbar .perf-inline-help {
+            font-size: 0.7rem;
+            color: var(--morandi-slate);
+            margin-right: 0.06rem;
+        }
+        #perfGroupSortToolbar select.perf-group-sort-select {
+            font-size: 0.72rem;
+            line-height: 1.15;
+            min-height: 24px;
+            height: 24px;
+            padding: 0.06rem 0.28rem;
+            border-radius: 5px;
+            border: 1px solid rgba(180, 172, 162, 0.88);
+            background: #fff;
+            color: var(--morandi-ink);
+            box-sizing: border-box;
+        }
+        #perfGroupSortToolbar select.perf-group-sort-select.perf-group-sort-key {
+            width: 142px;
+            min-width: 120px;
+            max-width: 200px;
+        }
+        #perfGroupSortToolbar select.perf-group-sort-select.perf-group-sort-dir {
+            width: 72px;
+            min-width: 72px;
+        }
         .perf-group-toolbar .check-select {
             width: 120px;
             min-width: 120px;
@@ -614,6 +651,46 @@
             border-radius: 8px;
             background: #fff;
             max-width: 100%;
+        }
+        /* 分组明细托管表：隐藏每页条数、显示 x–y/共 z 条、翻页（本表固定全量展示） */
+        .perf-group-tree-wrap > .pm-table-toolbar > .pm-table-toolbar-left,
+        .perf-group-tree-wrap > .pm-table-toolbar .pm-table-pager {
+            display: none !important;
+        }
+        .perf-group-grand-summary-host {
+            width: 100%;
+            max-width: 100%;
+            margin: 0 0 0.38rem 0;
+        }
+        .perf-group-grand-summary-scroll {
+            overflow-x: auto;
+            overflow-y: hidden;
+            width: 100%;
+            scrollbar-width: thin;
+        }
+        .perf-group-grand-total-table {
+            width: 100%;
+            min-width: 1180px;
+            margin-bottom: 0;
+            border: 1px solid rgba(160, 175, 155, 0.55);
+            border-radius: 8px;
+            background: linear-gradient(180deg, #f6faf6 0%, #edf5ee 100%);
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+        .perf-group-grand-total-row td {
+            font-size: 0.84rem;
+            padding: 0.38rem 0.45rem;
+            vertical-align: middle;
+            border-bottom: none;
+            box-sizing: border-box;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .perf-group-grand-total-label {
+            white-space: nowrap;
+            color: var(--morandi-ink);
         }
         /* 分组明细：交给全局 managed-table 接管（列筛选/字段排序/字段显示） */
         .perf-group-parent-row {
@@ -727,6 +804,16 @@
             position: sticky;
             top: 0;
             z-index: 1;
+        }
+        #perfGroupTable thead th.perf-th-metric {
+            text-align: right;
+        }
+        #perfGroupTable thead th .perf-th-head-metric {
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.28rem;
+            width: 100%;
         }
         .perf-table tr.row-focus {
             background: rgba(123, 154, 176, 0.18);
@@ -1065,6 +1152,9 @@
         const PERF_PAGE_SIZE_KEY = 'sales_perf_list_page_size_v1';
         const PERF_METRIC_ORDER_KEY = 'sales_perf_dashboard_metric_order_v1';
         const PERF_CHART_GRANULARITY_KEY = 'sales_perf_chart_granularity_v1';
+        /** 货号分组明细：外层（父行）/ 内层（子 SKU）排序默认字段与升降序 */
+        const PERF_GROUP_OUTER_SORT_KEY = 'sales_perf_group_outer_sort_v1';
+        const PERF_GROUP_INNER_SORT_KEY = 'sales_perf_group_inner_sort_v1';
         const DERIVED_METRICS = [
             { key: 'acos', label: 'ACOS', color: '#7c9d74', isComputed: true },
             { key: 'acoas', label: 'ACOAS', color: '#6b8f7e', isComputed: true },
@@ -1073,7 +1163,308 @@
             { key: 'cvr', label: 'CVR', color: '#8d6d92', isComputed: true },
             { key: 'cpc', label: 'CPC', color: '#a36f6f', isComputed: true }
         ];
-        const PERCENT_METRIC_KEYS = new Set(['acos', 'acoas', 'ctr', 'cvr']);
+        /** 仅用于货号分组明细；不参与趋势图 metric_keys 请求 */
+        const GROUP_DETAIL_METRICS = [
+            { key: 'gross_sales_amount', label: '销售额(USD)', color: '#7a6b9e', isGroupOnly: true },
+            { key: 'discount_rate', label: '折扣率', color: '#8b7a6c', isGroupOnly: true },
+            { key: 'refund_rate', label: '退款率', color: '#9a6b6b', isGroupOnly: true },
+            { key: 'estimated_product_cost_usd', label: '预估产品成本(至海外仓, USD)', color: '#5a5a72', isGroupOnly: true },
+            { key: 'estimated_last_mile_freight_usd', label: '预估尾程运费(USD)', color: '#4d6b7a', isGroupOnly: true },
+            { key: 'estimated_total_cost_usd', label: '预估成本(USD)', color: '#4a5568', isGroupOnly: true },
+            { key: 'est_referral_commission_usd', label: '预估销售佣金(家具, USD)', color: '#8a6b5a', isGroupOnly: true },
+            { key: 'commission_rate', label: '佣金费率', color: '#7a5c6e', isGroupOnly: true },
+            { key: 'estimated_net_profit_usd', label: '预估净利润(USD)', color: '#3d6b55', isGroupOnly: true },
+            { key: 'net_margin_rate', label: '净利率', color: '#4d6a7a', isGroupOnly: true }
+        ];
+        /** 货号分组表头：计算类字段右侧 help-dot 文案（key 与 metricMap / head data-manage-col-key 一致） */
+        const METRIC_HEADER_HELP = {
+            gross_sales_amount: '销售额：销售变体售价(USD)×筛选周期内销量之和。',
+            discount_rate: '折扣率：(销售额−净销售额)÷销售额；销售额为0时按0。',
+            refund_rate: '退款率：退款金额÷净销售额；净销售额为0时按0。',
+            estimated_product_cost_usd: '预估产品成本（至海外仓）：下单产品中 cost_usd 表示产品到海外仓的 BOM 成本；按销售变体关联的下单链接，对 cost_usd×链接数量 求和得到加权单位值(USD)，再×本周期销量。无链接时为0。',
+            estimated_last_mile_freight_usd: '预估尾程运费：下单产品中 last_mile_avg_freight_usd 为预估尾程平均运费；与产品成本同一套销售变体–下单链接，对 last_mile_avg_freight_usd×链接数量 求和后再×本周期销量。无链接或字段缺失时为0。',
+            est_referral_commission_usd: '预估销售佣金：默认采用亚马逊家具类目的分段费率估算（不校验货号类目）。对该 SKU 周期净销售额 S：min(S,200)×15% + max(S−200,0)×10%。',
+            estimated_total_cost_usd: '预估成本：预估产品成本(至海外仓)+预估尾程运费；与下方两项之和一致。',
+            commission_rate: '佣金费率：预估销售佣金÷净销售额；净销售额为0时按0。父货号行为各子 SKU 佣金合计÷净销售额合计。',
+            estimated_net_profit_usd: '预估净利润：净销售额−预估销售佣金−预估成本−广告花费−退款金额。父货号行为各子 SKU 该项求和。',
+            net_margin_rate: '净利率：预估净利润÷销售额(USD)；销售额为0时按0。父货号行为各子 SKU 预估净利润合计÷销售额合计。',
+            acos: 'ACOS：广告花费÷广告销售额。',
+            acoas: 'ACOAS：广告花费÷净销售额。',
+            rois: 'ROIS：净销售额÷广告花费。',
+            ctr: 'CTR：广告点击÷广告展示。',
+            cvr: 'CVR：广告订单量÷广告点击。',
+            cpc: 'CPC：广告花费÷广告点击。',
+            sub_category_rank: '小类排名：周期内表现记录条目的算术平均（非加权）；分组父行为加权平均。'
+        };
+        const PERCENT_METRIC_KEYS = new Set(['acos', 'acoas', 'ctr', 'cvr', 'discount_rate', 'refund_rate', 'commission_rate', 'net_margin_rate']);
+        /** 货号分组：父行/全量汇总可线性相加的指标键 */
+        const PERF_GROUP_ITEM_SUM_KEYS = [
+            'sales_qty', 'net_sales_amount', 'gross_sales_amount', 'order_qty', 'session_total',
+            'ad_impressions', 'ad_clicks', 'ad_orders', 'ad_spend', 'ad_sales_amount',
+            'refund_amount',
+            'estimated_product_cost_usd', 'estimated_last_mile_freight_usd', 'estimated_total_cost_usd',
+            'est_referral_commission_usd', 'estimated_net_profit_usd'
+        ];
+
+        function emptyPerfGroupSum() {
+            const sum = { rows: 0 };
+            PERF_GROUP_ITEM_SUM_KEYS.forEach(k => { sum[k] = 0; });
+            sum.__rank_weight_sum = 0;
+            sum.__rank_weight_cnt = 0;
+            return sum;
+        }
+
+        function accumulatePerfGroupItemIntoSum(sum, it) {
+            sum.rows += Number(it.rows || 0);
+            PERF_GROUP_ITEM_SUM_KEYS.forEach(k => { sum[k] += Number(it[k] || 0); });
+            const r = Number(it.sub_category_rank);
+            if (Number.isFinite(r) && r > 0) {
+                const w = Math.max(1, Number(it.rows || 1));
+                sum.__rank_weight_sum += r * w;
+                sum.__rank_weight_cnt += w;
+            }
+        }
+
+        function finalizePerfGroupAggregateSum(sum) {
+            if (sum.__rank_weight_cnt > 0) {
+                sum.sub_category_rank = Math.round((sum.__rank_weight_sum / sum.__rank_weight_cnt) * 100) / 100;
+            }
+            const gn = Number(sum.net_sales_amount || 0);
+            const gg = Number(sum.gross_sales_amount || 0);
+            const grf = Number(sum.refund_amount || 0);
+            sum.discount_rate = (gg > 0) ? (gg - gn) / gg : 0;
+            sum.refund_rate = (gn > 0) ? grf / gn : 0;
+            const gcomm = Number(sum.est_referral_commission_usd || 0);
+            sum.commission_rate = (gn > 0) ? gcomm / gn : 0;
+            sum.estimated_total_cost_usd = Math.round(Number(sum.estimated_total_cost_usd || 0) * 100) / 100;
+            sum.estimated_net_profit_usd = Math.round(Number(sum.estimated_net_profit_usd || 0) * 100) / 100;
+            const gprofit = Number(sum.estimated_net_profit_usd || 0);
+            sum.net_margin_rate = (gg > 0) ? Math.round((gprofit / gg) * 1e6) / 1e6 : 0;
+            return sum;
+        }
+
+        /** 货号分组「全量汇总」行：与托管表列显隐/冻结/列宽/横向滚动同步 */
+        let perfGroupGrandSyncState = {
+            mo: null,
+            ro: null,
+            onResize: null,
+            onScrollBody: null,
+            onScrollGrand: null,
+            bodyWrap: null,
+            grandScroll: null
+        };
+
+        function teardownPerfGroupGrandSync() {
+            try {
+                if (perfGroupGrandSyncState.mo) {
+                    perfGroupGrandSyncState.mo.disconnect();
+                    perfGroupGrandSyncState.mo = null;
+                }
+                if (perfGroupGrandSyncState.ro) {
+                    perfGroupGrandSyncState.ro.disconnect();
+                    perfGroupGrandSyncState.ro = null;
+                }
+                if (perfGroupGrandSyncState.onResize) {
+                    window.removeEventListener('resize', perfGroupGrandSyncState.onResize);
+                    perfGroupGrandSyncState.onResize = null;
+                }
+                const bw = perfGroupGrandSyncState.bodyWrap;
+                const gs = perfGroupGrandSyncState.grandScroll;
+                if (bw && perfGroupGrandSyncState.onScrollBody) {
+                    bw.removeEventListener('scroll', perfGroupGrandSyncState.onScrollBody);
+                }
+                if (gs && perfGroupGrandSyncState.onScrollGrand) {
+                    gs.removeEventListener('scroll', perfGroupGrandSyncState.onScrollGrand);
+                }
+            } catch (e) { /* ignore */ }
+            perfGroupGrandSyncState.bodyWrap = null;
+            perfGroupGrandSyncState.grandScroll = null;
+            perfGroupGrandSyncState.onScrollBody = null;
+            perfGroupGrandSyncState.onScrollGrand = null;
+            const gh = document.querySelector('.perf-group-grand-summary-host');
+            if (gh && gh.parentNode) gh.parentNode.removeChild(gh);
+        }
+
+        /** 按参照行（表头或数据行）的 data-manage-col-key 顺序重排汇总行单元格 */
+        function reorderPerfGroupGrandCellsToMatchRef(grandRow, refRow) {
+            if (!grandRow || !refRow || grandRow.cells.length !== refRow.cells.length) return;
+            const keys = Array.from(refRow.cells).map(c => String(c.dataset.manageColKey || '').trim());
+            const byKey = new Map();
+            Array.from(grandRow.cells).forEach((td) => {
+                const k = String(td.dataset.manageColKey || '').trim();
+                if (k) byKey.set(k, td);
+            });
+            keys.forEach((k) => {
+                const td = byKey.get(k);
+                if (td) grandRow.appendChild(td);
+            });
+        }
+
+        /** 与主表同一 perf-group-tree-wrap 下的托管分离表头行（与列宽/冻结/显隐一致） */
+        function getPerfGroupManagedHeaderRow(treeWrap) {
+            if (!treeWrap) return null;
+            const hr = treeWrap.querySelector('.pm-managed-head-table thead tr');
+            if (hr && hr.cells && hr.cells.length) return hr;
+            const mt = treeWrap.querySelector('#perfGroupTable');
+            if (mt && mt.tHead && mt.tHead.rows && mt.tHead.rows[0]) return mt.tHead.rows[0];
+            return null;
+        }
+
+        function syncPerfGroupGrandSummaryLayout() {
+            const mainTable = document.getElementById('perfGroupTable');
+            const grandTable = document.getElementById('perfGroupGrandTable');
+            const treeWrap = mainTable && mainTable.closest('.perf-group-tree-wrap');
+            if (!mainTable || !grandTable || !treeWrap) return;
+            const headRow = getPerfGroupManagedHeaderRow(treeWrap);
+            const grandRow = grandTable.querySelector('tr.perf-group-grand-total-row');
+            if (!headRow || !grandRow || headRow.cells.length !== grandRow.cells.length) return;
+
+            reorderPerfGroupGrandCellsToMatchRef(grandRow, headRow);
+
+            let cg = grandTable.querySelector(':scope > colgroup');
+            if (!cg) {
+                cg = document.createElement('colgroup');
+                grandTable.insertBefore(cg, grandTable.firstChild);
+            }
+            cg.innerHTML = '';
+            let totalW = 0;
+            Array.from(headRow.cells).forEach((th) => {
+                const col = document.createElement('col');
+                const k = String(th.dataset.manageColKey || '').trim();
+                if (k) col.dataset.manageColKey = k;
+                const hidden = th.classList && th.classList.contains('pm-table-hide-col');
+                let w = Math.round(th.getBoundingClientRect().width);
+                if (!Number.isFinite(w) || w < 0) w = 0;
+                if (hidden) {
+                    w = 0;
+                } else {
+                    w = Math.max(36, w);
+                }
+                col.style.width = `${w}px`;
+                col.style.minWidth = `${w}px`;
+                col.style.maxWidth = `${w}px`;
+                cg.appendChild(col);
+                totalW += w;
+            });
+
+            grandTable.style.tableLayout = 'fixed';
+            const bodyWrap = mainTable.closest('.pm-managed-body-wrap');
+            const targetOuter = Math.round(Math.max(
+                totalW,
+                mainTable.scrollWidth || 0,
+                bodyWrap ? bodyWrap.clientWidth : 0,
+                mainTable.getBoundingClientRect().width || 0
+            ));
+            grandTable.style.width = `${Math.max(targetOuter, 1)}px`;
+
+            for (let i = 0; i < headRow.cells.length; i += 1) {
+                const th = headRow.cells[i];
+                const td = grandRow.cells[i];
+                if (!th || !td) continue;
+                td.classList.toggle('pm-table-hide-col', th.classList.contains('pm-table-hide-col'));
+                td.classList.toggle('pm-table-pinned-cell', th.classList.contains('pm-table-pinned-cell'));
+                ['position', 'left', 'right', 'zIndex'].forEach((p) => {
+                    td.style[p] = th.style[p] || '';
+                });
+                td.style.width = '';
+                td.style.minWidth = '';
+                td.style.maxWidth = '';
+                td.style.boxSizing = 'border-box';
+            }
+
+            const bw = bodyWrap;
+            const gsc = perfGroupGrandSyncState.grandScroll;
+            if (bw && gsc && Math.abs(gsc.scrollLeft - bw.scrollLeft) > 1) {
+                gsc.scrollLeft = bw.scrollLeft;
+            }
+        }
+
+        function schedulePerfGroupGrandAttach(mainTable, grandSum, headKeys) {
+            const tryOnce = (attempt) => {
+                const treeWrap = mainTable && mainTable.closest('.perf-group-tree-wrap');
+                const toolbar = treeWrap && treeWrap.querySelector(':scope > .pm-table-toolbar');
+                if (!treeWrap || !toolbar || !document.body.contains(mainTable)) {
+                    if (attempt < 40) window.setTimeout(() => tryOnce(attempt + 1), 35);
+                    return;
+                }
+                teardownPerfGroupGrandSync();
+
+                const cellHtmlForKey = (k) => {
+                    if (k === '__toggle') return '';
+                    if (k === '__sku') return '<strong>全量汇总</strong>';
+                    if (k === '__fabric' || k === '__spec') return '-';
+                    if (k === '__rows') return formatNumber(grandSum.rows);
+                    return formatMetricValue(resolveMetricValue(grandSum, k), k);
+                };
+
+                const grandHost = document.createElement('div');
+                grandHost.className = 'perf-group-grand-summary-host';
+                const grandScroll = document.createElement('div');
+                grandScroll.className = 'perf-group-grand-summary-scroll';
+                const grandTable = document.createElement('table');
+                grandTable.id = 'perfGroupGrandTable';
+                grandTable.className = 'perf-table pm-table perf-group-grand-total-table';
+                grandTable.setAttribute('aria-label', '筛选范围内全量汇总');
+                const tds = headKeys.map((k) => {
+                    const isMetric = (k !== '__toggle' && k !== '__sku' && k !== '__fabric' && k !== '__spec' && k !== '__rows');
+                    const cls = `${k === '__sku' ? 'perf-group-grand-total-label' : ''}${isMetric ? ' perf-th-metric' : ''}`.trim();
+                    const clsAttr = cls ? ` class="${cls}"` : '';
+                    return `<td data-manage-col-key="${k}"${clsAttr}>${cellHtmlForKey(k)}</td>`;
+                }).join('');
+                grandTable.innerHTML = `<tbody><tr class="perf-group-grand-total-row">${tds}</tr></tbody>`;
+                grandScroll.appendChild(grandTable);
+                grandHost.appendChild(grandScroll);
+                toolbar.after(grandHost);
+
+                const bodyWrap = mainTable.closest('.pm-managed-body-wrap');
+                perfGroupGrandSyncState.bodyWrap = bodyWrap || null;
+                perfGroupGrandSyncState.grandScroll = grandScroll;
+
+                let debTimer = null;
+                const debouncedSync = () => {
+                    if (debTimer) clearTimeout(debTimer);
+                    debTimer = window.setTimeout(() => {
+                        debTimer = null;
+                        syncPerfGroupGrandSummaryLayout();
+                    }, 40);
+                };
+
+                if (bodyWrap) {
+                    perfGroupGrandSyncState.onScrollBody = () => {
+                        grandScroll.scrollLeft = bodyWrap.scrollLeft;
+                    };
+                    perfGroupGrandSyncState.onScrollGrand = () => {
+                        bodyWrap.scrollLeft = grandScroll.scrollLeft;
+                    };
+                    bodyWrap.addEventListener('scroll', perfGroupGrandSyncState.onScrollBody);
+                    grandScroll.addEventListener('scroll', perfGroupGrandSyncState.onScrollGrand);
+                }
+
+                const headTableEl = treeWrap.querySelector('.pm-managed-head-table');
+
+                const mo = new MutationObserver(debouncedSync);
+                mo.observe(mainTable, { subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+                if (headTableEl) mo.observe(headTableEl, { subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+                perfGroupGrandSyncState.mo = mo;
+
+                const ro = new ResizeObserver(debouncedSync);
+                ro.observe(mainTable);
+                if (bodyWrap) ro.observe(bodyWrap);
+                if (headTableEl) ro.observe(headTableEl);
+                perfGroupGrandSyncState.ro = ro;
+
+                perfGroupGrandSyncState.onResize = debouncedSync;
+                window.addEventListener('resize', perfGroupGrandSyncState.onResize);
+
+                syncPerfGroupGrandSummaryLayout();
+                if (bodyWrap) grandScroll.scrollLeft = bodyWrap.scrollLeft;
+
+                window.setTimeout(() => syncPerfGroupGrandSummaryLayout(), 120);
+                window.setTimeout(() => syncPerfGroupGrandSummaryLayout(), 380);
+            };
+            tryOnce(0);
+        }
+
         const state = {
             metrics: [],
             metricOrder: [],
@@ -1145,6 +1536,45 @@
 
         function saveMetricOrderToStorage() {
             try { localStorage.setItem(PERF_METRIC_ORDER_KEY, JSON.stringify(state.metricOrder || [])); } catch (e) {}
+        }
+
+        function _loadPerfGroupSortPersist(storageKey, validSortKeys) {
+            const allowed = new Set((validSortKeys || []).filter(Boolean));
+            if (!allowed.size) return null;
+            try {
+                const raw = localStorage.getItem(storageKey);
+                if (!raw) return null;
+                const o = JSON.parse(raw);
+                const key = String(o.key || '').trim();
+                const dirRaw = String(o.dir || 'desc').toLowerCase();
+                const dir = dirRaw === 'asc' ? 'asc' : 'desc';
+                if (allowed.has(key)) return { key, dir };
+            } catch (e) { /* ignore */ }
+            return null;
+        }
+
+        function _savePerfGroupSortPersist(storageKey, key, dir) {
+            try {
+                const k = String(key || '').trim();
+                const d = String(dir || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
+                localStorage.setItem(storageKey, JSON.stringify({ key: k, dir: d }));
+            } catch (e) { /* ignore */ }
+        }
+
+        function loadPerfGroupOuterSortFromStorage(validSortKeys) {
+            return _loadPerfGroupSortPersist(PERF_GROUP_OUTER_SORT_KEY, validSortKeys);
+        }
+
+        function savePerfGroupOuterSortToStorage(key, dir) {
+            _savePerfGroupSortPersist(PERF_GROUP_OUTER_SORT_KEY, key, dir);
+        }
+
+        function loadPerfGroupInnerSortFromStorage(validSortKeys) {
+            return _loadPerfGroupSortPersist(PERF_GROUP_INNER_SORT_KEY, validSortKeys);
+        }
+
+        function savePerfGroupInnerSortToStorage(key, dir) {
+            _savePerfGroupSortPersist(PERF_GROUP_INNER_SORT_KEY, key, dir);
         }
 
         function toYmd(dateObj) {
@@ -1297,6 +1727,24 @@
             return formatNumber(n);
         }
 
+        function escapeAttrForTip(s) {
+            return String(s || '')
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+
+        function perfGroupThCellInner(colKey, plainLabel) {
+            const tip = METRIC_HEADER_HELP[colKey];
+            const esc = String(plainLabel || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+            if (!tip) return esc;
+            return `<span class="perf-th-head-metric"><span>${esc}</span><span class="help-dot" data-tip="${escapeAttrForTip(tip)}"></span></span>`;
+        }
+
         function niceNumber(range, round) {
             const safeRange = Math.max(1e-9, Number(range) || 0);
             const exponent = Math.floor(Math.log10(safeRange));
@@ -1351,6 +1799,9 @@
                 if (m && m.key) keys.push(String(m.key));
             });
             DERIVED_METRICS.forEach(m => {
+                if (m && m.key) keys.push(String(m.key));
+            });
+            (GROUP_DETAIL_METRICS || []).forEach(m => {
                 if (m && m.key) keys.push(String(m.key));
             });
             return Array.from(new Set(keys));
@@ -1467,6 +1918,9 @@
             DERIVED_METRICS.forEach(m => {
                 state.metricMap[m.key] = m;
             });
+            (GROUP_DETAIL_METRICS || []).forEach(m => {
+                state.metricMap[m.key] = m;
+            });
         }
 
         function safeDiv(a, b) {
@@ -1491,19 +1945,20 @@
             return [
                 'sales_qty', 'net_sales_amount', 'order_qty', 'ad_spend', 'ad_sales_amount',
                 'acos', 'acoas', 'rois', 'ctr', 'cvr', 'cpc'
-            ].filter(k => state.metricMap[k]);
+            ].filter(k => state.metricMap[k] && !state.metricMap[k].isGroupOnly);
         }
 
         function getDefaultGroupMetricOrder() {
             const baseKeys = (state.metrics || []).map(x => String(x.key || '').trim()).filter(Boolean);
             const derivedKeys = (DERIVED_METRICS || []).map(x => String(x.key || '').trim()).filter(Boolean);
-            return Array.from(new Set(baseKeys.concat(derivedKeys)));
+            const groupDetailKeys = (GROUP_DETAIL_METRICS || []).map(x => String(x.key || '').trim()).filter(Boolean);
+            return Array.from(new Set(baseKeys.concat(derivedKeys).concat(groupDetailKeys)));
         }
 
         function renderMetricCheckboxBar() {
             const host = document.getElementById('metricCheckboxBar');
             if (!host) return;
-            const rows = Object.values(state.metricMap || {});
+            const rows = Object.values(state.metricMap || {}).filter(m => !m.isGroupOnly);
             host.innerHTML = rows.map(m => {
                 const checked = state.metricOrder.includes(m.key) ? 'checked' : '';
                 return `<label class="metric-chip"><input type="checkbox" data-metric-key="${m.key}" ${checked}><span>${m.label}</span></label>`;
@@ -1623,7 +2078,8 @@
 
             q.set('start_date', start || '');
             q.set('end_date', end || '');
-            q.set('metric_keys', (state.metrics || []).map(m => m.key).join(','));
+            const groupOnlyKeys = new Set((GROUP_DETAIL_METRICS || []).filter(m => m.isGroupOnly).map(m => m.key));
+            q.set('metric_keys', (state.metrics || []).map(m => m.key).filter(k => !groupOnlyKeys.has(k)).join(','));
             q.set('include_todos', document.getElementById('toggleTodos').checked ? '1' : '0');
             q.set('include_ads', document.getElementById('toggleAds').checked ? '1' : '0');
 
@@ -2107,6 +2563,7 @@
         }
 
         function renderGroups(groups) {
+            teardownPerfGroupGrandSync();
             state.lastGroups = Array.isArray(groups) ? groups : [];
             const host = document.getElementById('groupContainer');
             const allMetricKeys = getDefaultGroupMetricOrder();
@@ -2122,14 +2579,14 @@
                 </div>
                 <div id="perfGroupSortToolbar">
                     <span class="perf-inline-help">外层排序</span>
-                    <select id="perfGroupOuterSortKey" class="optional-field" style="width:160px;"></select>
-                    <select id="perfGroupOuterSortDir" class="optional-field" style="width:110px;">
+                    <select id="perfGroupOuterSortKey" class="perf-group-sort-select perf-group-sort-key"></select>
+                    <select id="perfGroupOuterSortDir" class="perf-group-sort-select perf-group-sort-dir">
                         <option value="desc">降序</option>
                         <option value="asc">升序</option>
                     </select>
                     <span class="perf-inline-help">内层排序</span>
-                    <select id="perfGroupInnerSortKey" class="optional-field" style="width:160px;"></select>
-                    <select id="perfGroupInnerSortDir" class="optional-field" style="width:110px;">
+                    <select id="perfGroupInnerSortKey" class="perf-group-sort-select perf-group-sort-key"></select>
+                    <select id="perfGroupInnerSortDir" class="perf-group-sort-select perf-group-sort-dir">
                         <option value="desc">降序</option>
                         <option value="asc">升序</option>
                     </select>
@@ -2149,51 +2606,45 @@
             table.dataset.serverPaginationMode = 'server';
             table.dataset.serverCurrentPage = '1';
             table.dataset.serverPageSize = '1000000';
-            const headCols = ['展开', '货号/SKU', '面料', '规格', '记录数'].concat(metricKeys.map(k => (state.metricMap[k] && state.metricMap[k].label) || k));
             const headKeys = ['__toggle', '__sku', '__fabric', '__spec', '__rows'].concat(metricKeys.map(k => String(k)));
+            const headColLabels = ['展开', '货号/SKU', '面料', '规格', '记录数'].concat(metricKeys.map(k => (state.metricMap[k] && state.metricMap[k].label) || k));
+            const headThCells = headKeys.map((k, i) => {
+                const lab = headColLabels[i] || k;
+                const isFirst = i === 0;
+                const cls = i >= 5 ? 'perf-th-metric' : '';
+                const inner = perfGroupThCellInner(k, lab);
+                return `<th class="${cls}" data-manage-col-key="${k}" data-disable-sort="1"${isFirst ? ' style="width:72px;"' : ''}>${inner}</th>`;
+            }).join('');
             table.innerHTML = `
                 <thead>
                     <tr>
-                        ${headCols.map((c, i) => `<th data-manage-col-key="${headKeys[i] || c}" data-disable-sort="1"${i===0?' style="width:72px;"':''}>${c}</th>`).join('')}
+                        ${headThCells}
                     </tr>
                 </thead>
                 <tbody id="perfGroupTreeBody"></tbody>
             `;
             const tbody = table.querySelector('#perfGroupTreeBody');
 
-            const BASE_KEYS = [
-                'sales_qty', 'net_sales_amount', 'order_qty', 'session_total',
-                'ad_impressions', 'ad_clicks', 'ad_orders', 'ad_spend', 'ad_sales_amount',
-                'refund_amount'
-            ];
+            const flatAllItems = [];
+            state.lastGroups.forEach(gg => (Array.isArray(gg.items) ? gg.items : []).forEach(it => flatAllItems.push(it)));
+            const grandSum = emptyPerfGroupSum();
+            flatAllItems.forEach(it => accumulatePerfGroupItemIntoSum(grandSum, it));
+            finalizePerfGroupAggregateSum(grandSum);
 
             state.lastGroups.forEach((g, idx) => {
                 const groupKey = `grp_${idx}_${String(g.sku_family_id || '').trim()}`;
                 const items = Array.isArray(g.items) ? g.items : [];
-                const sum = { rows: 0 };
-                BASE_KEYS.forEach(k => { sum[k] = 0; });
-                // 小类排名：按 rows 加权平均（避免简单相加导致父行错误）
-                sum.__rank_weight_sum = 0;
-                sum.__rank_weight_cnt = 0;
+                const sum = emptyPerfGroupSum();
                 let minDate = '';
                 let maxDate = '';
                 items.forEach(it => {
-                    sum.rows += Number(it.rows || 0);
-                    BASE_KEYS.forEach(k => { sum[k] += Number(it[k] || 0); });
-                    const r = Number(it.sub_category_rank);
-                    if (Number.isFinite(r) && r > 0) {
-                        const w = Math.max(1, Number(it.rows || 1));
-                        sum.__rank_weight_sum += r * w;
-                        sum.__rank_weight_cnt += w;
-                    }
+                    accumulatePerfGroupItemIntoSum(sum, it);
                     const mn = String(it.min_date || '').slice(0, 10);
                     const mx = String(it.max_date || '').slice(0, 10);
                     if (mn && (!minDate || mn < minDate)) minDate = mn;
                     if (mx && (!maxDate || mx > maxDate)) maxDate = mx;
                 });
-                if (sum.__rank_weight_cnt > 0) {
-                    sum.sub_category_rank = Math.round((sum.__rank_weight_sum / sum.__rank_weight_cnt) * 100) / 100;
-                }
+                finalizePerfGroupAggregateSum(sum);
                 const childRows = items.slice().sort((a, b) => String(a.platform_sku || '').localeCompare(String(b.platform_sku || '')));
 
                 const parentTr = document.createElement('tr');
@@ -2203,12 +2654,12 @@
                 parentTr.dataset.minDate = minDate || '';
                 parentTr.dataset.maxDate = maxDate || '';
                 parentTr.innerHTML = `
-                    <td><button type="button" class="perf-group-toggle" data-group-key="${groupKey}" aria-label="展开/收起"></button></td>
-                    <td>${g.sku_family || '未分组货号'}</td>
-                    <td>-</td>
-                    <td>-</td>
-                    <td>${formatNumber(sum.rows)}</td>
-                    ${metricKeys.map(k => `<td>${formatMetricValue(resolveMetricValue(sum, k), k)}</td>`).join('')}
+                    <td data-manage-col-key="__toggle"><button type="button" class="perf-group-toggle" data-group-key="${groupKey}" aria-label="展开/收起"></button></td>
+                    <td data-manage-col-key="__sku">${g.sku_family || '未分组货号'}</td>
+                    <td data-manage-col-key="__fabric">-</td>
+                    <td data-manage-col-key="__spec">-</td>
+                    <td data-manage-col-key="__rows">${formatNumber(sum.rows)}</td>
+                    ${metricKeys.map(k => `<td data-manage-col-key="${k}">${formatMetricValue(resolveMetricValue(sum, k), k)}</td>`).join('')}
                 `;
                 tbody.appendChild(parentTr);
 
@@ -2229,12 +2680,12 @@
                         tr.dataset.minDate = mn;
                         tr.dataset.maxDate = mx;
                         tr.innerHTML = `
-                            <td></td>
-                            <td style="padding-left:18px;">${row.platform_sku || '-'}</td>
-                            <td>${row.fabric || '-'}</td>
-                            <td>${row.spec_name || '-'}</td>
-                            <td>${formatNumber(row.rows || 0)}</td>
-                            ${metricKeys.map(k => `<td>${formatMetricValue(resolveMetricValue(row, k), k)}</td>`).join('')}
+                            <td data-manage-col-key="__toggle"></td>
+                            <td data-manage-col-key="__sku" style="padding-left:18px;">${row.platform_sku || '-'}</td>
+                            <td data-manage-col-key="__fabric">${row.fabric || '-'}</td>
+                            <td data-manage-col-key="__spec">${row.spec_name || '-'}</td>
+                            <td data-manage-col-key="__rows">${formatNumber(row.rows || 0)}</td>
+                            ${metricKeys.map(k => `<td data-manage-col-key="${k}">${formatMetricValue(resolveMetricValue(row, k), k)}</td>`).join('')}
                         `;
                         tbody.appendChild(tr);
                     });
@@ -2245,6 +2696,9 @@
             table.dataset.serverTotalRows = String((tbody && tbody.rows && tbody.rows.length) ? tbody.rows.length : 0);
             wrap.appendChild(table);
             host.appendChild(wrap);
+            if (typeof bindFloatingHelpDots === 'function') {
+                try { bindFloatingHelpDots(host); } catch (e) { /* ignore */ }
+            }
 
             host.querySelectorAll('.perf-group-toggle').forEach(btn => {
                 btn.addEventListener('click', function() {
@@ -2258,10 +2712,11 @@
             });
 
             // 层级排序：绑定到 managed 生成的表头（显示箭头），并对子SKU应用同规则排序
-            bindPerfGroupHierSort(table, headKeys, headCols);
+            bindPerfGroupHierSort(table, headKeys, headColLabels);
+            schedulePerfGroupGrandAttach(table, grandSum, headKeys);
         }
 
-        function bindPerfGroupHierSort(table, headKeys, headCols) {
+        function bindPerfGroupHierSort(table, headKeys, headColLabels) {
             if (!table) return;
             const tbody = table.tBodies && table.tBodies[0];
             const parentRows = () => Array.from(tbody.querySelectorAll('tr.perf-group-parent-row'));
@@ -2291,6 +2746,16 @@
             const validSortKeys = (headKeys || []).filter(k => k && k !== '__toggle');
             const outerSortState = { key: '__rows', dir: 'desc' };
             const innerSortState = { key: '__rows', dir: 'desc' };
+            const savedOuter = loadPerfGroupOuterSortFromStorage(validSortKeys);
+            if (savedOuter) {
+                outerSortState.key = savedOuter.key;
+                outerSortState.dir = savedOuter.dir;
+            }
+            const savedInner = loadPerfGroupInnerSortFromStorage(validSortKeys);
+            if (savedInner) {
+                innerSortState.key = savedInner.key;
+                innerSortState.dir = savedInner.dir;
+            }
 
             const findBodyColIndexByKey = (manageKey) => {
                 const head = table.tHead && table.tHead.rows && table.tHead.rows[0];
@@ -2368,7 +2833,7 @@
                 if (!toolbar || !outerKeyEl || !outerDirEl || !innerKeyEl || !innerDirEl) return;
                 const optionsHtml = validSortKeys.map((k) => {
                     const idx = (headKeys || []).indexOf(k);
-                    const label = (idx >= 0 && headCols && headCols[idx]) ? headCols[idx] : k;
+                    const label = (idx >= 0 && headColLabels && headColLabels[idx]) ? headColLabels[idx] : k;
                     return `<option value="${k}">${label}</option>`;
                 }).join('');
                 outerKeyEl.innerHTML = optionsHtml;
@@ -2382,6 +2847,8 @@
                     outerSortState.dir = outerDirEl.value === 'asc' ? 'asc' : 'desc';
                     innerSortState.key = validSortKeys.includes(innerKeyEl.value) ? innerKeyEl.value : '__rows';
                     innerSortState.dir = innerDirEl.value === 'asc' ? 'asc' : 'desc';
+                    savePerfGroupOuterSortToStorage(outerSortState.key, outerSortState.dir);
+                    savePerfGroupInnerSortToStorage(innerSortState.key, innerSortState.dir);
                     const root = table.parentElement ? table.parentElement.parentElement : document;
                     root.querySelectorAll('table.pm-managed-head-table thead tr, table#perfGroupTable thead tr').forEach(r => refreshHeaderArrows(r));
                     applyHierSort();
@@ -2419,6 +2886,7 @@
                     const outerDirEl = document.getElementById('perfGroupOuterSortDir');
                     if (outerKeyEl) outerKeyEl.value = outerSortState.key;
                     if (outerDirEl) outerDirEl.value = outerSortState.dir;
+                    savePerfGroupOuterSortToStorage(outerSortState.key, outerSortState.dir);
                     applyHierSort();
                     });
                 });
