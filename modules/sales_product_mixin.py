@@ -9778,9 +9778,19 @@ class SalesProductMixin:
                                 item['range_end'] = _fmt_date(bend)
                                 bucket_items.append(item)
 
-                        # right edge partial (avoid duplicate when same bucket as left)
-                        if right_partial and last_bucket_start and (not first_bucket_start or last_bucket_start != first_bucket_start):
-                            bucket_items.append(_query_raw_bucket(last_bucket_start, max(sd_obj, last_bucket_start), ed_obj))
+                        # right edge partial：多桶时补最后一个截断桶；单桶且仅右端截断时 first==last，
+                        # 若仍用「last != first」会整段被跳过（例如按月 2026-05-01～2026-05-10）。
+                        # 单桶且左端已用 raw 补过时不再追加，避免与左段重复。
+                        if right_partial and last_bucket_start:
+                            same_bucket = (
+                                first_bucket_start is not None
+                                and last_bucket_start is not None
+                                and first_bucket_start == last_bucket_start
+                            )
+                            if same_bucket and (not left_partial):
+                                bucket_items.append(_query_raw_bucket(last_bucket_start, sd_obj, ed_obj))
+                            elif not same_bucket:
+                                bucket_items.append(_query_raw_bucket(last_bucket_start, max(sd_obj, last_bucket_start), ed_obj))
 
                         # sort by record_date
                         bucket_items.sort(key=lambda x: str(x.get('record_date') or ''))
