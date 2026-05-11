@@ -137,29 +137,35 @@ class LogisticsWarehouseMixin:
             sp = str(r.get('storage_path') or '').strip()
             if not opid or not sp:
                 continue
-            is_dep = self._parse_int(r.get('is_deprecated')) or 0
-            if is_dep:
-                continue
             bucket.setdefault(opid, []).append(r)
 
         out = {}
         for opid, items in bucket.items():
+            # 与下单产品列表一致：优先未废弃映射，再考虑已废弃；同组内按 sort_order / id（与 SQL 顺序一致）
+            items_ranked = sorted(
+                items,
+                key=lambda r: (
+                    self._parse_int(r.get('is_deprecated')) or 0,
+                    self._parse_int(r.get('sort_order')) or 0,
+                    self._parse_int(r.get('id')) or 0,
+                ),
+            )
             picked = None
-            for r in items:
+            for r in items_ranked:
                 nm = str(r.get('image_type_name') or '').strip()
                 if nm and nm in preferred:
                     picked = r
                     break
-            if not picked and items:
-                picked = items[0]
+            if not picked and items_ranked:
+                picked = items_ranked[0]
             if not picked:
                 continue
             sp = str(picked.get('storage_path') or '').strip()
             rel = sp.replace('\\', '/').lstrip('/')
-            try:
-                b64 = base64.b64encode(os.fsencode(rel)).decode('ascii') if rel else ''
-            except Exception:
-                b64 = ''
+            # 与前端 order_product_management utf8ToB64 + /api/image-preview UTF-8 回退一致，避免 os.fsencode 与浏览器 UTF-8 不一致导致 404
+            if not rel:
+                continue
+            b64 = base64.b64encode(rel.encode('utf-8', errors='surrogatepass')).decode('ascii')
             if b64:
                 out[int(opid)] = b64
         return out
@@ -400,15 +406,15 @@ class LogisticsWarehouseMixin:
                                 scope_params
                             )
                         rows = cur.fetchall() or []
-                try:
-                    opids = [self._parse_int(r.get('order_product_id')) for r in rows if self._parse_int(r.get('order_product_id'))]
-                    preview_map = self._load_order_product_first_image_preview(conn, opids, type_name='白底纯图')
-                    for r in rows:
-                        opid = self._parse_int(r.get('order_product_id'))
-                        r['preview_image_b64'] = preview_map.get(opid, '') if opid else ''
-                except Exception:
-                    for r in rows:
-                        r['preview_image_b64'] = ''
+                    try:
+                        opids = [self._parse_int(r.get('order_product_id')) for r in rows if self._parse_int(r.get('order_product_id'))]
+                        preview_map = self._load_order_product_first_image_preview(conn, opids, type_name='白底纯图')
+                        for r in rows:
+                            opid = self._parse_int(r.get('order_product_id'))
+                            r['preview_image_b64'] = preview_map.get(opid, '') if opid else ''
+                    except Exception:
+                        for r in rows:
+                            r['preview_image_b64'] = ''
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             data = self._read_json_body(environ)
@@ -937,15 +943,15 @@ class LogisticsWarehouseMixin:
                                 scope_params
                             )
                         rows = cur.fetchall() or []
-                try:
-                    opids = [self._parse_int(r.get('order_product_id')) for r in rows if self._parse_int(r.get('order_product_id'))]
-                    preview_map = self._load_order_product_first_image_preview(conn, opids, type_name='白底纯图')
-                    for r in rows:
-                        opid = self._parse_int(r.get('order_product_id'))
-                        r['preview_image_b64'] = preview_map.get(opid, '') if opid else ''
-                except Exception:
-                    for r in rows:
-                        r['preview_image_b64'] = ''
+                    try:
+                        opids = [self._parse_int(r.get('order_product_id')) for r in rows if self._parse_int(r.get('order_product_id'))]
+                        preview_map = self._load_order_product_first_image_preview(conn, opids, type_name='白底纯图')
+                        for r in rows:
+                            opid = self._parse_int(r.get('order_product_id'))
+                            r['preview_image_b64'] = preview_map.get(opid, '') if opid else ''
+                    except Exception:
+                        for r in rows:
+                            r['preview_image_b64'] = ''
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             data = self._read_json_body(environ)

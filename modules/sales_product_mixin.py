@@ -80,8 +80,19 @@ class SalesProductMixin:
     def _abs_from_storage_path(self, storage_path):
         return self._join_resources((storage_path or '').strip().replace('\\', '/'))
 
+    @staticmethod
+    def _sales_variant_subfolder_display_name(spec_part, fabric_part):
+        """销售主图子目录名（面料必填）：有规格时为「规格-面料」，规格为空时仅为「面料」；无面料返回空串。"""
+        s = (spec_part or '').strip().replace('/', '-').replace('\\', '-')
+        f = (fabric_part or '').strip().replace('/', '-').replace('\\', '-')
+        if not f:
+            return ''
+        if s:
+            return f"{s}-{f}"
+        return f
+
     def _resolve_sales_variant_folder_by_variant_id(self, variant_id, ensure_folder=False):
-        """按 variant_id 解析销售主图文件夹（货号/主图/规格-面料）。"""
+        """按 variant_id 解析销售主图文件夹（货号/主图/子目录；子目录为规格-面料，规格可为空）。"""
         vid = int(variant_id or 0)
         if vid <= 0:
             raise RuntimeError('Missing variant_id')
@@ -116,13 +127,15 @@ class SalesProductMixin:
             fabric_part = str(row.get('fabric_name_en') or '').strip().replace('/', '-').replace('\\', '-')
             if not fabric_part:
                 fabric_part = self._resolve_fabric_folder_part(conn, row.get('fabric_id'), row.get('fabric'))
-            if not (sku_name and spec_part and fabric_part):
-                raise RuntimeError('当前规格缺少货号/规格/面料，无法定位主图文件夹')
+            if not fabric_part:
+                raise RuntimeError('面料为必填：当前规格缺少可解析的面料信息，无法定位主图文件夹')
+            variant_folder_name = self._sales_variant_subfolder_display_name(spec_part, fabric_part)
+            if not sku_name:
+                raise RuntimeError('当前规格缺少货号，无法定位主图文件夹')
 
             if ensure_folder:
                 self._ensure_listing_sales_variant_folder(sku_name, spec_part, fabric_part)
             base_folder = self._ensure_listing_folder()
-            variant_folder_name = f"{spec_part}-{fabric_part}"
             folder_path = os.path.join(
                 base_folder,
                 self._safe_fsencode(sku_name),
@@ -4414,13 +4427,13 @@ class SalesProductMixin:
             os.makedirs(main_folder, exist_ok=True)
 
         spec_part = (spec_name or '').strip().replace('/', '-').replace('\\', '-')
-        # Folder naming rule: 规格名称-面料英文名称（fallback to legacy fabric code/text if name_en missing）
+        # Folder naming rule: 规格-面料英文名（规格可为空；面料必填；面料段 fallback 同 _resolve_fabric_folder_part）
         fabric_part = (fabric_code or '').strip().replace('/', '-').replace('\\', '-')
         if not fabric_part:
             fabric_part = self._code_before_dash(fabric_code).replace('/', '-').replace('\\', '-')
-        if not (spec_part and fabric_part):
+        variant_folder_name = self._sales_variant_subfolder_display_name(spec_part, fabric_part)
+        if not variant_folder_name:
             return
-        variant_folder_name = f"{spec_part}-{fabric_part}"
         variant_folder = os.path.join(main_folder, self._safe_fsencode(variant_folder_name))
         if not os.path.exists(variant_folder):
             os.makedirs(variant_folder, exist_ok=True)
@@ -4953,11 +4966,11 @@ class SalesProductMixin:
                 # NAS backend: use bytes paths end-to-end to avoid str/bytes mixing.
                 target_folder_abs = folder_info.get('folder_path')
                 if not target_folder_abs:
-                    return self.send_json({'status': 'error', 'message': '无法定位主图文件夹，请确认货号/规格/面料信息完整'}, start_response)
+                    return self.send_json({'status': 'error', 'message': '无法定位主图文件夹，请确认货号与面料完整（面料必填；规格可为空）'}, start_response)
                 if isinstance(target_folder_abs, str):
                     target_folder_abs = self._safe_fsencode(target_folder_abs)
                 if not os.path.exists(target_folder_abs):
-                    return self.send_json({'status': 'error', 'message': '无法定位主图文件夹，请确认货号/规格/面料信息完整'}, start_response)
+                    return self.send_json({'status': 'error', 'message': '无法定位主图文件夹，请确认货号与面料完整（面料必填；规格可为空）'}, start_response)
 
                 # ---- Stage files first (atomic batch) ----
                 staged_moves = []   # [(src, tmp)] source moved to tmp; tmp still exists (not yet promoted)
@@ -6036,13 +6049,15 @@ class SalesProductMixin:
             fabric_part = str(row.get('fabric_name_en') or '').strip().replace('/', '-').replace('\\', '-')
             if not fabric_part:
                 fabric_part = self._resolve_fabric_folder_part(conn, row.get('fabric_id'), row.get('fabric'))
-            if not (sku_name and spec_part and fabric_part):
-                raise RuntimeError('当前销售产品缺少货号/规格/面料，无法定位主图文件夹')
+            if not fabric_part:
+                raise RuntimeError('面料为必填：当前销售产品缺少可解析的面料信息，无法定位主图文件夹')
+            variant_folder_name = self._sales_variant_subfolder_display_name(spec_part, fabric_part)
+            if not sku_name:
+                raise RuntimeError('当前销售产品缺少货号，无法定位主图文件夹')
 
             if ensure_folder:
                 self._ensure_listing_sales_variant_folder(sku_name, spec_part, fabric_part)
             base_folder = self._ensure_listing_folder()
-            variant_folder_name = f"{spec_part}-{fabric_part}"
             folder_path = os.path.join(
                 base_folder,
                 self._safe_fsencode(sku_name),
@@ -6451,11 +6466,61 @@ class SalesProductMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def _order_product_first_linked_variant_id(self, conn, order_product_id):
+        """销售规格绑定下单产品时写入 sales_variant_order_links；配件图子目录与主图一致用此 variant。"""
+        opid = int(order_product_id or 0)
+        if opid <= 0:
+            return 0
+        if not self._has_required_tables(['sales_variant_order_links']):
+            return 0
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT variant_id FROM sales_variant_order_links
+                    WHERE order_product_id=%s
+                    ORDER BY variant_id ASC
+                    LIMIT 1
+                    """,
+                    (opid,),
+                )
+                r = cur.fetchone() or {}
+            return int(self._parse_int(r.get('variant_id')) or 0)
+        except Exception:
+            return 0
+
     def _resolve_order_product_main_image_folder(self, order_product_id, ensure_folder=False):
         opid = int(order_product_id or 0)
         if opid <= 0:
             raise RuntimeError('Missing order_product_id')
         with self._get_db_connection() as conn:
+            vid = self._order_product_first_linked_variant_id(conn, opid)
+            if vid:
+                # 与销售产品主图同一套「货号/主图/规格-面料英文名」中的规格-面料段；物理目录在 配件图 下
+                vinfo = self._resolve_sales_variant_folder_by_variant_id(vid, ensure_folder=False)
+                sku_name = str(vinfo.get('sku_family') or '').strip()
+                folder_name = str(vinfo.get('variant_folder') or '').strip()
+                if not sku_name or not folder_name:
+                    raise RuntimeError('已绑定规格但无法解析文件夹名（缺少货号或面料段）')
+                base_folder = self._ensure_listing_folder()
+                folder_path = os.path.join(
+                    base_folder,
+                    self._safe_fsencode(sku_name),
+                    self._safe_fsencode('配件图'),
+                    self._safe_fsencode(folder_name),
+                )
+                if ensure_folder:
+                    os.makedirs(folder_path, exist_ok=True)
+                return {
+                    'order_product_id': opid,
+                    'sku_family': sku_name,
+                    'variant_folder': folder_name,
+                    'folder_path': folder_path,
+                    'linked_variant_id': vid,
+                    'spec_folder_part': str(vinfo.get('spec_name') or '').strip(),
+                    'fabric_folder_part': str(vinfo.get('fabric_folder_part') or '').strip(),
+                }
+
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -6470,28 +6535,41 @@ class SalesProductMixin:
                     (opid,),
                 )
                 row = cur.fetchone() or {}
-        if not row.get('id'):
-            raise RuntimeError('下单产品不存在')
-        sku_name = str(row.get('sku_family') or '').strip()
-        spec_part = self._derive_order_product_spec_folder_part(row)
-        if not sku_name:
-            raise RuntimeError('当前下单产品缺少货号，无法定位主图文件夹')
-        folder_name = spec_part or "通用"
-        base_folder = self._ensure_listing_folder()
-        folder_path = os.path.join(
-            base_folder,
-            self._safe_fsencode(sku_name),
-            self._safe_fsencode('配件图'),
-            self._safe_fsencode(folder_name),
-        )
-        if ensure_folder:
-            os.makedirs(folder_path, exist_ok=True)
-        return {
-            'order_product_id': opid,
-            'sku_family': sku_name,
-            'variant_folder': folder_name,
-            'folder_path': folder_path,
-        }
+            if not row.get('id'):
+                raise RuntimeError('下单产品不存在')
+            sku_name = str(row.get('sku_family') or '').strip()
+            if not sku_name:
+                raise RuntimeError('当前下单产品缺少货号，无法定位主图文件夹')
+            spec_part = self._derive_order_product_spec_folder_part(row)
+            fabric_part = str(row.get('fabric_name_en') or '').strip().replace('/', '-').replace('\\', '-')
+            if not fabric_part:
+                fabric_part = self._resolve_fabric_folder_part(conn, row.get('fabric_id'), row.get('fabric_code') or '')
+            if spec_part and fabric_part:
+                folder_name = f"{spec_part}-{fabric_part}"
+            elif fabric_part:
+                folder_name = fabric_part
+            elif spec_part:
+                folder_name = spec_part
+            else:
+                folder_name = "通用"
+            base_folder = self._ensure_listing_folder()
+            folder_path = os.path.join(
+                base_folder,
+                self._safe_fsencode(sku_name),
+                self._safe_fsencode('配件图'),
+                self._safe_fsencode(folder_name),
+            )
+            if ensure_folder:
+                os.makedirs(folder_path, exist_ok=True)
+            return {
+                'order_product_id': opid,
+                'sku_family': sku_name,
+                'variant_folder': folder_name,
+                'folder_path': folder_path,
+                'linked_variant_id': 0,
+                'spec_folder_part': spec_part,
+                'fabric_folder_part': fabric_part,
+            }
 
     def _derive_order_product_spec_folder_part(self, order_row):
         # 规格与数量简称优先；为空时从 SKU 结构中推断规格段（而不是回落成中文固定字符串）。
@@ -6696,7 +6774,6 @@ class SalesProductMixin:
                             if pref and not final_name.startswith(pref + '-'):
                                 final_name = f"{pref}-{final_name}"
                         sha256 = hashlib.sha256(payload).hexdigest()
-                        file_size = len(payload)
                         cur.execute("SELECT id, storage_path FROM image_assets WHERE sha256=%s LIMIT 1", (sha256,))
                         exists = cur.fetchone() or {}
                         aid = self._parse_int(exists.get('id')) or 0
@@ -6711,14 +6788,23 @@ class SalesProductMixin:
                             with open(abs_target, 'wb') as f:
                                 f.write(payload)
                             storage_path = self._storage_path_from_abs(abs_target)
-                            cur.execute(
-                                """
-                                INSERT INTO image_assets (storage_path, sha256, file_size, image_type_id, is_deprecated, description, original_filename)
-                                VALUES (%s, %s, %s, %s, 0, '', %s)
-                                """,
-                                (storage_path, sha256, file_size, (type_id or None), os.path.basename(abs_target)),
+                            try:
+                                orig_fn, _, _ = self._display_name_from_abs_path_b(abs_target)
+                            except Exception:
+                                orig_fn = ''
+                            aid = self._insert_image_asset_dynamic(
+                                conn,
+                                cur,
+                                {
+                                    'sha256': sha256,
+                                    'storage_path': storage_path,
+                                    'original_filename': orig_fn or final_name,
+                                    'description': '',
+                                    'image_type_id': int(type_id) if type_id else None,
+                                    'is_deprecated': 0,
+                                    'file_size': len(payload),
+                                },
                             )
-                            aid = cur.lastrowid
                             if aid:
                                 touched_asset_ids.append(int(aid))
                         else:
@@ -6878,30 +6964,48 @@ class SalesProductMixin:
                             final_name = f"{image_type_prefix}-{base_name}" if image_type_prefix and (not base_name.startswith(image_type_prefix + '-')) else base_name
                             final_name = self._next_available_filename(folder_abs, final_name)
                             abs_target = os.path.join(folder_abs, self._safe_fsencode(final_name))
-                            moved_ok = False
+                            src_b = row.get('source_file_b')
+                            payload_b = row.get('payload') or b''
                             try:
-                                os.replace(row.get('source_file_b'), abs_target)
-                                moved_ok = True
+                                with open(abs_target, 'wb') as wf:
+                                    wf.write(payload_b)
+                            except Exception:
+                                continue
+                            storage_path = self._storage_path_from_abs(abs_target)
+                            try:
+                                try:
+                                    orig_fn, _, _ = self._display_name_from_abs_path_b(abs_target)
+                                except Exception:
+                                    orig_fn = ''
+                                aid = self._insert_image_asset_dynamic(
+                                    conn,
+                                    cur,
+                                    {
+                                        'sha256': row.get('sha256'),
+                                        'storage_path': storage_path,
+                                        'original_filename': orig_fn or final_name,
+                                        'description': '',
+                                        'image_type_id': int(type_id) if type_id else None,
+                                        'is_deprecated': 0,
+                                        'file_size': len(payload_b),
+                                    },
+                                )
                             except Exception:
                                 try:
-                                    with open(abs_target, 'wb') as wf:
-                                        wf.write(row.get('payload') or b'')
+                                    if os.path.isfile(abs_target):
+                                        os.remove(abs_target)
                                 except Exception:
-                                    continue
-                            if moved_ok:
-                                moved += 1
-                            storage_path = self._storage_path_from_abs(abs_target)
-                            cur.execute(
-                                """
-                                INSERT INTO image_assets (storage_path, sha256, file_size, image_type_id, is_deprecated, description, original_filename)
-                                VALUES (%s, %s, %s, %s, 0, '', %s)
-                                """,
-                                (storage_path, row.get('sha256'), len(row.get('payload') or b''), (type_id or None), os.path.basename(final_name)),
-                            )
-                            aid = cur.lastrowid
-                            created_assets += 1
+                                    pass
+                                raise
                             if aid:
+                                created_assets += 1
                                 touched_asset_ids.append(int(aid))
+                                try:
+                                    if src_b and os.path.isfile(src_b) and os.path.abspath(src_b) != os.path.abspath(abs_target):
+                                        os.remove(src_b)
+                                        moved += 1
+                                except Exception:
+                                    pass
                         else:
                             if type_id:
                                 cur.execute("UPDATE image_assets SET image_type_id=%s WHERE id=%s", (type_id, aid))
@@ -6994,9 +7098,15 @@ class SalesProductMixin:
                     abs_path = self._join_resources(storage_path)
                     with open(abs_path, 'wb') as f:
                         f.write(payload)
+                    upd_parts = ['sha256=%s']
+                    upd_vals = [new_sha]
+                    if self._table_has_column(conn, 'image_assets', 'file_size'):
+                        upd_parts.append('file_size=%s')
+                        upd_vals.append(len(payload))
+                    upd_vals.append(aid)
                     cur.execute(
-                        "UPDATE image_assets SET sha256=%s, file_size=%s WHERE id=%s",
-                        (new_sha, len(payload), aid),
+                        f"UPDATE image_assets SET {', '.join(upd_parts)} WHERE id=%s",
+                        tuple(upd_vals),
                     )
             return self.send_json({'status': 'success', 'message': '替换成功'}, start_response)
         except Exception as e:
@@ -7072,7 +7182,7 @@ class SalesProductMixin:
                 folder_info = self._resolve_sales_product_variant_folder(sales_product_id, ensure_folder=True)
             target_folder_abs = folder_info.get('folder_path')
             if not target_folder_abs or not os.path.exists(target_folder_abs):
-                return self.send_json({'status': 'error', 'message': '无法定位主图文件夹，请确认货号/规格/面料信息完整'}, start_response)
+                return self.send_json({'status': 'error', 'message': '无法定位主图文件夹，请确认货号与面料完整（面料必填；规格可为空）'}, start_response)
 
             with self._get_db_connection() as conn:
                 variant_id = 0
@@ -7482,7 +7592,7 @@ class SalesProductMixin:
                     start_sort = self._get_sales_product_image_sort_start(conn, sales_product_id)
                 target_folder_abs = folder_info.get('folder_path')
                 if not target_folder_abs or not os.path.exists(target_folder_abs):
-                    return self.send_json({'status': 'error', 'message': '无法定位主图文件夹，请确认货号/规格/面料信息完整'}, start_response)
+                    return self.send_json({'status': 'error', 'message': '无法定位主图文件夹，请确认货号与面料完整（面料必填；规格可为空）'}, start_response)
                 created_assets = 0
                 reused_assets = 0
                 linked = 0

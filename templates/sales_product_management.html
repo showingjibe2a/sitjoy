@@ -468,8 +468,8 @@
                                 <div id="modalSpecSuggest" class="sales-spec-suggest-list" role="listbox" aria-label="规格联想"></div>
                             </div>
                             <div class="form-group pm-span-1">
-                                <label for="modalFabricId" class="label-help">面料<span class="help-dot" data-tip="先选择货号后，这里只显示该货号允许的面料；选择单个下单SKU时会自动带出"></span></label>
-                                <select id="modalFabricId" class="optional-field"></select>
+                                <label for="modalFabricId" class="label-help">面料<span class="required-asterisk">*</span><span class="help-dot" data-tip="先选择货号后，这里只显示该货号允许的面料；选择单个下单SKU时会自动带出"></span></label>
+                                <select id="modalFabricId" class="required-field"></select>
                                 <input type="hidden" id="modalFabric" value="">
                             </div>
                         </div>
@@ -512,7 +512,7 @@
                                 <div class="main-images-toolbar">
                                     <div class="image-type-bar" id="modalMainImageTypeBar"></div>
                                 </div>
-                                <div id="mainImageFolderTip" class="main-images-folder-tip">保存后自动绑定到货号/主图/规格-面料 子文件夹。双击图片可编辑卖点描述。</div>
+                                <div id="mainImageFolderTip" class="main-images-folder-tip">保存后自动绑定到货号/主图/子文件夹：面料必填；有规格时为「规格-面料英文名」，规格可为空时仅为「面料英文名」。双击图片可编辑卖点描述。</div>
                                 <div id="mainImagesGrid" class="sj-media-image-grid sj-media-image-grid--tight">
                                     <div class="sj-media-image-empty">新增状态下暂无主图，保存后即可上传和管理</div>
                                 </div>
@@ -1818,14 +1818,14 @@
             if (!grid || !tip) return;
 
             if (!editId) {
-                tip.textContent = '保存后自动绑定到货号/主图/规格-面料 子文件夹。双击图片可编辑卖点描述。';
+                tip.textContent = '保存后自动绑定到货号/主图/子文件夹：面料必填；有规格时为「规格-面料英文名」，规格可为空时仅为「面料英文名」。双击图片可编辑卖点描述。';
                 grid.innerHTML = '<div class="sj-media-image-empty">新增状态下暂无主图，保存后即可上传和管理</div>';
                 return;
             }
 
             const hasFabricCards = Array.isArray(fabricImageItems) && fabricImageItems.length;
             if (!mainImageItems.length && !hasFabricCards) {
-                grid.innerHTML = '<div class="sj-media-image-empty">当前规格-面料子文件夹暂无图片，可点击“新增主图”上传</div>';
+                grid.innerHTML = '<div class="sj-media-image-empty">当前主图子文件夹暂无图片，可点击“新增主图”上传</div>';
                 return;
             }
 
@@ -3908,6 +3908,10 @@
             };
             if (!payload.shop_id) {
                 showModalStatus('请选择店铺', true);
+                return;
+            }
+            if (!String(payload.fabric_id || '').trim()) {
+                showModalStatus('请选择面料', true);
                 return;
             }
             if (!payload.platform_sku || !payload.order_sku_links.length) {
