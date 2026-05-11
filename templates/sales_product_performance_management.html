@@ -582,16 +582,17 @@
             color: var(--morandi-slate);
             margin-right: 0.06rem;
         }
+        /* 覆盖全站 select 的 height + padding !important，避免「矮框 + 大内边距」把文字挤没 */
         #perfGroupSortToolbar select.perf-group-sort-select {
-            font-size: 0.72rem;
-            line-height: 1.15;
-            min-height: 24px;
-            height: 24px;
-            padding: 0.06rem 0.28rem;
-            border-radius: 5px;
-            border: 1px solid rgba(180, 172, 162, 0.88);
-            background: #fff;
-            color: var(--morandi-ink);
+            font-size: 0.78rem;
+            line-height: 1.35 !important;
+            min-height: 34px !important;
+            height: 34px !important;
+            padding: 0.2rem 0.5rem !important;
+            border-radius: 6px;
+            border: 1px solid rgba(180, 172, 162, 0.88) !important;
+            background: #fff !important;
+            color: var(--morandi-ink) !important;
             box-sizing: border-box;
         }
         #perfGroupSortToolbar select.perf-group-sort-select.perf-group-sort-key {
