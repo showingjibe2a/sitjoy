@@ -2060,8 +2060,6 @@
     function syncDetachedHeader(state){
         if(!state || !state.headerTable || !state.table || !state.table.tHead || !state.table.tHead.rows.length) return;
         const srcHead = state.table.tHead;
-        const srcRow = srcHead.rows[0];
-        if(!srcRow) return;
 
         // Keep detached header width model identical to source table (especially when colgroup is used).
         state.headerTable.querySelectorAll('colgroup').forEach(node => node.remove());
@@ -2077,10 +2075,13 @@
         }
         dstHead.innerHTML = '';
 
-        const cloned = srcRow.cloneNode(true);
-        cloned.querySelectorAll('.pm-col-resizer').forEach(node => node.remove());
-        cloned.querySelectorAll('[data-sort-bound]').forEach(node => node.removeAttribute('data-sort-bound'));
-        dstHead.appendChild(cloned);
+        Array.from(srcHead.rows || []).forEach((srcRow) => {
+            if(!srcRow) return;
+            const cloned = srcRow.cloneNode(true);
+            cloned.querySelectorAll('.pm-col-resizer').forEach(node => node.remove());
+            cloned.querySelectorAll('[data-sort-bound]').forEach(node => node.removeAttribute('data-sort-bound'));
+            dstHead.appendChild(cloned);
+        });
 
         srcHead.classList.add('pm-managed-hidden-head');
     }
@@ -2772,7 +2773,10 @@
 
     function ensureManagedTableColumnFilter(state){
         if(!state || !state.table || !state.table.tHead || !state.table.tHead.rows || !state.table.tHead.rows.length) return;
-        if(String(state.table.dataset.serverPaginationMode || '').toLowerCase() === 'server' || state.table.dataset.serverPaginationMode === '1') return;
+        const serverPagination = String(state.table.dataset.serverPaginationMode || '').toLowerCase() === 'server'
+            || state.table.dataset.serverPaginationMode === '1';
+        const allowColumnFilterWithServer = String(state.table.dataset.allowManagedColumnFilterWithServer || '').trim() === '1';
+        if(serverPagination && !allowColumnFilterWithServer) return;
         if(!window.SitjoyColumnFilter || typeof window.SitjoyColumnFilter.attach !== 'function') return;
 
         const headerCells = Array.from(state.table.tHead.rows[0].cells || []);

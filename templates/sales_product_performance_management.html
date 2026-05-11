@@ -657,38 +657,17 @@
         .perf-group-tree-wrap > .pm-table-toolbar .pm-table-pager {
             display: none !important;
         }
-        .perf-group-grand-summary-host {
-            width: 100%;
-            max-width: 100%;
-            margin: 0 0 0.38rem 0;
-        }
-        .perf-group-grand-summary-scroll {
-            overflow-x: auto;
-            overflow-y: hidden;
-            width: 100%;
-            scrollbar-width: thin;
-        }
-        .perf-group-grand-total-table {
-            width: 100%;
-            min-width: 1180px;
-            margin-bottom: 0;
-            border: 1px solid rgba(160, 175, 155, 0.55);
-            border-radius: 8px;
-            background: linear-gradient(180deg, #f6faf6 0%, #edf5ee 100%);
-            border-collapse: collapse;
-            table-layout: fixed;
-        }
-        .perf-group-grand-total-row td {
+        /* 全量汇总：主表 thead 第二行（与分离表头一并克隆），与列宽/显隐/冻结同源；随表头区固定于滚动表体之上 */
+        .perf-group-tree-wrap table#perfGroupTable thead tr.perf-group-grand-total-row th,
+        .perf-group-tree-wrap table.pm-managed-head-table thead tr.perf-group-grand-total-row th {
             font-size: 0.84rem;
-            padding: 0.38rem 0.45rem;
+            font-weight: 600;
             vertical-align: middle;
-            border-bottom: none;
-            box-sizing: border-box;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+            background: linear-gradient(180deg, #f6faf6 0%, #edf5ee 100%);
+            box-shadow: 0 1px 0 rgba(160, 175, 155, 0.45);
         }
-        .perf-group-grand-total-label {
+        .perf-group-tree-wrap table#perfGroupTable thead tr.perf-group-grand-total-row .perf-group-grand-total-label,
+        .perf-group-tree-wrap table.pm-managed-head-table thead tr.perf-group-grand-total-row .perf-group-grand-total-label {
             white-space: nowrap;
             color: var(--morandi-ink);
         }
@@ -1243,226 +1222,13 @@
             return sum;
         }
 
-        /** 货号分组「全量汇总」行：与托管表列显隐/冻结/列宽/横向滚动同步 */
-        let perfGroupGrandSyncState = {
-            mo: null,
-            ro: null,
-            onResize: null,
-            onScrollBody: null,
-            onScrollGrand: null,
-            bodyWrap: null,
-            grandScroll: null
-        };
-
-        function teardownPerfGroupGrandSync() {
-            try {
-                if (perfGroupGrandSyncState.mo) {
-                    perfGroupGrandSyncState.mo.disconnect();
-                    perfGroupGrandSyncState.mo = null;
-                }
-                if (perfGroupGrandSyncState.ro) {
-                    perfGroupGrandSyncState.ro.disconnect();
-                    perfGroupGrandSyncState.ro = null;
-                }
-                if (perfGroupGrandSyncState.onResize) {
-                    window.removeEventListener('resize', perfGroupGrandSyncState.onResize);
-                    perfGroupGrandSyncState.onResize = null;
-                }
-                const bw = perfGroupGrandSyncState.bodyWrap;
-                const gs = perfGroupGrandSyncState.grandScroll;
-                if (bw && perfGroupGrandSyncState.onScrollBody) {
-                    bw.removeEventListener('scroll', perfGroupGrandSyncState.onScrollBody);
-                }
-                if (gs && perfGroupGrandSyncState.onScrollGrand) {
-                    gs.removeEventListener('scroll', perfGroupGrandSyncState.onScrollGrand);
-                }
-            } catch (e) { /* ignore */ }
-            perfGroupGrandSyncState.bodyWrap = null;
-            perfGroupGrandSyncState.grandScroll = null;
-            perfGroupGrandSyncState.onScrollBody = null;
-            perfGroupGrandSyncState.onScrollGrand = null;
-            const gh = document.querySelector('.perf-group-grand-summary-host');
-            if (gh && gh.parentNode) gh.parentNode.removeChild(gh);
-        }
-
-        /** 按参照行（表头或数据行）的 data-manage-col-key 顺序重排汇总行单元格 */
-        function reorderPerfGroupGrandCellsToMatchRef(grandRow, refRow) {
-            if (!grandRow || !refRow || grandRow.cells.length !== refRow.cells.length) return;
-            const keys = Array.from(refRow.cells).map(c => String(c.dataset.manageColKey || '').trim());
-            const byKey = new Map();
-            Array.from(grandRow.cells).forEach((td) => {
-                const k = String(td.dataset.manageColKey || '').trim();
-                if (k) byKey.set(k, td);
-            });
-            keys.forEach((k) => {
-                const td = byKey.get(k);
-                if (td) grandRow.appendChild(td);
-            });
-        }
-
-        /** 与主表同一 perf-group-tree-wrap 下的托管分离表头行（与列宽/冻结/显隐一致） */
-        function getPerfGroupManagedHeaderRow(treeWrap) {
-            if (!treeWrap) return null;
-            const hr = treeWrap.querySelector('.pm-managed-head-table thead tr');
-            if (hr && hr.cells && hr.cells.length) return hr;
-            const mt = treeWrap.querySelector('#perfGroupTable');
-            if (mt && mt.tHead && mt.tHead.rows && mt.tHead.rows[0]) return mt.tHead.rows[0];
-            return null;
-        }
-
-        function syncPerfGroupGrandSummaryLayout() {
-            const mainTable = document.getElementById('perfGroupTable');
-            const grandTable = document.getElementById('perfGroupGrandTable');
-            const treeWrap = mainTable && mainTable.closest('.perf-group-tree-wrap');
-            if (!mainTable || !grandTable || !treeWrap) return;
-            const headRow = getPerfGroupManagedHeaderRow(treeWrap);
-            const grandRow = grandTable.querySelector('tr.perf-group-grand-total-row');
-            if (!headRow || !grandRow || headRow.cells.length !== grandRow.cells.length) return;
-
-            reorderPerfGroupGrandCellsToMatchRef(grandRow, headRow);
-
-            let cg = grandTable.querySelector(':scope > colgroup');
-            if (!cg) {
-                cg = document.createElement('colgroup');
-                grandTable.insertBefore(cg, grandTable.firstChild);
-            }
-            cg.innerHTML = '';
-            let totalW = 0;
-            Array.from(headRow.cells).forEach((th) => {
-                const col = document.createElement('col');
-                const k = String(th.dataset.manageColKey || '').trim();
-                if (k) col.dataset.manageColKey = k;
-                const hidden = th.classList && th.classList.contains('pm-table-hide-col');
-                let w = Math.round(th.getBoundingClientRect().width);
-                if (!Number.isFinite(w) || w < 0) w = 0;
-                if (hidden) {
-                    w = 0;
-                } else {
-                    w = Math.max(36, w);
-                }
-                col.style.width = `${w}px`;
-                col.style.minWidth = `${w}px`;
-                col.style.maxWidth = `${w}px`;
-                cg.appendChild(col);
-                totalW += w;
-            });
-
-            grandTable.style.tableLayout = 'fixed';
-            const bodyWrap = mainTable.closest('.pm-managed-body-wrap');
-            const targetOuter = Math.round(Math.max(
-                totalW,
-                mainTable.scrollWidth || 0,
-                bodyWrap ? bodyWrap.clientWidth : 0,
-                mainTable.getBoundingClientRect().width || 0
-            ));
-            grandTable.style.width = `${Math.max(targetOuter, 1)}px`;
-
-            for (let i = 0; i < headRow.cells.length; i += 1) {
-                const th = headRow.cells[i];
-                const td = grandRow.cells[i];
-                if (!th || !td) continue;
-                td.classList.toggle('pm-table-hide-col', th.classList.contains('pm-table-hide-col'));
-                td.classList.toggle('pm-table-pinned-cell', th.classList.contains('pm-table-pinned-cell'));
-                ['position', 'left', 'right', 'zIndex'].forEach((p) => {
-                    td.style[p] = th.style[p] || '';
-                });
-                td.style.width = '';
-                td.style.minWidth = '';
-                td.style.maxWidth = '';
-                td.style.boxSizing = 'border-box';
-            }
-
-            const bw = bodyWrap;
-            const gsc = perfGroupGrandSyncState.grandScroll;
-            if (bw && gsc && Math.abs(gsc.scrollLeft - bw.scrollLeft) > 1) {
-                gsc.scrollLeft = bw.scrollLeft;
-            }
-        }
-
-        function schedulePerfGroupGrandAttach(mainTable, grandSum, headKeys) {
-            const tryOnce = (attempt) => {
-                const treeWrap = mainTable && mainTable.closest('.perf-group-tree-wrap');
-                const toolbar = treeWrap && treeWrap.querySelector(':scope > .pm-table-toolbar');
-                if (!treeWrap || !toolbar || !document.body.contains(mainTable)) {
-                    if (attempt < 40) window.setTimeout(() => tryOnce(attempt + 1), 35);
-                    return;
-                }
-                teardownPerfGroupGrandSync();
-
-                const cellHtmlForKey = (k) => {
-                    if (k === '__toggle') return '';
-                    if (k === '__sku') return '<strong>全量汇总</strong>';
-                    if (k === '__fabric' || k === '__spec') return '-';
-                    if (k === '__rows') return formatNumber(grandSum.rows);
-                    return formatMetricValue(resolveMetricValue(grandSum, k), k);
-                };
-
-                const grandHost = document.createElement('div');
-                grandHost.className = 'perf-group-grand-summary-host';
-                const grandScroll = document.createElement('div');
-                grandScroll.className = 'perf-group-grand-summary-scroll';
-                const grandTable = document.createElement('table');
-                grandTable.id = 'perfGroupGrandTable';
-                grandTable.className = 'perf-table pm-table perf-group-grand-total-table';
-                grandTable.setAttribute('aria-label', '筛选范围内全量汇总');
-                const tds = headKeys.map((k) => {
-                    const isMetric = (k !== '__toggle' && k !== '__sku' && k !== '__fabric' && k !== '__spec' && k !== '__rows');
-                    const cls = `${k === '__sku' ? 'perf-group-grand-total-label' : ''}${isMetric ? ' perf-th-metric' : ''}`.trim();
-                    const clsAttr = cls ? ` class="${cls}"` : '';
-                    return `<td data-manage-col-key="${k}"${clsAttr}>${cellHtmlForKey(k)}</td>`;
-                }).join('');
-                grandTable.innerHTML = `<tbody><tr class="perf-group-grand-total-row">${tds}</tr></tbody>`;
-                grandScroll.appendChild(grandTable);
-                grandHost.appendChild(grandScroll);
-                toolbar.after(grandHost);
-
-                const bodyWrap = mainTable.closest('.pm-managed-body-wrap');
-                perfGroupGrandSyncState.bodyWrap = bodyWrap || null;
-                perfGroupGrandSyncState.grandScroll = grandScroll;
-
-                let debTimer = null;
-                const debouncedSync = () => {
-                    if (debTimer) clearTimeout(debTimer);
-                    debTimer = window.setTimeout(() => {
-                        debTimer = null;
-                        syncPerfGroupGrandSummaryLayout();
-                    }, 40);
-                };
-
-                if (bodyWrap) {
-                    perfGroupGrandSyncState.onScrollBody = () => {
-                        grandScroll.scrollLeft = bodyWrap.scrollLeft;
-                    };
-                    perfGroupGrandSyncState.onScrollGrand = () => {
-                        bodyWrap.scrollLeft = grandScroll.scrollLeft;
-                    };
-                    bodyWrap.addEventListener('scroll', perfGroupGrandSyncState.onScrollBody);
-                    grandScroll.addEventListener('scroll', perfGroupGrandSyncState.onScrollGrand);
-                }
-
-                const headTableEl = treeWrap.querySelector('.pm-managed-head-table');
-
-                const mo = new MutationObserver(debouncedSync);
-                mo.observe(mainTable, { subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
-                if (headTableEl) mo.observe(headTableEl, { subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
-                perfGroupGrandSyncState.mo = mo;
-
-                const ro = new ResizeObserver(debouncedSync);
-                ro.observe(mainTable);
-                if (bodyWrap) ro.observe(bodyWrap);
-                if (headTableEl) ro.observe(headTableEl);
-                perfGroupGrandSyncState.ro = ro;
-
-                perfGroupGrandSyncState.onResize = debouncedSync;
-                window.addEventListener('resize', perfGroupGrandSyncState.onResize);
-
-                syncPerfGroupGrandSummaryLayout();
-                if (bodyWrap) grandScroll.scrollLeft = bodyWrap.scrollLeft;
-
-                window.setTimeout(() => syncPerfGroupGrandSummaryLayout(), 120);
-                window.setTimeout(() => syncPerfGroupGrandSummaryLayout(), 380);
-            };
-            tryOnce(0);
+        function perfGroupGrandSummaryCellHtml(k, grandSum) {
+            if (!grandSum) return '';
+            if (k === '__toggle') return '';
+            if (k === '__sku') return '<strong>全量汇总</strong>';
+            if (k === '__fabric' || k === '__spec') return '-';
+            if (k === '__rows') return formatNumber(grandSum.rows);
+            return formatMetricValue(resolveMetricValue(grandSum, k), k);
         }
 
         const state = {
@@ -2563,7 +2329,6 @@
         }
 
         function renderGroups(groups) {
-            teardownPerfGroupGrandSync();
             state.lastGroups = Array.isArray(groups) ? groups : [];
             const host = document.getElementById('groupContainer');
             const allMetricKeys = getDefaultGroupMetricOrder();
@@ -2604,6 +2369,7 @@
             table.id = 'perfGroupTable';
             // 交给 managed-table 接管列筛选/字段排序/字段显示；但分页对分组树不友好，强制单页展示
             table.dataset.serverPaginationMode = 'server';
+            table.dataset.allowManagedColumnFilterWithServer = '1';
             table.dataset.serverCurrentPage = '1';
             table.dataset.serverPageSize = '1000000';
             const headKeys = ['__toggle', '__sku', '__fabric', '__spec', '__rows'].concat(metricKeys.map(k => String(k)));
@@ -2615,21 +2381,32 @@
                 const inner = perfGroupThCellInner(k, lab);
                 return `<th class="${cls}" data-manage-col-key="${k}" data-disable-sort="1"${isFirst ? ' style="width:72px;"' : ''}>${inner}</th>`;
             }).join('');
-            table.innerHTML = `
-                <thead>
-                    <tr>
-                        ${headThCells}
-                    </tr>
-                </thead>
-                <tbody id="perfGroupTreeBody"></tbody>
-            `;
-            const tbody = table.querySelector('#perfGroupTreeBody');
 
             const flatAllItems = [];
             state.lastGroups.forEach(gg => (Array.isArray(gg.items) ? gg.items : []).forEach(it => flatAllItems.push(it)));
             const grandSum = emptyPerfGroupSum();
             flatAllItems.forEach(it => accumulatePerfGroupItemIntoSum(grandSum, it));
             finalizePerfGroupAggregateSum(grandSum);
+
+            const grandThCells = headKeys.map((k) => {
+                const isMetric = (k !== '__toggle' && k !== '__sku' && k !== '__fabric' && k !== '__spec' && k !== '__rows');
+                const cls = `${isMetric ? 'perf-th-metric ' : ''}${k === '__sku' ? 'perf-group-grand-total-label' : ''}`.trim();
+                const clsAttr = cls ? ` class="${cls}"` : '';
+                return `<th${clsAttr} data-manage-col-key="${k}" data-disable-sort="1">${perfGroupGrandSummaryCellHtml(k, grandSum)}</th>`;
+            }).join('');
+
+            table.innerHTML = `
+                <thead>
+                    <tr>
+                        ${headThCells}
+                    </tr>
+                    <tr class="perf-group-grand-total-row" aria-label="筛选范围内全量汇总">
+                        ${grandThCells}
+                    </tr>
+                </thead>
+                <tbody id="perfGroupTreeBody"></tbody>
+            `;
+            const tbody = table.querySelector('#perfGroupTreeBody');
 
             state.lastGroups.forEach((g, idx) => {
                 const groupKey = `grp_${idx}_${String(g.sku_family_id || '').trim()}`;
@@ -2693,7 +2470,8 @@
             });
 
             // 让全局 managed-table 机制接管：直接把 table 放入容器即可
-            table.dataset.serverTotalRows = String((tbody && tbody.rows && tbody.rows.length) ? tbody.rows.length : 0);
+            const dataRowCount = tbody.querySelectorAll('tr.perf-group-parent-row, tr.perf-group-child-item').length;
+            table.dataset.serverTotalRows = String(dataRowCount);
             wrap.appendChild(table);
             host.appendChild(wrap);
             if (typeof bindFloatingHelpDots === 'function') {
@@ -2713,7 +2491,6 @@
 
             // 层级排序：绑定到 managed 生成的表头（显示箭头），并对子SKU应用同规则排序
             bindPerfGroupHierSort(table, headKeys, headColLabels);
-            schedulePerfGroupGrandAttach(table, grandSum, headKeys);
         }
 
         function bindPerfGroupHierSort(table, headKeys, headColLabels) {
