@@ -1371,22 +1371,32 @@
         function getNasMainImageModalScrollSnapshot() {
             const modal = document.getElementById('nas-main-image-import-modal');
             if (!modal || !modal.classList.contains('active')) return null;
-            const el = modal.querySelector('.pm-modal-scroll');
-            if (!el) return null;
-            return { el, top: el.scrollTop, left: el.scrollLeft };
+            const parts = [];
+            const list = document.getElementById('nasMainImageList');
+            if (list) {
+                parts.push({ el: list, top: list.scrollTop, left: list.scrollLeft });
+            }
+            const outer = modal.querySelector('.pm-modal-scroll');
+            if (outer && outer !== list) {
+                parts.push({ el: outer, top: outer.scrollTop, left: outer.scrollLeft });
+            }
+            return parts.length ? { parts } : null;
         }
         function restoreNasMainImageModalScrollSnapshot(snap) {
             try {
-                if (!snap || !snap.el) return;
-                const top = Number(snap.top) || 0;
-                const left = Number(snap.left) || 0;
-                requestAnimationFrame(() => {
-                    snap.el.scrollTop = top;
-                    snap.el.scrollLeft = left;
-                    requestAnimationFrame(() => {
-                        snap.el.scrollTop = top;
-                        snap.el.scrollLeft = left;
+                if (!snap || !Array.isArray(snap.parts) || !snap.parts.length) return;
+                const apply = () => {
+                    snap.parts.forEach(p => {
+                        if (!p || !p.el) return;
+                        const top = Number(p.top) || 0;
+                        const left = Number(p.left) || 0;
+                        p.el.scrollTop = top;
+                        p.el.scrollLeft = left;
                     });
+                };
+                requestAnimationFrame(() => {
+                    apply();
+                    requestAnimationFrame(apply);
                 });
             } catch (e) {}
         }
@@ -1845,6 +1855,7 @@
                 .then(data => {
                     if (!data || data.status !== 'success') throw new Error((data && data.message) || '上传失败');
                     refreshOrderMainImageList();
+                    if (editId) sjRefreshOrderProductListRowThumb(editId);
                 })
                 .catch(err => showModalStatus('主图上传失败: ' + (err && err.message ? err.message : err), true));
         }
@@ -1864,6 +1875,7 @@
             }).then(r => r.json()).then(data => {
                 if (!data || data.status !== 'success') throw new Error((data && data.message) || '删除失败');
                 refreshOrderMainImageList();
+                if (editId) sjRefreshOrderProductListRowThumb(editId);
             }).catch(err => showModalStatus('主图删除失败: ' + (err && err.message ? err.message : err), true));
         }
 
@@ -1894,13 +1906,17 @@
                             .then(data => {
                                 if (!data || data.status !== 'success') throw new Error((data && data.message) || '替换失败');
                                 refreshOrderMainImageList();
+                                if (editId) sjRefreshOrderProductListRowThumb(editId);
                                 if (window.showAppToast) window.showAppToast(data.message || '替换成功', false, 2500);
                             })
                             .catch(err => {
                                 if (window.showAppToast) window.showAppToast('替换失败：' + (err && err.message ? err.message : err), true, 6000);
                             });
                     },
-                    onAfterSuccess: () => refreshOrderMainImageList()
+                    onAfterSuccess: () => {
+                        refreshOrderMainImageList();
+                        if (editId) sjRefreshOrderProductListRowThumb(editId);
+                    }
                 }
             });
             window.PmImageEditModal.open({ pathB64, name: imageName, defaultVariantIds: [] });
@@ -3633,14 +3649,14 @@
                             : '<span class="order-preview-thumb-empty">-</span>';
                         const checked = selectedOrderProductIds.has(String(item.id)) ? 'checked' : '';
                         return `
-                            <tr>
+                            <tr data-sj-row-entity-id="${item.id}">
                                 <td style="text-align:center;"><input type="checkbox" class="order-row-checkbox" data-id="${item.id}" ${checked}></td>
                                 <td class="preview-edit-cell">${renderEditableYesNoSwitch(item.id, 'is_on_market', onMarketText)}</td>
                                 <td class="preview-edit-cell">${renderEditableYesNoSwitch(item.id, 'is_reship_accessory', reshipText)}</td>
                                 <td class="yesno-col">${renderReadonlyYesNoSwitch(item.is_iteration)}</td>
                                 <td class="yesno-col">${renderReadonlyYesNoSwitch(item.is_dachene_product)}</td>
                                 <td>${item.sku_family || ''}</td>
-                                <td class="order-preview-thumb-cell">${previewHtml}</td>
+                                <td class="order-preview-thumb-cell" data-sj-preview="1">${previewHtml}</td>
                                 <td>${item.sku || ''}</td>
                                 <td>${item.spec_qty_short || ''}</td>
                                 <td>${item.contents_desc_en || ''}</td>
@@ -3678,7 +3694,7 @@
         function loadOrderProductList() {
             const q = document.getElementById('searchInput').value.trim();
             const url = q ? `/api/order-product?q=${encodeURIComponent(q)}` : '/api/order-product';
-            fetch(url)
+            return fetch(url)
                 .then(r => r.json())
                 .then(data => {
                     const tbody = document.querySelector('#orderProductTable tbody');
@@ -3688,11 +3704,33 @@
                     }
                     orderProductItemsCache = data.items || [];
                     renderOrderProductTable(orderProductItemsCache);
+                    if (window.SitjoyRowImageRefresh) {
+                        window.SitjoyRowImageRefresh.bustImagesIn(tbody);
+                    }
                 })
                 .catch(err => {
                     const tbody = document.querySelector('#orderProductTable tbody');
                     tbody.innerHTML = `<tr><td colspan="26" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
                 });
+        }
+
+        function sjRefreshOrderProductListRowThumb(entityId) {
+            const id = Number(entityId || 0);
+            if (!id || !window.SitjoyRowImageRefresh) return Promise.resolve(false);
+            return window.SitjoyRowImageRefresh.refreshRowPreviewFromApi({
+                entityId: id,
+                fetchUrl: (eid) => `/api/order-product?id=${encodeURIComponent(eid)}`,
+                extractPreviewIdB64: (it) => {
+                    const p = String(it.preview_image_path || '').trim();
+                    return p ? utf8ToB64(p) : '';
+                },
+                thumb: {
+                    w: 120,
+                    q: 72,
+                    imgClass: 'order-preview-thumb',
+                    emptyHtml: '<span class="order-preview-thumb-empty">-</span>'
+                }
+            });
         }
 
         function bindRowSelectionEvents() {
@@ -4619,6 +4657,7 @@
     </script>
 </body>
     <script src="/static/js/header.js"></script>
+    <script src="/static/js/sitjoy_row_image_refresh.js"></script>
     <script src="/static/js/pm_image_edit_modal.js"></script>
 </html>
 

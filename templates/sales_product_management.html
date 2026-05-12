@@ -1354,9 +1354,9 @@
             const gk = escapeSalesGroupKeyAttr(groupKey);
             const rowCls = hidden ? 'sales-row-hidden' : '';
             return `
-                <tr class="${rowCls}" data-group-key="${gk}">
+                <tr class="${rowCls}" data-group-key="${gk}" data-sj-row-entity-id="${item.id}">
                     <td style="text-align:center;"><input type="checkbox" class="sales-row-checkbox" data-id="${item.id}" ${selectedSalesProductIds.has(String(item.id)) ? 'checked' : ''}></td>
-                    <td style="text-align:center;">${previewCell}</td>
+                    <td style="text-align:center;" data-sj-preview="1">${previewCell}</td>
                     <td>${renderInlineProductStatus(item)}</td>
                     <td>${item.sku_family || ''}</td>
                     <td>${item.fabric || ''}</td>
@@ -1532,6 +1532,8 @@
 
         function bindSalesRowSelectionEvents() {
             document.querySelectorAll('.sales-row-checkbox').forEach(el => {
+                if (el.dataset._salesRowCbBound === '1') return;
+                el.dataset._salesRowCbBound = '1';
                 el.addEventListener('change', function() {
                     const id = String(this.getAttribute('data-id') || '');
                     if (!id) return;
@@ -2168,6 +2170,9 @@
                 selectedMainImageType = normalizeMainImageTypeName(name);
                 loadSalesImageTypeOptions().finally(() => {
                     closeSalesImageTypeCreateModal();
+                    if (window.SitjoyRowImageRefresh) {
+                        window.SitjoyRowImageRefresh.bustImagesIn(document.querySelector('#salesProductTable tbody'));
+                    }
                 });
             }).catch(err => {
                 if (status) {
@@ -2326,6 +2331,7 @@
                 }
                 showModalStatus(`主图上传成功：${uploadedCount} 张（新建 ${createdCount}，复用 ${reusedCount}，关联 ${linkedCount}）`, false);
                 refreshMainImageList();
+                if (editId) sjRefreshSalesProductListRowThumb(editId);
             }).catch(err => {
                 showModalStatus('主图上传失败: ' + err, true);
             });
@@ -2367,6 +2373,7 @@
                 const msg = data.message || (data.asset_deleted ? '图片记录已删除（原文件已尝试移入回收站）' : '图片已解除当前关联');
                 showModalStatus(msg, false);
                 refreshMainImageList();
+                if (editId) sjRefreshSalesProductListRowThumb(editId);
             }).catch(err => showModalStatus('删除失败: ' + err, true));
         }
 
@@ -2398,7 +2405,10 @@
                     prefillVariantLinks: true,
                     resolveRecommendFabricName: () => getMainImageCurrentFabricName(),
                     onRenamed: computeRenamedPathB64,
-                    onAfterSuccess: () => refreshMainImageList(),
+                    onAfterSuccess: () => {
+                        refreshMainImageList();
+                        if (editId) sjRefreshSalesProductListRowThumb(editId);
+                    },
                     onReplaceSelected: ({ file, current }) => {
                         if (!file) return;
                         const row = lastMainImageEditRowKey ? findMainImageItemByRowKey(lastMainImageEditRowKey) : null;
@@ -2417,6 +2427,7 @@
                                 if (!data || data.status !== 'success') throw new Error((data && data.message) ? data.message : '替换失败');
                                 window.showAppToast && window.showAppToast(data.message || '替换成功', false, 6000);
                                 refreshMainImageList();
+                                if (editId) sjRefreshSalesProductListRowThumb(editId);
                             })
                             .catch(err => window.showAppToast && window.showAppToast('替换失败：' + (err && err.message ? err.message : err), true, 10000))
                             .finally(() => window.hideAppUploadProgress && window.hideAppUploadProgress());
@@ -2946,6 +2957,7 @@
                 if (window.showAppToast) window.showAppToast('保存成功', false, 6000);
                 closeMainImageDescModal();
                 refreshMainImageList();
+                if (editId) sjRefreshSalesProductListRowThumb(editId);
             } catch (e) {
                 const msg = '✗ ' + (e && e.message ? e.message : '提交失败');
                 if (statusDiv) {
@@ -2988,6 +3000,7 @@
                 }
                 showModalStatus(data.message || '替换成功', false);
                 refreshMainImageList();
+                if (editId) sjRefreshSalesProductListRowThumb(editId);
             } catch (e) {
                 showModalStatus('替换失败: ' + e, true);
             } finally {
@@ -3014,22 +3027,32 @@
         function getNasMainImageModalScrollSnapshot() {
             const modal = document.getElementById('nas-main-image-import-modal');
             if (!modal || !modal.classList.contains('active')) return null;
-            const el = modal.querySelector('.pm-modal-scroll');
-            if (!el) return null;
-            return { el, top: el.scrollTop, left: el.scrollLeft };
+            const parts = [];
+            const list = document.getElementById('nasMainImageList');
+            if (list) {
+                parts.push({ el: list, top: list.scrollTop, left: list.scrollLeft });
+            }
+            const outer = modal.querySelector('.pm-modal-scroll');
+            if (outer && outer !== list) {
+                parts.push({ el: outer, top: outer.scrollTop, left: outer.scrollLeft });
+            }
+            return parts.length ? { parts } : null;
         }
         function restoreNasMainImageModalScrollSnapshot(snap) {
             try {
-                if (!snap || !snap.el) return;
-                const top = Number(snap.top) || 0;
-                const left = Number(snap.left) || 0;
-                requestAnimationFrame(() => {
-                    snap.el.scrollTop = top;
-                    snap.el.scrollLeft = left;
-                    requestAnimationFrame(() => {
-                        snap.el.scrollTop = top;
-                        snap.el.scrollLeft = left;
+                if (!snap || !Array.isArray(snap.parts) || !snap.parts.length) return;
+                const apply = () => {
+                    snap.parts.forEach(p => {
+                        if (!p || !p.el) return;
+                        const top = Number(p.top) || 0;
+                        const left = Number(p.left) || 0;
+                        p.el.scrollTop = top;
+                        p.el.scrollLeft = left;
                     });
+                };
+                requestAnimationFrame(() => {
+                    apply();
+                    requestAnimationFrame(apply);
                 });
             } catch (e) {}
         }
@@ -3355,10 +3378,11 @@
                         showNasMainImageStatus((data2 && data2.message) ? data2.message : '导入失败', true);
                         return;
                     }
-                    const okMsg = `导入成功：关联 ${Number(data2.linked || 0)}，移动 ${Number(data2.moved || 0)}，复制 ${Number(data2.copied || 0)}。`;
-                    showNasMainImageStatus(okMsg, false);
-                    toastNasMainImageSuccess(okMsg);
+                    const okMsgDup = `导入成功：关联 ${Number(data2.linked || 0)}，移动 ${Number(data2.moved || 0)}，复制 ${Number(data2.copied || 0)}。`;
+                    showNasMainImageStatus(okMsgDup, false);
+                    toastNasMainImageSuccess(okMsgDup);
                     refreshMainImageList();
+                    if (editId) sjRefreshSalesProductListRowThumb(editId);
                     await renderNasMainImageList({ preserveScroll: true });
                     return;
                 }
@@ -3370,7 +3394,7 @@
                 showNasMainImageStatus(okMsg, false);
                 toastNasMainImageSuccess(okMsg);
                 refreshMainImageList();
-                // refresh current folder list to reflect moved files
+                if (editId) sjRefreshSalesProductListRowThumb(editId);
                 await renderNasMainImageList({ preserveScroll: true });
             } catch (e) {
                 showNasMainImageStatus('导入失败: ' + e, true);
@@ -3962,9 +3986,16 @@
                 body: JSON.stringify(payload)
             }).then(r => r.json()).then(data => {
                 if (data.status === 'success') {
+                    const rowRefreshId = method === 'PUT' ? Number(editId || 0) : Number(data.id || 0);
                     try { showTimeoutToast('保存成功'); } catch (e) {}
                     closeModal();
-                    loadSalesProductList();
+                    if (method === 'PUT' && rowRefreshId) {
+                        sjPatchSalesProductListRow(rowRefreshId).then((r) => {
+                            if (r && r.fullReload) loadSalesProductList();
+                        }).catch(() => loadSalesProductList());
+                    } else {
+                        loadSalesProductList();
+                    }
                 } else {
                     showModalStatus(data.message || '操作失败', true);
                 }
@@ -4214,7 +4245,7 @@
             const q = document.getElementById('searchInput').value.trim();
             // Performance: list view doesn't need order_sku_links payload; fetch links only in detail API calls.
             const url = q ? `/api/sales-product?q=${encodeURIComponent(q)}&include_links=0` : '/api/sales-product?include_links=0';
-            fetch(url).then(r => r.json()).then(data => {
+            return fetch(url).then(r => r.json()).then(data => {
                 const tbody = document.querySelector('#salesProductTable tbody');
                 if (data.status !== 'success') {
                     tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
@@ -4224,10 +4255,76 @@
                 salesProductItems = items;
                 Object.keys(salesProductDetailCache).forEach(k => delete salesProductDetailCache[k]);
                 renderSalesGroupedTable(items);
+                if (window.SitjoyRowImageRefresh) {
+                    window.SitjoyRowImageRefresh.bustImagesIn(tbody);
+                }
             }).catch(err => {
                 const tbody = document.querySelector('#salesProductTable tbody');
                 tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
             });
+        }
+
+        function sjSalesListThumbEmptyHtml() {
+            return '<div style="width:56px;height:56px;border:1px dashed var(--morandi-sand);border-radius:8px;background:rgba(0,0,0,0.02);margin:0 auto;"></div>';
+        }
+
+        function sjRefreshSalesProductListRowThumb(entityId) {
+            const id = Number(entityId || 0);
+            if (!id || !window.SitjoyRowImageRefresh) return Promise.resolve(false);
+            return window.SitjoyRowImageRefresh.refreshRowPreviewFromApi({
+                entityId: id,
+                fetchUrl: (eid) => `/api/sales-product?id=${encodeURIComponent(eid)}&include_links=0`,
+                extractPreviewIdB64: (it) => String(it.preview_image_b64 || '').trim(),
+                thumb: {
+                    w: 120,
+                    q: 60,
+                    imgStyle: 'width:56px;height:56px;object-fit:contain;background:#fff;border:1px solid var(--morandi-sand);border-radius:8px;display:block;margin:0 auto;',
+                    emptyHtml: sjSalesListThumbEmptyHtml()
+                }
+            });
+        }
+
+        function sjFindSalesProductTableRow(id) {
+            const sid = String(id);
+            if (window.CSS && typeof window.CSS.escape === 'function') {
+                return document.querySelector(`#salesProductTable tbody tr[data-sj-row-entity-id="${CSS.escape(sid)}"]`);
+            }
+            return document.querySelector(`#salesProductTable tbody tr[data-sj-row-entity-id="${sid.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`);
+        }
+
+        /** 编辑保存后局部更新列表行，保留搜索词与分组折叠状态；父体分组变化时回退为整表重载 */
+        async function sjPatchSalesProductListRow(entityId) {
+            const id = Number(entityId || 0);
+            if (!id || !window.SitjoyRowImageRefresh || typeof window.SitjoyRowImageRefresh.patchTableRow !== 'function') {
+                return { ok: false, fullReload: true };
+            }
+            const idx = (salesProductItems || []).findIndex(x => String(x.id) === String(id));
+            if (idx < 0) return { ok: false, fullReload: true };
+            const oldItem = salesProductItems[idx];
+            try {
+                const resp = await fetch(`/api/sales-product?id=${encodeURIComponent(id)}&include_links=1`, { cache: 'no-store' });
+                const data = await resp.json();
+                if (!data || data.status !== 'success' || !data.item) return { ok: false, fullReload: true };
+                const item = data.item;
+                if (salesProductAggregateMode === 'parent') {
+                    if (salesParentGroupMetaOf(oldItem).key !== salesParentGroupMetaOf(item).key) {
+                        return { ok: false, fullReload: true };
+                    }
+                }
+                salesProductItems[idx] = item;
+                salesProductDetailCache[String(id)] = item;
+                const row = sjFindSalesProductTableRow(id);
+                if (!row) return { ok: false, fullReload: true };
+                const groupKeyRaw = row.getAttribute('data-group-key') || '';
+                const hidden = row.classList.contains('sales-row-hidden');
+                const html = renderSalesDataRowHtml(item, groupKeyRaw, hidden);
+                if (!window.SitjoyRowImageRefresh.patchTableRow(row, html)) return { ok: false, fullReload: true };
+                bindSalesRowSelectionEvents();
+                syncSalesSelectAllCheckbox();
+                return { ok: true, fullReload: false };
+            } catch (e) {
+                return { ok: false, fullReload: true };
+            }
         }
 
         function fetchSalesProductDetail(id, forceReload) {
@@ -4610,6 +4707,7 @@
     </script>
 </body>
 <script src="/static/js/header.js"></script>
+<script src="/static/js/sitjoy_row_image_refresh.js"></script>
 <script src="/static/js/pm_image_edit_modal.js"></script>
 </html>
 

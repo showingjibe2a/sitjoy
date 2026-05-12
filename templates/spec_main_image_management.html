@@ -240,6 +240,7 @@
 <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
 
 <script src="/static/js/header.js"></script>
+<script src="/static/js/sitjoy_row_image_refresh.js"></script>
 <script src="/static/js/pm_image_edit_modal.js"></script>
 <script>
 (function () {
@@ -517,7 +518,11 @@
       const first = data.items[0];
       const b64 = String(first.image_b64 || '');
       if (!b64) { cell.textContent = '—'; return; }
-      cell.innerHTML = `<img class="specmi-thumb" src="/api/image-preview?id=${encodeURIComponent(b64)}&mode=thumb&w=88&q=70" alt="">`;
+      const rawSrc = `/api/image-preview?id=${encodeURIComponent(b64)}&mode=thumb&w=88&q=70`;
+      const src = (window.SitjoyRowImageRefresh && window.SitjoyRowImageRefresh.withCacheBust)
+        ? window.SitjoyRowImageRefresh.withCacheBust(rawSrc)
+        : rawSrc;
+      cell.innerHTML = `<img class="specmi-thumb" src="${src}" alt="">`;
     } catch (e) {
       cell.textContent = '—';
     }
@@ -1110,7 +1115,9 @@
       .then(data => {
         if (!data || data.status !== 'success') throw new Error((data && data.message) ? data.message : '上传失败');
         showToast(data.message || '上传成功', false);
-        return specmiRefreshMainImages();
+        return specmiRefreshMainImages().finally(() => {
+          if (specmiEditingVid) specmiPrefetchThumb(specmiEditingVid);
+        });
       })
       .catch(err => showToast(err.message || String(err), true))
       .finally(() => { window.hideAppUploadProgress && window.hideAppUploadProgress(); e.target.value = ''; });
@@ -1147,7 +1154,11 @@
         prefillVariantLinks: true,
         resolveRecommendFabricName: () => specmiFabricNameForRecommend(),
         onRenamed: computeRenamedPathB64,
-        onAfterSuccess: () => { specmiRefreshMainImages().catch(() => {}); },
+        onAfterSuccess: () => {
+          specmiRefreshMainImages().catch(() => {}).finally(() => {
+            if (specmiEditingVid) specmiPrefetchThumb(specmiEditingVid);
+          });
+        },
         onReplaceSelected: ({ file, current }) => {
           if (!file) return;
           const fd = new FormData();
@@ -1160,7 +1171,9 @@
             .then(data => {
               if (!data || data.status !== 'success') throw new Error(data.message || '替换失败');
               showToast(data.message || '替换成功', false);
-              return specmiRefreshMainImages();
+              return specmiRefreshMainImages().finally(() => {
+                if (specmiEditingVid) specmiPrefetchThumb(specmiEditingVid);
+              });
             })
             .catch(err => showToast('替换失败：' + (err.message || err), true))
             .finally(() => window.hideAppUploadProgress && window.hideAppUploadProgress());

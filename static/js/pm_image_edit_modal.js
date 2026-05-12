@@ -2,6 +2,7 @@
  * - DOM：运行时注入 static/html/pm_image_edit_modal.html
  * - 样式：各页 head 引入 /static/css/main-image-manager.css（与主图管理区共用变量与工具类）
  * - 主图管理区 HTML：templates/components/main_image_manager_section.html（销售/下单）、main_image_spec_editor_block.html（规格）
+ * - 列表行缩略图刷新：各业务页可引入 /static/js/sitjoy_row_image_refresh.js，在 hooks.onAfterSuccess 等回调里调用 SitjoyRowImageRefresh
  */
 (function () {
   function $(id) { return document.getElementById(id); }

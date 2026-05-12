@@ -3850,9 +3850,11 @@ class SalesProductMixin:
                             errors.append({'row': row_idx, 'error': 'Missing order_sku_links'})
                             continue
 
-                        derived = self._derive_sales_cost_size(conn, link_entries)
-                        auto_fabric, auto_spec_name, _auto_platform = self._derive_sales_fields(conn, derived.get('sku_family_id'), link_entries)
-                        sku_family_id = sku_family_map.get(sku_family_name) if sku_family_name else derived.get('sku_family_id')
+                        sid_input = sku_family_map.get(sku_family_name) if sku_family_name else None
+                        bundle_imp = self._derive_sales_order_links_bundle(conn, sid_input, link_entries)
+                        sku_family_id = sid_input or bundle_imp.get('sku_family_id')
+                        auto_fabric = (bundle_imp.get('fabric') or '').strip()
+                        auto_spec_name = (bundle_imp.get('spec_name') or '').strip()
                         if sku_family_name and not sku_family_id:
                             errors.append({'row': row_idx, 'error': f'Unknown sku_family: {sku_family_name}'})
                             continue
@@ -4120,20 +4122,18 @@ class SalesProductMixin:
                         elif item_id:
                             row['order_sku_links'] = []
 
-                    # Variant preview image (first 白底图) for table list
-                    if not item_id:
-                        try:
-                            vid_list = [int(r.get('variant_id') or 0) for r in rows if int(r.get('variant_id') or 0) > 0]
-                            preview_map = {}
-                            if vid_list:
-                                with self._get_db_connection() as conn2:
-                                    preview_map = self._load_variant_first_image_preview(conn2, vid_list, type_name='白底纯图')
-                            for r in rows:
-                                vid = int(r.get('variant_id') or 0)
-                                r['preview_image_b64'] = preview_map.get(vid, '') if vid else ''
-                        except Exception:
-                            for r in rows:
-                                r['preview_image_b64'] = ''
+                    # Variant preview image (first 白底图)：列表与单条 GET 均填充，供前端刷新行缩略图
+                    try:
+                        vid_list = [int(r.get('variant_id') or 0) for r in rows if int(r.get('variant_id') or 0) > 0]
+                        preview_map = {}
+                        if vid_list:
+                            preview_map = self._load_variant_first_image_preview(conn, vid_list, type_name='白底纯图')
+                        for r in rows:
+                            vid = int(r.get('variant_id') or 0)
+                            r['preview_image_b64'] = preview_map.get(vid, '') if vid else ''
+                    except Exception:
+                        for r in rows:
+                            r['preview_image_b64'] = ''
 
                 if item_id:
                     return self.send_json({'status': 'success', 'item': rows[0] if rows else None}, start_response)
@@ -4162,34 +4162,12 @@ class SalesProductMixin:
 
                 with self._get_db_connection() as conn:
                     sp_has_shop_col = self._table_has_column(conn, 'sales_products', 'shop_id')
-                    derived = self._derive_sales_cost_size(conn, links)
-                    sku_family_id = sku_family_id_input or derived.get('sku_family_id')
+                    bundle = self._derive_sales_order_links_bundle(conn, sku_family_id_input, links)
+                    sku_family_id = sku_family_id_input or bundle.get('sku_family_id')
                     if not sku_family_id:
                         return self.send_json({'status': 'error', 'message': '无法根据下单SKU推断归属货号'}, start_response)
 
-                    # Preserve current variant identity when possible to avoid accidentally "losing" image mappings
-                    current_variant_id = 0
-                    current_variant_fabric_id = 0
-                    try:
-                        with conn.cursor() as cur:
-                            cur.execute("SELECT variant_id FROM sales_products WHERE id=%s", (item_id,))
-                            vrow = cur.fetchone() or {}
-                            current_variant_id = self._parse_int(vrow.get('variant_id')) or 0
-                        if current_variant_id and self._table_has_column(conn, 'sales_product_variants', 'fabric_id'):
-                            with conn.cursor() as cur:
-                                cur.execute("SELECT fabric_id FROM sales_product_variants WHERE id=%s", (current_variant_id,))
-                                frow = cur.fetchone() or {}
-                                current_variant_fabric_id = self._parse_int(frow.get('fabric_id')) or 0
-                    except Exception:
-                        current_variant_id = current_variant_id or 0
-                        current_variant_fabric_id = current_variant_fabric_id or 0
-
-                    sku_family_code = ''
-                    with conn.cursor() as cur:
-                        cur.execute("SELECT sku_family FROM product_families WHERE id=%s", (sku_family_id,))
-                        sku_row = cur.fetchone()
-                        if sku_row:
-                            sku_family_code = (sku_row.get('sku_family') or '').strip()
+                    sku_family_code = (bundle.get('sku_family_code') or '').strip()
 
                     parent_id = None
                     parent_shop_id = None
@@ -4217,7 +4195,9 @@ class SalesProductMixin:
                     if not final_shop_id:
                         return self.send_json({'status': 'error', 'message': 'Missing required field: shop_id'}, start_response)
 
-                    auto_fabric, auto_spec_name, auto_platform_sku = self._derive_sales_fields(conn, sku_family_id, links)
+                    auto_fabric = (bundle.get('fabric') or '').strip()
+                    auto_spec_name = (bundle.get('spec_name') or '').strip()
+                    auto_platform_sku = (bundle.get('platform_sku') or '').strip()
                     final_fabric = (data.get('fabric') or '').strip() or auto_fabric
                     final_spec_name = (data.get('spec_name') or '').strip() or auto_spec_name
                     # Prefer fabric_id when provided; fallback to derived first fabric by code lookup
@@ -4291,17 +4271,31 @@ class SalesProductMixin:
 
                 with self._get_db_connection() as conn:
                     sp_has_shop_col = self._table_has_column(conn, 'sales_products', 'shop_id')
-                    derived = self._derive_sales_cost_size(conn, links)
-                    sku_family_id = sku_family_id_input or derived.get('sku_family_id')
+                    current_variant_fabric_id = 0
+                    try:
+                        if self._table_has_column(conn, 'sales_product_variants', 'fabric_id'):
+                            with conn.cursor() as cur:
+                                cur.execute(
+                                    """
+                                    SELECT v.fabric_id
+                                    FROM sales_products sp
+                                    LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
+                                    WHERE sp.id=%s
+                                    LIMIT 1
+                                    """,
+                                    (item_id,),
+                                )
+                                rowv = cur.fetchone() or {}
+                                current_variant_fabric_id = self._parse_int(rowv.get('fabric_id')) or 0
+                    except Exception:
+                        current_variant_fabric_id = 0
+
+                    bundle = self._derive_sales_order_links_bundle(conn, sku_family_id_input, links)
+                    sku_family_id = sku_family_id_input or bundle.get('sku_family_id')
                     if not sku_family_id:
                         return self.send_json({'status': 'error', 'message': '无法根据下单SKU推断归属货号'}, start_response)
 
-                    sku_family_code = ''
-                    with conn.cursor() as cur:
-                        cur.execute("SELECT sku_family FROM product_families WHERE id=%s", (sku_family_id,))
-                        sku_row = cur.fetchone()
-                        if sku_row:
-                            sku_family_code = (sku_row.get('sku_family') or '').strip()
+                    sku_family_code = (bundle.get('sku_family_code') or '').strip()
 
                     parent_id = None
                     parent_shop_id = None
@@ -4329,7 +4323,9 @@ class SalesProductMixin:
                     if not final_shop_id:
                         return self.send_json({'status': 'error', 'message': 'Missing required field: shop_id'}, start_response)
 
-                    auto_fabric, auto_spec_name, auto_platform_sku = self._derive_sales_fields(conn, sku_family_id, links)
+                    auto_fabric = (bundle.get('fabric') or '').strip()
+                    auto_spec_name = (bundle.get('spec_name') or '').strip()
+                    auto_platform_sku = (bundle.get('platform_sku') or '').strip()
                     final_fabric = (data.get('fabric') or '').strip() or auto_fabric
                     final_spec_name = (data.get('spec_name') or '').strip() or auto_spec_name
                     resolved_fabric_id = fabric_id_input or None
@@ -10691,36 +10687,72 @@ class SalesProductMixin:
             return
         self._replace_sales_variant_order_links(conn, variant_id, links)
 
-    def _derive_sales_fields(self, conn, sku_family_id, links):
-        if not links:
-            return '', '', ''
-
-        sku_family_code = ''
-        if sku_family_id:
-            with conn.cursor() as cur:
-                cur.execute("SELECT sku_family FROM product_families WHERE id=%s", (sku_family_id,))
-                row = cur.fetchone()
-                if row:
-                    sku_family_code = (row.get('sku_family') or '').strip()
-
-        id_list = [entry['order_product_id'] for entry in links]
+    def _derive_sales_order_links_bundle(self, conn, sku_family_id_input, links):
+        """对关联下单 SKU 做一次 order_products + fabric 查询，同时得到成本/尺寸汇总与自动面料、规格片段、平台 SKU 草稿。"""
+        empty = {
+            'warehouse_cost_usd': 0.0,
+            'last_mile_cost_usd': 0.0,
+            'package_length_in': 0.0,
+            'package_width_in': 0.0,
+            'package_height_in': 0.0,
+            'net_weight_lbs': 0.0,
+            'gross_weight_lbs': 0.0,
+            'sku_family_id': None,
+            'sku_family_code': '',
+            'fabric': '',
+            'spec_name': '',
+            'platform_sku': '',
+        }
+        merged = self._normalize_sales_order_links(links)
+        if not merged:
+            return dict(empty)
+        id_list = [entry['order_product_id'] for entry in merged]
         placeholders = ','.join(['%s'] * len(id_list))
         with conn.cursor() as cur:
             cur.execute(
                 f"""
-                SELECT op.id, op.sku, op.spec_qty_short, fm.fabric_code, fm.fabric_name_en
+                SELECT op.id, op.sku_family_id,
+                       op.cost_usd, op.last_mile_avg_freight_usd,
+                       op.package_length_in, op.package_width_in, op.package_height_in,
+                       op.net_weight_lbs, op.gross_weight_lbs,
+                       op.spec_qty_short,
+                       fm.fabric_code, fm.fabric_name_en
                 FROM order_products op
                 LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
                 WHERE op.id IN ({placeholders})
                 """,
-                id_list
+                id_list,
             )
             rows = cur.fetchall() or []
-
         row_map = {row['id']: row for row in rows}
+
+        warehouse_cost_usd = 0.0
+        last_mile_cost_usd = 0.0
+        package_length_in = 0.0
+        package_width_in = 0.0
+        package_height_in = 0.0
+        net_weight_lbs = 0.0
+        gross_weight_lbs = 0.0
+        sku_family_id = self._parse_int(sku_family_id_input) or None
+
+        for entry in merged:
+            row = row_map.get(entry['order_product_id'])
+            if not row:
+                continue
+            qty = max(1, int(entry.get('quantity') or 1))
+            if sku_family_id is None:
+                sku_family_id = self._parse_int(row.get('sku_family_id'))
+            warehouse_cost_usd += float(row.get('cost_usd') or 0) * qty
+            last_mile_cost_usd += float(row.get('last_mile_avg_freight_usd') or 0) * qty
+            package_length_in = max(package_length_in, float(row.get('package_length_in') or 0))
+            package_width_in = max(package_width_in, float(row.get('package_width_in') or 0))
+            package_height_in = max(package_height_in, float(row.get('package_height_in') or 0))
+            net_weight_lbs += float(row.get('net_weight_lbs') or 0) * qty
+            gross_weight_lbs += float(row.get('gross_weight_lbs') or 0) * qty
+
         fabrics = []
         spec_parts = []
-        for entry in links:
+        for entry in merged:
             row = row_map.get(entry['order_product_id'])
             if not row:
                 continue
@@ -10736,69 +10768,21 @@ class SalesProductMixin:
         fabric = ' / '.join(fabrics)
         spec_name = ''.join(spec_parts)
 
+        sku_family_code = ''
+        if sku_family_id:
+            with conn.cursor() as cur:
+                cur.execute("SELECT sku_family FROM product_families WHERE id=%s", (sku_family_id,))
+                sku_row = cur.fetchone()
+                if sku_row:
+                    sku_family_code = (sku_row.get('sku_family') or '').strip()
+
         platform_sku = ''
         if sku_family_code and fabric and spec_name:
             first_fabric = fabrics[0] if fabrics else ''
             platform_sku = self._build_sales_platform_sku(sku_family_code, spec_name, first_fabric)
 
-        return fabric, spec_name, platform_sku
-
-    def _derive_sales_cost_size(self, conn, links):
-        if not links:
-            return {
-                'warehouse_cost_usd': 0.0,
-                'last_mile_cost_usd': 0.0,
-                'package_length_in': 0.0,
-                'package_width_in': 0.0,
-                'package_height_in': 0.0,
-                'net_weight_lbs': 0.0,
-                'gross_weight_lbs': 0.0,
-                'sku_family_id': None
-            }
-
-        id_list = [entry['order_product_id'] for entry in links]
-        placeholders = ','.join(['%s'] * len(id_list))
-        with conn.cursor() as cur:
-            cur.execute(
-                f"""
-                SELECT id, sku_family_id,
-                       cost_usd, last_mile_avg_freight_usd,
-                       package_length_in, package_width_in, package_height_in,
-                       net_weight_lbs, gross_weight_lbs
-                FROM order_products
-                WHERE id IN ({placeholders})
-                """,
-                id_list
-            )
-            rows = cur.fetchall() or []
-
-        row_map = {row['id']: row for row in rows}
-        warehouse_cost_usd = 0.0
-        last_mile_cost_usd = 0.0
-        package_length_in = 0.0
-        package_width_in = 0.0
-        package_height_in = 0.0
-        net_weight_lbs = 0.0
-        gross_weight_lbs = 0.0
-        sku_family_id = None
-
-        for entry in links:
-            row = row_map.get(entry['order_product_id'])
-            if not row:
-                continue
-            qty = max(1, int(entry.get('quantity') or 1))
-            if sku_family_id is None:
-                sku_family_id = row.get('sku_family_id')
-
-            warehouse_cost_usd += float(row.get('cost_usd') or 0) * qty
-            last_mile_cost_usd += float(row.get('last_mile_avg_freight_usd') or 0) * qty
-            package_length_in = max(package_length_in, float(row.get('package_length_in') or 0))
-            package_width_in = max(package_width_in, float(row.get('package_width_in') or 0))
-            package_height_in = max(package_height_in, float(row.get('package_height_in') or 0))
-            net_weight_lbs += float(row.get('net_weight_lbs') or 0) * qty
-            gross_weight_lbs += float(row.get('gross_weight_lbs') or 0) * qty
-
-        return {
+        out = dict(empty)
+        out.update({
             'warehouse_cost_usd': round(warehouse_cost_usd, 2),
             'last_mile_cost_usd': round(last_mile_cost_usd, 2),
             'package_length_in': round(package_length_in, 2),
@@ -10806,8 +10790,13 @@ class SalesProductMixin:
             'package_height_in': round(package_height_in, 2),
             'net_weight_lbs': round(net_weight_lbs, 2),
             'gross_weight_lbs': round(gross_weight_lbs, 2),
-            'sku_family_id': sku_family_id
-        }
+            'sku_family_id': sku_family_id,
+            'sku_family_code': sku_family_code,
+            'fabric': fabric,
+            'spec_name': spec_name,
+            'platform_sku': platform_sku,
+        })
+        return out
 
     def _code_before_dash(self, value):
         text = (value or '').strip()

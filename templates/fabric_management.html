@@ -990,8 +990,8 @@
                             ? `<span class="fabric-color-dot" style="background:${colorText};" title="${(item.fabric_name_en || '').replace(/"/g, '&quot;')}"></span>`
                             : '';
                         return `
-                            <tr>
-                                <td class="fabric-image-cell cell-center">${thumbWrap}</td>
+                            <tr data-sj-row-entity-id="${item.id}">
+                                <td class="fabric-image-cell cell-center" data-sj-preview="1">${thumbWrap}</td>
                                 <td>${item.fabric_code}</td>
                                 <td>${item.fabric_name_en}</td>
                                 <td class="fabric-color-cell">${colorDot}</td>
@@ -1015,6 +1015,9 @@
                             if (item) openEditModal(item);
                         });
                     });
+                    if (window.SitjoyRowImageRefresh) {
+                        window.SitjoyRowImageRefresh.bustImagesIn(document.querySelector('#fabricTable tbody'));
+                    }
                 })
                 .catch(err => {
                     const tbody = document.querySelector('#fabricTable tbody');
@@ -1496,5 +1499,6 @@
     </script>
 </body>
     <script src="/static/js/header.js"></script>
+    <script src="/static/js/sitjoy_row_image_refresh.js"></script>
 </html>
 
