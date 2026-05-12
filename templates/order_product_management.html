@@ -847,7 +847,7 @@
             <div class="nas-main-image-header">
                 <div class="nas-main-image-title">
                     <h3 style="margin:0;">从NAS选择主图（移动绑定）</h3>
-                    <span class="help-dot" data-tip="提示：这是服务器侧NAS浏览，可真正移动源文件并绑定。"></span>
+                    <span class="help-dot" data-tip="提示：这是服务器侧NAS浏览，可真正移动源文件并绑定。文件夹请双击进入，避免单击误入子目录后第二次点击误触图片。"></span>
                 </div>
                 <div class="nas-main-image-header-actions">
                     <div class="nas-header-control">
@@ -1434,6 +1434,12 @@
                         card.tabIndex = 0;
                         card.setAttribute('title', '双击进入文件夹');
                         card.addEventListener('dblclick', () => nasMainImageEnterFolder(pathB64));
+                        card.addEventListener('keydown', (e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                nasMainImageEnterFolder(pathB64);
+                            }
+                        });
                         const thumb = document.createElement('div');
                         thumb.className = 'item-thumbnail folder';
                         const icon = document.createElement('div');
