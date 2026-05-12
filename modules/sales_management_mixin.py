@@ -2166,6 +2166,37 @@ class SalesManagementMixin:
         })
         platform_cells = self._forecast_load_platform_cells(conn, all_sp_ids, months)
 
+        # 历史月销量：聚合表按销售产品/变体，无 order_product 粒度；按关联变体与链接数量比例分摊到本页各下单 SKU
+        variant_hist_ids = sorted({
+            self._parse_int(vl.get('variant_id'))
+            for r in dim_rows
+            for vl in (r.get('variant_links') or [])
+            if self._parse_int(vl.get('variant_id'))
+        })
+        history_by_variant = (
+            self._forecast_load_history_by_variant(conn, variant_hist_ids, hist_start, hist_end)
+            if variant_hist_ids else {}
+        )
+        variant_hist_weight_sum = {}
+        if variant_hist_ids:
+            ph = ','.join(['%s'] * len(variant_hist_ids))
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT variant_id,
+                           SUM(GREATEST(1, COALESCE(quantity, 1))) AS w
+                    FROM sales_variant_order_links
+                    WHERE variant_id IN ({ph})
+                    GROUP BY variant_id
+                    """,
+                    tuple(variant_hist_ids),
+                )
+                for rr in (cur.fetchall() or []):
+                    vid = self._parse_int(rr.get('variant_id'))
+                    if vid:
+                        variant_hist_weight_sum[vid] = float(rr.get('w') or 0)
+        hist_month_keys = self._forecast_iter_months(hist_start, hist_end)
+
         def spec_effective_qty(vid, month):
             cell = spec_cells.get((vid, month))
             if cell:
@@ -2255,9 +2286,33 @@ class SalesManagementMixin:
                         } if inherited_items else None,
                         'cell_meta': cell,
                     }
-            # 下单SKU 没有自身的销售历史记录；保留空 dict 以保持结构
-            for hm in self._forecast_iter_months(hist_start, hist_end):
-                row['history'][hm] = {'sales_qty': 0, 'net_sales_amount': 0, 'order_qty': 0, 'session_total': 0, 'refund_amount': 0}
+            empty_hist = {'sales_qty': 0, 'net_sales_amount': 0, 'order_qty': 0, 'session_total': 0, 'refund_amount': 0}
+            for hm in hist_month_keys:
+                agg = {k: 0.0 for k in empty_hist}
+                for vl in links:
+                    vid = self._parse_int(vl.get('variant_id'))
+                    if not vid:
+                        continue
+                    h = history_by_variant.get((vid, hm))
+                    if not h:
+                        continue
+                    denom = float(variant_hist_weight_sum.get(vid) or 0)
+                    if denom <= 0:
+                        continue
+                    q = max(1, self._parse_int(vl.get('quantity')) or 1)
+                    share = float(q) / denom
+                    agg['sales_qty'] += float(h.get('sales_qty') or 0) * share
+                    agg['net_sales_amount'] += float(h.get('net_sales_amount') or 0) * share
+                    agg['order_qty'] += float(h.get('order_qty') or 0) * share
+                    agg['session_total'] += float(h.get('session_total') or 0) * share
+                    agg['refund_amount'] += float(h.get('refund_amount') or 0) * share
+                row['history'][hm] = {
+                    'sales_qty': agg['sales_qty'],
+                    'net_sales_amount': agg['net_sales_amount'],
+                    'order_qty': agg['order_qty'],
+                    'session_total': agg['session_total'],
+                    'refund_amount': agg['refund_amount'],
+                }
             out.append(row)
         return out
 

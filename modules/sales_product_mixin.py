@@ -546,55 +546,129 @@ class SalesProductMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
-    def handle_spec_main_images_api(self, environ, method, start_response):
-        """规格主图管理：按 variant_id 读取该规格已关联的图片记录（只读）。"""
+    def _spec_main_images_variant_detail(self, conn, variant_id):
+        """规格主图编辑/保存后：变体基础信息 + 售价 + 关联下单 SKU + 成本/包裹汇总（与销售产品页同源）。"""
+        vid_int = int(self._parse_int(variant_id) or 0)
+        variant_out = {'variant_id': vid_int}
         try:
-            if method != 'GET':
-                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
-            query_params = parse_qs(environ.get('QUERY_STRING', ''))
-            variant_id = self._parse_int(query_params.get('variant_id', [''])[0] or query_params.get('id', [''])[0])
-            if not variant_id:
-                return self.send_json({'status': 'error', 'message': 'Missing variant_id'}, start_response)
+            has_fabric_id = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
+            has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+            has_sale_price = self._table_has_column(conn, 'sales_product_variants', 'sale_price_usd')
+            fabric_join = "LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id" if has_fabric_id else ""
+            if has_fabric_id and has_fabric_text:
+                fabric_select = "COALESCE(fm.fabric_name_en, v.fabric) AS fabric_name_en"
+            elif has_fabric_id:
+                fabric_select = "fm.fabric_name_en AS fabric_name_en"
+            else:
+                fabric_select = ("v.fabric AS fabric_name_en" if has_fabric_text else "'' AS fabric_name_en")
+            fabric_code_select = "COALESCE(fm.fabric_code, '') AS fabric_code" if has_fabric_id else "'' AS fabric_code"
+            sale_select = "v.sale_price_usd" if has_sale_price else "NULL AS sale_price_usd"
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT v.id, v.spec_name, {sale_select}, {fabric_select},
+                           {fabric_code_select}, pf.sku_family
+                    FROM sales_product_variants v
+                    LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                    {fabric_join}
+                    WHERE v.id=%s
+                    LIMIT 1
+                    """,
+                    (vid_int,),
+                )
+                row = cur.fetchone() or {}
+                if row.get('id'):
+                    sp = row.get('sale_price_usd')
+                    sale_val = None
+                    if sp is not None and str(sp).strip() != '':
+                        try:
+                            sale_val = float(sp)
+                        except (TypeError, ValueError):
+                            sale_val = None
+                    variant_out.update({
+                        'variant_id': self._parse_int(row.get('id')) or vid_int,
+                        'sku_family': str(row.get('sku_family') or '').strip(),
+                        'spec_name': str(row.get('spec_name') or '').strip(),
+                        'fabric_name_en': str(row.get('fabric_name_en') or '').strip(),
+                        'fabric_code': str(row.get('fabric_code') or '').strip(),
+                        'sale_price_usd': sale_val,
+                    })
+        except Exception:
+            pass
 
-            with self._get_db_connection() as conn:
-                items = self._read_sales_product_image_items(conn, sales_product_id=None, variant_id=variant_id) or []
+        try:
+            mm = self._load_sales_variant_metrics(conn, [vid_int], include_links=True) or {}
+            m = mm.get(vid_int) or {}
+            variant_out.update({
+                'warehouse_cost_usd': m.get('warehouse_cost_usd'),
+                'last_mile_cost_usd': m.get('last_mile_cost_usd'),
+                'package_length_in': m.get('package_length_in'),
+                'package_width_in': m.get('package_width_in'),
+                'package_height_in': m.get('package_height_in'),
+                'net_weight_lbs': m.get('net_weight_lbs'),
+                'gross_weight_lbs': m.get('gross_weight_lbs'),
+                'order_sku_links': m.get('order_sku_links') or [],
+            })
+        except Exception:
+            variant_out.setdefault('order_sku_links', [])
+        return variant_out
 
-                # 尽量返回规格基础信息（便于前端显示校验）
-                base = {}
-                try:
+    def handle_spec_main_images_api(self, environ, method, start_response):
+        """规格主图管理：GET 按 variant_id 读主图列表 + 变体明细；PATCH 更新关联下单 SKU、售价。"""
+        try:
+            if method == 'GET':
+                query_params = parse_qs(environ.get('QUERY_STRING', ''))
+                variant_id = self._parse_int(query_params.get('variant_id', [''])[0] or query_params.get('id', [''])[0])
+                if not variant_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing variant_id'}, start_response)
+
+                with self._get_db_connection() as conn:
+                    items = self._read_sales_product_image_items(conn, sales_product_id=None, variant_id=variant_id) or []
+                    variant_out = self._spec_main_images_variant_detail(conn, variant_id)
+                return self.send_json({'status': 'success', 'items': items, 'variant': variant_out}, start_response)
+
+            if method == 'PATCH':
+                data = self._read_json_body(environ) or {}
+                variant_id = self._parse_int(data.get('variant_id'))
+                links = self._normalize_sales_order_links(data.get('order_sku_links'))
+                if not variant_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing variant_id'}, start_response)
+                if not links:
+                    return self.send_json({'status': 'error', 'message': '请至少保留一条关联下单SKU及数量'}, start_response)
+                sale_price_usd = None
+                if 'sale_price_usd' in data:
+                    if data.get('sale_price_usd') is None or str(data.get('sale_price_usd')).strip() == '':
+                        sale_price_usd = None
+                    else:
+                        sale_price_usd = self._parse_float(data.get('sale_price_usd'))
+
+                with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        has_fabric_id = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
-                        has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
-                        fabric_join = "LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id" if has_fabric_id else ""
-                        if has_fabric_id and has_fabric_text:
-                            fabric_select = "COALESCE(fm.fabric_name_en, v.fabric) AS fabric_name_en"
-                        elif has_fabric_id:
-                            fabric_select = "fm.fabric_name_en AS fabric_name_en"
-                        else:
-                            fabric_select = ("v.fabric AS fabric_name_en" if has_fabric_text else "'' AS fabric_name_en")
                         cur.execute(
-                            f"""
-                            SELECT v.id, v.spec_name, {fabric_select}, pf.sku_family
-                            FROM sales_product_variants v
-                            LEFT JOIN product_families pf ON pf.id = v.sku_family_id
-                            {fabric_join}
-                            WHERE v.id=%s
-                            LIMIT 1
-                            """,
+                            "SELECT id, sku_family_id FROM sales_product_variants WHERE id=%s LIMIT 1",
                             (int(variant_id),),
                         )
-                        row = cur.fetchone() or {}
-                        if row.get('id'):
-                            base = {
-                                'variant_id': self._parse_int(row.get('id')) or 0,
-                                'sku_family': str(row.get('sku_family') or '').strip(),
-                                'spec_name': str(row.get('spec_name') or '').strip(),
-                                'fabric_name_en': str(row.get('fabric_name_en') or '').strip(),
-                            }
-                except Exception:
-                    base = {}
+                        vr = cur.fetchone() or {}
+                    if not vr.get('id'):
+                        return self.send_json({'status': 'error', 'message': '规格不存在'}, start_response)
+                    sku_family_id = self._parse_int(vr.get('sku_family_id'))
+                    if not sku_family_id:
+                        return self.send_json({'status': 'error', 'message': '变体缺少货号信息'}, start_response)
+                    bundle = self._derive_sales_order_links_bundle(conn, sku_family_id, links)
+                    inferred_fid = self._parse_int(bundle.get('sku_family_id'))
+                    if inferred_fid and inferred_fid != int(sku_family_id):
+                        return self.send_json({'status': 'error', 'message': '关联下单SKU须属于当前规格所属货号'}, start_response)
+                    self._replace_sales_variant_order_links(conn, variant_id, links)
+                    if 'sale_price_usd' in data and self._table_has_column(conn, 'sales_product_variants', 'sale_price_usd'):
+                        with conn.cursor() as cur:
+                            cur.execute(
+                                "UPDATE sales_product_variants SET sale_price_usd=%s WHERE id=%s",
+                                (sale_price_usd, int(variant_id)),
+                            )
+                    variant_out = self._spec_main_images_variant_detail(conn, variant_id)
+                return self.send_json({'status': 'success', 'variant': variant_out}, start_response)
 
-            return self.send_json({'status': 'success', 'items': items, 'variant': base}, start_response)
+            return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
@@ -652,6 +726,13 @@ class SalesProductMixin:
                 variant_id = self._get_or_create_sales_variant(
                     conn, sku_family_id, spec_name, fabric, sale_price_usd, fabric_id
                 )
+                links = self._normalize_sales_order_links(data.get('order_sku_links'))
+                if links:
+                    bundle = self._derive_sales_order_links_bundle(conn, sku_family_id, links)
+                    inferred_fid = self._parse_int(bundle.get('sku_family_id'))
+                    if inferred_fid and inferred_fid != int(sku_family_id):
+                        return self.send_json({'status': 'error', 'message': '关联下单SKU须属于所选货号'}, start_response)
+                    self._replace_sales_variant_order_links(conn, variant_id, links)
             return self.send_json({
                 'status': 'success',
                 'variant_id': int(variant_id or 0),

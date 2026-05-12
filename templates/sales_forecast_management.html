@@ -168,11 +168,22 @@
             position: relative;
         }
         table.sf-table {
-            border-collapse: separate;
+            /* collapse：消除 separate 模式下表头两行之间、表头与首行 tbody 间易出现的一条“假空白”带 */
+            border-collapse: collapse;
             border-spacing: 0;
             width: max-content;
             font-size: 0.85rem;
             table-layout: fixed;
+        }
+        /* 整块 thead 叠在 tbody 之上，避免两行 sticky 的 top 亚像素缝透出下面数据 */
+        table.sf-table thead {
+            position: relative;
+            z-index: 2;
+            background-color: #ece2cf;
+        }
+        table.sf-table tbody {
+            position: relative;
+            z-index: 0;
         }
         .sf-month-two-line{
             display: grid;
@@ -195,8 +206,26 @@
         table.sf-table thead tr.sf-thead-row-2 th.sf-th-month{
             text-align: center;
         }
-        table.sf-table thead th {
+        /*
+         * 表头固定：sticky 挂在 tr 上，避免 collapse 表格里多个 th 各自 sticky+top 在行间挤出白条。
+         * th 仅用 relative 作为列宽拖拽条的定位包含块。
+         */
+        table.sf-table thead tr.sf-thead-row-1 {
+            position: -webkit-sticky;
             position: sticky;
+            top: 0;
+            z-index: 6;
+            background: #ece2cf;
+        }
+        table.sf-table thead tr.sf-thead-row-2 {
+            position: -webkit-sticky;
+            position: sticky;
+            top: var(--sf-thead-row1-height, 34px);
+            z-index: 5;
+            background: #f5efe5;
+        }
+        table.sf-table thead th {
+            position: relative;
             background: #f5efe5;
             color: var(--morandi-ink);
             border-bottom: 1px solid rgba(207, 199, 189, 0.85);
@@ -204,20 +233,24 @@
             font-weight: 600;
             text-align: left;
             white-space: nowrap;
-            z-index: 4;
             box-sizing: border-box;
+            vertical-align: middle;
         }
         table.sf-table thead tr.sf-thead-row-1 th {
-            top: 0;
             background: #ece2cf;
             white-space: nowrap;
-            height: 34px;
+            min-height: 34px;
+            height: auto;
             padding-top: 0.3rem;
             padding-bottom: 0.3rem;
+            /* 与第二行之间只保留一条分割线，避免 border-top+border-bottom 叠出“假空白” */
+            border-bottom: 1px solid rgba(207, 199, 189, 0.85);
+            cursor: default;
         }
-        table.sf-table thead tr.sf-thead-row-2 th { top: var(--sf-thead-row1-height, 34px); background: #f5efe5; }
-        table.sf-table thead tr.sf-thead-row-1 th { z-index: 6; cursor: default; }
-        table.sf-table thead tr.sf-thead-row-2 th { z-index: 5; }
+        table.sf-table thead tr.sf-thead-row-2 th {
+            background: #f5efe5;
+            border-top: none;
+        }
         table.sf-table thead tr.sf-thead-row-2 th.sf-th-spec { background: #f3ecdf; }
         table.sf-table thead tr.sf-thead-row-2 th.sf-th-history { background: #f0ece1; }
         table.sf-table thead tr.sf-thead-row-2 th.sf-th-month { background: #ede2cb; }
@@ -227,7 +260,6 @@
             color: #4f463b;
         }
         /* Column resize handle (like warehouse dashboard) */
-        table.sf-table thead th { position: sticky; }
         .sf-col-resize-handle{
             position: absolute;
             top: 0;
@@ -264,18 +296,25 @@
             min-width: 0;
             white-space: normal;
             line-height: 1.25;
+            color: #5b5346;
         }
         td.sf-cell-spec .sf-spec-sub {
-            color: var(--morandi-slate);
+            color: #5b5346;
             font-size: 0.78rem;
         }
-        td.sf-cell-fabric { min-width: 0; white-space: normal; line-height: 1.2; }
+        td.sf-cell-fabric {
+            min-width: 0;
+            white-space: normal;
+            line-height: 1.2;
+            color: #5b5346;
+        }
         td.sf-cell-thumb,
         th.sf-th-thumb {
             width: 68px;
             min-width: 68px;
             text-align: center;
         }
+        td.sf-cell-thumb { color: #5b5346; }
         .sf-variant-thumb {
             width: 44px;
             height: 44px;
@@ -293,7 +332,7 @@
             height: 44px;
             border: 1px dashed rgba(207, 199, 189, 0.8);
             border-radius: 8px;
-            color: #9a8f7e;
+            color: #5b5346;
             font-size: 11px;
         }
         .sf-fabric-dot {
@@ -310,6 +349,9 @@
             font-weight: 700;
             border-top: 1px solid rgba(207, 199, 189, 0.85);
             cursor: pointer;
+        }
+        table.sf-table tbody tr.sf-group-row:first-of-type td {
+            border-top: none;
         }
         .sf-group-toggle {
             display: inline-flex;
@@ -622,12 +664,13 @@
                 <tbody id="forecastTbody"></tbody>
             </table>
             <div class="sf-loading-overlay" id="forecastLoading">数据加载中…</div>
-            <div class="sf-selection-hint" id="sfSelectionHint" style="display:none;">
-                已选 <span id="sfSelectionCount">0</span> 个历史单元格。
-                <button type="button" class="btn-secondary btn-small" id="sfSelectionClearBtn" style="margin-left:0.4rem;">清空选择</button>
-                <button type="button" class="btn-secondary btn-small" id="sfSelectionShowPerfBtn" style="margin-left:0.35rem;">查看产品表现</button>
-            </div>
         </div>
+    </div>
+
+    <div class="pm-batch-float-bar" id="sfHistorySelectionBar" aria-live="polite">
+        <span class="pm-batch-float-count" id="sfSelectionCountText">已选 0 个历史单元格</span>
+        <button type="button" class="btn-secondary" id="sfSelectionClearBtn">清空选择</button>
+        <button type="button" class="btn-secondary" id="sfSelectionShowPerfBtn">查看产品表现</button>
     </div>
 
     <div class="sf-batch-popup" id="sfBatchPopup">
@@ -1265,15 +1308,35 @@
             thead.appendChild(trTop);
             thead.appendChild(trBottom);
             const applyHeadOffset = () => {
-                const row1Height = Math.max(34, trTop.getBoundingClientRect().height || trTop.offsetHeight || 34);
-                table.style.setProperty('--sf-thead-row1-height', `${Math.ceil(row1Height)}px`);
+                /* 用两行 offsetTop 差值 = 第一行在表格内的实际占位，避免 ceil(getBoundingClientRect) 偏大导致
+                   第二行 sticky 的 top 下移、与第一行之间出现透明缝（滚动时露出 tbody）。 */
+                let h = 0;
+                try {
+                    const dt = trBottom.offsetTop - trTop.offsetTop;
+                    if (Number.isFinite(dt) && dt > 8) h = dt;
+                } catch (_) {}
+                if (!h) {
+                    const r = trTop.getBoundingClientRect();
+                    h = (r && r.height) ? r.height : (trTop.offsetHeight || 34);
+                }
+                h = Math.max(34, Math.floor(h));
+                table.style.setProperty('--sf-thead-row1-height', `${h}px`);
             };
-            applyHeadOffset();
-            if (typeof requestAnimationFrame === 'function') requestAnimationFrame(applyHeadOffset);
-            setTimeout(applyHeadOffset, 0);
             bindHeaderEvents(thead, cols);
             annotateForecastHeaderColumns(thead, cols.length + histCols + fcCols);
             attachForecastColumnResizeHandles(thead, cols, meta, leafColWidths);
+            /* 手柄挂载后再量第一行高度，保证第二行 sticky 的 top 与第一行实际像素对齐 */
+            if (table._sfTheadResizeObserver) {
+                try { table._sfTheadResizeObserver.disconnect(); } catch (_) {}
+                table._sfTheadResizeObserver = null;
+            }
+            applyHeadOffset();
+            if (typeof requestAnimationFrame === 'function') requestAnimationFrame(applyHeadOffset);
+            setTimeout(applyHeadOffset, 0);
+            if (typeof ResizeObserver !== 'undefined') {
+                table._sfTheadResizeObserver = new ResizeObserver(() => applyHeadOffset());
+                table._sfTheadResizeObserver.observe(trTop);
+            }
 
             const filteredRows = applyFilters(state.rows.slice(), cols);
             const groups = buildGroups(filteredRows);
@@ -1437,12 +1500,12 @@
         function applyHistorySelectionStyles() {
             const tbody = document.getElementById('forecastTbody');
             const thead = document.getElementById('forecastThead');
-            const hint = document.getElementById('sfSelectionHint');
-            const cnt = document.getElementById('sfSelectionCount');
+            const bar = document.getElementById('sfHistorySelectionBar');
+            const cnt = document.getElementById('sfSelectionCountText');
             const showBtn = document.getElementById('sfSelectionShowPerfBtn');
             const n = state.selectedHistoryCells.size || 0;
-            if (cnt) cnt.textContent = String(n);
-            if (hint) hint.style.display = n > 0 ? '' : 'none';
+            if (cnt) cnt.textContent = `已选 ${n} 个历史单元格`;
+            if (bar) bar.classList.toggle('active', n > 0);
             if (tbody) {
                 tbody.querySelectorAll('td.sf-cell-history').forEach(td => {
                     td.classList.remove('sf-cell-selected', 'sf-spotlight-col');
@@ -1644,7 +1707,7 @@
                 const colStart = Number(cell.dataset.colStart);
                 const colEnd = Number(cell.dataset.colEnd);
                 if (!Number.isFinite(colStart) || !Number.isFinite(colEnd) || colStart < 0 || colEnd < colStart || colEnd >= totalCols) return;
-                cell.style.position = 'relative';
+                /* 勿设为 relative：会覆盖 thead th 的 position:sticky，且第二行 th 的 top 会在文档流中产生空白带 */
                 const handle = document.createElement('span');
                 handle.className = 'sf-col-resize-handle';
                 handle.addEventListener('click', (event) => {
