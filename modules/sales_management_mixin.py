@@ -1671,12 +1671,29 @@ class SalesManagementMixin:
         return rows
 
     def _forecast_load_variant_thumb_b64(self, conn, variant_ids):
-        """variant_id -> 预览图 b64（优先白底纯图，其次白底图，再次任意图）"""
+        """variant_id -> 预览图 b64；仅使用图片类型为「白底纯图」的映射（无则不回退）。"""
         out = {}
         ids = [self._parse_int(x) for x in (variant_ids or []) if self._parse_int(x)]
         if not ids:
             return out
         placeholders = ','.join(['%s'] * len(ids))
+        has_sim_tid = self._table_has_column(conn, 'sales_variant_image_mappings', 'image_type_id')
+        has_ia_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
+        if has_sim_tid and has_ia_tid:
+            type_expr = "COALESCE(NULLIF(TRIM(it_sim.name),''), NULLIF(TRIM(it_ia.name),''), '') AS image_type_name"
+            join_types = """
+                LEFT JOIN image_types it_ia ON it_ia.id = ia.image_type_id
+                LEFT JOIN image_types it_sim ON it_sim.id = sim.image_type_id
+            """
+        elif has_sim_tid:
+            type_expr = "COALESCE(NULLIF(TRIM(it_sim.name),''), '') AS image_type_name"
+            join_types = "LEFT JOIN image_types it_sim ON it_sim.id = sim.image_type_id"
+        elif has_ia_tid:
+            type_expr = "COALESCE(NULLIF(TRIM(it_ia.name),''), '') AS image_type_name"
+            join_types = "LEFT JOIN image_types it_ia ON it_ia.id = ia.image_type_id"
+        else:
+            type_expr = "'' AS image_type_name"
+            join_types = ""
         with conn.cursor() as cur:
             cur.execute(
                 f"""
@@ -1684,10 +1701,10 @@ class SalesManagementMixin:
                        ia.storage_path,
                        sim.sort_order,
                        sim.id AS sim_id,
-                       COALESCE(it_ia.name, '') AS image_type_name
+                       {type_expr}
                 FROM sales_variant_image_mappings sim
                 JOIN image_assets ia ON ia.id = sim.image_asset_id
-                LEFT JOIN image_types it_ia ON it_ia.id = ia.image_type_id
+                {join_types}
                 WHERE sim.variant_id IN ({placeholders})
                 ORDER BY sim.variant_id ASC, sim.sort_order ASC, sim.id ASC
                 """,
@@ -1704,21 +1721,73 @@ class SalesManagementMixin:
             if not storage_path:
                 continue
             tname = str(row.get('image_type_name') or '').strip()
-            if tname == '白底纯图':
-                score = 0
-            elif tname == '白底图':
-                score = 1
-            else:
-                score = 2
+            if tname != '白底纯图':
+                continue
             sort_order = self._parse_int(row.get('sort_order')) or 0
             sim_id = self._parse_int(row.get('sim_id')) or 0
-            key = (score, sort_order, sim_id)
+            key = (sort_order, sim_id)
             if vid not in best or key < best[vid][0]:
                 b64 = self._b64_from_fs(storage_path.replace('\\', '/').lstrip('/'))
                 best[vid] = (key, b64)
 
         for vid, pair in best.items():
             out[vid] = pair[1]
+        return out
+
+    def _forecast_load_order_product_thumb_b64(self, conn, order_product_ids):
+        """order_product_id -> 预览图 b64；仅「白底纯图」类型（order_product_image_mappings）。"""
+        out = {}
+        if not self._has_required_tables(['order_product_image_mappings', 'image_assets']):
+            return out
+        ids = [self._parse_int(x) for x in (order_product_ids or []) if self._parse_int(x)]
+        if not ids:
+            return out
+        placeholders = ','.join(['%s'] * len(ids))
+        has_ia_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
+        if has_ia_tid:
+            type_expr = "COALESCE(NULLIF(TRIM(it_ia.name),''), '') AS image_type_name"
+            join_types = "LEFT JOIN image_types it_ia ON it_ia.id = ia.image_type_id"
+        else:
+            type_expr = "'' AS image_type_name"
+            join_types = ""
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT opim.order_product_id,
+                       ia.storage_path,
+                       opim.sort_order,
+                       opim.id AS opim_id,
+                       {type_expr}
+                FROM order_product_image_mappings opim
+                JOIN image_assets ia ON ia.id = opim.image_asset_id
+                {join_types}
+                WHERE opim.order_product_id IN ({placeholders})
+                ORDER BY opim.order_product_id ASC, opim.sort_order ASC, opim.id ASC
+                """,
+                tuple(ids)
+            )
+            rows = cur.fetchall() or []
+
+        best = {}
+        for row in rows:
+            opid = self._parse_int(row.get('order_product_id'))
+            if not opid:
+                continue
+            storage_path = str(row.get('storage_path') or '').strip()
+            if not storage_path:
+                continue
+            tname = str(row.get('image_type_name') or '').strip()
+            if tname != '白底纯图':
+                continue
+            sort_order = self._parse_int(row.get('sort_order')) or 0
+            rid = self._parse_int(row.get('opim_id')) or 0
+            key = (sort_order, rid)
+            if opid not in best or key < best[opid][0]:
+                b64 = self._b64_from_fs(storage_path.replace('\\', '/').lstrip('/'))
+                best[opid] = (key, b64)
+
+        for opid, pair in best.items():
+            out[opid] = pair[1]
         return out
 
     def _forecast_load_platform_cells(self, conn, sales_product_ids, months):
@@ -2078,6 +2147,7 @@ class SalesManagementMixin:
         dim_rows = self._forecast_load_order_dim(conn, query_params)
         order_ids = [self._parse_int(r.get('order_product_id')) for r in dim_rows if self._parse_int(r.get('order_product_id'))]
         order_cells = self._forecast_load_order_cells(conn, order_ids, months)
+        thumb_by_order = self._forecast_load_order_product_thumb_b64(conn, order_ids)
 
         # spec 预测的覆盖（包含继承自 platform 的逻辑），用于推导默认值
         all_variant_ids = sorted({
@@ -2126,6 +2196,7 @@ class SalesManagementMixin:
                     'fabric_name_en': r.get('fabric_name_en') or '',
                     'representative_color': r.get('representative_color') or '',
                     'is_on_market': self._parse_int(r.get('is_on_market')) or 0,
+                    'order_thumb_b64': thumb_by_order.get(op_id, ''),
                     'variant_links': [
                         {
                             'variant_id': vl.get('variant_id'),

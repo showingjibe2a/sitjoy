@@ -1100,6 +1100,7 @@
             if (mode === 'order') {
                 return [
                     { key: 'sku_family', label: '货号', filter: true, sort: false, cellClass: 'sf-cell-spec', get: r => r.labels.sku_family || '' },
+                    { key: 'thumb', label: '缩略图', filter: false, sort: false, thClass: 'sf-th-thumb', cellClass: 'sf-cell-thumb', get: r => r.labels.order_thumb_b64 || '' },
                     { key: 'sku', label: '下单SKU', filter: true, sort: true, cellClass: 'sf-cell-spec', get: r => r.labels.sku || '' },
                     { key: 'spec_qty_short', label: '规格', filter: true, sort: true, cellClass: 'sf-cell-spec', get: r => r.labels.spec_qty_short || '' },
                     { key: 'fabric_code', label: '面料', filter: true, sort: true, cellClass: 'sf-cell-fabric', get: r => r.labels.fabric_code || r.labels.fabric_name_en || '' },

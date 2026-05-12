@@ -1,0 +1,47 @@
+{# REFERENCE ONLY: sitjoy 页面 HTML 由 serve_file() 直出，不经 Jinja。请勿在业务模板里 {% from/include %} 本文件；请把展开后的 DOM 复制进 sales_product_management / order_product_management 等静态页。 #}
+{% macro mim_sales_order_main_image_section(
+  toolbar_label,
+  dup_off_id, dup_on_id, fab_off_id, fab_on_id,
+  dup_off_onclick, dup_on_onclick, fab_off_onclick, fab_on_onclick,
+  nas_onclick,
+  type_bar_id,
+  tip_id,
+  tip_text,
+  grid_id,
+  grid_empty_html,
+  dup_wrap_id='',
+  fab_wrap_id='',
+  upload_onclick='',
+  upload_button_id='',
+  extra_between_toolbar_and_manager=''
+) %}
+                        <div class="form-group pm-form-full">
+                            <div class="mim-toolbar-row">
+                                <label class="mim-toolbar-label">{{ toolbar_label }}</label>
+                                <div class="mim-toolbar-actions">
+                                    <div class="status-segment status-segment--inline mim-status-segment-spaced"{% if dup_wrap_id %} id="{{ dup_wrap_id }}"{% endif %}>
+                                        <button id="{{ dup_off_id }}" type="button" class="status-pill status-pill--no" onclick="{{ dup_off_onclick }}">重复提示：关</button>
+                                        <button id="{{ dup_on_id }}" type="button" class="status-pill status-pill--yes" onclick="{{ dup_on_onclick }}">重复提示：开</button>
+                                    </div>
+                                    <div class="status-segment status-segment--inline mim-status-segment-spaced"{% if fab_wrap_id %} id="{{ fab_wrap_id }}"{% endif %}>
+                                        <button id="{{ fab_off_id }}" type="button" class="status-pill status-pill--no" onclick="{{ fab_off_onclick }}">面料图：关</button>
+                                        <button id="{{ fab_on_id }}" type="button" class="status-pill status-pill--yes" onclick="{{ fab_on_onclick }}">面料图：开</button>
+                                    </div>
+                                    <button type="button" class="btn-accent"
+                                      {%- if upload_button_id %} id="{{ upload_button_id }}"{% endif %}
+                                      {%- if upload_onclick %} onclick="{{ upload_onclick }}"{% endif %}>新增主图</button>
+                                    <button type="button" class="btn-secondary" onclick="{{ nas_onclick }}">从NAS选择并移动</button>
+                                </div>
+                            </div>
+                            {{ extra_between_toolbar_and_manager|safe }}
+                            <div class="main-images-manager main-images-manager--mt-sm">
+                                <div class="main-images-toolbar">
+                                    <div class="image-type-bar" id="{{ type_bar_id }}"></div>
+                                </div>
+                                <div id="{{ tip_id }}" class="main-images-folder-tip">{{ tip_text }}</div>
+                                <div id="{{ grid_id }}" class="sj-media-image-grid sj-media-image-grid--tight">
+                                    {{ grid_empty_html|safe }}
+                                </div>
+                            </div>
+                        </div>
+{% endmacro %}

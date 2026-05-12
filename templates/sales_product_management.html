@@ -6,6 +6,7 @@
     <title>销售产品管理</title>
     <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/main-image-manager.css">
     <style>
         .required-field, .optional-field {
             padding: 0.65rem 0.8rem !important;
@@ -304,24 +305,6 @@
             gap: 0.45rem;
             flex-wrap: wrap;
         }
-        .main-images-manager {
-            border: 2px solid var(--morandi-sand);
-            border-radius: 8px;
-            padding: 0.65rem;
-            background: #fff;
-            display: grid;
-            gap: 0.55rem;
-        }
-        .main-images-toolbar {
-            display: flex;
-            gap: 0.45rem;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-        .main-images-folder-tip {
-            color: var(--morandi-slate);
-            font-size: 0.86rem;
-        }
         .sales-parent-group-row td {
             background: #f3ece0 !important;
             color: #5a4f42;
@@ -491,15 +474,16 @@
                 <div class="pm-section pm-form-full">
                     <h4>主图管理</h4>
                     <div class="pm-section-body pm-form">
+                        <input type="file" id="modalMainImageUpload" accept="image/*" multiple style="display:none;">
                         <div class="form-group pm-form-full">
-                            <div style="display:flex; align-items:center; justify-content:space-between; gap:0.6rem; flex-wrap:wrap;">
-                                <label style="margin:0;">规格-面料主图</label>
-                                <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
-                                    <div class="status-segment status-segment--inline" style="margin-right:0.25rem;">
+                            <div class="mim-toolbar-row">
+                                <label class="mim-toolbar-label">规格-面料主图</label>
+                                <div class="mim-toolbar-actions">
+                                    <div class="status-segment status-segment--inline mim-status-segment-spaced">
                                         <button id="mainImagePromptDupOff" type="button" class="status-pill status-pill--no" onclick="setMainImagePromptDuplicate(false)">重复提示：关</button>
                                         <button id="mainImagePromptDupOn" type="button" class="status-pill status-pill--yes" onclick="setMainImagePromptDuplicate(true)">重复提示：开</button>
                                     </div>
-                                    <div class="status-segment status-segment--inline" style="margin-right:0.25rem;">
+                                    <div class="status-segment status-segment--inline mim-status-segment-spaced">
                                         <button id="mainImageShowFabricOff" type="button" class="status-pill status-pill--no" onclick="setMainImageShowFabric(false)">面料图：关</button>
                                         <button id="mainImageShowFabricOn" type="button" class="status-pill status-pill--yes" onclick="setMainImageShowFabric(true)">面料图：开</button>
                                     </div>
@@ -507,8 +491,7 @@
                                     <button type="button" class="btn-secondary" onclick="openNasMainImageImportModal()">从NAS选择并移动</button>
                                 </div>
                             </div>
-                            <input type="file" id="modalMainImageUpload" accept="image/*" multiple style="display:none;">
-                            <div class="main-images-manager" style="margin-top:0.55rem;">
+                            <div class="main-images-manager main-images-manager--mt-sm">
                                 <div class="main-images-toolbar">
                                     <div class="image-type-bar" id="modalMainImageTypeBar"></div>
                                 </div>
@@ -957,7 +940,7 @@
             seg.querySelectorAll('button.status-pill[data-value]').forEach(btn => {
                 btn.addEventListener('click', function() {
                     applyNasActionMode(String(this.getAttribute('data-value') || 'multi'));
-                    renderNasMainImageList();
+                    void renderNasMainImageList({ preserveScroll: true });
                 });
             });
             const initial = String(safeGetLocalStorage(NAS_MAIN_IMAGE_ACTION_MODE_KEY) || seg.getAttribute('data-value') || 'multi');
@@ -3028,6 +3011,43 @@
             window.showAppToast && window.showAppToast(text, false, 7000);
         }
 
+        function getNasMainImageModalScrollSnapshot() {
+            const modal = document.getElementById('nas-main-image-import-modal');
+            if (!modal || !modal.classList.contains('active')) return null;
+            const el = modal.querySelector('.pm-modal-scroll');
+            if (!el) return null;
+            return { el, top: el.scrollTop, left: el.scrollLeft };
+        }
+        function restoreNasMainImageModalScrollSnapshot(snap) {
+            try {
+                if (!snap || !snap.el) return;
+                const top = Number(snap.top) || 0;
+                const left = Number(snap.left) || 0;
+                requestAnimationFrame(() => {
+                    snap.el.scrollTop = top;
+                    snap.el.scrollLeft = left;
+                    requestAnimationFrame(() => {
+                        snap.el.scrollTop = top;
+                        snap.el.scrollLeft = left;
+                    });
+                });
+            } catch (e) {}
+        }
+        /** 多选切换选中时只更新勾选态与卡片样式，避免整表重载导致滚动条回到顶部 */
+        function patchNasMainImageSelectionUi() {
+            const list = document.getElementById('nasMainImageList');
+            if (!list) return;
+            list.querySelectorAll('input[type="checkbox"][data-path]').forEach(cb => {
+                const p = String(cb.dataset.path || '');
+                const on = nasMainImageSelected && nasMainImageSelected.has(p);
+                cb.checked = !!on;
+                const card = cb.closest('.item-card');
+                if (card) card.classList.toggle('item-card--selected', !!on);
+            });
+            const n = list.querySelectorAll('.item-card.item-card--nas-browse:not(.item-card--folder)').length;
+            updateNasMainImageMeta(n);
+        }
+
         async function nasMainImageBrowse(pathB64) {
             const url = pathB64 ? `/api/browse?path=${encodeURIComponent(pathB64)}` : '/api/browse';
             const resp = await fetch(url);
@@ -3038,23 +3058,25 @@
             return data;
         }
 
-        async function renderNasMainImageList() {
+        async function renderNasMainImageList(opts) {
             const list = document.getElementById('nasMainImageList');
             if (!list) return false;
-            list.innerHTML = '';
-            const loading = document.createElement('div');
-            loading.className = 'pm-select-empty nas-main-image-grid-loading';
-            loading.textContent = '加载中...';
-            list.appendChild(loading);
-            showNasMainImageStatus('', false);
+            const preserveScroll = !!(opts && opts.preserveScroll);
+            const snap = preserveScroll ? getNasMainImageModalScrollSnapshot() : null;
+            let out = false;
             try {
+                list.innerHTML = '';
+                const loading = document.createElement('div');
+                loading.className = 'pm-select-empty nas-main-image-grid-loading';
+                loading.textContent = '加载中...';
+                list.appendChild(loading);
+                showNasMainImageStatus('', false);
                 const data = await nasMainImageBrowse(nasMainImagePathB64);
                 const folders = Array.isArray(data.folders) ? data.folders : [];
                 const images = Array.isArray(data.images) ? data.images : [];
                 renderNasBreadcrumbs();
 
                 list.innerHTML = '';
-                // Ensure thumb size class remains after re-render
                 const seg = document.getElementById('nasThumbSizeSegment');
                 const mode = seg ? String(seg.getAttribute('data-value') || 'lg') : 'lg';
                 list.classList.toggle('is-thumb-sm', mode === 'sm');
@@ -3064,9 +3086,8 @@
                     empty.className = 'pm-select-empty nas-main-image-grid-empty';
                     empty.textContent = '此目录为空';
                     list.appendChild(empty);
-                    return true;
-                }
-
+                    out = true;
+                } else {
                 folders.forEach(f => {
                     const pathB64 = String(f.path || '');
                     const displayName = decodeB64Utf8(f.name) || '';
@@ -3164,7 +3185,8 @@
                     card.appendChild(info);
                     list.appendChild(card);
                 });
-                return true;
+                out = true;
+                }
             } catch (e) {
                 list.innerHTML = '';
                 const err = document.createElement('div');
@@ -3173,8 +3195,11 @@
                 list.appendChild(err);
                 showNasMainImageStatus('浏览失败: ' + e, true);
                 updateNasMainImageMeta(0);
-                return false;
+                out = false;
+            } finally {
+                if (snap) restoreNasMainImageModalScrollSnapshot(snap);
             }
+            return out;
         }
 
         function openNasMainImageImportModal() {
@@ -3269,7 +3294,7 @@
         }
 
         async function nasMainImageReload() {
-            const ok = await renderNasMainImageList();
+            const ok = await renderNasMainImageList({ preserveScroll: true });
             if (ok) persistNasMainImageBrowseLocation();
         }
 
@@ -3334,7 +3359,7 @@
                     showNasMainImageStatus(okMsg, false);
                     toastNasMainImageSuccess(okMsg);
                     refreshMainImageList();
-                    await renderNasMainImageList();
+                    await renderNasMainImageList({ preserveScroll: true });
                     return;
                 }
                 if (!data || data.status !== 'success') {
@@ -3346,7 +3371,7 @@
                 toastNasMainImageSuccess(okMsg);
                 refreshMainImageList();
                 // refresh current folder list to reflect moved files
-                await renderNasMainImageList();
+                await renderNasMainImageList({ preserveScroll: true });
             } catch (e) {
                 showNasMainImageStatus('导入失败: ' + e, true);
             }
@@ -3363,7 +3388,7 @@
             }
             if (nasMainImageSelected.has(p)) nasMainImageSelected.delete(p);
             else nasMainImageSelected.add(p);
-            renderNasMainImageList();
+            patchNasMainImageSelectionUi();
         }
 
         function nasMainImageSelectAll() {
@@ -3511,7 +3536,7 @@
                     toastNasMainImageSuccess(okMsg2);
                     nasMainImageSelected = new Set();
                     refreshMainImageList();
-                    await renderNasMainImageList();
+                    await renderNasMainImageList({ preserveScroll: true });
                     return;
                 }
                 if (!data || data.status !== 'success') {
@@ -3523,7 +3548,7 @@
                 toastNasMainImageSuccess(okMsg3);
                 nasMainImageSelected = new Set();
                 refreshMainImageList();
-                await renderNasMainImageList();
+                await renderNasMainImageList({ preserveScroll: true });
             } catch (e) {
                 showNasMainImageStatus('导入失败: ' + e, true);
             }
@@ -4448,15 +4473,23 @@
             if (wrap.contains(e.target)) return;
             hideSpecSuggestPanel();
         }, true);
-        document.getElementById('modalPlatformSku').addEventListener('input', function() { manualPlatformSku = this.value.trim() !== ''; });
-        document.getElementById('salesProductUploadInput').addEventListener('change', function() {
-            const file = this.files && this.files[0];
-            if (file) {
-                uploadSalesProductTemplate(file);
-            }
-            this.value = '';
-        });
-        document.getElementById('modalMainImageUpload').addEventListener('change', function() {
+        const modalPlatformSkuEl = document.getElementById('modalPlatformSku');
+        if (modalPlatformSkuEl) {
+            modalPlatformSkuEl.addEventListener('input', function() { manualPlatformSku = this.value.trim() !== ''; });
+        }
+        const salesProductUploadInputEl = document.getElementById('salesProductUploadInput');
+        if (salesProductUploadInputEl) {
+            salesProductUploadInputEl.addEventListener('change', function() {
+                const file = this.files && this.files[0];
+                if (file) {
+                    uploadSalesProductTemplate(file);
+                }
+                this.value = '';
+            });
+        }
+        const modalMainImageUploadEl = document.getElementById('modalMainImageUpload');
+        if (modalMainImageUploadEl) {
+            modalMainImageUploadEl.addEventListener('change', function() {
             const raw = this.files;
             // Snapshot File objects immediately: clearing `this.value` empties the live FileList in many
             // browsers, which would otherwise make the async upload step see `files.length === 0` and skip
@@ -4497,7 +4530,8 @@
                     uploadMainImages(files, false);
                 }
             }).catch(err => showModalStatus('主图预检失败: ' + err, true));
-        });
+            });
+        }
         window.setTimeout(function() {
             var b = window.bindPmModalBackdropClose;
             if (typeof b !== 'function') return;

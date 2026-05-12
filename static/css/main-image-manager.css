@@ -1,0 +1,62 @@
+/**
+ * 主图管理区（销售/下单 modal、规格主图 modal 等）共用布局与容器样式。
+ * 与 static/js/pm_image_edit_modal.js + static/html/pm_image_edit_modal.html 配套使用。
+ */
+
+.main-images-manager {
+    border: 2px solid var(--morandi-sand);
+    border-radius: 8px;
+    padding: 0.65rem;
+    background: #fff;
+    display: grid;
+    gap: 0.55rem;
+}
+
+.main-images-toolbar {
+    display: flex;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.main-images-folder-tip {
+    color: var(--morandi-slate);
+    font-size: 0.86rem;
+}
+
+/* 替代原模板内联 margin */
+.main-images-manager--mt-sm {
+    margin-top: 0.55rem;
+}
+
+.main-images-manager--mt-md {
+    margin-top: 0.75rem;
+}
+
+.main-images-toolbar--mt-sm {
+    margin-top: 0.5rem;
+}
+
+/* modal 顶栏：左侧标题 + 右侧开关与按钮 */
+.mim-toolbar-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.mim-toolbar-label {
+    margin: 0;
+}
+
+.mim-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.mim-status-segment-spaced {
+    margin-right: 0.25rem;
+}

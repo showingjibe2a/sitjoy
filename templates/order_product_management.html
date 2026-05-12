@@ -6,6 +6,7 @@
     <title>下单产品管理</title>
     <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/main-image-manager.css">
     <style>
         .required-field {
             background: #fff !important;
@@ -101,24 +102,6 @@
         .order-preview-thumb-empty {
             color: var(--morandi-slate);
             font-size: 0.8rem;
-        }
-        .main-images-manager {
-            border: 2px solid var(--morandi-sand);
-            border-radius: 8px;
-            padding: 0.65rem;
-            background: #fff;
-            display: grid;
-            gap: 0.55rem;
-        }
-        .main-images-toolbar {
-            display: flex;
-            gap: 0.45rem;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-        .main-images-folder-tip {
-            color: var(--morandi-slate);
-            font-size: 0.86rem;
         }
         .upload-progress {
             position: fixed;
@@ -653,15 +636,16 @@
                 <div class="pm-section">
                     <h4>主图管理</h4>
                     <div class="pm-section-body">
+                        <input type="file" id="orderMainImageUploadInput" accept="image/*" multiple style="display:none;">
                         <div class="form-group pm-form-full">
-                            <div style="display:flex; align-items:center; justify-content:space-between; gap:0.6rem; flex-wrap:wrap;">
-                                <label style="margin:0;">规格-面料主图</label>
-                                <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
-                                    <div class="status-segment status-segment--inline" id="orderMainImagePromptDupSegment" style="margin-right:0.25rem;">
+                            <div class="mim-toolbar-row">
+                                <label class="mim-toolbar-label">规格-面料主图</label>
+                                <div class="mim-toolbar-actions">
+                                    <div class="status-segment status-segment--inline mim-status-segment-spaced" id="orderMainImagePromptDupSegment">
                                         <button id="orderMainImagePromptDupOff" type="button" class="status-pill status-pill--no" onclick="setOrderMainImagePromptDuplicate(false)">重复提示：关</button>
                                         <button id="orderMainImagePromptDupOn" type="button" class="status-pill status-pill--yes" onclick="setOrderMainImagePromptDuplicate(true)">重复提示：开</button>
                                     </div>
-                                    <div class="status-segment status-segment--inline" id="orderMainImageShowFabricSegment" style="margin-right:0.25rem;">
+                                    <div class="status-segment status-segment--inline mim-status-segment-spaced" id="orderMainImageShowFabricSegment">
                                         <button id="orderMainImageShowFabricOff" type="button" class="status-pill status-pill--no" onclick="setOrderMainImageShowFabric(false)">面料图：关</button>
                                         <button id="orderMainImageShowFabricOn" type="button" class="status-pill status-pill--yes" onclick="setOrderMainImageShowFabric(true)">面料图：开</button>
                                     </div>
@@ -669,9 +653,8 @@
                                     <button type="button" class="btn-secondary" onclick="openNasMainImageImportModal()">从NAS选择并移动</button>
                                 </div>
                             </div>
-                            <input type="file" id="orderMainImageUploadInput" accept="image/*" multiple style="display:none;">
                             <input type="hidden" id="orderMainImageTypeSelect" value="">
-                            <div class="main-images-manager" style="margin-top:0.55rem;">
+                            <div class="main-images-manager main-images-manager--mt-sm">
                                 <div class="main-images-toolbar">
                                     <div class="image-type-bar" id="orderMainImageTypeBar"></div>
                                 </div>
@@ -1385,6 +1368,42 @@
                 });
             });
         }
+        function getNasMainImageModalScrollSnapshot() {
+            const modal = document.getElementById('nas-main-image-import-modal');
+            if (!modal || !modal.classList.contains('active')) return null;
+            const el = modal.querySelector('.pm-modal-scroll');
+            if (!el) return null;
+            return { el, top: el.scrollTop, left: el.scrollLeft };
+        }
+        function restoreNasMainImageModalScrollSnapshot(snap) {
+            try {
+                if (!snap || !snap.el) return;
+                const top = Number(snap.top) || 0;
+                const left = Number(snap.left) || 0;
+                requestAnimationFrame(() => {
+                    snap.el.scrollTop = top;
+                    snap.el.scrollLeft = left;
+                    requestAnimationFrame(() => {
+                        snap.el.scrollTop = top;
+                        snap.el.scrollLeft = left;
+                    });
+                });
+            } catch (e) {}
+        }
+        /** 多选切换选中时只更新勾选态与卡片样式，避免整表重载导致滚动条回到顶部 */
+        function patchNasMainImageSelectionUi() {
+            const list = document.getElementById('nasMainImageList');
+            if (!list) return;
+            list.querySelectorAll('input[type="checkbox"][data-path]').forEach(cb => {
+                const p = String(cb.dataset.path || '');
+                const on = nasMainImageSelected && nasMainImageSelected.has(p);
+                cb.checked = !!on;
+                const card = cb.closest('.item-card');
+                if (card) card.classList.toggle('item-card--selected', !!on);
+            });
+            const n = list.querySelectorAll('.item-card.item-card--nas-browse:not(.item-card--folder)').length;
+            updateNasMainImageMeta(n);
+        }
         async function nasMainImageBrowse(pathB64) {
             const url = pathB64 ? `/api/browse?path=${encodeURIComponent(pathB64)}` : '/api/browse';
             const resp = await fetch(url, { credentials: 'include' });
@@ -1392,14 +1411,17 @@
             if (!data || data.status !== 'success') throw new Error((data && data.message) || '浏览失败');
             return data;
         }
-        async function renderNasMainImageList() {
+        async function renderNasMainImageList(opts) {
             const list = document.getElementById('nasMainImageList');
             if (!list) return false;
-            list.classList.toggle('is-thumb-sm', nasMainImageThumbSize === 'sm');
-            syncNasMainImageBrowserGridMode();
-            list.innerHTML = '<div class="pm-select-empty nas-main-image-grid-loading">加载中...</div>';
-            showNasMainImageStatus('', false);
+            const preserveScroll = !!(opts && opts.preserveScroll);
+            const snap = preserveScroll ? getNasMainImageModalScrollSnapshot() : null;
+            let out = false;
             try {
+                list.classList.toggle('is-thumb-sm', nasMainImageThumbSize === 'sm');
+                syncNasMainImageBrowserGridMode();
+                list.innerHTML = '<div class="pm-select-empty nas-main-image-grid-loading">加载中...</div>';
+                showNasMainImageStatus('', false);
                 const data = await nasMainImageBrowse(nasMainImagePathB64);
                 const crumbsFromApi = Array.isArray(data.breadcrumbs) ? data.breadcrumbs : [];
                 if (crumbsFromApi.length) {
@@ -1420,105 +1442,109 @@
                 persistNasOrderMainImageBrowseLocation();
                 if (!nasMainImageEntries.length) {
                     list.innerHTML = '<div class="pm-select-empty nas-main-image-grid-empty">当前目录暂无可用文件</div>';
-                    return true;
-                }
-                list.innerHTML = '';
-                nasMainImageEntries.forEach(entry => {
-                    if (entry.kind === 'folder') {
-                        const folder = entry.item || {};
-                        const pathB64 = String(folder.path || '');
-                        const name = browseSegDisplayName({ name: String(folder.name || '') }, 0) || '未命名文件夹';
-                        const card = document.createElement('div');
-                        card.className = 'item-card item-card--folder item-card--nas-browse';
-                        card.setAttribute('role', 'button');
-                        card.tabIndex = 0;
-                        card.setAttribute('title', '双击进入文件夹');
-                        card.addEventListener('dblclick', () => nasMainImageEnterFolder(pathB64));
-                        card.addEventListener('keydown', (e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                                e.preventDefault();
-                                nasMainImageEnterFolder(pathB64);
-                            }
-                        });
-                        const thumb = document.createElement('div');
-                        thumb.className = 'item-thumbnail folder';
-                        const icon = document.createElement('div');
-                        icon.className = 'folder-icon';
-                        icon.textContent = '📁';
-                        thumb.appendChild(icon);
-                        const info = document.createElement('div');
-                        info.className = 'item-info';
-                        const title = document.createElement('div');
-                        title.className = 'item-name';
-                        title.textContent = name;
-                        info.appendChild(title);
-                        card.appendChild(thumb);
-                        card.appendChild(info);
-                        list.appendChild(card);
-                    } else {
-                        const img = entry.item || {};
-                        const fullPathB64 = String(img.path || '');
-                        const name = browseSegDisplayName({ name: String(img.name || '') }, 0) || '';
-                        const isSelected = nasMainImageSelected.has(fullPathB64);
-                        const card = document.createElement('div');
-                        card.className = 'item-card item-card--nas-browse' + (isSelected ? ' item-card--selected' : '');
-                        const modeSeg = document.getElementById('nasActionModeSegment');
-                        const actionMode = modeSeg ? String(modeSeg.getAttribute('data-value') || 'multi') : String(nasMainImageActionMode || 'multi');
-                        const thumbUrl = `/api/image-preview?id=${encodeURIComponent(fullPathB64)}`;
-                        if (actionMode === 'double') {
-                            card.addEventListener('dblclick', () => { nasMainImageImport(fullPathB64); });
-                            card.addEventListener('click', (e) => {
-                                e.preventDefault();
+                    out = true;
+                } else {
+                    list.innerHTML = '';
+                    nasMainImageEntries.forEach(entry => {
+                        if (entry.kind === 'folder') {
+                            const folder = entry.item || {};
+                            const pathB64 = String(folder.path || '');
+                            const name = browseSegDisplayName({ name: String(folder.name || '') }, 0) || '未命名文件夹';
+                            const card = document.createElement('div');
+                            card.className = 'item-card item-card--folder item-card--nas-browse';
+                            card.setAttribute('role', 'button');
+                            card.tabIndex = 0;
+                            card.setAttribute('title', '双击进入文件夹');
+                            card.addEventListener('dblclick', () => nasMainImageEnterFolder(pathB64));
+                            card.addEventListener('keydown', (e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    nasMainImageEnterFolder(pathB64);
+                                }
                             });
+                            const thumb = document.createElement('div');
+                            thumb.className = 'item-thumbnail folder';
+                            const icon = document.createElement('div');
+                            icon.className = 'folder-icon';
+                            icon.textContent = '📁';
+                            thumb.appendChild(icon);
+                            const info = document.createElement('div');
+                            info.className = 'item-info';
+                            const title = document.createElement('div');
+                            title.className = 'item-name';
+                            title.textContent = name;
+                            info.appendChild(title);
+                            card.appendChild(thumb);
+                            card.appendChild(info);
+                            list.appendChild(card);
                         } else {
-                            card.addEventListener('click', () => nasMainImageToggle(fullPathB64));
-                        }
-                        const selectWrap = document.createElement('div');
-                        selectWrap.className = 'item-select';
-                        selectWrap.addEventListener('click', (e) => e.stopPropagation());
-                        const cb = document.createElement('input');
-                        cb.type = 'checkbox';
-                        cb.dataset.path = fullPathB64;
-                        cb.checked = isSelected;
-                        cb.addEventListener('click', (e) => e.stopPropagation());
-                        cb.addEventListener('change', (e) => {
-                            const seg = document.getElementById('nasActionModeSegment');
-                            const m = seg ? String(seg.getAttribute('data-value') || 'multi') : 'multi';
-                            if (m === 'double') {
-                                e.target.checked = false;
-                                return;
+                            const img = entry.item || {};
+                            const fullPathB64 = String(img.path || '');
+                            const name = browseSegDisplayName({ name: String(img.name || '') }, 0) || '';
+                            const isSelected = nasMainImageSelected.has(fullPathB64);
+                            const card = document.createElement('div');
+                            card.className = 'item-card item-card--nas-browse' + (isSelected ? ' item-card--selected' : '');
+                            const modeSeg = document.getElementById('nasActionModeSegment');
+                            const actionMode = modeSeg ? String(modeSeg.getAttribute('data-value') || 'multi') : String(nasMainImageActionMode || 'multi');
+                            const thumbUrl = `/api/image-preview?id=${encodeURIComponent(fullPathB64)}`;
+                            if (actionMode === 'double') {
+                                card.addEventListener('dblclick', () => { nasMainImageImport(fullPathB64); });
+                                card.addEventListener('click', (e) => {
+                                    e.preventDefault();
+                                });
+                            } else {
+                                card.addEventListener('click', () => nasMainImageToggle(fullPathB64));
                             }
-                            nasMainImageToggle(fullPathB64, true, e.target.checked);
-                            card.classList.toggle('item-card--selected', !!e.target.checked);
-                            updateNasMainImageMeta(images.length);
-                        });
-                        selectWrap.appendChild(cb);
-                        const thumb = document.createElement('div');
-                        thumb.className = 'item-thumbnail';
-                        const im = document.createElement('img');
-                        im.src = thumbUrl;
-                        im.alt = name;
-                        im.loading = 'lazy';
-                        thumb.appendChild(im);
-                        const info = document.createElement('div');
-                        info.className = 'item-info';
-                        const title = document.createElement('div');
-                        title.className = 'item-name';
-                        title.textContent = name;
-                        info.appendChild(title);
-                        card.appendChild(selectWrap);
-                        card.appendChild(thumb);
-                        card.appendChild(info);
-                        list.appendChild(card);
-                    }
-                });
-                return true;
+                            const selectWrap = document.createElement('div');
+                            selectWrap.className = 'item-select';
+                            selectWrap.addEventListener('click', (e) => e.stopPropagation());
+                            const cb = document.createElement('input');
+                            cb.type = 'checkbox';
+                            cb.dataset.path = fullPathB64;
+                            cb.checked = isSelected;
+                            cb.addEventListener('click', (e) => e.stopPropagation());
+                            cb.addEventListener('change', (e) => {
+                                const seg = document.getElementById('nasActionModeSegment');
+                                const m = seg ? String(seg.getAttribute('data-value') || 'multi') : 'multi';
+                                if (m === 'double') {
+                                    e.target.checked = false;
+                                    return;
+                                }
+                                nasMainImageToggle(fullPathB64, true, e.target.checked);
+                                card.classList.toggle('item-card--selected', !!e.target.checked);
+                                updateNasMainImageMeta(images.length);
+                            });
+                            selectWrap.appendChild(cb);
+                            const thumb = document.createElement('div');
+                            thumb.className = 'item-thumbnail';
+                            const im = document.createElement('img');
+                            im.src = thumbUrl;
+                            im.alt = name;
+                            im.loading = 'lazy';
+                            thumb.appendChild(im);
+                            const info = document.createElement('div');
+                            info.className = 'item-info';
+                            const title = document.createElement('div');
+                            title.className = 'item-name';
+                            title.textContent = name;
+                            info.appendChild(title);
+                            card.appendChild(selectWrap);
+                            card.appendChild(thumb);
+                            card.appendChild(info);
+                            list.appendChild(card);
+                        }
+                    });
+                    out = true;
+                }
             } catch (e) {
                 list.innerHTML = `<div class="pm-select-empty nas-main-image-grid-empty">${escapeHtml((e && e.message) || '加载失败')}</div>`;
                 showNasMainImageStatus('浏览失败: ' + ((e && e.message) || e), true);
                 updateNasMainImageMeta(0);
-                return false;
+                out = false;
+            } finally {
+                if (snap) restoreNasMainImageModalScrollSnapshot(snap);
             }
+            return out;
         }
         function openNasMainImageImportModal() {
             if (!editId) {
@@ -1601,7 +1627,7 @@
             }
             if (nasMainImageSelected.has(p)) nasMainImageSelected.delete(p);
             else nasMainImageSelected.add(p);
-            renderNasMainImageList();
+            patchNasMainImageSelectionUi();
         }
         function formatOrderNasImportSuccessMsg(data) {
             const linked = Number((data && data.linked) || 0);
@@ -1652,7 +1678,7 @@
                 showNasMainImageStatus('', false);
                 toastNasOrderMainImageSuccess(okMsg);
                 await refreshOrderMainImageList();
-                await renderNasMainImageList();
+                await renderNasMainImageList({ preserveScroll: true });
             } catch (e) {
                 showNasMainImageStatus('导入失败: ' + ((e && e.message) ? e.message : e), true);
             }
@@ -1717,7 +1743,7 @@
                     toastNasOrderMainImageSuccess(okMsg2);
                     nasMainImageSelected = new Set();
                     await refreshOrderMainImageList();
-                    await renderNasMainImageList();
+                    await renderNasMainImageList({ preserveScroll: true });
                     return;
                 }
                 if (!data || data.status !== 'success') {
@@ -1729,7 +1755,7 @@
                 toastNasOrderMainImageSuccess(okMsg);
                 nasMainImageSelected = new Set();
                 await refreshOrderMainImageList();
-                await renderNasMainImageList();
+                await renderNasMainImageList({ preserveScroll: true });
             } catch (e) {
                 showNasMainImageStatus('导入失败: ' + ((e && e.message) ? e.message : e), true);
             }
@@ -4390,23 +4416,29 @@
             }
             this.value = '';
         });
-        document.getElementById('orderMainImageUploadBtn').addEventListener('click', function() {
+        const orderMainImageUploadBtnEl = document.getElementById('orderMainImageUploadBtn');
+        if (orderMainImageUploadBtnEl) {
+            orderMainImageUploadBtnEl.addEventListener('click', function() {
             const input = document.getElementById('orderMainImageUploadInput');
             if (!input) return;
             input.value = '';
             input.click();
-        });
-        document.getElementById('orderMainImageUploadInput').addEventListener('change', function() {
+            });
+        }
+        const orderMainImageUploadInputEl = document.getElementById('orderMainImageUploadInput');
+        if (orderMainImageUploadInputEl) {
+            orderMainImageUploadInputEl.addEventListener('change', function() {
             handleOrderMainImageUpload(this.files || []);
             this.value = '';
-        });
+            });
+        }
         document.querySelectorAll('#nasActionModeSegment .status-pill[data-value]').forEach(btn => {
             btn.addEventListener('click', function() {
                 const m = String(this.getAttribute('data-value') || 'multi');
                 safeSetLocalStorage(NAS_MAIN_IMAGE_ACTION_MODE_KEY, m);
                 applyNasSegmentState('nasActionModeSegment', m);
                 if (document.getElementById('nas-main-image-import-modal')?.classList.contains('active')) {
-                    renderNasMainImageList();
+                    void renderNasMainImageList({ preserveScroll: true });
                 }
             });
         });
@@ -4415,7 +4447,8 @@
                 nasMainImageThumbSize = String(this.getAttribute('data-value') || 'sm');
                 safeSetLocalStorage(NAS_MAIN_IMAGE_THUMB_SIZE_KEY, nasMainImageThumbSize);
                 applyNasSegmentState('nasThumbSizeSegment', nasMainImageThumbSize);
-                renderNasMainImageList();
+                const list = document.getElementById('nasMainImageList');
+                if (list) list.classList.toggle('is-thumb-sm', nasMainImageThumbSize === 'sm');
             });
         });
         document.getElementById('nasMainImageSelectAllBox')?.addEventListener('change', function() {
@@ -4438,7 +4471,7 @@
                     }
                 });
             }
-            renderNasMainImageList();
+            patchNasMainImageSelectionUi();
         });
         window.setTimeout(function() {
             var b = window.bindPmModalBackdropClose;
