@@ -70,6 +70,35 @@ class EncodingUtilsMixin:
             except Exception:
                 return ''
 
+    def _listing_paths_equivalent(self, p1, p2):
+        """
+        Whether two paths denote the same filesystem location (bytes/str safe).
+        Prevents os.replace / shutil.move from using identical source and destination,
+        which can delete the only on-disk copy on some platforms.
+        """
+        if p1 is None or p2 is None:
+            return False
+        try:
+            b1 = self._safe_fsencode(p1) if isinstance(p1, str) else bytes(p1)
+            b2 = self._safe_fsencode(p2) if isinstance(p2, str) else bytes(p2)
+        except Exception:
+            return False
+        if b1 == b2:
+            return True
+        try:
+            a1 = os.path.normcase(os.path.normpath(os.path.abspath(b1)))
+            a2 = os.path.normcase(os.path.normpath(os.path.abspath(b2)))
+            if a1 == a2:
+                return True
+        except Exception:
+            pass
+        try:
+            if os.path.exists(b1) and os.path.exists(b2):
+                return bool(os.path.samefile(b1, b2))
+        except Exception:
+            pass
+        return False
+
     def _listing_resources_root_abs_b(self):
         """
         Absolute bytes path to the 『上架资源』 root (same as app.RESOURCES_PATH_BYTES when available).

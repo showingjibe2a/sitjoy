@@ -186,7 +186,7 @@ class FileManagementMixin:
 
             try:
                 debug_items = []
-                rel_path_bytes = os.fsencode(rel_path) if rel_path else b''
+                rel_path_bytes = self._safe_fsencode(rel_path) if rel_path else b''
                 with os.scandir(current_path) as it:
                     for entry in it:
                         try:
@@ -249,7 +249,7 @@ class FileManagementMixin:
 
             breadcrumbs = []
             if rel_path:
-                rel_path_bytes = os.fsencode(rel_path)
+                rel_path_bytes = self._safe_fsencode(rel_path)
                 parts = rel_path_bytes.split(b'/')
                 current = b''
                 for part in parts:

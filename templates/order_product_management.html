@@ -1160,6 +1160,13 @@
                 if (typeof TextDecoder === 'undefined') return '';
                 const dec = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
                 if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(dec)) return '';
+                // 排除「展示名本身像 base64」的假阳性：例如 "MS02" 被误当 base64 会解成 "1-6"
+                const encBytes = new TextEncoder().encode(dec);
+                let bin = '';
+                for (let i = 0; i < encBytes.length; i++) bin += String.fromCharCode(encBytes[i]);
+                const roundTrip = btoa(bin);
+                const stripPad = (x) => String(x || '').replace(/=+$/, '');
+                if (stripPad(roundTrip) !== stripPad(s)) return '';
                 return dec;
             } catch (e) {
                 return '';
@@ -1397,7 +1404,7 @@
                 const crumbsFromApi = Array.isArray(data.breadcrumbs) ? data.breadcrumbs : [];
                 if (crumbsFromApi.length) {
                     nasMainImageNavStack = crumbsFromApi.map(b => ({
-                        name: decodeB64Utf8(String(b.name || '')) || '目录',
+                        name: browseSegDisplayName({ name: String(b.name || '') }, 0) || '目录',
                         pathB64: String(b.path || ''),
                     }));
                 } else if (!nasMainImagePathB64) {
@@ -1420,13 +1427,13 @@
                     if (entry.kind === 'folder') {
                         const folder = entry.item || {};
                         const pathB64 = String(folder.path || '');
-                        const name = decodeB64Utf8(folder.name) || '未命名文件夹';
+                        const name = browseSegDisplayName({ name: String(folder.name || '') }, 0) || '未命名文件夹';
                         const card = document.createElement('div');
                         card.className = 'item-card item-card--folder item-card--nas-browse';
                         card.setAttribute('role', 'button');
                         card.tabIndex = 0;
+                        card.setAttribute('title', '双击进入文件夹');
                         card.addEventListener('dblclick', () => nasMainImageEnterFolder(pathB64));
-                        card.addEventListener('click', () => nasMainImageEnterFolder(pathB64));
                         const thumb = document.createElement('div');
                         thumb.className = 'item-thumbnail folder';
                         const icon = document.createElement('div');
@@ -1445,7 +1452,7 @@
                     } else {
                         const img = entry.item || {};
                         const fullPathB64 = String(img.path || '');
-                        const name = decodeB64Utf8(img.name) || '';
+                        const name = browseSegDisplayName({ name: String(img.name || '') }, 0) || '';
                         const isSelected = nasMainImageSelected.has(fullPathB64);
                         const card = document.createElement('div');
                         card.className = 'item-card item-card--nas-browse' + (isSelected ? ' item-card--selected' : '');
@@ -1590,6 +1597,18 @@
             else nasMainImageSelected.add(p);
             renderNasMainImageList();
         }
+        function formatOrderNasImportSuccessMsg(data) {
+            const linked = Number((data && data.linked) || 0);
+            const moved = Number((data && data.moved) || 0);
+            const created = Number((data && data.created_assets) || 0);
+            const rec = Number((data && data.recycled_duplicate_sources) || 0);
+            let msg = `导入成功：关联 ${linked}，从 NAS 删除源 ${moved}，新建资源 ${created}`;
+            if (rec > 0) {
+                msg += `；重复所选的另一路径副本 ${rec} 个已移入「上架资源/回收站」`;
+            }
+            msg += '。';
+            return msg;
+        }
         async function nasMainImageImport(filePathB64, allowDuplicate) {
             if (!editId) return;
             const payload = {
@@ -1623,8 +1642,8 @@
                     showNasMainImageStatus((data && data.message) ? data.message : '导入失败', true);
                     return;
                 }
-                const okMsg = `导入成功：关联 ${Number(data.linked || 0)}，移动 ${Number(data.moved || 0)}，新建资源 ${Number(data.created_assets || 0)}。`;
-                showNasMainImageStatus(okMsg, false);
+                const okMsg = formatOrderNasImportSuccessMsg(data);
+                showNasMainImageStatus('', false);
                 toastNasOrderMainImageSuccess(okMsg);
                 await refreshOrderMainImageList();
                 await renderNasMainImageList();
@@ -1667,7 +1686,7 @@
                             message: `以下图片已存在（将复用已有图片继续导入）：\n${names}${list.length > 12 ? `\n…等共 ${list.length} 张` : ''}\n\n${data.message || '是否继续？'}`,
                             confirmText: '确认复用并导入',
                             requireConfirmCheck: true,
-                            confirmCheckText: '我已知晓：复用会按系统规则归档图片位置',
+                            confirmCheckText: '我已知晓：复用会按系统规则归档图片位置；另一路径的相同文件会移入「上架资源/回收站」',
                         })
                         : confirm(data.message || '检测到重复图片，是否继续复用并导入？');
                     if (!ok) {
@@ -1687,7 +1706,7 @@
                         showNasMainImageStatus((data2 && data2.message) ? data2.message : '导入失败', true);
                         return;
                     }
-                    const okMsg2 = `导入成功：关联 ${Number(data2.linked || 0)}，移动 ${Number(data2.moved || 0)}，新建资源 ${Number(data2.created_assets || 0)}。`;
+                    const okMsg2 = formatOrderNasImportSuccessMsg(data2);
                     showNasMainImageStatus(okMsg2, false);
                     toastNasOrderMainImageSuccess(okMsg2);
                     nasMainImageSelected = new Set();
@@ -1699,8 +1718,8 @@
                     showNasMainImageStatus((data && data.message) ? data.message : '导入失败', true);
                     return;
                 }
-                const okMsg = `导入成功：关联 ${Number(data.linked || 0)}，移动 ${Number(data.moved || 0)}，新建资源 ${Number(data.created_assets || 0)}。`;
-                showNasMainImageStatus(okMsg, false);
+                const okMsg = formatOrderNasImportSuccessMsg(data);
+                showNasMainImageStatus('', false);
                 toastNasOrderMainImageSuccess(okMsg);
                 nasMainImageSelected = new Set();
                 await refreshOrderMainImageList();

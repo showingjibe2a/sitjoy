@@ -1357,12 +1357,17 @@ class SalesProductMixin:
                     try:
                         if action == 'move':
                             if os.path.abspath(os.path.dirname(abs_source)) != os.path.abspath(target_abs):
-                                os.replace(abs_source, abs_target)
-                                file_op_done = True
+                                if not self._listing_paths_equivalent(abs_source, abs_target):
+                                    os.replace(abs_source, abs_target)
+                                    file_op_done = True
+                                else:
+                                    abs_target = abs_source
                             else:
                                 abs_target = abs_source
                         else:
-                            if os.path.abspath(abs_source) != os.path.abspath(abs_target):
+                            if (not self._listing_paths_equivalent(abs_source, abs_target)) and (
+                                os.path.abspath(abs_source) != os.path.abspath(abs_target)
+                            ):
                                 shutil.copy2(abs_source, abs_target)
                                 file_op_done = True
                             else:
@@ -1423,11 +1428,12 @@ class SalesProductMixin:
                                 base_str = self._safe_fsdecode(os.path.basename(cur_abs))
                                 new_name = self._next_available_filename(target_folder, base_str)
                                 dst_abs = os.path.join(target_folder, self._safe_fsencode(new_name))
-                                os.replace(cur_abs, dst_abs)
-                                storage_path = self._storage_path_from_abs(dst_abs)
-                                with conn.cursor() as cur:
-                                    cur.execute("UPDATE image_assets SET storage_path=%s WHERE id=%s", (storage_path, int(aid)))
-                                rehomed = True
+                                if not self._listing_paths_equivalent(cur_abs, dst_abs):
+                                    os.replace(cur_abs, dst_abs)
+                                    storage_path = self._storage_path_from_abs(dst_abs)
+                                    with conn.cursor() as cur:
+                                        cur.execute("UPDATE image_assets SET storage_path=%s WHERE id=%s", (storage_path, int(aid)))
+                                    rehomed = True
                     except Exception:
                         pass
 
@@ -1444,12 +1450,13 @@ class SalesProductMixin:
                                 base_str = self._safe_fsdecode(os.path.basename(cur_b))
                                 new_name = self._next_available_filename(tf, base_str)
                                 dst_abs = os.path.join(tf, self._safe_fsencode(new_name))
-                                os.replace(cur_b, dst_abs)
-                                storage_path = self._storage_path_from_abs(dst_abs)
-                                with conn.cursor() as cur:
-                                    cur.execute("UPDATE image_assets SET storage_path=%s WHERE id=%s", (storage_path, int(aid)))
-                                rehomed = True
-                                file_op_done = True
+                                if not self._listing_paths_equivalent(cur_b, dst_abs):
+                                    os.replace(cur_b, dst_abs)
+                                    storage_path = self._storage_path_from_abs(dst_abs)
+                                    with conn.cursor() as cur:
+                                        cur.execute("UPDATE image_assets SET storage_path=%s WHERE id=%s", (storage_path, int(aid)))
+                                    rehomed = True
+                                    file_op_done = True
                                 if not rehome_kind:
                                     rehome_kind = 'single_variant'
                     except Exception:
@@ -2172,18 +2179,30 @@ class SalesProductMixin:
         target_folder = self._choose_rehome_target(conn, aid)
         if not target_folder:
             return None
+        src_dir = os.path.dirname(src_abs)
+        # 已在目标目录：必须用 bytes/混排安全比较；原 fsdecode 抛错时会被吞掉并误走后续逻辑，
+        # 可能算出 dst==src，os.replace 自替换导致磁盘文件消失（下单 NAS 双击复用已绑规格图时易触发）。
         try:
-            src_dir = os.path.dirname(src_abs)
-            # Already under target folder
-            if os.path.normcase(os.fsdecode(src_dir)) == os.path.normcase(os.fsdecode(target_folder)):
+            if os.path.isdir(src_dir) and os.path.isdir(target_folder) and os.path.samefile(src_dir, target_folder):
+                return None
+        except Exception:
+            pass
+        try:
+            sd = self._safe_fsdecode(src_dir).replace('\\', '/').rstrip('/')
+            td = self._safe_fsdecode(target_folder).replace('\\', '/').rstrip('/')
+            if os.path.normcase(os.path.normpath(sd)) == os.path.normcase(os.path.normpath(td)):
                 return None
         except Exception:
             pass
 
         # If moving into “通用/全局通用”目录：尽量按推荐语法改名
         # 面料（若所有关联规格面料一致）-图片类型-原名
-        ext = os.path.splitext(os.path.basename(storage_path))[1] or '.jpg'
-        orig = os.path.basename(storage_path)
+        try:
+            base_src_dec = self._safe_fsdecode(os.path.basename(src_abs))
+        except Exception:
+            base_src_dec = os.path.basename(storage_path)
+        ext = os.path.splitext(base_src_dec)[1] or os.path.splitext(storage_path)[1] or '.jpg'
+        orig = base_src_dec or os.path.basename(storage_path)
         base_part = self._sanitize_filename_component(os.path.splitext(orig)[0], 120) or f"image_{aid}"
 
         def _is_common_folder(folder_abs):
@@ -2279,6 +2298,8 @@ class SalesProductMixin:
         filename = f"{base_part}{ext}"
         final_name = self._next_available_filename(target_folder, filename)
         dst_abs = os.path.join(target_folder, self._safe_fsencode(final_name))
+        if self._listing_paths_equivalent(src_abs, dst_abs):
+            return None
         try:
             os.makedirs(os.path.dirname(dst_abs), exist_ok=True)
         except Exception:
@@ -2292,6 +2313,8 @@ class SalesProductMixin:
             moved = True
         except Exception:
             try:
+                if self._listing_paths_equivalent(src_abs, dst_abs):
+                    return None
                 shutil.move(src_abs, dst_abs)
                 moved = True
             except Exception:
@@ -2299,6 +2322,8 @@ class SalesProductMixin:
 
         if not moved:
             try:
+                if self._listing_paths_equivalent(src_abs, dst_abs):
+                    return None
                 with open(src_abs, 'rb') as fsrc:
                     data = fsrc.read()
                 with open(dst_abs, 'wb') as fdst:
@@ -2307,7 +2332,7 @@ class SalesProductMixin:
                 return None
             # Copy succeeded: DB will point at dst; src must not remain as a second full copy.
             try:
-                if os.path.exists(dst_abs):
+                if os.path.exists(dst_abs) and (not self._listing_paths_equivalent(src_abs, dst_abs)):
                     self._safe_unlink(src_abs)
                     if os.path.exists(src_abs):
                         self._move_file_to_listing_recycle_bin(src_abs, '重复')
@@ -6294,11 +6319,12 @@ class SalesProductMixin:
                                         new_storage_path = old_storage_path[:-len(old_base)] + new_base
                                         old_abs = self._join_resources(old_storage_path)
                                         new_abs = self._join_resources(new_storage_path)
-                                        os.replace(old_abs, new_abs)
-                                        cur.execute(
-                                            "UPDATE image_assets SET storage_path=%s WHERE id=%s",
-                                            (new_storage_path, aid),
-                                        )
+                                        if not self._listing_paths_equivalent(old_abs, new_abs):
+                                            os.replace(old_abs, new_abs)
+                                            cur.execute(
+                                                "UPDATE image_assets SET storage_path=%s WHERE id=%s",
+                                                (new_storage_path, aid),
+                                            )
                         except Exception:
                             pass
                         # Optional manual rename of the on-disk filename (storage_path basename)
@@ -6344,6 +6370,8 @@ class SalesProductMixin:
                                     if os.path.exists(new_abs):
                                         return self.send_json({'status': 'error', 'message': '目标文件名已存在'}, start_response)
                                     try:
+                                        if self._listing_paths_equivalent(old_abs, new_abs):
+                                            return self.send_json({'status': 'error', 'message': '无效的重命名（源与目标相同）'}, start_response)
                                         os.replace(old_abs, new_abs)
                                     except Exception as e:
                                         return self.send_json({'status': 'error', 'message': f'重命名失败: {str(e)}'}, start_response)
@@ -6639,7 +6667,10 @@ class SalesProductMixin:
             storage_path = str(row.get('storage_path') or '').strip()
             if not storage_path:
                 continue
-            rel_bytes = os.fsencode(storage_path)
+            try:
+                rel_bytes = os.fsencode(storage_path)
+            except Exception:
+                rel_bytes = storage_path.encode('utf-8', errors='surrogatepass')
             image_b64 = base64.b64encode(rel_bytes).decode('ascii') if rel_bytes else ''
             out.append({
                 'image_name': os.path.basename(storage_path),
@@ -6677,7 +6708,11 @@ class SalesProductMixin:
                 folder_info = self._resolve_order_product_main_image_folder(order_product_id, ensure_folder=True)
                 with self._get_db_connection() as conn:
                     items = self._read_order_product_image_items(conn, order_product_id)
-                return self.send_json({'status': 'success', 'items': items, 'folder': folder_info}, start_response)
+                folder_out = dict(folder_info or {})
+                fp = folder_out.get('folder_path')
+                if isinstance(fp, (bytes, bytearray)):
+                    folder_out['folder_path'] = self._safe_fsdecode(bytes(fp))
+                return self.send_json({'status': 'success', 'items': items, 'folder': folder_out}, start_response)
 
             if method == 'DELETE':
                 data = self._read_json_body(environ) or {}
@@ -6822,9 +6857,10 @@ class SalesProductMixin:
                                         while os.path.exists(new_abs):
                                             new_abs = os.path.join(common_folder, f"{stem}_{j}{ext}")
                                             j += 1
-                                        os.replace(old_abs, new_abs)
-                                        storage_path = self._storage_path_from_abs(new_abs)
-                                        cur.execute("UPDATE image_assets SET storage_path=%s WHERE id=%s", (storage_path, aid))
+                                        if not self._listing_paths_equivalent(old_abs, new_abs):
+                                            os.replace(old_abs, new_abs)
+                                            storage_path = self._storage_path_from_abs(new_abs)
+                                            cur.execute("UPDATE image_assets SET storage_path=%s WHERE id=%s", (storage_path, aid))
                                 except Exception:
                                     pass
                             if type_id:
@@ -6931,6 +6967,7 @@ class SalesProductMixin:
                         'sha256': sha256,
                         'payload': payload,
                         'asset_id': aid,
+                        'asset_storage_path': str(exists.get('storage_path') or '').strip() if aid else '',
                     })
                     if aid:
                         duplicates.append({
@@ -6953,6 +6990,7 @@ class SalesProductMixin:
                 linked = 0
                 created_assets = 0
                 moved = 0
+                recycled_duplicate_sources = 0
                 touched_asset_ids = []
                 with conn.cursor() as cur:
                     for row in prepared:
@@ -7001,7 +7039,11 @@ class SalesProductMixin:
                                 created_assets += 1
                                 touched_asset_ids.append(int(aid))
                                 try:
-                                    if src_b and os.path.isfile(src_b) and os.path.abspath(src_b) != os.path.abspath(abs_target):
+                                    if (
+                                        src_b
+                                        and os.path.isfile(src_b)
+                                        and (not self._listing_paths_equivalent(src_b, abs_target))
+                                    ):
                                         os.remove(src_b)
                                         moved += 1
                                 except Exception:
@@ -7011,6 +7053,18 @@ class SalesProductMixin:
                                 cur.execute("UPDATE image_assets SET image_type_id=%s WHERE id=%s", (type_id, aid))
                             if aid:
                                 touched_asset_ids.append(int(aid))
+                            # SHA256 复用：库中已有 canonical 文件；若 NAS 所选为另一路径的相同副本，移入回收站以免重复占空间
+                            src_b = row.get('source_file_b')
+                            canon_sp = str(row.get('asset_storage_path') or '').strip()
+                            if src_b and os.path.isfile(src_b) and canon_sp:
+                                try:
+                                    canon_abs = self._abs_from_storage_path(canon_sp)
+                                    if not self._listing_paths_equivalent(src_b, canon_abs):
+                                        mv_ok, _, _ = self._move_file_to_listing_recycle_bin(src_b, '重复')
+                                        if mv_ok:
+                                            recycled_duplicate_sources += 1
+                                except Exception:
+                                    pass
                         if not aid:
                             continue
                         cur.execute(
@@ -7034,6 +7088,7 @@ class SalesProductMixin:
                     'created_assets': created_assets,
                     'linked': linked,
                     'moved': moved,
+                    'recycled_duplicate_sources': recycled_duplicate_sources,
                 }, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)

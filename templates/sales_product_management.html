@@ -3074,7 +3074,8 @@
                     card.className = 'item-card item-card--folder item-card--nas-browse';
                     card.setAttribute('role', 'button');
                     card.tabIndex = 0;
-                    card.addEventListener('click', () => nasMainImageEnterFolder(pathB64, displayName));
+                    card.setAttribute('title', '双击进入文件夹');
+                    card.addEventListener('dblclick', () => nasMainImageEnterFolder(pathB64, displayName));
                     card.addEventListener('keydown', (e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
