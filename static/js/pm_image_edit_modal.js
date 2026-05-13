@@ -1087,6 +1087,66 @@
     }
   }
 
+  function mergeOrderProductMgmtBindingPatch(patch) {
+    if (!patch || typeof patch !== 'object') return;
+    const ops = Array.isArray(patch.order_products) ? patch.order_products : [];
+    if (ops.length) {
+      const mergedOp = Array.isArray(orderProductOptions) ? orderProductOptions.slice() : [];
+      const seenOp = new Set(mergedOp.map(x => Number(x.order_product_id || 0)));
+      ops.forEach(op => {
+        const id = Number(op.order_product_id || 0);
+        if (!id) return;
+        selectedOrderProductIds.add(id);
+        if (!seenOp.has(id)) {
+          seenOp.add(id);
+          mergedOp.push({
+            order_product_id: id,
+            sku: String(op.sku || ''),
+            sku_family: String(op.sku_family || ''),
+            spec_qty_short: String(op.spec_qty_short || ''),
+          });
+        }
+      });
+      orderProductOptions = mergedOp;
+    }
+    const fabs = Array.isArray(patch.fabrics) ? patch.fabrics : [];
+    if (fabs.length) {
+      const mergedF = Array.isArray(fabricOptions) ? fabricOptions.slice() : [];
+      const seenF = new Set(mergedF.map(x => Number(x.fabric_id || 0)));
+      fabs.forEach(f => {
+        const id = Number(f.fabric_id || 0);
+        if (!id) return;
+        selectedFabricIds.add(id);
+        if (!seenF.has(id)) {
+          seenF.add(id);
+          mergedF.push({
+            fabric_id: id,
+            fabric_code: String(f.fabric_code || ''),
+            fabric_name_en: String(f.fabric_name_en || ''),
+          });
+        }
+      });
+      fabricOptions = mergedF;
+    }
+    const vidsExtra = Array.isArray(patch.variant_ids) ? patch.variant_ids : [];
+    vidsExtra.map(v => Number(v)).filter(v => v > 0).forEach(v => selectedVariantIds.add(v));
+  }
+
+  async function applyOrderProductMgmtBindingDefaultsFromHook() {
+    const fn = ctx && ctx.hooks && typeof ctx.hooks.applyOrderProductMgmtBindingDefaults === 'function'
+      ? ctx.hooks.applyOrderProductMgmtBindingDefaults
+      : null;
+    if (!fn) return;
+    try {
+      const patch = await fn();
+      mergeOrderProductMgmtBindingPatch(patch || {});
+      updateSelectedVariantTable();
+      updateSelectedFabricTable();
+      updateSelectedOrderProductTable();
+      updateApplyHintUi();
+    } catch (e) {}
+  }
+
   async function tryPrefillVariantLinksFromDbIfEnabled() {
     if (!ctx || !ctx.hooks || !ctx.hooks.prefillVariantLinks) return;
     if (!current || !current.pathB64) return;
@@ -1352,6 +1412,7 @@
     updateSelectedFabricTable();
     updateSelectedOrderProductTable();
     await tryPrefillVariantLinksFromDbIfEnabled();
+    await applyOrderProductMgmtBindingDefaultsFromHook();
     await tryPrefillMetaFromDb();
     applyRecommendedNameIfNeeded(true);
     initialBindingsSnapshot = {

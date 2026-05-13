@@ -2063,7 +2063,14 @@ class OrderManagementMixin:
                             WHERE opim.order_product_id = op.id
                             ORDER BY opim.sort_order ASC, opim.id ASC
                             LIMIT 1
-                        ) AS preview_image_path
+                        ) AS preview_image_path,
+                        (
+                            SELECT l.variant_id
+                            FROM sales_variant_order_links l
+                            WHERE l.order_product_id = op.id
+                            ORDER BY l.variant_id ASC
+                            LIMIT 1
+                        ) AS linked_variant_id
                     FROM order_products op
                     LEFT JOIN product_families pf ON pf.id = op.sku_family_id
                     LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
@@ -2090,7 +2097,14 @@ class OrderManagementMixin:
                             WHERE opim.order_product_id = op.id
                             ORDER BY opim.sort_order ASC, opim.id ASC
                             LIMIT 1
-                        ) AS preview_image_path
+                        ) AS preview_image_path,
+                        (
+                            SELECT l.variant_id
+                            FROM sales_variant_order_links l
+                            WHERE l.order_product_id = op.id
+                            ORDER BY l.variant_id ASC
+                            LIMIT 1
+                        ) AS linked_variant_id
                     FROM order_products op
                     LEFT JOIN product_families pf ON pf.id = op.sku_family_id
                     LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
@@ -2122,7 +2136,14 @@ class OrderManagementMixin:
                             WHERE opim.order_product_id = op.id
                             ORDER BY opim.sort_order ASC, opim.id ASC
                             LIMIT 1
-                        ) AS preview_image_path
+                        ) AS preview_image_path,
+                        (
+                            SELECT l.variant_id
+                            FROM sales_variant_order_links l
+                            WHERE l.order_product_id = op.id
+                            ORDER BY l.variant_id ASC
+                            LIMIT 1
+                        ) AS linked_variant_id
                     FROM order_products op
                     LEFT JOIN product_families pf ON pf.id = op.sku_family_id
                     LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id

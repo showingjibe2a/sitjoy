@@ -189,6 +189,24 @@
             gap: 0.75rem;
             align-items: end;
         }
+        .pm-order-basic-row {
+            grid-column: 1 / -1;
+            display: grid;
+            gap: 0.75rem;
+            align-items: end;
+        }
+        .pm-order-basic-row--sku-desc {
+            grid-template-columns: 1fr 1fr;
+        }
+        .pm-order-basic-row--family-spec-fabric {
+            grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.95fr) minmax(0, 1.1fr);
+        }
+        @media (max-width: 720px) {
+            .pm-order-basic-row--sku-desc,
+            .pm-order-basic-row--family-spec-fabric {
+                grid-template-columns: 1fr;
+            }
+        }
         .yes-no-field {
             display: inline-flex;
             align-items: center;
@@ -487,9 +505,9 @@
                         <tr>
                             <th style="width:54px; text-align:center;"><input type="checkbox" id="orderSelectAll"></th>
                             <th class="yesno-col">是否在市</th>
-                            <th class="yesno-col">是否为补发用配件</th>
-                            <th class="yesno-col">是否迭代款</th>
-                            <th class="yesno-col">是否大健云仓</th>
+                            <th class="yesno-col">补发配件</th>
+                            <th class="yesno-col">迭代款</th>
+                            <th class="yesno-col">大健云仓</th>
                             <th style="width: 100px;">货号</th>
                             <th style="width: 64px; text-align:center;">图片</th>
                             <th>SKU</th>
@@ -613,39 +631,43 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="form-group pm-form-span-2">
-                            <label for="modalSku">下单SKU（注意核验）<span class="required-asterisk">*</span></label>
-                            <input type="text" id="modalSku" class="required-field" placeholder="例如：MS01A-Brown" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="modalSkuFamily">归属货号<span class="required-asterisk">*</span></label>
-                            <div class="pm-select" id="modalSkuFamilySelect">
-                                <button type="button" class="universal-select-trigger" id="modalSkuFamilyTrigger">请选择货号</button>
-                                <div class="pm-select-panel" id="modalSkuFamilyPanel">
-                                    <input type="text" class="pm-select-search" id="modalSkuFamilySearch" placeholder="搜索货号">
-                                    <div class="pm-select-list" id="modalSkuFamilyList"></div>
-                                </div>
+                        <div class="pm-order-basic-row pm-order-basic-row--sku-desc">
+                            <div class="form-group">
+                                <label for="modalSku">下单SKU（注意核验）<span class="required-asterisk">*</span></label>
+                                <input type="text" id="modalSku" class="required-field" placeholder="例如：MS01A-Brown" required>
                             </div>
-                            <select id="modalSkuFamily" class="required-field" required style="display:none;"></select>
-                        </div>
-                        <div class="form-group">
-                            <label for="modalFabric">面料<span class="required-asterisk">*</span></label>
-                            <div class="pm-select" id="modalFabricSelect">
-                                <button type="button" class="universal-select-trigger" id="modalFabricTrigger">请选择面料</button>
-                                <div class="pm-select-panel" id="modalFabricPanel">
-                                    <input type="text" class="pm-select-search" id="modalFabricSearch" placeholder="搜索面料编号/英文名">
-                                    <div class="pm-select-list" id="modalFabricList"></div>
-                                </div>
+                            <div class="form-group">
+                                <label for="modalContentsDescEn">内含物英文描述</label>
+                                <input type="text" id="modalContentsDescEn" class="optional-field" placeholder="选填，例如：memory foam + metal frame">
                             </div>
-                            <select id="modalFabric" class="required-field" required style="display:none;"></select>
                         </div>
-                        <div class="form-group">
-                            <label for="modalSpecQtyShort">规格与数量简称</label>
-                            <input type="text" id="modalSpecQtyShort" class="optional-field" placeholder="选填，例如：A，B，C...">
-                        </div>
-                        <div class="form-group">
-                            <label for="modalContentsDescEn">内含物英文描述</label>
-                            <input type="text" id="modalContentsDescEn" class="optional-field" placeholder="选填，例如：memory foam + metal frame">
+                        <div class="pm-order-basic-row pm-order-basic-row--family-spec-fabric">
+                            <div class="form-group">
+                                <label for="modalSkuFamily">归属货号<span class="required-asterisk">*</span></label>
+                                <div class="pm-select" id="modalSkuFamilySelect">
+                                    <button type="button" class="universal-select-trigger" id="modalSkuFamilyTrigger">请选择货号</button>
+                                    <div class="pm-select-panel" id="modalSkuFamilyPanel">
+                                        <input type="text" class="pm-select-search" id="modalSkuFamilySearch" placeholder="搜索货号">
+                                        <div class="pm-select-list" id="modalSkuFamilyList"></div>
+                                    </div>
+                                </div>
+                                <select id="modalSkuFamily" class="required-field" required style="display:none;"></select>
+                            </div>
+                            <div class="form-group">
+                                <label for="modalSpecQtyShort">规格与数量简称</label>
+                                <input type="text" id="modalSpecQtyShort" class="optional-field" placeholder="选填，例如：A，B，C...">
+                            </div>
+                            <div class="form-group">
+                                <label for="modalFabric">面料<span class="required-asterisk">*</span></label>
+                                <div class="pm-select" id="modalFabricSelect">
+                                    <button type="button" class="universal-select-trigger" id="modalFabricTrigger">请选择面料</button>
+                                    <div class="pm-select-panel" id="modalFabricPanel">
+                                        <input type="text" class="pm-select-search" id="modalFabricSearch" placeholder="搜索面料编号/英文名">
+                                        <div class="pm-select-list" id="modalFabricList"></div>
+                                    </div>
+                                </div>
+                                <select id="modalFabric" class="required-field" required style="display:none;"></select>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1300,16 +1322,18 @@
         function renderNasMainImageTypeBar() {
             const bar = document.getElementById('nasMainImageTypeBar');
             if (!bar) return;
-            const chips = ['<button type="button" class="status-pill" data-name="">全部</button>'];
+            const allowedNames = getOrderProductAllowedImageTypeNames();
+            if (nasSelectedImageType && !allowedNames.includes(nasSelectedImageType)) nasSelectedImageType = '';
+            const chips = [];
             (orderMainImageTypeOptions || []).forEach(item => {
                 const name = String((item && item.name) || '').trim();
                 if (!name) return;
-                chips.push(`<button type="button" class="status-pill" data-name="${name.replace(/"/g, '&quot;')}">${name}</button>`);
+                chips.push(`<button type="button" class="status-pill" data-name="${name.replace(/"/g, '&quot;')}">${escapeHtml(name)}</button>`);
             });
-            bar.innerHTML = chips.join('');
-            bar.querySelectorAll('.status-pill').forEach(btn => {
+            bar.innerHTML = chips.length ? chips.join('') : '<span class="nas-main-image-type-empty" style="font-size:0.88rem;color:var(--morandi-slate);">暂无可用图片类型，请稍后重试或联系管理员配置。</span>';
+            bar.querySelectorAll('.status-pill[data-name]').forEach(btn => {
                 const name = String(btn.getAttribute('data-name') || '');
-                btn.classList.toggle('is-active', name === nasSelectedImageType || (!name && !nasSelectedImageType));
+                btn.classList.toggle('is-active', name === nasSelectedImageType);
                 btn.addEventListener('click', () => {
                     nasSelectedImageType = name;
                     renderNasMainImageTypeBar();
@@ -1318,6 +1342,34 @@
         }
         function getNasImportImageTypeName() {
             return String(nasSelectedImageType || orderMainImageTypeName || '').trim();
+        }
+        function getOrderProductAllowedImageTypeNames() {
+            return (orderMainImageTypeOptions || [])
+                .map(it => String((it && it.name) || '').trim())
+                .filter(Boolean);
+        }
+        function isOrderProductNasImportImageTypeValid() {
+            const name = getNasImportImageTypeName();
+            if (!name) return false;
+            return getOrderProductAllowedImageTypeNames().includes(name);
+        }
+        function ensureNasImportImageTypeOrAbort() {
+            if (isOrderProductNasImportImageTypeValid()) return true;
+            showNasMainImageStatus('请先在「图片类型」中选择一个有效类型后再导入（主图侧为「全部」或类型未在系统中配置时不可提交）。', true);
+            return false;
+        }
+        function isOrderProductMainImageUploadTypeValid() {
+            const name = String(orderMainImageTypeName || (document.getElementById('orderMainImageTypeSelect') || {}).value || '').trim();
+            if (!name) return false;
+            return getOrderProductAllowedImageTypeNames().includes(name);
+        }
+        function toastOrderProductMainImageTypeRequiredForUpload() {
+            const msg = '请先在「新增主图」按钮下方的图片类型栏中选择具体类型后再尝试添加图片（不要选择「全部」）。';
+            if (window.showAppToast) {
+                window.showAppToast(msg, true, 9000);
+                return;
+            }
+            showModalStatus(msg, true);
         }
         function showNasMainImageStatus(message, isError) {
             const el = document.getElementById('nasMainImageStatus');
@@ -1617,6 +1669,11 @@
                 nasMainImageNavStack = [];
             }
             nasMainImageSelected = new Set();
+            const allowed = getOrderProductAllowedImageTypeNames();
+            if (nasSelectedImageType && !allowed.includes(nasSelectedImageType)) nasSelectedImageType = '';
+            if (!nasSelectedImageType && orderMainImageTypeName && allowed.includes(orderMainImageTypeName)) {
+                nasSelectedImageType = orderMainImageTypeName;
+            }
             renderNasMainImageTypeBar();
             applyNasSegmentState('nasActionModeSegment', nasMainImageActionMode);
             applyNasSegmentState('nasThumbSizeSegment', nasMainImageThumbSize);
@@ -1690,6 +1747,7 @@
         }
         async function nasMainImageImport(filePathB64, allowDuplicate) {
             if (!editId) return;
+            if (!ensureNasImportImageTypeOrAbort()) return;
             const payload = {
                 order_product_id: editId,
                 source_path_b64: String(filePathB64 || ''),
@@ -1732,6 +1790,7 @@
         }
         async function nasMainImageImportSelected() {
             if (!editId) return;
+            if (!ensureNasImportImageTypeOrAbort()) return;
             const paths = Array.from(nasMainImageSelected || []);
             if (!paths.length) {
                 showNasMainImageStatus('请先勾选要导入的图片。', true);
@@ -1880,12 +1939,16 @@
                 showModalStatus('请先保存下单产品后再上传主图', true);
                 return;
             }
+            if (!isOrderProductMainImageUploadTypeValid()) {
+                toastOrderProductMainImageTypeRequiredForUpload();
+                return;
+            }
             const selectedType = String((document.getElementById('orderMainImageTypeSelect') || {}).value || '').trim();
             const picked = Array.from(files || []).filter(f => f && f.size > 0);
             if (!picked.length) return;
             const fd = new FormData();
             fd.append('order_product_id', String(editId));
-            if (selectedType) fd.append('image_type_name', selectedType);
+            fd.append('image_type_name', selectedType);
             picked.forEach(f => fd.append('file', f, f.name || 'image.bin'));
             fetch('/api/order-product-main-images-upload', { method: 'POST', credentials: 'include', body: fd })
                 .then(r => r.json())
@@ -1925,7 +1988,25 @@
             window.PmImageEditModal.init({
                 mode: 'order_product_management',
                 hooks: {
-                    prefillVariantLinks: false,
+                    prefillVariantLinks: true,
+                    applyOrderProductMgmtBindingDefaults: async () => {
+                        const base = editOriginalItem || {};
+                        const opid = Number(editId || 0);
+                        const skuEl = document.getElementById('modalSku');
+                        const specEl = document.getElementById('modalSpecQtyShort');
+                        const patch = { order_products: [], fabrics: [], variant_ids: [] };
+                        if (opid) {
+                            patch.order_products.push({
+                                order_product_id: opid,
+                                sku: (skuEl && skuEl.value) ? String(skuEl.value).trim() : String(base.sku || '').trim(),
+                                sku_family: String(base.sku_family || '').trim(),
+                                spec_qty_short: (specEl && specEl.value) ? String(specEl.value).trim() : String(base.spec_qty_short || '').trim(),
+                            });
+                        }
+                        const vid = Number(base.linked_variant_id || 0);
+                        if (vid) patch.variant_ids.push(vid);
+                        return patch;
+                    },
                     onRenamed: ({ oldPathB64, newFilename }) => {
                         const oldRel = decodeB64Utf8(oldPathB64);
                         const folder = oldRel.includes('/') ? oldRel.slice(0, oldRel.lastIndexOf('/')) : '';
@@ -1956,7 +2037,12 @@
                     }
                 }
             });
-            window.PmImageEditModal.open({ pathB64, name: imageName, defaultVariantIds: [] });
+            const linkedVid = Number((editOriginalItem || {}).linked_variant_id || 0);
+            window.PmImageEditModal.open({
+                pathB64,
+                name: imageName,
+                defaultVariantIds: linkedVid ? [linkedVid] : [],
+            });
         }
 
         function resetSearch() {
@@ -4770,6 +4856,10 @@
         const orderMainImageUploadBtnEl = document.getElementById('orderMainImageUploadBtn');
         if (orderMainImageUploadBtnEl) {
             orderMainImageUploadBtnEl.addEventListener('click', function() {
+            if (!isOrderProductMainImageUploadTypeValid()) {
+                toastOrderProductMainImageTypeRequiredForUpload();
+                return;
+            }
             const input = document.getElementById('orderMainImageUploadInput');
             if (!input) return;
             input.value = '';

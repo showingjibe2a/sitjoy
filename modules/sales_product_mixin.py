@@ -6857,6 +6857,8 @@ class SalesProductMixin:
             image_type_name = str((form.getfirst('image_type_name', '') or '').strip()) if form else ''
             if not order_product_id:
                 return self.send_json({'status': 'error', 'message': 'Missing order_product_id'}, start_response)
+            if not image_type_name:
+                return self.send_json({'status': 'error', 'message': '请先选择图片类型后再上传主图'}, start_response)
             uploads = []
             for p in getattr(form, 'list', []) or []:
                 if getattr(p, 'filename', None):
@@ -6870,7 +6872,9 @@ class SalesProductMixin:
             created = []
             touched_asset_ids = []
             with self._get_db_connection() as conn:
-                type_id = self._get_image_type_id_by_name(conn, image_type_name) if image_type_name else 0
+                type_id = self._get_image_type_id_by_name(conn, image_type_name)
+                if not type_id:
+                    return self.send_json({'status': 'error', 'message': '图片类型无效或未在系统中配置，请刷新页面后重新选择类型再上传'}, start_response)
                 sort_start = self._get_order_product_image_sort_start(conn, order_product_id)
                 with conn.cursor() as cur:
                     for idx, up in enumerate(uploads, start=1):
@@ -6891,11 +6895,11 @@ class SalesProductMixin:
                         aid = self._parse_int(exists.get('id')) or 0
                         storage_path = str(exists.get('storage_path') or '').strip()
                         if not aid:
-                            abs_target = os.path.join(folder_abs, final_name)
+                            abs_target = os.path.join(folder_abs, self._safe_fsencode(final_name))
                             i = 1
                             while os.path.exists(abs_target):
                                 stem, ext = os.path.splitext(final_name)
-                                abs_target = os.path.join(folder_abs, f"{stem}_{i}{ext}")
+                                abs_target = os.path.join(folder_abs, self._safe_fsencode(f"{stem}_{i}{ext}"))
                                 i += 1
                             with open(abs_target, 'wb') as f:
                                 f.write(payload)
@@ -6926,13 +6930,13 @@ class SalesProductMixin:
                                 try:
                                     common_folder = self._ensure_order_product_common_folder(folder_info.get('sku_family'))
                                     old_abs = self._join_resources(storage_path)
-                                    base_name = os.path.basename(storage_path) or final_name
-                                    new_abs = os.path.join(common_folder, base_name)
+                                    base_name = str(os.path.basename(str(storage_path or '').replace('\\', '/')) or final_name or '').strip()
+                                    new_abs = os.path.join(common_folder, self._safe_fsencode(base_name))
                                     if os.path.normpath(old_abs) != os.path.normpath(new_abs):
                                         j = 1
                                         stem, ext = os.path.splitext(base_name)
                                         while os.path.exists(new_abs):
-                                            new_abs = os.path.join(common_folder, f"{stem}_{j}{ext}")
+                                            new_abs = os.path.join(common_folder, self._safe_fsencode(f"{stem}_{j}{ext}"))
                                             j += 1
                                         if not self._listing_paths_equivalent(old_abs, new_abs):
                                             os.replace(old_abs, new_abs)
