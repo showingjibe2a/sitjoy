@@ -17,6 +17,27 @@
             background:rgba(236,231,223,0.65);
         }
         .wh-import-status.show { display:inline-flex; align-items:center; }
+        .preview-savebar {
+            position: fixed;
+            right: 18px;
+            bottom: 18px;
+            z-index: 5300;
+            display: none;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.75rem 0.9rem;
+            border: 1px solid rgba(207, 199, 189, 0.9);
+            border-radius: 12px;
+            background: #fff;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+            min-width: min(520px, calc(100vw - 24px));
+        }
+        .preview-savebar.active { display: flex; }
+        .preview-savebar span { flex: 1; color: var(--morandi-ink); font-weight: 700; }
+        .preview-savebar .btn-primary,
+        .preview-savebar .btn-secondary { padding: 0.65rem 1rem; }
+        .preview-edit-input { width: 100%; min-width: 0; box-sizing: border-box; }
+        .preview-edit-cell { padding-left: 0.35rem !important; padding-right: 0.35rem !important; }
     </style>
 </head>
 <body>
@@ -71,11 +92,12 @@
                             <th>供应商</th>
                             <th>仓库简称</th>
                             <th>区域</th>
+                            <th style="width:160px;">Wayfair ID</th>
                             <th style="width:180px;">创建时间</th>
                             <th style="width:160px;">操作</th>
                         </tr>
                     </thead>
-                    <tbody><tr><td colspan="7" style="text-align:center;">加载中...</td></tr></tbody>
+                    <tbody><tr><td colspan="8" style="text-align:center;">加载中...</td></tr></tbody>
                 </table>
             </div>
         </section>
@@ -100,6 +122,10 @@
                 <div class="form-group">
                     <label for="region">区域<span class="required-asterisk">*</span></label>
                     <select id="region" class="required-field"></select>
+                </div>
+                <div class="form-group pm-form-full">
+                    <label for="warehouseWayfairId">Wayfair ID</label>
+                    <input type="text" id="warehouseWayfairId" class="optional-field" maxlength="128" placeholder="可选，与 Wayfair 仓库/站点对应">
                 </div>
                 <div class="form-group pm-form-full">
                     <label>启用状态</label>
@@ -153,6 +179,12 @@
 
     <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
 
+    <div id="whWayfairSaveBar" class="preview-savebar" aria-live="polite">
+        <span id="whWayfairSaveText">已修改 0 条 Wayfair ID</span>
+        <button type="button" class="btn-secondary" onclick="cancelWhWayfairEdits()">取消修改</button>
+        <button type="button" class="btn-primary" onclick="saveWhWayfairEdits()">统一保存</button>
+    </div>
+
     <script>
         let editId = null;
         let supplierEditId = null;
@@ -162,6 +194,120 @@
         let supplierOptions = [];
         let destinationRegionOptions = [];
         let dragRegionId = null;
+        let warehouseListCache = [];
+        let whWayfairDraft = {};
+
+        function escAttr(v) {
+            return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+        function getWhWayfairEffective(id, item) {
+            const sid = String(id);
+            if (Object.prototype.hasOwnProperty.call(whWayfairDraft, sid)) return whWayfairDraft[sid];
+            return String((item && item.wayfair_id) || '').trim();
+        }
+        function pruneWhWayfairDraft(allowedIds) {
+            const set = new Set((allowedIds || []).map(x => String(x)));
+            Object.keys(whWayfairDraft).forEach(k => { if (!set.has(k)) delete whWayfairDraft[k]; });
+        }
+        function countWhWayfairDirty() {
+            let n = 0;
+            (warehouseListCache || []).forEach(item => {
+                const sid = String(item.id);
+                if (!Object.prototype.hasOwnProperty.call(whWayfairDraft, sid)) return;
+                const orig = String(item.wayfair_id || '').trim();
+                if (String(whWayfairDraft[sid] || '').trim() !== orig) n += 1;
+            });
+            return n;
+        }
+        function syncWhWayfairSaveBar() {
+            const bar = document.getElementById('whWayfairSaveBar');
+            const text = document.getElementById('whWayfairSaveText');
+            if (!bar || !text) return;
+            const c = countWhWayfairDirty();
+            text.textContent = `已修改 ${c} 条 Wayfair ID`;
+            bar.classList.toggle('active', c > 0);
+        }
+        function cancelWhWayfairEdits() {
+            whWayfairDraft = {};
+            renderWarehouseTable(warehouseListCache);
+            syncWhWayfairSaveBar();
+        }
+        function bindWhWayfairFieldEvents() {
+            document.querySelectorAll('.wh-wayfair-field').forEach(el => {
+                el.addEventListener('input', function() {
+                    const sid = String(this.getAttribute('data-id') || '');
+                    if (!sid) return;
+                    whWayfairDraft[sid] = this.value;
+                    syncWhWayfairSaveBar();
+                });
+            });
+        }
+        function saveWhWayfairEdits() {
+            const items = [];
+            (warehouseListCache || []).forEach(item => {
+                const sid = String(item.id);
+                if (!Object.prototype.hasOwnProperty.call(whWayfairDraft, sid)) return;
+                const orig = String(item.wayfair_id || '').trim();
+                const next = String(whWayfairDraft[sid] || '').trim();
+                if (next === orig) return;
+                items.push({ id: Number(item.id), wayfair_id: next });
+            });
+            if (!items.length) {
+                syncWhWayfairSaveBar();
+                return;
+            }
+            const bar = document.getElementById('whWayfairSaveBar');
+            const saveBtn = bar ? bar.querySelector('.btn-primary') : null;
+            if (saveBtn) {
+                saveBtn.disabled = true;
+                saveBtn.textContent = '保存中...';
+            }
+            fetch('/api/logistics-warehouse?action=batch_wayfair', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items }),
+            })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.status !== 'success') {
+                        window.showAppToast && window.showAppToast(d.message || '保存失败', true, 4000);
+                        if (saveBtn) {
+                            saveBtn.disabled = false;
+                            saveBtn.textContent = '统一保存';
+                        }
+                        return;
+                    }
+                    whWayfairDraft = {};
+                    window.showAppToast && window.showAppToast(`已保存 ${Number(d.updated || items.length)} 条`, false, 2500);
+                    loadList();
+                    if (saveBtn) {
+                        saveBtn.disabled = false;
+                        saveBtn.textContent = '统一保存';
+                    }
+                })
+                .catch(err => {
+                    window.showAppToast && window.showAppToast('保存失败: ' + err, true, 4000);
+                    if (saveBtn) {
+                        saveBtn.disabled = false;
+                        saveBtn.textContent = '统一保存';
+                    }
+                });
+        }
+        function renderWarehouseTable(items) {
+            const tbody = document.querySelector('#mainTable tbody');
+            const safe = Array.isArray(items) ? items : [];
+            if (!tbody) return;
+            if (!safe.length) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">暂无数据</td></tr>';
+                return;
+            }
+            tbody.innerHTML = safe.map(item => {
+                const wfVal = escAttr(getWhWayfairEffective(item.id, item));
+                return `<tr><td><div class="status-segment status-segment--inline warehouse-enabled-segment" data-id="${item.id}" data-value="${Number(item.is_enabled || 0) ? 1 : 0}"><button type="button" class="status-pill status-pill--yes ${Number(item.is_enabled || 0) ? 'is-active' : ''}" data-value="1">是</button><button type="button" class="status-pill status-pill--no ${Number(item.is_enabled || 0) ? '' : 'is-active'}" data-value="0">否</button></div></td><td>${item.warehouse_name || ''}</td><td>${item.supplier_name || ''}</td><td>${item.warehouse_short_name || ''}</td><td>${item.region || ''}</td><td class="preview-edit-cell"><input type="text" class="inline-input preview-edit-input wh-wayfair-field" data-id="${item.id}" maxlength="128" value="${wfVal}" placeholder="可选"></td><td>${item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : ''}</td><td><div class="pm-actions"><button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button><button class="btn-danger" onclick='removeItem(${item.id})'>删除</button></div></td></tr>`;
+            }).join('');
+            bindWhWayfairFieldEvents();
+            syncWhWayfairSaveBar();
+        }
         function setSegmentValue(seg, value){
             if(!seg) return;
             const v = String(value === undefined || value === null ? '' : value);
@@ -326,6 +472,7 @@
             document.getElementById('warehouseShortName').value='';
             document.getElementById('supplierSelect').value='';
             document.getElementById('region').value='';
+            document.getElementById('warehouseWayfairId').value='';
             setSegmentValue(document.getElementById('warehouseEnabledSegment'), '1');
             if(window.refreshUniversalSingleSelect){ window.refreshUniversalSingleSelect('supplierSelect'); window.refreshUniversalSingleSelect('region'); }
             resetStatus();
@@ -338,6 +485,7 @@
             document.getElementById('warehouseShortName').value=item.warehouse_short_name||'';
             fillSupplierSelect(item.supplier_id || '');
             document.getElementById('region').value=item.destination_region_id||'';
+            document.getElementById('warehouseWayfairId').value=String(item.wayfair_id||'').trim();
             setSegmentValue(document.getElementById('warehouseEnabledSegment'), String(Number(item.is_enabled || 0) ? 1 : 0));
             if(window.refreshUniversalSingleSelect){ window.refreshUniversalSingleSelect('region'); }
             resetStatus();
@@ -409,7 +557,8 @@
                 supplier_id: document.getElementById('supplierSelect').value,
                 warehouse_short_name: document.getElementById('warehouseShortName').value.trim(),
                 is_enabled: Number((document.getElementById('warehouseEnabledSegment').dataset.value || '1') === '1' ? 1 : 0),
-                destination_region_id: document.getElementById('region').value
+                destination_region_id: document.getElementById('region').value,
+                wayfair_id: document.getElementById('warehouseWayfairId').value.trim()
             };
             if(!payload.supplier_id || !payload.destination_region_id){ showStatus('请填写供应商和目的区域', true); return; }
             if(!payload.warehouse_name && !payload.warehouse_short_name){ showStatus('请填写仓库名称或仓库简称', true); return; }
@@ -453,11 +602,12 @@
             const url = params.length ? `/api/logistics-warehouse?${params.join('&')}` : '/api/logistics-warehouse';
             fetch(url).then(r=>r.json()).then(data=>{
                 const tbody = document.querySelector('#mainTable tbody');
-                if(data.status!=='success'){ tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#a33;">${data.message||'加载失败'}</td></tr>`; return; }
+                if(data.status!=='success'){ tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#a33;">${data.message||'加载失败'}</td></tr>`; return; }
                 const items = data.items || [];
-                if(!items.length){ tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">暂无数据</td></tr>'; return; }
-                tbody.innerHTML = items.map(item => `<tr><td><div class="status-segment status-segment--inline warehouse-enabled-segment" data-id="${item.id}" data-value="${Number(item.is_enabled||0)?1:0}"><button type="button" class="status-pill status-pill--yes ${Number(item.is_enabled||0)?'is-active':''}" data-value="1">是</button><button type="button" class="status-pill status-pill--no ${Number(item.is_enabled||0)?'':'is-active'}" data-value="0">否</button></div></td><td>${item.warehouse_name||''}</td><td>${item.supplier_name||''}</td><td>${item.warehouse_short_name||''}</td><td>${item.region||''}</td><td>${item.created_at?new Date(item.created_at).toLocaleString('zh-CN'):''}</td><td><div class="pm-actions"><button class="btn-secondary" onclick='openEditModal(${JSON.stringify(item)})'>编辑</button><button class="btn-danger" onclick='removeItem(${item.id})'>删除</button></div></td></tr>`).join('');
-            }).catch(err=>{ document.querySelector('#mainTable tbody').innerHTML = `<tr><td colspan="7" style="text-align:center;color:#a33;">加载失败: ${err}</td></tr>`; });
+                warehouseListCache = items;
+                pruneWhWayfairDraft(items.map(x => x.id));
+                renderWarehouseTable(items);
+            }).catch(err=>{ document.querySelector('#mainTable tbody').innerHTML = `<tr><td colspan="8" style="text-align:center;color:#a33;">加载失败: ${err}</td></tr>`; });
         }
         function toggleWarehouseEnabled(id, isEnabled){
             fetch('/api/logistics-warehouse?action=toggle_enabled', {

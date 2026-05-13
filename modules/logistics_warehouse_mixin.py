@@ -2360,6 +2360,7 @@ class LogisticsWarehouseMixin:
                             SELECT w.id, w.warehouse_name, w.supplier_id, w.warehouse_short_name, w.is_enabled,
                                 COALESCE(dr.region_name, w.region) AS region,
                                 w.destination_region_id,
+                                w.wayfair_id,
                                 dr.region_name AS destination_region_name,
                                    w.created_at, w.updated_at, s.supplier_name
                             FROM logistics_overseas_warehouses w
@@ -2376,8 +2377,11 @@ class LogisticsWarehouseMixin:
                             params.append(destination_region_id)
                         if keyword:
                             like = f"%{keyword}%"
-                            filters.append("(w.warehouse_name LIKE %s OR s.supplier_name LIKE %s OR w.warehouse_short_name LIKE %s OR COALESCE(dr.region_name, w.region) LIKE %s)")
-                            params.extend([like, like, like, like])
+                            filters.append(
+                                "(w.warehouse_name LIKE %s OR s.supplier_name LIKE %s OR w.warehouse_short_name LIKE %s "
+                                "OR COALESCE(dr.region_name, w.region) LIKE %s OR COALESCE(w.wayfair_id, '') LIKE %s)"
+                            )
+                            params.extend([like, like, like, like, like])
                         where_sql = (' WHERE ' + ' AND '.join(filters)) if filters else ''
                         cur.execute(sql + where_sql + " ORDER BY w.id DESC", params)
                         rows = cur.fetchall() or []
@@ -2385,6 +2389,31 @@ class LogisticsWarehouseMixin:
 
             data = self._read_json_body(environ)
             action = (query_params.get('action', [''])[0] or '').strip().lower()
+
+            if method == 'PUT' and action == 'batch_wayfair':
+                batch_items = data.get('items') if isinstance(data, dict) else None
+                if not isinstance(batch_items, list) or not batch_items:
+                    return self.send_json({'status': 'error', 'message': 'Missing items'}, start_response)
+                rows = []
+                for it in batch_items:
+                    if not isinstance(it, dict):
+                        continue
+                    wid = self._parse_int(it.get('id'))
+                    if not wid:
+                        continue
+                    wf = str(it.get('wayfair_id') or '').strip()
+                    if len(wf) > 128:
+                        wf = wf[:128]
+                    rows.append((wf or None, wid))
+                if not rows:
+                    return self.send_json({'status': 'error', 'message': 'No valid rows'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.executemany(
+                            "UPDATE logistics_overseas_warehouses SET wayfair_id=%s WHERE id=%s",
+                            rows,
+                        )
+                return self.send_json({'status': 'success', 'updated': len(rows)}, start_response)
 
             if method == 'PUT' and action == 'toggle_enabled':
                 item_id = self._parse_int(data.get('id'))
@@ -2400,6 +2429,8 @@ class LogisticsWarehouseMixin:
                 supplier_id = self._parse_int(data.get('supplier_id'))
                 destination_region_id = self._parse_int(data.get('destination_region_id'))
                 region = (data.get('region') or '').strip()
+                wayfair_raw = str(data.get('wayfair_id') or '').strip()
+                wayfair_id = wayfair_raw[:128] if wayfair_raw else None
                 is_enabled = 1 if self._parse_int(data.get('is_enabled', 1)) else 0
                 if not supplier_id:
                     return self.send_json({'status': 'error', 'message': '供应商和目的区域必填'}, start_response)
@@ -2415,10 +2446,10 @@ class LogisticsWarehouseMixin:
                             cur.execute(
                                 """
                                 INSERT INTO logistics_overseas_warehouses
-                                (warehouse_name, supplier_id, warehouse_short_name, is_enabled, region, destination_region_id)
-                                VALUES (%s, %s, %s, %s, %s, %s)
+                                (warehouse_name, supplier_id, warehouse_short_name, is_enabled, region, destination_region_id, wayfair_id)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s)
                                 """,
-                                (name, supplier_id, short_name, is_enabled, resolved_region_name, destination_region_id)
+                                (name, supplier_id, short_name, is_enabled, resolved_region_name, destination_region_id, wayfair_id)
                             )
                             return self.send_json({'status': 'success', 'id': cur.lastrowid}, start_response)
                         item_id = self._parse_int(data.get('id'))
@@ -2427,10 +2458,10 @@ class LogisticsWarehouseMixin:
                         cur.execute(
                             """
                             UPDATE logistics_overseas_warehouses
-                            SET warehouse_name=%s, supplier_id=%s, warehouse_short_name=%s, is_enabled=%s, region=%s, destination_region_id=%s
+                            SET warehouse_name=%s, supplier_id=%s, warehouse_short_name=%s, is_enabled=%s, region=%s, destination_region_id=%s, wayfair_id=%s
                             WHERE id=%s
                             """,
-                            (name, supplier_id, short_name, is_enabled, resolved_region_name, destination_region_id, item_id)
+                            (name, supplier_id, short_name, is_enabled, resolved_region_name, destination_region_id, wayfair_id, item_id)
                         )
                         return self.send_json({'status': 'success'}, start_response)
 
@@ -2470,13 +2501,12 @@ class LogisticsWarehouseMixin:
             wb = Workbook()
             ws = wb.active
             ws.title = 'warehouse_import'
-            headers = ['仓库名称', '供应商', '仓库简称', '区域']
+            headers = ['仓库名称', '供应商', '仓库简称', '区域', 'Wayfair ID']
             ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
             title_cell = ws.cell(row=1, column=1, value='海外仓导入模板')
             title_cell.fill = PatternFill(start_color='A8B9A5', end_color='A8B9A5', fill_type='solid')
             title_cell.font = Font(bold=True, color='2A2420')
             title_cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-
             ws.append(headers)
 
             for cell in ws[2]:
@@ -2484,13 +2514,13 @@ class LogisticsWarehouseMixin:
                 cell.font = Font(bold=True, color='2A2420')
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
-            ws.append(['示例仓库（请勿导入）', '示例供应商（请勿导入）', '示例简称', '示例区域'])
+            ws.append(['示例仓库（请勿导入）', '示例供应商（请勿导入）', '示例简称', '示例区域', ''])
             for cell in ws[3]:
                 cell.fill = PatternFill(start_color='ECECEC', end_color='ECECEC', fill_type='solid')
                 cell.font = Font(italic=True, color='7B8088')
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
-            widths = [28, 22, 18, 12]
+            widths = [28, 22, 18, 12, 18]
             for idx, width in enumerate(widths, start=1):
                 ws.column_dimensions[get_column_letter(idx)].width = width
             ws.freeze_panes = 'A4'
@@ -2603,26 +2633,57 @@ class LogisticsWarehouseMixin:
                         if not warehouse_name or not warehouse_short_name:
                             raise ValueError('仓库名称/仓库简称无效，至少需形成可推导的完整名称')
 
+                        has_wayfair_col = 'Wayfair ID' in header_map
+                        new_wayfair = None
+                        if has_wayfair_col:
+                            new_wayfair = str(get_cell(row, 'Wayfair ID') or '').strip()[:128] or None
+
                         with conn.cursor() as cur:
                             cur.execute(
-                                "SELECT id, supplier_id, warehouse_short_name, region, destination_region_id FROM logistics_overseas_warehouses WHERE warehouse_name=%s LIMIT 1",
+                                "SELECT id, supplier_id, warehouse_short_name, region, destination_region_id, wayfair_id FROM logistics_overseas_warehouses WHERE warehouse_name=%s LIMIT 1",
                                 (warehouse_name,)
                             )
                             existing = cur.fetchone()
                             if existing:
-                                if int(existing.get('supplier_id') or 0) == int(supplier_id or 0) and str(existing.get('warehouse_short_name') or '').strip() == warehouse_short_name and int(existing.get('destination_region_id') or 0) == int(destination_region_id or 0):
+                                same_core = (
+                                    int(existing.get('supplier_id') or 0) == int(supplier_id or 0)
+                                    and str(existing.get('warehouse_short_name') or '').strip() == warehouse_short_name
+                                    and int(existing.get('destination_region_id') or 0) == int(destination_region_id or 0)
+                                )
+                                ex_wf = str(existing.get('wayfair_id') or '').strip()
+                                nw_cmp = str(new_wayfair or '').strip() if has_wayfair_col else ex_wf
+                                same_wf = ex_wf == nw_cmp
+                                if same_core and same_wf:
                                     unchanged += 1
-                                else:
+                                elif same_core and has_wayfair_col and not same_wf:
                                     cur.execute(
-                                        "UPDATE logistics_overseas_warehouses SET supplier_id=%s, warehouse_short_name=%s, region=%s, destination_region_id=%s WHERE id=%s",
-                                        (supplier_id, warehouse_short_name, region, destination_region_id, existing.get('id'))
+                                        "UPDATE logistics_overseas_warehouses SET wayfair_id=%s WHERE id=%s",
+                                        (new_wayfair, existing.get('id')),
                                     )
                                     updated += 1
+                                else:
+                                    if has_wayfair_col:
+                                        cur.execute(
+                                            "UPDATE logistics_overseas_warehouses SET supplier_id=%s, warehouse_short_name=%s, region=%s, destination_region_id=%s, wayfair_id=%s WHERE id=%s",
+                                            (supplier_id, warehouse_short_name, region, destination_region_id, new_wayfair, existing.get('id')),
+                                        )
+                                    else:
+                                        cur.execute(
+                                            "UPDATE logistics_overseas_warehouses SET supplier_id=%s, warehouse_short_name=%s, region=%s, destination_region_id=%s WHERE id=%s",
+                                            (supplier_id, warehouse_short_name, region, destination_region_id, existing.get('id')),
+                                        )
+                                    updated += 1
                             else:
-                                cur.execute(
-                                    "INSERT INTO logistics_overseas_warehouses (warehouse_name, supplier_id, warehouse_short_name, region, destination_region_id) VALUES (%s, %s, %s, %s, %s)",
-                                    (warehouse_name, supplier_id, warehouse_short_name, region, destination_region_id)
-                                )
+                                if has_wayfair_col:
+                                    cur.execute(
+                                        "INSERT INTO logistics_overseas_warehouses (warehouse_name, supplier_id, warehouse_short_name, region, destination_region_id, wayfair_id) VALUES (%s, %s, %s, %s, %s, %s)",
+                                        (warehouse_name, supplier_id, warehouse_short_name, region, destination_region_id, new_wayfair),
+                                    )
+                                else:
+                                    cur.execute(
+                                        "INSERT INTO logistics_overseas_warehouses (warehouse_name, supplier_id, warehouse_short_name, region, destination_region_id) VALUES (%s, %s, %s, %s, %s)",
+                                        (warehouse_name, supplier_id, warehouse_short_name, region, destination_region_id),
+                                    )
                                 created += 1
                     except Exception as row_error:
                         errors.append({'row': row_idx, 'error': str(row_error)})
