@@ -212,14 +212,30 @@
             padding: 0.18rem 0.4rem !important;
             font-size: 0.8rem !important;
         }
+        .preview-edit-input[readonly] {
+            background: rgba(247, 244, 239, 0.92);
+            cursor: default;
+        }
         .preview-edit-cell {
             min-width: 118px;
             width: 118px;
             box-sizing: border-box;
             overflow: hidden;
         }
-        #orderProductTable .pm-actions {
-            gap: 0.35rem;
+        #orderBatchCalcTable {
+            width: 100%;
+            font-size: 0.86rem;
+        }
+        .order-batch-calc-apply-hint {
+            display: none;
+            margin: 0.35rem 0 0.5rem;
+            padding: 0.45rem 0.55rem;
+            border-radius: 8px;
+            background: rgba(236, 226, 207, 0.55);
+            border: 1px solid rgba(207, 199, 189, 0.75);
+            color: #4f463b;
+            font-size: 0.88rem;
+            font-weight: 600;
         }
         .preview-savebar {
             position: fixed;
@@ -456,7 +472,6 @@
                             <button class="btn-secondary" onclick="resetSearch()">清空</button>
                                 </div>
                         <span class="pm-divider" aria-hidden="true"></span>
-                        <button class="btn-secondary" onclick="updateSelectedCartonQty()">更新装箱量</button>
                         <button class="btn-secondary" onclick="downloadOrderProductTemplate()">下载模板</button>
                         <button class="btn-secondary" onclick="triggerOrderProductUpload()">批量上传</button>
                         <input type="file" id="orderProductUploadInput" accept=".xlsx" style="display:none;">
@@ -467,7 +482,7 @@
             </div>
 
             <div>
-                <table class="pm-table" id="orderProductTable">
+                <table class="pm-table" id="orderProductTable" data-order-product-batch-extras="1" data-batch-bar-floating="1">
                     <thead>
                         <tr>
                             <th style="width:54px; text-align:center;"><input type="checkbox" id="orderSelectAll"></th>
@@ -492,6 +507,8 @@
                             <th style="width: 72px;">包裹长(in)</th>
                             <th style="width: 72px;">包裹宽(in)</th>
                             <th style="width: 72px;">包裹高(in)</th>
+                            <th style="width: 72px;">净重(lbs)</th>
+                            <th style="width: 72px;">毛重(lbs)</th>
                             <th>包裹归类</th>
                             <th>装箱量</th>
                             <th style="width:160px;">创建时间</th>
@@ -499,7 +516,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="26" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="28" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -680,10 +697,6 @@
                             <label for="modalFinishedHeight">成品高 (inch)</label>
                             <input type="number" step="0.01" id="modalFinishedHeight" class="optional-field">
                         </div>
-                        <div class="form-group">
-                            <label for="modalNetWeight">净重 (lbs)</label>
-                            <input type="number" step="0.01" id="modalNetWeight" class="optional-field">
-                        </div>
                     </div>
                 </div>
 
@@ -703,6 +716,10 @@
                             <input type="number" step="0.01" id="modalPackageHeight" class="optional-field">
                         </div>
                         <div class="form-group">
+                            <label for="modalNetWeight">净重 (lbs)</label>
+                            <input type="number" step="0.01" id="modalNetWeight" class="optional-field">
+                        </div>
+                        <div class="form-group">
                             <label for="modalGrossWeight">毛重 (lbs)</label>
                             <input type="number" step="0.01" id="modalGrossWeight" class="optional-field">
                         </div>
@@ -711,8 +728,8 @@
                             <input type="number" step="1" id="modalCartonQty" class="optional-field">
                         </div>
                         <div class="form-group">
-                            <label for="modalPackageClass">包裹大小归类（Fedx）</label>
-                            <input type="text" id="modalPackageClass" class="optional-field">
+                            <label for="modalPackageClass">包裹大小归类（FedEx/UPS 阈值，自动）</label>
+                            <input type="text" id="modalPackageClass" class="optional-field" readonly title="随包裹三边与毛重自动计算，与列表批量归类规则一致">
                         </div>
                     </div>
                 </div>
@@ -894,6 +911,24 @@
         <button type="button" class="btn-primary" onclick="savePreviewEdits()">统一保存</button>
     </div>
 
+    <div class="pm-modal" id="orderBatchCalcModal">
+        <div class="pm-modal-content pm-modal-content--wide" style="max-width: 960px;">
+            <h3 id="orderBatchCalcTitle" style="margin-top:0;"></h3>
+            <p id="orderBatchCalcSummary" class="dialog-message" style="margin: 0.45rem 0 0.85rem;"></p>
+            <p id="orderBatchCalcApplyHint" class="order-batch-calc-apply-hint" aria-live="polite"></p>
+            <div class="pm-modal-scroll" style="max-height: 55vh;">
+                <table class="pm-table" id="orderBatchCalcTable">
+                    <thead id="orderBatchCalcThead"></thead>
+                    <tbody id="orderBatchCalcTbody"></tbody>
+                </table>
+            </div>
+            <div class="pm-modal-actions">
+                <button type="button" class="btn-secondary" id="orderBatchCalcCancelBtn" onclick="closeOrderBatchCalcModal()">取消</button>
+                <button type="button" class="btn-primary" id="orderBatchCalcConfirmBtn">确认提交</button>
+            </div>
+        </div>
+    </div>
+
     <div id="uploadProgress" class="upload-progress" aria-live="polite">
         <div id="uploadProgressText" class="upload-progress-title">准备上传...</div>
         <div class="upload-progress-bar"><span id="uploadProgressFill"></span></div>
@@ -996,6 +1031,8 @@
         let uploadDialogErrorRows = [];
         let toastTimer = null;
         let selectedOrderProductIds = new Set();
+        let orderBatchCalcState = { kind: '', endpoint: '', ids: [] };
+        let orderBatchCalcApplyAbort = null;
         let orderProductItemsCache = [];
         let orderMainImageItems = [];
         let orderMainImageTypeOptions = [];
@@ -1994,7 +2031,6 @@
                     setInputValue('modalGrossWeight', item.gross_weight_lbs ?? '');
                     setInputValue('modalCost', item.cost_usd ?? '');
                     setInputValue('modalCartonQty', item.carton_qty ?? '');
-                    setInputValue('modalPackageClass', item.package_size_class || '');
                     setInputValue('modalLastMile', item.last_mile_avg_freight_usd ?? '');
                     setPickerSelected('filling', item.filling_material_ids || []);
                     setPickerSelected('frame', item.frame_material_ids || []);
@@ -2008,6 +2044,7 @@
                     setInputValue('modalSku', '');
                     skuManuallyEdited = false;
                     autoCalcCartonQtyFromPackage();
+                    syncModalPackageClassFromInputs();
                     closeCopyModal();
                     showTimeoutToast('已复制产品信息，请填写新的下单SKU');
                 })
@@ -2046,7 +2083,6 @@
             setInputValue('modalGrossWeight', '');
             setInputValue('modalCost', '');
             setInputValue('modalCartonQty', '');
-            setInputValue('modalPackageClass', '');
             setInputValue('modalLastMile', '');
             setInputValue('modalFactoryWip', '');
             setPickerSelected('filling', []);
@@ -2064,6 +2100,7 @@
             document.getElementById('pm-modal').classList.add('active');
             document.getElementById('modalSku').focus();
             autoCalcCartonQtyFromPackage();
+            syncModalPackageClassFromInputs();
             // 初始化选填项样式
             setTimeout(initOptionalFieldListeners, 50);
         }
@@ -2115,7 +2152,6 @@
             setInputValue('modalGrossWeight', item.gross_weight_lbs ?? '');
             setInputValue('modalCost', item.cost_usd ?? '');
             setInputValue('modalCartonQty', item.carton_qty ?? '');
-            setInputValue('modalPackageClass', item.package_size_class || '');
             setInputValue('modalLastMile', item.last_mile_avg_freight_usd ?? '');
             setPickerSelected('filling', item.filling_material_ids || []);
             setPickerSelected('frame', item.frame_material_ids || []);
@@ -2130,6 +2166,7 @@
             document.getElementById('pm-modal').classList.add('active');
             document.getElementById('modalSku').focus();
             autoCalcCartonQtyFromPackage();
+            syncModalPackageClassFromInputs();
             // 初始化选填项样式
             setTimeout(initOptionalFieldListeners, 50);
         }
@@ -2224,6 +2261,66 @@
             return Number.isFinite(num) ? num : null;
         }
 
+        function orderProductCeilingPositiveInt(value) {
+            const v = parseNumber(value);
+            if (v === null || v <= 0) return null;
+            return Math.ceil(v - 1e-9);
+        }
+
+        function orderProductSortedCeiledDims(lengthIn, widthIn, heightIn) {
+            const a = orderProductCeilingPositiveInt(lengthIn);
+            const b = orderProductCeilingPositiveInt(widthIn);
+            const c = orderProductCeilingPositiveInt(heightIn);
+            if (a === null || b === null || c === null) return null;
+            const arr = [a, b, c].sort((x, y) => x - y);
+            return { S: arr[0], M: arr[1], L: arr[2] };
+        }
+
+        /** 与后端 _order_product_classify_fedex_package 一致（三边与毛重均向上取整） */
+        function classifyOrderProductPackage(lengthIn, widthIn, heightIn, grossLbs) {
+            const dims = orderProductSortedCeiledDims(lengthIn, widthIn, heightIn);
+            const wInt = orderProductCeilingPositiveInt(grossLbs);
+            if (!dims || wInt === null) return null;
+            const S = dims.S;
+            const M = dims.M;
+            const L = dims.L;
+            const G = (S + M) * 2 + L;
+            const V = S * M * L;
+            const W = wInt;
+            if (W > 150 || L > 108 || G > 165) return 'LTL';
+            if (L > 96 || G > 130 || V > 17280 || W > 110) return 'Oversize';
+            if (V > 10368 || L > 48 || M > 30) return 'AHS-D';
+            if (W >= 50) return 'AHS';
+            return '小件';
+        }
+
+        function syncModalPackageClassFromInputs() {
+            const lenEl = document.getElementById('modalPackageLength');
+            const widEl = document.getElementById('modalPackageWidth');
+            const heiEl = document.getElementById('modalPackageHeight');
+            const gwEl = document.getElementById('modalGrossWeight');
+            const outEl = document.getElementById('modalPackageClass');
+            if (!lenEl || !widEl || !heiEl || !gwEl || !outEl) return;
+            const cls = classifyOrderProductPackage(lenEl.value, widEl.value, heiEl.value, gwEl.value);
+            outEl.value = cls === null ? '' : String(cls);
+        }
+
+        function syncPreviewPackageClassFromDims(itemId) {
+            const item = orderProductItemsCache.find(x => String(x.id) === String(itemId));
+            if (!item) return;
+            const l = getPreviewEffectiveValue(item, 'package_length_in');
+            const w = getPreviewEffectiveValue(item, 'package_width_in');
+            const h = getPreviewEffectiveValue(item, 'package_height_in');
+            const g = getPreviewEffectiveValue(item, 'gross_weight_lbs');
+            const cls = classifyOrderProductPackage(l, w, h, g);
+            const text = cls === null ? '' : String(cls);
+            const el = document.querySelector(
+                `.preview-edit-field[data-id="${String(itemId)}"][data-field="package_size_class"]`
+            );
+            if (el) el.value = text;
+            updatePreviewDraft(itemId, 'package_size_class', text);
+        }
+
         function renderReadonlyYesNoSwitch(value) {
             const isYes = Number(value) === 1;
             return `
@@ -2309,6 +2406,7 @@
             const count = countPreviewEditedRows();
             text.textContent = `已修改 ${count} 条预览数据`;
             bar.classList.toggle('active', count > 0);
+            syncOrderBatchFloatBar();
         }
 
         function updatePreviewDraft(itemId, field, rawValue) {
@@ -2324,9 +2422,11 @@
                     finished_length_in: item.finished_length_in,
                     finished_width_in: item.finished_width_in,
                     finished_height_in: item.finished_height_in,
+                    net_weight_lbs: item.net_weight_lbs,
                     package_length_in: item.package_length_in,
                     package_width_in: item.package_width_in,
                     package_height_in: item.package_height_in,
+                    gross_weight_lbs: item.gross_weight_lbs,
                     package_size_class: item.package_size_class || '',
                     carton_qty: item.carton_qty,
                     last_mile_avg_freight_usd: item.last_mile_avg_freight_usd
@@ -2344,9 +2444,11 @@
                 && normalizePreviewFieldValue('finished_length_in', draft.finished_length_in) === normalizePreviewFieldValue('finished_length_in', item.finished_length_in)
                 && normalizePreviewFieldValue('finished_width_in', draft.finished_width_in) === normalizePreviewFieldValue('finished_width_in', item.finished_width_in)
                 && normalizePreviewFieldValue('finished_height_in', draft.finished_height_in) === normalizePreviewFieldValue('finished_height_in', item.finished_height_in)
+                && normalizePreviewFieldValue('net_weight_lbs', draft.net_weight_lbs) === normalizePreviewFieldValue('net_weight_lbs', item.net_weight_lbs)
                 && normalizePreviewFieldValue('package_length_in', draft.package_length_in) === normalizePreviewFieldValue('package_length_in', item.package_length_in)
                 && normalizePreviewFieldValue('package_width_in', draft.package_width_in) === normalizePreviewFieldValue('package_width_in', item.package_width_in)
                 && normalizePreviewFieldValue('package_height_in', draft.package_height_in) === normalizePreviewFieldValue('package_height_in', item.package_height_in)
+                && normalizePreviewFieldValue('gross_weight_lbs', draft.gross_weight_lbs) === normalizePreviewFieldValue('gross_weight_lbs', item.gross_weight_lbs)
                 && normalizePreviewFieldValue('package_size_class', draft.package_size_class) === normalizePreviewFieldValue('package_size_class', item.package_size_class)
                 && normalizePreviewFieldValue('carton_qty', draft.carton_qty) === normalizePreviewFieldValue('carton_qty', item.carton_qty)
                 && normalizePreviewFieldValue('last_mile_avg_freight_usd', draft.last_mile_avg_freight_usd) === normalizePreviewFieldValue('last_mile_avg_freight_usd', item.last_mile_avg_freight_usd);
@@ -2358,17 +2460,19 @@
 
         function bindPreviewEditEvents() {
             document.querySelectorAll('.preview-edit-field').forEach(el => {
+                if (el.readOnly) return;
                 const handler = function() {
                     const itemId = this.getAttribute('data-id');
                     const field = this.getAttribute('data-field');
                     updatePreviewDraft(itemId, field, this.value);
-                    if (field === 'package_length_in' || field === 'package_width_in' || field === 'package_height_in') {
+                    if (field === 'package_length_in' || field === 'package_width_in' || field === 'package_height_in' || field === 'gross_weight_lbs') {
                         syncPreviewCartonQtyFromPackage(itemId);
+                        syncPreviewPackageClassFromDims(itemId);
                     }
                 };
                 el.addEventListener('change', handler);
                 const field = String(el.getAttribute('data-field') || '');
-                if (field === 'package_length_in' || field === 'package_width_in' || field === 'package_height_in') {
+                if (field === 'package_length_in' || field === 'package_width_in' || field === 'package_height_in' || field === 'gross_weight_lbs') {
                     el.addEventListener('input', handler);
                 }
             });
@@ -2413,9 +2517,11 @@
                 finished_length_in: normalizePreviewFieldValue('finished_length_in', previewEditDraft[id].finished_length_in),
                 finished_width_in: normalizePreviewFieldValue('finished_width_in', previewEditDraft[id].finished_width_in),
                 finished_height_in: normalizePreviewFieldValue('finished_height_in', previewEditDraft[id].finished_height_in),
+                net_weight_lbs: normalizePreviewFieldValue('net_weight_lbs', previewEditDraft[id].net_weight_lbs),
                 package_length_in: normalizePreviewFieldValue('package_length_in', previewEditDraft[id].package_length_in),
                 package_width_in: normalizePreviewFieldValue('package_width_in', previewEditDraft[id].package_width_in),
                 package_height_in: normalizePreviewFieldValue('package_height_in', previewEditDraft[id].package_height_in),
+                gross_weight_lbs: normalizePreviewFieldValue('gross_weight_lbs', previewEditDraft[id].gross_weight_lbs),
                 package_size_class: normalizePreviewFieldValue('package_size_class', previewEditDraft[id].package_size_class),
                 carton_qty: normalizePreviewFieldValue('carton_qty', previewEditDraft[id].carton_qty),
                 last_mile_avg_freight_usd: normalizePreviewFieldValue('last_mile_avg_freight_usd', previewEditDraft[id].last_mile_avg_freight_usd)
@@ -2446,9 +2552,11 @@
                     item.finished_length_in = update.finished_length_in;
                     item.finished_width_in = update.finished_width_in;
                     item.finished_height_in = update.finished_height_in;
+                    item.net_weight_lbs = update.net_weight_lbs;
                     item.package_length_in = update.package_length_in;
                     item.package_width_in = update.package_width_in;
                     item.package_height_in = update.package_height_in;
+                    item.gross_weight_lbs = update.gross_weight_lbs;
                     item.package_size_class = update.package_size_class;
                     item.carton_qty = update.carton_qty;
                     item.last_mile_avg_freight_usd = update.last_mile_avg_freight_usd;
@@ -2489,6 +2597,11 @@
                 document.getElementById('modalPackageHeight').value
             );
             setInputValue('modalCartonQty', qty === null ? '' : String(qty));
+        }
+
+        function onModalPackageDimsOrGrossChanged() {
+            autoCalcCartonQtyFromPackage();
+            syncModalPackageClassFromInputs();
         }
 
         function getSelectedSkuFamilyText() {
@@ -2587,13 +2700,13 @@
             setInputValue('modalGrossWeight', source.gross_weight_lbs ?? '');
             setInputValue('modalCost', source.cost_usd ?? '');
             setInputValue('modalCartonQty', source.carton_qty ?? '');
-            setInputValue('modalPackageClass', source.package_size_class || '');
             setInputValue('modalLastMile', source.last_mile_avg_freight_usd ?? '');
             setPickerSelected('filling', source.filling_material_ids || []);
             setPickerSelected('frame', source.frame_material_ids || []);
             setPickerSelected('feature', source.feature_ids || []);
             setPickerSelected('cert', source.certification_ids || []);
             autoCalcCartonQtyFromPackage();
+            syncModalPackageClassFromInputs();
             updateSkuFromInputs();
         }
 
@@ -3620,9 +3733,10 @@
             });
             selectedOrderProductIds = new Set(Array.from(selectedOrderProductIds).filter(id => availableIdSet.has(String(id))));
             if (safeItems.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="26" style="text-align:center;">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="28" style="text-align:center;">暂无数据</td></tr>';
                 syncSelectAllCheckbox();
                 syncPreviewSaveBar();
+                syncOrderBatchFloatBar();
                 return;
             }
             tbody.innerHTML = safeItems.map(item => {
@@ -3637,6 +3751,8 @@
                         const packageLenText = getPreviewEffectiveValue(item, 'package_length_in');
                         const packageWidText = getPreviewEffectiveValue(item, 'package_width_in');
                         const packageHeiText = getPreviewEffectiveValue(item, 'package_height_in');
+                        const netWeightText = getPreviewEffectiveValue(item, 'net_weight_lbs');
+                        const grossWeightText = getPreviewEffectiveValue(item, 'gross_weight_lbs');
                         const packageClassText = getPreviewEffectiveValue(item, 'package_size_class') || '';
                         const cartonQtyText = getPreviewEffectiveValue(item, 'carton_qty');
                         const lastMileText = getPreviewEffectiveValue(item, 'last_mile_avg_freight_usd');
@@ -3672,7 +3788,9 @@
                                 <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="package_length_in" type="number" step="0.01" min="0" value="${packageLenText ?? ''}"></td>
                                 <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="package_width_in" type="number" step="0.01" min="0" value="${packageWidText ?? ''}"></td>
                                 <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="package_height_in" type="number" step="0.01" min="0" value="${packageHeiText ?? ''}"></td>
-                                <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="package_size_class" type="text" value="${String(packageClassText || '').replace(/"/g, '&quot;')}"></td>
+                                <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="net_weight_lbs" type="number" step="0.01" min="0" value="${netWeightText ?? ''}"></td>
+                                <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="gross_weight_lbs" type="number" step="0.01" min="0" value="${grossWeightText ?? ''}"></td>
+                                <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="package_size_class" type="text" readonly title="根据包裹三边与毛重自动计算" value="${String(packageClassText || '').replace(/"/g, '&quot;')}"></td>
                                 <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="carton_qty" type="number" step="1" min="0" value="${cartonQtyText ?? ''}"></td>
                                 <td>${dateText}</td>
                                 <td>
@@ -3689,6 +3807,7 @@
             bindPreviewEditEvents();
             syncSelectAllCheckbox();
             syncPreviewSaveBar();
+            syncOrderBatchFloatBar();
         }
 
         function loadOrderProductList() {
@@ -3699,7 +3818,7 @@
                 .then(data => {
                     const tbody = document.querySelector('#orderProductTable tbody');
                     if (data.status !== 'success') {
-                        tbody.innerHTML = `<tr><td colspan="26" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="28" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                         return;
                     }
                     orderProductItemsCache = data.items || [];
@@ -3710,7 +3829,7 @@
                 })
                 .catch(err => {
                     const tbody = document.querySelector('#orderProductTable tbody');
-                    tbody.innerHTML = `<tr><td colspan="26" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="28" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
                 });
         }
 
@@ -3744,6 +3863,7 @@
                         selectedOrderProductIds.delete(id);
                     }
                     syncSelectAllCheckbox();
+                    syncOrderBatchFloatBar();
                 });
             });
         }
@@ -3771,39 +3891,228 @@
                 else selectedOrderProductIds.delete(id);
             });
             syncSelectAllCheckbox();
+            syncOrderBatchFloatBar();
         }
 
-        function updateSelectedCartonQty() {
+        function findOrderProductManagedBatchBar() {
+            const floated = document.querySelector('.pm-batch-float-bar[data-pm-table-id="orderProductTable"]');
+            if (floated) return floated;
+            const tbl = document.getElementById('orderProductTable');
+            if (!tbl) return null;
+            const wrap = tbl.closest('.pm-table-wrap');
+            const stage = wrap && wrap.parentElement;
+            const toolbar = stage ? stage.querySelector(':scope > .pm-table-toolbar') : null;
+            return toolbar ? toolbar.querySelector('.pm-managed-batch-host .pm-batch-float-bar') : null;
+        }
+
+        function syncOrderBatchFloatBar() {
+            const bindExtras = () => {
+                const bar = findOrderProductManagedBatchBar();
+                if (!bar) return false;
+                if (!bar.dataset.orderExtrasBound) {
+                    bar.dataset.orderExtrasBound = '1';
+                    const sep = document.createElement('span');
+                    sep.className = 'pm-order-batch-sep';
+                    sep.setAttribute('aria-hidden', 'true');
+                    const b1 = document.createElement('button');
+                    b1.type = 'button';
+                    b1.className = 'btn-secondary btn-small';
+                    b1.textContent = '更新装箱量';
+                    b1.addEventListener('click', () => { openOrderBatchCartonPreview(); });
+                    const b2 = document.createElement('button');
+                    b2.type = 'button';
+                    b2.className = 'btn-secondary btn-small';
+                    b2.textContent = '批量更新包裹归类';
+                    b2.addEventListener('click', () => { openOrderBatchPackageClassPreview(); });
+                    bar.appendChild(sep);
+                    bar.appendChild(b1);
+                    bar.appendChild(b2);
+                }
+                return true;
+            };
+            if (!bindExtras()) {
+                window.requestAnimationFrame(() => {
+                    if (!bindExtras()) window.setTimeout(bindExtras, 80);
+                });
+            }
+        }
+
+        document.addEventListener('sitjoy:order-product-batch-toolbar-sync', () => syncOrderBatchFloatBar());
+
+        function closeOrderBatchCalcModal() {
+            if (orderBatchCalcApplyAbort) {
+                try { orderBatchCalcApplyAbort.abort(); } catch (_e) {}
+                orderBatchCalcApplyAbort = null;
+            }
+            const m = document.getElementById('orderBatchCalcModal');
+            if (m) m.classList.remove('active');
+            orderBatchCalcState = { kind: '', endpoint: '', ids: [] };
+            const btn = document.getElementById('orderBatchCalcConfirmBtn');
+            if (btn) {
+                btn.onclick = null;
+                btn.disabled = false;
+                btn.textContent = '确认提交';
+            }
+            const cancelBtn = document.getElementById('orderBatchCalcCancelBtn');
+            if (cancelBtn) cancelBtn.disabled = false;
+            const hint = document.getElementById('orderBatchCalcApplyHint');
+            if (hint) {
+                hint.textContent = '';
+                hint.style.display = 'none';
+            }
+        }
+
+        function openOrderBatchCalcModal(title, summaryHtml, theadHtml, tbodyHtml, canSubmit) {
+            if (orderBatchCalcApplyAbort) {
+                try { orderBatchCalcApplyAbort.abort(); } catch (_e) {}
+                orderBatchCalcApplyAbort = null;
+            }
+            const m = document.getElementById('orderBatchCalcModal');
+            const h = document.getElementById('orderBatchCalcTitle');
+            const s = document.getElementById('orderBatchCalcSummary');
+            const th = document.getElementById('orderBatchCalcThead');
+            const tb = document.getElementById('orderBatchCalcTbody');
+            const btn = document.getElementById('orderBatchCalcConfirmBtn');
+            const cancelBtn = document.getElementById('orderBatchCalcCancelBtn');
+            const hint = document.getElementById('orderBatchCalcApplyHint');
+            if (!m || !h || !s || !th || !tb || !btn) return;
+            if (hint) {
+                hint.textContent = '';
+                hint.style.display = 'none';
+            }
+            if (cancelBtn) cancelBtn.disabled = false;
+            h.textContent = title;
+            s.innerHTML = summaryHtml;
+            th.innerHTML = theadHtml;
+            tb.innerHTML = tbodyHtml;
+            btn.textContent = '确认提交';
+            btn.disabled = !canSubmit;
+            btn.onclick = () => { if (!btn.disabled) submitOrderBatchCalcApply(); };
+            m.classList.add('active');
+        }
+
+        function getSelectedOrderProductIdsOrWarn() {
             const ids = Array.from(selectedOrderProductIds);
             if (!ids.length) {
-                if (window.showAppToast) {
-                    window.showAppToast('请先勾选需要更新装箱量的SKU', true, 2600);
-                } else {
-                    showUploadDialog({ title: '提示', message: '请先勾选需要更新装箱量的SKU' });
-                }
-                return;
+                if (window.showAppToast) window.showAppToast('请先勾选要处理的 SKU', true, 2600);
+                else showUploadDialog({ title: '提示', message: '请先勾选要处理的 SKU' });
+                return null;
             }
-            const doUpdate = () => {
-                fetch('/api/order-product-carton-calc', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ids })
-                })
+            return ids;
+        }
+
+        function openOrderBatchCartonPreview() {
+            const ids = getSelectedOrderProductIdsOrWarn();
+            if (!ids) return;
+            fetch('/api/order-product-carton-calc', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids, mode: 'preview' }),
+                credentials: 'include'
+            })
                 .then(r => r.json())
                 .then(data => {
-                    if (data.status !== 'success') {
-                        if (window.showAppToast) window.showAppToast(data.message || '更新失败', true, 3200);
-                        else showUploadDialog({ title: '更新失败', message: data.message || '更新失败' });
+                    if (!data || data.status !== 'success') {
+                        if (window.showAppToast) window.showAppToast((data && data.message) || '预览失败', true, 3200);
+                        else showUploadDialog({ title: '预览失败', message: (data && data.message) || '预览失败' });
+                        return;
+                    }
+                    orderBatchCalcState = { kind: 'carton', endpoint: '/api/order-product-carton-calc', ids };
+                    const sel = Number(data.selected_count || 0);
+                    const ok = Number(data.updatable_count || 0);
+                    const miss = Number(data.missing_info_count || 0);
+                    const summary = `本次勾选 <strong>${sel}</strong> 条；有数据可更新 <strong>${ok}</strong> 条；无完整包裹尺寸（长宽高均为正数）<strong>${miss}</strong> 条。装箱量按 40HQ=69m³ 体积折算。`;
+                    const thead = '<tr><th>SKU</th><th>包裹长(in)</th><th>包裹宽(in)</th><th>包裹高(in)</th><th>当前装箱量</th><th>新装箱量</th></tr>';
+                    const rows = (data.rows || []).map(row => {
+                        const sku = escapeHtml(row.sku || '');
+                        return `<tr><td>${sku}</td><td>${escapeHtml(String(row.package_length_in ?? ''))}</td><td>${escapeHtml(String(row.package_width_in ?? ''))}</td><td>${escapeHtml(String(row.package_height_in ?? ''))}</td><td>${escapeHtml(String(row.carton_qty_old ?? ''))}</td><td>${escapeHtml(String(row.carton_qty_new ?? ''))}</td></tr>`;
+                    }).join('');
+                    openOrderBatchCalcModal('批量更新装箱量', summary, thead, rows || '<tr><td colspan="6" style="text-align:center;">无待更新行</td></tr>', ok > 0);
+                })
+                .catch(err => {
+                    if (window.showAppToast) window.showAppToast('请求失败: ' + err, true, 3200);
+                    else showUploadDialog({ title: '请求失败', message: '请求失败: ' + err });
+                });
+        }
+
+        function openOrderBatchPackageClassPreview() {
+            const ids = getSelectedOrderProductIdsOrWarn();
+            if (!ids) return;
+            fetch('/api/order-product-package-class-batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids, mode: 'preview' }),
+                credentials: 'include'
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (!data || data.status !== 'success') {
+                        if (window.showAppToast) window.showAppToast((data && data.message) || '预览失败', true, 3200);
+                        else showUploadDialog({ title: '预览失败', message: (data && data.message) || '预览失败' });
+                        return;
+                    }
+                    orderBatchCalcState = { kind: 'package', endpoint: '/api/order-product-package-class-batch', ids };
+                    const sel = Number(data.selected_count || 0);
+                    const ok = Number(data.updatable_count || 0);
+                    const miss = Number(data.missing_info_count || 0);
+                    const summary = `本次勾选 <strong>${sel}</strong> 条；有数据可更新 <strong>${ok}</strong> 条；无包裹尺寸或毛重（无法向上取整计算）<strong>${miss}</strong> 条。归类规则：三边与毛重均向上取整后排序为 S≤M≤L（L 最长）；长+围长 G=L+2(S+M)；体积 V=S×M×L（立方英寸）。顺序：G>165 或 L>108 或 W>150 → LTL；否则 L>96 或 G>130 或 V>17280 或 W>110 → Oversize；否则 V>10368 或 L>48 或 M>30 → AHS-D；否则 W≥50 → AHS；否则小件。实际计费以承运商价表为准。`;
+                    const thead = '<tr><th>SKU</th><th>最长边(in)</th><th>次长边(in)</th><th>最短边(in)</th><th>毛重(lb↑)</th><th>当前归类</th><th>新归类</th></tr>';
+                    const rows = (data.rows || []).map(row => {
+                        const sku = escapeHtml(row.sku || '');
+                        const o = escapeHtml(String(row.package_class_old || '—'));
+                        const n = escapeHtml(String(row.package_class_new || ''));
+                        return `<tr><td>${sku}</td><td>${escapeHtml(String(row.edge_long_in ?? ''))}</td><td>${escapeHtml(String(row.edge_mid_in ?? ''))}</td><td>${escapeHtml(String(row.edge_short_in ?? ''))}</td><td>${escapeHtml(String(row.gross_weight_lb_ceiled ?? ''))}</td><td>${o}</td><td>${n}</td></tr>`;
+                    }).join('');
+                    openOrderBatchCalcModal('批量更新包裹归类', summary, thead, rows || '<tr><td colspan="7" style="text-align:center;">无待更新行</td></tr>', ok > 0);
+                })
+                .catch(err => {
+                    if (window.showAppToast) window.showAppToast('请求失败: ' + err, true, 3200);
+                    else showUploadDialog({ title: '请求失败', message: '请求失败: ' + err });
+                });
+        }
+
+        function submitOrderBatchCalcApply() {
+            const btn = document.getElementById('orderBatchCalcConfirmBtn');
+            const cancelBtn = document.getElementById('orderBatchCalcCancelBtn');
+            const hint = document.getElementById('orderBatchCalcApplyHint');
+            const ids = orderBatchCalcState.ids && orderBatchCalcState.ids.length ? orderBatchCalcState.ids : null;
+            const ep = orderBatchCalcState.endpoint;
+            if (!ids || !ep) return;
+            if (orderBatchCalcApplyAbort) return;
+            orderBatchCalcApplyAbort = new AbortController();
+            const signal = orderBatchCalcApplyAbort.signal;
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '提交中…';
+            }
+            if (cancelBtn) cancelBtn.disabled = true;
+            if (hint) {
+                hint.textContent = '正在提交，请稍候…（数据量较大时可能需要数十秒）';
+                hint.style.display = 'block';
+            }
+            fetch(ep, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids, mode: 'apply' }),
+                credentials: 'include',
+                signal
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (!data || data.status !== 'success') {
+                        if (window.showAppToast) window.showAppToast((data && data.message) || '提交失败', true, 3200);
+                        else showUploadDialog({ title: '提交失败', message: (data && data.message) || '提交失败' });
                         return;
                     }
                     const errCount = Array.isArray(data.errors) ? data.errors.length : 0;
+                    const title = orderBatchCalcState.kind === 'package' ? '包裹归类更新完成' : '装箱量更新完成';
                     if (window.showAppResultPanel) {
                         const details = (data.errors || []).map(err => {
                             const rowText = (err && err.sku) ? String(err.sku) : (err && err.id ? `ID ${err.id}` : '未知记录');
                             return `${rowText}：${err && err.error ? err.error : '更新异常'}`;
                         });
                         window.showAppResultPanel({
-                            title: '装箱量更新完成',
+                            title,
                             summary: `已更新 ${data.updated || 0} 条，跳过 ${data.skipped || 0} 条${errCount ? `，异常 ${errCount} 条` : ''}`,
                             details,
                             isError: errCount > 0
@@ -3812,35 +4121,31 @@
                         window.showAppToast(`已更新 ${data.updated || 0} 条，跳过 ${data.skipped || 0} 条${errCount ? `，异常 ${errCount} 条` : ''}`, errCount > 0, 3600);
                     } else {
                         showUploadDialog({
-                            title: '更新完成',
+                            title,
                             message: `已更新 ${data.updated || 0} 条，跳过 ${data.skipped || 0} 条${errCount ? `，异常 ${errCount} 条` : ''}`,
                             errors: data.errors || []
                         });
                     }
+                    closeOrderBatchCalcModal();
                     loadOrderProductList();
                 })
                 .catch(err => {
+                    if (err && err.name === 'AbortError') return;
                     if (window.showAppToast) window.showAppToast('请求失败: ' + err, true, 3200);
                     else showUploadDialog({ title: '请求失败', message: '请求失败: ' + err });
+                })
+                .finally(() => {
+                    orderBatchCalcApplyAbort = null;
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = '确认提交';
+                    }
+                    if (cancelBtn) cancelBtn.disabled = false;
+                    if (hint) {
+                        hint.textContent = '';
+                        hint.style.display = 'none';
+                    }
                 });
-            };
-
-            if (window.showAppConfirmAsync) {
-                window.showAppConfirmAsync({
-                    title: '确认更新',
-                    message: `将按 40HQ=69m³ 自动计算并更新已勾选 ${ids.length} 条SKU的装箱量，确认继续？`,
-                    confirmText: '确认更新'
-                }).then(ok => { if (ok) doUpdate(); });
-                return;
-            }
-
-            showUploadDialog({
-                title: '确认更新',
-                message: `将按 40HQ=69m³ 自动计算并更新已勾选 ${ids.length} 条SKU的装箱量，确认继续？`,
-                confirmText: '确认更新',
-                cancelText: '取消',
-                onConfirm: doUpdate
-            });
         }
 
         function downloadOrderProductTemplate() {
@@ -4366,6 +4671,7 @@
         }
 
         window.addEventListener('load', loadOrderProductList);
+        window.addEventListener('load', syncOrderBatchFloatBar);
         window.addEventListener('load', loadSkuFamilies);
         window.addEventListener('load', loadFabrics);
         window.addEventListener('load', loadSourceSkuOptions);
@@ -4387,6 +4693,8 @@
         window.setTimeout(function() {
             var el = document.getElementById('pm-modal');
             if (el && typeof window.bindPmModalBackdropClose === 'function') window.bindPmModalBackdropClose(el, closeModal);
+            var batchEl = document.getElementById('orderBatchCalcModal');
+            if (batchEl && typeof window.bindPmModalBackdropClose === 'function') window.bindPmModalBackdropClose(batchEl, closeOrderBatchCalcModal);
         }, 0);
         document.getElementById('searchInput').addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
@@ -4407,9 +4715,14 @@
         });
         document.getElementById('modalVersion').addEventListener('input', updateSkuFromInputs);
         document.getElementById('modalSpecQtyShort').addEventListener('input', updateSkuFromInputs);
-        document.getElementById('modalPackageLength').addEventListener('input', autoCalcCartonQtyFromPackage);
-        document.getElementById('modalPackageWidth').addEventListener('input', autoCalcCartonQtyFromPackage);
-        document.getElementById('modalPackageHeight').addEventListener('input', autoCalcCartonQtyFromPackage);
+        document.getElementById('modalPackageLength').addEventListener('input', onModalPackageDimsOrGrossChanged);
+        document.getElementById('modalPackageWidth').addEventListener('input', onModalPackageDimsOrGrossChanged);
+        document.getElementById('modalPackageHeight').addEventListener('input', onModalPackageDimsOrGrossChanged);
+        document.getElementById('modalGrossWeight').addEventListener('input', onModalPackageDimsOrGrossChanged);
+        document.getElementById('modalPackageLength').addEventListener('change', onModalPackageDimsOrGrossChanged);
+        document.getElementById('modalPackageWidth').addEventListener('change', onModalPackageDimsOrGrossChanged);
+        document.getElementById('modalPackageHeight').addEventListener('change', onModalPackageDimsOrGrossChanged);
+        document.getElementById('modalGrossWeight').addEventListener('change', onModalPackageDimsOrGrossChanged);
         document.getElementById('modalFabricTrigger').addEventListener('click', function() {
             toggleSelectPanel('fabric');
         });

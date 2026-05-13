@@ -317,7 +317,7 @@
         let maxHeight = 0;
         const candidates = [
             '.app-upload-progress-panel.show',
-            '.pm-batch-float-bar.active',
+            '.pm-batch-float-bar.active:not(.pm-batch-float-bar--embedded)',
             '.preview-savebar.active',
         ];
         candidates.forEach(selector => {
@@ -3721,6 +3721,21 @@
         }
     }
 
+    function ensureManagedBatchBarHost(state){
+        if(!state || !state.toolbar) return null;
+        let host = state.toolbar.querySelector('.pm-managed-batch-host');
+        if(host) return host;
+        host = document.createElement('div');
+        host.className = 'pm-managed-batch-host';
+        const right = state.toolbar.querySelector('.pm-table-toolbar-right');
+        if(right && right.parentNode === state.toolbar){
+            state.toolbar.insertBefore(host, right);
+        } else {
+            state.toolbar.appendChild(host);
+        }
+        return host;
+    }
+
     function ensureManagedBatchBar(state){
         if(!state || !state.wrap) return null;
         if(state.batchBar && document.body.contains(state.batchBar)) return state.batchBar;
@@ -3732,7 +3747,18 @@
             '<button type="button" class="btn-secondary" data-action="download">批量下载数据</button>',
             '<button type="button" class="btn-danger" data-action="delete">批量删除</button>'
         ].join('');
-        document.body.appendChild(bar);
+        const preferFloating = state.table && String(state.table.dataset.batchBarFloating || '').trim() === '1';
+        const host = (!preferFloating && state.toolbar) ? ensureManagedBatchBarHost(state) : null;
+        if(host){
+            host.appendChild(bar);
+            bar.classList.add('pm-batch-float-bar--embedded');
+        } else {
+            document.body.appendChild(bar);
+            const tid = state.table && state.table.id ? String(state.table.id).trim() : '';
+            if(tid){
+                bar.dataset.pmTableId = tid;
+            }
+        }
 
         const downloadBtn = bar.querySelector('[data-action="download"]');
         const deleteBtn = bar.querySelector('[data-action="delete"]');
@@ -3773,6 +3799,7 @@
 
     function positionManagedBatchBar(state){
         if(!state || !state.batchBar) return;
+        if(state.batchBar.classList.contains('pm-batch-float-bar--embedded')) return;
         const baseBottom = 18;
         const extraBottom = getPreviewSaveBarOffset();
         state.batchBar.style.bottom = `${baseBottom + extraBottom}px`;
@@ -3807,6 +3834,12 @@
         }
         bar.classList.toggle('active', ids.length > 0);
         positionManagedBatchBar(state);
+        if(state.table && String(state.table.dataset.orderProductBatchExtras || '') === '1'){
+            try {
+                document.dispatchEvent(new CustomEvent('sitjoy:order-product-batch-toolbar-sync', { bubbles: true }));
+            } catch(_e){
+            }
+        }
     }
 
     function ensureManagedBatchHandlers(state){
@@ -4488,6 +4521,7 @@
             const isDateTimeText = input.classList && input.classList.contains('app-datetime-text-input');
             if(isDateTimeText){
                 input.classList.add('app-date-input');
+                input.classList.add('app-datetime-input');
                 input.addEventListener('input', () => {
                     maskDateTimeTextInput(input);
                     syncValueClass();
@@ -4756,6 +4790,11 @@
             '</div>'
         ].join('');
         document.body.appendChild(panel);
+        // Clicks inside the panel replace the day grid (innerHTML), which detaches the
+        // original target before the event bubbles to document. A document-level "outside"
+        // handler would then see a detached target and wrongly close the picker — stop
+        // propagation at the panel so in-panel clicks never reach document.
+        panel.addEventListener('click', (e) => { e.stopPropagation(); });
         const hourSel = panel.querySelector('.app-dt-hour');
         const minSel = panel.querySelector('.app-dt-minute');
         for(let i = 0; i < 24; i += 1){

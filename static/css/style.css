@@ -2055,6 +2055,46 @@ input.optional-date-input[type="text"]:focus {
     display: inline-flex;
 }
 
+.pm-managed-batch-host {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+    flex: 1 1 200px;
+    min-width: 0;
+    justify-content: flex-start;
+}
+
+.pm-table-toolbar .pm-batch-float-bar.pm-batch-float-bar--embedded {
+    position: static;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    transform: none;
+    z-index: auto;
+    min-width: 0;
+    max-width: 100%;
+    box-shadow: none;
+    border: 1px solid rgba(207, 199, 189, 0.85);
+    background: rgba(255, 252, 248, 0.98);
+    padding: 0.35rem 0.55rem;
+    margin: 0;
+}
+
+.pm-table-toolbar .pm-batch-float-bar--embedded .pm-batch-float-count {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.pm-order-batch-sep {
+    width: 1px;
+    height: 1.15rem;
+    align-self: center;
+    background: rgba(120, 105, 90, 0.28);
+    margin: 0 0.15rem;
+    flex-shrink: 0;
+}
+
 .pm-batch-float-count {
     flex: 1;
     font-size: 0.92rem;
@@ -2104,6 +2144,11 @@ input.optional-date-input[type="text"]:focus {
         border-radius: 12px;
         justify-content: space-between;
         flex-wrap: wrap;
+    }
+    .pm-table-toolbar .pm-batch-float-bar.pm-batch-float-bar--embedded {
+        left: auto;
+        right: auto;
+        bottom: auto;
     }
 }
 

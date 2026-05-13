@@ -2102,6 +2102,166 @@ class SalesManagementMixin:
             'days_in_month': mtd_ctx.get('days_in_month'),
         }
 
+    def _forecast_inventory_zero(self):
+        return {'overseas_qty': 0, 'transit_qty': 0, 'factory_stock_qty': 0, 'wip_qty': 0}
+
+    def _forecast_load_inventory_by_order_product(self, conn, order_product_ids):
+        """按 order_product_id 汇总：海外仓、在途、在库、在制（未完工）。"""
+        ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+        out = {i: self._forecast_inventory_zero() for i in ids}
+        if not ids:
+            return out
+        ph = ','.join(['%s'] * len(ids))
+        tpl = tuple(ids)
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT order_product_id, COALESCE(SUM(available_qty), 0) AS q
+                FROM logistics_overseas_inventory
+                WHERE order_product_id IN ({ph})
+                GROUP BY order_product_id
+                """,
+                tpl,
+            )
+            for rr in cur.fetchall() or []:
+                oid = self._parse_int(rr.get('order_product_id'))
+                if oid in out:
+                    out[oid]['overseas_qty'] = int(float(rr.get('q') or 0))
+
+            cur.execute(
+                f"""
+                SELECT order_product_id, COALESCE(SUM(GREATEST(0, shipped_qty - listed_qty)), 0) AS q
+                FROM logistics_in_transit_items
+                WHERE order_product_id IN ({ph})
+                GROUP BY order_product_id
+                """,
+                tpl,
+            )
+            for rr in cur.fetchall() or []:
+                oid = self._parse_int(rr.get('order_product_id'))
+                if oid in out:
+                    out[oid]['transit_qty'] = int(float(rr.get('q') or 0))
+
+            cur.execute(
+                f"""
+                SELECT order_product_id, COALESCE(SUM(quantity), 0) AS q
+                FROM factory_stock_inventory
+                WHERE order_product_id IN ({ph})
+                GROUP BY order_product_id
+                """,
+                tpl,
+            )
+            for rr in cur.fetchall() or []:
+                oid = self._parse_int(rr.get('order_product_id'))
+                if oid in out:
+                    out[oid]['factory_stock_qty'] = int(float(rr.get('q') or 0))
+
+            cur.execute(
+                f"""
+                SELECT order_product_id, COALESCE(SUM(quantity), 0) AS q
+                FROM factory_wip_inventory
+                WHERE order_product_id IN ({ph}) AND COALESCE(is_completed, 0) = 0
+                GROUP BY order_product_id
+                """,
+                tpl,
+            )
+            for rr in cur.fetchall() or []:
+                oid = self._parse_int(rr.get('order_product_id'))
+                if oid in out:
+                    out[oid]['wip_qty'] = int(float(rr.get('q') or 0))
+        return out
+
+    def _forecast_row_history_sales_avg_tail(self, row, history_months, tail=3):
+        """取 history_months 末尾最多 tail 个月的月均销量（用于动销月列）。"""
+        if not history_months:
+            return None
+        keys = list(history_months)[-tail:] if len(history_months) > tail else list(history_months)
+        if not keys:
+            return None
+        total = 0.0
+        for k in keys:
+            h = (row.get('history') or {}).get(k) or {}
+            total += float(h.get('sales_qty') or 0)
+        avg = total / float(len(keys))
+        return avg if avg > 1e-9 else None
+
+    def _forecast_attach_inventory_to_rows(self, conn, rows, forecast_mode, history_months):
+        if not rows:
+            return
+        inv_by_op = {}
+        variant_to_ops = {}
+
+        if forecast_mode == 'order':
+            op_ids = [self._parse_int((r.get('labels') or {}).get('order_product_id')) for r in rows]
+            op_ids = [x for x in op_ids if x]
+            inv_by_op = self._forecast_load_inventory_by_order_product(conn, op_ids)
+        else:
+            variant_ids = sorted({
+                self._parse_int((r.get('labels') or {}).get('variant_id'))
+                for r in rows
+                if self._parse_int((r.get('labels') or {}).get('variant_id'))
+            })
+            if variant_ids:
+                ph = ','.join(['%s'] * len(variant_ids))
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""
+                        SELECT variant_id, order_product_id
+                        FROM sales_variant_order_links
+                        WHERE variant_id IN ({ph})
+                        """,
+                        tuple(variant_ids),
+                    )
+                    for rr in cur.fetchall() or []:
+                        vid = self._parse_int(rr.get('variant_id'))
+                        oid = self._parse_int(rr.get('order_product_id'))
+                        if not vid or not oid:
+                            continue
+                        variant_to_ops.setdefault(vid, set()).add(oid)
+            all_ops = []
+            for s in variant_to_ops.values():
+                all_ops.extend(s)
+            inv_by_op = self._forecast_load_inventory_by_order_product(conn, all_ops)
+
+        for row in rows:
+            labels = row.get('labels') or {}
+            agg = self._forecast_inventory_zero()
+            if forecast_mode == 'order':
+                oid = self._parse_int(labels.get('order_product_id'))
+                if oid and oid in inv_by_op:
+                    agg = dict(inv_by_op[oid])
+            else:
+                vid = self._parse_int(labels.get('variant_id'))
+                for oid in (variant_to_ops.get(vid) or ()):
+                    src = inv_by_op.get(oid)
+                    if not src:
+                        continue
+                    agg['overseas_qty'] += int(src['overseas_qty'])
+                    agg['transit_qty'] += int(src['transit_qty'])
+                    agg['factory_stock_qty'] += int(src['factory_stock_qty'])
+                    agg['wip_qty'] += int(src['wip_qty'])
+
+            o = int(agg['overseas_qty'])
+            t = int(agg['transit_qty'])
+            st = int(agg['factory_stock_qty'])
+            wp = int(agg['wip_qty'])
+            avg_sales = self._forecast_row_history_sales_avg_tail(row, history_months, tail=3)
+
+            def _cov(num):
+                if not avg_sales or int(num) <= 0:
+                    return None
+                return round(float(num) / float(avg_sales), 2)
+
+            row['inventory'] = {
+                'months_cover_overseas': _cov(o),
+                'months_cover_overseas_transit': _cov(o + t),
+                'months_cover_total': _cov(o + t + st + wp),
+                'overseas_qty': o,
+                'transit_qty': t,
+                'in_stock_qty': st,
+                'wip_qty': wp,
+            }
+
     def handle_sales_forecast_api(self, environ, method, start_response):
         try:
             if method != 'GET':
@@ -2135,6 +2295,7 @@ class SalesManagementMixin:
                     rows = self._forecast_build_order_rows(conn, query_params, months, hist_start, hist_end)
                 else:
                     rows = self._forecast_build_spec_rows(conn, query_params, months, hist_start, hist_end)
+                self._forecast_attach_inventory_to_rows(conn, rows, forecast_mode, history_months)
                 for row in rows:
                     row['mtd_completion'] = self._forecast_row_mtd_completion(
                         row.get('history') or {}, row.get('forecasts') or {}, mtd_ctx

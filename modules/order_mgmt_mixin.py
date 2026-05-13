@@ -3,6 +3,7 @@
 
 import cgi
 import io
+import math
 import re
 from urllib.parse import parse_qs
 
@@ -172,9 +173,11 @@ class OrderManagementMixin:
                             self._parse_float(item.get('finished_length_in')),
                             self._parse_float(item.get('finished_width_in')),
                             self._parse_float(item.get('finished_height_in')),
+                            self._parse_float(item.get('net_weight_lbs')),
                             self._parse_float(item.get('package_length_in')),
                             self._parse_float(item.get('package_width_in')),
                             self._parse_float(item.get('package_height_in')),
+                            self._parse_float(item.get('gross_weight_lbs')),
                             self._parse_float(item.get('cost_usd')),
                             (item.get('package_size_class') or '').strip() or None,
                             self._parse_int(item.get('carton_qty')),
@@ -190,14 +193,16 @@ class OrderManagementMixin:
                     with self._get_db_connection() as conn:
                         with conn.cursor() as cur:
                             row_map = {}
-                            for finished_length_in, finished_width_in, finished_height_in, package_length_in, package_width_in, package_height_in, cost_usd, package_size_class, carton_qty, last_mile_avg_freight_usd, is_on_market, is_reship_accessory, item_id in updates:
+                            for finished_length_in, finished_width_in, finished_height_in, net_weight_lbs, package_length_in, package_width_in, package_height_in, gross_weight_lbs, cost_usd, package_size_class, carton_qty, last_mile_avg_freight_usd, is_on_market, is_reship_accessory, item_id in updates:
                                 row_map[int(item_id)] = {
                                     'finished_length_in': finished_length_in,
                                     'finished_width_in': finished_width_in,
                                     'finished_height_in': finished_height_in,
+                                    'net_weight_lbs': net_weight_lbs,
                                     'package_length_in': package_length_in,
                                     'package_width_in': package_width_in,
                                     'package_height_in': package_height_in,
+                                    'gross_weight_lbs': gross_weight_lbs,
                                     'cost_usd': cost_usd,
                                     'package_size_class': package_size_class,
                                     'carton_qty': carton_qty,
@@ -220,9 +225,11 @@ class OrderManagementMixin:
                                 f"finished_length_in = {build_case('finished_length_in')}",
                                 f"finished_width_in = {build_case('finished_width_in')}",
                                 f"finished_height_in = {build_case('finished_height_in')}",
+                                f"net_weight_lbs = {build_case('net_weight_lbs')}",
                                 f"package_length_in = {build_case('package_length_in')}",
                                 f"package_width_in = {build_case('package_width_in')}",
                                 f"package_height_in = {build_case('package_height_in')}",
+                                f"gross_weight_lbs = {build_case('gross_weight_lbs')}",
                                 f"cost_usd = {build_case('cost_usd')}",
                                 f"package_size_class = {build_case('package_size_class')}",
                                 f"carton_qty = {build_case('carton_qty')}",
@@ -490,22 +497,276 @@ class OrderManagementMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def _order_product_parse_id_list(self, data):
+        """解析请求体中的 ids：支持 list 或逗号分隔字符串。"""
+        out = []
+        raw = (data or {}).get('ids')
+        if isinstance(raw, list):
+            for x in raw:
+                pid = self._parse_int(x)
+                if pid:
+                    out.append(pid)
+        elif isinstance(raw, str):
+            for token in re.split(r'[,，;；\s]+', raw.strip()):
+                if not token:
+                    continue
+                pid = self._parse_int(token)
+                if pid:
+                    out.append(pid)
+        return sorted(set(out))
+
+    def _order_product_ceiling_positive_int(self, value):
+        v = self._parse_float(value)
+        if v is None or v <= 0:
+            return None
+        return int(math.ceil(float(v) - 1e-9))
+
+    def _order_product_sorted_ceiled_dims(self, length_in, width_in, height_in):
+        a = self._order_product_ceiling_positive_int(length_in)
+        b = self._order_product_ceiling_positive_int(width_in)
+        c = self._order_product_ceiling_positive_int(height_in)
+        if a is None or b is None or c is None:
+            return None
+        arr = sorted([a, b, c])
+        return arr[0], arr[1], arr[2]
+
+    def _order_product_classify_fedex_package(self, S, M, L, weight_lb_int):
+        """美国小件网络尺寸类归类（与 FedEx / UPS Service Guide 常见阈值对齐，用于内部标签）。
+
+        S,M,L 为三边向上取整后的升序（英寸），故 L 为最长边；毛重 W 为向上取整磅数。
+        G = L + 2*(S+M) 为「最长边 + 围长」(length + girth)；V = S*M*L 为立方英寸。
+
+        判定顺序（后者不得越过前者已命中项）：
+        1) LTL：超出小件承运上限（与 FedEx Ground Unauthorized / UPS 包裹上限同向）——
+           W>150 或 L>108 或 G>165。
+        2) Oversize：仍属小件网络内，但命中「大件费 / Large-Oversize」类触发条件之一即可
+           （条件之间为「或」）—— L>96 或 G>130 或 V>17280 或 W>110。
+        3) AHS-D：未命中以上，但命中附加操作「尺寸类」常见触发之一——
+           V>10368 或 L>48 或 M>30（M 为次长边，对应 UPS 第二边>30\" 规则）。
+        4) AHS：毛重 W>=50 且无上述情形（重量带附加操作，与尺寸类区分）。
+        5) 小件：其余。
+
+        实际计费以承运商当期价表及 rating hierarchy 为准；本函数不做费用计算。
+        """
+        if S is None or M is None or L is None or weight_lb_int is None:
+            return None
+        G = (S + M) * 2 + L
+        V = int(S) * int(M) * int(L)
+        W = int(weight_lb_int)
+
+        if W > 150 or L > 108 or G > 165:
+            return 'LTL'
+        if L > 96 or G > 130 or V > 17280 or W > 110:
+            return 'Oversize'
+        if V > 10368 or L > 48 or M > 30:
+            return 'AHS-D'
+        if W >= 50:
+            return 'AHS'
+        return '小件'
+
+    def _order_product_batch_case_update(self, cur, apply_payload, column_name):
+        """将多行 (value, id) 合并为少量 CASE WHEN UPDATE，减少数据库往返。"""
+        allowed = {'package_size_class', 'carton_qty'}
+        if column_name not in allowed:
+            raise ValueError('invalid batch update column')
+        if not apply_payload:
+            return 0, []
+        errors = []
+        updated = 0
+        chunk_size = 120
+        for i in range(0, len(apply_payload), chunk_size):
+            chunk = apply_payload[i:i + chunk_size]
+            when_parts = []
+            params = []
+            id_list = []
+            for val, rid in chunk:
+                when_parts.append('WHEN %s THEN %s')
+                params.extend([rid, val])
+                id_list.append(rid)
+            in_ph = ','.join(['%s'] * len(id_list))
+            sql = (
+                f'UPDATE order_products SET {column_name} = CASE id '
+                + ' '.join(when_parts)
+                + f' ELSE {column_name} END WHERE id IN ({in_ph})'
+            )
+            try:
+                cur.execute(sql, tuple(params + id_list))
+                updated += int(cur.rowcount or 0)
+            except Exception as ex:
+                errors.append({'id': id_list[0] if id_list else 0, 'sku': '', 'error': str(ex)})
+        return updated, errors
+
     def handle_order_product_carton_calc_api(self, environ, method, start_response):
-        """纸箱数量计算 API"""
+        """装箱量：单组尺寸试算，或勾选 id 批量 preview/apply。"""
         try:
             if method != 'POST':
                 return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
 
-            data = self._read_json_body(environ)
+            data = self._read_json_body(environ) or {}
             length = self._parse_float(data.get('length'))
             width = self._parse_float(data.get('width'))
             height = self._parse_float(data.get('height'))
+            if length or width or height:
+                if not all([length, width, height]):
+                    return self.send_json({'status': 'error', 'message': 'Missing dimensions'}, start_response)
+                qty = self._calc_carton_qty_by_40hq(length, width, height)
+                return self.send_json({'status': 'success', 'carton_qty': qty}, start_response)
 
-            if not all([length, width, height]):
-                return self.send_json({'status': 'error', 'message': 'Missing dimensions'}, start_response)
+            ids = self._order_product_parse_id_list(data)
+            if not ids:
+                return self.send_json({'status': 'error', 'message': 'Missing ids'}, start_response)
+            mode = str(data.get('mode') or 'apply').strip().lower()
+            if mode not in ('preview', 'apply'):
+                mode = 'apply'
 
-            qty = self._calc_carton_qty_by_40hq(length, width, height)
-            return self.send_json({'status': 'success', 'carton_qty': qty}, start_response)
+            placeholders = ','.join(['%s'] * len(ids))
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""
+                        SELECT id, sku, package_length_in, package_width_in, package_height_in, carton_qty
+                        FROM order_products
+                        WHERE id IN ({placeholders})
+                        """,
+                        tuple(ids),
+                    )
+                    rows = cur.fetchall() or []
+
+                preview_rows = []
+                apply_payload = []
+                for r in rows:
+                    rid = self._parse_int(r.get('id'))
+                    sku = (r.get('sku') or '').strip()
+                    qty_new = self._calc_carton_qty_by_40hq(
+                        r.get('package_length_in'),
+                        r.get('package_width_in'),
+                        r.get('package_height_in'),
+                    )
+                    if qty_new is None:
+                        continue
+                    old_q = self._parse_int(r.get('carton_qty'))
+                    preview_rows.append({
+                        'id': rid,
+                        'sku': sku,
+                        'package_length_in': self._parse_float(r.get('package_length_in')),
+                        'package_width_in': self._parse_float(r.get('package_width_in')),
+                        'package_height_in': self._parse_float(r.get('package_height_in')),
+                        'carton_qty_old': old_q,
+                        'carton_qty_new': qty_new,
+                    })
+                    apply_payload.append((qty_new, rid))
+
+                updatable_count = len(preview_rows)
+                missing_info_count = len(ids) - updatable_count
+
+                if mode == 'preview':
+                    return self.send_json({
+                        'status': 'success',
+                        'mode': 'preview',
+                        'selected_count': len(ids),
+                        'updatable_count': updatable_count,
+                        'missing_info_count': missing_info_count,
+                        'rows': preview_rows,
+                    }, start_response)
+
+                errors = []
+                updated = 0
+                with conn.cursor() as cur:
+                    updated, errors = self._order_product_batch_case_update(cur, apply_payload, 'carton_qty')
+
+                return self.send_json({
+                    'status': 'success',
+                    'mode': 'apply',
+                    'updated': updated,
+                    'skipped': len(ids) - len(apply_payload),
+                    'errors': errors,
+                }, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def handle_order_product_package_class_batch_api(self, environ, method, start_response):
+        """勾选 SKU 批量预览/更新包裹归类（FedEx/UPS Service Guide 阈值对齐的内部标签）。"""
+        try:
+            if method != 'POST':
+                return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+
+            data = self._read_json_body(environ) or {}
+            ids = self._order_product_parse_id_list(data)
+            if not ids:
+                return self.send_json({'status': 'error', 'message': 'Missing ids'}, start_response)
+            mode = str(data.get('mode') or 'apply').strip().lower()
+            if mode not in ('preview', 'apply'):
+                mode = 'apply'
+
+            placeholders = ','.join(['%s'] * len(ids))
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""
+                        SELECT id, sku, package_length_in, package_width_in, package_height_in,
+                               gross_weight_lbs, package_size_class
+                        FROM order_products
+                        WHERE id IN ({placeholders})
+                        """,
+                        tuple(ids),
+                    )
+                    rows = cur.fetchall() or []
+
+                preview_rows = []
+                apply_payload = []
+                for r in rows:
+                    rid = self._parse_int(r.get('id'))
+                    sku = (r.get('sku') or '').strip()
+                    dims = self._order_product_sorted_ceiled_dims(
+                        r.get('package_length_in'),
+                        r.get('package_width_in'),
+                        r.get('package_height_in'),
+                    )
+                    w_int = self._order_product_ceiling_positive_int(r.get('gross_weight_lbs'))
+                    if not dims or w_int is None:
+                        continue
+                    S, M, L = dims
+                    cls = self._order_product_classify_fedex_package(S, M, L, w_int)
+                    old_cls = (r.get('package_size_class') or '').strip() or None
+                    preview_rows.append({
+                        'id': rid,
+                        'sku': sku,
+                        'edge_short_in': S,
+                        'edge_mid_in': M,
+                        'edge_long_in': L,
+                        'gross_weight_lb_ceiled': w_int,
+                        'girth_in': (S + M) * 2 + L,
+                        'volume_cu_in': S * M * L,
+                        'package_class_old': old_cls,
+                        'package_class_new': cls,
+                    })
+                    apply_payload.append((cls, rid))
+
+                updatable_count = len(preview_rows)
+                missing_info_count = len(ids) - updatable_count
+
+                if mode == 'preview':
+                    return self.send_json({
+                        'status': 'success',
+                        'mode': 'preview',
+                        'selected_count': len(ids),
+                        'updatable_count': updatable_count,
+                        'missing_info_count': missing_info_count,
+                        'rows': preview_rows,
+                    }, start_response)
+
+                errors = []
+                updated = 0
+                with conn.cursor() as cur:
+                    updated, errors = self._order_product_batch_case_update(cur, apply_payload, 'package_size_class')
+
+                return self.send_json({
+                    'status': 'success',
+                    'mode': 'apply',
+                    'updated': updated,
+                    'skipped': len(ids) - len(apply_payload),
+                    'errors': errors,
+                }, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
