@@ -1,7 +1,8 @@
 ﻿import io
 import cgi
 import re
-from datetime import datetime
+import calendar
+from datetime import date, datetime
 from urllib.parse import parse_qs
 
 try:
@@ -1281,13 +1282,9 @@ class SalesManagementMixin:
         end_month = self._forecast_normalize_month(raw_end)
         start_month = self._forecast_normalize_month(raw_start)
         if not end_month:
+            # 默认包含「本月」：历史月范围截止到当前月（数据可能仍不完整）
             today = datetime.now()
-            year = today.year
-            month = today.month - 1
-            if month < 1:
-                month = 12
-                year -= 1
-            end_month = f'{year:04d}-{month:02d}-01'
+            end_month = f'{today.year:04d}-{today.month:02d}-01'
         if not start_month:
             try:
                 end_dt = datetime.strptime(end_month, '%Y-%m-%d')
@@ -1967,6 +1964,144 @@ class SalesManagementMixin:
                 }
         return out
 
+    def _forecast_current_month_key(self):
+        today = datetime.now()
+        return f'{today.year:04d}-{today.month:02d}-01'
+
+    def _forecast_perf_max_record_date(self, conn):
+        """产品表现日表的全局最新业务日期（按日，精确到日历日）。"""
+        try:
+            with conn.cursor() as cur:
+                cur.execute('SELECT MAX(record_date) AS mx FROM sales_product_performances')
+                return (cur.fetchone() or {}).get('mx')
+        except Exception:
+            return None
+
+    def _forecast_format_date_only(self, value):
+        if value is None:
+            return None
+        if hasattr(value, 'strftime'):
+            try:
+                return value.strftime('%Y-%m-%d')
+            except Exception:
+                return str(value)[:10]
+        s = str(value or '')
+        return s[:10] if len(s) >= 10 else (s or None)
+
+    def _forecast_month_add_years(self, month_key, delta_years):
+        try:
+            d = datetime.strptime(str(month_key)[:10], '%Y-%m-%d')
+        except Exception:
+            return None
+        y = d.year + int(delta_years)
+        return f'{y:04d}-{d.month:02d}-01'
+
+    def _forecast_mtd_time_context(self, record_date_max, cur_month_key, today=None):
+        """本月时间进度 T = ref_day / days_in_month。
+        ref_day 来自 sales_product_performances 的全局 MAX(record_date)：
+        若该日期落在本月，则取「该日号」表示该日整天已计入进度；若早于本月则为 0；
+        若晚于本月末则视为已满。无数据时退回「今天在当月内的日号」。"""
+        today = today or datetime.now()
+        try:
+            d0 = datetime.strptime(str(cur_month_key)[:10], '%Y-%m-%d')
+        except Exception:
+            d0 = today
+        year, mon = d0.year, d0.month
+        dim = calendar.monthrange(year, mon)[1]
+        month_start = date(year, mon, 1)
+        month_end = date(year, mon, dim)
+
+        d_max = None
+        if record_date_max is not None:
+            try:
+                if isinstance(record_date_max, datetime):
+                    d_max = record_date_max.date()
+                elif isinstance(record_date_max, date):
+                    d_max = record_date_max
+                else:
+                    d_max = datetime.strptime(str(record_date_max)[:10], '%Y-%m-%d').date()
+            except Exception:
+                d_max = None
+
+        ref_day = 0
+        if d_max is not None:
+            if d_max < month_start:
+                ref_day = 0
+            elif d_max > month_end:
+                ref_day = dim
+            elif d_max.year == year and d_max.month == mon:
+                ref_day = int(d_max.day)
+            else:
+                ref_day = dim
+        else:
+            if today.year == year and today.month == mon:
+                ref_day = min(int(today.day), dim)
+            else:
+                ref_day = dim
+
+        ref_day = max(0, min(int(ref_day), dim))
+        tp = (ref_day / float(dim)) if dim else 1.0
+        if tp <= 0 and dim:
+            tp = 1.0 / float(dim)
+        tp = min(1.0, max(tp, (1.0 / float(dim)) if dim else 0.02))
+        return {
+            'current_month_key': f'{year:04d}-{mon:02d}-01',
+            'days_in_month': dim,
+            'ref_day': ref_day,
+            'time_progress': tp,
+        }
+
+    def _forecast_row_mtd_ratio_band(self, ratio, tp):
+        band = 'neutral'
+        completion_pct = None
+        bar_pct = 0.0
+        if ratio is None:
+            return band, completion_pct, bar_pct
+        completion_pct = round(ratio * 100.0, 1)
+        bar_pct = min(100.0, max(0.0, ratio * 100.0))
+        r, t = ratio, float(tp or 0.05)
+        if r < t - 0.10:
+            band = 'red'
+        elif r > t + 0.30:
+            band = 'purple'
+        elif r > t:
+            band = 'green'
+        elif r >= t - 0.10:
+            band = 'yellow'
+        else:
+            band = 'red'
+        return band, completion_pct, bar_pct
+
+    def _forecast_row_mtd_completion(self, history, forecasts, mtd_ctx):
+        """本月完成率：本月历史销量（左）÷ 本月预测整月量（右，与表格预测列同源）。"""
+        if not mtd_ctx:
+            return {
+                'applicable': False,
+                'band': 'neutral',
+            }
+        cur_key = mtd_ctx.get('current_month_key') or ''
+        tp = float(mtd_ctx.get('time_progress') or 0.05)
+        cell = (history or {}).get(cur_key) or {}
+        mtd_sales = float(cell.get('sales_qty') or 0)
+        fc = (forecasts or {}).get(cur_key) or {}
+        denom = float(fc.get('value_qty') or 0)
+        ratio = (mtd_sales / denom) if denom > 1e-9 else None
+        band, completion_pct, bar_pct = self._forecast_row_mtd_ratio_band(ratio, tp)
+        expected_curve = round(denom * tp, 4) if denom > 1e-9 else None
+        return {
+            'applicable': True,
+            'mtd_sales_qty': mtd_sales,
+            'forecast_month_qty': denom,
+            'expected_mtd_qty': expected_curve,
+            'time_progress': round(tp, 4),
+            'completion_ratio': None if ratio is None else round(ratio, 4),
+            'completion_pct': completion_pct,
+            'bar_pct': bar_pct,
+            'band': band,
+            'ref_day': mtd_ctx.get('ref_day'),
+            'days_in_month': mtd_ctx.get('days_in_month'),
+        }
+
     def handle_sales_forecast_api(self, environ, method, start_response):
         try:
             if method != 'GET':
@@ -1984,14 +2119,38 @@ class SalesManagementMixin:
             hist_end_raw = (query_params.get('history_end', [''])[0] or '').strip()
             hist_start, hist_end = self._forecast_history_month_range(hist_start_raw, hist_end_raw, default_months=12)
             history_months = self._forecast_iter_months(hist_start, hist_end)
+            cur_key = self._forecast_current_month_key()
+            perf_max_record_date = None
+            mtd_ctx = None
+            mtd_in = False
+            rows = []
 
             with self._get_db_connection() as conn:
+                perf_max_record_date = self._forecast_perf_max_record_date(conn)
+                mtd_in = cur_key in set(history_months or [])
+                mtd_ctx = self._forecast_mtd_time_context(perf_max_record_date, cur_key) if mtd_in else None
                 if forecast_mode == 'platform':
                     rows = self._forecast_build_platform_rows(conn, query_params, months, hist_start, hist_end)
                 elif forecast_mode == 'order':
                     rows = self._forecast_build_order_rows(conn, query_params, months, hist_start, hist_end)
                 else:
                     rows = self._forecast_build_spec_rows(conn, query_params, months, hist_start, hist_end)
+                for row in rows:
+                    row['mtd_completion'] = self._forecast_row_mtd_completion(
+                        row.get('history') or {}, row.get('forecasts') or {}, mtd_ctx
+                    )
+
+            mtd_payload = {
+                'current_month_key': cur_key,
+                'in_history_range': mtd_in,
+                'perf_max_record_date': self._forecast_format_date_only(perf_max_record_date),
+            }
+            if mtd_ctx:
+                mtd_payload.update({
+                    'days_in_month': mtd_ctx.get('days_in_month'),
+                    'ref_day': mtd_ctx.get('ref_day'),
+                    'time_progress': mtd_ctx.get('time_progress'),
+                })
 
             return self.send_json({
                 'status': 'success',
@@ -1999,6 +2158,7 @@ class SalesManagementMixin:
                 'months': months,
                 'history_months': history_months,
                 'history_range': {'start': hist_start, 'end': hist_end},
+                'mtd': mtd_payload,
                 'rows': rows,
             }, start_response)
         except Exception as e:

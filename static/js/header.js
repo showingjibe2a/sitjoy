@@ -848,6 +848,24 @@
         return bubble ? String(bubble.textContent || '').trim() : '';
     }
 
+    /** 去掉与 help-dot 文案相同的原生 title，避免浏览器自带黄框与 .app-help-floating-tip 叠两层 */
+    function stripNativeTitlesMirroringHelpDot(dot){
+        if(!dot || !dot.classList || !dot.classList.contains('help-dot')) return;
+        const tip = String(resolveHelpDotTipText(dot) || '').trim();
+        dot.removeAttribute('title');
+        if(!tip) return;
+        let el = dot.parentElement;
+        for(let i = 0; i < 6 && el; i++, el = el.parentElement){
+            try{
+                if(!el.hasAttribute || !el.hasAttribute('title')) continue;
+                const pt = String(el.getAttribute('title') || '').trim();
+                if(pt && pt === tip){
+                    el.removeAttribute('title');
+                }
+            }catch(_){ /* ignore */ }
+        }
+    }
+
     function positionHelpDotTooltip(dot, tooltip){
         if(!dot || !tooltip) return;
         const dotRect = dot.getBoundingClientRect();
@@ -880,6 +898,7 @@
     function showHelpDotTooltip(dot){
         const text = resolveHelpDotTipText(dot);
         if(!text) return;
+        stripNativeTitlesMirroringHelpDot(dot);
         const tooltip = ensureHelpDotTooltip();
         activeHelpDotAnchor = dot;
         tooltip.textContent = text;
@@ -936,6 +955,7 @@
         const scope = root && root.querySelectorAll ? root : document;
         scope.querySelectorAll('.help-dot').forEach(dot => {
             dot.classList.add('help-dot--floating');
+            stripNativeTitlesMirroringHelpDot(dot);
         });
     }
 

@@ -175,9 +175,11 @@
             font-size: 0.85rem;
             table-layout: fixed;
         }
-        /* 整块 thead 叠在 tbody 之上，避免两行 sticky 的 top 亚像素缝透出下面数据 */
+        /* 整块 thead 一次 sticky：两行同进同退，根除「行间缝透出 tbody」；勿对两行 tr 分别 sticky+top */
         table.sf-table thead {
-            position: relative;
+            position: -webkit-sticky;
+            position: sticky;
+            top: 0;
             z-index: 2;
             background-color: #ece2cf;
         }
@@ -207,21 +209,12 @@
             text-align: center;
         }
         /*
-         * 表头固定：sticky 挂在 tr 上，避免 collapse 表格里多个 th 各自 sticky+top 在行间挤出白条。
-         * th 仅用 relative 作为列宽拖拽条的定位包含块。
+         * 表头两行均非 sticky（由 thead 整体 sticky）；th 用 relative 作为列宽拖拽定位包含块。
          */
         table.sf-table thead tr.sf-thead-row-1 {
-            position: -webkit-sticky;
-            position: sticky;
-            top: 0;
-            z-index: 6;
             background: #ece2cf;
         }
         table.sf-table thead tr.sf-thead-row-2 {
-            position: -webkit-sticky;
-            position: sticky;
-            top: var(--sf-thead-row1-height, 34px);
-            z-index: 5;
             background: #f5efe5;
         }
         table.sf-table thead th {
@@ -258,6 +251,71 @@
             text-align: center;
             font-weight: 700;
             color: #4f463b;
+        }
+        table.sf-table thead th.sf-th-mtd {
+            text-align: center;
+            vertical-align: middle;
+            min-width: 96px;
+        }
+        .sf-cell-mtd {
+            text-align: center;
+            vertical-align: middle;
+            padding: 0.35rem 0.45rem !important;
+            position: relative;
+            overflow: hidden;
+        }
+        .sf-mtd-stack {
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 0.25rem;
+            min-width: 0;
+        }
+        .sf-mtd-track {
+            position: relative;
+            height: 10px;
+            border-radius: 6px;
+            background: rgba(207, 199, 189, 0.35);
+            overflow: hidden;
+        }
+        .sf-mtd-timefill {
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            background: rgba(236, 226, 207, 0.95);
+            pointer-events: none;
+            z-index: 0;
+        }
+        .sf-mtd-bar {
+            position: relative;
+            height: 100%;
+            border-radius: 6px;
+            z-index: 1;
+            min-width: 0;
+            max-width: 100%;
+            transition: width 0.12s ease;
+        }
+        .sf-mtd-bar--neutral { background: rgba(123, 109, 92, 0.45); }
+        .sf-mtd-bar--red { background: linear-gradient(90deg, #c45a5a, #d67878); }
+        .sf-mtd-bar--yellow { background: linear-gradient(90deg, #c9a24a, #dfc06a); }
+        .sf-mtd-bar--green { background: linear-gradient(90deg, #5a9a62, #7ab882); }
+        .sf-mtd-bar--purple { background: linear-gradient(90deg, #7a5cb0, #9a7ad0); }
+        .sf-mtd-pct {
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: #4f463b;
+            font-variant-numeric: tabular-nums;
+        }
+        .sf-mtd-na {
+            color: var(--morandi-slate);
+            font-size: 0.82rem;
+        }
+        .sf-mtd-subhead {
+            font-size: 0.68rem;
+            color: rgba(79, 70, 59, 0.72);
+            margin-top: 0.12rem;
+            line-height: 1.15;
         }
         /* Column resize handle (like warehouse dashboard) */
         .sf-col-resize-handle{
@@ -437,6 +495,20 @@
             display: inline-flex;
             align-items: center;
             justify-content: flex-end;
+        }
+        /* 角标 tooltip 容器勿铺满整格，否则会叠在 input 上拦截点击 */
+        .sf-cell-wrap > .sf-tooltip-wrap {
+            flex: 0 0 auto;
+            width: auto;
+            max-width: 48%;
+            pointer-events: none;
+        }
+        .sf-cell-wrap > .sf-tooltip-wrap .sf-tooltip-content {
+            pointer-events: auto;
+        }
+        .sf-cell-wrap > .sf-num-input {
+            position: relative;
+            z-index: 2;
         }
         .sf-source-badge {
             position: absolute;
@@ -705,6 +777,7 @@
             collapsedSkuGroups: new Set(),
             selectedHistoryCells: new Set(), // key: row_key|monthKey
             selectionAnchor: null,           // { rowKey, monthKey }
+            mtdContext: {},                  // /api/sales-forecast 返回的 mtd 块（时间进度、聚合更新时间等）
         };
 
         function readBoolPref(key, fallback) {
@@ -752,10 +825,12 @@
             const spec = (pref && pref.spec && typeof pref.spec === 'object') ? pref.spec : {};
             const history = Number(pref && pref.history);
             const forecast = Number(pref && pref.forecast);
+            const mtd = Number(pref && pref.mtd);
             return {
                 spec,
                 history: Number.isFinite(history) && history > 30 ? history : 86,
                 forecast: Number.isFinite(forecast) && forecast > 30 ? forecast : 86,
+                mtd: Number.isFinite(mtd) && mtd > 40 ? mtd : 108,
             };
         }
 
@@ -771,13 +846,17 @@
             }
             let history = pref.history;
             let forecast = pref.forecast;
+            let mtdW = pref.mtd;
             if (meta && meta.historyStart != null && meta.historyStart >= 0 && meta.histCols > 0) {
                 history = Math.round(Number(leafColWidths[meta.historyStart] || history));
             }
             if (meta && meta.forecastStart != null && meta.forecastStart >= 0 && meta.fcCols > 0) {
                 forecast = Math.round(Number(leafColWidths[meta.forecastStart] || forecast));
             }
-            writeJsonPref(colWidthPrefKey(mode), { v: 1, spec, history, forecast, updated_at: Date.now() });
+            if (meta && meta.mtdStart != null && meta.mtdStart >= 0 && meta.mtdCols > 0) {
+                mtdW = Math.round(Number(leafColWidths[meta.mtdStart] || mtdW));
+            }
+            writeJsonPref(colWidthPrefKey(mode), { v: 1, spec, history, forecast, mtd: mtdW, updated_at: Date.now() });
         }
 
         function pad2(n) { n = Number(n) || 0; return n < 10 ? ('0' + n) : ('' + n); }
@@ -1117,6 +1196,7 @@
             state.historyMonths = Array.isArray(data.history_months) ? data.history_months.slice() : [];
             state.historyRange = data.history_range || { start: '', end: '' };
             state.rows = Array.isArray(data.rows) ? data.rows : [];
+            state.mtdContext = (data && data.mtd && typeof data.mtd === 'object') ? data.mtd : {};
             if (state.forecastMode === 'platform') state.collapsedPlatformGroups.clear();
             else state.collapsedSkuGroups.clear();
             state.dirty.clear();
@@ -1244,6 +1324,98 @@
             td.innerHTML = `<div>${escapeHtml(String(col.get(row) || '—') || '—')}</div>`;
         }
 
+        function getEffectiveForecastQty(row, monthKey) {
+            if (!row || !monthKey) return 0;
+            const dirtyKey = String(row.row_key || '') + '|' + String(monthKey);
+            if (state.dirty.has(dirtyKey)) return Math.max(0, Number(state.dirty.get(dirtyKey).latest_qty) || 0);
+            const fc = (row.forecasts && row.forecasts[monthKey]) || null;
+            return fc ? Math.max(0, Number(fc.value_qty || 0)) : 0;
+        }
+
+        function mtdBandClass(ratio, tp) {
+            const t = Number(tp) || 0.05;
+            const r = Number(ratio);
+            if (r < t - 0.10) return 'red';
+            if (r > t + 0.30) return 'purple';
+            if (r > t) return 'green';
+            if (r >= t - 0.10) return 'yellow';
+            return 'red';
+        }
+
+        function computeMtdDisplay(row) {
+            const ctx = state.mtdContext || {};
+            const curKey = String(ctx.current_month_key || '');
+            const tp = Math.max(0, Math.min(1, Number(ctx.time_progress) || 0));
+            if (!curKey || !row) {
+                return { ok: false, reason: 'dash' };
+            }
+            const histCell = (row.history && row.history[curKey]) || {};
+            const mtdSales = Math.max(0, Number(histCell.sales_qty || 0));
+            const denom = getEffectiveForecastQty(row, curKey);
+            if (!(denom > 0)) {
+                return { ok: false, reason: 'noref', tp };
+            }
+            const ratio = mtdSales / denom;
+            const barPct = Math.min(100, Math.max(0, ratio * 100));
+            const pctText = `${(Math.round(ratio * 1000) / 10).toFixed(1)}%`;
+            const bandRaw = mtdBandClass(ratio, tp);
+            const bandClass = ({ red: 'red', yellow: 'yellow', green: 'green', purple: 'purple', neutral: 'neutral' })[bandRaw] || 'neutral';
+            const recordStr = ctx.perf_max_record_date || String(ctx.perf_latest_updated_at || '').slice(0, 10) || '—';
+            const refd = ctx.ref_day != null && ctx.days_in_month ? `${ctx.ref_day}/${ctx.days_in_month}日` : '';
+            const title = `本月历史销量 ${formatNumber(mtdSales)}；本月预测整月 ${formatNumber(denom)}；完成率 ${pctText}（左÷右）。日表最新 record_date ${recordStr}，时间进度约 ${Math.round(tp * 100)}%（${refd}）；预测×进度参考约 ${formatNumber(Math.round(denom * tp))}`;
+            return { ok: true, tp, barPct, bandClass, pctText, title };
+        }
+
+        function fillMtdTd(td, row) {
+            td.className = 'sf-cell-mtd';
+            const ctx = state.mtdContext || {};
+            if (!ctx.in_history_range) {
+                td.innerHTML = '<span class="sf-mtd-na">—</span>';
+                td.title = '当前历史范围未包含本月，或无法计算';
+                return;
+            }
+            const d = computeMtdDisplay(row);
+            if (!d.ok && d.reason === 'noref') {
+                td.innerHTML = '<div class="sf-mtd-stack"><span class="sf-mtd-na">无参考</span></div>';
+                td.title = '本月预测为 0 或未选本月作为预测列，无法按「历史÷预测」计算';
+                return;
+            }
+            if (!d.ok) {
+                td.innerHTML = '<span class="sf-mtd-na">—</span>';
+                td.title = '无法计算';
+                return;
+            }
+            td.title = d.title;
+            td.innerHTML = `
+                <div class="sf-mtd-stack">
+                    <div class="sf-mtd-track" aria-hidden="true">
+                        <div class="sf-mtd-timefill" style="width:${Math.round(d.tp * 1000) / 10}%"></div>
+                        <div class="sf-mtd-bar sf-mtd-bar--${d.bandClass}" style="width:${Math.round(d.barPct * 10) / 10}%"></div>
+                    </div>
+                    <div class="sf-mtd-pct">${escapeHtml(d.pctText)}</div>
+                </div>`;
+        }
+
+        function renderMtdCell(row) {
+            const td = document.createElement('td');
+            fillMtdTd(td, row);
+            return td;
+        }
+
+        function refreshMtdCellForRowKey(rowKey) {
+            const rk = String(rowKey || '');
+            if (!rk) return;
+            const tbody = document.getElementById('forecastTbody');
+            if (!tbody) return;
+            const tr = Array.from(tbody.querySelectorAll('tr[data-row-key]')).find(el => String(el.dataset.rowKey) === rk);
+            if (!tr) return;
+            const td = tr.querySelector('td.sf-cell-mtd');
+            if (!td) return;
+            const row = (state.rows || []).find(r => String(r.row_key) === rk);
+            if (!row) return;
+            fillMtdTd(td, row);
+        }
+
         function renderForecastTable() {
             const thead = document.getElementById('forecastThead');
             const tbody = document.getElementById('forecastTbody');
@@ -1254,6 +1426,7 @@
             const visibleFcMonths = state.forecastExpanded ? state.months.slice() : [];
             const histCols = state.historyMonths.length ? (state.historyExpanded ? visibleHistMonths.length : 1) : 0;
             const fcCols = state.months.length ? (state.forecastExpanded ? visibleFcMonths.length : 1) : 0;
+            const mtdCols = histCols > 0 ? 1 : 0;
             const pref = loadColWidthPrefs(state.forecastMode);
             const leafColWidths = [];
             cols.forEach(col => {
@@ -1265,15 +1438,22 @@
             const historyWidth = Number(pref.history || 86);
             const forecastWidth = Number(pref.forecast || 86);
             for (let i = 0; i < histCols; i++) leafColWidths.push(historyWidth);
+            if (mtdCols) {
+                const mtdW0 = Number(pref.mtd);
+                leafColWidths.push((Number.isFinite(mtdW0) && mtdW0 > 40) ? mtdW0 : 108);
+            }
             for (let i = 0; i < fcCols; i++) leafColWidths.push(forecastWidth);
             const meta = {
                 specCount: cols.length,
                 histCols,
+                mtdCols,
                 fcCols,
                 historyStart: cols.length,
                 historyEnd: cols.length + Math.max(0, histCols - 1),
-                forecastStart: cols.length + histCols,
-                forecastEnd: cols.length + histCols + Math.max(0, fcCols - 1),
+                mtdStart: cols.length + histCols,
+                mtdEnd: cols.length + histCols + mtdCols - 1,
+                forecastStart: cols.length + histCols + mtdCols,
+                forecastEnd: cols.length + histCols + mtdCols + Math.max(0, fcCols - 1),
             };
             state._sfColMeta = meta;
             state._sfLeafColWidths = leafColWidths;
@@ -1281,6 +1461,7 @@
             const wpx = Math.max(960, totalWidth);
             table.style.width = `${wpx}px`;
             table.style.minWidth = `${wpx}px`;
+            table.style.removeProperty('--sf-thead-row1-height');
             const oldColgroup = table.querySelector('colgroup#forecastColgroup');
             if (oldColgroup && oldColgroup.parentNode) oldColgroup.parentNode.removeChild(oldColgroup);
             const colgroup = document.createElement('colgroup');
@@ -1294,56 +1475,38 @@
 
             const trTop = document.createElement('tr');
             trTop.className = 'sf-thead-row-1';
+            const mtdHeadTip = '完成率 = 本月历史销量（左）÷ 本月预测整月量（右，含未保存编辑）。时间进度 = 产品表现日表 sales_product_performances 的全局最新 record_date 所在日号 ÷ 当月天数（仅精确到日）。色带：红明显落后进度、黄接近、绿超前、紫大幅超前。';
+            const perfSub = (state.mtdContext && (state.mtdContext.perf_max_record_date || String(state.mtdContext.perf_latest_updated_at || '').slice(0, 10)))
+                ? String(state.mtdContext.perf_max_record_date || state.mtdContext.perf_latest_updated_at || '').replace('T', ' ').slice(0, 16)
+                : '—';
+            const mtdProg = (state.mtdContext && state.mtdContext.in_history_range)
+                ? `${Math.round((Number(state.mtdContext.time_progress) || 0) * 100)}%`
+                : '—';
             trTop.innerHTML =
                 `<th class="sf-th-section" colspan="${cols.length}">规格信息</th>` +
                 (histCols ? `<th class="sf-th-section" colspan="${histCols}"><span class="sf-th-section-toggle" data-section="history"><span class="sf-group-toggle">${state.historyExpanded ? '▼' : '▶'}</span><span>历史月销量 <span class="help-dot" data-tip="数据来自“产品表现”看板按月聚合"></span></span></span></th>` : '') +
+                (mtdCols ? `<th class="sf-th-section sf-th-mtd" colspan="1"><span class="help-dot" data-tip="${escapeHtml(mtdHeadTip)}"></span>本月完成率</th>` : '') +
                 (fcCols ? `<th class="sf-th-section" colspan="${fcCols}"><span class="sf-th-section-toggle" data-section="forecast"><span class="sf-group-toggle">${state.forecastExpanded ? '▼' : '▶'}</span><span>预测月份</span></span></th>` : '');
 
             const trBottom = document.createElement('tr');
             trBottom.className = 'sf-thead-row-2';
             trBottom.innerHTML = cols.map(col => buildBottomHeaderHtml(col)).join('')
                 + (state.historyExpanded ? visibleHistMonths.map(m => `<th class="sf-th-history" data-month="${m}">${monthHeaderTwoLineHtml(m)}</th>`).join('') : (histCols ? '<th class="sf-th-history">历史合计</th>' : ''))
+                + (mtdCols ? `<th class="sf-th-mtd" title="${escapeHtml(mtdHeadTip)}"><div class="sf-month-two-line"><div class="sf-month-y">日表最新</div><div class="sf-month-m">${escapeHtml(perfSub)}</div></div><div class="sf-mtd-subhead">时间进度 ${escapeHtml(mtdProg)}</div></th>` : '')
                 + (state.forecastExpanded ? visibleFcMonths.map(m => `<th class="sf-th-month">${monthHeaderTwoLineHtml(m)}</th>`).join('') : (fcCols ? '<th class="sf-th-month">预测合计</th>' : ''));
             thead.innerHTML = '';
             thead.appendChild(trTop);
             thead.appendChild(trBottom);
-            const applyHeadOffset = () => {
-                /* 用两行 offsetTop 差值 = 第一行在表格内的实际占位，避免 ceil(getBoundingClientRect) 偏大导致
-                   第二行 sticky 的 top 下移、与第一行之间出现透明缝（滚动时露出 tbody）。 */
-                let h = 0;
-                try {
-                    const dt = trBottom.offsetTop - trTop.offsetTop;
-                    if (Number.isFinite(dt) && dt > 8) h = dt;
-                } catch (_) {}
-                if (!h) {
-                    const r = trTop.getBoundingClientRect();
-                    h = (r && r.height) ? r.height : (trTop.offsetHeight || 34);
-                }
-                h = Math.max(34, Math.floor(h));
-                table.style.setProperty('--sf-thead-row1-height', `${h}px`);
-            };
             bindHeaderEvents(thead, cols);
-            annotateForecastHeaderColumns(thead, cols.length + histCols + fcCols);
+            const totalLeafCols = cols.length + histCols + mtdCols + fcCols;
+            annotateForecastHeaderColumns(thead, totalLeafCols);
             attachForecastColumnResizeHandles(thead, cols, meta, leafColWidths);
-            /* 手柄挂载后再量第一行高度，保证第二行 sticky 的 top 与第一行实际像素对齐 */
-            if (table._sfTheadResizeObserver) {
-                try { table._sfTheadResizeObserver.disconnect(); } catch (_) {}
-                table._sfTheadResizeObserver = null;
-            }
-            applyHeadOffset();
-            if (typeof requestAnimationFrame === 'function') requestAnimationFrame(applyHeadOffset);
-            setTimeout(applyHeadOffset, 0);
-            if (typeof ResizeObserver !== 'undefined') {
-                table._sfTheadResizeObserver = new ResizeObserver(() => applyHeadOffset());
-                table._sfTheadResizeObserver.observe(trTop);
-            }
-
             const filteredRows = applyFilters(state.rows.slice(), cols);
             const groups = buildGroups(filteredRows);
             const collapsedSet = getCollapsedSet();
             if (collapsedSet.size === 0 && groups.length) initCollapsedGroups(groups);
 
-            const totalCols = cols.length + histCols + fcCols;
+            const totalCols = cols.length + histCols + mtdCols + fcCols;
             tbody.innerHTML = '';
             if (!groups.length) {
                 const tr = document.createElement('tr');
@@ -1393,6 +1556,7 @@
                             tr.appendChild(td);
                         }
                     }
+                    if (mtdCols) tr.appendChild(renderMtdCell(row));
                     if (fcCols) {
                         if (state.forecastExpanded) {
                             visibleFcMonths.forEach(monthKey => {
@@ -1701,7 +1865,7 @@
         function attachForecastColumnResizeHandles(thead, cols, meta, leafColWidths) {
             if (!thead) return;
             const table = document.getElementById('forecastTable');
-            const totalCols = Number(meta && meta.specCount || 0) + Number(meta && meta.histCols || 0) + Number(meta && meta.fcCols || 0);
+            const totalCols = Number(meta && meta.specCount || 0) + Number(meta && meta.histCols || 0) + Number(meta && meta.mtdCols || 0) + Number(meta && meta.fcCols || 0);
             thead.querySelectorAll('.sf-col-resize-handle').forEach(el => el.remove());
             thead.querySelectorAll('th').forEach(cell => {
                 const colStart = Number(cell.dataset.colStart);
@@ -1987,7 +2151,6 @@
             input.inputMode = 'numeric';
             input.autocomplete = 'off';
             input.spellcheck = false;
-            input.pattern = '\\\\d*';
             input.className = 'sf-num-input';
             if (forecast && forecast.is_inherited) input.classList.add('is-inherited');
             if (dirtyVal !== null) input.classList.add('is-dirty');
@@ -1997,9 +2160,9 @@
             input.dataset.original = String(baseValue || 0);
             input.addEventListener('input', onForecastInputChange);
             input.addEventListener('beforeinput', (ev) => {
-                // Block non-digit insertions early when supported.
-                if (!ev || !ev.data) return;
-                if (/^\\d+$/.test(ev.data)) return;
+                if (!ev || ev.isComposing) return;
+                if (!ev.data) return;
+                if (/^\d+$/.test(ev.data)) return;
                 if (ev.inputType && String(ev.inputType).startsWith('delete')) return;
                 try { ev.preventDefault(); } catch (_) {}
             });
@@ -2054,6 +2217,10 @@
             }
             refreshBatchPopup();
             if (!state.forecastExpanded) renderForecastTableBodyOnly();
+            const curM = state.mtdContext && state.mtdContext.current_month_key;
+            if (curM && String(month) === String(curM) && state.mtdContext.in_history_range) {
+                refreshMtdCellForRowKey(rowKey);
+            }
         }
 
         function makeTooltipWrap(html, contentNode) {
@@ -2167,10 +2334,9 @@
             state.forecastExpanded = readBoolPref(SF_PREF_FORECAST_EXPANDED_KEY, true);
             // 历史范围默认：上个月起回溯 12 个月
             const today = new Date();
-            let endY = today.getFullYear();
-            let endM = today.getMonth(); // 当前月-1（getMonth=0..11，需先取 month-1）
-            if (endM < 1) { endM = 12; endY -= 1; }
-            const endKey = endY.toString().padStart(4, '0') + '-' + pad2(endM) + '-01';
+            const endY = today.getFullYear();
+            const endM = today.getMonth() + 1;
+            const endKey = `${String(endY).padStart(4, '0')}-${pad2(endM)}-01`;
             const startKey = shiftMonth(endKey, -11);
             const startEl = document.getElementById('historyStart');
             const endEl = document.getElementById('historyEnd');
