@@ -320,6 +320,36 @@
             text-align: center;
         }
         .sales-row-hidden { display: none; }
+        .sj-sales-table-host.sj-aggregate-active .sj-agg-toggle-col,
+        .sj-sales-table-host.sj-aggregate-active .sj-agg-toggle-cell { width: 40px; max-width: 48px; text-align: center; vertical-align: middle; }
+        .sj-sales-table-host.sj-aggregate-active .sj-agg-toggle-head-inner { display: flex; align-items: center; justify-content: center; min-height: 2.1rem; }
+        .sj-sales-table-host.sj-aggregate-active .sj-agg-all-toggle {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 2rem;
+            height: 2rem;
+            padding: 0;
+            margin: 0;
+            border: 1px solid rgba(207, 199, 189, 0.75);
+            border-radius: 6px;
+            background: #faf7f2;
+            cursor: pointer;
+            font-size: 0.88rem;
+            line-height: 1;
+            color: #5a4f42;
+            font-weight: 700;
+        }
+        .sj-sales-table-host:not(.sj-aggregate-active) th.sj-agg-toggle-col,
+        .sj-sales-table-host:not(.sj-aggregate-active) td.sj-agg-toggle-cell {
+            display: none !important;
+            width: 0 !important;
+            min-width: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+        }
+        .sales-parent-group-row .sj-agg-toggle-cell { cursor: pointer; }
+        .sales-parent-group-row .sj-agg-toggle-cell .sales-parent-group-toggle { margin-right: 0; }
     </style>
 </head>
 <body>
@@ -358,11 +388,16 @@
                 </div>
             </div>
 
-            <div>
+            <div class="sj-sales-table-host" id="salesProductTableHost">
                 <table class="pm-table" id="salesProductTable">
                     <thead>
                         <tr>
-                            <th style="width:54px; text-align:center;"><input type="checkbox" id="salesSelectAll"></th>
+                            <th class="sj-agg-toggle-col" data-manage-col-key="__sj_agg__" data-disable-sort="1" style="width:0;padding:0;border:none;">
+                                <div class="sj-agg-toggle-head-inner">
+                                    <button type="button" class="sj-agg-all-toggle" data-sj-agg-all-toggle="1" aria-label="分组全部展开或收起">▼</button>
+                                </div>
+                            </th>
+                            <th style="width:54px; text-align:center;" data-manage-col-key="__sales_chk__"><input type="checkbox" id="salesSelectAll"></th>
                             <th style="width:76px;">图片</th>
                             <th data-sort-key="product_status">状态</th>
                             <th data-sort-key="sku_family">货号</th>
@@ -377,7 +412,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="12" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="13" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1355,6 +1390,7 @@
             const rowCls = hidden ? 'sales-row-hidden' : '';
             return `
                 <tr class="${rowCls}" data-group-key="${gk}" data-sj-row-entity-id="${item.id}">
+                    <td class="sj-agg-toggle-cell"></td>
                     <td style="text-align:center;"><input type="checkbox" class="sales-row-checkbox" data-id="${item.id}" ${selectedSalesProductIds.has(String(item.id)) ? 'checked' : ''}></td>
                     <td style="text-align:center;" data-sj-preview="1">${previewCell}</td>
                     <td>${renderInlineProductStatus(item)}</td>
@@ -1396,18 +1432,38 @@
             });
         }
 
-        function bindSalesParentGroupEvents() {
-            const tbody = document.querySelector('#salesProductTable tbody');
-            if (!tbody || tbody.dataset.salesGroupBound === '1') return;
-            tbody.dataset.salesGroupBound = '1';
-            tbody.addEventListener('click', function(e) {
-                const row = e.target && e.target.closest ? e.target.closest('tr.sales-parent-group-row[data-group-key]') : null;
-                if (!row) return;
-                const key = String(row.dataset.groupKey || '');
-                if (!key) return;
-                if (salesProductCollapsedParentGroups.has(key)) salesProductCollapsedParentGroups.delete(key);
-                else salesProductCollapsedParentGroups.add(key);
-                renderSalesGroupedTable(salesProductItems || []);
+        function initSalesGroupedAggregateHelpers() {
+            if (!window.SitjoyGroupedAggregate) return;
+            SitjoyGroupedAggregate.bindGroupRowToggle({
+                tbody: document.querySelector('#salesProductTable tbody'),
+                groupRowSelector: 'tr.sales-parent-group-row[data-group-key]',
+                getCollapsedSet() {
+                    return salesProductCollapsedParentGroups;
+                },
+                onAfterToggle() {
+                    renderSalesGroupedTable(salesProductItems || []);
+                }
+            });
+            SitjoyGroupedAggregate.bindDocumentAggregateGroupSort({
+                bodyTable: document.getElementById('salesProductTable'),
+                isAggregateMode: () => salesProductAggregateMode === 'parent',
+                getSortState: () => salesProductGroupSort,
+                setSortState() { /* sort object mutated in place */ },
+                onAfterSortChange() {
+                    renderSalesGroupedTable(salesProductItems || []);
+                }
+            });
+            SitjoyGroupedAggregate.bindAggregateHeaderExpandCollapse({
+                table: document.getElementById('salesProductTable'),
+                isAggregateMode: () => salesProductAggregateMode === 'parent',
+                onToggle() {
+                    if (salesProductAggregateMode !== 'parent') return;
+                    const keys = salesCollectParentGroupKeysForToggle(salesProductItems || []);
+                    const allExpanded = keys.length > 0 && keys.every(k => !salesProductCollapsedParentGroups.has(k));
+                    if (allExpanded) keys.forEach(k => salesProductCollapsedParentGroups.add(k));
+                    else salesProductCollapsedParentGroups.clear();
+                    renderSalesGroupedTable(salesProductItems || []);
+                }
             });
         }
 
@@ -1434,34 +1490,6 @@
             });
         }
 
-        function bindSalesHeaderGroupSort() {
-            if (document.body.dataset.salesGroupSortBound === '1') return;
-            document.body.dataset.salesGroupSortBound = '1';
-            document.addEventListener('click', function(e) {
-                if (salesProductAggregateMode !== 'parent') return;
-                if (e.target && e.target.closest && e.target.closest('.pm-column-filter-btn')) return;
-                const th = e.target && e.target.closest ? e.target.closest('#salesProductTable thead th[data-sort-key]') : null;
-                if (!th) return;
-                const hostTable = th.closest ? th.closest('table') : null;
-                const mainTable = document.getElementById('salesProductTable');
-                if (!hostTable || !mainTable || hostTable !== mainTable) return;
-
-                e.preventDefault();
-                e.stopPropagation();
-                if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
-
-                const key = String(th.getAttribute('data-sort-key') || '').trim();
-                if (!key) return;
-                if (salesProductGroupSort.key === key) {
-                    salesProductGroupSort.dir = salesProductGroupSort.dir === 'asc' ? 'desc' : 'asc';
-                } else {
-                    salesProductGroupSort.key = key;
-                    salesProductGroupSort.dir = 'asc';
-                }
-                renderSalesGroupedTable(salesProductItems || []);
-            }, true);
-        }
-
         function syncSalesAggregateSegmentUi() {
             const seg = document.getElementById('salesProductAggregateSegment');
             if (!seg) return;
@@ -1476,11 +1504,62 @@
             salesProductAggregateMode = raw === 'parent' ? 'parent' : 'none';
         }
 
+        function salesCollectParentGroupKeysForToggle(rows) {
+            const keys = [];
+            const seen = new Set();
+            (Array.isArray(rows) ? rows : []).forEach(item => {
+                const meta = salesParentGroupMetaOf(item);
+                if (!seen.has(meta.key)) {
+                    seen.add(meta.key);
+                    keys.push(meta.key);
+                }
+            });
+            return keys;
+        }
+
+        function salesSyncAggregateToggleHeaderUi() {
+            const host = document.getElementById('salesProductTableHost');
+            if (!host) return;
+            const btns = host.querySelectorAll('.sj-agg-all-toggle');
+            if (!btns.length) return;
+            let text = '▼';
+            let title = '';
+            if (salesProductAggregateMode === 'parent') {
+                const keys = salesCollectParentGroupKeysForToggle(salesProductItems || []);
+                const allExpanded = keys.length > 0 && keys.every(k => !salesProductCollapsedParentGroups.has(k));
+                text = allExpanded ? '▶' : '▼';
+                title = allExpanded ? '单击：全部收起' : '单击：全部展开';
+            }
+            btns.forEach(b => {
+                b.textContent = text;
+                if (title) b.setAttribute('title', title);
+                else b.removeAttribute('title');
+            });
+        }
+
+        function salesApplyAggregateToggleLockedAndRefresh() {
+            const main = document.getElementById('salesProductTable');
+            if (!main || !main.tHead || !main.tHead.rows || !main.tHead.rows[0]) return;
+            const th = main.tHead.rows[0].querySelector('th.sj-agg-toggle-col');
+            if (!th) return;
+            const lockNow = salesProductAggregateMode === 'parent' ? '1' : '';
+            const prev = String(th.dataset.manageColLocked || '');
+            if (lockNow) th.dataset.manageColLocked = '1';
+            else delete th.dataset.manageColLocked;
+            salesSyncAggregateToggleHeaderUi();
+            if (prev !== lockNow && window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.invalidateLayout === 'function') {
+                window.SitjoyManagedPmTable.invalidateLayout(main);
+            }
+        }
+
         function renderSalesGroupedTable(items) {
             const tbody = document.querySelector('#salesProductTable tbody');
             if (!tbody) return;
             if (!(items || []).length) {
-                tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;">暂无数据</td></tr>';
+                const host = document.getElementById('salesProductTableHost');
+                if (host) host.classList.toggle('sj-aggregate-active', salesProductAggregateMode === 'parent');
+                salesApplyAggregateToggleLockedAndRefresh();
                 refreshSalesProductTableHeaderSortUi();
                 syncSalesSelectAllCheckbox();
                 return;
@@ -1514,7 +1593,8 @@
                     const safeKey = escapeSalesGroupKeyAttr(groupKey);
                     html.push(`
                 <tr class="sales-parent-group-row" data-group-key="${safeKey}">
-                    <td colspan="12"><span class="sales-parent-group-toggle">${collapsed ? '▶' : '▼'}</span>${escapeHtml(groupLabel)}（${sorted.length}）</td>
+                    <td class="sj-agg-toggle-cell"><span class="sales-parent-group-toggle" aria-hidden="true">${collapsed ? '▶' : '▼'}</span></td>
+                    <td colspan="12">${escapeHtml(groupLabel)}（${sorted.length}）</td>
                 </tr>
             `);
                     sorted.forEach(item => {
@@ -1524,9 +1604,11 @@
             }
 
             tbody.innerHTML = html.join('');
+            const host = document.getElementById('salesProductTableHost');
+            if (host) host.classList.toggle('sj-aggregate-active', salesProductAggregateMode === 'parent');
+            salesApplyAggregateToggleLockedAndRefresh();
             refreshSalesProductTableHeaderSortUi();
             bindSalesRowSelectionEvents();
-            bindSalesParentGroupEvents();
             syncSalesSelectAllCheckbox();
         }
 
@@ -4248,7 +4330,10 @@
             return fetch(url).then(r => r.json()).then(data => {
                 const tbody = document.querySelector('#salesProductTable tbody');
                 if (data.status !== 'success') {
-                    tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="13" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                    const h = document.getElementById('salesProductTableHost');
+                    if (h) h.classList.toggle('sj-aggregate-active', salesProductAggregateMode === 'parent');
+                    salesApplyAggregateToggleLockedAndRefresh();
                     return;
                 }
                 const items = data.items || [];
@@ -4260,7 +4345,10 @@
                 }
             }).catch(err => {
                 const tbody = document.querySelector('#salesProductTable tbody');
-                tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="13" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                const h = document.getElementById('salesProductTableHost');
+                if (h) h.classList.toggle('sj-aggregate-active', salesProductAggregateMode === 'parent');
+                salesApplyAggregateToggleLockedAndRefresh();
             });
         }
 
@@ -4485,7 +4573,7 @@
             restoreSalesProductAggregateModeFromStorage();
             syncSalesAggregateSegmentUi();
             bindSalesAggregateSegment();
-            bindSalesHeaderGroupSort();
+            initSalesGroupedAggregateHelpers();
             loadSalesProductList();
             Promise.all([
                 loadShopOptions(),
@@ -4705,9 +4793,10 @@
         }
         window.addEventListener('load', initPage);
     </script>
+    <script src="/static/js/header.js"></script>
+    <script src="/static/js/sitjoy_grouped_aggregate.js"></script>
+    <script src="/static/js/sitjoy_row_image_refresh.js"></script>
+    <script src="/static/js/pm_image_edit_modal.js"></script>
 </body>
-<script src="/static/js/header.js"></script>
-<script src="/static/js/sitjoy_row_image_refresh.js"></script>
-<script src="/static/js/pm_image_edit_modal.js"></script>
 </html>
 

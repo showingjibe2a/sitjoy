@@ -44,31 +44,36 @@
       </div>
     </div>
 
-    <div>
+    <div class="sj-wip-table-host" id="factoryWipTableHost">
       <table class="pm-table" id="mainTable" data-batch-delete-handler="handleFactoryWipBatchDelete">
         <thead>
           <tr>
-            <th style="width:54px; text-align:center;"><input type="checkbox" id="wipSelectAll"></th>
-            <th data-sort-key="factory_name">工厂</th>
-            <th style="width:160px;" data-sort-key="order_no">订单号</th>
-            <th style="width:160px;" data-sort-key="contract_no">合同编号</th>
-            <th style="width:120px;" data-sort-key="representative_color">颜色</th>
-            <th style="width:64px;" class="cell-center">图片</th>
-            <th data-sort-key="sku">SKU</th>
-            <th style="width:150px;">在市状态</th>
-            <th style="width:120px;" data-sort-key="quantity">数量</th>
-            <th style="width:140px;" data-sort-key="expected_completion_date">预计完工日期</th>
-            <th style="width:170px;" data-sort-key="initial_expected_completion_date">最初预计完工日期</th>
-            <th style="width:160px;">是否完工</th>
-            <th style="width:140px;" data-sort-key="actual_completion_date">实际完工时间</th>
-            <th data-sort-key="notes">备注</th>
-            <th style="width:180px;" data-sort-key="created_at">创建时间</th>
-            <th style="width:180px;" data-sort-key="update_time">更新时间</th>
-            <th style="width:160px;">操作</th>
+            <th class="sj-agg-toggle-col" data-manage-col-key="__sj_agg__" data-disable-sort="1" style="width:0;padding:0;border:none;">
+              <div class="sj-agg-toggle-head-inner">
+                <button type="button" class="sj-agg-all-toggle" data-sj-agg-all-toggle="1" aria-label="分组全部展开或收起">▼</button>
+              </div>
+            </th>
+            <th style="width:54px; text-align:center;" data-manage-col-key="__wip_chk__"><input type="checkbox" id="wipSelectAll"></th>
+            <th data-manage-col-key="1" data-sort-key="factory_name">工厂</th>
+            <th style="width:160px;" data-manage-col-key="2" data-sort-key="order_no">订单号</th>
+            <th style="width:160px;" data-manage-col-key="3" data-sort-key="contract_no">合同编号</th>
+            <th style="width:120px;" data-manage-col-key="4" data-sort-key="representative_color">颜色</th>
+            <th style="width:64px;" class="cell-center" data-manage-col-key="__wip_img__">图片</th>
+            <th data-manage-col-key="5" data-sort-key="sku">SKU</th>
+            <th style="width:150px;" data-manage-col-key="6">在市状态</th>
+            <th style="width:120px;" data-manage-col-key="7" data-sort-key="quantity">数量</th>
+            <th style="width:140px;" data-manage-col-key="8" data-sort-key="expected_completion_date">预计完工日期</th>
+            <th style="width:170px;" data-manage-col-key="9" data-sort-key="initial_expected_completion_date">最初预计完工日期</th>
+            <th style="width:160px;" data-manage-col-key="10">是否完工</th>
+            <th style="width:140px;" data-manage-col-key="11" data-sort-key="actual_completion_date">实际完工时间</th>
+            <th data-manage-col-key="12" data-sort-key="notes">备注</th>
+            <th style="width:180px;" data-manage-col-key="13" data-sort-key="created_at">创建时间</th>
+            <th style="width:180px;" data-manage-col-key="14" data-sort-key="update_time">更新时间</th>
+            <th style="width:160px;" data-manage-col-key="__wip_op__">操作</th>
           </tr>
         </thead>
         <tbody>
-          <tr><td colspan="17" style="text-align:center;">加载中...</td></tr>
+          <tr><td colspan="18" style="text-align:center;">加载中...</td></tr>
         </tbody>
       </table>
     </div>
@@ -188,6 +193,36 @@
     font-weight: 700;
   }
   .wip-row-hidden { display: none; }
+  .sj-wip-table-host.sj-aggregate-active .sj-agg-toggle-col,
+  .sj-wip-table-host.sj-aggregate-active .sj-agg-toggle-cell { width: 40px; max-width: 48px; text-align: center; vertical-align: middle; }
+  .sj-wip-table-host.sj-aggregate-active .sj-agg-toggle-head-inner { display: flex; align-items: center; justify-content: center; min-height: 2.1rem; }
+  .sj-wip-table-host.sj-aggregate-active .sj-agg-all-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    margin: 0;
+    border: 1px solid rgba(207,199,189,.75);
+    border-radius: 6px;
+    background: #faf7f2;
+    cursor: pointer;
+    font-size: 0.88rem;
+    line-height: 1;
+    color: #5a4f42;
+    font-weight: 700;
+  }
+  .sj-wip-table-host:not(.sj-aggregate-active) th.sj-agg-toggle-col,
+  .sj-wip-table-host:not(.sj-aggregate-active) td.sj-agg-toggle-cell {
+    display: none !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+  }
+  .wip-group-row .sj-agg-toggle-cell { cursor: pointer; }
+  .wip-group-row .sj-agg-toggle-cell .wip-group-toggle { margin-right: 0; }
 </style>
 
 <script>
@@ -207,6 +242,7 @@ let factoryWipColumnFilters = {};
 let wipAggregateMode = 'none';
 let wipCollapsedOrderGroups = new Set();
 let wipCollapsedFamilyGroups = new Set();
+let wipGroupCollapseInitDone = false;
 let wipGroupSort = { key: '', dir: 'asc' };
 
 const WIP_FILTER_COLUMNS = {
@@ -307,7 +343,7 @@ function installWipColumnFilterButtons(){
     columns: Object.keys(WIP_FILTER_COLUMNS).map(key => {
       const index = Number(key);
       const config = WIP_FILTER_COLUMNS[index] || {};
-      return { index, label: config.label || `字段${index}` };
+      return { index, key: String(index), label: config.label || `字段${index}` };
     }),
     fetchOptions: ({ column, query, exact, limit }) => {
       const params = new URLSearchParams({
@@ -1086,7 +1122,10 @@ function loadList(){
     .then(d => {
       const tbody = document.querySelector('#mainTable tbody');
       if(d.status !== 'success'){
-        tbody.innerHTML = `<tr><td colspan="17" style="text-align:center;color:#a33;">${d.message || '加载失败'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="18" style="text-align:center;color:#a33;">${d.message || '加载失败'}</td></tr>`;
+        const h = document.getElementById('factoryWipTableHost');
+        if (h) h.classList.toggle('sj-aggregate-active', wipAggregateMode !== 'none');
+        wipApplyAggregateToggleLockedAndRefresh();
         selectedWipIds = new Set();
         syncWipSelectAll();
         syncFactoryWipSaveBar();
@@ -1098,7 +1137,10 @@ function loadList(){
       const availableIds = new Set(listCache.map(item => Number(item.id || 0)).filter(v => v > 0));
       selectedWipIds = new Set(Array.from(selectedWipIds).filter(id => availableIds.has(id)));
       if(!listCache.length){
-        tbody.innerHTML = '<tr><td colspan="17" style="text-align:center;">暂无数据</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="18" style="text-align:center;">暂无数据</td></tr>';
+        const h = document.getElementById('factoryWipTableHost');
+        if (h) h.classList.toggle('sj-aggregate-active', wipAggregateMode !== 'none');
+        wipApplyAggregateToggleLockedAndRefresh();
         installWipColumnFilterButtons();
         syncWipSelectAll();
         syncFactoryWipSaveBar();
@@ -1109,11 +1151,74 @@ function loadList(){
     })
     .catch(err => {
       const tbody = document.querySelector('#mainTable tbody');
-      tbody.innerHTML = `<tr><td colspan="17" style="text-align:center;color:#a33;">${err.message || '加载失败'}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="18" style="text-align:center;color:#a33;">${err.message || '加载失败'}</td></tr>`;
+      const h = document.getElementById('factoryWipTableHost');
+      if (h) h.classList.toggle('sj-aggregate-active', wipAggregateMode !== 'none');
+      wipApplyAggregateToggleLockedAndRefresh();
       selectedWipIds = new Set();
       syncWipSelectAll();
       syncFactoryWipSaveBar();
     });
+}
+
+function wipCollectGroupKeysForToggle(rows, mode){
+  const keys = [];
+  const seen = new Set();
+  const list = Array.isArray(rows) ? rows : [];
+  if(mode === 'order'){
+    list.forEach(item => {
+      const rawKey = String(item.order_no || '').trim();
+      const key = rawKey || '（无订单号）';
+      if(!seen.has(key)){ seen.add(key); keys.push(key); }
+    });
+  } else if(mode === 'family'){
+    list.forEach(item => {
+      const familyId = Number(item && item.sku_family_id || 0);
+      const familyName = String(item && item.sku_family || '').trim();
+      let key;
+      if (familyId > 0 && familyName) key = `family:${familyId}`;
+      else if (familyName) key = `family-name:${familyName}`;
+      else key = 'family:unknown';
+      if(!seen.has(key)){ seen.add(key); keys.push(key); }
+    });
+  }
+  return keys;
+}
+
+function wipSyncAggregateToggleHeaderUi(){
+  const host = document.getElementById('factoryWipTableHost');
+  if(!host) return;
+  const btns = host.querySelectorAll('.sj-agg-all-toggle');
+  if(!btns.length) return;
+  let text = '▼';
+  let title = '';
+  if(wipAggregateMode !== 'none'){
+    const targetSet = wipAggregateMode === 'order' ? wipCollapsedOrderGroups : wipCollapsedFamilyGroups;
+    const keys = wipCollectGroupKeysForToggle(applyWipColumnFilters(listCache), wipAggregateMode);
+    const allExpanded = keys.length > 0 && keys.every(k => !targetSet.has(k));
+    text = allExpanded ? '▶' : '▼';
+    title = allExpanded ? '单击：全部收起' : '单击：全部展开';
+  }
+  btns.forEach(b => {
+    b.textContent = text;
+    if(title) b.setAttribute('title', title);
+    else b.removeAttribute('title');
+  });
+}
+
+function wipApplyAggregateToggleLockedAndRefresh(){
+  const main = document.getElementById('mainTable');
+  if(!main || !main.tHead || !main.tHead.rows || !main.tHead.rows[0]) return;
+  const th = main.tHead.rows[0].querySelector('th.sj-agg-toggle-col');
+  if(!th) return;
+  const lockNow = wipAggregateMode !== 'none' ? '1' : '';
+  const prev = String(th.dataset.manageColLocked || '');
+  if(lockNow) th.dataset.manageColLocked = '1';
+  else delete th.dataset.manageColLocked;
+  wipSyncAggregateToggleHeaderUi();
+  if(prev !== lockNow && window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.invalidateLayout === 'function'){
+    window.SitjoyManagedPmTable.invalidateLayout(main);
+  }
 }
 
 function renderFactoryWipTable(items){
@@ -1121,7 +1226,15 @@ function renderFactoryWipTable(items){
   const rows = Array.isArray(items) ? items : [];
   if(!tbody) return;
   if(!rows.length){
-    tbody.innerHTML = '<tr><td colspan="17" style="text-align:center;">暂无数据</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="18" style="text-align:center;">暂无数据</td></tr>';
+    const wipHost0 = document.getElementById('factoryWipTableHost');
+    if (wipHost0) wipHost0.classList.toggle('sj-aggregate-active', wipAggregateMode !== 'none');
+    wipApplyAggregateToggleLockedAndRefresh();
+    installWipColumnFilterButtons();
+    refreshWipFilterButtons();
+    bindRowSelectionEvents();
+    bindFactoryWipEditEvents();
+    syncWipSelectAll();
     return;
   }
   const html = [];
@@ -1187,6 +1300,7 @@ function renderFactoryWipTable(items){
     const safeGroupKeyAttr = String(groupKey || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     return `
       <tr class="${hidden ? 'wip-row-hidden' : ''}" data-group-key="${safeGroupKeyAttr}">
+        <td class="sj-agg-toggle-cell"></td>
         <td style="text-align:center;"><input type="checkbox" class="wip-row-checkbox" data-id="${item.id}" ${selectedWipIds.has(Number(item.id)) ? 'checked' : ''}></td>
         <td>${item.factory_name || ''}</td>
         <td class="preview-edit-cell"><input type="text" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="order_no" value="${String(item.order_no || '').replace(/"/g, '&quot;')}" placeholder="可选"></td>
@@ -1241,8 +1355,9 @@ function renderFactoryWipTable(items){
         groups.get(family.key).items.push(item);
       }
     });
-    if (activeCollapsedSet && activeCollapsedSet.size === 0) {
+    if (activeCollapsedSet && activeCollapsedSet.size === 0 && !wipGroupCollapseInitDone) {
       Array.from(groups.keys()).forEach(k => activeCollapsedSet.add(k));
+      wipGroupCollapseInitDone = true;
     }
     Array.from(groups.entries()).forEach(([groupKey, groupData]) => {
       const groupLabel = String((groupData && groupData.label) || groupKey || '').trim() || '（无货号）';
@@ -1251,7 +1366,8 @@ function renderFactoryWipTable(items){
       const collapsed = activeCollapsedSet ? activeCollapsedSet.has(groupKey) : false;
       html.push(`
         <tr class="wip-group-row" data-group-key="${String(groupKey).replace(/"/g, '&quot;')}">
-          <td colspan="17"><span class="wip-group-toggle">${collapsed ? '▶' : '▼'}</span>${groupLabel}（${sorted.length}）</td>
+          <td class="sj-agg-toggle-cell"><span class="wip-group-toggle" aria-hidden="true">${collapsed ? '▶' : '▼'}</span></td>
+          <td colspan="17">${groupLabel}（${sorted.length}）</td>
         </tr>
       `);
       sorted.forEach(item => {
@@ -1261,28 +1377,56 @@ function renderFactoryWipTable(items){
   }
 
   tbody.innerHTML = html.join('');
+  const wipHost = document.getElementById('factoryWipTableHost');
+  if (wipHost) wipHost.classList.toggle('sj-aggregate-active', wipAggregateMode !== 'none');
+  wipApplyAggregateToggleLockedAndRefresh();
   installWipColumnFilterButtons();
   refreshWipFilterButtons();
   bindRowSelectionEvents();
   bindFactoryWipEditEvents();
   syncWipSelectAll();
-  bindWipGroupEvents();
 }
 
-function bindWipGroupEvents(){
-  const tbody = document.querySelector('#mainTable tbody');
-  if(!tbody || tbody.dataset.groupBound === '1') return;
-  tbody.dataset.groupBound = '1';
-  tbody.addEventListener('click', function(e){
-    const row = e.target && e.target.closest ? e.target.closest('tr.wip-group-row[data-group-key]') : null;
-    if(!row) return;
-    const key = String(row.dataset.groupKey || '');
-    if(!key) return;
-    const targetSet = wipAggregateMode === 'order' ? wipCollapsedOrderGroups : wipCollapsedFamilyGroups;
-    if(targetSet.has(key)) targetSet.delete(key);
-    else targetSet.add(key);
-    renderFactoryWipTable(applyWipColumnFilters(listCache));
-    syncFactoryWipSaveBar();
+function initWipGroupedAggregateHelpers(){
+  if(!window.SitjoyGroupedAggregate) return;
+  SitjoyGroupedAggregate.bindGroupRowToggle({
+    tbody: document.querySelector('#mainTable tbody'),
+    groupRowSelector: 'tr.wip-group-row[data-group-key]',
+    getCollapsedSet(){
+      if(wipAggregateMode === 'order') return wipCollapsedOrderGroups;
+      if(wipAggregateMode === 'family') return wipCollapsedFamilyGroups;
+      return wipCollapsedOrderGroups;
+    },
+    onAfterToggle(){
+      renderFactoryWipTable(applyWipColumnFilters(listCache));
+      syncFactoryWipSaveBar();
+    }
+  });
+  SitjoyGroupedAggregate.bindDocumentAggregateGroupSort({
+    bodyTable: document.getElementById('mainTable'),
+    isAggregateMode: () => wipAggregateMode !== 'none',
+    getSortState: () => wipGroupSort,
+    setSortState(s){ wipGroupSort = s; },
+    onAfterSortChange(){
+      renderFactoryWipTable(applyWipColumnFilters(listCache));
+      syncFactoryWipSaveBar();
+    }
+  });
+  SitjoyGroupedAggregate.bindAggregateHeaderExpandCollapse({
+    table: document.getElementById('mainTable'),
+    isAggregateMode: () => wipAggregateMode !== 'none',
+    onToggle(){
+      if(wipAggregateMode === 'none') return;
+      const targetSet = wipAggregateMode === 'order' ? wipCollapsedOrderGroups : wipCollapsedFamilyGroups;
+      const rows = applyWipColumnFilters(listCache);
+      const keys = wipCollectGroupKeysForToggle(rows, wipAggregateMode);
+      const allExpanded = keys.length > 0 && keys.every(k => !targetSet.has(k));
+      if(allExpanded) keys.forEach(k => targetSet.add(k));
+      else keys.forEach(k => targetSet.delete(k));
+      wipGroupCollapseInitDone = true;
+      renderFactoryWipTable(applyWipColumnFilters(listCache));
+      syncFactoryWipSaveBar();
+    }
   });
 }
 
@@ -1319,43 +1463,18 @@ function bindWipAggregateSegment(){
       seg.querySelectorAll('button.status-pill[data-value]').forEach(b => {
         b.classList.toggle('is-active', String(b.getAttribute('data-value') || '') === wipAggregateMode);
       });
-      if(wipAggregateMode === 'order') wipCollapsedOrderGroups = new Set();
-      if(wipAggregateMode === 'family') wipCollapsedFamilyGroups = new Set();
+      if(wipAggregateMode === 'order'){
+        wipCollapsedOrderGroups = new Set();
+        wipGroupCollapseInitDone = false;
+      }
+      if(wipAggregateMode === 'family'){
+        wipCollapsedFamilyGroups = new Set();
+        wipGroupCollapseInitDone = false;
+      }
       renderFactoryWipTable(applyWipColumnFilters(listCache));
       syncFactoryWipSaveBar();
     });
   });
-}
-
-function bindWipHeaderGroupSort(){
-  if(document.body.dataset.wipGroupSortBound === '1') return;
-  document.body.dataset.wipGroupSortBound = '1';
-  document.addEventListener('click', function(e){
-    if(wipAggregateMode === 'none') return;
-    if(e.target && e.target.closest && e.target.closest('.pm-column-filter-btn')) return;
-    const th = e.target && e.target.closest ? e.target.closest('th[data-sort-key]') : null;
-    if(!th) return;
-    const hostTable = th.closest ? th.closest('table') : null;
-    const mainTable = document.getElementById('mainTable');
-    const isMainHeader = !!(hostTable && mainTable && hostTable === mainTable);
-    const isManagedHeader = !!(hostTable && hostTable.classList && hostTable.classList.contains('pm-managed-head-table'));
-    if(!isMainHeader && !isManagedHeader) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-    if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
-
-    const key = String(th.getAttribute('data-sort-key') || '').trim();
-    if(!key) return;
-    if(wipGroupSort.key === key){
-      wipGroupSort.dir = wipGroupSort.dir === 'asc' ? 'desc' : 'asc';
-    }else{
-      wipGroupSort.key = key;
-      wipGroupSort.dir = 'asc';
-    }
-    renderFactoryWipTable(applyWipColumnFilters(listCache));
-    syncFactoryWipSaveBar();
-  }, true);
 }
 
 function resetSearch(){
@@ -1423,12 +1542,13 @@ window.addEventListener('load', () => {
   }
   installWipColumnFilterButtons();
   bindWipAggregateSegment();
-  bindWipHeaderGroupSort();
+  initWipGroupedAggregateHelpers();
   loadOptions().finally(loadList);
   setTimeout(installWipColumnFilterButtons, 200);
 });
 </script>
-</body>
 <script src="/static/js/header.js"></script>
+<script src="/static/js/sitjoy_grouped_aggregate.js"></script>
+</body>
 </html>
 

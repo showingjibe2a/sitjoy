@@ -2597,6 +2597,7 @@
     }
 
     function applyPagination(state){
+        if(!state || !state.info || !state.pageCurrent || !state.prevBtn || !state.nextBtn) return;
         const allRows = getDataRows(state);
         const rows = allRows.filter(row => String(row.dataset.pmFilterHidden || '0') !== '1');
         const isServerManaged = String(state.table.dataset.serverPaginationMode || '').toLowerCase() === 'server'
@@ -2667,6 +2668,13 @@
         const t = String(label || '').trim();
         if(!t) return false;
         return /多选|选择|勾选/.test(t);
+    }
+
+    /** 复选列或业务声明的列（如汇总三角列），冻结窗格中不可取消 */
+    function isLockedLayoutColumn(headerCell, label){
+        if(!headerCell) return false;
+        if(isMultiSelectColumn(headerCell, label)) return true;
+        return String(headerCell.dataset && headerCell.dataset.manageColLocked || '').trim() === '1';
     }
 
     function readManagedCellDisplayText(cell){
@@ -3374,6 +3382,40 @@
         return handle;
     }
 
+    function resolveBodyTableFromHeaderTh(th){
+        if(!th || !th.closest) return null;
+        const table = th.closest('table');
+        if(!table) return null;
+        if(managedTableState.has(table)) return table;
+        if(table.classList && table.classList.contains('pm-managed-head-table')){
+            let found = null;
+            managedTableState.forEach((state) => {
+                if(found) return;
+                if(state && state.headerTable === table) found = state.table || null;
+            });
+            return found;
+        }
+        return null;
+    }
+
+    function invalidateManagedTableLayout(table){
+        const t = typeof table === 'string' ? document.querySelector(table) : table;
+        if(!t) return;
+        const state = managedTableState.get(t);
+        if(!state) return;
+        try{
+            t.dataset.sjManageLayoutSig = String(Date.now());
+        } catch(_e){
+        }
+        state.headerSignature = '';
+        refreshManagedTable(state);
+    }
+
+    window.SitjoyManagedPmTable = Object.assign({}, window.SitjoyManagedPmTable || {}, {
+        resolveBodyTableFromHeaderTh,
+        invalidateLayout: invalidateManagedTableLayout
+    });
+
     window.SitjoyColumnFilter = {
         attach: attachColumnFilter,
         close: closeColumnFilterPopup,
@@ -3978,11 +4020,12 @@
         ensureManagedColumnKeys(state, headerMeta);
 
         const validKeys = headerMeta.map(meta => String(meta.key || '').trim()).filter(Boolean);
+        const layoutSig = String(state.table && state.table.dataset && state.table.dataset.sjManageLayoutSig ? state.table.dataset.sjManageLayoutSig : '');
         const headerSignature = headerMeta
             .slice()
             .sort((a, b) => String(a.key || '').localeCompare(String(b.key || ''), 'zh-Hans-CN', { sensitivity: 'base' }))
             .map(meta => `${meta.key}:${meta.label}`)
-            .join('|');
+            .join('|') + '|__layout__|' + layoutSig;
 
         if(headerSignature !== state.headerSignature){
             state.headerSignature = headerSignature;
@@ -4014,7 +4057,7 @@
             }
             state.lockedColumns = new Set(
                 headerMeta
-                    .filter(meta => isMultiSelectColumn(meta.cell, meta.label))
+                    .filter(meta => isLockedLayoutColumn(meta.cell, meta.label))
                     .map(meta => String(meta.key || '').trim())
             );
             state.lockedColumns.forEach(key => state.visibleColumns.add(String(key || '').trim()));

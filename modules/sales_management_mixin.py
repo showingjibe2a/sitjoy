@@ -1883,6 +1883,96 @@ class SalesManagementMixin:
             payload.update(extra_keys)
         return payload
 
+    def _forecast_perf_history_cost_join_sql(self, conn):
+        """与产品表现看板货号分组（周/月粒度）一致的变体级单位成本子查询，用于预测历史月单元格。"""
+        has_op_reship = self._table_has_column(conn, 'order_products', 'is_reship_accessory')
+        has_op_last_mile = self._table_has_column(conn, 'order_products', 'last_mile_avg_freight_usd')
+        reship_clause = ' AND COALESCE(op.is_reship_accessory,0)=0 ' if has_op_reship else ''
+        lm_weighted_sum = (
+            'SUM(COALESCE(op.last_mile_avg_freight_usd, 0) * COALESCE(svol.quantity, 1))'
+            if has_op_last_mile else '0'
+        )
+        return (
+            'LEFT JOIN ('
+            ' SELECT v.id AS variant_id,'
+            '   SUM(COALESCE(op.cost_usd, 0) * COALESCE(svol.quantity, 1)) AS unit_bom_cost_usd,'
+            f'   {lm_weighted_sum} AS unit_last_mile_freight_usd'
+            ' FROM sales_product_variants v'
+            ' INNER JOIN sales_variant_order_links svol ON svol.variant_id = v.id'
+            ' INNER JOIN order_products op ON op.id = svol.order_product_id'
+            f' WHERE 1=1{reship_clause}'
+            ' GROUP BY v.id'
+            ') est_unit_cost ON est_unit_cost.variant_id = sp.variant_id'
+        )
+
+    def _forecast_finalize_history_perf_payload(self, raw):
+        """将 sales_perf_agg_month 一行（或按变体汇总）规范为与看板货号分组内层 SKU 行一致的指标集合。"""
+        net = float(raw.get('net_sales_amount') or 0)
+        gross = float(raw.get('gross_sales_amount') or 0)
+        ref = float(raw.get('refund_amount') or 0)
+        ad_spend = float(raw.get('ad_spend') or 0)
+        bom = round(float(raw.get('estimated_product_cost_usd') or 0), 2)
+        lm = round(float(raw.get('estimated_last_mile_freight_usd') or 0), 2)
+        comm = round(min(net, 200.0) * 0.15 + max(net - 200.0, 0.0) * 0.10, 2)
+        total_cost = round(bom + lm, 2)
+        profit = round(net - comm - total_cost - ad_spend - ref, 2)
+        discount_rate = round((gross - net) / gross, 6) if gross > 1e-12 else 0.0
+        refund_rate = round(ref / net, 6) if net > 1e-12 else 0.0
+        commission_rate = round(comm / net, 6) if net > 1e-12 else 0.0
+        net_margin_rate = round(profit / gross, 6) if gross > 1e-12 else 0.0
+        scr = raw.get('sub_category_rank_avg')
+        if scr is None:
+            scr = raw.get('sub_category_rank')
+        sub_rank = None
+        if scr is not None:
+            try:
+                sub_rank = round(float(scr), 4)
+            except Exception:
+                sub_rank = None
+        return {
+            'rows': int(self._parse_int(raw.get('source_rows')) or 0),
+            'sales_qty': float(raw.get('sales_qty') or 0),
+            'net_sales_amount': round(net, 2),
+            'gross_sales_amount': round(gross, 2),
+            'discount_rate': discount_rate,
+            'order_qty': float(raw.get('order_qty') or 0),
+            'session_total': float(raw.get('session_total') or 0),
+            'ad_impressions': float(raw.get('ad_impressions') or 0),
+            'ad_clicks': float(raw.get('ad_clicks') or 0),
+            'ad_orders': float(raw.get('ad_orders') or 0),
+            'ad_spend': round(float(raw.get('ad_spend') or 0), 2),
+            'ad_sales_amount': round(float(raw.get('ad_sales_amount') or 0), 2),
+            'refund_amount': round(ref, 2),
+            'refund_rate': refund_rate,
+            'sub_category_rank': sub_rank,
+            'estimated_product_cost_usd': bom,
+            'estimated_last_mile_freight_usd': lm,
+            'estimated_total_cost_usd': total_cost,
+            'est_referral_commission_usd': comm,
+            'commission_rate': commission_rate,
+            'estimated_net_profit_usd': profit,
+            'net_margin_rate': net_margin_rate,
+        }
+
+    def _forecast_empty_history_perf_payload(self):
+        return self._forecast_finalize_history_perf_payload({
+            'source_rows': 0,
+            'sales_qty': 0,
+            'net_sales_amount': 0,
+            'gross_sales_amount': 0,
+            'order_qty': 0,
+            'session_total': 0,
+            'ad_impressions': 0,
+            'ad_clicks': 0,
+            'ad_orders': 0,
+            'ad_spend': 0,
+            'ad_sales_amount': 0,
+            'refund_amount': 0,
+            'estimated_product_cost_usd': 0,
+            'estimated_last_mile_freight_usd': 0,
+            'sub_category_rank_avg': None,
+        })
+
     def _forecast_load_history_by_sales_product(self, conn, sales_product_ids, start_month, end_month):
         out = {}
         if not sales_product_ids or not start_month or not end_month:
@@ -1892,15 +1982,34 @@ class SalesManagementMixin:
             return out
         placeholders = ','.join(['%s'] * len(sales_product_ids))
         params = list(sales_product_ids) + [start_month, end_exclusive]
+        cost_join = self._forecast_perf_history_cost_join_sql(conn)
         with conn.cursor() as cur:
             cur.execute(
                 f"""
-                SELECT sales_product_id, month_start,
-                       sales_qty, net_sales_amount, order_qty, session_total, refund_amount
-                FROM sales_perf_agg_month
-                WHERE sales_product_id IN ({placeholders})
-                  AND month_start >= %s
-                  AND month_start < %s
+                SELECT m.sales_product_id,
+                       m.month_start,
+                       m.source_rows,
+                       m.sales_qty,
+                       m.net_sales_amount,
+                       m.order_qty,
+                       m.session_total,
+                       m.ad_impressions,
+                       m.ad_clicks,
+                       m.ad_orders,
+                       m.ad_spend,
+                       m.ad_sales_amount,
+                       m.refund_amount,
+                       m.sub_category_rank_avg,
+                       (COALESCE(v.sale_price_usd, 0) * COALESCE(m.sales_qty, 0)) AS gross_sales_amount,
+                       (COALESCE(est_unit_cost.unit_bom_cost_usd, 0) * COALESCE(m.sales_qty, 0)) AS estimated_product_cost_usd,
+                       (COALESCE(est_unit_cost.unit_last_mile_freight_usd, 0) * COALESCE(m.sales_qty, 0)) AS estimated_last_mile_freight_usd
+                FROM sales_perf_agg_month m
+                JOIN sales_products sp ON sp.id = m.sales_product_id
+                LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
+                {cost_join}
+                WHERE m.sales_product_id IN ({placeholders})
+                  AND m.month_start >= %s
+                  AND m.month_start < %s
                 """,
                 tuple(params)
             )
@@ -1909,15 +2018,7 @@ class SalesManagementMixin:
                 month_str = self._forecast_month_to_str(row.get('month_start'))
                 if not spid or not month_str:
                     continue
-                out[(spid, month_str)] = {
-                    'sales_product_id': spid,
-                    'month_start': month_str,
-                    'sales_qty': float(row.get('sales_qty') or 0),
-                    'net_sales_amount': float(row.get('net_sales_amount') or 0),
-                    'order_qty': float(row.get('order_qty') or 0),
-                    'session_total': float(row.get('session_total') or 0),
-                    'refund_amount': float(row.get('refund_amount') or 0),
-                }
+                out[(spid, month_str)] = self._forecast_finalize_history_perf_payload(dict(row))
         return out
 
     def _forecast_load_history_by_variant(self, conn, variant_ids, start_month, end_month):
@@ -1929,18 +2030,31 @@ class SalesManagementMixin:
             return out
         placeholders = ','.join(['%s'] * len(variant_ids))
         params = list(variant_ids) + [start_month, end_exclusive]
+        cost_join = self._forecast_perf_history_cost_join_sql(conn)
         with conn.cursor() as cur:
             cur.execute(
                 f"""
                 SELECT sp.variant_id AS variant_id,
                        m.month_start AS month_start,
+                       SUM(COALESCE(m.source_rows, 0)) AS source_rows,
                        SUM(COALESCE(m.sales_qty, 0)) AS sales_qty,
                        SUM(COALESCE(m.net_sales_amount, 0)) AS net_sales_amount,
                        SUM(COALESCE(m.order_qty, 0)) AS order_qty,
                        SUM(COALESCE(m.session_total, 0)) AS session_total,
-                       SUM(COALESCE(m.refund_amount, 0)) AS refund_amount
+                       SUM(COALESCE(m.ad_impressions, 0)) AS ad_impressions,
+                       SUM(COALESCE(m.ad_clicks, 0)) AS ad_clicks,
+                       SUM(COALESCE(m.ad_orders, 0)) AS ad_orders,
+                       SUM(COALESCE(m.ad_spend, 0)) AS ad_spend,
+                       SUM(COALESCE(m.ad_sales_amount, 0)) AS ad_sales_amount,
+                       SUM(COALESCE(m.refund_amount, 0)) AS refund_amount,
+                       AVG(m.sub_category_rank_avg) AS sub_category_rank_avg,
+                       (COALESCE(MAX(v.sale_price_usd), 0) * SUM(COALESCE(m.sales_qty, 0))) AS gross_sales_amount,
+                       (MAX(COALESCE(est_unit_cost.unit_bom_cost_usd, 0)) * SUM(COALESCE(m.sales_qty, 0))) AS estimated_product_cost_usd,
+                       (MAX(COALESCE(est_unit_cost.unit_last_mile_freight_usd, 0)) * SUM(COALESCE(m.sales_qty, 0))) AS estimated_last_mile_freight_usd
                 FROM sales_perf_agg_month m
                 JOIN sales_products sp ON sp.id = m.sales_product_id
+                LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
+                {cost_join}
                 WHERE sp.variant_id IN ({placeholders})
                   AND m.month_start >= %s
                   AND m.month_start < %s
@@ -1953,15 +2067,7 @@ class SalesManagementMixin:
                 month_str = self._forecast_month_to_str(row.get('month_start'))
                 if not vid or not month_str:
                     continue
-                out[(vid, month_str)] = {
-                    'variant_id': vid,
-                    'month_start': month_str,
-                    'sales_qty': float(row.get('sales_qty') or 0),
-                    'net_sales_amount': float(row.get('net_sales_amount') or 0),
-                    'order_qty': float(row.get('order_qty') or 0),
-                    'session_total': float(row.get('session_total') or 0),
-                    'refund_amount': float(row.get('refund_amount') or 0),
-                }
+                out[(vid, month_str)] = self._forecast_finalize_history_perf_payload(dict(row))
         return out
 
     def _forecast_current_month_key(self):
@@ -2335,6 +2441,7 @@ class SalesManagementMixin:
         cells = self._forecast_load_platform_cells(conn, sales_product_ids, months)
         history = self._forecast_load_history_by_sales_product(conn, sales_product_ids, hist_start, hist_end)
 
+        hist_empty = self._forecast_empty_history_perf_payload()
         out = []
         for r in dim_rows:
             spid = self._parse_int(r.get('sales_product_id'))
@@ -2372,7 +2479,7 @@ class SalesManagementMixin:
                 }
             for hm in self._forecast_iter_months(hist_start, hist_end):
                 h = history.get((spid, hm))
-                row['history'][hm] = h or {'sales_qty': 0, 'net_sales_amount': 0, 'order_qty': 0, 'session_total': 0, 'refund_amount': 0}
+                row['history'][hm] = h if h else hist_empty.copy()
             out.append(row)
         return out
 
@@ -2383,6 +2490,7 @@ class SalesManagementMixin:
         spec_cells = self._forecast_load_spec_cells(conn, variant_ids, months)
         history = self._forecast_load_history_by_variant(conn, variant_ids, hist_start, hist_end)
 
+        hist_empty = self._forecast_empty_history_perf_payload()
         platforms_by_variant = self._forecast_load_variant_platform_skus(conn, variant_ids)
         all_sp_ids = sorted({
             sp.get('sales_product_id')
@@ -2460,7 +2568,7 @@ class SalesManagementMixin:
                     }
             for hm in self._forecast_iter_months(hist_start, hist_end):
                 h = history.get((vid, hm))
-                row['history'][hm] = h or {'sales_qty': 0, 'net_sales_amount': 0, 'order_qty': 0, 'session_total': 0, 'refund_amount': 0}
+                row['history'][hm] = h if h else hist_empty.copy()
             out.append(row)
         return out
 
@@ -2487,7 +2595,8 @@ class SalesManagementMixin:
         })
         platform_cells = self._forecast_load_platform_cells(conn, all_sp_ids, months)
 
-        # 历史月销量：聚合表按销售产品/变体，无 order_product 粒度；按关联变体与链接数量比例分摊到本页各下单 SKU
+        # 历史月销量：聚合为变体粒度。下单 SKU 行「销量」= 各关联变体月销 × sales_variant_order_links.quantity 之和（BOM 件数）；
+        # 净销售额/订单/会话/退款仍按链接数量占该变体全局链接权重比例分摊，避免金额重复全额记入每个下单 SKU。
         variant_hist_ids = sorted({
             self._parse_int(vl.get('variant_id'))
             for r in dim_rows
@@ -2617,12 +2726,13 @@ class SalesManagementMixin:
                     h = history_by_variant.get((vid, hm))
                     if not h:
                         continue
+                    q = float(max(1, self._parse_int(vl.get('quantity')) or 1))
+                    # 销量：变体月销 × 本下单 SKU 在该变体上的链接数量（多链接、多下单 SKU 各自累加）
+                    agg['sales_qty'] += float(h.get('sales_qty') or 0) * q
                     denom = float(variant_hist_weight_sum.get(vid) or 0)
                     if denom <= 0:
                         continue
-                    q = max(1, self._parse_int(vl.get('quantity')) or 1)
-                    share = float(q) / denom
-                    agg['sales_qty'] += float(h.get('sales_qty') or 0) * share
+                    share = q / denom
                     agg['net_sales_amount'] += float(h.get('net_sales_amount') or 0) * share
                     agg['order_qty'] += float(h.get('order_qty') or 0) * share
                     agg['session_total'] += float(h.get('session_total') or 0) * share

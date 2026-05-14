@@ -1989,8 +1989,6 @@
                 mode: 'order_product_management',
                 hooks: {
                     prefillVariantLinks: true,
-                    // 不预填/不默认勾选销售规格；仅由用户手动选择要关联的销售 SKU
-                    prefillSalesVariantLinks: false,
                     applyOrderProductMgmtBindingDefaults: async () => {
                         const base = editOriginalItem || {};
                         const opid = Number(editId || 0);
