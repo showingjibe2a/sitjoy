@@ -1368,7 +1368,7 @@
             if (col.key === 'thumb') {
                 const b64 = String(col.get(row) || '').trim();
                 if (b64) {
-                    td.innerHTML = `<img class="sf-variant-thumb" src="/api/image-preview?id=${encodeURIComponent(b64)}&mode=thumb&w=120&q=60" alt="thumb" loading="lazy">`;
+                    td.innerHTML = `<img class="sf-variant-thumb" src="/api/image-preview?id=${encodeURIComponent(b64)}&mode=thumb&w=120&q=60" alt="" loading="lazy">`;
                 } else {
                     td.innerHTML = '<span class="sf-thumb-empty">暂无</span>';
                 }

@@ -299,6 +299,18 @@ class RequestRoutingMixin:
             return self.send_json({'status': 'error', 'message': '未登录'}, start_response)
         # 规格主图管理（gallery）与销售产品管理共用主图 API，任一模块权限即可
         dual_access = {
+            # 上架资源缩略图：多模块列表/弹窗内嵌 <img src="/api/image-preview">，浏览器请求不带「当前页」信息，
+            # 若仅校验 gallery，仅有工厂在库/在制等权限的用户会 403 导致整列裂图。
+            '/api/image-preview': (
+                'gallery',
+                'sales_product_management',
+                'order_product_management',
+                'fabric_management',
+                'factory_stock_management',
+                'factory_wip_management',
+                'sales_forecast_management',
+                'aplus_management',
+            ),
             '/api/sales-product-main-images': ('gallery', 'sales_product_management'),
             '/api/sales-product-main-images-upload': ('gallery', 'sales_product_management'),
             '/api/sales-product-main-images-replace': ('gallery', 'sales_product_management'),

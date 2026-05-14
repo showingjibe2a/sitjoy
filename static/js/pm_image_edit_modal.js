@@ -1154,9 +1154,13 @@
       const resp = await fetch('/api/gallery-image-links?id=' + encodeURIComponent(current.pathB64));
       const data = await resp.json();
       if (!data || data.status !== 'success' || !data.linked) return;
-      const vids = Array.isArray(data.variant_ids) ? data.variant_ids : [];
-      const nextV = new Set(vids.map(v => Number(v)).filter(v => v > 0));
-      if (nextV.size) selectedVariantIds = nextV;
+      // 下单产品管理等场景：仍预填面料/下单产品绑定，但不从库中回填销售规格（避免同图多规格或「可组成 SKU」被整批勾选）
+      const prefillSalesVariants = !(ctx.hooks && ctx.hooks.prefillSalesVariantLinks === false);
+      if (prefillSalesVariants) {
+        const vids = Array.isArray(data.variant_ids) ? data.variant_ids : [];
+        const nextV = new Set(vids.map(v => Number(v)).filter(v => v > 0));
+        if (nextV.size) selectedVariantIds = nextV;
+      }
 
       const fids = Array.isArray(data.fabric_ids) ? data.fabric_ids : [];
       const nextF = new Set(fids.map(v => Number(v)).filter(v => v > 0));

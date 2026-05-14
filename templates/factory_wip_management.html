@@ -1182,7 +1182,7 @@ function renderFactoryWipTable(items){
       : '<span class="sku-color-empty">-</span>';
     const thumbB64 = String(item.preview_image_b64 || '').trim();
     const thumbHtml = thumbB64
-      ? `<img class="fabric-table-thumb" src="/api/image-preview?id=${encodeURIComponent(thumbB64)}" alt="thumb" loading="lazy">`
+      ? `<img class="fabric-table-thumb" src="/api/image-preview?id=${encodeURIComponent(thumbB64)}" alt="" loading="lazy">`
       : `<span class="fabric-thumb-empty"></span>`;
     const safeGroupKeyAttr = String(groupKey || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     return `

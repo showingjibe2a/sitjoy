@@ -8,12 +8,73 @@ import mimetypes
 import tempfile
 import zipfile
 from datetime import datetime
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, unquote
 
 try:
     from PIL import Image
 except Exception:
     Image = None
+
+
+def _effective_wsgi_query_string(environ):
+    """
+    部分反向代理 / 隧道（云端访问）只保留 REQUEST_URI 中的查询串，或把查询放在 REDIRECT_QUERY_STRING。
+    若仅用 environ['QUERY_STRING'] 可能为空，导致 /api/image-preview 拿不到 id。
+    """
+    if not environ:
+        return ''
+    raw = environ.get('QUERY_STRING')
+    if raw is not None and str(raw).strip():
+        return str(raw)
+    for key in ('REDIRECT_QUERY_STRING', 'HTTP_X_ORIGINAL_QUERY_STRING', 'HTTP_X_QUERY_STRING'):
+        val = environ.get(key)
+        if val is not None and str(val).strip():
+            return str(val)
+    for uri_key in ('REQUEST_URI', 'RAW_URI', 'UNENCODED_URL'):
+        uri = environ.get(uri_key)
+        if uri is None:
+            continue
+        if isinstance(uri, (bytes, bytearray)):
+            try:
+                uri = uri.decode('latin-1', errors='replace')
+            except Exception:
+                continue
+        uri = str(uri)
+        q = uri.find('?')
+        if q >= 0 and q < len(uri) - 1:
+            return uri[q + 1 :]
+    return ''
+
+
+def _parse_qs_ampersand_only(qs):
+    """仅按 & 分段，避免旧版 urllib 把 ; 也当分隔符误拆参数。"""
+    if not qs:
+        return {}
+    try:
+        return parse_qs(qs, separator='&', keep_blank_values=False)
+    except TypeError:
+        return parse_qs(qs, keep_blank_values=False)
+
+
+def _extract_first_query_param_value(qs, key):
+    """
+    从原始查询串读取首个 key=value 的值，仅做百分号解码（unquote）。
+    不把 + 解释为空格；parse_qs 按 application/x-www-form-urlencoded 会把 '+' 变成空格，
+    会破坏图片 id（路径的 Base64）中的合法加号，导致预览 404 / 裂图。
+    """
+    if not qs or not key:
+        return ''
+    prefix = f'{key}='
+    for part in str(qs).split('&'):
+        if not part:
+            continue
+        if part.startswith(prefix):
+            raw = part[len(prefix) :]
+            try:
+                return unquote(raw, errors='replace')
+            except TypeError:
+                return unquote(raw)
+    return ''
 
 
 def _resolve_resources_parent():
@@ -59,8 +120,8 @@ class FileManagementMixin:
         """获取图片列表（用Base64编码路径避免编码问题）"""
         images = []
         try:
-            query_string = environ.get('QUERY_STRING', '')
-            query_params = parse_qs(query_string)
+            query_string = _effective_wsgi_query_string(environ)
+            query_params = _parse_qs_ampersand_only(query_string)
             
             page = int(query_params.get('page', ['1'])[0])
             per_page = min(int(query_params.get('per_page', ['100'])[0]), 200)
@@ -151,9 +212,9 @@ class FileManagementMixin:
     def handle_browse_api(self, environ, start_response):
         """浏览目录API：返回指定目录下的文件夹和图片"""
         try:
-            query_string = environ.get('QUERY_STRING', '')
-            query_params = parse_qs(query_string)
-            path_b64 = query_params.get('path', [''])[0]
+            query_string = _effective_wsgi_query_string(environ)
+            query_params = _parse_qs_ampersand_only(query_string)
+            path_b64 = _extract_first_query_param_value(query_string, 'path')
             debug = query_params.get('debug', ['0'])[0] == '1'
 
             # 解码路径（如果为空则为根目录）
@@ -284,9 +345,9 @@ class FileManagementMixin:
     def handle_image_preview(self, environ, start_response):
         """获取图片预览（接受Base64编码的路径）"""
         try:
-            query_string = environ.get('QUERY_STRING', '')
-            query_params = parse_qs(query_string)
-            path_b64 = query_params.get('id', [''])[0]
+            query_string = _effective_wsgi_query_string(environ)
+            query_params = _parse_qs_ampersand_only(query_string)
+            path_b64 = _extract_first_query_param_value(query_string, 'id')
             mode = (query_params.get('mode', [''])[0] or '').strip().lower()
             max_w = self._to_int(query_params.get('w', [''])[0], 0) or 0
             max_h = self._to_int(query_params.get('h', [''])[0], 0) or 0

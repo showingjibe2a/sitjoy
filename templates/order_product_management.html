@@ -1989,12 +1989,14 @@
                 mode: 'order_product_management',
                 hooks: {
                     prefillVariantLinks: true,
+                    // 不预填/不默认勾选销售规格；仅由用户手动选择要关联的销售 SKU
+                    prefillSalesVariantLinks: false,
                     applyOrderProductMgmtBindingDefaults: async () => {
                         const base = editOriginalItem || {};
                         const opid = Number(editId || 0);
                         const skuEl = document.getElementById('modalSku');
                         const specEl = document.getElementById('modalSpecQtyShort');
-                        const patch = { order_products: [], fabrics: [], variant_ids: [] };
+                        const patch = { order_products: [], fabrics: [] };
                         if (opid) {
                             patch.order_products.push({
                                 order_product_id: opid,
@@ -2003,8 +2005,6 @@
                                 spec_qty_short: (specEl && specEl.value) ? String(specEl.value).trim() : String(base.spec_qty_short || '').trim(),
                             });
                         }
-                        const vid = Number(base.linked_variant_id || 0);
-                        if (vid) patch.variant_ids.push(vid);
                         return patch;
                     },
                     onRenamed: ({ oldPathB64, newFilename }) => {
@@ -2037,11 +2037,10 @@
                     }
                 }
             });
-            const linkedVid = Number((editOriginalItem || {}).linked_variant_id || 0);
             window.PmImageEditModal.open({
                 pathB64,
                 name: imageName,
-                defaultVariantIds: linkedVid ? [linkedVid] : [],
+                defaultVariantIds: [],
             });
         }
 

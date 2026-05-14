@@ -597,7 +597,7 @@ class SalesProductMixin:
             pass
 
         try:
-            mm = self._load_sales_variant_metrics(conn, [vid_int], include_links=True) or {}
+            mm = self._load_sales_variant_metrics(conn, [vid_int]) or {}
             m = mm.get(vid_int) or {}
             variant_out.update({
                 'warehouse_cost_usd': m.get('warehouse_cost_usd'),
@@ -3125,7 +3125,7 @@ class SalesProductMixin:
                         'order_sku_links': [],
                     }, start_response)
 
-                metrics = self._load_sales_variant_metrics(conn, [variant_id], include_links=True) or {}
+                metrics = self._load_sales_variant_metrics(conn, [variant_id]) or {}
                 bucket = metrics.get(variant_id, {}) if variant_id else {}
                 raw_links = bucket.get('order_sku_links') or []
                 order_sku_links = []
@@ -4186,7 +4186,7 @@ class SalesProductMixin:
                     metrics_map = {}
                     if variant_ids:
                         # Reuse same DB connection for performance (must be inside conn context)
-                        metrics_map = self._load_sales_variant_metrics(conn, variant_ids, include_links=include_links)
+                        metrics_map = self._load_sales_variant_metrics(conn, variant_ids)
 
                     for row in rows:
                         variant_id = int(row.get('variant_id') or 0)
@@ -4198,10 +4198,10 @@ class SalesProductMixin:
                         row['package_height_in'] = metrics.get('package_height_in', 0.0)
                         row['net_weight_lbs'] = metrics.get('net_weight_lbs', 0.0)
                         row['gross_weight_lbs'] = metrics.get('gross_weight_lbs', 0.0)
-                        if include_links:
-                            row['order_sku_links'] = metrics.get('order_sku_links', [])
-                        elif item_id:
+                        if item_id and (not include_links):
                             row['order_sku_links'] = []
+                        else:
+                            row['order_sku_links'] = metrics.get('order_sku_links', [])
 
                     # Variant preview image (first 白底图)：列表与单条 GET 均填充，供前端刷新行缩略图
                     try:
@@ -10689,7 +10689,7 @@ class SalesProductMixin:
                 values
             )
 
-    def _load_sales_variant_metrics(self, conn, variant_ids, include_links=False):
+    def _load_sales_variant_metrics(self, conn, variant_ids):
         ids = sorted({self._parse_int(v) for v in (variant_ids or []) if self._parse_int(v)})
         if not ids:
             return {}
@@ -10742,12 +10742,12 @@ class SalesProductMixin:
             bucket['package_height_in'] = max(bucket['package_height_in'], float(row.get('package_height_in') or 0))
             bucket['net_weight_lbs'] += float(row.get('net_weight_lbs') or 0) * qty
             bucket['gross_weight_lbs'] += float(row.get('gross_weight_lbs') or 0) * qty
-            if include_links:
-                bucket['order_sku_links'].append({
-                    'order_product_id': self._parse_int(row.get('order_product_id')),
-                    'sku': row.get('sku') or '',
-                    'quantity': qty
-                })
+            # 列表与成本汇总共用同一套 link 行；始终填充以便列表「下单SKU」列展示（无额外查询）
+            bucket['order_sku_links'].append({
+                'order_product_id': self._parse_int(row.get('order_product_id')),
+                'sku': row.get('sku') or '',
+                'quantity': qty
+            })
 
         for variant_id in metrics.keys():
             bucket = metrics[variant_id]
