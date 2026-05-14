@@ -15,6 +15,47 @@
     --morandi-cream: #ece7df;
     --morandi-mist: #f3f0ec;
     --morandi-accent: #9aa3a8;
+    /* 莫兰迪红（关闭、弱警示等，低饱和） */
+    --morandi-rose: #b67f7f;
+}
+
+/**
+ * 通用圆形关闭（×）：外圈与字重视觉一致（2px 描边 + 粗体字形），莫兰迪红
+ * 用于 class="modal-close" 的 button，勿与 .feature-category-remove 等标签内 × 混用
+ */
+button.modal-close {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.375rem;
+    height: 1.375rem;
+    min-width: 1.375rem;
+    min-height: 1.375rem;
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    color: var(--morandi-rose);
+    border: 2px solid var(--morandi-rose);
+    border-radius: 50%;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+button.modal-close:hover {
+    background: rgba(182, 127, 127, 0.14);
+    color: var(--morandi-rose);
+    border-color: var(--morandi-rose);
+}
+
+button.modal-close:focus-visible {
+    outline: 2px solid rgba(182, 127, 127, 0.55);
+    outline-offset: 2px;
 }
 
 body {

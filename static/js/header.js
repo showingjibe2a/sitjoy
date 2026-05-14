@@ -1446,9 +1446,56 @@
         }
     }
 
+    const PM_MONTH_COL_GROUP_WIDTH_KEY = '__pm_month_col_group__';
+
+    function getPmMetricColKeyForWidthSync(table){
+        return String(table && table.dataset && table.dataset.pmMetricColKey || 'sf_metric_col').trim();
+    }
+
+    function isPmMonthColWidthSyncTable(table){
+        return !!(table && String(table.dataset.pmMonthColWidthSync || '') === '1');
+    }
+
+    function isPmMonthColKeyForWidthSync(table, key){
+        const k = String(key || '').trim();
+        if(!k || k === getPmMetricColKeyForWidthSync(table)) return false;
+        return /^m_\d+$/.test(k);
+    }
+
+    function collectPmMonthColKeysForWidthSync(state){
+        if(!state || !state.table || !isPmMonthColWidthSyncTable(state.table)) return [];
+        const table = state.table;
+        return (state.headers || [])
+            .map(h => String(h && h.key || '').trim())
+            .filter(k => isPmMonthColKeyForWidthSync(table, k));
+    }
+
+    function resolvePmMonthGroupWidthFromPersisted(table, persistedWidths, monthKeys, resolvedWidths){
+        let w = Number(persistedWidths && persistedWidths[PM_MONTH_COL_GROUP_WIDTH_KEY]);
+        if(!Number.isFinite(w) || w < 36){
+            const nums = Object.keys(persistedWidths || {})
+                .filter(k => /^m_\d+$/.test(String(k || '').trim()))
+                .map(k => Number(persistedWidths[k]))
+                .filter(n => Number.isFinite(n) && n >= 36);
+            if(nums.length) w = Math.max.apply(null, nums);
+        }
+        if(!Number.isFinite(w) || w < 36){
+            const fromResolved = (monthKeys || []).map(k => Number((resolvedWidths || {})[k])).filter(n => Number.isFinite(n) && n >= 36);
+            if(fromResolved.length) w = Math.max.apply(null, fromResolved);
+        }
+        if(!Number.isFinite(w) || w < 36) w = 72;
+        return Math.round(w);
+    }
+
     function persistColumnWidths(state){
         try {
-            localStorage.setItem(makeStorageKey(state.table, 'column-widths'), JSON.stringify(state.columnWidths || {}));
+            const raw = Object.assign({}, state.columnWidths || {});
+            if(state && state.table && isPmMonthColWidthSyncTable(state.table)){
+                const monthKeys = collectPmMonthColKeysForWidthSync(state);
+                const sample = monthKeys.find(k => Number.isFinite(Number(raw[k])) && Number(raw[k]) >= 36);
+                if(sample) raw[PM_MONTH_COL_GROUP_WIDTH_KEY] = Number(raw[sample]);
+            }
+            localStorage.setItem(makeStorageKey(state.table, 'column-widths'), JSON.stringify(raw));
         } catch (_) {}
     }
 
@@ -2283,12 +2330,7 @@
         });
     }
 
-    function setColumnWidthByKey(state, key, widthPx){
-        const width = Math.max(36, Math.round(Number(widthPx) || 0));
-        const columnKey = String(key || '').trim();
-        if(!columnKey) return;
-        state.columnWidths[columnKey] = width;
-
+    function applyColumnWidthToDomForKey(state, columnKey, width){
         const colgroup = state.table && state.table.querySelector ? state.table.querySelector('colgroup') : null;
         if(colgroup){
             const matchedCols = Array.from(colgroup.children || [])
@@ -2343,9 +2385,34 @@
         }
     }
 
+    function resolveColumnWidthKeysToApply(state, primaryKey){
+        const columnKey = String(primaryKey || '').trim();
+        if(!columnKey) return [];
+        if(!state || !state.table || !isPmMonthColWidthSyncTable(state.table)) return [columnKey];
+        if(!isPmMonthColKeyForWidthSync(state.table, columnKey)) return [columnKey];
+        const monthKeys = collectPmMonthColKeysForWidthSync(state);
+        return monthKeys.length ? monthKeys.slice() : [columnKey];
+    }
+
+    function setColumnWidthByKey(state, key, widthPx){
+        const width = Math.max(36, Math.round(Number(widthPx) || 0));
+        const columnKey = String(key || '').trim();
+        if(!columnKey || columnKey === PM_MONTH_COL_GROUP_WIDTH_KEY) return;
+        const keysToApply = resolveColumnWidthKeysToApply(state, columnKey);
+        keysToApply.forEach((k) => {
+            state.columnWidths[k] = width;
+        });
+        keysToApply.forEach((k) => {
+            applyColumnWidthToDomForKey(state, k, width);
+        });
+    }
+
     function applyColumnWidths(state){
         const widths = state.columnWidths || {};
-        Object.keys(widths).forEach(key => setColumnWidthByKey(state, key, Number(widths[key])));
+        Object.keys(widths).forEach(key => {
+            if(String(key) === PM_MONTH_COL_GROUP_WIDTH_KEY) return;
+            setColumnWidthByKey(state, key, Number(widths[key]));
+        });
         syncSjAggToggleColumnCssVar(state);
     }
 
@@ -2928,6 +2995,7 @@
             || state.table.dataset.serverPaginationMode === '1';
         const allowColumnFilterWithServer = String(state.table.dataset.allowManagedColumnFilterWithServer || '').trim() === '1';
         if(serverPagination && !allowColumnFilterWithServer) return;
+        if(String(state.table.dataset.pmLightNoColumnFilter || '') === '1') return;
         if(!window.SitjoyColumnFilter || typeof window.SitjoyColumnFilter.attach !== 'function') return;
 
         const headerCells = Array.from(state.table.tHead.rows[0].cells || []);
@@ -4188,6 +4256,16 @@
                 const width = Number(stored ?? legacy ?? compact);
                 resolvedWidths[key] = Number.isFinite(width) && width > 0 ? width : compact;
             });
+            if(isPmMonthColWidthSyncTable(state.table)){
+                const monthKeys = validKeys.filter(k => isPmMonthColKeyForWidthSync(state.table, k));
+                if(monthKeys.length){
+                    const gw = resolvePmMonthGroupWidthFromPersisted(state.table, persistedWidths, monthKeys, resolvedWidths);
+                    monthKeys.forEach(k => {
+                        resolvedWidths[k] = gw;
+                    });
+                    resolvedWidths[PM_MONTH_COL_GROUP_WIDTH_KEY] = gw;
+                }
+            }
             state.columnWidths = resolvedWidths;
             try {
                 localStorage.setItem(makeStorageKey(state.table, 'column-widths'), JSON.stringify(state.columnWidths || {}));
@@ -4201,6 +4279,17 @@
             state.lockedColumns.forEach(key => state.visibleColumns.add(String(key || '').trim()));
             state.pinnedColumns = readPersistedPinned(state.table, headerMeta) || new Set();
             state.lockedColumns.forEach(key => state.pinnedColumns.add(String(key || '').trim()));
+            if(String(state.table.dataset.pmDefaultPinnedFirst || '') === '1' && validKeys[0]){
+                let hasStoredPins = false;
+                try{
+                    hasStoredPins = localStorage.getItem(makeStorageKey(state.table, 'pinned-columns')) != null;
+                } catch(_e){
+                }
+                if(!hasStoredPins){
+                    state.pinnedColumns.add(validKeys[0]);
+                    persistPinnedColumns(state);
+                }
+            }
             if(!state.light){
                 state.columnsWrap.style.display = headerCount >= 2 ? '' : 'none';
                 renderColumnPanel(state);
@@ -4220,6 +4309,11 @@
             syncDetachedHeader(state);
             applyColumnWidths(state);
             applyPinnedColumns(state);
+        } else if(String(state.table.dataset.pmLightStickyLayout || '') === '1'){
+            applyColumnOrder(state);
+            applyColumnVisibility(state);
+            applyColumnWidths(state);
+            applyPinnedColumns(state);
         }
         ensureSortableHeaders(state);
         refreshSortHeaderUi(state);
@@ -4230,6 +4324,9 @@
             syncManagedBatchBar(state);
             syncTopScroll(state);
             if(activeColumnsPanelState === state) repositionColumnsPanel(state);
+        } else if(state.light && String(state.table.dataset.pmLightStickyLayout || '') === '1'
+            && String(state.table.dataset.pmLightAllowColResize || '') === '1'){
+            ensureResizeHandles(state);
         }
         ensureManagedTableColumnFilter(state);
 

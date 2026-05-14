@@ -556,10 +556,6 @@
         .sf-tooltip-wrap.is-pinned {
             z-index: 1200;
         }
-        body.sf-history-perf-pinned .sf-history-perf-wrap:not(.is-pinned):hover,
-        body.sf-history-perf-pinned .sf-history-perf-wrap:not(.is-pinned):focus-within {
-            z-index: 1;
-        }
         .sf-tooltip-bubble {
             position: absolute;
             z-index: 1201;
@@ -582,10 +578,6 @@
         .sf-tooltip-wrap.is-pinned .sf-tooltip-bubble {
             display: block;
         }
-        body.sf-history-perf-pinned .sf-history-perf-wrap:not(.is-pinned):hover .sf-tooltip-bubble,
-        body.sf-history-perf-pinned .sf-history-perf-wrap:not(.is-pinned):focus-within .sf-tooltip-bubble {
-            display: none !important;
-        }
         .sf-tooltip-bubble dl {
             margin: 0;
             display: grid;
@@ -594,12 +586,58 @@
         }
         .sf-tooltip-bubble dt { color: #d6cfbf; font-weight: 500; }
         .sf-tooltip-bubble dd { margin: 0; color: #fff; word-break: break-all; }
-        /* 历史月单元格：字段与「产品表现」弹窗可见列一致，气泡略加宽并可滚动 */
+        /* 产品表现：悬浮 / 侧栏统一为深色表格（横向月份、纵向指标） */
+        .sf-perf-matrix-outer {
+            margin-top: 0.2rem;
+            overflow: auto;
+            max-width: min(880px, 94vw);
+            max-height: 64vh;
+        }
+        .sf-tooltip-bubble.sf-history-perf-tooltip-bubble .sf-perf-matrix-outer {
+            max-width: min(880px, 94vw);
+        }
+        .sf-perf-matrix-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+            line-height: 1.35;
+        }
+        .sf-perf-matrix-table th,
+        .sf-perf-matrix-table td {
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            padding: 0.2rem 0.38rem;
+            text-align: right;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }
+        .sf-perf-matrix-table thead th {
+            color: #d6cfbf;
+            font-weight: 600;
+            background: rgba(0, 0, 0, 0.18);
+        }
+        .sf-perf-matrix-table .sf-perf-matrix-corner {
+            text-align: left;
+            color: #ece7df;
+        }
+        .sf-perf-matrix-table tbody th.sf-perf-matrix-rowhead {
+            text-align: left;
+            font-weight: 500;
+            color: #d6cfbf;
+            background: rgba(0, 0, 0, 0.12);
+            white-space: nowrap;
+        }
+        .sf-perf-matrix-table tbody td {
+            color: #fff;
+            word-break: break-all;
+            white-space: normal;
+            max-width: 10rem;
+        }
+        /* 历史月单元格：气泡略加宽并可滚动 */
         .sf-tooltip-bubble.sf-history-perf-tooltip-bubble {
-            max-width: min(520px, 94vw);
+            max-width: min(900px, 96vw);
             max-height: 72vh;
-            overflow-y: auto;
-            overflow-x: hidden;
+            overflow: auto;
+            overflow-x: auto;
         }
         .sf-tooltip-bubble .sf-tip-title {
             font-weight: 600;
@@ -658,30 +696,7 @@
             background: #fff;
         }
 
-        /* 历史月销量 · 产品表现弹窗：托管 pm-table（与全站列筛选 / 字段显示 / 分页一致） */
-        /* 冻结列依赖 position:sticky；祖先若 overflow:hidden 会裁切/“遮挡”冻结区（与 style.css 中 managed 表约定一致） */
-        #sfPerfModal .sf-perf-managed-host {
-            margin-top: 0.65rem;
-            border: 1px solid rgba(207, 199, 189, 0.6);
-            border-radius: 10px;
-            background: #fff;
-            overflow: visible;
-            position: relative;
-            z-index: 0;
-        }
-        #sfPerfModal .sf-perf-managed-host .pm-managed-body-wrap.is-managed-wrap {
-            max-height: min(58vh, calc(100vh - 240px));
-        }
-        #sfPerfModal .sf-perf-managed-host .pm-table-toolbar {
-            border-bottom: 1px solid rgba(207, 199, 189, 0.55);
-            background: rgba(252, 249, 244, 0.96);
-        }
-        #sfPerfModal .sf-perf-managed-host thead th.sf-perf-th {
-            white-space: nowrap;
-            font-size: 0.8rem;
-        }
-
-        /* 右下角批量处理弹窗：z-index 须高于 pm-batch-float-bar(5350)，否则「待保存」会被「已选历史」条盖住 */
+        /* 右下角批量处理弹窗 */
         .sf-batch-popup {
             position: fixed;
             right: 24px;
@@ -697,15 +712,6 @@
             display: none;
         }
         .sf-batch-popup.is-active { display: block; }
-        /* 有待保存时抬高「已选历史」浮动条，与弹窗错开（同角 fixed 会叠） */
-        body.sf-dirty-batch-open #sfHistorySelectionBar.pm-batch-float-bar.active {
-            bottom: calc(18px + 9.25rem);
-        }
-        @media (max-width: 820px) {
-            body.sf-dirty-batch-open #sfHistorySelectionBar.pm-batch-float-bar.active {
-                bottom: calc(12px + 9.5rem);
-            }
-        }
         .sf-batch-popup-title {
             font-weight: 700;
             color: #4f463b;
@@ -727,6 +733,177 @@
             display: inline-flex;
             align-items: center;
             gap: 0.4rem;
+        }
+        .sf-perf-ui-group {
+            display: inline-flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.35rem 0.6rem;
+            max-width: 52rem;
+        }
+        .sf-perf-ui-label {
+            font-size: 0.88rem;
+            color: #5b5346;
+            white-space: nowrap;
+        }
+        .sf-perf-ui-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.2rem;
+            font-size: 0.82rem;
+            color: #4f463b;
+            cursor: pointer;
+            user-select: none;
+        }
+        .sf-perf-ui-interact-wrap {
+            display: inline-flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.35rem 0.5rem;
+        }
+        .sf-perf-attach-seg-label {
+            font-size: 0.72rem;
+            color: #5c534a;
+            white-space: nowrap;
+            margin-left: 0.25rem;
+        }
+        td.sf-cell-history { position: relative; vertical-align: middle; }
+        .sf-tooltip-wrap.sf-tooltip-wrap--cell-wide {
+            display: block;
+            width: 100%;
+            min-height: 1.35em;
+        }
+        .sf-history-cell-inner {
+            display: block;
+            width: 100%;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            padding: 0.08rem 0;
+            box-sizing: border-box;
+        }
+        .sf-perf-float-panel {
+            position: fixed;
+            z-index: 5400;
+            left: 18px;
+            top: 120px;
+            width: min(440px, calc(100vw - 36px));
+            height: min(320px, calc(100vh - 100px));
+            min-width: 260px;
+            min-height: 160px;
+            max-width: calc(100vw - 16px);
+            max-height: calc(100vh - 16px);
+            background: #f4efe6;
+            color: #3a342d;
+            border: 1px solid rgba(42, 36, 32, 0.16);
+            border-radius: 12px;
+            box-shadow: 0 14px 36px rgba(35, 28, 20, 0.18);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            resize: both;
+        }
+        .sf-perf-float-panel-header {
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            padding: 0.45rem 0.55rem 0.35rem;
+            border-bottom: 1px solid rgba(42, 36, 32, 0.1);
+            background: #ebe4d9;
+            cursor: grab;
+            user-select: none;
+        }
+        .sf-perf-float-panel-header:active { cursor: grabbing; }
+        .sf-perf-float-panel-header-left {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            min-width: 0;
+            flex: 1 1 auto;
+        }
+        .sf-perf-float-drag-hint {
+            color: #7a7268;
+            font-size: 0.75rem;
+            line-height: 1;
+        }
+        .sf-perf-float-title {
+            font-weight: 600;
+            font-size: 0.88rem;
+            color: #2a2420;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .sf-perf-float-panel-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            padding: 0.35rem 0.45rem 0.5rem;
+            overflow: hidden;
+        }
+        .sf-perf-float-table-scroll {
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            border-radius: 8px;
+            border: 1px solid rgba(42, 36, 32, 0.12);
+            background: #fdfaf6;
+        }
+        #sfPerfFloatingPanel table.sf-perf-pm-matrix.pm-table {
+            width: max-content;
+            min-width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+            line-height: 1.35;
+            color: #2f2a26;
+        }
+        #sfPerfFloatingPanel table.sf-perf-pm-matrix th,
+        #sfPerfFloatingPanel table.sf-perf-pm-matrix td {
+            border: 1px solid rgba(42, 36, 32, 0.12);
+            padding: 0.22rem 0.4rem;
+            text-align: right;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+            color: #2f2a26;
+        }
+        #sfPerfFloatingPanel table.sf-perf-pm-matrix thead th {
+            color: #3a342d;
+            font-weight: 600;
+            background: #e8e1d6;
+        }
+        #sfPerfFloatingPanel table.sf-perf-pm-matrix thead th[data-manage-col-key="sf_metric_col"],
+        #sfPerfFloatingPanel table.sf-perf-pm-matrix tbody th {
+            text-align: left;
+            color: #2a2420;
+        }
+        #sfPerfFloatingPanel table.sf-perf-pm-matrix tbody th {
+            font-weight: 600;
+            color: #3a342d;
+            background: #f0ebe3;
+        }
+        #sfPerfFloatingPanel table.sf-perf-pm-matrix tbody td {
+            color: #2f2a26;
+            background: #fdfaf6;
+        }
+        #sfPerfFloatingPanel table.sf-perf-pm-matrix.pm-table.is-managed-table th.pm-table-pinned-cell,
+        #sfPerfFloatingPanel table.sf-perf-pm-matrix.pm-table.is-managed-table td.pm-table-pinned-cell {
+            background: linear-gradient(0deg, #ebe4d9, #ebe4d9) !important;
+            color: #2a2420 !important;
+        }
+        .sf-perf-fields-modal .sf-perf-fields-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+            gap: 0.35rem 0.75rem;
+            margin: 0.75rem 0 1rem;
+            max-height: min(56vh, 480px);
+            overflow-y: auto;
+        }
+        .sf-perf-fields-modal label {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.82rem;
+            cursor: pointer;
         }
     </style>
 </head>
@@ -750,6 +927,23 @@
                             <button type="button" class="status-pill status-pill--enabled is-active" data-value="spec">规格+面料</button>
                             <button type="button" class="status-pill status-pill--enabled" data-value="order">下单SKU</button>
                         </div>
+                    </div>
+                </div>
+                <span class="sf-divider" aria-hidden="true"></span>
+                <div class="sf-toolbar-group sf-perf-ui-group" id="sfPerfUiToolbarGroup">
+                    <span class="sf-perf-ui-label">显示产品信息：</span>
+                    <div id="sfPerfUiToolbarInteractWrap" class="sf-perf-ui-interact-wrap">
+                        <label class="sf-perf-ui-toggle"><input type="checkbox" id="sfPerfUiNone"> 不显示</label>
+                        <label class="sf-perf-ui-toggle"><input type="checkbox" id="sfPerfUiHover"> 悬浮</label>
+                        <label class="sf-perf-ui-toggle"><input type="checkbox" id="sfPerfUiClick"> 点击</label>
+                        <label class="sf-perf-ui-toggle"><input type="checkbox" id="sfPerfUiRect"> 框选</label>
+                        <button type="button" class="btn-secondary" id="sfPerfManageFieldsBtn">管理产品表现信息</button>
+                    </div>
+                    <span class="sf-perf-attach-seg-label">弹窗位置</span>
+                    <input type="hidden" id="sfPerfPanelAttachVal" value="follow">
+                    <div class="status-segment status-segment--inline" id="sfPerfPanelAttachSeg" data-value="follow">
+                        <button type="button" class="status-pill status-pill--enabled" data-value="free">自由</button>
+                        <button type="button" class="status-pill status-pill--enabled is-active" data-value="follow">跟随选中</button>
                     </div>
                 </div>
                 <span class="sf-divider" aria-hidden="true"></span>
@@ -796,10 +990,36 @@
         </div>
     </div>
 
-    <div class="pm-batch-float-bar" id="sfHistorySelectionBar" aria-live="polite">
-        <span class="pm-batch-float-count" id="sfSelectionCountText">已选 0 个单元格</span>
-        <button type="button" class="btn-secondary" id="sfSelectionClearBtn">清空选择</button>
-        <button type="button" class="btn-secondary" id="sfSelectionShowPerfBtn">查看产品表现</button>
+    <div id="sfPerfFloatingPanel" class="sf-perf-float-panel" hidden aria-label="产品表现">
+        <div class="sf-perf-float-panel-header" id="sfPerfPanelHeader">
+            <div class="sf-perf-float-panel-header-left">
+                <span class="sf-perf-float-drag-hint" aria-hidden="true">⠿</span>
+                <span class="sf-perf-float-title" id="sfPerfPanelTitle">产品表现</span>
+            </div>
+            <button type="button" class="modal-close" id="sfPerfPanelClose" aria-label="关闭">×</button>
+        </div>
+        <div class="sf-perf-float-panel-body">
+            <div class="sf-perf-float-table-scroll">
+                <table id="sfPerfMatrixTable" class="pm-table sf-perf-pm-matrix"
+                    data-table-manage-mode="light"
+                    data-pm-light-sticky-layout="1"
+                    data-pm-default-pinned-first="1"
+                    data-pm-light-no-column-filter="1"
+                    data-pm-light-allow-col-resize="1"
+                    data-pm-month-col-width-sync="1"
+                    data-pm-metric-col-key="sf_metric_col"
+                    data-manage-key="sfPerfMatrixTable">
+                    <thead id="sfPerfMatrixThead"><tr>
+                        <th scope="col" data-manage-col-key="sf_metric_col" data-disable-sort="1">指标</th>
+                        <th scope="col" data-manage-col-key="m_placeholder" data-disable-sort="1">—</th>
+                    </tr></thead>
+                    <tbody id="sfPerfMatrixTbody"><tr>
+                        <th scope="row" data-manage-col-key="sf_metric_col" data-disable-sort="1">—</th>
+                        <td data-manage-col-key="m_placeholder">—</td>
+                    </tr></tbody>
+                </table>
+            </div>
+        </div>
     </div>
 
     <div class="sf-batch-popup" id="sfBatchPopup">
@@ -816,6 +1036,9 @@
         const SF_PREF_HISTORY_EXPANDED_KEY = 'sales_forecast_history_expanded_v1';
         const SF_PREF_FORECAST_EXPANDED_KEY = 'sales_forecast_forecast_expanded_v1';
         const SF_PREF_FORECAST_MODE_KEY = 'sales_forecast_dimension_v1';
+        const SF_PREF_PERF_UI_KEY = 'sales_forecast_perf_ui_v1';
+        const SF_PREF_PERF_PANEL_KEY = 'sales_forecast_perf_panel_v1';
+        const SF_METRIC_COL_KEY = 'sf_metric_col';
         const SF_PREF_COL_WIDTHS_PREFIX = 'sales_forecast_col_widths_v1_';
         const SF_TURNOVER_COLS = 3;
         const SF_STOCK_COLS = 4;
@@ -854,6 +1077,12 @@
             sfGridSelected: new Set(),       // JSON.stringify([rowKey, colIdx])，colIdx 为叶子列下标，与 data-sf-ci 一致
             selectionAnchor: null,           // { rowKey, colIdx }
             sfColLayout: [],                // 与叶子列顺序一一对应，用于复制/产品表现等
+            perfUi: { none: false, hover: true, click: false, rect: false },
+            sfPerfHoverCtx: null,
+            sfPerfPanelAttachMode: 'follow',
+            sfPerfPanelManuallyHidden: false,
+            sfPerfPanelHiddenSig: '',
+            sfPerfPanelLastShownSig: '',
             mtdContext: {},                  // /api/sales-forecast 返回的 mtd 块（时间进度、聚合更新时间等）
         };
 
@@ -1274,8 +1503,10 @@
             state.sortKey = '';
             state.sortDir = 'asc';
             state.colFilters = {};
+            state.sfPerfHoverCtx = null;
             applySfGridSelectionStyles();
             persistForecastMode(mode);
+            updateSfPerfToolbarGroupMode();
         }
 
         function buildSalesForecastQueryParams(extra) {
@@ -1797,7 +2028,6 @@
 
             const totalCols = cols.length + histCols + mtdCols + fcCols + invCols;
             tbody.innerHTML = '';
-            document.body.classList.remove('sf-history-perf-pinned');
             if (!groups.length) {
                 state.sfGridSelected.clear();
                 state.selectionAnchor = null;
@@ -1843,8 +2073,7 @@
                                 td.dataset.month = monthKey;
                                 const cell = (row.history && row.history[monthKey]) || null;
                                 const text = cell ? formatNumber(cell.sales_qty) : '0';
-                                if (cell) td.appendChild(makeTooltipWrap(buildHistoryTooltip(cell, monthKey, row), document.createTextNode(text), 'sf-history-perf-tooltip-bubble'));
-                                else td.textContent = text;
+                                td.textContent = text;
                                 markSfGridCell(td, row.row_key, ci);
                                 ci += 1;
                                 tr.appendChild(td);
@@ -2136,8 +2365,26 @@
             if (!pairs.length) return false;
             const ris = pairs.map(p => rowOrder.indexOf(p.rowKey)).filter(i => i >= 0);
             const cis = pairs.map(p => p.colIdx).filter(i => Number.isFinite(i) && i >= 0);
-            const r0 = Math.min(...ris);
-            const c0 = Math.min(...cis);
+            const rLo = Math.min(...ris);
+            const rHi = Math.max(...ris);
+            const cLo = Math.min(...cis);
+            const cHi = Math.max(...cis);
+            let r0 = -1;
+            let c0 = -1;
+            for (let ri = rLo; ri <= rHi; ri += 1) {
+                const rk = rowOrder[ri];
+                if (!rk) continue;
+                for (let ci = cLo; ci <= cHi; ci += 1) {
+                    const td = getSfGridTd(tbody, rk, ci);
+                    if (td && td.querySelector('input.sf-num-input')) {
+                        r0 = ri;
+                        c0 = ci;
+                        break;
+                    }
+                }
+                if (r0 >= 0) break;
+            }
+            if (r0 < 0 || c0 < 0) return false;
             let applied = 0;
             for (let r = 0; r < matrix.length; r += 1) {
                 const rowVals = matrix[r] || [''];
@@ -2159,6 +2406,19 @@
             return applied > 0;
         }
 
+        /** 矩阵粘贴到预测格：焦点在筛选栏/弹窗等时不抢粘贴 */
+        function sfActiveElementBlocksForecastMatrixPaste() {
+            const ae = document.activeElement;
+            if (!ae || ae === document.body || ae === document.documentElement) return false;
+            if (ae.closest && ae.closest('#sfPerfFieldsModal')) return true;
+            if (ae.closest && ae.closest('#sfPerfFloatingPanel')) return true;
+            if (ae.closest && ae.closest('.sf-toolbar')) return true;
+            if (ae.closest && ae.closest('#sfBatchPopup')) return true;
+            if (ae.closest && ae.closest('#sfGlobalMonthPickerPopover')) return true;
+            if (ae.closest && ae.closest('.sf-month-picker-popover')) return true;
+            return false;
+        }
+
         function initSfForecastSelectionGlobalOnce() {
             if (document.body.dataset.sfForecastGlobalBound === '1') return;
             document.body.dataset.sfForecastGlobalBound = '1';
@@ -2168,9 +2428,9 @@
                 const t = e.target;
                 if (!t || !t.closest) return;
                 if (t.closest('#forecastTableWrap')
-                    || t.closest('#sfHistorySelectionBar')
                     || t.closest('#sfBatchPopup')
-                    || t.closest('#sfPerfModal')
+                    || t.closest('#sfPerfFloatingPanel')
+                    || t.closest('#sfPerfFieldsModal')
                     || t.closest('.sf-month-picker-popover')
                     || t.closest('#sfGlobalMonthPickerPopover')) {
                     return;
@@ -2197,12 +2457,23 @@
             }, true);
 
             document.addEventListener('paste', (e) => {
-                const el = e.target;
-                if (!el || !el.closest || !el.closest('#forecastTable')) return;
+                if (!document.getElementById('forecastTable')) return;
                 const text = (e.clipboardData && e.clipboardData.getData) ? e.clipboardData.getData('text/plain') : '';
                 const matrix = parseClipboardMatrixSf(text);
                 if (!matrix.length) return;
                 const single = matrix.length === 1 && (matrix[0] || []).length <= 1;
+
+                /* 多选后焦点常在 body 或表格外控件，paste 的 target 不在 #forecastTable，原先逻辑永远进不来 */
+                if (!single && state.sfGridSelected && state.sfGridSelected.size && !sfActiveElementBlocksForecastMatrixPaste()) {
+                    if (applySfMatrixPasteFromGridSelection(matrix)) {
+                        e.preventDefault();
+                        if (window.showAppToast) window.showAppToast('已粘贴到预测输入区域', false, 1800);
+                        return;
+                    }
+                }
+
+                const el = e.target;
+                if (!el || !el.closest || !el.closest('#forecastTable')) return;
                 const field = el.closest('input.sf-num-input');
                 if (field) {
                     if (single) return;
@@ -2211,12 +2482,6 @@
                         window.showAppToast('已粘贴到预测输入区域', false, 1800);
                     }
                     return;
-                }
-                if (!single && state.sfGridSelected && state.sfGridSelected.size) {
-                    if (applySfMatrixPasteFromGridSelection(matrix)) {
-                        e.preventDefault();
-                        if (window.showAppToast) window.showAppToast('已粘贴到预测输入区域', false, 1800);
-                    }
                 }
             }, true);
         }
@@ -2230,12 +2495,7 @@
         function applySfGridSelectionStyles() {
             const tbody = document.getElementById('forecastTbody');
             const thead = document.getElementById('forecastThead');
-            const bar = document.getElementById('sfHistorySelectionBar');
-            const cnt = document.getElementById('sfSelectionCountText');
-            const showBtn = document.getElementById('sfSelectionShowPerfBtn');
             const n = state.sfGridSelected.size || 0;
-            if (cnt) cnt.textContent = `已选 ${n} 个单元格`;
-            if (bar) bar.classList.toggle('active', n > 0);
             if (tbody) {
                 tbody.querySelectorAll('td.sf-grid-selectable').forEach(td => {
                     td.classList.remove('sf-cell-selected', 'sf-spotlight-col');
@@ -2246,23 +2506,17 @@
                 thead.querySelectorAll('th.sf-spotlight-col').forEach(th => th.classList.remove('sf-spotlight-col'));
             }
             if (!n || !tbody) {
-                if (showBtn) {
-                    showBtn.hidden = state.forecastMode === 'order';
-                    showBtn.disabled = true;
-                }
+                updateSfPerfPanel();
                 return;
             }
 
             const selectedRows = new Set();
             const selectedColIdxs = new Set();
-            const perfHistoryMonths = new Set();
             state.sfGridSelected.forEach(k => {
                 const { rowKey, colIdx } = parseSfGridCellKey(k);
                 if (!rowKey || colIdx < 0) return;
                 selectedRows.add(rowKey);
                 selectedColIdxs.add(colIdx);
-                const seg = (state.sfColLayout || [])[colIdx];
-                if (seg && seg.kind === 'H' && seg.month) perfHistoryMonths.add(seg.month);
             });
 
             tbody.querySelectorAll('tr[data-row-key]').forEach(tr => {
@@ -2289,14 +2543,22 @@
                     }
                 });
             }
+            updateSfPerfPanel();
+        }
 
-            let rowOnly = '';
-            selectedRows.forEach(r => { if (!rowOnly) rowOnly = r; else rowOnly = '__multi__'; });
-            const perfModeOk = state.forecastMode === 'spec' || state.forecastMode === 'platform';
-            if (showBtn) {
-                showBtn.hidden = !perfModeOk;
-                showBtn.disabled = !perfModeOk || !(rowOnly && rowOnly !== '__multi__' && perfHistoryMonths.size > 0);
+        /** 在表格内开始框选/点选另一格时，让仍聚焦的预测输入框失焦，避免焦点与选区不一致 */
+        function blurSfForecastInputLeavingCell(targetTd) {
+            if (!targetTd) return;
+            const ae = document.activeElement;
+            if (!ae || ae.tagName !== 'INPUT' || !ae.classList || !ae.classList.contains('sf-num-input')) return;
+            if (!ae.closest || !ae.closest('#forecastTable')) return;
+            const host = ae.closest('td.sf-grid-selectable[data-sf-ci]');
+            if (!host) return;
+            if (String(host.dataset.rowKey) === String(targetTd.dataset.rowKey)
+                && String(host.dataset.sfCi) === String(targetTd.dataset.sfCi)) {
+                return;
             }
+            try { ae.blur(); } catch (_) {}
         }
 
         function bindForecastGridSelection(tbody) {
@@ -2368,6 +2630,7 @@
             tbody.addEventListener('mousedown', (e) => {
                 const td = pickGridTdFromEvent(e);
                 if (!td) return;
+                blurSfForecastInputLeavingCell(td);
                 gridDragMoved = false;
                 suppressNextGridClick = false;
                 lastPointerMods = { ctrl: !!(e.ctrlKey || e.metaKey), shift: !!e.shiftKey };
@@ -2381,6 +2644,7 @@
                 if (!dragging || !dragStart) return;
                 const td = pickGridTdFromEvent(e);
                 if (!td) return;
+                blurSfForecastInputLeavingCell(td);
                 gridDragMoved = true;
                 const cur = { rowKey: String(td.dataset.rowKey || ''), colIdx: Number(td.dataset.sfCi) };
                 selectRect(dragStart, cur, true);
@@ -2731,7 +2995,13 @@
             return sfFormatPerfMetricValue(resolved, key);
         }
 
+        /** 仅「规格+面料」「销售平台SKU」有按月历史格，可展示产品表现；下单 SKU 维度不支持 */
+        function isSalesForecastHistoryPerfMode() {
+            return state.forecastMode === 'spec' || state.forecastMode === 'platform';
+        }
+
         function getSelectedHistoryCellsForSingleRow() {
+            if (!isSalesForecastHistoryPerfMode()) return null;
             const keys = selectedCellsArray();
             const rowSet = new Set();
             const months = [];
@@ -2757,99 +3027,530 @@
             return rows.find(r => String(r.row_key || '') === rk) || null;
         }
 
-        function ensurePerfModal() {
-            let modal = document.getElementById('sfPerfModal');
+        function writeSfPerfVisibleColumnKeys(keys) {
+            const pathKey = sfPerfTablePathKeyForStorage();
+            const all = getPerfFieldCatalog().map((x) => x.key);
+            const allowed = new Set(all);
+            const out = (keys || []).map((k) => String(k || '').trim()).filter((k) => allowed.has(k));
+            try {
+                localStorage.setItem(`sitjoy:${pathKey}:sfPerfDataTable:visible-columns`, JSON.stringify(out.length ? out : all));
+            } catch (_) {}
+        }
+
+        function normalizePerfUiPatch(patch) {
+            const cur = Object.assign({}, state.perfUi, patch);
+            if (cur.none) return { none: true, hover: false, click: false, rect: false };
+            if (!cur.hover && !cur.click && !cur.rect) return { none: true, hover: false, click: false, rect: false };
+            return { none: false, hover: !!cur.hover, click: !!cur.click, rect: !!cur.rect };
+        }
+
+        function readPerfUiPrefs() {
+            try {
+                const raw = localStorage.getItem(SF_PREF_PERF_UI_KEY);
+                if (!raw) return { none: false, hover: true, click: false, rect: false };
+                const o = JSON.parse(raw);
+                return normalizePerfUiPatch({
+                    none: !!o.none,
+                    hover: !!o.hover,
+                    click: !!o.click,
+                    rect: !!o.rect,
+                });
+            } catch (_) {
+                return { none: false, hover: true, click: false, rect: false };
+            }
+        }
+
+        function writePerfUiPrefs() {
+            try {
+                localStorage.setItem(SF_PREF_PERF_UI_KEY, JSON.stringify(state.perfUi));
+            } catch (_) {}
+        }
+
+        function syncPerfUiCheckboxesFromState() {
+            const ok = isSalesForecastHistoryPerfMode();
+            const n = document.getElementById('sfPerfUiNone');
+            const h = document.getElementById('sfPerfUiHover');
+            const c = document.getElementById('sfPerfUiClick');
+            const r = document.getElementById('sfPerfUiRect');
+            const u = state.perfUi || {};
+            if (n) {
+                n.checked = !!u.none;
+                n.disabled = !ok;
+            }
+            if (h) {
+                h.checked = !!u.hover;
+                h.disabled = !ok || !!u.none;
+            }
+            if (c) {
+                c.checked = !!u.click;
+                c.disabled = !ok || !!u.none;
+            }
+            if (r) {
+                r.checked = !!u.rect;
+                r.disabled = !ok || !!u.none;
+            }
+        }
+
+        function sfPerfMonthManageKey(monthKey) {
+            return 'm_' + String(monthKey || '').replace(/[^0-9a-z]/gi, '');
+        }
+
+        function renderSfPerfMatrixIntoTable(row, displayMonths) {
+            const thead = document.getElementById('sfPerfMatrixThead');
+            const tbody = document.getElementById('sfPerfMatrixTbody');
+            const table = document.getElementById('sfPerfMatrixTable');
+            if (!thead || !tbody || !table) return;
+            if (!row || !displayMonths || !displayMonths.length) {
+                thead.innerHTML = '<tr><th scope="col" data-manage-col-key="' + SF_METRIC_COL_KEY + '" data-disable-sort="1">指标</th>'
+                    + '<th scope="col" data-manage-col-key="m_ph" data-disable-sort="1">—</th></tr>';
+                tbody.innerHTML = '<tr><th scope="row" data-manage-col-key="' + SF_METRIC_COL_KEY + '" data-disable-sort="1">—</th>'
+                    + '<td data-manage-col-key="m_ph">—</td></tr>';
+                return;
+            }
+            const catalog = getPerfFieldCatalog();
+            const labelByKey = new Map(catalog.map((f) => [f.key, f.label]));
+            let keys = readSfPerfVisibleFieldKeysForTooltip().filter((k) => k !== 'month');
+            if (!keys.length) keys = catalog.map((f) => f.key).filter((k) => k !== 'month');
+            const thMonths = displayMonths.map((mk) => {
+                const k = sfPerfMonthManageKey(mk);
+                return '<th scope="col" data-manage-col-key="' + escapeHtml(k) + '" data-disable-sort="1">' + escapeHtml(monthShortLabel(mk)) + '</th>';
+            }).join('');
+            thead.innerHTML = '<tr><th scope="col" data-manage-col-key="' + SF_METRIC_COL_KEY + '" data-disable-sort="1">指标</th>' + thMonths + '</tr>';
+            const trs = keys.map((fieldKey) => {
+                const lab = escapeHtml(labelByKey.get(fieldKey) || fieldKey);
+                const tds = displayMonths.map((mk) => {
+                    const histCell = (row.history && row.history[mk]) || null;
+                    const v = computePerfValue(histCell, fieldKey, mk, row) || '—';
+                    const ck = escapeHtml(sfPerfMonthManageKey(mk));
+                    return '<td data-manage-col-key="' + ck + '">' + escapeHtml(String(v)) + '</td>';
+                }).join('');
+                return '<tr><th scope="row" data-manage-col-key="' + SF_METRIC_COL_KEY + '" data-disable-sort="1">' + lab + '</th>' + tds + '</tr>';
+            }).join('');
+            tbody.innerHTML = trs;
+            try {
+                table.dataset.sjManageLayoutSig = String(Date.now());
+            } catch (_) {}
+            if (window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.invalidateLayout === 'function') {
+                window.SitjoyManagedPmTable.invalidateLayout(table);
+            } else if (window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.enhance === 'function') {
+                window.SitjoyManagedPmTable.enhance(document.getElementById('sfPerfFloatingPanel') || document.body);
+            }
+        }
+
+        function getFirstSelectedHistoryTd() {
+            const tbody = document.getElementById('forecastTbody');
+            if (!tbody || !state.sfGridSelected || !state.sfGridSelected.size) return null;
+            const layout = state.sfColLayout || [];
+            for (const k of state.sfGridSelected) {
+                const parsed = parseSfGridCellKey(k);
+                const rowKey = parsed.rowKey;
+                const colIdx = parsed.colIdx;
+                const seg = layout[colIdx];
+                if (!seg || seg.kind !== 'H' || !seg.month) continue;
+                const tr = Array.from(tbody.querySelectorAll('tr[data-row-key]')).find((r) => String(r.dataset.rowKey || '') === String(rowKey));
+                if (!tr) continue;
+                const td = tr.querySelector('td.sf-grid-selectable[data-sf-ci="' + String(Number(colIdx)) + '"]');
+                if (td) return td;
+            }
+            return null;
+        }
+
+        function getSfPerfPanelPayloadRaw() {
+            if (!isSalesForecastHistoryPerfMode()) {
+                state.sfPerfHoverCtx = null;
+                return null;
+            }
+            const ui = state.perfUi || {};
+            if (ui.none) return null;
+            if (!ui.hover && state.sfPerfHoverCtx) state.sfPerfHoverCtx = null;
+            const sel = getSelectedHistoryCellsForSingleRow();
+            if (ui.rect && sel && sel.months && sel.months.length) {
+                const row = resolveRowByKey(sel.rowKey);
+                if (row) return { tier: 1, row, months: sel.months.slice() };
+            }
+            if (ui.click && sel && sel.months && sel.months.length) {
+                const row = resolveRowByKey(sel.rowKey);
+                if (row) return { tier: 2, row, months: sel.months.slice() };
+            }
+            if (ui.hover && state.sfPerfHoverCtx && state.sfPerfHoverCtx.rowKey && state.sfPerfHoverCtx.monthKey) {
+                const row = resolveRowByKey(state.sfPerfHoverCtx.rowKey);
+                const mk = String(state.sfPerfHoverCtx.monthKey || '').trim();
+                if (row && mk) return { tier: 3, row, months: [mk], hoverEl: state.sfPerfHoverCtx.el || null };
+            }
+            return null;
+        }
+
+        function sfPerfPanelPayloadSig(payload) {
+            if (!payload || !payload.row) return '';
+            const ms = (payload.months || []).map((m) => String(m || '').trim()).sort((a, b) => String(a).localeCompare(String(b)));
+            return String(payload.tier) + '|' + String(payload.row.row_key || '') + '|' + ms.join(',');
+        }
+
+        function clampSfPerfFloatingPanelToViewport() {
+            const panel = document.getElementById('sfPerfFloatingPanel');
+            if (!panel || panel.hidden) return;
+            const pad = 8;
+            const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+            const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+            const r = panel.getBoundingClientRect();
+            let left = r.left;
+            let top = r.top;
+            const w = r.width;
+            const h = r.height;
+            if (left + w > vw - pad) left = Math.max(pad, vw - pad - w);
+            if (left < pad) left = pad;
+            if (top + h > vh - pad) top = Math.max(pad, vh - pad - h);
+            if (top < pad) top = pad;
+            panel.style.left = Math.round(left) + 'px';
+            panel.style.top = Math.round(top) + 'px';
+        }
+
+        function positionSfPerfFloatingPanel(payload) {
+            const panel = document.getElementById('sfPerfFloatingPanel');
+            if (!panel || panel.hidden) return;
+            const mode = state.sfPerfPanelAttachMode || 'follow';
+            if (mode === 'follow') {
+                let anchor = null;
+                if (payload && payload.tier < 3) anchor = getFirstSelectedHistoryTd();
+                else if (payload && payload.tier === 3) anchor = payload.hoverEl || null;
+                if (anchor && typeof anchor.getBoundingClientRect === 'function') {
+                    const a = anchor.getBoundingClientRect();
+                    const pad = 10;
+                    const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+                    const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+                    const pr = panel.getBoundingClientRect();
+                    const pw = pr.width || panel.offsetWidth || 320;
+                    const ph = pr.height || panel.offsetHeight || 240;
+                    let left = a.right + 8;
+                    let top = a.top;
+                    if (left + pw > vw - pad) left = Math.max(pad, a.left - pw - 8);
+                    if (left < pad) left = pad;
+                    if (top + ph > vh - pad) top = Math.max(pad, vh - pad - ph);
+                    if (top < pad) top = pad;
+                    panel.style.left = Math.round(left) + 'px';
+                    panel.style.top = Math.round(top) + 'px';
+                    clampSfPerfFloatingPanelToViewport();
+                    return;
+                }
+            }
+            clampSfPerfFloatingPanelToViewport();
+        }
+
+        function readSfPerfPanelPrefs() {
+            try {
+                const raw = localStorage.getItem(SF_PREF_PERF_PANEL_KEY);
+                if (!raw) return null;
+                const o = JSON.parse(raw);
+                return o && typeof o === 'object' ? o : null;
+            } catch (_) {
+                return null;
+            }
+        }
+
+        function writeSfPerfPanelPrefs() {
+            try {
+                const panel = document.getElementById('sfPerfFloatingPanel');
+                let rec = readSfPerfPanelPrefs() || {};
+                rec.attach = state.sfPerfPanelAttachMode || 'follow';
+                if (panel && !panel.hidden) {
+                    const r = panel.getBoundingClientRect();
+                    rec.left = Math.round(r.left);
+                    rec.top = Math.round(r.top);
+                    rec.width = Math.round(r.width);
+                    rec.height = Math.round(r.height);
+                }
+                localStorage.setItem(SF_PREF_PERF_PANEL_KEY, JSON.stringify(rec));
+            } catch (_) {}
+        }
+
+        function applySfPerfPanelPrefsToDom() {
+            const panel = document.getElementById('sfPerfFloatingPanel');
+            const pref = readSfPerfPanelPrefs();
+            if (!panel || !pref) return;
+            const attach = pref.attach === 'free' ? 'free' : 'follow';
+            state.sfPerfPanelAttachMode = attach;
+            setSfPerfPanelAttachModeUI(attach);
+            if (attach === 'free' && Number.isFinite(Number(pref.left)) && Number.isFinite(Number(pref.top))) {
+                panel.style.left = Math.round(Number(pref.left)) + 'px';
+                panel.style.top = Math.round(Number(pref.top)) + 'px';
+                if (Number.isFinite(Number(pref.width)) && Number(pref.width) >= 200) {
+                    panel.style.width = Math.round(Number(pref.width)) + 'px';
+                }
+                if (Number.isFinite(Number(pref.height)) && Number(pref.height) >= 120) {
+                    panel.style.height = Math.round(Number(pref.height)) + 'px';
+                }
+                clampSfPerfFloatingPanelToViewport();
+            }
+        }
+
+        function setSfPerfPanelAttachModeUI(mode) {
+            const m = mode === 'free' ? 'free' : 'follow';
+            state.sfPerfPanelAttachMode = m;
+            const seg = document.getElementById('sfPerfPanelAttachSeg');
+            const hidden = document.getElementById('sfPerfPanelAttachVal');
+            if (hidden) hidden.value = m;
+            if (seg) {
+                seg.dataset.value = m;
+                seg.querySelectorAll('.status-pill').forEach((b) => b.classList.toggle('is-active', String(b.dataset.value || '') === m));
+            }
+        }
+
+        let _sfPerfPanelGeomWriteTimer = null;
+        function scheduleWriteSfPerfPanelPrefs() {
+            clearTimeout(_sfPerfPanelGeomWriteTimer);
+            _sfPerfPanelGeomWriteTimer = setTimeout(() => writeSfPerfPanelPrefs(), 280);
+        }
+
+        function bindSfPerfPanelOnce() {
+            if (document.body.dataset.sfPerfPanelBound === '1') return;
+            document.body.dataset.sfPerfPanelBound = '1';
+            const panel = document.getElementById('sfPerfFloatingPanel');
+            const header = document.getElementById('sfPerfPanelHeader');
+            const seg = document.getElementById('sfPerfPanelAttachSeg');
+            const closeBtn = document.getElementById('sfPerfPanelClose');
+            if (seg) {
+                seg.addEventListener('click', (e) => {
+                    const btn = e.target && e.target.closest ? e.target.closest('.status-pill[data-value]') : null;
+                    if (!btn) return;
+                    e.stopPropagation();
+                    const next = String(btn.dataset.value || '');
+                    if (next !== 'free' && next !== 'follow') return;
+                    setSfPerfPanelAttachModeUI(next);
+                    writeSfPerfPanelPrefs();
+                    updateSfPerfPanel();
+                });
+            }
+            if (closeBtn && panel) {
+                closeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    panel.hidden = true;
+                    state.sfPerfPanelManuallyHidden = true;
+                    state.sfPerfPanelHiddenSig = state.sfPerfPanelLastShownSig || '';
+                    writeSfPerfPanelPrefs();
+                });
+            }
+            let drag = null;
+            const startDrag = (clientX, clientY) => {
+                if (!panel) return;
+                const r = panel.getBoundingClientRect();
+                drag = { sx: clientX, sy: clientY, sl: r.left, st: r.top };
+            };
+            const moveDrag = (clientX, clientY) => {
+                if (!drag || !panel) return;
+                panel.style.left = Math.round(drag.sl + clientX - drag.sx) + 'px';
+                panel.style.top = Math.round(drag.st + clientY - drag.sy) + 'px';
+                setSfPerfPanelAttachModeUI('free');
+                clampSfPerfFloatingPanelToViewport();
+            };
+            const endDrag = () => {
+                if (drag) {
+                    drag = null;
+                    scheduleWriteSfPerfPanelPrefs();
+                }
+            };
+            if (header && panel) {
+                header.addEventListener('mousedown', (e) => {
+                    if (e.button !== 0) return;
+                    if (e.target.closest('.status-segment') || e.target.closest('#sfPerfPanelClose')) return;
+                    startDrag(e.clientX, e.clientY);
+                    e.preventDefault();
+                });
+            }
+            document.addEventListener('mousemove', (e) => {
+                if (!drag) return;
+                moveDrag(e.clientX, e.clientY);
+            });
+            document.addEventListener('mouseup', () => endDrag());
+            if (typeof ResizeObserver === 'function' && panel) {
+                const ro = new ResizeObserver(() => scheduleWriteSfPerfPanelPrefs());
+                ro.observe(panel);
+            }
+            window.addEventListener('resize', () => {
+                if (panel && !panel.hidden) clampSfPerfFloatingPanelToViewport();
+            });
+            const wrap = document.getElementById('forecastTableWrap');
+            if (wrap) {
+                wrap.addEventListener('mouseover', (e) => {
+                    if (!isSalesForecastHistoryPerfMode()) return;
+                    const td = e.target && e.target.closest ? e.target.closest('td.sf-cell-history[data-month]') : null;
+                    if (!td || (state.perfUi && state.perfUi.none)) return;
+                    if (!(state.perfUi || {}).hover) return;
+                    const tr = td.closest('tr[data-row-key]');
+                    const rk = tr && String(tr.dataset.rowKey || '').trim();
+                    const mk = String(td.dataset.month || '').trim();
+                    if (!rk || !mk) return;
+                    state.sfPerfHoverCtx = { rowKey: rk, monthKey: mk, el: td };
+                    requestAnimationFrame(() => updateSfPerfPanel());
+                });
+                wrap.addEventListener('mouseleave', (e) => {
+                    if (!isSalesForecastHistoryPerfMode()) {
+                        state.sfPerfHoverCtx = null;
+                        return;
+                    }
+                    const rel = e.relatedTarget;
+                    if (rel && rel.closest && (rel.closest('#sfPerfFloatingPanel') || rel.closest('#forecastTableWrap'))) return;
+                    state.sfPerfHoverCtx = null;
+                    requestAnimationFrame(() => updateSfPerfPanel());
+                });
+            }
+            applySfPerfPanelPrefsToDom();
+            if (panel && window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.enhance === 'function') {
+                window.SitjoyManagedPmTable.enhance(panel);
+            }
+        }
+
+        function updateSfPerfPanel() {
+            const panel = document.getElementById('sfPerfFloatingPanel');
+            const title = document.getElementById('sfPerfPanelTitle');
+            if (!panel) return;
+            const payloadRaw = getSfPerfPanelPayloadRaw();
+            const sig = sfPerfPanelPayloadSig(payloadRaw);
+            if (state.sfPerfPanelManuallyHidden && sig && sig === state.sfPerfPanelHiddenSig) {
+                panel.hidden = true;
+                return;
+            }
+            if (!payloadRaw) {
+                panel.hidden = true;
+                state.sfPerfPanelManuallyHidden = false;
+                state.sfPerfPanelLastShownSig = '';
+                return;
+            }
+            if (sig !== state.sfPerfPanelLastShownSig) {
+                state.sfPerfPanelManuallyHidden = false;
+            }
+            state.sfPerfPanelLastShownSig = sig;
+
+            const distinctMonths = Array.from(new Set(payloadRaw.months || [])).sort((a, b) => String(a).localeCompare(String(b)));
+            const displayMonths = expandMonthsAlongHistoryTimeline(distinctMonths);
+            if (!displayMonths.length) {
+                panel.hidden = true;
+                return;
+            }
+            const row = payloadRaw.row;
+            if (title) {
+                if (displayMonths.length === distinctMonths.length) {
+                    title.textContent = '产品表现 · ' + distinctMonths.map((m) => monthShortLabel(m)).join('、');
+                } else {
+                    const a = monthShortLabel(displayMonths[0]);
+                    const b = monthShortLabel(displayMonths[displayMonths.length - 1]);
+                    title.textContent = '产品表现 · ' + a + ' — ' + b + '（' + displayMonths.length + ' 个月连续区间）';
+                }
+            }
+            renderSfPerfMatrixIntoTable(row, displayMonths);
+            panel.hidden = false;
+            requestAnimationFrame(() => {
+                positionSfPerfFloatingPanel(payloadRaw);
+                if (state.sfPerfPanelAttachMode === 'free') clampSfPerfFloatingPanelToViewport();
+            });
+        }
+
+        function updateSfPerfToolbarGroupMode() {
+            const grp = document.getElementById('sfPerfUiToolbarGroup');
+            const interact = document.getElementById('sfPerfUiToolbarInteractWrap');
+            const mgr = document.getElementById('sfPerfManageFieldsBtn');
+            if (!grp) return;
+            const ok = isSalesForecastHistoryPerfMode();
+            grp.style.opacity = '';
+            grp.style.pointerEvents = '';
+            grp.title = '';
+            if (interact) {
+                interact.style.opacity = ok ? '' : '0.45';
+                interact.style.pointerEvents = ok ? '' : 'none';
+                interact.title = ok ? '' : '下单 SKU 维度不支持产品表现（悬浮 / 点击 / 框选）';
+                if (ok) interact.removeAttribute('inert');
+                else interact.setAttribute('inert', '');
+            }
+            if (mgr) {
+                mgr.disabled = !ok;
+                mgr.title = ok ? '' : '下单 SKU 维度不可用';
+            }
+        }
+
+        function bindPerfUiToolbarOnce() {
+            if (document.body.dataset.sfPerfUiBound === '1') return;
+            document.body.dataset.sfPerfUiBound = '1';
+            ['sfPerfUiNone', 'sfPerfUiHover', 'sfPerfUiClick', 'sfPerfUiRect'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.addEventListener('change', () => {
+                    if (id === 'sfPerfUiNone' && el.checked) {
+                        state.perfUi = { none: true, hover: false, click: false, rect: false };
+                    } else if (id === 'sfPerfUiNone' && !el.checked) {
+                        state.perfUi = normalizePerfUiPatch({ none: false, hover: true, click: false, rect: false });
+                    } else {
+                        state.perfUi = normalizePerfUiPatch({
+                            none: !!(document.getElementById('sfPerfUiNone') || {}).checked,
+                            hover: !!(document.getElementById('sfPerfUiHover') || {}).checked,
+                            click: !!(document.getElementById('sfPerfUiClick') || {}).checked,
+                            rect: !!(document.getElementById('sfPerfUiRect') || {}).checked,
+                        });
+                    }
+                    writePerfUiPrefs();
+                    syncPerfUiCheckboxesFromState();
+                    renderForecastTable();
+                    updateSfPerfPanel();
+                });
+            });
+            const mgr = document.getElementById('sfPerfManageFieldsBtn');
+            if (mgr) mgr.addEventListener('click', openSfPerfFieldsModal);
+        }
+
+        function ensureSfPerfFieldsModal() {
+            let modal = document.getElementById('sfPerfFieldsModal');
             if (modal) return modal;
             modal = document.createElement('div');
-            modal.id = 'sfPerfModal';
-            modal.className = 'pm-modal';
+            modal.id = 'sfPerfFieldsModal';
+            modal.className = 'pm-modal sf-perf-fields-modal';
             modal.innerHTML = `
                 <div class="pm-modal-content pm-modal-content--wide">
-                    <div class="pm-modal-scroll">
-                        <h3 style="margin-top:0;">历史月销量 · 产品表现</h3>
-                        <div class="helper-text" id="sfPerfModalTitle"></div>
-                        <div class="sf-perf-managed-host">
-                            <table id="sfPerfDataTable" class="pm-table" style="margin:0;">
-                                <thead><tr id="sfPerfHeadRow"></tr></thead>
-                                <tbody id="sfPerfBody"></tbody>
-                            </table>
-                        </div>
-                    </div>
+                    <h3 style="margin-top:0;">管理产品表现信息</h3>
+                    <p class="helper-text">勾选要在产品表现弹窗表格中展示的字段（与原先「字段显示」共用同一持久化键）。</p>
+                    <div class="sf-perf-fields-grid" id="sfPerfFieldsCheckboxes"></div>
                     <div class="pm-modal-actions">
-                        <button type="button" class="btn-secondary" id="sfPerfCloseBtn">关闭</button>
+                        <button type="button" class="btn-secondary" id="sfPerfFieldsCloseBtn">关闭</button>
+                        <button type="button" class="btn-accent" id="sfPerfFieldsSaveBtn">保存</button>
                     </div>
-                </div>
-            `;
+                </div>`;
             document.body.appendChild(modal);
             if (typeof window.bindPmModalBackdropClose === 'function') {
-                window.bindPmModalBackdropClose(modal, closePerfModal);
+                window.bindPmModalBackdropClose(modal, closeSfPerfFieldsModal);
             }
-            modal.querySelector('#sfPerfCloseBtn')?.addEventListener('click', closePerfModal);
+            modal.querySelector('#sfPerfFieldsCloseBtn')?.addEventListener('click', closeSfPerfFieldsModal);
+            modal.querySelector('#sfPerfFieldsSaveBtn')?.addEventListener('click', () => {
+                const box = document.getElementById('sfPerfFieldsCheckboxes');
+                if (!box) return;
+                const keys = [];
+                box.querySelectorAll('input[type="checkbox"][data-field-key]').forEach((inp) => {
+                    if (inp.checked) keys.push(String(inp.dataset.fieldKey || ''));
+                });
+                writeSfPerfVisibleColumnKeys(keys.length ? keys : getPerfFieldCatalog().map((x) => x.key));
+                closeSfPerfFieldsModal();
+                renderForecastTable();
+                updateSfPerfPanel();
+                if (window.showAppToast) window.showAppToast('已保存字段显示', false, 1600);
+            });
             return modal;
         }
 
-        function closePerfModal() {
-            const modal = document.getElementById('sfPerfModal');
+        function closeSfPerfFieldsModal() {
+            const modal = document.getElementById('sfPerfFieldsModal');
             if (modal) modal.classList.remove('active');
         }
 
-        function renderPerfModal() {
-            const sel = getSelectedHistoryCellsForSingleRow();
-            if (!sel) {
-                showToast('请先在同一行选择至少一个历史月份单元格', true);
-                return;
-            }
-            const row = resolveRowByKey(sel.rowKey);
-            if (!row) {
-                showToast('未找到对应行数据', true);
-                return;
-            }
-            const distinctMonths = Array.from(new Set(sel.months || [])).sort((a, b) => String(a).localeCompare(String(b)));
-            const displayMonths = expandMonthsAlongHistoryTimeline(distinctMonths);
-            if (!displayMonths.length) {
-                showToast('无法解析已选月份', true);
-                return;
-            }
-            const modal = ensurePerfModal();
-            const title = modal.querySelector('#sfPerfModalTitle');
-            if (title) {
-                const a = monthShortLabel(displayMonths[0]);
-                const b = monthShortLabel(displayMonths[displayMonths.length - 1]);
-                if (displayMonths.length === distinctMonths.length) {
-                    title.textContent = `已选月份：${distinctMonths.map(m => monthShortLabel(m)).join('、')}`;
-                } else {
-                    title.textContent = `历史销量连续区间：${a} — ${b}（共 ${displayMonths.length} 个月；含框内未点选月份，维度列与整行一致）`;
-                }
-            }
-
+        function openSfPerfFieldsModal() {
+            if (!isSalesForecastHistoryPerfMode()) return;
+            const modal = ensureSfPerfFieldsModal();
+            const box = document.getElementById('sfPerfFieldsCheckboxes');
+            if (!box) return;
+            const visible = new Set(readSfPerfVisibleFieldKeysForTooltip());
             const catalog = getPerfFieldCatalog();
-            const headRow = modal.querySelector('#sfPerfHeadRow');
-            if (headRow && headRow.dataset.sfPerfHeadBuilt !== '1') {
-                /* 表头仅初始化一次：与通用托管表克隆表头一致；列定义变更后需整页刷新 */
-                headRow.innerHTML = catalog.map((f) => {
-                    const k = escapeHtml(f.key);
-                    const lab = escapeHtml(f.label);
-                    return `<th class="sf-perf-th" data-manage-col-key="${k}" data-disable-sort="1">${lab}</th>`;
-                }).join('');
-                headRow.dataset.sfPerfHeadBuilt = '1';
-            }
-            const body = modal.querySelector('#sfPerfBody');
-            if (body) {
-                body.innerHTML = displayMonths.map((mk) => {
-                    const cell = (row.history && row.history[mk]) || null;
-                    const tds = catalog.map((f) => {
-                        const k = escapeHtml(f.key);
-                        const v = computePerfValue(cell, f.key, mk, row) || '—';
-                        return `<td data-manage-col-key="${k}">${escapeHtml(String(v))}</td>`;
-                    }).join('');
-                    return `<tr>${tds}</tr>`;
-                }).join('');
-            }
-
+            box.innerHTML = catalog.map((f) => {
+                const k = escapeHtml(f.key);
+                const lab = escapeHtml(f.label);
+                const ch = visible.has(f.key) ? ' checked' : '';
+                return `<label><input type="checkbox" data-field-key="${k}"${ch}><span>${lab}</span></label>`;
+            }).join('');
             modal.classList.add('active');
-            if (window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.enhance === 'function') {
-                window.requestAnimationFrame(() => window.SitjoyManagedPmTable.enhance(modal));
-            }
         }
 
         // ===== 单元格 =====
@@ -2892,9 +3593,12 @@
             input.addEventListener('blur', onForecastInputBlur);
             input.addEventListener('beforeinput', (ev) => {
                 if (!ev || ev.isComposing) return;
+                const it = ev.inputType ? String(ev.inputType) : '';
+                /* 粘贴内容常含逗号、制表符、多字符等，勿在此拦截，交给 input 里 normalizeForecastDigitString */
+                if (it === 'insertFromPaste' || it === 'insertFromPasteAsQuotation' || it === 'insertReplacementText') return;
                 if (!ev.data) return;
                 if (/^\d+$/.test(ev.data)) return;
-                if (ev.inputType && String(ev.inputType).startsWith('delete')) return;
+                if (it.startsWith('delete')) return;
                 try { ev.preventDefault(); } catch (_) {}
             });
 
@@ -2962,36 +3666,22 @@
             onForecastInputChange({ target: input });
         }
 
-        function syncSfHistoryPerfPinnedBodyClass() {
-            const locked = !!document.querySelector('.sf-history-perf-wrap.is-pinned');
-            document.body.classList.toggle('sf-history-perf-pinned', locked);
-        }
-
-        function makeTooltipWrap(html, contentNode, bubbleExtraClass) {
+        function makeTooltipWrap(html, contentNode, bubbleExtraClass, cellWide) {
             const wrap = document.createElement('span');
             wrap.className = 'sf-tooltip-wrap';
+            if (cellWide) wrap.classList.add('sf-tooltip-wrap--cell-wide');
             wrap.tabIndex = 0;
             const extra = String(bubbleExtraClass || '').trim();
-            if (extra.includes('sf-history-perf-tooltip-bubble')) {
-                wrap.classList.add('sf-history-perf-wrap');
-            }
             const content = document.createElement('span');
             content.className = 'sf-tooltip-content';
             content.appendChild(contentNode);
             wrap.appendChild(content);
             const bubble = document.createElement('span');
-            bubble.className = 'sf-tooltip-bubble' + (extra ? ` ${extra}` : '');
+            bubble.className = 'sf-tooltip-bubble' + (extra ? ' ' + extra : '');
             bubble.innerHTML = html;
             wrap.appendChild(bubble);
             wrap.addEventListener('click', (e) => {
-                e.preventDefault();
                 e.stopPropagation();
-                const isPinned = wrap.classList.contains('is-pinned');
-                document.querySelectorAll('.sf-tooltip-wrap.is-pinned').forEach(node => {
-                    node.classList.remove('is-pinned');
-                });
-                if (!isPinned) wrap.classList.add('is-pinned');
-                syncSfHistoryPerfPinnedBodyClass();
             });
             return wrap;
         }
@@ -3002,8 +3692,8 @@
         }
 
         /**
-         * 与「历史月销量 · 产品表现」弹窗内托管表 #sfPerfDataTable 的「字段显示」一致；
-         * 若尚未打开过弹窗则展示目录中的全部列；若持久化中缺少新列则自动追加到末尾。
+         * 与「管理产品表现信息」及弹窗矩阵表格可见列一致；
+         * 若尚未保存过则展示目录中的全部列；若持久化中缺少新列则自动追加到末尾。
          */
         function readSfPerfVisibleFieldKeysForTooltip() {
             const all = getPerfFieldCatalog().map((x) => x.key);
@@ -3027,18 +3717,6 @@
             } catch (e) {
                 return all.slice();
             }
-        }
-
-        function buildHistoryTooltip(cell, monthKey, row) {
-            const keys = readSfPerfVisibleFieldKeysForTooltip();
-            const catalog = getPerfFieldCatalog();
-            const labelByKey = new Map(catalog.map((f) => [f.key, f.label]));
-            const dl = keys.map((key) => {
-                const lab = labelByKey.get(key) || key;
-                const v = computePerfValue(cell, key, monthKey, row) || '—';
-                return '<dt>' + escapeHtml(lab) + '</dt><dd>' + escapeHtml(String(v)) + '</dd>';
-            }).join('');
-            return '<div class="sf-tip-title">历史月销量 · 产品表现</div><dl>' + dl + '</dl>';
         }
 
         function buildSourceTooltip(forecast, monthKey, hasStored) {
@@ -3127,6 +3805,11 @@
 
             const savedMode = readSavedForecastMode();
             setForecastMode(savedMode);
+            state.perfUi = readPerfUiPrefs();
+            syncPerfUiCheckboxesFromState();
+            bindPerfUiToolbarOnce();
+            bindSfPerfPanelOnce();
+            updateSfPerfToolbarGroupMode();
 
             bindModeSegment();
             setForecastMonthsFuture(6);
@@ -3210,20 +3893,6 @@
 
             loadForecastData();
             initSfForecastSelectionGlobalOnce();
-        });
-
-        // Selection hint buttons
-        document.addEventListener('DOMContentLoaded', () => {
-            const clearBtn = document.getElementById('sfSelectionClearBtn');
-            const showBtn = document.getElementById('sfSelectionShowPerfBtn');
-            if (clearBtn && clearBtn.dataset.bound !== '1') {
-                clearBtn.dataset.bound = '1';
-                clearBtn.addEventListener('click', clearHistorySelection);
-            }
-            if (showBtn && showBtn.dataset.bound !== '1') {
-                showBtn.dataset.bound = '1';
-                showBtn.addEventListener('click', renderPerfModal);
-            }
         });
     </script>
 </body>
