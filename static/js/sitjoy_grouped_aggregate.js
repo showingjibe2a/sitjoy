@@ -75,6 +75,7 @@
         if (!sel) return;
 
         tbody.addEventListener('click', function(e) {
+            if (e.target && e.target.closest && e.target.closest('input, button, a, label, .pm-column-filter-btn')) return;
             const row = e.target && e.target.closest ? e.target.closest(sel) : null;
             if (!row) return;
             const key = String(row.dataset.groupKey || '').trim();

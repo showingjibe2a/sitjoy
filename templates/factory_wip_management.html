@@ -48,17 +48,17 @@
       <table class="pm-table" id="mainTable" data-batch-delete-handler="handleFactoryWipBatchDelete">
         <thead>
           <tr>
-            <th class="sj-agg-toggle-col" data-manage-col-key="__sj_agg__" data-disable-sort="1" style="width:0;padding:0;border:none;">
+            <th style="width:54px; text-align:center;" data-manage-col-key="__wip_chk__" data-disable-sort="1"><input type="checkbox" id="wipSelectAll"></th>
+            <th class="sj-agg-toggle-col" data-manage-col-key="__sj_agg__" data-disable-sort="1">
               <div class="sj-agg-toggle-head-inner">
                 <button type="button" class="sj-agg-all-toggle" data-sj-agg-all-toggle="1" aria-label="分组全部展开或收起">▼</button>
               </div>
             </th>
-            <th style="width:54px; text-align:center;" data-manage-col-key="__wip_chk__"><input type="checkbox" id="wipSelectAll"></th>
             <th data-manage-col-key="1" data-sort-key="factory_name">工厂</th>
             <th style="width:160px;" data-manage-col-key="2" data-sort-key="order_no">订单号</th>
             <th style="width:160px;" data-manage-col-key="3" data-sort-key="contract_no">合同编号</th>
             <th style="width:120px;" data-manage-col-key="4" data-sort-key="representative_color">颜色</th>
-            <th style="width:64px;" class="cell-center" data-manage-col-key="__wip_img__">图片</th>
+            <th class="cell-center sj-th-thumb" data-manage-col-key="__wip_img__">图片</th>
             <th data-manage-col-key="5" data-sort-key="sku">SKU</th>
             <th style="width:150px;" data-manage-col-key="6">在市状态</th>
             <th style="width:120px;" data-manage-col-key="7" data-sort-key="quantity">数量</th>
@@ -194,24 +194,35 @@
   }
   .wip-row-hidden { display: none; }
   .sj-wip-table-host.sj-aggregate-active .sj-agg-toggle-col,
-  .sj-wip-table-host.sj-aggregate-active .sj-agg-toggle-cell { width: 40px; max-width: 48px; text-align: center; vertical-align: middle; }
+  .sj-wip-table-host.sj-aggregate-active .sj-agg-toggle-cell {
+    width: var(--sj-agg-toggle-w, 40px);
+    min-width: var(--sj-agg-toggle-w, 40px);
+    max-width: var(--sj-agg-toggle-w, 40px);
+    text-align: center;
+    vertical-align: middle;
+  }
   .sj-wip-table-host.sj-aggregate-active .sj-agg-toggle-head-inner { display: flex; align-items: center; justify-content: center; min-height: 2.1rem; }
   .sj-wip-table-host.sj-aggregate-active .sj-agg-all-toggle {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2rem;
-    height: 2rem;
     padding: 0;
     margin: 0;
-    border: 1px solid rgba(207,199,189,.75);
-    border-radius: 6px;
-    background: #faf7f2;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
     cursor: pointer;
     font-size: 0.88rem;
     line-height: 1;
     color: #5a4f42;
     font-weight: 700;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .sj-wip-table-host.sj-aggregate-active .sj-agg-all-toggle:focus-visible {
+    outline: 2px solid rgba(90, 79, 66, 0.35);
+    outline-offset: 2px;
   }
   .sj-wip-table-host:not(.sj-aggregate-active) th.sj-agg-toggle-col,
   .sj-wip-table-host:not(.sj-aggregate-active) td.sj-agg-toggle-cell {
@@ -223,6 +234,7 @@
   }
   .wip-group-row .sj-agg-toggle-cell { cursor: pointer; }
   .wip-group-row .sj-agg-toggle-cell .wip-group-toggle { margin-right: 0; }
+  .wip-group-row td:first-child { text-align: center; vertical-align: middle; }
 </style>
 
 <script>
@@ -244,6 +256,37 @@ let wipCollapsedOrderGroups = new Set();
 let wipCollapsedFamilyGroups = new Set();
 let wipGroupCollapseInitDone = false;
 let wipGroupSort = { key: '', dir: 'asc' };
+
+const FACTORY_WIP_AGGREGATE_MODE_KEY = 'sj.factoryWip.aggregateMode.v1';
+
+function safeSetLocalStorage(key, value){
+  try { localStorage.setItem(key, String(value)); } catch (_e) {}
+}
+function safeGetLocalStorage(key){
+  try { return localStorage.getItem(key); } catch (_e) { return null; }
+}
+
+function restoreFactoryWipAggregateModeFromStorage(){
+  const raw = String(safeGetLocalStorage(FACTORY_WIP_AGGREGATE_MODE_KEY) || '').trim();
+  const next = ['order', 'family', 'none'].includes(raw) ? raw : 'none';
+  wipAggregateMode = next;
+  if(next === 'order'){
+    wipCollapsedOrderGroups = new Set();
+    wipGroupCollapseInitDone = false;
+  } else if(next === 'family'){
+    wipCollapsedFamilyGroups = new Set();
+    wipGroupCollapseInitDone = false;
+  }
+}
+
+function syncWipAggregateSegmentUi(){
+  const seg = document.getElementById('wipAggregateSegment');
+  if(!seg) return;
+  seg.setAttribute('data-value', wipAggregateMode);
+  seg.querySelectorAll('button.status-pill[data-value]').forEach(b => {
+    b.classList.toggle('is-active', String(b.getAttribute('data-value') || '') === wipAggregateMode);
+  });
+}
 
 const WIP_FILTER_COLUMNS = {
   1: { key: 'factory_name', label: '工厂', finite: true },
@@ -657,6 +700,59 @@ function importTemplate(file){
     });
 }
 
+function syncWipParentGroupCheckboxes(){
+  const tbody = document.querySelector('#mainTable tbody');
+  if(!tbody) return;
+  tbody.querySelectorAll('tr.wip-group-row[data-group-key]').forEach((groupTr) => {
+    const gk = String(groupTr.getAttribute('data-group-key') || '').trim();
+    const pbox = groupTr.querySelector('.wip-parent-group-checkbox');
+    if(!pbox || !gk) return;
+    const ids = [];
+    Array.from(tbody.querySelectorAll('tr[data-group-key]')).forEach((tr) => {
+      if(tr.classList.contains('wip-group-row')) return;
+      if(String(tr.getAttribute('data-group-key') || '').trim() !== gk) return;
+      const cb = tr.querySelector('.wip-row-checkbox');
+      const id = cb ? Number(cb.getAttribute('data-id') || 0) : 0;
+      if(Number.isFinite(id) && id > 0) ids.push(id);
+    });
+    if(!ids.length){
+      pbox.checked = false;
+      pbox.indeterminate = false;
+      return;
+    }
+    const allOn = ids.every((id) => selectedWipIds.has(id));
+    const anyOn = ids.some((id) => selectedWipIds.has(id));
+    pbox.checked = allOn;
+    pbox.indeterminate = anyOn && !allOn;
+  });
+}
+
+function bindWipParentGroupSelectionEvents(){
+  document.querySelectorAll('.wip-parent-group-checkbox').forEach((el) => {
+    if(el.dataset._wipParentCbBound === '1') return;
+    el.dataset._wipParentCbBound = '1';
+    el.addEventListener('change', function(){
+      const gk = String(this.getAttribute('data-group-key') || '').trim();
+      if(!gk) return;
+      const tbody = document.querySelector('#mainTable tbody');
+      if(!tbody) return;
+      const want = !!this.checked;
+      Array.from(tbody.querySelectorAll('tr[data-group-key]')).forEach((tr) => {
+        if(tr.classList.contains('wip-group-row')) return;
+        if(String(tr.getAttribute('data-group-key') || '').trim() !== gk) return;
+        const cb = tr.querySelector('.wip-row-checkbox');
+        if(!cb) return;
+        const id = Number(cb.getAttribute('data-id') || 0);
+        if(!Number.isFinite(id) || id <= 0) return;
+        cb.checked = want;
+        if(want) selectedWipIds.add(id);
+        else selectedWipIds.delete(id);
+      });
+      syncWipSelectAll();
+    });
+  });
+}
+
 function bindRowSelectionEvents(){
   document.querySelectorAll('.wip-row-checkbox').forEach(el => {
     el.addEventListener('change', function(){
@@ -688,6 +784,7 @@ function syncWipSelectAll(){
       master.checked = false;
       master.indeterminate = false;
     });
+    syncWipParentGroupCheckboxes();
     return;
   }
   const checkedCount = rows.filter(r => r.checked).length;
@@ -697,6 +794,7 @@ function syncWipSelectAll(){
     master.checked = allChecked;
     master.indeterminate = partial;
   });
+  syncWipParentGroupCheckboxes();
 }
 
 function toggleWipSelectAll(checked){
@@ -1221,6 +1319,14 @@ function wipApplyAggregateToggleLockedAndRefresh(){
   }
 }
 
+/** tbody 重绘后立刻让 managed-table 重算列宽/变量，避免仅依赖 MutationObserver 下一帧时序错位 */
+function wipInvalidateManagedTableLayout(){
+  const main = document.getElementById('mainTable');
+  if(main && window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.invalidateLayout === 'function'){
+    window.SitjoyManagedPmTable.invalidateLayout(main);
+  }
+}
+
 function renderFactoryWipTable(items){
   const tbody = document.querySelector('#mainTable tbody');
   const rows = Array.isArray(items) ? items : [];
@@ -1235,6 +1341,7 @@ function renderFactoryWipTable(items){
     bindRowSelectionEvents();
     bindFactoryWipEditEvents();
     syncWipSelectAll();
+    wipInvalidateManagedTableLayout();
     return;
   }
   const html = [];
@@ -1295,18 +1402,18 @@ function renderFactoryWipTable(items){
       : '<span class="sku-color-empty">-</span>';
     const thumbB64 = String(item.preview_image_b64 || '').trim();
     const thumbHtml = thumbB64
-      ? `<img class="fabric-table-thumb" src="/api/image-preview?id=${encodeURIComponent(thumbB64)}" alt="" loading="lazy">`
-      : `<span class="fabric-thumb-empty"></span>`;
+      ? `<img class="sj-table-thumb-img" src="/api/image-preview?id=${encodeURIComponent(thumbB64)}&mode=thumb&w=120&q=60" alt="" loading="lazy">`
+      : `<span class="sj-table-thumb-empty">暂无</span>`;
     const safeGroupKeyAttr = String(groupKey || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     return `
       <tr class="${hidden ? 'wip-row-hidden' : ''}" data-group-key="${safeGroupKeyAttr}">
-        <td class="sj-agg-toggle-cell"></td>
         <td style="text-align:center;"><input type="checkbox" class="wip-row-checkbox" data-id="${item.id}" ${selectedWipIds.has(Number(item.id)) ? 'checked' : ''}></td>
+        <td class="sj-agg-toggle-cell" data-manage-col-key="__sj_agg__"></td>
         <td>${item.factory_name || ''}</td>
         <td class="preview-edit-cell"><input type="text" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="order_no" value="${String(item.order_no || '').replace(/"/g, '&quot;')}" placeholder="可选"></td>
         <td class="preview-edit-cell"><input type="text" class="inline-input preview-edit-input wip-edit-field" data-id="${item.id}" data-field="contract_no" value="${String(item.contract_no || '').replace(/"/g, '&quot;')}" placeholder="可选"></td>
         <td>${colorHtml}</td>
-        <td class="cell-center">${thumbHtml}</td>
+        <td class="cell-center sj-cell-thumb">${thumbHtml}</td>
         <td>${item.sku || ''}</td>
         <td>
           <div class="status-segment status-segment--inline readonly-segment market-status-segment" data-value="${isOnMarket ? '1' : '0'}">
@@ -1364,10 +1471,12 @@ function renderFactoryWipTable(items){
       const groupItems = (groupData && Array.isArray(groupData.items)) ? groupData.items : [];
       const sorted = wipGroupSort.key ? groupItems.slice().sort(compareBySortKey) : groupItems.slice();
       const collapsed = activeCollapsedSet ? activeCollapsedSet.has(groupKey) : false;
+      const gkAttr = String(groupKey || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       html.push(`
-        <tr class="wip-group-row" data-group-key="${String(groupKey).replace(/"/g, '&quot;')}">
-          <td class="sj-agg-toggle-cell"><span class="wip-group-toggle" aria-hidden="true">${collapsed ? '▶' : '▼'}</span></td>
-          <td colspan="17">${groupLabel}（${sorted.length}）</td>
+        <tr class="wip-group-row" data-group-key="${gkAttr}">
+          <td style="text-align:center;"><input type="checkbox" class="wip-parent-group-checkbox" data-group-key="${gkAttr}" title="选中该组下全部行" aria-label="选中该组下全部行"></td>
+          <td class="sj-agg-toggle-cell" data-manage-col-key="__sj_agg__"><span class="wip-group-toggle" aria-hidden="true">${collapsed ? '▶' : '▼'}</span></td>
+          <td colspan="16">${groupLabel}（${sorted.length}）</td>
         </tr>
       `);
       sorted.forEach(item => {
@@ -1383,8 +1492,10 @@ function renderFactoryWipTable(items){
   installWipColumnFilterButtons();
   refreshWipFilterButtons();
   bindRowSelectionEvents();
+  bindWipParentGroupSelectionEvents();
   bindFactoryWipEditEvents();
   syncWipSelectAll();
+  wipInvalidateManagedTableLayout();
 }
 
 function initWipGroupedAggregateHelpers(){
@@ -1432,7 +1543,8 @@ function initWipGroupedAggregateHelpers(){
 
 function bindWipAggregateSegment(){
   const seg = document.getElementById('wipAggregateSegment');
-  if(!seg) return;
+  if(!seg || seg.dataset.bound === '1') return;
+  seg.dataset.bound = '1';
   const resetManagedTableSortState = () => {
     const host = document.querySelector('.pm-managed-head-table') || document.querySelector('#mainTable thead');
     if(!host) return;
@@ -1459,6 +1571,7 @@ function bindWipAggregateSegment(){
         resetManagedTableSortState();
       }
       wipAggregateMode = nextMode;
+      safeSetLocalStorage(FACTORY_WIP_AGGREGATE_MODE_KEY, wipAggregateMode);
       seg.setAttribute('data-value', wipAggregateMode);
       seg.querySelectorAll('button.status-pill[data-value]').forEach(b => {
         b.classList.toggle('is-active', String(b.getAttribute('data-value') || '') === wipAggregateMode);
@@ -1541,6 +1654,8 @@ window.addEventListener('load', () => {
     });
   }
   installWipColumnFilterButtons();
+  restoreFactoryWipAggregateModeFromStorage();
+  syncWipAggregateSegmentUi();
   bindWipAggregateSegment();
   initWipGroupedAggregateHelpers();
   loadOptions().finally(loadList);

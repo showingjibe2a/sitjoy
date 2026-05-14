@@ -692,14 +692,6 @@ section.card.pm-card .pm-divider {
     color: rgba(74, 78, 87, 0.82);
 }
 
-.specmi-thumb {
-    width: 44px;
-    height: 44px;
-    object-fit: cover;
-    border-radius: 6px;
-    vertical-align: middle;
-}
-
 .specmi-muted {
     color: var(--morandi-slate);
     font-size: 0.9rem;
@@ -2524,6 +2516,55 @@ body.has-active-modal {
     white-space: nowrap;
 }
 
+/* 全站表格缩略图列（与销量预测 sf-* 一致；含 pm-table 与 sf-table） */
+.pm-table th.sj-th-thumb,
+.pm-table td.sj-cell-thumb,
+table.sf-table th.sf-th-thumb,
+table.sf-table td.sf-cell-thumb {
+    width: 68px;
+    min-width: 68px;
+    max-width: 78px;
+    text-align: center;
+    vertical-align: middle;
+}
+.pm-table td.sj-cell-thumb,
+table.sf-table td.sf-cell-thumb {
+    color: #5b5346;
+}
+.sj-table-thumb-img,
+.sf-variant-thumb,
+.fabric-table-thumb,
+.specmi-thumb,
+.order-preview-thumb {
+    width: 44px;
+    height: 44px;
+    object-fit: contain;
+    display: inline-block;
+    vertical-align: middle;
+    background: #fff;
+    border: 1px solid rgba(207, 199, 189, 0.8);
+    border-radius: 8px;
+    box-sizing: border-box;
+}
+.sj-table-thumb-empty,
+.sf-thumb-empty,
+.fabric-thumb-empty,
+.order-preview-thumb-empty {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border: 1px dashed rgba(207, 199, 189, 0.8);
+    border-radius: 8px;
+    color: #5b5346;
+    font-size: 11px;
+    line-height: 1.2;
+    box-sizing: border-box;
+    vertical-align: middle;
+    text-align: center;
+}
+
 .cell-center {
     text-align: center;
 }
@@ -2531,20 +2572,6 @@ body.has-active-modal {
 .pm-table th.cell-center,
 .pm-table td.cell-center {
     text-align: center;
-}
-
-.fabric-table-thumb {
-    width: 44px;
-    height: 44px;
-    border-radius: 8px;
-    object-fit: cover;
-    background: rgba(236, 231, 223, 0.5);
-    box-shadow: 0 6px 16px rgba(0,0,0,0.12);
-}
-
-.fabric-thumb-empty {
-    width: 44px;
-    height: 44px;
 }
 
 .fabric-thumb-wrap {

@@ -83,7 +83,7 @@
       <thead>
       <tr>
         <th class="sj-toggle-cb-cell" style="width:44px;" title="多选（可点整格）"><input type="checkbox" class="specmi-select-all-page" id="specmiSelectAllPage" aria-label="全选当前列表"></th>
-        <th style="width:120px;">图片</th>
+        <th class="sj-th-thumb cell-center">图片</th>
         <th style="width:200px;">货号</th>
         <th style="width:200px;">规格</th>
         <th style="width:200px;">面料</th>
@@ -626,7 +626,7 @@
       return `
         <tr>
           <td class="sj-toggle-cb-cell"><input type="checkbox" class="specmi-row-select" data-vid="${vid}" aria-label="选择 ${ariaSel}"${sel}></td>
-          <td class="specmi-muted" id="specmiPrev_${vid}">—</td>
+          <td class="sj-cell-thumb cell-center" id="specmiPrev_${vid}"><span class="sj-table-thumb-empty">暂无</span></td>
           <td>${sku}</td>
           <td>${spec}</td>
           <td>${fabric}</td>
@@ -702,7 +702,7 @@
       const resp = await fetch(`/api/sales-product-main-images?variant_id=${encodeURIComponent(String(vid))}`);
       const data = await resp.json();
       if (!data || data.status !== 'success' || !Array.isArray(data.items) || !data.items.length) {
-        cell.textContent = '—';
+        cell.innerHTML = '<span class="sj-table-thumb-empty">暂无</span>';
         return;
       }
       const white = String(SPECMI_LIST_THUMB_IMAGE_TYPE || '').trim();
@@ -716,18 +716,21 @@
         }
       }
       if (!first) {
-        cell.textContent = '—';
+        cell.innerHTML = '<span class="sj-table-thumb-empty">暂无</span>';
         return;
       }
       const b64 = String(first.image_b64 || '');
-      if (!b64) { cell.textContent = '—'; return; }
-      const rawSrc = `/api/image-preview?id=${encodeURIComponent(b64)}&mode=thumb&w=88&q=70`;
+      if (!b64) {
+        cell.innerHTML = '<span class="sj-table-thumb-empty">暂无</span>';
+        return;
+      }
+      const rawSrc = `/api/image-preview?id=${encodeURIComponent(b64)}&mode=thumb&w=120&q=60`;
       const src = (window.SitjoyRowImageRefresh && window.SitjoyRowImageRefresh.withCacheBust)
         ? window.SitjoyRowImageRefresh.withCacheBust(rawSrc)
         : rawSrc;
-      cell.innerHTML = `<img class="specmi-thumb" src="${src}" alt="">`;
+      cell.innerHTML = `<img class="sj-table-thumb-img" src="${src}" alt="">`;
     } catch (e) {
-      cell.textContent = '—';
+      cell.innerHTML = '<span class="sj-table-thumb-empty">暂无</span>';
     }
   }
 

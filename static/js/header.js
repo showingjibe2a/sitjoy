@@ -1279,7 +1279,9 @@
             const rawLabel = extractHeaderLabelText(cell);
             const key = String(cell.dataset.manageColKey || rawLabel || `字段${origin + 1}`).trim();
             if(!cell.dataset.manageColKey) cell.dataset.manageColKey = key;
-            const fallback = cell.querySelector('input[type="checkbox"]') ? '多选框' : `字段${origin + 1}`;
+            const fallback = cell.querySelector('input[type="checkbox"]')
+                ? '多选框'
+                : (key === '__sj_agg__' ? '展开收起' : `字段${origin + 1}`);
             return {
                 origin,
                 key,
@@ -1352,7 +1354,7 @@
         const legacyKeyMap = new Map((Array.isArray(headerMeta) ? headerMeta : []).map(meta => [String(meta.origin), String(meta.key || '').trim()]));
         try {
             const raw = localStorage.getItem(makeStorageKey(table, 'column-order'));
-            if(!raw) return validKeys.slice();
+            if(!raw) return normalizeManagedTableColumnOrder([], validKeys, headerMeta);
             const arr = JSON.parse(raw);
             const inOrder = Array.isArray(arr)
                 ? arr.map(v => {
@@ -1364,9 +1366,16 @@
             validKeys.forEach(v => {
                 if(!inOrder.includes(v)) inOrder.push(v);
             });
-            return inOrder;
+            const normalized = normalizeManagedTableColumnOrder(inOrder, validKeys, headerMeta);
+            if(JSON.stringify(normalized) !== JSON.stringify(inOrder)){
+                try {
+                    localStorage.setItem(makeStorageKey(table, 'column-order'), JSON.stringify(normalized));
+                } catch (_e) {
+                }
+            }
+            return normalized;
         } catch (_) {
-            return validKeys.slice();
+            return normalizeManagedTableColumnOrder([], validKeys, headerMeta);
         }
     }
 
@@ -1377,7 +1386,11 @@
     }
 
     function persistColumnOrder(state){
+        if(!state || !state.table) return;
         try {
+            const headerMeta = getHeaderMeta(state.table);
+            const validKeys = headerMeta.map(meta => String(meta.key || '').trim()).filter(Boolean);
+            state.columnOrder = normalizeManagedTableColumnOrder(state.columnOrder || [], validKeys, headerMeta);
             localStorage.setItem(makeStorageKey(state.table, 'column-order'), JSON.stringify(state.columnOrder.slice()));
         } catch (_) {}
     }
@@ -2319,11 +2332,21 @@
                 cell.style.maxWidth = `${width}px`;
             });
         }
+
+        // 分组汇总行仅 2 格（三角 + colspan），不满足 headerCount，需单独同步收起列宽，否则会与数据行/表头错位
+        if(columnKey === '__sj_agg__' && state.table && state.table.tBodies && state.table.tBodies[0]){
+            state.table.tBodies[0].querySelectorAll('td.sj-agg-toggle-cell').forEach((cell) => {
+                cell.style.width = `${width}px`;
+                cell.style.minWidth = `${width}px`;
+                cell.style.maxWidth = `${width}px`;
+            });
+        }
     }
 
     function applyColumnWidths(state){
         const widths = state.columnWidths || {};
         Object.keys(widths).forEach(key => setColumnWidthByKey(state, key, Number(widths[key])));
+        syncSjAggToggleColumnCssVar(state);
     }
 
     function ensureResizeHandles(state){
@@ -2459,6 +2482,7 @@
         state.columnOrder.forEach((key, orderIdx) => {
             const header = state.headers.find(h => String(h.key || '').trim() === String(key || '').trim());
             if(!header) return;
+            const k0 = String(key || '').trim();
 
             const item = document.createElement('label');
             item.className = 'pm-table-columns-item';
@@ -2499,18 +2523,17 @@
 
             const text = document.createElement('span');
             text.textContent = header.label;
-            if(isLocked) text.title = '该列为多选/选择列，不能隐藏';
+            if(isLocked) text.title = k0 === '__sj_agg__' ? '该列为汇总收起列，不能隐藏' : '该列为多选/选择列，不能隐藏';
             main.appendChild(checkbox);
             main.appendChild(text);
 
             const pin = document.createElement('button');
             pin.type = 'button';
             pin.className = 'pm-table-columns-pin';
-            const k0 = String(key || '').trim();
             const pinnedNow = !!(state.pinnedColumns && state.pinnedColumns.has(k0)) || isLocked;
             pin.textContent = '';
             pin.setAttribute('aria-label', pinnedNow ? '取消冻结' : '冻结到左侧');
-            pin.title = isLocked ? '复选列默认冻结' : (pinnedNow ? '点击取消冻结' : '点击冻结到左侧');
+            pin.title = isLocked ? (k0 === '__sj_agg__' ? '收起列默认冻结' : '复选列默认冻结') : (pinnedNow ? '点击取消冻结' : '点击冻结到左侧');
             pin.disabled = isLocked;
             pin.classList.toggle('is-active', pinnedNow);
             pin.addEventListener('click', (ev) => {
@@ -2673,8 +2696,108 @@
     /** 复选列或业务声明的列（如汇总三角列），冻结窗格中不可取消 */
     function isLockedLayoutColumn(headerCell, label){
         if(!headerCell) return false;
+        if(headerCell.classList && headerCell.classList.contains('sj-agg-toggle-col')) return true;
+        if(String(headerCell.dataset && headerCell.dataset.manageColKey || '').trim() === '__sj_agg__') return true;
         if(isMultiSelectColumn(headerCell, label)) return true;
         return String(headerCell.dataset && headerCell.dataset.manageColLocked || '').trim() === '1';
+    }
+
+    /** 汇总展开列、表头全选列：托管表不在表头展示列排序箭头与列筛选入口 */
+    function isManagedTableNoSortNoFilterHeaderCell(headerCell){
+        if(!headerCell) return false;
+        if(headerCell.classList && headerCell.classList.contains('sj-agg-toggle-col')) return true;
+        if(String(headerCell.dataset && headerCell.dataset.manageColKey || '').trim() === '__sj_agg__') return true;
+        if(headerCell.querySelector('input[type="checkbox"]')) return true;
+        return false;
+    }
+
+    /** 汇总收起列、全选列等必须固定在表格最前，且不受持久化顺序漂移影响 */
+    function canonicalLayoutLeadKeysFromMeta(headerMeta, validKeySet){
+        const unique = new Set();
+        (Array.isArray(headerMeta) ? headerMeta : []).forEach((meta) => {
+            const k = String(meta && meta.key || '').trim();
+            if(!k || !validKeySet.has(k)) return;
+            if(!isLockedLayoutColumn(meta.cell, meta.label)) return;
+            unique.add(k);
+        });
+        const isLeadCheckboxKey = (k) => {
+            const kk = String(k || '').trim();
+            if(!kk || kk === '__sj_agg__') return false;
+            const meta = (Array.isArray(headerMeta) ? headerMeta : []).find(m => String(m && m.key || '').trim() === kk);
+            return !!(meta && meta.cell && meta.cell.querySelector('input[type="checkbox"]'));
+        };
+        return [...unique].sort((a, b) => {
+            const ra = isLeadCheckboxKey(a) ? 0 : (a === '__sj_agg__' ? 1 : 2);
+            const rb = isLeadCheckboxKey(b) ? 0 : (b === '__sj_agg__' ? 1 : 2);
+            if(ra !== rb) return ra - rb;
+            return String(a).localeCompare(String(b), 'en');
+        });
+    }
+
+    /**
+     * 将持久化列顺序与当前表头字段对齐：布局锚点列（收起三角、复选框等）始终排在最前，
+     * 其余列保持持久化中的相对顺序，未出现的键按 validKeysArray 顺序补全。
+     * 解决：持久化顺序把锚点列挤到末尾后 applyColumnOrder 污染 thead，导致重置时读 DOM 仍错位。
+     */
+    function normalizeManagedTableColumnOrder(persistedKeys, validKeysArray, headerMeta){
+        const validKeys = (Array.isArray(validKeysArray) ? validKeysArray : []).map((k) => String(k || '').trim()).filter(Boolean);
+        const validSet = new Set(validKeys);
+        const seen = new Set();
+        const persistUnique = [];
+        (Array.isArray(persistedKeys) ? persistedKeys : []).forEach((k) => {
+            const kk = String(k || '').trim();
+            if(!validSet.has(kk) || seen.has(kk)) return;
+            seen.add(kk);
+            persistUnique.push(kk);
+        });
+        const leadKeys = canonicalLayoutLeadKeysFromMeta(headerMeta, validSet);
+        const leadSet = new Set(leadKeys);
+        const out = leadKeys.slice();
+        persistUnique.forEach((k) => {
+            if(!leadSet.has(k) && !out.includes(k)) out.push(k);
+        });
+        validKeys.forEach((k) => {
+            if(!out.includes(k)) out.push(k);
+        });
+        return out;
+    }
+
+    /** 父体/分组行等需与表头「收起」列同宽：优先用持久化列宽，避免 display:none 时测到 0 宽污染 CSS 变量 */
+    function syncSjAggToggleColumnCssVar(state){
+        if(!state || !state.table || state.light) return;
+        const hr = state.table.tHead && state.table.tHead.rows && state.table.tHead.rows[0];
+        if(!hr) return;
+        let th = null;
+        Array.from(hr.cells || []).forEach((cell) => {
+            if(String(cell.dataset.manageColKey || '').trim() === '__sj_agg__') th = cell;
+        });
+        if(!th) th = hr.querySelector('th.sj-agg-toggle-col');
+        if(!th) return;
+
+        const stored = Number((state.columnWidths || {})['__sj_agg__']);
+        let w = 0;
+        if(Number.isFinite(stored) && stored > 0){
+            w = Math.round(stored);
+        } else {
+            let cs = null;
+            try {
+                cs = window.getComputedStyle(th);
+            } catch (_e) {
+                cs = null;
+            }
+            if(!cs || cs.display === 'none' || cs.visibility === 'hidden'){
+                try {
+                    state.table.style.removeProperty('--sj-agg-toggle-w');
+                } catch (_e2) {
+                }
+                return;
+            }
+            w = Math.max(1, Math.round(th.getBoundingClientRect().width || 0));
+        }
+        try {
+            state.table.style.setProperty('--sj-agg-toggle-w', `${w}px`);
+        } catch (_e) {
+        }
     }
 
     function readManagedCellDisplayText(cell){
@@ -2811,11 +2934,14 @@
         const columns = headerCells.map((cell, index) => {
             const label = extractHeaderLabelText(cell);
             const key = String(cell.dataset.manageColKey || label || `字段${index + 1}`).trim();
-            return { index, key, label: label || `字段${index + 1}` };
+            const resolvedLabel = label || (key === '__sj_agg__' ? '展开收起' : `字段${index + 1}`);
+            return { index, key, label: resolvedLabel };
         }).filter(item => {
             const label = String(item.label || '').trim();
             if(!label) return false;
             if(/操作|详情|动作/.test(label)) return false;
+            const cell = headerCells[item.index];
+            if(isManagedTableNoSortNoFilterHeaderCell(cell)) return false;
             return true;
         });
         if(!columns.length) return;
@@ -3227,15 +3353,18 @@
                 Array.from(headerRow.cells || []).forEach((cell, idx) => {
                     const headerKey = String(cell.dataset.manageColKey || '').trim() || String(idx);
                     const columnConfig = getColumnConfig(headerKey);
-                    if(!columnConfig) return;
+                    const existingBtn = cell.querySelector('.pm-column-filter-btn');
+                    if(!columnConfig){
+                        cell.classList.remove('pm-column-filter-th');
+                        if(existingBtn) existingBtn.remove();
+                        return;
+                    }
                     cell.classList.add('pm-column-filter-th');
-                    let btn = cell.querySelector('.pm-column-filter-btn');
+                    let btn = existingBtn;
                     if(!btn){
                         btn = document.createElement('button');
                         btn.type = 'button';
                         btn.className = 'pm-column-filter-btn';
-                        btn.dataset.columnIndex = String(idx);
-                        btn.dataset.columnKey = String(columnConfig.key || '').trim() || headerKey;
                         btn.title = '列筛选';
                         cell.appendChild(btn);
                     }
@@ -3932,9 +4061,10 @@
         const headerRow = getPrimaryHeaderRow(state);
         if(!headerRow) return;
         Array.from(headerRow.cells || []).forEach(cell => {
-            if(cell.dataset.disableSort === '1') return;
             const origin = String(cell.dataset.manageColKey || '').trim();
             cell.classList.remove('pm-sortable', 'pm-sort-asc', 'pm-sort-desc');
+            if(cell.dataset.disableSort === '1') return;
+            if(isManagedTableNoSortNoFilterHeaderCell(cell)) return;
             if(state.lockedColumns.has(origin)) return;
             cell.classList.add('pm-sortable');
             if(state.sortOrigin !== origin || !state.sortDir) return;
@@ -3947,8 +4077,11 @@
         const headerRow = getPrimaryHeaderRow(state);
         if(!headerRow) return;
         Array.from(headerRow.cells).forEach(cell => {
-            if(cell.dataset.disableSort === '1') return;
             if(cell.dataset.sortBound === '1') return;
+            if(cell.dataset.disableSort === '1' || isManagedTableNoSortNoFilterHeaderCell(cell)){
+                cell.dataset.sortBound = '1';
+                return;
+            }
             cell.dataset.sortBound = '1';
             cell.addEventListener('click', (event) => {
                 if(Date.now() < suppressSortUntil) return;
@@ -4063,14 +4196,16 @@
             state.lockedColumns.forEach(key => state.visibleColumns.add(String(key || '').trim()));
             state.pinnedColumns = readPersistedPinned(state.table, headerMeta) || new Set();
             state.lockedColumns.forEach(key => state.pinnedColumns.add(String(key || '').trim()));
-            validKeys.forEach(key => {
-                if(!state.columnOrder.includes(key)) state.columnOrder.push(key);
-            });
             if(!state.light){
                 state.columnsWrap.style.display = headerCount >= 2 ? '' : 'none';
                 renderColumnPanel(state);
             }
         }
+
+        validKeys.forEach(key => {
+            if(!state.columnOrder.includes(key)) state.columnOrder.push(key);
+        });
+        state.columnOrder = normalizeManagedTableColumnOrder(state.columnOrder || [], validKeys, headerMeta);
 
         ensureRowSortOrigin(state);
         ensureManagedBatchHandlers(state);
@@ -4313,7 +4448,7 @@
                         const hasCustomPinned = Array.from(pinnedNow.values()).some(k => k && !locked.has(String(k || '').trim()));
 
                         if(hasCustomPinned){
-                            const msg = '重置字段排序会取消对「冻结窗格」的保存（仅保留复选列默认冻结）。\n\n是否继续重置？';
+                            const msg = '重置字段排序会取消对「冻结窗格」的保存（仅保留收起列、复选列等布局锚点的默认冻结）。\n\n是否继续重置？';
                             let ok = true;
                             if(window.showAppConfirmAsync){
                                 const res = await window.showAppConfirmAsync({
@@ -4332,13 +4467,26 @@
                             }
                         }
 
-                        try { localStorage.removeItem(makeStorageKey(state.table, 'column-order')); } catch (_) {}
+                        const orderKey = makeStorageKey(state.table, 'column-order');
+                        let previousOrder = [];
+                        try {
+                            const rawPrev = localStorage.getItem(orderKey);
+                            if(rawPrev){
+                                const parsed = JSON.parse(rawPrev);
+                                if(Array.isArray(parsed)) previousOrder = parsed;
+                            }
+                        } catch (_e) {}
+
+                        try { localStorage.removeItem(orderKey); } catch (_) {}
                         try { localStorage.removeItem(makeStorageKey(state.table, 'pinned-columns')); } catch (_) {}
                         state.pinnedColumns = new Set();
                         locked.forEach(k => state.pinnedColumns.add(String(k || '').trim()));
                         persistPinnedColumns(state);
 
-                        state.columnOrder = (state.headers || []).map(h => String(h.key || '').trim()).filter(Boolean);
+                        const headerMetaNow = getHeaderMeta(state.table);
+                        const validKeysNow = headerMetaNow.map(m => String(m.key || '').trim()).filter(Boolean);
+                        const hintOrder = previousOrder.length ? previousOrder : (state.columnOrder || []).slice();
+                        state.columnOrder = normalizeManagedTableColumnOrder(hintOrder, validKeysNow, headerMetaNow);
                         persistColumnOrder(state);
                         refreshLayout();
                         showAppToast('字段排序已重置', false, 1200);
@@ -5629,9 +5777,13 @@
 
     document.addEventListener('mouseup', () => {
         if(activeResizeState){
-            if(activeResizeState.hasMoved) suppressSortUntil = Date.now() + 260;
+            // 松手后 click 常落在表头 th 上而非 resizer，会误触排序；与是否产生位移无关
+            const until = Date.now() + 650;
+            suppressSortUntil = Math.max(Number(suppressSortUntil) || 0, until);
             activeResizeState.handle.classList.remove('is-active');
-            persistColumnWidths(activeResizeState.state);
+            const rsState = activeResizeState.state;
+            persistColumnWidths(rsState);
+            syncSjAggToggleColumnCssVar(rsState);
             activeResizeState = null;
             document.body.style.cursor = '';
             document.body.style.userSelect = '';

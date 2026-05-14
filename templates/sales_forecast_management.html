@@ -381,33 +381,6 @@
             line-height: 1.2;
             color: #5b5346;
         }
-        td.sf-cell-thumb,
-        th.sf-th-thumb {
-            width: 68px;
-            min-width: 68px;
-            text-align: center;
-        }
-        td.sf-cell-thumb { color: #5b5346; }
-        .sf-variant-thumb {
-            width: 44px;
-            height: 44px;
-            object-fit: contain;
-            display: inline-block;
-            background: #fff;
-            border: 1px solid rgba(207, 199, 189, 0.8);
-            border-radius: 8px;
-        }
-        .sf-thumb-empty {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 44px;
-            height: 44px;
-            border: 1px dashed rgba(207, 199, 189, 0.8);
-            border-radius: 8px;
-            color: #5b5346;
-            font-size: 11px;
-        }
         .sf-fabric-dot {
             display: inline-block;
             width: 12px;
@@ -1423,9 +1396,9 @@
             if (col.key === 'thumb') {
                 const b64 = String(col.get(row) || '').trim();
                 if (b64) {
-                    td.innerHTML = `<img class="sf-variant-thumb" src="/api/image-preview?id=${encodeURIComponent(b64)}&mode=thumb&w=120&q=60" alt="" loading="lazy">`;
+                    td.innerHTML = `<img class="sj-table-thumb-img" src="/api/image-preview?id=${encodeURIComponent(b64)}&mode=thumb&w=120&q=60" alt="" loading="lazy">`;
                 } else {
-                    td.innerHTML = '<span class="sf-thumb-empty">暂无</span>';
+                    td.innerHTML = '<span class="sj-table-thumb-empty">暂无</span>';
                 }
                 return;
             }

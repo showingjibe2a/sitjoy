@@ -141,13 +141,6 @@
             border-color: var(--morandi-ink) !important;
             background: rgba(255, 255, 255, 0.75);
         }
-        .fabric-thumb-empty {
-            display: inline-block;
-            color: var(--morandi-slate);
-            font-size: 0.9rem;
-            line-height: 1;
-            padding: 0.2rem 0;
-        }
         .fabric-color-cell {
             text-align: center !important;
             vertical-align: middle;
@@ -214,7 +207,7 @@
                 <table class="pm-table" id="fabricTable">
                     <thead>
                         <tr>
-                            <th style="width:80px;" class="cell-center">图片</th>
+                            <th style="width:80px;" class="cell-center sj-th-thumb">图片</th>
                             <th>面料编号</th>
                             <th>面料英文名称</th>
                             <th style="width:90px;" class="cell-center">代表色</th>
@@ -978,12 +971,12 @@
                         const imagePath = imageName ? `『面料』/${imageName}` : '';
                         const imageB64 = imagePath ? utf8ToB64(imagePath) : '';
                         const imageThumb = imageB64
-                            ? `<img class="fabric-table-thumb" src="/api/image-preview?id=${encodeURIComponent(imageB64)}&mode=thumb&w=220&q=68" alt="${imageName}">`
+                            ? `<img class="sj-table-thumb-img" src="/api/image-preview?id=${encodeURIComponent(imageB64)}&mode=thumb&w=120&q=60" alt="${imageName}">`
                             : '';
                         const imageCount = imageNames.length > 1 ? `<div class="fabric-image-count">${imageNames.length}</div>` : '';
                         const thumbWrap = imageThumb
                             ? `<div class="fabric-thumb-wrap">${imageThumb}${imageCount}</div>`
-                            : '<span class="fabric-thumb-empty"></span>';
+                            : '<span class="sj-table-thumb-empty">暂无</span>';
                         const materialText = item.material_name ? `${item.material_name} / ${item.material_name_en || ''}` : '';
                         const colorText = String(item.representative_color || '').trim();
                         const colorDot = colorText
@@ -991,7 +984,7 @@
                             : '';
                         return `
                             <tr data-sj-row-entity-id="${item.id}">
-                                <td class="fabric-image-cell cell-center" data-sj-preview="1">${thumbWrap}</td>
+                                <td class="fabric-image-cell cell-center sj-cell-thumb" data-sj-preview="1">${thumbWrap}</td>
                                 <td>${item.fabric_code}</td>
                                 <td>${item.fabric_name_en}</td>
                                 <td class="fabric-color-cell">${colorDot}</td>

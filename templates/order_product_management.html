@@ -86,23 +86,6 @@
             color: var(--morandi-slate);
             font-size: 0.9rem;
         }
-        .order-preview-thumb-cell {
-            width: 64px;
-            text-align: center;
-        }
-        .order-preview-thumb {
-            width: 42px;
-            height: 42px;
-            object-fit: contain;
-            border-radius: 8px;
-            border: 1px solid rgba(207, 199, 189, 0.8);
-            background: #fff;
-            display: inline-block;
-        }
-        .order-preview-thumb-empty {
-            color: var(--morandi-slate);
-            font-size: 0.8rem;
-        }
         .upload-progress {
             position: fixed;
             right: 18px;
@@ -503,13 +486,13 @@
                 <table class="pm-table" id="orderProductTable" data-order-product-batch-extras="1" data-batch-bar-floating="1">
                     <thead>
                         <tr>
-                            <th style="width:54px; text-align:center;"><input type="checkbox" id="orderSelectAll"></th>
+                            <th style="width:54px; text-align:center;" data-disable-sort="1"><input type="checkbox" id="orderSelectAll"></th>
                             <th class="yesno-col">是否在市</th>
                             <th class="yesno-col">补发配件</th>
                             <th class="yesno-col">迭代款</th>
                             <th class="yesno-col">大健云仓</th>
                             <th style="width: 100px;">货号</th>
-                            <th style="width: 64px; text-align:center;">图片</th>
+                            <th class="sj-th-thumb cell-center">图片</th>
                             <th>SKU</th>
                             <th>规格简称</th>
                             <th>内含物英文描述</th>
@@ -3844,8 +3827,8 @@
                         const previewPath = String(item.preview_image_path || '').trim();
                         const previewB64 = previewPath ? utf8ToB64(previewPath) : '';
                         const previewHtml = previewB64
-                            ? `<img class="order-preview-thumb" src="/api/image-preview?id=${encodeURIComponent(previewB64)}&mode=thumb&w=120&q=72" alt="图片" loading="lazy">`
-                            : '<span class="order-preview-thumb-empty">-</span>';
+                            ? `<img class="sj-table-thumb-img" src="/api/image-preview?id=${encodeURIComponent(previewB64)}&mode=thumb&w=120&q=72" alt="图片" loading="lazy">`
+                            : '<span class="sj-table-thumb-empty">暂无</span>';
                         const checked = selectedOrderProductIds.has(String(item.id)) ? 'checked' : '';
                         return `
                             <tr data-sj-row-entity-id="${item.id}">
@@ -3855,7 +3838,7 @@
                                 <td class="yesno-col">${renderReadonlyYesNoSwitch(item.is_iteration)}</td>
                                 <td class="yesno-col">${renderReadonlyYesNoSwitch(item.is_dachene_product)}</td>
                                 <td>${item.sku_family || ''}</td>
-                                <td class="order-preview-thumb-cell" data-sj-preview="1">${previewHtml}</td>
+                                <td class="sj-cell-thumb" data-sj-preview="1">${previewHtml}</td>
                                 <td>${item.sku || ''}</td>
                                 <td>${item.spec_qty_short || ''}</td>
                                 <td>${item.contents_desc_en || ''}</td>
@@ -3929,8 +3912,8 @@
                 thumb: {
                     w: 120,
                     q: 72,
-                    imgClass: 'order-preview-thumb',
-                    emptyHtml: '<span class="order-preview-thumb-empty">-</span>'
+                    imgClass: 'sj-table-thumb-img',
+                    emptyHtml: '<span class="sj-table-thumb-empty">暂无</span>'
                 }
             });
         }

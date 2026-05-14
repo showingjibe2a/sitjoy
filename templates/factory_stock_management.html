@@ -70,7 +70,7 @@
           <tr>
             <th style="width:54px; text-align:center;"><input type="checkbox" id="stockSelectAll"></th>
             <th style="width:150px;">在市状态</th>
-            <th style="width:64px;" class="cell-center">图片</th>
+            <th class="cell-center sj-th-thumb">图片</th>
             <th>SKU</th>
             <th style="width:120px;">颜色</th>
             <th>工厂</th>
@@ -430,8 +430,8 @@ function renderFactoryStockTable(items){
       : '<span class="sku-color-empty">-</span>';
     const thumbB64 = String(item.preview_image_b64 || '').trim();
     const thumbHtml = thumbB64
-      ? `<img class="fabric-table-thumb" src="/api/image-preview?id=${encodeURIComponent(thumbB64)}" alt="" loading="lazy">`
-      : `<span class="fabric-thumb-empty"></span>`;
+      ? `<img class="sj-table-thumb-img" src="/api/image-preview?id=${encodeURIComponent(thumbB64)}&mode=thumb&w=120&q=60" alt="" loading="lazy">`
+      : `<span class="sj-table-thumb-empty">暂无</span>`;
     return `
       <tr>
         <td style="text-align:center;"><input type="checkbox" class="stock-row-checkbox" data-id="${item.id}" ${selectedStockIds.has(Number(item.id)) ? 'checked' : ''}></td>
@@ -441,7 +441,7 @@ function renderFactoryStockTable(items){
             <button type="button" class="status-pill status-pill--no ${isOnMarket ? '' : 'is-active'}" data-value="0">下市</button>
           </div>
         </td>
-        <td class="cell-center">${thumbHtml}</td>
+        <td class="cell-center sj-cell-thumb">${thumbHtml}</td>
         <td>${item.sku || ''}</td>
         <td data-sort-value="${String(colorText || '-').replace(/"/g, '&quot;')}" data-export-value="${String(colorText || '-').replace(/"/g, '&quot;')}">${colorHtml}</td>
         <td>${item.factory_name || ''}</td>
