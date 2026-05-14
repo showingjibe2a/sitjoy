@@ -2096,7 +2096,8 @@ input.optional-date-input[type="text"]:focus {
 }
 
 .pm-batch-delete-modal {
-    z-index: 4200;
+    /* 勿用低位 z-index，否则会覆盖 .pm-modal(15000) 导致确认框叠在托管表/分页条之下 */
+    z-index: 15100;
 }
 
 .pm-batch-delete-content {

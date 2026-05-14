@@ -552,6 +552,10 @@
         .sf-tooltip-wrap.is-pinned {
             z-index: 1200;
         }
+        body.sf-history-perf-pinned .sf-history-perf-wrap:not(.is-pinned):hover,
+        body.sf-history-perf-pinned .sf-history-perf-wrap:not(.is-pinned):focus-within {
+            z-index: 1;
+        }
         .sf-tooltip-bubble {
             position: absolute;
             z-index: 1201;
@@ -573,6 +577,10 @@
         .sf-tooltip-wrap:focus-within .sf-tooltip-bubble,
         .sf-tooltip-wrap.is-pinned .sf-tooltip-bubble {
             display: block;
+        }
+        body.sf-history-perf-pinned .sf-history-perf-wrap:not(.is-pinned):hover .sf-tooltip-bubble,
+        body.sf-history-perf-pinned .sf-history-perf-wrap:not(.is-pinned):focus-within .sf-tooltip-bubble {
+            display: none !important;
         }
         .sf-tooltip-bubble dl {
             margin: 0;
@@ -1648,6 +1656,7 @@
 
             const totalCols = cols.length + histCols + mtdCols + fcCols + invCols;
             tbody.innerHTML = '';
+            document.body.classList.remove('sf-history-perf-pinned');
             if (!groups.length) {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `<td colspan="${totalCols}" class="sf-empty">没有匹配的数据</td>`;
@@ -2456,16 +2465,24 @@
             onForecastInputChange({ target: input });
         }
 
+        function syncSfHistoryPerfPinnedBodyClass() {
+            const locked = !!document.querySelector('.sf-history-perf-wrap.is-pinned');
+            document.body.classList.toggle('sf-history-perf-pinned', locked);
+        }
+
         function makeTooltipWrap(html, contentNode, bubbleExtraClass) {
             const wrap = document.createElement('span');
             wrap.className = 'sf-tooltip-wrap';
             wrap.tabIndex = 0;
+            const extra = String(bubbleExtraClass || '').trim();
+            if (extra.includes('sf-history-perf-tooltip-bubble')) {
+                wrap.classList.add('sf-history-perf-wrap');
+            }
             const content = document.createElement('span');
             content.className = 'sf-tooltip-content';
             content.appendChild(contentNode);
             wrap.appendChild(content);
             const bubble = document.createElement('span');
-            const extra = String(bubbleExtraClass || '').trim();
             bubble.className = 'sf-tooltip-bubble' + (extra ? ` ${extra}` : '');
             bubble.innerHTML = html;
             wrap.appendChild(bubble);
@@ -2477,6 +2494,7 @@
                     node.classList.remove('is-pinned');
                 });
                 if (!isPinned) wrap.classList.add('is-pinned');
+                syncSfHistoryPerfPinnedBodyClass();
             });
             return wrap;
         }

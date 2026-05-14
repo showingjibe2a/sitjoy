@@ -3918,8 +3918,9 @@
             '<button type="button" class="btn-secondary" data-action="download">批量下载数据</button>',
             '<button type="button" class="btn-danger" data-action="delete">批量删除</button>'
         ].join('');
-        const preferFloating = state.table && String(state.table.dataset.batchBarFloating || '').trim() === '1';
-        const host = (!preferFloating && state.toolbar) ? ensureManagedBatchBarHost(state) : null;
+        // 默认右下角浮动；仅当表上声明 data-batch-bar-embedded="1" 时嵌入工具栏（避免与「每页/共几条」抢位）
+        const useEmbedded = state.table && String(state.table.dataset.batchBarEmbedded || '').trim() === '1';
+        const host = (useEmbedded && state.toolbar) ? ensureManagedBatchBarHost(state) : null;
         if(host){
             host.appendChild(bar);
             bar.classList.add('pm-batch-float-bar--embedded');
@@ -5447,8 +5448,10 @@
             {
                 title: '批量下载与批量删除',
                 lines: [
-                    '若表格配置了行勾选与批量工具栏，可按页面说明勾选多行后触发批量下载或删除。',
-                    '页面可通过 data-batch-delete-handler 等属性接入自定义逻辑；未配置时会有 toast 提示。'
+                    '勾选行后，批量下载/删除条默认固定在页面右下角，不挤占表头工具栏与分页区域。',
+                    '若某页确需将该条嵌入工具栏，可为表格设置 data-batch-bar-embedded="1"。',
+                    '页面可通过 data-batch-delete-handler 等属性接入自定义逻辑；未配置时会有 toast 提示。',
+                    '批量删除前会弹出全屏居中确认框，请勾选「我已阅读…」后再二次确认执行。'
                 ]
             },
             {
