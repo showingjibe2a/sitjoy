@@ -1411,7 +1411,8 @@ input.optional-date-input[type="text"]:focus {
 
 .pm-column-filter-pop {
     position: fixed;
-    z-index: 5800;
+    /* 与 .pm-table-columns-panel 同层：弹窗内托管表列筛选须高于 .pm-modal(15000) */
+    z-index: 15500;
     width: min(320px, calc(100vw - 20px));
     background: rgba(255, 255, 255, 0.98);
     border: 1px solid rgba(188, 180, 170, 0.82);
@@ -1631,7 +1632,8 @@ input.optional-date-input[type="text"]:focus {
     border: 1px solid rgba(207, 199, 189, 0.95);
     background: #fff;
     box-shadow: 0 12px 30px rgba(15, 23, 42, 0.14);
-    z-index: 4100;
+    /* 须高于 .pm-modal(15000)，否则在弹窗内托管表点击「字段显示」面板不可见；低于 .app-toast-stack(16000) */
+    z-index: 15500;
     display: none;
     visibility: hidden;
     pointer-events: none;

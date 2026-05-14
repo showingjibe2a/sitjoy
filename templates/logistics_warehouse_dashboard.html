@@ -996,11 +996,12 @@ function bindBoardCellUiEvents(){
     if(!td || !tbody.contains(td)) return;
     const col = Number(td.dataset.boardColIndex);
     const pos = getCellPos(td);
+    if(boardCellMouseDown && boardSelectionAnchor && pos){
+      boardSelectionFocus = pos;
+      selectBoardCellRange(boardSelectionAnchor, boardSelectionFocus);
+      return;
+    }
     if(boardSelectionLocked){
-      if(boardCellMouseDown && boardSelectionMode === 'range' && boardSelectionAnchor && pos){
-        boardSelectionFocus = pos;
-        selectBoardCellRange(boardSelectionAnchor, boardSelectionFocus);
-      }
       return;
     }
     if(pos){
@@ -1008,13 +1009,23 @@ function bindBoardCellUiEvents(){
     } else if(Number.isFinite(col)) {
       applyHoverColumn(col);
     }
-    if(boardCellMouseDown && boardSelectionAnchor){
-      const pos = getCellPos(td);
-      if(!pos) return;
-      boardSelectionFocus = pos;
-      selectBoardCellRange(boardSelectionAnchor, boardSelectionFocus);
-    }
   });
+
+  const boardDocPointerMove = function(event){
+    if(!boardCellMouseDown || !boardSelectionAnchor) return;
+    if(typeof event.buttons === 'number' && event.buttons === 0) return;
+    let td = event.target && event.target.closest ? event.target.closest('td.board-selectable-cell') : null;
+    if(!td && document.elementsFromPoint){
+      const stack = document.elementsFromPoint(event.clientX, event.clientY) || [];
+      td = stack.find(el => el && el.matches && el.matches('td.board-selectable-cell')) || null;
+    }
+    if(!td || !tbody.contains(td)) return;
+    const pos = getCellPos(td);
+    if(!pos) return;
+    boardSelectionFocus = pos;
+    selectBoardCellRange(boardSelectionAnchor, boardSelectionFocus);
+  };
+  document.addEventListener('mousemove', boardDocPointerMove, true);
 
   tbody.addEventListener('mouseleave', function(){
     if(!boardSelectionLocked) clearHoverState();

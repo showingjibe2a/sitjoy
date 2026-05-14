@@ -3542,7 +3542,11 @@
 
     window.SitjoyManagedPmTable = Object.assign({}, window.SitjoyManagedPmTable || {}, {
         resolveBodyTableFromHeaderTh,
-        invalidateLayout: invalidateManagedTableLayout
+        invalidateLayout: invalidateManagedTableLayout,
+        /** 对 root 下尚未托管的 table.pm-table 执行 createManagedTable（如弹窗内动态插入的表） */
+        enhance(root){
+            enhanceManagedTables(root && root.querySelectorAll ? root : document);
+        }
     });
 
     window.SitjoyColumnFilter = {

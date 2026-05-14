@@ -5,6 +5,43 @@ import calendar
 from datetime import date, datetime
 from urllib.parse import parse_qs
 
+
+def _sf_effective_wsgi_query_string(environ):
+    """与 file_management_mixin 一致：代理环境下 QUERY_STRING 可能为空。"""
+    if not environ:
+        return ''
+    raw = environ.get('QUERY_STRING')
+    if raw is not None and str(raw).strip():
+        return str(raw)
+    for key in ('REDIRECT_QUERY_STRING', 'HTTP_X_ORIGINAL_QUERY_STRING', 'HTTP_X_QUERY_STRING'):
+        val = environ.get(key)
+        if val is not None and str(val).strip():
+            return str(val)
+    for uri_key in ('REQUEST_URI', 'RAW_URI', 'UNENCODED_URL'):
+        uri = environ.get(uri_key)
+        if uri is None:
+            continue
+        if isinstance(uri, (bytes, bytearray)):
+            try:
+                uri = uri.decode('latin-1', errors='replace')
+            except Exception:
+                continue
+        uri = str(uri)
+        q = uri.find('?')
+        if q >= 0 and q < len(uri) - 1:
+            return uri[q + 1 :]
+    return ''
+
+
+def _sf_parse_qs(qs):
+    if not qs:
+        return {}
+    try:
+        return parse_qs(qs, separator='&', keep_blank_values=False)
+    except TypeError:
+        return parse_qs(qs, keep_blank_values=False)
+
+
 try:
     from openpyxl import Workbook, load_workbook
     _openpyxl_import_error = None
@@ -1452,7 +1489,21 @@ class SalesManagementMixin:
         except Exception:
             return None
 
-    def _forecast_load_platform_sku_dim(self, conn, query_params=None):
+    def _forecast_apply_sf_group_platform(self, sf_group, clauses, params):
+        """与前端 groupKey 一致：shop||family，各自与 COALESCE(TRIM(...), '-') 比较。"""
+        if not sf_group:
+            return
+        raw = str(sf_group).strip()
+        if not raw:
+            return
+        parts = raw.split('||', 1)
+        shop_g = parts[0].strip() if parts else '-'
+        fam_g = parts[1].strip() if len(parts) > 1 else '-'
+        clauses.append("COALESCE(NULLIF(TRIM(sh.shop_name),''), '-') = %s")
+        clauses.append("COALESCE(NULLIF(TRIM(pf.sku_family),''), '-') = %s")
+        params.extend([shop_g or '-', fam_g or '-'])
+
+    def _forecast_load_platform_sku_dim(self, conn, query_params=None, sf_group=None):
         """加载平台SKU维度行：sales_products + variant + family + fabric + 在售标识。"""
         sku_keyword = ''
         spec_keyword = ''
@@ -1475,6 +1526,7 @@ class SalesManagementMixin:
             clauses.append("(fm.fabric_code LIKE %s OR fm.fabric_name_en LIKE %s)")
             like_val = f"%{fabric_keyword}%"
             params.extend([like_val, like_val])
+        self._forecast_apply_sf_group_platform(sf_group, clauses, params)
 
         where_sql = ' AND '.join(clauses)
         with conn.cursor() as cur:
@@ -1506,7 +1558,58 @@ class SalesManagementMixin:
             )
             return [dict(row) for row in (cur.fetchall() or [])]
 
-    def _forecast_load_variant_dim(self, conn, query_params=None):
+    def _forecast_list_platform_groups(self, conn, query_params=None):
+        """轻量：仅返回店铺/货号分组及行数（与前端 buildGroups 的 key 一致）。"""
+        sku_keyword = ''
+        spec_keyword = ''
+        fabric_keyword = ''
+        if query_params:
+            sku_keyword = (query_params.get('sku', [''])[0] or '').strip()
+            spec_keyword = (query_params.get('spec', [''])[0] or '').strip()
+            fabric_keyword = (query_params.get('fabric', [''])[0] or '').strip()
+        clauses = ["1=1"]
+        params = []
+        if sku_keyword:
+            clauses.append("(sp.platform_sku LIKE %s OR pf.sku_family LIKE %s)")
+            like_val = f"%{sku_keyword}%"
+            params.extend([like_val, like_val])
+        if spec_keyword:
+            clauses.append("v.spec_name LIKE %s")
+            params.append(f"%{spec_keyword}%")
+        if fabric_keyword:
+            clauses.append("(fm.fabric_code LIKE %s OR fm.fabric_name_en LIKE %s)")
+            like_val = f"%{fabric_keyword}%"
+            params.extend([like_val, like_val])
+        where_sql = ' AND '.join(clauses)
+        out = []
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT COALESCE(NULLIF(TRIM(sh.shop_name),''), '-') AS shop_g,
+                       COALESCE(NULLIF(TRIM(pf.sku_family),''), '-') AS fam_g,
+                       COUNT(*) AS cnt
+                FROM sales_products sp
+                JOIN sales_product_variants v ON v.id = sp.variant_id
+                LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id
+                LEFT JOIN shops sh ON sh.id = sp.shop_id
+                WHERE {where_sql}
+                GROUP BY COALESCE(NULLIF(TRIM(sh.shop_name),''), '-'),
+                         COALESCE(NULLIF(TRIM(pf.sku_family),''), '-')
+                ORDER BY shop_g ASC, fam_g ASC
+                """,
+                tuple(params)
+            )
+            for row in (cur.fetchall() or []):
+                shop_g = str(row.get('shop_g') or '-').strip() or '-'
+                fam_g = str(row.get('fam_g') or '-').strip() or '-'
+                key = f"{shop_g}||{fam_g}"
+                title = f"{shop_g} / {fam_g}"
+                cnt = int(self._parse_int(row.get('cnt')) or 0)
+                out.append({'key': key, 'title': title, 'item_count': cnt})
+        return out
+
+    def _forecast_load_variant_dim(self, conn, query_params=None, sf_group=None):
         """加载规格+面料 维度行（variant 行）。"""
         sku_keyword = ''
         spec_keyword = ''
@@ -1528,6 +1631,11 @@ class SalesManagementMixin:
             clauses.append("(fm.fabric_code LIKE %s OR fm.fabric_name_en LIKE %s)")
             like_val = f"%{fabric_keyword}%"
             params.extend([like_val, like_val])
+        if sf_group:
+            gk = str(sf_group).strip()
+            if gk:
+                clauses.append("COALESCE(NULLIF(TRIM(pf.sku_family),''), '-') = %s")
+                params.append(gk)
 
         where_sql = ' AND '.join(clauses)
         with conn.cursor() as cur:
@@ -1550,6 +1658,49 @@ class SalesManagementMixin:
                 tuple(params)
             )
             return [dict(row) for row in (cur.fetchall() or [])]
+
+    def _forecast_list_spec_groups(self, conn, query_params=None):
+        """轻量：货号分组及变体行数。"""
+        sku_keyword = ''
+        spec_keyword = ''
+        fabric_keyword = ''
+        if query_params:
+            sku_keyword = (query_params.get('sku', [''])[0] or '').strip()
+            spec_keyword = (query_params.get('spec', [''])[0] or '').strip()
+            fabric_keyword = (query_params.get('fabric', [''])[0] or '').strip()
+        clauses = ["1=1"]
+        params = []
+        if sku_keyword:
+            clauses.append("pf.sku_family LIKE %s")
+            params.append(f"%{sku_keyword}%")
+        if spec_keyword:
+            clauses.append("v.spec_name LIKE %s")
+            params.append(f"%{spec_keyword}%")
+        if fabric_keyword:
+            clauses.append("(fm.fabric_code LIKE %s OR fm.fabric_name_en LIKE %s)")
+            like_val = f"%{fabric_keyword}%"
+            params.extend([like_val, like_val])
+        where_sql = ' AND '.join(clauses)
+        out = []
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT COALESCE(NULLIF(TRIM(pf.sku_family),''), '-') AS gkey,
+                       COUNT(*) AS cnt
+                FROM sales_product_variants v
+                LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id
+                WHERE {where_sql}
+                GROUP BY COALESCE(NULLIF(TRIM(pf.sku_family),''), '-')
+                ORDER BY gkey ASC
+                """,
+                tuple(params)
+            )
+            for row in (cur.fetchall() or []):
+                gkey = str(row.get('gkey') or '-').strip() or '-'
+                cnt = int(self._parse_int(row.get('cnt')) or 0)
+                out.append({'key': gkey, 'title': gkey, 'item_count': cnt})
+        return out
 
     def _forecast_load_variant_platform_skus(self, conn, variant_ids):
         """variant_id -> [{sales_product_id, platform_sku, shop_name}]"""
@@ -1582,7 +1733,7 @@ class SalesManagementMixin:
                 })
         return out
 
-    def _forecast_load_order_dim(self, conn, query_params=None):
+    def _forecast_load_order_dim(self, conn, query_params=None, sf_group=None):
         """加载下单SKU 维度行 + 关联 variant/规格信息。"""
         sku_keyword = ''
         spec_keyword = ''
@@ -1605,6 +1756,11 @@ class SalesManagementMixin:
             clauses.append("(fm.fabric_code LIKE %s OR fm.fabric_name_en LIKE %s)")
             like_val = f"%{fabric_keyword}%"
             params.extend([like_val, like_val])
+        if sf_group:
+            gk = str(sf_group).strip()
+            if gk:
+                clauses.append("COALESCE(NULLIF(TRIM(pf.sku_family),''), '-') = %s")
+                params.append(gk)
 
         where_sql = ' AND '.join(clauses)
         with conn.cursor() as cur:
@@ -1666,6 +1822,50 @@ class SalesManagementMixin:
             op_id = self._parse_int(r.get('order_product_id'))
             r['variant_links'] = links_by_op.get(op_id, [])
         return rows
+
+    def _forecast_list_order_groups(self, conn, query_params=None):
+        """轻量：下单 SKU 按货号分组及行数。"""
+        sku_keyword = ''
+        spec_keyword = ''
+        fabric_keyword = ''
+        if query_params:
+            sku_keyword = (query_params.get('sku', [''])[0] or '').strip()
+            spec_keyword = (query_params.get('spec', [''])[0] or '').strip()
+            fabric_keyword = (query_params.get('fabric', [''])[0] or '').strip()
+        clauses = ["1=1", "COALESCE(op.is_reship_accessory, 0) = 0"]
+        params = []
+        if sku_keyword:
+            clauses.append("(op.sku LIKE %s OR pf.sku_family LIKE %s)")
+            like_val = f"%{sku_keyword}%"
+            params.extend([like_val, like_val])
+        if spec_keyword:
+            clauses.append("op.spec_qty_short LIKE %s")
+            params.append(f"%{spec_keyword}%")
+        if fabric_keyword:
+            clauses.append("(fm.fabric_code LIKE %s OR fm.fabric_name_en LIKE %s)")
+            like_val = f"%{fabric_keyword}%"
+            params.extend([like_val, like_val])
+        where_sql = ' AND '.join(clauses)
+        out = []
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT COALESCE(NULLIF(TRIM(pf.sku_family),''), '-') AS gkey,
+                       COUNT(*) AS cnt
+                FROM order_products op
+                LEFT JOIN product_families pf ON pf.id = op.sku_family_id
+                LEFT JOIN fabric_materials fm ON fm.id = op.fabric_id
+                WHERE {where_sql}
+                GROUP BY COALESCE(NULLIF(TRIM(pf.sku_family),''), '-')
+                ORDER BY gkey ASC
+                """,
+                tuple(params)
+            )
+            for row in (cur.fetchall() or []):
+                gkey = str(row.get('gkey') or '-').strip() or '-'
+                cnt = int(self._parse_int(row.get('cnt')) or 0)
+                out.append({'key': gkey, 'title': gkey, 'item_count': cnt})
+        return out
 
     def _forecast_load_variant_thumb_b64(self, conn, variant_ids):
         """variant_id -> 预览图 b64；仅使用图片类型为「白底纯图」的映射（无则不回退）。"""
@@ -2373,7 +2573,7 @@ class SalesManagementMixin:
             if method != 'GET':
                 return self.send_error(405, 'Method not allowed', start_response)
 
-            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            query_params = _sf_parse_qs(_sf_effective_wsgi_query_string(environ))
             forecast_mode = self._forecast_normalize_mode((query_params.get('forecast_mode', [''])[0] or ''))
 
             months_raw = query_params.get('months') or []
@@ -2390,22 +2590,36 @@ class SalesManagementMixin:
             mtd_ctx = None
             mtd_in = False
             rows = []
+            groups_meta = None
+            lazy_raw = (query_params.get('lazy', [''])[0] or '').strip().lower()
+            lazy_groups_only = lazy_raw in ('1', 'true', 'yes', 'on')
+            sf_group = (query_params.get('sf_group', [''])[0] or '').strip()
 
             with self._get_db_connection() as conn:
                 perf_max_record_date = self._forecast_perf_max_record_date(conn)
                 mtd_in = cur_key in set(history_months or [])
                 mtd_ctx = self._forecast_mtd_time_context(perf_max_record_date, cur_key) if mtd_in else None
-                if forecast_mode == 'platform':
-                    rows = self._forecast_build_platform_rows(conn, query_params, months, hist_start, hist_end)
-                elif forecast_mode == 'order':
-                    rows = self._forecast_build_order_rows(conn, query_params, months, hist_start, hist_end)
+                if lazy_groups_only and not sf_group:
+                    if forecast_mode == 'platform':
+                        groups_meta = self._forecast_list_platform_groups(conn, query_params)
+                    elif forecast_mode == 'order':
+                        groups_meta = self._forecast_list_order_groups(conn, query_params)
+                    else:
+                        groups_meta = self._forecast_list_spec_groups(conn, query_params)
+                    rows = []
                 else:
-                    rows = self._forecast_build_spec_rows(conn, query_params, months, hist_start, hist_end)
-                self._forecast_attach_inventory_to_rows(conn, rows, forecast_mode, history_months)
-                for row in rows:
-                    row['mtd_completion'] = self._forecast_row_mtd_completion(
-                        row.get('history') or {}, row.get('forecasts') or {}, mtd_ctx
-                    )
+                    sf_filter = sf_group if sf_group else None
+                    if forecast_mode == 'platform':
+                        rows = self._forecast_build_platform_rows(conn, query_params, months, hist_start, hist_end, sf_group=sf_filter)
+                    elif forecast_mode == 'order':
+                        rows = self._forecast_build_order_rows(conn, query_params, months, hist_start, hist_end, sf_group=sf_filter)
+                    else:
+                        rows = self._forecast_build_spec_rows(conn, query_params, months, hist_start, hist_end, sf_group=sf_filter)
+                    self._forecast_attach_inventory_to_rows(conn, rows, forecast_mode, history_months)
+                    for row in rows:
+                        row['mtd_completion'] = self._forecast_row_mtd_completion(
+                            row.get('history') or {}, row.get('forecasts') or {}, mtd_ctx
+                        )
 
             mtd_payload = {
                 'current_month_key': cur_key,
@@ -2419,7 +2633,7 @@ class SalesManagementMixin:
                     'time_progress': mtd_ctx.get('time_progress'),
                 })
 
-            return self.send_json({
+            payload = {
                 'status': 'success',
                 'forecast_mode': forecast_mode,
                 'months': months,
@@ -2427,14 +2641,21 @@ class SalesManagementMixin:
                 'history_range': {'start': hist_start, 'end': hist_end},
                 'mtd': mtd_payload,
                 'rows': rows,
-            }, start_response)
+            }
+            if lazy_groups_only and not sf_group:
+                payload['lazy'] = True
+                payload['groups'] = groups_meta or []
+            elif sf_group:
+                payload['lazy'] = True
+                payload['sf_group'] = sf_group
+            return self.send_json(payload, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     # ----- 三种模式的行装配 -----
 
-    def _forecast_build_platform_rows(self, conn, query_params, months, hist_start, hist_end):
-        dim_rows = self._forecast_load_platform_sku_dim(conn, query_params)
+    def _forecast_build_platform_rows(self, conn, query_params, months, hist_start, hist_end, sf_group=None):
+        dim_rows = self._forecast_load_platform_sku_dim(conn, query_params, sf_group=sf_group)
         sales_product_ids = [self._parse_int(r.get('sales_product_id')) for r in dim_rows if self._parse_int(r.get('sales_product_id'))]
         variant_ids = [self._parse_int(r.get('variant_id')) for r in dim_rows if self._parse_int(r.get('variant_id'))]
         thumb_by_variant = self._forecast_load_variant_thumb_b64(conn, variant_ids)
@@ -2483,8 +2704,8 @@ class SalesManagementMixin:
             out.append(row)
         return out
 
-    def _forecast_build_spec_rows(self, conn, query_params, months, hist_start, hist_end):
-        dim_rows = self._forecast_load_variant_dim(conn, query_params)
+    def _forecast_build_spec_rows(self, conn, query_params, months, hist_start, hist_end, sf_group=None):
+        dim_rows = self._forecast_load_variant_dim(conn, query_params, sf_group=sf_group)
         variant_ids = [self._parse_int(r.get('variant_id')) for r in dim_rows if self._parse_int(r.get('variant_id'))]
         thumb_by_variant = self._forecast_load_variant_thumb_b64(conn, variant_ids)
         spec_cells = self._forecast_load_spec_cells(conn, variant_ids, months)
@@ -2572,8 +2793,8 @@ class SalesManagementMixin:
             out.append(row)
         return out
 
-    def _forecast_build_order_rows(self, conn, query_params, months, hist_start, hist_end):
-        dim_rows = self._forecast_load_order_dim(conn, query_params)
+    def _forecast_build_order_rows(self, conn, query_params, months, hist_start, hist_end, sf_group=None):
+        dim_rows = self._forecast_load_order_dim(conn, query_params, sf_group=sf_group)
         order_ids = [self._parse_int(r.get('order_product_id')) for r in dim_rows if self._parse_int(r.get('order_product_id'))]
         order_cells = self._forecast_load_order_cells(conn, order_ids, months)
         thumb_by_order = self._forecast_load_order_product_thumb_b64(conn, order_ids)

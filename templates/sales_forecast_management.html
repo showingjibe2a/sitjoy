@@ -166,8 +166,7 @@
             overflow: auto;
             max-height: calc(100vh - 230px);
             position: relative;
-            /* 底部 fixed 条占位，避免末行历史/预测单元格与悬浮层视觉重叠 */
-            padding-bottom: 5.5rem;
+            padding-bottom: 0;
             box-sizing: border-box;
         }
         table.sf-table {
@@ -406,6 +405,11 @@
             color: #7a7269;
             margin-right: 4px;
         }
+        .sf-muted {
+            font-weight: 500;
+            color: #7a7269;
+            margin-left: 0.35rem;
+        }
         .sf-row-hidden {
             display: none;
         }
@@ -425,7 +429,7 @@
             color: #5b5346;
         }
         /* Excel-like selection spotlight */
-        td.sf-cell-history.sf-cell-selected{
+        td.sf-grid-selectable.sf-cell-selected{
             box-shadow: inset 0 0 0 2px rgba(80, 120, 170, 0.85);
             background: rgba(80, 120, 170, 0.10) !important;
         }
@@ -793,7 +797,7 @@
     </div>
 
     <div class="pm-batch-float-bar" id="sfHistorySelectionBar" aria-live="polite">
-        <span class="pm-batch-float-count" id="sfSelectionCountText">已选 0 个历史单元格</span>
+        <span class="pm-batch-float-count" id="sfSelectionCountText">已选 0 个单元格</span>
         <button type="button" class="btn-secondary" id="sfSelectionClearBtn">清空选择</button>
         <button type="button" class="btn-secondary" id="sfSelectionShowPerfBtn">查看产品表现</button>
     </div>
@@ -811,6 +815,7 @@
         const FORECAST_MODES = ['platform', 'spec', 'order'];
         const SF_PREF_HISTORY_EXPANDED_KEY = 'sales_forecast_history_expanded_v1';
         const SF_PREF_FORECAST_EXPANDED_KEY = 'sales_forecast_forecast_expanded_v1';
+        const SF_PREF_FORECAST_MODE_KEY = 'sales_forecast_dimension_v1';
         const SF_PREF_COL_WIDTHS_PREFIX = 'sales_forecast_col_widths_v1_';
         const SF_TURNOVER_COLS = 3;
         const SF_STOCK_COLS = 4;
@@ -832,7 +837,11 @@
             months: [],
             historyMonths: [],
             historyRange: { start: '', end: '' },
-            rows: [],                       // 当前模式的行
+            rows: [],                       // 当前模式的行（懒加载下为已展开分组合并后的子行）
+            lazyForecast: false,           // true：首包仅分组元数据，展开分组再拉取 sf_group 明细
+            forecastGroups: [],            // [{ key, title, item_count }] 与后端 lazy 对齐
+            loadedGroupKeys: new Set(),    // 已拉取明细的分组 key
+            loadingGroupKey: '',         // 正在请求的分组（展示「加载中」）
             dirty: new Map(),               // key: row_key|month -> { row_key, forecast_month, latest_qty }
             sortKey: '',
             sortDir: 'asc',
@@ -842,8 +851,9 @@
             forecastExpanded: true,
             collapsedPlatformGroups: new Set(),
             collapsedSkuGroups: new Set(),
-            selectedHistoryCells: new Set(), // key: row_key|monthKey
-            selectionAnchor: null,           // { rowKey, monthKey }
+            sfGridSelected: new Set(),       // JSON.stringify([rowKey, colIdx])，colIdx 为叶子列下标，与 data-sf-ci 一致
+            selectionAnchor: null,           // { rowKey, colIdx }
+            sfColLayout: [],                // 与叶子列顺序一一对应，用于复制/产品表现等
             mtdContext: {},                  // /api/sales-forecast 返回的 mtd 块（时间进度、聚合更新时间等）
         };
 
@@ -871,6 +881,20 @@
 
         function writeJsonPref(key, value) {
             try { localStorage.setItem(key, JSON.stringify(value || {})); } catch (e) {}
+        }
+
+        function readSavedForecastMode() {
+            try {
+                const raw = String(localStorage.getItem(SF_PREF_FORECAST_MODE_KEY) || '').trim().toLowerCase();
+                if (FORECAST_MODES.includes(raw)) return raw;
+            } catch (e) {}
+            return 'spec';
+        }
+
+        function persistForecastMode(mode) {
+            const m = String(mode || '').trim().toLowerCase();
+            if (!FORECAST_MODES.includes(m)) return;
+            try { localStorage.setItem(SF_PREF_FORECAST_MODE_KEY, m); } catch (e) {}
         }
 
         function colWidthPrefKey(mode) {
@@ -1250,11 +1274,11 @@
             state.sortKey = '';
             state.sortDir = 'asc';
             state.colFilters = {};
-            applyHistorySelectionStyles();
+            applySfGridSelectionStyles();
+            persistForecastMode(mode);
         }
 
-        // ===== 数据加载 =====
-        async function loadForecastData() {
+        function buildSalesForecastQueryParams(extra) {
             const monthsParam = (state.months || []).map(m => m.slice(0, 7)).join(',');
             const histStartEl = document.getElementById('historyStart');
             const histEndEl = document.getElementById('historyEnd');
@@ -1262,7 +1286,6 @@
             const skuEl = document.getElementById('filterSku');
             const specEl = document.getElementById('filterSpec');
             const fabricEl = document.getElementById('filterFabric');
-
             const params = new URLSearchParams();
             params.set('forecast_mode', state.forecastMode);
             if (monthsParam) params.set('months', monthsParam);
@@ -1272,9 +1295,17 @@
             if (skuEl && skuEl.value.trim()) params.set('sku', skuEl.value.trim());
             if (specEl && specEl.value.trim()) params.set('spec', specEl.value.trim());
             if (fabricEl && fabricEl.value.trim()) params.set('fabric', fabricEl.value.trim());
+            const ex = extra || {};
+            if (ex.lazy) params.set('lazy', '1');
+            if (ex.sf_group) params.set('sf_group', String(ex.sf_group));
+            return params;
+        }
 
+        // ===== 数据加载 =====
+        async function loadForecastData() {
             setLoading(true);
             try {
+                const params = buildSalesForecastQueryParams({ lazy: true });
                 const resp = await fetch('/api/sales-forecast?' + params.toString());
                 const data = await resp.json();
                 if (!data || data.status !== 'success') throw new Error((data && data.message) || '加载失败');
@@ -1287,12 +1318,59 @@
             }
         }
 
+        async function loadForecastGroupRows(groupKey) {
+            const gk = String(groupKey || '').trim();
+            if (!gk || state.loadedGroupKeys.has(gk)) return;
+            state.loadingGroupKey = gk;
+            renderForecastTableBodyOnly();
+            try {
+                const params = buildSalesForecastQueryParams({ sf_group: gk });
+                const resp = await fetch('/api/sales-forecast?' + params.toString());
+                const data = await resp.json();
+                if (!data || data.status !== 'success') throw new Error((data && data.message) || '加载失败');
+                mergeForecastGroupPayload(data);
+            } catch (err) {
+                showToast(err && err.message ? err.message : '分组加载失败', true);
+            } finally {
+                state.loadingGroupKey = '';
+                renderForecastTableBodyOnly();
+            }
+        }
+
+        function mergeForecastGroupPayload(data) {
+            const incoming = Array.isArray(data.rows) ? data.rows : [];
+            const gk = String((data && data.sf_group) || '').trim();
+            if (!gk) return;
+            const byKey = new Map((state.rows || []).map(r => [String(r.row_key || ''), r]));
+            incoming.forEach(r => {
+                const rk = String(r.row_key || '');
+                if (!rk) return;
+                byKey.set(rk, r);
+            });
+            state.rows = Array.from(byKey.values());
+            state.loadedGroupKeys.add(gk);
+        }
+
         function applyDashboardPayload(data) {
             state.months = Array.isArray(data.months) ? data.months.slice() : state.months;
             state.historyMonths = Array.isArray(data.history_months) ? data.history_months.slice() : [];
             state.historyRange = data.history_range || { start: '', end: '' };
-            state.rows = Array.isArray(data.rows) ? data.rows : [];
             state.mtdContext = (data && data.mtd && typeof data.mtd === 'object') ? data.mtd : {};
+            const lazyFlag = data && (data.lazy === true || data.lazy === 1);
+            const groupsFromServer = Array.isArray(data.groups) ? data.groups : null;
+            if (lazyFlag) {
+                state.lazyForecast = true;
+                state.forecastGroups = groupsFromServer ? groupsFromServer.slice() : [];
+                state.rows = [];
+                state.loadedGroupKeys = new Set();
+                state.loadingGroupKey = '';
+            } else {
+                state.lazyForecast = false;
+                state.forecastGroups = [];
+                state.loadedGroupKeys = new Set();
+                state.loadingGroupKey = '';
+                state.rows = Array.isArray(data.rows) ? data.rows : [];
+            }
             if (state.forecastMode === 'platform') state.collapsedPlatformGroups.clear();
             else state.collapsedSkuGroups.clear();
             state.dirty.clear();
@@ -1356,7 +1434,37 @@
             });
         }
 
+        function groupKeyFromRow(row) {
+            if (!row || !row.labels) return '-';
+            if (state.forecastMode === 'platform') {
+                const shop = String(row.labels.shop_name || '-').trim() || '-';
+                const family = String(row.labels.sku_family || '-').trim() || '-';
+                return `${shop}||${family}`;
+            }
+            return String(row.labels.sku_family || '-').trim() || '-';
+        }
+
         function buildGroups(rows) {
+            if (state.lazyForecast && Array.isArray(state.forecastGroups)) {
+                const cols = getColumnsForMode(state.forecastMode);
+                const filtered = applyFilters(rows.slice(), cols);
+                const byKey = new Map();
+                filtered.forEach(row => {
+                    const k = groupKeyFromRow(row);
+                    if (!byKey.has(k)) byKey.set(k, []);
+                    byKey.get(k).push(row);
+                });
+                return state.forecastGroups.map(g => {
+                    const cnt = g.item_count != null ? g.item_count : null;
+                    const baseTitle = String(g.title || g.key || '');
+                    const title = cnt != null && cnt !== '' ? `${baseTitle}（${cnt}）` : baseTitle;
+                    return {
+                        key: g.key,
+                        title,
+                        items: byKey.get(g.key) || [],
+                    };
+                });
+            }
             if (state.forecastMode === 'platform') {
                 const map = new Map();
                 rows.forEach(row => {
@@ -1463,7 +1571,7 @@
         }
 
         function fillMtdTd(td, row) {
-            td.className = 'sf-cell-mtd';
+            td.className = 'sf-cell-mtd sf-grid-selectable';
             const ctx = state.mtdContext || {};
             if (!ctx.in_history_range) {
                 td.innerHTML = '<span class="sf-mtd-na">—</span>';
@@ -1510,9 +1618,35 @@
             const row = (state.rows || []).find(r => String(r.row_key) === rk);
             if (!row) return;
             fillMtdTd(td, row);
+            applySfGridSelectionStyles();
         }
 
-        function appendForecastInventoryRowCells(tr, row) {
+        function markSfGridCell(td, rowKey, colIdx) {
+            if (!td) return;
+            td.dataset.rowKey = String(rowKey || '');
+            td.dataset.sfCi = String(colIdx);
+            td.classList.add('sf-grid-selectable');
+        }
+
+        function buildSfColLayout(cols, histCols, mtdCols, fcCols, visibleHistMonths, visibleFcMonths, historyExpanded, forecastExpanded) {
+            const L = [];
+            cols.forEach(c => L.push({ kind: 'spec', key: c.key }));
+            if (histCols) {
+                if (historyExpanded) (visibleHistMonths || []).forEach(m => L.push({ kind: 'H', month: m }));
+                else L.push({ kind: 'H', agg: true });
+            }
+            if (mtdCols) L.push({ kind: 'M' });
+            if (fcCols) {
+                if (forecastExpanded) (visibleFcMonths || []).forEach(m => L.push({ kind: 'F', month: m }));
+                else L.push({ kind: 'F', agg: true });
+            }
+            for (let i = 0; i < SF_TURNOVER_COLS; i += 1) L.push({ kind: 'T', idx: i });
+            for (let i = 0; i < SF_STOCK_COLS; i += 1) L.push({ kind: 'I', idx: i });
+            return L;
+        }
+
+        function appendForecastInventoryRowCells(tr, row, rowKey, startCi) {
+            let ci = Number(startCi) || 0;
             const inv = row.inventory || {};
             const fmtMc = (v) => ((v !== null && v !== undefined && Number.isFinite(Number(v))) ? Number(v).toFixed(2) : '—');
             const turnVals = [
@@ -1525,6 +1659,8 @@
                 td.className = 'sf-cell-history sf-cell-turn';
                 if (h.tip) td.title = h.tip;
                 td.textContent = turnVals[i];
+                markSfGridCell(td, rowKey, ci);
+                ci += 1;
                 tr.appendChild(td);
             });
             const stockVals = [
@@ -1538,8 +1674,11 @@
                 td.className = 'sf-cell-history sf-cell-inv';
                 if (h.tip) td.title = h.tip;
                 td.textContent = stockVals[i];
+                markSfGridCell(td, rowKey, ci);
+                ci += 1;
                 tr.appendChild(td);
             });
+            return ci;
         }
 
         function renderForecastTable() {
@@ -1654,13 +1793,19 @@
             const collapsedSet = getCollapsedSet();
             if (collapsedSet.size === 0 && groups.length) initCollapsedGroups(groups);
 
+            state.sfColLayout = buildSfColLayout(cols, histCols, mtdCols, fcCols, visibleHistMonths, visibleFcMonths, state.historyExpanded, state.forecastExpanded);
+
             const totalCols = cols.length + histCols + mtdCols + fcCols + invCols;
             tbody.innerHTML = '';
             document.body.classList.remove('sf-history-perf-pinned');
             if (!groups.length) {
+                state.sfGridSelected.clear();
+                state.selectionAnchor = null;
                 const tr = document.createElement('tr');
                 tr.innerHTML = `<td colspan="${totalCols}" class="sf-empty">没有匹配的数据</td>`;
                 tbody.appendChild(tr);
+                bindForecastGridSelection(tbody);
+                applySfGridSelectionStyles();
                 return;
             }
 
@@ -1669,7 +1814,10 @@
                 const gtr = document.createElement('tr');
                 gtr.className = 'sf-group-row';
                 gtr.dataset.groupKey = group.key;
-                gtr.innerHTML = `<td colspan="${totalCols}"><span class="sf-group-toggle">${isCollapsed ? '▶' : '▼'}</span>${escapeHtml(group.title)}</td>`;
+                const loadHint = (state.lazyForecast && state.loadingGroupKey === group.key)
+                    ? ' <span class="sf-muted">加载中…</span>'
+                    : '';
+                gtr.innerHTML = `<td colspan="${totalCols}"><span class="sf-group-toggle">${isCollapsed ? '▶' : '▼'}</span>${escapeHtml(group.title)}${loadHint}</td>`;
                 tbody.appendChild(gtr);
 
                 const sortedItems = sortGroupItems(group.items, cols);
@@ -1678,10 +1826,13 @@
                     if (isCollapsed) tr.classList.add('sf-row-hidden');
                     tr.dataset.groupKey = group.key;
                     tr.dataset.rowKey = row.row_key;
+                    let ci = 0;
                     cols.forEach(col => {
                         const td = document.createElement('td');
                         td.className = col.cellClass || 'sf-cell-spec';
                         renderSpecCell(td, col, row);
+                        markSfGridCell(td, row.row_key, ci);
+                        ci += 1;
                         tr.appendChild(td);
                     });
                     if (histCols) {
@@ -1689,12 +1840,13 @@
                             visibleHistMonths.forEach(monthKey => {
                                 const td = document.createElement('td');
                                 td.className = 'sf-cell-history';
-                                td.dataset.rowKey = row.row_key;
                                 td.dataset.month = monthKey;
                                 const cell = (row.history && row.history[monthKey]) || null;
                                 const text = cell ? formatNumber(cell.sales_qty) : '0';
                                 if (cell) td.appendChild(makeTooltipWrap(buildHistoryTooltip(cell, monthKey, row), document.createTextNode(text), 'sf-history-perf-tooltip-bubble'));
                                 else td.textContent = text;
+                                markSfGridCell(td, row.row_key, ci);
+                                ci += 1;
                                 tr.appendChild(td);
                             });
                         } else {
@@ -1702,16 +1854,25 @@
                             const td = document.createElement('td');
                             td.className = 'sf-cell-history';
                             td.textContent = formatNumber(sum || 0);
+                            markSfGridCell(td, row.row_key, ci);
+                            ci += 1;
                             tr.appendChild(td);
                         }
                     }
-                    if (mtdCols) tr.appendChild(renderMtdCell(row));
+                    if (mtdCols) {
+                        const td = renderMtdCell(row);
+                        markSfGridCell(td, row.row_key, ci);
+                        ci += 1;
+                        tr.appendChild(td);
+                    }
                     if (fcCols) {
                         if (state.forecastExpanded) {
                             visibleFcMonths.forEach(monthKey => {
                                 const td = document.createElement('td');
                                 td.className = 'sf-cell-forecast preview-edit-cell';
                                 td.appendChild(buildForecastCell(row, monthKey));
+                                markSfGridCell(td, row.row_key, ci);
+                                ci += 1;
                                 tr.appendChild(td);
                             });
                         } else {
@@ -1725,15 +1886,17 @@
                             const td = document.createElement('td');
                             td.className = 'sf-cell-history';
                             td.textContent = formatNumber(sum || 0);
+                            markSfGridCell(td, row.row_key, ci);
+                            ci += 1;
                             tr.appendChild(td);
                         }
                     }
-                    appendForecastInventoryRowCells(tr, row);
+                    appendForecastInventoryRowCells(tr, row, row.row_key, ci);
                     tbody.appendChild(tr);
                 });
             });
-            bindHistoryCellSelection(tbody);
-            applyHistorySelectionStyles();
+            bindForecastGridSelection(tbody);
+            applySfGridSelectionStyles();
         }
 
         function buildBottomHeaderHtml(col) {
@@ -1792,36 +1955,289 @@
                     const key = String(row.dataset.groupKey || '');
                     if (!key) return;
                     const collapsedSet = getCollapsedSet();
-                    if (collapsedSet.has(key)) collapsedSet.delete(key);
-                    else collapsedSet.add(key);
-                    renderForecastTable();
+                    const wasCollapsed = collapsedSet.has(key);
+                    const run = async () => {
+                        if (wasCollapsed && state.lazyForecast && !state.loadedGroupKeys.has(key)) {
+                            await loadForecastGroupRows(key);
+                        }
+                        if (collapsedSet.has(key)) collapsedSet.delete(key);
+                        else collapsedSet.add(key);
+                        renderForecastTable();
+                    };
+                    run();
                 });
             }
         }
 
         function clearHistorySelection() {
-            state.selectedHistoryCells.clear();
+            state.sfGridSelected.clear();
             state.selectionAnchor = null;
-            applyHistorySelectionStyles();
+            applySfGridSelectionStyles();
+        }
+
+        function makeSfGridCellKey(rowKey, colIdx) {
+            return JSON.stringify([String(rowKey || ''), Number(colIdx)]);
+        }
+
+        function parseSfGridCellKey(k) {
+            try {
+                const a = JSON.parse(String(k));
+                if (Array.isArray(a) && a.length >= 2) {
+                    const colIdx = Number(a[1]);
+                    return { rowKey: String(a[0] || ''), colIdx: Number.isFinite(colIdx) ? colIdx : -1 };
+                }
+            } catch (_) {}
+            return { rowKey: '', colIdx: -1 };
+        }
+
+        function getSfGridTd(tbody, rowKey, colIdx) {
+            if (!tbody) return null;
+            const rk = String(rowKey || '');
+            const esc = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(rk) : rk.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+            const ci = Number(colIdx);
+            if (!rk || !Number.isFinite(ci) || ci < 0) return null;
+            return tbody.querySelector(`tr[data-row-key="${esc}"] td[data-sf-ci="${ci}"]`);
+        }
+
+        function exportSfGridTdPlain(td) {
+            if (!td) return '';
+            const inp = td.querySelector('input.sf-num-input');
+            if (inp) return String(inp.value != null ? inp.value : '').trim();
+            let t = String(td.innerText || '').replace(/\u00a0/g, ' ').trim();
+            return t.replace(/\s+/g, ' ');
+        }
+
+        function getSfOrderedRowKeys() {
+            const tbody = document.getElementById('forecastTbody');
+            if (!tbody) return [];
+            return Array.from(tbody.querySelectorAll('tr[data-row-key]'))
+                .map(tr => String(tr.dataset.rowKey || '').trim())
+                .filter(Boolean);
+        }
+
+        /** 将已选月份扩展为 historyMonths 时间轴上的连续闭区间（与 Excel 框选含义一致，不按离散格筛市场） */
+        function expandMonthsAlongHistoryTimeline(monthKeys) {
+            const order = (state.historyMonths || []).slice();
+            const idxs = [];
+            (monthKeys || []).forEach(mk => {
+                const i = order.indexOf(String(mk));
+                if (i >= 0) idxs.push(i);
+            });
+            if (!idxs.length) return [];
+            const lo = Math.min(...idxs);
+            const hi = Math.max(...idxs);
+            return order.slice(lo, hi + 1);
+        }
+
+        function parseClipboardMatrixSf(text) {
+            const raw = String(text || '').replace(/\r/g, '');
+            if (!raw) return [];
+            return raw.split('\n').filter(line => line.length > 0).map(line => line.split('\t'));
+        }
+
+        function copySfGridSelectionTsv() {
+            if (!state.sfGridSelected || state.sfGridSelected.size === 0) return false;
+            const tbody = document.getElementById('forecastTbody');
+            if (!tbody) return false;
+            const rows = getSfOrderedRowKeys();
+            const keys = new Set(state.sfGridSelected);
+            const pairs = [];
+            keys.forEach(k => {
+                const { rowKey, colIdx } = parseSfGridCellKey(k);
+                if (!rowKey || colIdx < 0) return;
+                pairs.push({ rowKey, colIdx });
+            });
+            if (!pairs.length) return false;
+            const ri = pairs.map(p => rows.indexOf(p.rowKey)).filter(i => i >= 0);
+            const ci = pairs.map(p => p.colIdx).filter(i => Number.isFinite(i) && i >= 0);
+            if (!ri.length || !ci.length) return false;
+            const rLo = Math.min(...ri);
+            const rHi = Math.max(...ri);
+            const cLo = Math.min(...ci);
+            const cHi = Math.max(...ci);
+            const lines = [];
+            for (let r = rLo; r <= rHi; r += 1) {
+                const rk = rows[r];
+                const colsLine = [];
+                for (let c = cLo; c <= cHi; c += 1) {
+                    if (!keys.has(makeSfGridCellKey(rk, c))) {
+                        colsLine.push('');
+                        continue;
+                    }
+                    const td = getSfGridTd(tbody, rk, c);
+                    colsLine.push(exportSfGridTdPlain(td));
+                }
+                lines.push(colsLine.join('\t'));
+            }
+            const tsv = lines.join('\n');
+            if (!tsv) return false;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(tsv).then(() => {
+                    if (window.showAppToast) window.showAppToast('已复制选中区域', false, 1200);
+                }).catch(() => {});
+                return true;
+            }
+            const area = document.createElement('textarea');
+            area.value = tsv;
+            area.style.position = 'fixed';
+            area.style.left = '-10000px';
+            document.body.appendChild(area);
+            area.focus();
+            area.select();
+            try {
+                document.execCommand('copy');
+                if (window.showAppToast) window.showAppToast('已复制选中区域', false, 1200);
+            } catch (_) {}
+            document.body.removeChild(area);
+            return true;
+        }
+
+        function applyForecastMatrixPasteFromInput(startInput, matrix) {
+            if (!startInput || !matrix || !matrix.length) return false;
+            const tbody = document.getElementById('forecastTbody');
+            if (!tbody || !tbody.contains(startInput)) return false;
+            const rowKeys = getSfOrderedRowKeys();
+            const monthKeys = (state.months || []).slice();
+            const startRk = String(startInput.dataset.rowKey || '');
+            const startMk = String(startInput.dataset.month || '');
+            const r0 = rowKeys.indexOf(startRk);
+            const c0 = monthKeys.indexOf(startMk);
+            if (r0 < 0 || c0 < 0) return false;
+            let applied = 0;
+            for (let r = 0; r < matrix.length; r += 1) {
+                const rowVals = matrix[r] || [''];
+                for (let c = 0; c < rowVals.length; c += 1) {
+                    const rk = rowKeys[r0 + r];
+                    const mk = monthKeys[c0 + c];
+                    if (!rk || !mk) continue;
+                    const inp = tbody.querySelector('input.sf-num-input[data-row-key="' + String(rk).replace(/"/g, '') + '"][data-month="' + String(mk).replace(/"/g, '') + '"]');
+                    if (!inp) continue;
+                    const raw = String(rowVals[c] != null ? rowVals[c] : '').trim();
+                    const d = normalizeForecastDigitString(raw.replace(/[^\d]/g, ''));
+                    inp.value = d === '' ? '0' : String(Math.max(0, parseInt(d, 10) || 0));
+                    inp.dispatchEvent(new Event('input', { bubbles: true }));
+                    applied += 1;
+                }
+            }
+            return applied > 0;
+        }
+
+        function applySfMatrixPasteFromGridSelection(matrix) {
+            if (!matrix || !matrix.length) return false;
+            const tbody = document.getElementById('forecastTbody');
+            if (!tbody || !state.sfGridSelected || state.sfGridSelected.size === 0) return false;
+            const rowOrder = getSfOrderedRowKeys();
+            const pairs = [];
+            state.sfGridSelected.forEach(k => {
+                const { rowKey, colIdx } = parseSfGridCellKey(k);
+                if (!rowKey || colIdx < 0) return;
+                pairs.push({ rowKey, colIdx });
+            });
+            if (!pairs.length) return false;
+            const ris = pairs.map(p => rowOrder.indexOf(p.rowKey)).filter(i => i >= 0);
+            const cis = pairs.map(p => p.colIdx).filter(i => Number.isFinite(i) && i >= 0);
+            const r0 = Math.min(...ris);
+            const c0 = Math.min(...cis);
+            let applied = 0;
+            for (let r = 0; r < matrix.length; r += 1) {
+                const rowVals = matrix[r] || [''];
+                for (let c = 0; c < rowVals.length; c += 1) {
+                    const rk = rowOrder[r0 + r];
+                    const colIdx = c0 + c;
+                    if (!rk || !Number.isFinite(colIdx) || colIdx < 0) continue;
+                    const td = getSfGridTd(tbody, rk, colIdx);
+                    if (!td) continue;
+                    const inp = td.querySelector('input.sf-num-input');
+                    if (!inp) continue;
+                    const raw = String(rowVals[c] != null ? rowVals[c] : '').trim();
+                    const d = normalizeForecastDigitString(raw.replace(/[^\d]/g, ''));
+                    inp.value = d === '' ? '0' : String(Math.max(0, parseInt(d, 10) || 0));
+                    inp.dispatchEvent(new Event('input', { bubbles: true }));
+                    applied += 1;
+                }
+            }
+            return applied > 0;
+        }
+
+        function initSfForecastSelectionGlobalOnce() {
+            if (document.body.dataset.sfForecastGlobalBound === '1') return;
+            document.body.dataset.sfForecastGlobalBound = '1';
+
+            document.addEventListener('mousedown', (e) => {
+                if (!document.getElementById('forecastTable')) return;
+                const t = e.target;
+                if (!t || !t.closest) return;
+                if (t.closest('#forecastTableWrap')
+                    || t.closest('#sfHistorySelectionBar')
+                    || t.closest('#sfBatchPopup')
+                    || t.closest('#sfPerfModal')
+                    || t.closest('.sf-month-picker-popover')
+                    || t.closest('#sfGlobalMonthPickerPopover')) {
+                    return;
+                }
+                if (state.sfGridSelected && state.sfGridSelected.size) clearHistorySelection();
+            }, false);
+
+            document.addEventListener('keydown', (e) => {
+                if (!document.getElementById('forecastTable')) return;
+                if (e.key === 'Escape') {
+                    if (state.sfGridSelected && state.sfGridSelected.size) {
+                        clearHistorySelection();
+                        try { e.preventDefault(); } catch (_) {}
+                    }
+                    return;
+                }
+                if ((e.ctrlKey || e.metaKey) && String(e.key || '').toLowerCase() === 'c') {
+                    const ae = document.activeElement;
+                    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT') && !state.sfGridSelected.size) return;
+                    if (state.sfGridSelected && state.sfGridSelected.size && copySfGridSelectionTsv()) {
+                        try { e.preventDefault(); } catch (_) {}
+                    }
+                }
+            }, true);
+
+            document.addEventListener('paste', (e) => {
+                const el = e.target;
+                if (!el || !el.closest || !el.closest('#forecastTable')) return;
+                const text = (e.clipboardData && e.clipboardData.getData) ? e.clipboardData.getData('text/plain') : '';
+                const matrix = parseClipboardMatrixSf(text);
+                if (!matrix.length) return;
+                const single = matrix.length === 1 && (matrix[0] || []).length <= 1;
+                const field = el.closest('input.sf-num-input');
+                if (field) {
+                    if (single) return;
+                    e.preventDefault();
+                    if (applyForecastMatrixPasteFromInput(field, matrix) && window.showAppToast) {
+                        window.showAppToast('已粘贴到预测输入区域', false, 1800);
+                    }
+                    return;
+                }
+                if (!single && state.sfGridSelected && state.sfGridSelected.size) {
+                    if (applySfMatrixPasteFromGridSelection(matrix)) {
+                        e.preventDefault();
+                        if (window.showAppToast) window.showAppToast('已粘贴到预测输入区域', false, 1800);
+                    }
+                }
+            }, true);
         }
 
         function selectedCellsArray() {
             const out = [];
-            state.selectedHistoryCells.forEach(k => out.push(k));
+            state.sfGridSelected.forEach(k => out.push(k));
             return out;
         }
 
-        function applyHistorySelectionStyles() {
+        function applySfGridSelectionStyles() {
             const tbody = document.getElementById('forecastTbody');
             const thead = document.getElementById('forecastThead');
             const bar = document.getElementById('sfHistorySelectionBar');
             const cnt = document.getElementById('sfSelectionCountText');
             const showBtn = document.getElementById('sfSelectionShowPerfBtn');
-            const n = state.selectedHistoryCells.size || 0;
-            if (cnt) cnt.textContent = `已选 ${n} 个历史单元格`;
+            const n = state.sfGridSelected.size || 0;
+            if (cnt) cnt.textContent = `已选 ${n} 个单元格`;
             if (bar) bar.classList.toggle('active', n > 0);
             if (tbody) {
-                tbody.querySelectorAll('td.sf-cell-history').forEach(td => {
+                tbody.querySelectorAll('td.sf-grid-selectable').forEach(td => {
                     td.classList.remove('sf-cell-selected', 'sf-spotlight-col');
                 });
                 tbody.querySelectorAll('tr.sf-spotlight-row').forEach(tr => tr.classList.remove('sf-spotlight-row'));
@@ -1838,132 +2254,193 @@
             }
 
             const selectedRows = new Set();
-            const selectedMonths = new Set();
-            state.selectedHistoryCells.forEach(k => {
-                const parts = String(k).split('|');
-                if (parts.length < 2) return;
-                selectedRows.add(parts[0]);
-                selectedMonths.add(parts.slice(1).join('|'));
+            const selectedColIdxs = new Set();
+            const perfHistoryMonths = new Set();
+            state.sfGridSelected.forEach(k => {
+                const { rowKey, colIdx } = parseSfGridCellKey(k);
+                if (!rowKey || colIdx < 0) return;
+                selectedRows.add(rowKey);
+                selectedColIdxs.add(colIdx);
+                const seg = (state.sfColLayout || [])[colIdx];
+                if (seg && seg.kind === 'H' && seg.month) perfHistoryMonths.add(seg.month);
             });
 
             tbody.querySelectorAll('tr[data-row-key]').forEach(tr => {
                 const rk = String(tr.dataset.rowKey || '');
                 if (rk && selectedRows.has(rk)) tr.classList.add('sf-spotlight-row');
             });
-            tbody.querySelectorAll('td.sf-cell-history[data-month][data-row-key]').forEach(td => {
+            tbody.querySelectorAll('td.sf-grid-selectable').forEach(td => {
                 const rk = String(td.dataset.rowKey || '');
-                const mk = String(td.dataset.month || '');
-                if (rk && mk && state.selectedHistoryCells.has(`${rk}|${mk}`)) {
-                    td.classList.add('sf-cell-selected');
-                }
-                if (mk && selectedMonths.has(mk)) td.classList.add('sf-spotlight-col');
+                const ci = Number(td.dataset.sfCi);
+                if (!rk || !Number.isFinite(ci)) return;
+                if (state.sfGridSelected.has(makeSfGridCellKey(rk, ci))) td.classList.add('sf-cell-selected');
+                if (selectedColIdxs.has(ci)) td.classList.add('sf-spotlight-col');
             });
-            if (thead && state.historyExpanded) {
-                thead.querySelectorAll('tr.sf-thead-row-2 th.sf-th-history[data-month]').forEach(th => {
-                    const mk = String(th.dataset.month || '');
-                    if (mk && selectedMonths.has(mk)) th.classList.add('sf-spotlight-col');
+            if (thead) {
+                thead.querySelectorAll('tr.sf-thead-row-2 th').forEach(th => {
+                    const a = Number(th.dataset.colStart);
+                    const b = Number(th.dataset.colEnd);
+                    if (!Number.isFinite(a) || !Number.isFinite(b)) return;
+                    for (let c = a; c <= b; c += 1) {
+                        if (selectedColIdxs.has(c)) {
+                            th.classList.add('sf-spotlight-col');
+                            break;
+                        }
+                    }
                 });
             }
 
-            // 下单 SKU 维度不展示「查看产品表现」；规格+面料 / 销售平台 SKU 下同选一行多个月时可点
             let rowOnly = '';
             selectedRows.forEach(r => { if (!rowOnly) rowOnly = r; else rowOnly = '__multi__'; });
             const perfModeOk = state.forecastMode === 'spec' || state.forecastMode === 'platform';
             if (showBtn) {
                 showBtn.hidden = !perfModeOk;
-                showBtn.disabled = !perfModeOk || !(rowOnly && rowOnly !== '__multi__' && selectedMonths.size > 0);
+                showBtn.disabled = !perfModeOk || !(rowOnly && rowOnly !== '__multi__' && perfHistoryMonths.size > 0);
             }
         }
 
-        function bindHistoryCellSelection(tbody) {
-            if (!tbody || tbody.dataset.historySelectBound === '1') return;
-            tbody.dataset.historySelectBound = '1';
+        function bindForecastGridSelection(tbody) {
+            if (!tbody || tbody.dataset.sfGridSelectBound === '1') return;
+            tbody.dataset.sfGridSelectBound = '1';
+
+            let gridDragMoved = false;
+            let suppressNextGridClick = false;
+            let lastPointerMods = { ctrl: false, shift: false };
 
             const getCellKeyFromTd = (td) => {
                 if (!td) return '';
                 const rk = String(td.dataset.rowKey || '');
-                const mk = String(td.dataset.month || '');
-                if (!rk || !mk) return '';
-                return `${rk}|${mk}`;
+                const ci = Number(td.dataset.sfCi);
+                if (!rk || !Number.isFinite(ci)) return '';
+                return makeSfGridCellKey(rk, ci);
             };
+
+            const getOrderedDataRowKeys = () => Array.from(tbody.querySelectorAll('tr[data-row-key]'))
+                .map(tr => String(tr.dataset.rowKey || '').trim())
+                .filter(Boolean);
 
             const selectRect = (a, b, replace) => {
                 if (!a || !b) return;
                 const aRow = String(a.rowKey || '');
                 const bRow = String(b.rowKey || '');
-                const aMonth = String(a.monthKey || '');
-                const bMonth = String(b.monthKey || '');
-                if (!aRow || !bRow || !aMonth || !bMonth) return;
-                // current implementation focuses on same-row multi-month selection (most common)
-                if (aRow !== bRow) return;
-                const months = state.historyMonths.slice();
-                const i1 = months.indexOf(aMonth);
-                const i2 = months.indexOf(bMonth);
-                if (i1 < 0 || i2 < 0) return;
-                const lo = Math.min(i1, i2);
-                const hi = Math.max(i1, i2);
-                if (replace) state.selectedHistoryCells.clear();
-                for (let i = lo; i <= hi; i++) {
-                    state.selectedHistoryCells.add(`${aRow}|${months[i]}`);
+                const aCol = Number(a.colIdx);
+                const bCol = Number(b.colIdx);
+                if (!aRow || !bRow || !Number.isFinite(aCol) || !Number.isFinite(bCol)) return;
+                const rowOrder = getOrderedDataRowKeys();
+                const colCount = (state.sfColLayout || []).length;
+                if (!colCount) return;
+                const ri1 = rowOrder.indexOf(aRow);
+                const ri2 = rowOrder.indexOf(bRow);
+                if (ri1 < 0 || ri2 < 0) return;
+                const rLo = Math.min(ri1, ri2);
+                const rHi = Math.max(ri1, ri2);
+                let cLo = Math.min(aCol, bCol);
+                let cHi = Math.max(aCol, bCol);
+                cLo = Math.max(0, cLo);
+                cHi = Math.min(colCount - 1, cHi);
+                if (cLo > cHi) return;
+                if (replace) state.sfGridSelected.clear();
+                for (let r = rLo; r <= rHi; r += 1) {
+                    const rk = rowOrder[r];
+                    if (!rk) continue;
+                    for (let c = cLo; c <= cHi; c += 1) {
+                        state.sfGridSelected.add(makeSfGridCellKey(rk, c));
+                    }
                 }
             };
 
             let dragging = false;
             let dragStart = null;
 
-            tbody.addEventListener('mousedown', (e) => {
-                const td = e.target && e.target.closest ? e.target.closest('td.sf-cell-history[data-month][data-row-key]') : null;
-                if (!td) return;
-                if (!state.historyExpanded) return;
-                dragging = true;
-                dragStart = { rowKey: String(td.dataset.rowKey || ''), monthKey: String(td.dataset.month || '') };
-                state.selectionAnchor = dragStart;
-                if (!(e.ctrlKey || e.metaKey || e.shiftKey)) {
-                    state.selectedHistoryCells.clear();
+            const pickGridTdFromEvent = (e) => {
+                const t = e.target;
+                if (t && t.closest && t.closest('input.sf-num-input, select, textarea, button')) {
+                    if (!(e.ctrlKey || e.metaKey || e.shiftKey)) return null;
                 }
-                const key = getCellKeyFromTd(td);
-                if (key) state.selectedHistoryCells.add(key);
-                applyHistorySelectionStyles();
+                let td = t && t.closest ? t.closest('tr[data-row-key] td.sf-grid-selectable[data-sf-ci]') : null;
+                if (!td && typeof document.elementsFromPoint === 'function') {
+                    const stack = document.elementsFromPoint(e.clientX, e.clientY) || [];
+                    td = stack.find(n => n && n.nodeType === 1 && n.matches && n.matches('tr[data-row-key] td.sf-grid-selectable[data-sf-ci]')) || null;
+                }
+                return td;
+            };
+
+            tbody.addEventListener('mousedown', (e) => {
+                const td = pickGridTdFromEvent(e);
+                if (!td) return;
+                gridDragMoved = false;
+                suppressNextGridClick = false;
+                lastPointerMods = { ctrl: !!(e.ctrlKey || e.metaKey), shift: !!e.shiftKey };
+                dragging = true;
+                dragStart = { rowKey: String(td.dataset.rowKey || ''), colIdx: Number(td.dataset.sfCi) };
+                state.selectionAnchor = dragStart;
                 e.preventDefault();
             }, true);
 
             document.addEventListener('mousemove', (e) => {
                 if (!dragging || !dragStart) return;
-                const td = e.target && e.target.closest ? e.target.closest('td.sf-cell-history[data-month][data-row-key]') : null;
+                const td = pickGridTdFromEvent(e);
                 if (!td) return;
-                const cur = { rowKey: String(td.dataset.rowKey || ''), monthKey: String(td.dataset.month || '') };
+                gridDragMoved = true;
+                const cur = { rowKey: String(td.dataset.rowKey || ''), colIdx: Number(td.dataset.sfCi) };
                 selectRect(dragStart, cur, true);
-                applyHistorySelectionStyles();
+                applySfGridSelectionStyles();
             }, true);
 
             document.addEventListener('mouseup', () => {
-                if (!dragging) return;
+                if (!dragging || !dragStart) return;
+                const hadMove = gridDragMoved;
+                const ds = dragStart;
+                const ctrl = lastPointerMods.ctrl;
+                const shift = lastPointerMods.shift;
                 dragging = false;
                 dragStart = null;
+                if (!ctrl && !shift) {
+                    if (hadMove) {
+                        suppressNextGridClick = true;
+                    } else {
+                        const k = makeSfGridCellKey(ds.rowKey, ds.colIdx);
+                        if (state.sfGridSelected.size === 1 && state.sfGridSelected.has(k)) {
+                            state.sfGridSelected.clear();
+                            state.selectionAnchor = null;
+                        } else {
+                            selectRect(ds, ds, true);
+                        }
+                        suppressNextGridClick = true;
+                    }
+                    applySfGridSelectionStyles();
+                } else if (hadMove) {
+                    applySfGridSelectionStyles();
+                }
+                gridDragMoved = false;
             }, true);
 
             tbody.addEventListener('click', (e) => {
-                const td = e.target && e.target.closest ? e.target.closest('td.sf-cell-history[data-month][data-row-key]') : null;
-                if (!td || !state.historyExpanded) return;
+                const td = pickGridTdFromEvent(e);
+                if (!td) return;
                 if (e.target && e.target.closest && e.target.closest('.sf-tooltip-wrap')) return;
+                if (suppressNextGridClick) {
+                    suppressNextGridClick = false;
+                    return;
+                }
+                if (gridDragMoved) {
+                    gridDragMoved = false;
+                    return;
+                }
                 const key = getCellKeyFromTd(td);
                 if (!key) return;
                 const rowKey = String(td.dataset.rowKey || '');
-                const monthKey = String(td.dataset.month || '');
+                const colIdx = Number(td.dataset.sfCi);
                 const isCtrl = e.ctrlKey || e.metaKey;
                 const isShift = e.shiftKey;
-                if (isShift && state.selectionAnchor) {
-                    selectRect(state.selectionAnchor, { rowKey, monthKey }, !isCtrl);
+                if (isShift && state.selectionAnchor && Number.isFinite(Number(state.selectionAnchor.colIdx))) {
+                    selectRect(state.selectionAnchor, { rowKey, colIdx }, !isCtrl);
                 } else if (isCtrl) {
-                    if (state.selectedHistoryCells.has(key)) state.selectedHistoryCells.delete(key);
-                    else state.selectedHistoryCells.add(key);
-                    state.selectionAnchor = { rowKey, monthKey };
-                } else {
-                    state.selectedHistoryCells.clear();
-                    state.selectedHistoryCells.add(key);
-                    state.selectionAnchor = { rowKey, monthKey };
+                    if (state.sfGridSelected.has(key)) state.sfGridSelected.delete(key);
+                    else state.sfGridSelected.add(key);
+                    state.selectionAnchor = { rowKey, colIdx };
                 }
-                applyHistorySelectionStyles();
+                applySfGridSelectionStyles();
             });
         }
 
@@ -2258,15 +2735,18 @@
             const keys = selectedCellsArray();
             const rowSet = new Set();
             const months = [];
+            const layout = state.sfColLayout || [];
             keys.forEach(k => {
-                const [rowKey, monthKey] = String(k).split('|');
-                if (!rowKey || !monthKey) return;
+                const { rowKey, colIdx } = parseSfGridCellKey(k);
+                if (!rowKey || colIdx < 0) return;
+                const seg = layout[colIdx];
+                if (!seg || seg.kind !== 'H' || !seg.month) return;
                 rowSet.add(rowKey);
-                months.push(monthKey);
+                months.push(seg.month);
             });
             if (rowSet.size !== 1) return null;
             const rowKey = Array.from(rowSet)[0];
-            months.sort();
+            months.sort((a, b) => String(a).localeCompare(String(b)));
             return { rowKey, months: Array.from(new Set(months)) };
         }
 
@@ -2324,9 +2804,23 @@
                 showToast('未找到对应行数据', true);
                 return;
             }
+            const distinctMonths = Array.from(new Set(sel.months || [])).sort((a, b) => String(a).localeCompare(String(b)));
+            const displayMonths = expandMonthsAlongHistoryTimeline(distinctMonths);
+            if (!displayMonths.length) {
+                showToast('无法解析已选月份', true);
+                return;
+            }
             const modal = ensurePerfModal();
             const title = modal.querySelector('#sfPerfModalTitle');
-            if (title) title.textContent = `已选月份：${sel.months.map(m => monthShortLabel(m)).join('、')}`;
+            if (title) {
+                const a = monthShortLabel(displayMonths[0]);
+                const b = monthShortLabel(displayMonths[displayMonths.length - 1]);
+                if (displayMonths.length === distinctMonths.length) {
+                    title.textContent = `已选月份：${distinctMonths.map(m => monthShortLabel(m)).join('、')}`;
+                } else {
+                    title.textContent = `历史销量连续区间：${a} — ${b}（共 ${displayMonths.length} 个月；含框内未点选月份，维度列与整行一致）`;
+                }
+            }
 
             const catalog = getPerfFieldCatalog();
             const headRow = modal.querySelector('#sfPerfHeadRow');
@@ -2341,7 +2835,7 @@
             }
             const body = modal.querySelector('#sfPerfBody');
             if (body) {
-                body.innerHTML = sel.months.map((mk) => {
+                body.innerHTML = displayMonths.map((mk) => {
                     const cell = (row.history && row.history[mk]) || null;
                     const tds = catalog.map((f) => {
                         const k = escapeHtml(f.key);
@@ -2353,6 +2847,9 @@
             }
 
             modal.classList.add('active');
+            if (window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.enhance === 'function') {
+                window.requestAnimationFrame(() => window.SitjoyManagedPmTable.enhance(modal));
+            }
         }
 
         // ===== 单元格 =====
@@ -2628,6 +3125,9 @@
             if (startEl) startEl.value = startKey.slice(0, 7);
             if (endEl) endEl.value = endKey.slice(0, 7);
 
+            const savedMode = readSavedForecastMode();
+            setForecastMode(savedMode);
+
             bindModeSegment();
             setForecastMonthsFuture(6);
 
@@ -2709,6 +3209,7 @@
             document.getElementById('sfBatchDiscardBtn').addEventListener('click', discardAllChanges);
 
             loadForecastData();
+            initSfForecastSelectionGlobalOnce();
         });
 
         // Selection hint buttons
