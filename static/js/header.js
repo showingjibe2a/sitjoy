@@ -2360,6 +2360,27 @@
         });
     }
 
+    function syncManagedHeaderColgroupFromMainTable(state){
+        if(!state || !state.table || !state.headerTable) return;
+        const srcColgroup = state.table.querySelector('colgroup');
+        const dstColgroup = state.headerTable.querySelector('colgroup');
+        if(!srcColgroup || !dstColgroup) return;
+        const srcCols = Array.from(srcColgroup.children || []).filter(node => node && String(node.tagName || '').toUpperCase() === 'COL');
+        const dstCols = Array.from(dstColgroup.children || []).filter(node => node && String(node.tagName || '').toUpperCase() === 'COL');
+        if(!srcCols.length || srcCols.length !== dstCols.length) return;
+        for(let i = 0; i < srcCols.length; i += 1){
+            const s = srcCols[i];
+            const d = dstCols[i];
+            d.style.width = s.style.width;
+            d.style.minWidth = s.style.minWidth;
+            d.style.maxWidth = s.style.maxWidth;
+            const k = String(s.dataset.manageColKey || '').trim();
+            if(k) d.dataset.manageColKey = k;
+            const span = String(s.dataset.manageColSpan || '').trim();
+            if(span) d.dataset.manageColSpan = span;
+        }
+    }
+
     function applyColumnWidthToDomForKey(state, columnKey, width){
         const colgroup = state.table && state.table.querySelector ? state.table.querySelector('colgroup') : null;
         if(colgroup){
@@ -2404,6 +2425,8 @@
                 cell.style.maxWidth = `${width}px`;
             });
         }
+
+        syncManagedHeaderColgroupFromMainTable(state);
 
         // 分组汇总行仅 2 格（三角 + colspan），不满足 headerCount，需单独同步收起列宽，否则会与数据行/表头错位
         if(columnKey === '__sj_agg__' && state.table && state.table.tBodies && state.table.tBodies[0]){

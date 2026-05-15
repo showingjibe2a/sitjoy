@@ -2173,7 +2173,35 @@ class SalesManagementMixin:
             'sub_category_rank_avg': None,
         })
 
-    def _forecast_load_history_by_sales_product(self, conn, sales_product_ids, start_month, end_month):
+    def _forecast_parse_sf_shop_ids(self, query_params):
+        """解析 GET 参数 sf_shop_ids（逗号分隔店铺 id）；空或未传表示不按店铺过滤。"""
+        if not query_params:
+            return None
+        raw = (query_params.get('sf_shop_ids', [''])[0] or '').strip()
+        if not raw:
+            return None
+        out = []
+        for part in raw.split(','):
+            sid = self._parse_int(str(part).strip())
+            if sid and sid > 0:
+                out.append(int(sid))
+        return sorted(set(out)) if out else None
+
+    def _forecast_list_shops_for_forecast(self, conn):
+        """销量预测页店铺筛选下拉数据。"""
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, shop_name FROM shops ORDER BY shop_name ASC")
+                rows = cur.fetchall() or []
+            return [
+                {'id': self._parse_int(r.get('id')), 'shop_name': str(r.get('shop_name') or '').strip()}
+                for r in rows
+                if self._parse_int(r.get('id'))
+            ]
+        except Exception:
+            return []
+
+    def _forecast_load_history_by_sales_product(self, conn, sales_product_ids, start_month, end_month, shop_ids=None):
         out = {}
         if not sales_product_ids or not start_month or not end_month:
             return out
@@ -2181,7 +2209,13 @@ class SalesManagementMixin:
         if not end_exclusive:
             return out
         placeholders = ','.join(['%s'] * len(sales_product_ids))
-        params = list(sales_product_ids) + [start_month, end_exclusive]
+        shop_frag = ''
+        params = list(sales_product_ids)
+        if shop_ids:
+            sph = ','.join(['%s'] * len(shop_ids))
+            shop_frag = f' AND sp.shop_id IN ({sph}) '
+            params.extend(int(x) for x in shop_ids)
+        params.extend([start_month, end_exclusive])
         cost_join = self._forecast_perf_history_cost_join_sql(conn)
         with conn.cursor() as cur:
             cur.execute(
@@ -2210,6 +2244,7 @@ class SalesManagementMixin:
                 WHERE m.sales_product_id IN ({placeholders})
                   AND m.month_start >= %s
                   AND m.month_start < %s
+                  {shop_frag}
                 """,
                 tuple(params)
             )
@@ -2221,7 +2256,7 @@ class SalesManagementMixin:
                 out[(spid, month_str)] = self._forecast_finalize_history_perf_payload(dict(row))
         return out
 
-    def _forecast_load_history_by_variant(self, conn, variant_ids, start_month, end_month):
+    def _forecast_load_history_by_variant(self, conn, variant_ids, start_month, end_month, shop_ids=None):
         out = {}
         if not variant_ids or not start_month or not end_month:
             return out
@@ -2229,7 +2264,13 @@ class SalesManagementMixin:
         if not end_exclusive:
             return out
         placeholders = ','.join(['%s'] * len(variant_ids))
-        params = list(variant_ids) + [start_month, end_exclusive]
+        shop_frag = ''
+        params = list(variant_ids)
+        if shop_ids:
+            sph = ','.join(['%s'] * len(shop_ids))
+            shop_frag = f' AND sp.shop_id IN ({sph}) '
+            params.extend(int(x) for x in shop_ids)
+        params.extend([start_month, end_exclusive])
         cost_join = self._forecast_perf_history_cost_join_sql(conn)
         with conn.cursor() as cur:
             cur.execute(
@@ -2258,6 +2299,7 @@ class SalesManagementMixin:
                 WHERE sp.variant_id IN ({placeholders})
                   AND m.month_start >= %s
                   AND m.month_start < %s
+                  {shop_frag}
                 GROUP BY sp.variant_id, m.month_start
                 """,
                 tuple(params)
@@ -2412,7 +2454,9 @@ class SalesManagementMixin:
         return {'overseas_qty': 0, 'transit_qty': 0, 'factory_stock_qty': 0, 'wip_qty': 0}
 
     def _forecast_load_inventory_by_order_product(self, conn, order_product_ids):
-        """按 order_product_id 汇总：海外仓、在途、在库、在制（未完工）。"""
+        """按 order_product_id 汇总：海外仓、在途、在库、在制（未完工）。
+        在途：仅统计「已登记上架=否」的在途单（logistics_in_transit.inventory_registered=0）下的发货数量；
+        未登记前明细里 listed_qty 常与 shipped_qty 相同，故不再用 shipped-listed 以免恒为 0。"""
         ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
         out = {i: self._forecast_inventory_zero() for i in ids}
         if not ids:
@@ -2436,10 +2480,12 @@ class SalesManagementMixin:
 
             cur.execute(
                 f"""
-                SELECT order_product_id, COALESCE(SUM(GREATEST(0, shipped_qty - listed_qty)), 0) AS q
-                FROM logistics_in_transit_items
-                WHERE order_product_id IN ({ph})
-                GROUP BY order_product_id
+                SELECT li.order_product_id, COALESCE(SUM(li.shipped_qty), 0) AS q
+                FROM logistics_in_transit_items li
+                INNER JOIN logistics_in_transit t ON t.id = li.transit_id
+                WHERE li.order_product_id IN ({ph})
+                  AND COALESCE(t.inventory_registered, 0) = 0
+                GROUP BY li.order_product_id
                 """,
                 tpl,
             )
@@ -2614,10 +2660,101 @@ class SalesManagementMixin:
         avg = total / float(len(keys))
         return avg if avg > 1e-9 else None
 
-    def _forecast_attach_inventory_to_rows(self, conn, rows, forecast_mode, history_months):
-        """按各下单 SKU 最早一条含明细的替代发货方案折算库存（海外/在途/在库/在制），再与变体 BOM 成套汇总。"""
+    def _forecast_load_order_variant_links_by_order_product_ids(self, conn, order_product_ids):
+        """order_product_id -> [{ variant_id, quantity }, ...]（与下单 SKU 行 variant_links 同源）。"""
+        ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+        out = {}
+        if not ids:
+            return out
+        ph = ','.join(['%s'] * len(ids))
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT l.order_product_id,
+                       l.variant_id,
+                       GREATEST(1, COALESCE(l.quantity, 1)) AS quantity
+                FROM sales_variant_order_links l
+                WHERE l.order_product_id IN ({ph})
+                ORDER BY l.order_product_id ASC, l.variant_id ASC
+                """,
+                tuple(ids),
+            )
+            for rr in cur.fetchall() or []:
+                op = self._parse_int(rr.get('order_product_id'))
+                vid = self._parse_int(rr.get('variant_id'))
+                qp = max(1, self._parse_int(rr.get('quantity')) or 1)
+                if not op or not vid:
+                    continue
+                out.setdefault(op, []).append({'variant_id': vid, 'quantity': qp})
+        return out
+
+    def _forecast_variant_hist_weight_sum_for_variants(self, conn, variant_ids):
+        """各 variant 在 sales_variant_order_links 上的全局权重分母（与下单 SKU 行历史分摊一致）。"""
+        ids = sorted({int(x) for x in (variant_ids or []) if self._parse_int(x)})
+        out = {}
+        if not ids:
+            return out
+        ph = ','.join(['%s'] * len(ids))
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT variant_id,
+                       SUM(GREATEST(1, COALESCE(quantity, 1))) AS w
+                FROM sales_variant_order_links
+                WHERE variant_id IN ({ph})
+                GROUP BY variant_id
+                """,
+                tuple(ids),
+            )
+            for rr in (cur.fetchall() or []):
+                vid = self._parse_int(rr.get('variant_id'))
+                if vid:
+                    out[vid] = float(rr.get('w') or 0)
+        return out
+
+    def _forecast_build_order_like_history_for_links(self, links, history_by_variant, variant_hist_weight_sum, hist_month_keys):
+        """与 _forecast_build_order_rows 中下单 SKU 行 history 相同的按月聚合（用于动销月分母）。"""
+        empty_hist = {'sales_qty': 0, 'net_sales_amount': 0, 'order_qty': 0, 'session_total': 0, 'refund_amount': 0}
+        history = {}
+        for hm in hist_month_keys or []:
+            agg = {k: 0.0 for k in empty_hist}
+            for vl in links or []:
+                vid = self._parse_int(vl.get('variant_id'))
+                if not vid:
+                    continue
+                h = history_by_variant.get((vid, hm))
+                if not h:
+                    continue
+                q = float(max(1, self._parse_int(vl.get('quantity')) or 1))
+                agg['sales_qty'] += float(h.get('sales_qty') or 0) * q
+                denom = float(variant_hist_weight_sum.get(vid) or 0)
+                if denom <= 0:
+                    continue
+                share = q / denom
+                agg['net_sales_amount'] += float(h.get('net_sales_amount') or 0) * share
+                agg['order_qty'] += float(h.get('order_qty') or 0) * share
+                agg['session_total'] += float(h.get('session_total') or 0) * share
+                agg['refund_amount'] += float(h.get('refund_amount') or 0) * share
+            history[hm] = {
+                'sales_qty': agg['sales_qty'],
+                'net_sales_amount': agg['net_sales_amount'],
+                'order_qty': agg['order_qty'],
+                'session_total': agg['session_total'],
+                'refund_amount': agg['refund_amount'],
+            }
+        return history
+
+    def _forecast_attach_inventory_to_rows(self, conn, rows, forecast_mode, history_months, hist_start=None, hist_end=None, shop_ids=None):
+        """按各下单 SKU 最早一条含明细的替代发货方案折算库存（海外/在途/在库/在制），再与变体 BOM 成套汇总。
+        规格/平台维度下：库存为变体整套瓶颈；动销月三列 = 所链接各下单 SKU（按替代方案展开后单独成套）的动销月再取最小值；
+        每个下单 SKU 的动销月分母为其自身「下单 SKU 维度」历史销量尾部月均（与下单 SKU 行一致），不得使用规格/平台行的变体汇总销量。"""
         if not rows:
             return
+        hm_list = list(history_months or [])
+        if hist_start is None and hm_list:
+            hist_start = hm_list[0]
+        if hist_end is None and hm_list:
+            hist_end = hm_list[-1]
         inv_by_op = {}
         variant_bom_links = {}
         variant_expanded = {}
@@ -2659,6 +2796,33 @@ class SalesManagementMixin:
                 all_ops.extend([o for o, _q in pairs])
             inv_by_op = self._forecast_load_inventory_by_order_product(conn, sorted(set(all_ops).union(extra_subs)))
 
+        op_avg_sales_by_op = {}
+        if forecast_mode != 'order' and variant_expanded and hist_start and hist_end:
+            all_op_ids_flat = sorted({
+                int(o)
+                for pairs in variant_expanded.values()
+                for o, _q in pairs
+                if self._parse_int(o)
+            })
+            if all_op_ids_flat:
+                links_by_op = self._forecast_load_order_variant_links_by_order_product_ids(conn, all_op_ids_flat)
+                all_v_for_hist = sorted({
+                    self._parse_int(vl.get('variant_id'))
+                    for ls in links_by_op.values()
+                    for vl in (ls or [])
+                    if self._parse_int(vl.get('variant_id'))
+                })
+                hist_keys = list(self._forecast_iter_months(hist_start, hist_end))
+                hist_by_v = (
+                    self._forecast_load_history_by_variant(conn, all_v_for_hist, hist_start, hist_end, shop_ids=shop_ids)
+                    if all_v_for_hist else {}
+                )
+                wsum = self._forecast_variant_hist_weight_sum_for_variants(conn, all_v_for_hist)
+                for opx in all_op_ids_flat:
+                    lk = links_by_op.get(opx) or []
+                    hist_op = self._forecast_build_order_like_history_for_links(lk, hist_by_v, wsum, hist_keys)
+                    op_avg_sales_by_op[opx] = self._forecast_row_history_sales_avg_tail({'history': hist_op}, history_months, tail=3)
+
         for row in rows:
             labels = row.get('labels') or {}
             agg = self._forecast_inventory_zero()
@@ -2672,6 +2836,10 @@ class SalesManagementMixin:
                 bom = variant_expanded.get(vid) or []
                 agg = self._forecast_bom_tier_assembled_counts(inv_by_op, bom)
 
+            pairs = []
+            if forecast_mode != 'order':
+                pairs = variant_bom_links.get(self._parse_int(labels.get('variant_id'))) or []
+
             o = int(agg['overseas_qty'])
             t = int(agg['transit_qty'])
             st = int(agg['factory_stock_qty'])
@@ -2683,10 +2851,42 @@ class SalesManagementMixin:
                     return None
                 return round(float(num) / float(avg_sales), 2)
 
+            if forecast_mode == 'order':
+                mo, mot, mtot = _cov(o), _cov(o + t), _cov(o + t + st + wp)
+            elif pairs:
+                vals_o, vals_ot, vals_tot = [], [], []
+                for oid, qp in pairs:
+                    oid = int(oid)
+                    qp = max(1, int(qp or 1))
+                    if not oid:
+                        continue
+                    avg_op = op_avg_sales_by_op.get(oid)
+                    if not avg_op or float(avg_op) <= 1e-9:
+                        continue
+                    bom_line = self._forecast_expand_owner_pairs_with_substitute_plans([(oid, qp)], plan_items_by_owner)
+                    ai = self._forecast_bom_tier_assembled_counts(inv_by_op, bom_line)
+                    oi = int(ai['overseas_qty'])
+                    ti = int(ai['transit_qty'])
+                    sti = int(ai['factory_stock_qty'])
+                    wpi = int(ai['wip_qty'])
+                    if oi > 0:
+                        vals_o.append(round(float(oi) / float(avg_op), 2))
+                    if oi + ti > 0:
+                        vals_ot.append(round(float(oi + ti) / float(avg_op), 2))
+                    if oi + ti + sti + wpi > 0:
+                        vals_tot.append(round(float(oi + ti + sti + wpi) / float(avg_op), 2))
+                mo = min(vals_o) if vals_o else None
+                mot = min(vals_ot) if vals_ot else None
+                mtot = min(vals_tot) if vals_tot else None
+                if mo is None and mot is None and mtot is None and avg_sales and float(avg_sales) > 1e-9:
+                    mo, mot, mtot = _cov(o), _cov(o + t), _cov(o + t + st + wp)
+            else:
+                mo, mot, mtot = _cov(o), _cov(o + t), _cov(o + t + st + wp)
+
             row['inventory'] = {
-                'months_cover_overseas': _cov(o),
-                'months_cover_overseas_transit': _cov(o + t),
-                'months_cover_total': _cov(o + t + st + wp),
+                'months_cover_overseas': mo,
+                'months_cover_overseas_transit': mot,
+                'months_cover_total': mtot,
                 'overseas_qty': o,
                 'transit_qty': t,
                 'in_stock_qty': st,
@@ -2719,8 +2919,11 @@ class SalesManagementMixin:
             lazy_raw = (query_params.get('lazy', [''])[0] or '').strip().lower()
             lazy_groups_only = lazy_raw in ('1', 'true', 'yes', 'on')
             sf_group = (query_params.get('sf_group', [''])[0] or '').strip()
+            sf_shop_ids = self._forecast_parse_sf_shop_ids(query_params)
+            shops_list = []
 
             with self._get_db_connection() as conn:
+                shops_list = self._forecast_list_shops_for_forecast(conn)
                 perf_max_record_date = self._forecast_perf_max_record_date(conn)
                 mtd_in = cur_key in set(history_months or [])
                 mtd_ctx = self._forecast_mtd_time_context(perf_max_record_date, cur_key) if mtd_in else None
@@ -2735,12 +2938,21 @@ class SalesManagementMixin:
                 else:
                     sf_filter = sf_group if sf_group else None
                     if forecast_mode == 'platform':
-                        rows = self._forecast_build_platform_rows(conn, query_params, months, hist_start, hist_end, sf_group=sf_filter)
+                        rows = self._forecast_build_platform_rows(
+                            conn, query_params, months, hist_start, hist_end, sf_group=sf_filter, shop_ids=sf_shop_ids
+                        )
                     elif forecast_mode == 'order':
-                        rows = self._forecast_build_order_rows(conn, query_params, months, hist_start, hist_end, sf_group=sf_filter)
+                        rows = self._forecast_build_order_rows(
+                            conn, query_params, months, hist_start, hist_end, sf_group=sf_filter, shop_ids=sf_shop_ids
+                        )
                     else:
-                        rows = self._forecast_build_spec_rows(conn, query_params, months, hist_start, hist_end, sf_group=sf_filter)
-                    self._forecast_attach_inventory_to_rows(conn, rows, forecast_mode, history_months)
+                        rows = self._forecast_build_spec_rows(
+                            conn, query_params, months, hist_start, hist_end, sf_group=sf_filter, shop_ids=sf_shop_ids
+                        )
+                    self._forecast_attach_inventory_to_rows(
+                        conn, rows, forecast_mode, history_months,
+                        hist_start=hist_start, hist_end=hist_end, shop_ids=sf_shop_ids,
+                    )
                     for row in rows:
                         row['mtd_completion'] = self._forecast_row_mtd_completion(
                             row.get('history') or {}, row.get('forecasts') or {}, mtd_ctx
@@ -2766,6 +2978,7 @@ class SalesManagementMixin:
                 'history_range': {'start': hist_start, 'end': hist_end},
                 'mtd': mtd_payload,
                 'rows': rows,
+                'shops': shops_list,
             }
             if lazy_groups_only and not sf_group:
                 payload['lazy'] = True
@@ -2779,13 +2992,15 @@ class SalesManagementMixin:
 
     # ----- 三种模式的行装配 -----
 
-    def _forecast_build_platform_rows(self, conn, query_params, months, hist_start, hist_end, sf_group=None):
+    def _forecast_build_platform_rows(self, conn, query_params, months, hist_start, hist_end, sf_group=None, shop_ids=None):
         dim_rows = self._forecast_load_platform_sku_dim(conn, query_params, sf_group=sf_group)
         sales_product_ids = [self._parse_int(r.get('sales_product_id')) for r in dim_rows if self._parse_int(r.get('sales_product_id'))]
         variant_ids = [self._parse_int(r.get('variant_id')) for r in dim_rows if self._parse_int(r.get('variant_id'))]
         thumb_by_variant = self._forecast_load_variant_thumb_b64(conn, variant_ids)
         cells = self._forecast_load_platform_cells(conn, sales_product_ids, months)
-        history = self._forecast_load_history_by_sales_product(conn, sales_product_ids, hist_start, hist_end)
+        history = self._forecast_load_history_by_sales_product(
+            conn, sales_product_ids, hist_start, hist_end, shop_ids=shop_ids
+        )
 
         hist_empty = self._forecast_empty_history_perf_payload()
         out = []
@@ -2829,12 +3044,12 @@ class SalesManagementMixin:
             out.append(row)
         return out
 
-    def _forecast_build_spec_rows(self, conn, query_params, months, hist_start, hist_end, sf_group=None):
+    def _forecast_build_spec_rows(self, conn, query_params, months, hist_start, hist_end, sf_group=None, shop_ids=None):
         dim_rows = self._forecast_load_variant_dim(conn, query_params, sf_group=sf_group)
         variant_ids = [self._parse_int(r.get('variant_id')) for r in dim_rows if self._parse_int(r.get('variant_id'))]
         thumb_by_variant = self._forecast_load_variant_thumb_b64(conn, variant_ids)
         spec_cells = self._forecast_load_spec_cells(conn, variant_ids, months)
-        history = self._forecast_load_history_by_variant(conn, variant_ids, hist_start, hist_end)
+        history = self._forecast_load_history_by_variant(conn, variant_ids, hist_start, hist_end, shop_ids=shop_ids)
 
         hist_empty = self._forecast_empty_history_perf_payload()
         platforms_by_variant = self._forecast_load_variant_platform_skus(conn, variant_ids)
@@ -2918,7 +3133,7 @@ class SalesManagementMixin:
             out.append(row)
         return out
 
-    def _forecast_build_order_rows(self, conn, query_params, months, hist_start, hist_end, sf_group=None):
+    def _forecast_build_order_rows(self, conn, query_params, months, hist_start, hist_end, sf_group=None, shop_ids=None):
         dim_rows = self._forecast_load_order_dim(conn, query_params, sf_group=sf_group)
         order_ids = [self._parse_int(r.get('order_product_id')) for r in dim_rows if self._parse_int(r.get('order_product_id'))]
         order_cells = self._forecast_load_order_cells(conn, order_ids, months)
@@ -2950,27 +3165,10 @@ class SalesManagementMixin:
             if self._parse_int(vl.get('variant_id'))
         })
         history_by_variant = (
-            self._forecast_load_history_by_variant(conn, variant_hist_ids, hist_start, hist_end)
+            self._forecast_load_history_by_variant(conn, variant_hist_ids, hist_start, hist_end, shop_ids=shop_ids)
             if variant_hist_ids else {}
         )
-        variant_hist_weight_sum = {}
-        if variant_hist_ids:
-            ph = ','.join(['%s'] * len(variant_hist_ids))
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"""
-                    SELECT variant_id,
-                           SUM(GREATEST(1, COALESCE(quantity, 1))) AS w
-                    FROM sales_variant_order_links
-                    WHERE variant_id IN ({ph})
-                    GROUP BY variant_id
-                    """,
-                    tuple(variant_hist_ids),
-                )
-                for rr in (cur.fetchall() or []):
-                    vid = self._parse_int(rr.get('variant_id'))
-                    if vid:
-                        variant_hist_weight_sum[vid] = float(rr.get('w') or 0)
+        variant_hist_weight_sum = self._forecast_variant_hist_weight_sum_for_variants(conn, variant_hist_ids)
         hist_month_keys = self._forecast_iter_months(hist_start, hist_end)
 
         def spec_effective_qty(vid, month):
@@ -3062,34 +3260,9 @@ class SalesManagementMixin:
                         } if inherited_items else None,
                         'cell_meta': cell,
                     }
-            empty_hist = {'sales_qty': 0, 'net_sales_amount': 0, 'order_qty': 0, 'session_total': 0, 'refund_amount': 0}
-            for hm in hist_month_keys:
-                agg = {k: 0.0 for k in empty_hist}
-                for vl in links:
-                    vid = self._parse_int(vl.get('variant_id'))
-                    if not vid:
-                        continue
-                    h = history_by_variant.get((vid, hm))
-                    if not h:
-                        continue
-                    q = float(max(1, self._parse_int(vl.get('quantity')) or 1))
-                    # 销量：变体月销 × 本下单 SKU 在该变体上的链接数量（多链接、多下单 SKU 各自累加）
-                    agg['sales_qty'] += float(h.get('sales_qty') or 0) * q
-                    denom = float(variant_hist_weight_sum.get(vid) or 0)
-                    if denom <= 0:
-                        continue
-                    share = q / denom
-                    agg['net_sales_amount'] += float(h.get('net_sales_amount') or 0) * share
-                    agg['order_qty'] += float(h.get('order_qty') or 0) * share
-                    agg['session_total'] += float(h.get('session_total') or 0) * share
-                    agg['refund_amount'] += float(h.get('refund_amount') or 0) * share
-                row['history'][hm] = {
-                    'sales_qty': agg['sales_qty'],
-                    'net_sales_amount': agg['net_sales_amount'],
-                    'order_qty': agg['order_qty'],
-                    'session_total': agg['session_total'],
-                    'refund_amount': agg['refund_amount'],
-                }
+            row['history'] = self._forecast_build_order_like_history_for_links(
+                links, history_by_variant, variant_hist_weight_sum, hist_month_keys
+            )
             out.append(row)
         return out
 

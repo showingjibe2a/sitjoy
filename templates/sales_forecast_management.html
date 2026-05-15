@@ -39,19 +39,64 @@
             font-size: 0.82rem;
             min-width: 0;
         }
-        /* Compact month input (smaller height) */
-        .sf-toolbar input.sf-compact-month[type="month"]{
-            min-height: 28px;
-            height: 28px;
-            padding: 0.2rem 0.45rem !important;
-            border-radius: 10px;
-            font-size: 0.82rem;
+        /* 年月：小输入框尺寸（与工具栏其它控件比例协调） */
+        .sf-toolbar .sf-month-input-wrap input.sf-compact-month[type="month"] {
+            box-sizing: border-box;
+            width: 7.35rem;
+            min-width: 7.35rem;
+            max-width: 7.35rem;
+            min-height: 24px;
+            height: 24px;
+            padding: 0.1rem 0.28rem !important;
+            padding-right: 1.28rem !important;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            line-height: 1.2;
             border-width: 1px;
-            padding-right: 1.6rem !important;
-            background-position: right 0.4rem center, 0 0;
-            background-size: 14px 14px, auto;
+            background-position: right 0.28rem center, 0 0;
+            background-size: 12px 12px, auto;
+            cursor: pointer;
         }
         .sf-toolbar input[type="text"] { min-width: 120px; }
+        #sfShopFilterDropdown .pm-table-columns-trigger {
+            cursor: pointer;
+            padding: 0.22rem 0.55rem !important;
+            min-height: 28px !important;
+            height: 28px !important;
+            font-size: 0.82rem !important;
+            line-height: 1.2 !important;
+        }
+        .sf-shop-filter-panel {
+            max-height: min(320px, 70vh);
+            overflow: auto;
+            display: grid;
+            gap: 0.35rem;
+            padding: 0.45rem 0.5rem;
+        }
+        .sf-shop-filter-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            margin-bottom: 0.25rem;
+        }
+        .sf-shop-filter-actions .btn-secondary {
+            padding: 0.18rem 0.45rem;
+            font-size: 0.76rem;
+        }
+        .sf-shop-filter-item label {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            cursor: pointer;
+            font-size: 0.8rem;
+            color: #3a342d;
+            min-width: 0;
+        }
+        .sf-shop-filter-empty {
+            margin: 0;
+            font-size: 0.78rem;
+            color: rgba(42, 36, 32, 0.55);
+        }
         .sf-toolbar .btn-secondary,
         .sf-toolbar .btn-primary,
         .sf-toolbar .btn-accent { padding: 0.4rem 0.85rem; font-size: 0.88rem; }
@@ -121,10 +166,7 @@
             position: relative;
             display: inline-flex;
             align-items: center;
-        }
-        .sf-month-input-wrap input[type="month"] {
-            padding-right: 1.6rem;
-            cursor: pointer;
+            max-width: 7.35rem;
         }
         .sf-divider {
             width: 1px;
@@ -1027,9 +1069,6 @@
                     <span class="sf-month-input-wrap"><input type="month" id="forecastStart" class="sf-compact-month" readonly></span>
                     <span>至</span>
                     <span class="sf-month-input-wrap"><input type="month" id="forecastEnd" class="sf-compact-month" readonly></span>
-                    <button class="btn-secondary" type="button" data-future="3">未来3月</button>
-                    <button class="btn-secondary" type="button" data-future="6">未来6月</button>
-                    <button class="btn-secondary" type="button" data-future="12">未来12月</button>
                 </div>
                 <span class="sf-divider" aria-hidden="true"></span>
                 <div class="sf-toolbar-group">
@@ -1041,7 +1080,10 @@
                 <span class="sf-divider" aria-hidden="true"></span>
                 <div class="sf-toolbar-group">
                     <label>筛选：</label>
-                    <input type="text" id="filterShop" placeholder="店铺">
+                    <div class="pm-table-columns sf-shop-filter-dropdown" id="sfShopFilterDropdown" title="勾选后，产品表现仅统计所选店铺的销量与金额等；未勾选任何店铺或全选时不限制店铺">
+                        <button type="button" class="pm-table-columns-trigger btn-secondary" id="sfShopFilterTrigger" aria-expanded="false" aria-controls="sfShopFilterPanel">店铺</button>
+                        <div class="pm-table-columns-panel sf-shop-filter-panel" id="sfShopFilterPanel" role="region" aria-label="店铺筛选"></div>
+                    </div>
                     <input type="text" id="filterSku" placeholder="货号/平台SKU">
                     <input type="text" id="filterSpec" placeholder="规格">
                     <input type="text" id="filterFabric" placeholder="面料">
@@ -1124,9 +1166,9 @@
         const SF_STOCK_COLS = 4;
         const SF_TAIL_COL_COUNT = SF_TURNOVER_COLS + SF_STOCK_COLS;
         const SF_TURNOVER_HEADERS = [
-            { label: '海外仓', tip: '动销月 = 仅海外仓可用量 ÷ 历史月销量区间最后三个月月均销量' },
-            { label: '海外仓+在途', tip: '动销月 =（海外仓 + 在途）÷ 同上' },
-            { label: '全部', tip: '动销月 =（海外仓 + 在途 + 在库 + 在制）÷ 同上' },
+            { label: '海外仓', tip: '动销月 = 仅海外仓可用量 ÷ 历史月销量区间最后三个月月均销量。规格/平台行：取所链接各下单 SKU（按替代发货方案折算库存后单独成套）在该列动销月的最小值。' },
+            { label: '海外仓+在途', tip: '动销月 =（海外仓 + 在途）÷ 同上。规格/平台行：各下单 SKU 含替代方案折算后分别计算，再取最小值。' },
+            { label: '全部', tip: '动销月 =（海外仓 + 在途 + 在库 + 在制）÷ 同上。规格/平台行：各下单 SKU 含替代方案折算后分别计算，再取最小值。' },
         ];
         const SF_STOCK_HEADERS = [
             { label: '海外仓', tip: '海外仓可用量合计' },
@@ -1165,6 +1207,9 @@
             sfPerfPanelFollowBlurDismissed: true,
             mtdContext: {},                  // /api/sales-forecast 返回的 mtd 块（时间进度、聚合更新时间等）
             sfPerfFieldsPanelOpen: false,
+            shops: [],                      // [{ id, shop_name }] 店铺筛选下拉数据
+            sfShopFilterPanelOpen: false,
+            sfShopFilterHydrated: false,   // 是否已渲染过店铺勾选（用于保留勾选状态）
         };
 
         function readBoolPref(key, fallback) {
@@ -1371,18 +1416,6 @@
             if (!/^\d{4}-\d{2}$/.test(sy) || !/^\d{4}-\d{2}$/.test(ey)) return;
             state.months = monthKeysBetweenInclusive(sy, ey);
             syncForecastRangeInputsFromState();
-        }
-
-        function setForecastMonthsFuture(count) {
-            const start = todayMonthKey();
-            const n = Math.max(1, Math.min(120, Number(count) || 6));
-            const end = shiftMonth(start, n - 1);
-            state.months = monthKeysBetweenInclusive(start, end);
-            syncForecastRangeInputsFromState();
-        }
-
-        function renderAddMonthPicker() {
-            // compat noop: replaced by global month dialog
         }
 
         function positionSfMonthPopoverNear(anchor, panel) {
@@ -1600,7 +1633,6 @@
             const monthsParam = (state.months || []).map(m => m.slice(0, 7)).join(',');
             const histStartEl = document.getElementById('historyStart');
             const histEndEl = document.getElementById('historyEnd');
-            const shopEl = document.getElementById('filterShop');
             const skuEl = document.getElementById('filterSku');
             const specEl = document.getElementById('filterSpec');
             const fabricEl = document.getElementById('filterFabric');
@@ -1609,7 +1641,8 @@
             if (monthsParam) params.set('months', monthsParam);
             if (histStartEl && histStartEl.value) params.set('history_start', histStartEl.value);
             if (histEndEl && histEndEl.value) params.set('history_end', histEndEl.value);
-            if (shopEl && shopEl.value.trim()) params.set('shop', shopEl.value.trim());
+            const sfShopIds = computeSfShopIdsForQuery();
+            if (sfShopIds) params.set('sf_shop_ids', sfShopIds);
             if (skuEl && skuEl.value.trim()) params.set('sku', skuEl.value.trim());
             if (specEl && specEl.value.trim()) params.set('spec', specEl.value.trim());
             if (fabricEl && fabricEl.value.trim()) params.set('fabric', fabricEl.value.trim());
@@ -1617,6 +1650,201 @@
             if (ex.lazy) params.set('lazy', '1');
             if (ex.sf_group) params.set('sf_group', String(ex.sf_group));
             return params;
+        }
+
+        let sfShopFilterReloadTimer = null;
+        function scheduleSfShopFilterDataReload() {
+            if (sfShopFilterReloadTimer) clearTimeout(sfShopFilterReloadTimer);
+            sfShopFilterReloadTimer = setTimeout(() => {
+                sfShopFilterReloadTimer = null;
+                loadForecastData();
+            }, 320);
+        }
+
+        function getSfShopFilterCheckedIds() {
+            const panel = document.getElementById('sfShopFilterPanel');
+            const shops = state.shops || [];
+            if (!panel || !shops.length) return null;
+            const ids = [];
+            panel.querySelectorAll('input[type="checkbox"][data-shop-id]').forEach((cb) => {
+                if (!cb.checked) return;
+                const n = parseInt(String(cb.dataset.shopId || ''), 10);
+                if (n > 0) ids.push(n);
+            });
+            return ids;
+        }
+
+        function computeSfShopIdsForQuery() {
+            const shops = state.shops || [];
+            if (!shops.length) return '';
+            const checked = getSfShopFilterCheckedIds();
+            if (!checked || !checked.length || checked.length >= shops.length) return '';
+            const sorted = checked.slice().sort((a, b) => a - b);
+            return sorted.join(',');
+        }
+
+        function updateSfShopFilterTriggerLabel() {
+            const trig = document.getElementById('sfShopFilterTrigger');
+            if (!trig) return;
+            const shops = state.shops || [];
+            if (!shops.length) {
+                trig.textContent = '店铺';
+                return;
+            }
+            const raw = getSfShopFilterCheckedIds();
+            const n = raw ? raw.length : 0;
+            if (!n || n >= shops.length) trig.textContent = '店铺（全部）';
+            else trig.textContent = '店铺（' + n + '）';
+        }
+
+        function repositionSfShopFilterPanel() {
+            const trigger = document.getElementById('sfShopFilterTrigger');
+            const panel = document.getElementById('sfShopFilterPanel');
+            if (!trigger || !panel || !panel.classList.contains('open')) return;
+            const triggerRect = trigger.getBoundingClientRect();
+            panel.style.visibility = 'hidden';
+            panel.style.display = 'grid';
+            const panelRect = panel.getBoundingClientRect();
+            const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+            const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+            let left = triggerRect.right - panelRect.width;
+            left = Math.max(8, Math.min(left, viewportWidth - panelRect.width - 8));
+            let top = triggerRect.bottom + 6;
+            if (top + panelRect.height > viewportHeight - 8) {
+                top = Math.max(8, triggerRect.top - panelRect.height - 6);
+            }
+            top = Math.max(8, Math.min(top, viewportHeight - panelRect.height - 8));
+            panel.style.left = `${left}px`;
+            panel.style.top = `${top}px`;
+            panel.style.visibility = 'visible';
+        }
+
+        function closeSfShopFilterPanel() {
+            const panel = document.getElementById('sfShopFilterPanel');
+            const trig = document.getElementById('sfShopFilterTrigger');
+            if (!panel) return;
+            panel.classList.remove('open');
+            panel.style.display = 'none';
+            panel.style.visibility = 'hidden';
+            panel.style.pointerEvents = 'none';
+            panel.style.left = '';
+            panel.style.top = '';
+            if (trig) trig.setAttribute('aria-expanded', 'false');
+            state.sfShopFilterPanelOpen = false;
+        }
+
+        function openSfShopFilterPanel() {
+            const panel = document.getElementById('sfShopFilterPanel');
+            const trig = document.getElementById('sfShopFilterTrigger');
+            if (!panel || !trig) return;
+            renderSfShopFilterPanel();
+            panel.classList.add('open');
+            panel.style.pointerEvents = 'auto';
+            trig.setAttribute('aria-expanded', 'true');
+            state.sfShopFilterPanelOpen = true;
+            requestAnimationFrame(() => repositionSfShopFilterPanel());
+        }
+
+        function toggleSfShopFilterPanel(e) {
+            if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+            const panel = document.getElementById('sfShopFilterPanel');
+            if (panel && panel.classList.contains('open')) closeSfShopFilterPanel();
+            else openSfShopFilterPanel();
+        }
+
+        function bindSfShopFilterDropdownOnce() {
+            if (document.body.dataset.sfShopFilterDdBound === '1') return;
+            document.body.dataset.sfShopFilterDdBound = '1';
+            const trig = document.getElementById('sfShopFilterTrigger');
+            if (trig) {
+                trig.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    toggleSfShopFilterPanel(e);
+                });
+            }
+            document.addEventListener('mousedown', (e) => {
+                if (!state.sfShopFilterPanelOpen) return;
+                const t = e.target;
+                if (t && t.closest && t.closest('#sfShopFilterDropdown')) return;
+                closeSfShopFilterPanel();
+            }, true);
+            document.addEventListener('keydown', (e) => {
+                if (e.key !== 'Escape') return;
+                if (!state.sfShopFilterPanelOpen) return;
+                closeSfShopFilterPanel();
+            }, true);
+            window.addEventListener('resize', () => {
+                if (state.sfShopFilterPanelOpen) repositionSfShopFilterPanel();
+            });
+        }
+
+        function renderSfShopFilterPanel() {
+            const panel = document.getElementById('sfShopFilterPanel');
+            if (!panel) return;
+            const shops = state.shops || [];
+            const prev = new Set();
+            if (state.sfShopFilterHydrated) {
+                panel.querySelectorAll('input[type="checkbox"][data-shop-id]').forEach((cb) => {
+                    if (cb.checked) {
+                        const n = parseInt(String(cb.dataset.shopId || ''), 10);
+                        if (n > 0) prev.add(n);
+                    }
+                });
+            }
+            if (!shops.length) {
+                panel.innerHTML = '<p class="sf-shop-filter-empty">暂无店铺</p>';
+                state.sfShopFilterHydrated = true;
+                updateSfShopFilterTriggerLabel();
+                return;
+            }
+            const isChecked = (id) => {
+                if (!state.sfShopFilterHydrated) return true;
+                if (!prev.size) return true;
+                return prev.has(id);
+            };
+            const rows = shops.map((s) => {
+                const id = parseInt(String(s.id), 10);
+                if (!(id > 0)) return '';
+                const nm = escapeHtml(String(s.shop_name != null ? s.shop_name : ''));
+                const ch = isChecked(id) ? ' checked' : '';
+                return '<div class="sf-shop-filter-item" data-shop-id="' + id + '">'
+                    + '<label><input type="checkbox" data-shop-id="' + id + '"' + ch + '><span>'
+                    + (nm || ('#' + id)) + '</span></label></div>';
+            }).join('');
+            const actions = '<div class="sf-shop-filter-actions">'
+                + '<button type="button" class="btn-secondary" id="sfShopFilterSelectAll">全选</button>'
+                + '<button type="button" class="btn-secondary" id="sfShopFilterClear">清空筛选</button>'
+                + '</div>';
+            panel.innerHTML = actions + rows;
+            state.sfShopFilterHydrated = true;
+            panel.querySelectorAll('input[type="checkbox"][data-shop-id]').forEach((inp) => {
+                inp.addEventListener('change', () => {
+                    updateSfShopFilterTriggerLabel();
+                    scheduleSfShopFilterDataReload();
+                });
+            });
+            const allBtn = document.getElementById('sfShopFilterSelectAll');
+            const clrBtn = document.getElementById('sfShopFilterClear');
+            if (allBtn) {
+                allBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    panel.querySelectorAll('input[type="checkbox"][data-shop-id]').forEach((cb) => { cb.checked = true; });
+                    updateSfShopFilterTriggerLabel();
+                    scheduleSfShopFilterDataReload();
+                });
+            }
+            if (clrBtn) {
+                clrBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    panel.querySelectorAll('input[type="checkbox"][data-shop-id]').forEach((cb) => { cb.checked = true; });
+                    updateSfShopFilterTriggerLabel();
+                    scheduleSfShopFilterDataReload();
+                });
+            }
+            updateSfShopFilterTriggerLabel();
         }
 
         // ===== 数据加载 =====
@@ -1681,6 +1909,8 @@
             state.historyMonths = Array.isArray(data.history_months) ? data.history_months.slice() : [];
             state.historyRange = data.history_range || { start: '', end: '' };
             state.mtdContext = (data && data.mtd && typeof data.mtd === 'object') ? data.mtd : {};
+            state.shops = Array.isArray(data.shops) ? data.shops.slice() : [];
+            renderSfShopFilterPanel();
             const lazyFlag = data && (data.lazy === true || data.lazy === 1);
             const groupsFromServer = Array.isArray(data.groups) ? data.groups : null;
             if (lazyFlag) {
@@ -4197,9 +4427,15 @@
             bindPerfUiToolbarOnce();
             bindSfPerfPanelOnce();
             updateSfPerfToolbarGroupMode();
+            bindSfShopFilterDropdownOnce();
 
             bindModeSegment();
-            setForecastMonthsFuture(6);
+            {
+                const start = todayMonthKey();
+                const end = shiftMonth(start, 5);
+                state.months = monthKeysBetweenInclusive(start, end);
+                syncForecastRangeInputsFromState();
+            }
 
             // 月份选择器
             ensureGlobalMonthPickerDialog();
@@ -4265,9 +4501,6 @@
 
             // 工具栏按钮
             document.getElementById('btnLoadForecast').addEventListener('click', loadForecastData);
-            document.querySelectorAll('button[data-future]').forEach(btn => {
-                btn.addEventListener('click', () => setForecastMonthsFuture(parseInt(btn.dataset.future, 10) || 6));
-            });
             const bindTopFilter = (id, key) => {
                 const el = document.getElementById(id);
                 if (!el) return;
@@ -4278,7 +4511,6 @@
                     renderForecastTable();
                 });
             };
-            bindTopFilter('filterShop', 'shop_name');
             bindTopFilter('filterSku', 'sku_family');
             bindTopFilter('filterSpec', 'spec_name');
             bindTopFilter('filterFabric', 'fabric_code');
