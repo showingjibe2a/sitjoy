@@ -7,53 +7,21 @@
   <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
   <link rel="stylesheet" href="/static/css/style.css">
   <link rel="stylesheet" href="/static/css/main-image-manager.css">
-  <style>
-    /* 与销售产品管理弹窗「关联下单SKU」同布局（可编辑三列） */
-    .specmi-variant-surface .order-link-box {
-      border: 2px solid var(--morandi-sand);
-      border-radius: 8px;
-      padding: 0.65rem;
-      background: #fff;
-      display: grid;
-      gap: 0.45rem;
-    }
-    .specmi-variant-surface .order-link-head {
-      display: grid;
-      grid-template-columns: minmax(200px, 1fr) 110px 64px;
-      gap: 0.45rem;
-      font-size: 0.82rem;
-      color: var(--morandi-slate);
-      padding: 0 0.2rem;
-    }
-    .specmi-variant-surface .order-link-selected { display: grid; gap: 0.4rem; }
-    .specmi-variant-surface .order-link-row {
-      display: grid;
-      grid-template-columns: minmax(200px, 1fr) 110px 64px;
-      gap: 0.45rem;
-      align-items: center;
-    }
-    .specmi-variant-surface .order-link-row .btn-danger {
-      padding: 0.35rem 0.45rem;
-      font-size: 0.82rem;
-      line-height: 1.15;
-    }
-    .specmi-create-no-main-images-hint .specmi-toolbar-note { margin-top: 0.35rem; }
-  </style>
 </head>
 <body>
 <div id="site-header"></div>
 
 <div class="container">
-  <section class="hero" style="margin-bottom: 1.5rem;">
+  <section class="hero">
     <h2>规格主图管理</h2>
-    <p class="specmi-lead">按销售变体（规格）维护主图；上传、NAS 移动绑定、排序与编辑弹窗与销售产品主图模块一致。</p>
+    <p class="pm-page-lead">按销售变体（规格）维护主图；上传、NAS 移动绑定、排序与编辑弹窗与销售产品主图模块一致。</p>
   </section>
 
   <section class="pm-layout">
     <div class="card pm-card">
       <div class="pm-toolbar">
         <div class="pm-toolbar-actions">
-          <div class="specmi-filter-fields" role="group" aria-label="在已加载列表中筛选">
+          <div class="pm-toolbar-filters" role="group" aria-label="在已加载列表中筛选">
             <div class="form-group">
               <label for="specmiSearchSku">货号</label>
               <input id="specmiSearchSku" class="optional-field" type="text" placeholder="sku_family 部分匹配" autocomplete="off">
@@ -75,23 +43,23 @@
           <button class="btn-secondary" type="button" onclick="specmiReload()">刷新</button>
         </div>
       </div>
-      <p class="specmi-toolbar-note">以下为前端过滤：留空的维度不参与；点「筛选」应用条件，「清空」恢复全部已加载行。列表与父体管理等页相同，由通用表格托管（固定表头、列宽、每页条数、列显示与冻结等，设置按表持久化）。</p>
+      <p class="pm-form-hint">以下为前端过滤：留空的维度不参与；点「筛选」应用条件，「清空」恢复全部已加载行。列表与父体管理等页相同，由通用表格托管（固定表头、列宽、每页条数、列显示与冻结等，设置按表持久化）。</p>
     </div>
 
-    <div class="specmi-table-section">
+    <div class="pm-table-block">
     <table class="pm-table" id="specmiTable">
       <thead>
       <tr>
-        <th class="sj-toggle-cb-cell" style="width:44px;" title="多选（可点整格）"><input type="checkbox" class="specmi-select-all-page" id="specmiSelectAllPage" aria-label="全选当前列表"></th>
+        <th class="sj-toggle-cb-cell pm-th-cb-narrow" title="多选（可点整格）"><input type="checkbox" class="specmi-select-all-page" id="specmiSelectAllPage" aria-label="全选当前列表"></th>
         <th class="sj-th-thumb cell-center">图片</th>
-        <th style="width:200px;">货号</th>
-        <th style="width:200px;">规格</th>
-        <th style="width:200px;">面料</th>
-        <th style="width:200px;">操作</th>
+        <th>货号</th>
+        <th>规格</th>
+        <th>面料</th>
+        <th>操作</th>
       </tr>
       </thead>
       <tbody>
-      <tr><td colspan="6" style="text-align:center;">加载中...</td></tr>
+      <tr><td colspan="6" class="pm-text-center">加载中...</td></tr>
       </tbody>
     </table>
     </div>
@@ -108,29 +76,29 @@
 <div class="pm-modal" id="specmiBatchValidateModal">
   <div class="pm-modal-content pm-modal-content--wide">
     <div class="pm-modal-scroll">
-      <h3 style="margin-top:0;">批量校验结果</h3>
-      <p class="specmi-toolbar-note" style="margin-top:0.25rem;">仅展示<strong>有问题</strong>的规格：货号×面料未在 <code>fabric_product_families</code> 绑定，或因外键无法删除（与下单产品关联可级联删除，不作为拦截）。合法且可删的规格不列出；可删行左侧可选，全选仅作用于可删除行。</p>
-      <p class="specmi-toolbar-note" id="specmiBvOmittedNote" style="display:none;margin-top:0.2rem;"></p>
-      <div style="overflow:auto;max-height:min(62vh,640px);margin-top:0.5rem;">
-        <table class="pm-table" id="specmiBvResultTable" data-disable-table-manage="1" style="min-width:820px;">
+      <h3>批量校验结果</h3>
+      <p class="pm-form-hint">仅展示<strong>有问题</strong>的规格：货号×面料未在 <code>fabric_product_families</code> 绑定，或因外键无法删除（与下单产品关联可级联删除，不作为拦截）。合法且可删的规格不列出；可删行左侧可选，全选仅作用于可删除行。</p>
+      <p class="pm-form-hint pm-u-hidden" id="specmiBvOmittedNote"></p>
+      <div class="pm-modal-table-scroll">
+        <table class="pm-table pm-table--min-820" id="specmiBvResultTable" data-disable-table-manage="1">
           <thead>
             <tr>
-              <th class="sj-toggle-cb-cell" style="width:44px;"><input type="checkbox" id="specmiBvSelectAllDeletable" aria-label="全选可删除行" title="仅选中可删除的行"></th>
-              <th style="width:140px;">货号</th>
-              <th style="width:120px;">规格</th>
-              <th style="width:160px;">面料</th>
-              <th style="width:88px;">可删除</th>
+              <th class="sj-toggle-cb-cell pm-th-cb-narrow"><input type="checkbox" id="specmiBvSelectAllDeletable" aria-label="全选可删除行" title="仅选中可删除的行"></th>
+              <th>货号</th>
+              <th>规格</th>
+              <th>面料</th>
+              <th>可删除</th>
               <th>说明</th>
             </tr>
           </thead>
           <tbody id="specmiBvTableBody">
-            <tr><td colspan="6" style="text-align:center;">加载中…</td></tr>
+            <tr><td colspan="6" class="pm-text-center">加载中…</td></tr>
           </tbody>
         </table>
       </div>
     </div>
-    <div class="pm-modal-actions" style="flex-wrap:wrap;gap:0.5rem;align-items:center;">
-      <label style="display:flex;align-items:center;gap:0.35rem;cursor:pointer;margin-right:auto;">
+    <div class="pm-modal-actions pm-modal-actions--wrap">
+      <label class="pm-ack-label">
         <input type="checkbox" id="specmiBvDeleteAck">
         <span>我已确认：仅删除上表勾选且服务端判定可删的规格（关联下单 SKU 将级联移除）。</span>
       </label>
@@ -143,31 +111,34 @@
 <!-- 新增销售规格（变体）：布局与编辑弹窗一致，无主图操作区 -->
 <div class="pm-modal" id="specmiCreateModal">
   <div class="pm-modal-content pm-modal-content--wide">
-    <div class="pm-modal-scroll specmi-variant-surface">
-      <div class="pm-section-header" style="margin-bottom: 12px;">
-        <h3 style="margin:0;">新增规格</h3>
+    <div class="pm-modal-scroll">
+      <div class="pm-modal-title-block">
+        <h3>新增规格</h3>
       </div>
-      <p class="specmi-toolbar-note" style="margin-top:0;">在「货号 + 规格名 + 面料」组合已存在时，将直接打开已有规格，不会重复建行。</p>
+      <p class="pm-form-hint pm-form-hint--flush">在「货号 + 规格名 + 面料」组合已存在时，将直接打开已有规格，不会重复建行。</p>
       <div class="pm-form">
         <div class="pm-section pm-form-full">
           <div class="pm-section-header"><h4>基础信息</h4></div>
-          <div class="pm-section-body pm-form pm-form-full">
-            <div class="form-group pm-form-full">
+          <div class="pm-section-body pm-form pm-grid-3">
+            <div class="form-group pm-span-1">
               <label for="specmiCreateSkuFamily">货号（父体）<span class="required-asterisk">*</span></label>
               <select id="specmiCreateSkuFamily" class="required-field"></select>
             </div>
-            <div class="form-group pm-form-full">
+            <div class="form-group pm-span-1">
               <label for="specmiCreateSpecName">规格名称<span class="required-asterisk">*</span></label>
               <input id="specmiCreateSpecName" class="required-field" type="text" placeholder="例如 King、Queen" autocomplete="off">
             </div>
-            <div class="form-group pm-form-full">
+            <div class="form-group pm-span-1">
               <label for="specmiCreateFabric">面料<span class="required-asterisk">*</span></label>
               <select id="specmiCreateFabric" class="required-field"></select>
             </div>
           </div>
         </div>
         <div class="pm-section pm-form-full">
-          <div class="pm-section-header"><h4>关联下单SKU及数量<span class="required-asterisk">*</span></h4></div>
+          <div class="pm-section-header pm-section-header--split">
+            <h4>关联下单SKU及数量<span class="required-asterisk">*</span></h4>
+            <button type="button" class="btn-secondary btn-small" id="specmiCreateCopyOrderLinksBtn">复制…</button>
+          </div>
           <div class="pm-section-body pm-form">
             <div class="form-group pm-form-full">
               <div class="order-link-box">
@@ -181,17 +152,13 @@
             </div>
           </div>
         </div>
-        <div class="pm-section pm-form-full specmi-create-no-main-images-hint">
+        <div class="pm-section pm-form-full">
           <h4>主图管理</h4>
-          <p class="specmi-toolbar-note">保存生成规格后，将自动进入「编辑」弹窗，即可上传与管理主图（本步骤不显示图片操作）。</p>
+          <p class="pm-form-hint">保存生成规格后，将自动进入「编辑」弹窗，即可上传与管理主图（本步骤不显示图片操作）。</p>
         </div>
         <div class="pm-section pm-form-full">
-          <h4>成本 <span id="specmiCreateCostWarning" class="danger-note" style="display:none;">售价低于成本+尾程，请重点核对</span></h4>
+          <h4>成本</h4>
           <div class="pm-section-body pm-form">
-            <div class="form-group">
-              <label for="specmiCreateSalePrice">售价(USD)</label>
-              <input type="number" step="0.01" id="specmiCreateSalePrice" class="optional-field" placeholder="可选">
-            </div>
             <div class="form-group">
               <label for="specmiCreateWarehouseCost">产品成本及发货至海外仓成本估算(自动)</label>
               <input type="number" step="0.01" id="specmiCreateWarehouseCost" class="optional-field" readonly>
@@ -228,7 +195,7 @@
           </div>
         </div>
       </div>
-      <div id="specmiCreateStatus" class="specmi-create-status" aria-live="polite"></div>
+      <div id="specmiCreateStatus" class="pm-inline-status" aria-live="polite"></div>
     </div>
     <div class="pm-modal-actions">
       <button class="btn-secondary" type="button" onclick="specmiCloseCreateModal()">取消</button>
@@ -240,9 +207,9 @@
 <!-- 主图编辑：区块顺序与销售产品管理对齐（关联下单SKU → 主图 → 成本 → 包裹） -->
 <div class="pm-modal" id="specmiEditModal">
   <div class="pm-modal-content pm-modal-content--wide">
-    <div class="pm-modal-scroll specmi-variant-surface">
-      <div class="pm-section-header" style="margin-bottom: 12px;">
-        <h3 style="margin:0;">规格主图</h3>
+    <div class="pm-modal-scroll">
+      <div class="pm-modal-title-block">
+        <h3>规格主图</h3>
       </div>
       <div class="pm-form">
         <div class="pm-section pm-form-full">
@@ -266,8 +233,9 @@
         </div>
 
         <div class="pm-section pm-form-full">
-          <div class="pm-section-header">
+          <div class="pm-section-header pm-section-header--split">
             <h4>关联下单SKU及数量<span class="required-asterisk">*</span></h4>
+            <button type="button" class="btn-secondary btn-small" id="specmiModalCopyOrderLinksBtn">复制…</button>
           </div>
           <div class="pm-section-body pm-form">
             <div class="form-group pm-form-full">
@@ -288,7 +256,7 @@
         <div class="pm-section pm-form-full" id="specmiEditMainImagesSection">
           <h4>主图管理</h4>
           <div class="pm-section-body pm-form">
-            <input type="file" id="specmiFileUpload" accept="image/*" multiple style="display:none;">
+            <input type="file" id="specmiFileUpload" accept="image/*" multiple hidden>
             <div class="form-group pm-form-full">
               <div class="mim-toolbar-row">
                 <label class="mim-toolbar-label">规格-面料主图</label>
@@ -319,12 +287,8 @@
         </div>
 
         <div class="pm-section pm-form-full">
-          <h4>成本 <span id="specmiModalCostWarning" class="danger-note" style="display:none;">售价低于成本+尾程，请重点核对</span></h4>
+          <h4>成本</h4>
           <div class="pm-section-body pm-form">
-            <div class="form-group">
-              <label for="specmiModalSalePrice">售价(USD)</label>
-              <input type="number" step="0.01" id="specmiModalSalePrice" class="optional-field">
-            </div>
             <div class="form-group">
               <label for="specmiModalWarehouseCost">产品成本及发货至海外仓成本估算(自动)</label>
               <input type="number" step="0.01" id="specmiModalWarehouseCost" class="optional-field" readonly>
@@ -415,11 +379,28 @@
           <div id="specmiNasList" class="browser-grid nas-main-image-browser-grid"></div>
         </div>
       </div>
-      <div id="specmiNasStatus" class="nas-main-image-status status-message" style="display:none;"></div>
+      <div id="specmiNasStatus" class="nas-main-image-status status-message pm-u-hidden"></div>
     </div>
     <div class="pm-modal-actions nas-main-image-modal-actions">
       <button class="btn-small" type="button" onclick="specmiCloseNasModal()">关闭</button>
       <button class="btn-accent" type="button" onclick="specmiNasImportSelected()">批量导入所选</button>
+    </div>
+  </div>
+</div>
+
+<div class="pm-modal pm-modal--stack" id="specmiCopyOrderLinksModal">
+  <div class="pm-modal-content">
+    <h3>从其他规格复制</h3>
+    <p class="pm-form-hint pm-form-hint--flush">仅列出与当前<strong>相同货号</strong>的其他规格；复制其关联下单 SKU 及数量到本表单（不修改货号、规格名、面料）。</p>
+    <div class="pm-form">
+      <div class="form-group">
+        <label for="specmiCopyOrderLinksSource">来源规格</label>
+        <select id="specmiCopyOrderLinksSource" class="required-field"></select>
+      </div>
+    </div>
+    <div class="pm-modal-actions">
+      <button type="button" class="btn-secondary" id="specmiCopyOrderLinksCancel">取消</button>
+      <button type="button" class="btn-primary" id="specmiCopyOrderLinksApply">复制</button>
     </div>
   </div>
 </div>
@@ -465,6 +446,8 @@
   let specmiDragIdx = null;
   let specmiDragInsert = null;
   const specmiRowSelected = new Set();
+  /** 列表缩略图：进入视口才请求，避免首屏对全部规格并发拉主图 */
+  let specmiThumbObs = null;
   let specmiBvLastRows = [];
 
   function decodeB64Utf8(b64) {
@@ -616,6 +599,7 @@
   }
 
   function renderTable(rows) {
+    specmiDisconnectThumbObs();
     const tbody = document.querySelector('#specmiTable tbody');
     if (!tbody) return;
     const list = Array.isArray(rows) ? rows : [];
@@ -633,7 +617,7 @@
       const rowLabel = `${String(v.sku_family || '').trim()} ${String(v.spec_name || '').trim()}`.trim() || '该行';
       const ariaSel = specmiEscapeCell(rowLabel).replace(/"/g, '&quot;');
       return `
-        <tr>
+        <tr data-specmi-vid="${vid}">
           <td class="sj-toggle-cb-cell"><input type="checkbox" class="specmi-row-select" data-vid="${vid}" aria-label="选择 ${ariaSel}"${sel}></td>
           <td class="sj-cell-thumb cell-center" id="specmiPrev_${vid}"><span class="sj-table-thumb-empty">暂无</span></td>
           <td>${sku}</td>
@@ -659,7 +643,42 @@
     });
     specmiSyncMainSelectAllCheckbox();
     specmiUpdateMainBulkBar();
-    list.forEach(v => specmiPrefetchThumb(Number(v.variant_id || 0)));
+    specmiBindThumbLazyLoad();
+  }
+
+  function specmiDisconnectThumbObs() {
+    if (specmiThumbObs) {
+      specmiThumbObs.disconnect();
+      specmiThumbObs = null;
+    }
+  }
+
+  function specmiBindThumbLazyLoad() {
+    specmiDisconnectThumbObs();
+    const table = document.querySelector('#specmiTable');
+    const rows = table ? Array.from(table.querySelectorAll('tbody tr[data-specmi-vid]')) : [];
+    if (!rows.length) return;
+    const runThumb = (vid) => {
+      const v = Number(vid || 0);
+      if (v) specmiPrefetchThumb(v);
+    };
+    if (typeof IntersectionObserver === 'undefined') {
+      rows.slice(0, 40).forEach((tr, idx) => {
+        const vid = Number(tr.dataset.specmiVid || 0);
+        window.setTimeout(() => runThumb(vid), 30 * idx);
+      });
+      return;
+    }
+    specmiThumbObs = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (!en.isIntersecting) return;
+        const tr = en.target;
+        const vid = Number(tr.dataset.specmiVid || 0);
+        if (specmiThumbObs) specmiThumbObs.unobserve(tr);
+        runThumb(vid);
+      });
+    }, { root: null, rootMargin: '120px 0px', threshold: 0.01 });
+    rows.forEach((tr) => { specmiThumbObs.observe(tr); });
   }
 
   function specmiDeleteVariantFromModal() {
@@ -708,7 +727,10 @@
     const cell = document.getElementById(`specmiPrev_${vid}`);
     if (!cell || !vid) return;
     try {
-      const resp = await fetch(`/api/sales-product-main-images?variant_id=${encodeURIComponent(String(vid))}`);
+      const tt = encodeURIComponent(String(SPECMI_LIST_THUMB_IMAGE_TYPE || '').trim());
+      const resp = await fetch(
+        `/api/sales-product-main-images?variant_id=${encodeURIComponent(String(vid))}&list_thumb=1&thumb_image_type=${tt}`
+      );
       const data = await resp.json();
       if (!data || data.status !== 'success' || !Array.isArray(data.items) || !data.items.length) {
         cell.innerHTML = '<span class="sj-table-thumb-empty">暂无</span>';
@@ -983,7 +1005,7 @@
     const selFab = document.getElementById('specmiCreateFabric');
     if (!selSku || !selFab) return;
     selSku.innerHTML = '<option value="">请选择货号</option>';
-    selFab.innerHTML = '<option value="">请选择面料</option>';
+    selFab.innerHTML = '<option value="">请先选择货号</option>';
     const rSku = await fetch('/api/gallery-sku-family-picker');
     const dSku = await rSku.json();
     if (!dSku || dSku.status !== 'success') throw new Error(dSku.message || '货号列表加载失败');
@@ -993,18 +1015,58 @@
       o.textContent = it.sku_family || o.value;
       selSku.appendChild(o);
     });
-    const rFab = await fetch('/api/gallery-fabric-picker');
-    const dFab = await rFab.json();
-    if (!dFab || dFab.status !== 'success') throw new Error(dFab.message || '面料列表加载失败');
-    (Array.isArray(dFab.items) ? dFab.items : []).forEach((it) => {
-      const fid = String(it.fabric_id || '');
-      const code = String(it.fabric_code || '').trim();
-      const name = String(it.fabric_name_en || '').trim();
-      const o = document.createElement('option');
-      o.value = fid;
-      o.textContent = [code, name].filter(Boolean).join(' / ') || fid;
-      o.dataset.fabricLabel = [code, name].filter(Boolean).join(' ') || o.textContent;
-      selFab.appendChild(o);
+  }
+
+  async function specmiCreateRefreshFabricsForSelectedSkuFamily() {
+    const selSku = document.getElementById('specmiCreateSkuFamily');
+    const selFab = document.getElementById('specmiCreateFabric');
+    if (!selSku || !selFab) return;
+    const familyId = Number(selSku.value || 0) || 0;
+    if (!familyId) {
+      selFab.innerHTML = '<option value="">请先选择货号</option>';
+      return;
+    }
+    const prevVal = String(selFab.value || '');
+    selFab.innerHTML = '<option value="">加载中…</option>';
+    try {
+      const rFab = await fetch(`/api/gallery-fabric-picker?sku_family_id=${encodeURIComponent(String(familyId))}`);
+      const dFab = await rFab.json();
+      if (!dFab || dFab.status !== 'success') throw new Error(dFab.message || '面料列表加载失败');
+      const items = Array.isArray(dFab.items) ? dFab.items : [];
+      selFab.innerHTML = '<option value="">请选择面料</option>';
+      if (!items.length) {
+        const hint = document.createElement('option');
+        hint.value = '';
+        hint.disabled = true;
+        hint.textContent = '该货号暂无已绑定面料（请在货号管理中维护货号与面料关联）';
+        selFab.appendChild(hint);
+        return;
+      }
+      items.forEach((it) => {
+        const fid = String(it.fabric_id || '');
+        const code = String(it.fabric_code || '').trim();
+        const name = String(it.fabric_name_en || '').trim();
+        const o = document.createElement('option');
+        o.value = fid;
+        o.textContent = [code, name].filter(Boolean).join(' / ') || fid;
+        o.dataset.fabricLabel = [code, name].filter(Boolean).join(' ') || o.textContent;
+        selFab.appendChild(o);
+      });
+      if (prevVal && Array.from(selFab.options).some((o) => o.value === prevVal)) {
+        selFab.value = prevVal;
+      }
+    } catch (e) {
+      selFab.innerHTML = '<option value="">加载失败</option>';
+      specmiCreateSetStatus(String(e.message || e), true);
+    }
+  }
+
+  function specmiInitCreateSkuFabricLink() {
+    const selSku = document.getElementById('specmiCreateSkuFamily');
+    if (!selSku || selSku.dataset.specmiFabBound === '1') return;
+    selSku.dataset.specmiFabBound = '1';
+    selSku.addEventListener('change', () => {
+      void specmiCreateRefreshFabricsForSelectedSkuFamily();
     });
   }
 
@@ -1075,12 +1137,6 @@
     specmiCreateSetStatus('保存中…', false);
     try {
       await ensureSpecmiOrderSkuOptions();
-      const spCreate = document.getElementById('specmiCreateSalePrice');
-      let sale_price_usd = null;
-      if (spCreate && spCreate.value !== '' && spCreate.value != null) {
-        const n = Number(spCreate.value);
-        sale_price_usd = Number.isFinite(n) ? n : null;
-      }
       const resp = await fetch('/api/spec-main-image-variant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1093,7 +1149,6 @@
             order_product_id: x.order_product_id,
             quantity: Math.max(1, Number(x.quantity) || 1),
           })),
-          sale_price_usd,
         }),
       });
       const data = await resp.json();
@@ -1453,6 +1508,111 @@
     return mode === 'create' ? 'specmiCreateOrderLinksInner' : 'specmiModalOrderLinksInner';
   }
 
+  let specmiCopyOrderLinksTargetMode = 'create';
+
+  function specmiFmtVariantCopyLabel(v) {
+    if (!v || typeof v !== 'object') return '';
+    const sku = String(v.sku_family || '').trim();
+    const spec = String(v.spec_name || '').trim();
+    const fab = String(v.fabric_name_en || v.fabric_code || '').trim();
+    const parts = [sku, spec, fab].filter(Boolean);
+    return parts.join(' · ') || `规格 #${Number(v.variant_id || 0) || ''}`;
+  }
+
+  async function specmiOpenCopyOrderLinksDialog(mode) {
+    const m = mode === 'edit' ? 'edit' : 'create';
+    specmiCopyOrderLinksTargetMode = m;
+    await ensureSpecmiOrderSkuOptions();
+    let familyId = 0;
+    let excludeVid = 0;
+    if (m === 'create') {
+      familyId = Number(document.getElementById('specmiCreateSkuFamily')?.value || 0) || 0;
+    } else {
+      excludeVid = Number(specmiEditingVid || 0) || 0;
+      const row = (specmiAllVariants || []).find((x) => Number(x.variant_id || 0) === excludeVid);
+      familyId = row ? Number(row.sku_family_id || 0) : 0;
+    }
+    if (!familyId) {
+      showToast(m === 'create' ? '请先选择货号（父体）' : '无法解析当前规格的货号，请刷新列表后重试', true);
+      return;
+    }
+    const candidates = (specmiAllVariants || []).filter((v) => {
+      const fid = Number(v.sku_family_id || 0) || 0;
+      const vid = Number(v.variant_id || 0) || 0;
+      return fid === familyId && vid > 0 && vid !== excludeVid;
+    });
+    if (!candidates.length) {
+      showToast('暂无同货号的其他规格可复制', true);
+      return;
+    }
+    const sel = document.getElementById('specmiCopyOrderLinksSource');
+    const dlg = document.getElementById('specmiCopyOrderLinksDialog');
+    if (!sel || !dlg) return;
+    sel.innerHTML = '<option value="">请选择来源规格</option>';
+    candidates.forEach((v) => {
+      const o = document.createElement('option');
+      o.value = String(v.variant_id || '');
+      o.textContent = specmiFmtVariantCopyLabel(v);
+      sel.appendChild(o);
+    });
+    if (typeof dlg.showModal !== 'function') {
+      showToast('当前环境不支持原生对话框，请使用 Chrome / Firefox / Edge 等新版浏览器', true);
+      return;
+    }
+    dlg.showModal();
+  }
+
+  async function specmiApplyCopyOrderLinksFromDialog() {
+    const sel = document.getElementById('specmiCopyOrderLinksSource');
+    const dlg = document.getElementById('specmiCopyOrderLinksDialog');
+    const sid = Number(sel?.value || 0) || 0;
+    if (!sid) {
+      showToast('请选择来源规格', true);
+      return;
+    }
+    try {
+      await ensureSpecmiOrderSkuOptions();
+      const resp = await fetch(`/api/spec-main-images?variant_id=${encodeURIComponent(String(sid))}&t=${Date.now()}`, { cache: 'no-store' });
+      const data = await resp.json();
+      if (!data || data.status !== 'success' || !data.variant) throw new Error(data.message || '加载失败');
+      const links = Array.isArray(data.variant.order_sku_links) ? data.variant.order_sku_links : [];
+      const next = links.map((l) => ({
+        order_product_id: Number(l.order_product_id) || null,
+        quantity: Math.max(1, Number(l.quantity) || 1),
+      })).filter((x) => x.order_product_id);
+      if (!next.length) {
+        showToast('所选规格没有关联下单SKU', true);
+        return;
+      }
+      const list = specmiOrderLinksList(specmiCopyOrderLinksTargetMode);
+      list.length = 0;
+      next.forEach((x) => list.push({ order_product_id: x.order_product_id, quantity: x.quantity }));
+      specmiRenderOrderSkuRows(specmiCopyOrderLinksTargetMode);
+      if (dlg && typeof dlg.close === 'function') dlg.close();
+      showToast('已复制关联下单SKU及数量', false);
+    } catch (e) {
+      showToast(String(e.message || e), true);
+    }
+  }
+
+  function specmiInitCopyOrderLinksUi() {
+    const dlg = document.getElementById('specmiCopyOrderLinksDialog');
+    if (!dlg || dlg.dataset.specmiBound === '1') return;
+    dlg.dataset.specmiBound = '1';
+    document.getElementById('specmiCreateCopyOrderLinksBtn')?.addEventListener('click', () => {
+      void specmiOpenCopyOrderLinksDialog('create');
+    });
+    document.getElementById('specmiModalCopyOrderLinksBtn')?.addEventListener('click', () => {
+      void specmiOpenCopyOrderLinksDialog('edit');
+    });
+    document.getElementById('specmiCopyOrderLinksCancel')?.addEventListener('click', () => {
+      if (typeof dlg.close === 'function') dlg.close();
+    });
+    document.getElementById('specmiCopyOrderLinksApply')?.addEventListener('click', () => {
+      void specmiApplyCopyOrderLinksFromDialog();
+    });
+  }
+
   /** 与销售页 autoComputeFabricSpec 中成本/包裹/重量叠加逻辑一致（不改动规格名/面料） */
   function specmiRecalcVariantMetrics(mode) {
     const prefix = mode === 'create' ? 'specmiCreate' : 'specmiModal';
@@ -1496,8 +1656,6 @@
     setNum('PackageHeight', packageHeight, 2);
     setNum('NetWeight', netWeight, 2);
     setNum('GrossWeight', grossWeight, 2);
-    if (mode === 'edit') specmiUpdateCostWarning();
-    else specmiUpdateCreateCostWarning();
   }
 
   function specmiRenderOrderSkuRows(mode) {
@@ -1560,24 +1718,12 @@
   }
 
   function specmiClearCreateCostFields() {
-    ['specmiCreateSalePrice', 'specmiCreateWarehouseCost', 'specmiCreateLastMileCost',
+    ['specmiCreateWarehouseCost', 'specmiCreateLastMileCost',
       'specmiCreatePackageLength', 'specmiCreatePackageWidth', 'specmiCreatePackageHeight',
       'specmiCreateNetWeight', 'specmiCreateGrossWeight'].forEach((id) => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });
-    const w = document.getElementById('specmiCreateCostWarning');
-    if (w) w.style.display = 'none';
-  }
-
-  function specmiUpdateCreateCostWarning() {
-    const sale = Number(document.getElementById('specmiCreateSalePrice')?.value || 0);
-    const warehouse = Number(document.getElementById('specmiCreateWarehouseCost')?.value || 0);
-    const lastMile = Number(document.getElementById('specmiCreateLastMileCost')?.value || 0);
-    const warning = document.getElementById('specmiCreateCostWarning');
-    if (!warning) return;
-    const risk = sale > 0 && (warehouse + lastMile) > 0 && sale < (warehouse + lastMile);
-    warning.style.display = risk ? '' : 'none';
   }
 
   async function specmiSaveEdit() {
@@ -1601,11 +1747,6 @@
           quantity: Math.max(1, Number(x.quantity) || 1),
         })),
       };
-      const spEl = document.getElementById('specmiModalSalePrice');
-      if (spEl) {
-        if (spEl.value === '' || spEl.value == null) payload.sale_price_usd = null;
-        else payload.sale_price_usd = Number(spEl.value);
-      }
       const resp = await fetch('/api/spec-main-images', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -1626,24 +1767,12 @@
   function specmiClearVariantDetailPanel() {
     specmiSelectedOrderSkus = [];
     specmiRenderOrderSkuRows('edit');
-    ['specmiModalSalePrice', 'specmiModalWarehouseCost', 'specmiModalLastMileCost',
+    ['specmiModalWarehouseCost', 'specmiModalLastMileCost',
       'specmiModalPackageLength', 'specmiModalPackageWidth', 'specmiModalPackageHeight',
       'specmiModalNetWeight', 'specmiModalGrossWeight'].forEach((id) => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });
-    const w = document.getElementById('specmiModalCostWarning');
-    if (w) w.style.display = 'none';
-  }
-
-  function specmiUpdateCostWarning() {
-    const sale = Number(document.getElementById('specmiModalSalePrice')?.value || 0);
-    const warehouse = Number(document.getElementById('specmiModalWarehouseCost')?.value || 0);
-    const lastMile = Number(document.getElementById('specmiModalLastMileCost')?.value || 0);
-    const warning = document.getElementById('specmiModalCostWarning');
-    if (!warning) return;
-    const risk = sale > 0 && (warehouse + lastMile) > 0 && sale < (warehouse + lastMile);
-    warning.style.display = risk ? '' : 'none';
   }
 
   function specmiFillVariantDetailFromApi(vr) {
@@ -1659,7 +1788,6 @@
       if (!el) return;
       el.value = val === '' || val == null ? '' : String(val);
     };
-    setVal('specmiModalSalePrice', vrSafe.sale_price_usd != null && vrSafe.sale_price_usd !== '' ? specmiFmtNumField(vrSafe.sale_price_usd, 2) : '');
     setVal('specmiModalWarehouseCost', specmiFmtNumField(vrSafe.warehouse_cost_usd, 2));
     setVal('specmiModalLastMileCost', specmiFmtNumField(vrSafe.last_mile_cost_usd, 2));
     setVal('specmiModalPackageLength', specmiFmtNumField(vrSafe.package_length_in, 2));
@@ -1680,7 +1808,6 @@
       const fabEl = document.getElementById('specmiModalFabric');
       if (fabEl) fabEl.value = fabTxt;
     }
-    specmiUpdateCostWarning();
   }
 
   async function specmiOpenEdit(variantId) {
@@ -1713,7 +1840,6 @@
         showToast(String((dj && dj.message) || '详情加载失败'), true);
         specmiSelectedOrderSkus = [];
         specmiRenderOrderSkuRows('edit');
-        specmiUpdateCostWarning();
       }
       await specmiLoadImageTypes();
       if (!specmiSelectedMainImageFilterType || specmiSelectedMainImageFilterType === '全部') {
@@ -2237,6 +2363,8 @@
 
   window.addEventListener('load', () => {
     specmiDupUi();
+    specmiInitCreateSkuFabricLink();
+    specmiInitCopyOrderLinksUi();
     specmiInitNasSelectAllBox();
     const bvMaster = document.getElementById('specmiBvSelectAllDeletable');
     if (bvMaster) {
@@ -2255,8 +2383,6 @@
       });
     });
     specmiLoadImageTypes().finally(() => specmiReload());
-    document.getElementById('specmiModalSalePrice')?.addEventListener('input', specmiUpdateCostWarning);
-    document.getElementById('specmiCreateSalePrice')?.addEventListener('input', specmiUpdateCreateCostWarning);
   });
 
   window.setTimeout(() => {

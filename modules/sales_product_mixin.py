@@ -614,7 +614,7 @@ class SalesProductMixin:
         return variant_out
 
     def handle_spec_main_images_api(self, environ, method, start_response):
-        """规格主图管理：GET 按 variant_id 读主图列表 + 变体明细；PATCH 更新关联下单 SKU、售价。"""
+        """规格主图管理：GET 按 variant_id 读主图列表 + 变体明细；PATCH 仅更新关联下单 SKU（不改售价等销售字段）。"""
         try:
             if method == 'GET':
                 query_params = parse_qs(environ.get('QUERY_STRING', ''))
@@ -1207,15 +1207,30 @@ class SalesProductMixin:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_gallery_fabric_picker_api(self, environ, method, start_response):
-        """Gallery 弹窗：面料列表（搜索用）。"""
+        """Gallery 弹窗：面料列表（搜索用）。可选 sku_family_id：仅返回 fabric_product_families 中与该货号绑定的面料。"""
         try:
             if method != 'GET':
                 return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
+            query_params = parse_qs(environ.get('QUERY_STRING', '') or '')
+            sku_family_id = self._parse_int((query_params.get('sku_family_id', [''])[0] or '').strip()) or 0
+
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT id, fabric_code, fabric_name_en FROM fabric_materials ORDER BY fabric_code ASC, id ASC"
-                    )
+                    if sku_family_id > 0:
+                        cur.execute(
+                            """
+                            SELECT fm.id, fm.fabric_code, fm.fabric_name_en
+                            FROM fabric_materials fm
+                            INNER JOIN fabric_product_families fpf
+                                ON fpf.fabric_id = fm.id AND fpf.sku_family_id = %s
+                            ORDER BY fm.fabric_code ASC, fm.id ASC
+                            """,
+                            (sku_family_id,),
+                        )
+                    else:
+                        cur.execute(
+                            "SELECT id, fabric_code, fabric_name_en FROM fabric_materials ORDER BY fabric_code ASC, id ASC"
+                        )
                     rows = cur.fetchall() or []
             items = []
             for r in rows or []:
@@ -6026,6 +6041,87 @@ class SalesProductMixin:
             })
         return items
 
+    def _read_sales_product_image_list_thumb(self, conn, variant_id, image_type_name):
+        """Return at most one mapped image for list thumbnails (LIMIT 1), same ordering as full list."""
+        has_variant = self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id')
+        if not variant_id or not has_variant:
+            return []
+        has_ia_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
+        has_sim_tid = self._table_has_column(conn, 'sales_variant_image_mappings', 'image_type_id')
+        has_ia_dep = self._table_has_column(conn, 'image_assets', 'is_deprecated')
+        dep_expr = "COALESCE(ia.is_deprecated,0)" if has_ia_dep else "0"
+        has_ia_ofn = self._table_has_column(conn, 'image_assets', 'original_filename')
+        ofn_sel = "ia.original_filename AS original_filename" if has_ia_ofn else "NULL AS original_filename"
+        if has_ia_tid:
+            join_types = "LEFT JOIN image_types it ON it.id = ia.image_type_id"
+            type_name_expr = "it.name"
+            type_id_expr = "ia.image_type_id"
+        elif has_sim_tid:
+            join_types = "LEFT JOIN image_types it ON it.id = sim.image_type_id"
+            type_name_expr = "it.name"
+            type_id_expr = "sim.image_type_id"
+        else:
+            join_types = ""
+            type_name_expr = "NULL"
+            type_id_expr = "NULL"
+        type_name = str(image_type_name or "").strip()
+        type_clause = ""
+        params = [int(variant_id)]
+        if type_name and join_types:
+            type_clause = f" AND TRIM(COALESCE({type_name_expr},''))=%s"
+            params.append(type_name)
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT sim.id AS mapping_id, sim.sort_order,
+                       ia.id AS image_asset_id, ia.sha256, ia.storage_path,
+                       {ofn_sel},
+                       ia.description,
+                       {type_id_expr} AS image_type_id,
+                       {type_name_expr} AS image_type_name,
+                       {dep_expr} AS is_deprecated
+                FROM sales_variant_image_mappings sim
+                JOIN image_assets ia ON ia.id = sim.image_asset_id
+                {join_types}
+                WHERE sim.variant_id=%s{type_clause}
+                ORDER BY {dep_expr} ASC, sim.sort_order ASC, sim.id ASC
+                LIMIT 1
+                """,
+                tuple(params),
+            )
+            rows = cur.fetchall() or []
+        items = []
+        for row in rows:
+            storage_path = (row.get("storage_path") or "").strip()
+            base_name = os.path.basename(storage_path) if storage_path else ""
+            orig_fn = (str(row.get("original_filename") or "").strip()) if has_ia_ofn else ""
+            image_name = orig_fn or base_name
+            if isinstance(storage_path, str):
+                try:
+                    rel_bytes = os.fsencode(storage_path)
+                except Exception:
+                    rel_bytes = storage_path.encode("utf-8", errors="surrogatepass")
+            else:
+                rel_bytes = storage_path
+            image_b64 = base64.b64encode(rel_bytes).decode("ascii") if rel_bytes else ""
+            items.append(
+                {
+                    "mapping_id": row.get("mapping_id"),
+                    "image_asset_id": row.get("image_asset_id"),
+                    "image_name": image_name,
+                    "image_b64": image_b64,
+                    "description": row.get("description") or "",
+                    "image_type_id": row.get("image_type_id"),
+                    "image_type_name": row.get("image_type_name") or "",
+                    "sort_order": row.get("sort_order") or 0,
+                    "group_sort": None,
+                    "is_deprecated": int(row.get("is_deprecated") or 0),
+                    "sha256": row.get("sha256") or "",
+                    "file_size": 0,
+                }
+            )
+        return items
+
     def _storage_rel_from_image_b64(self, image_b64):
         """Decode UI `image_b64` / gallery id into a normalized relative storage path (UTF-8, forward slashes)."""
         s = str(image_b64 or '').strip()
@@ -6183,21 +6279,35 @@ class SalesProductMixin:
                 query_params = parse_qs(environ.get('QUERY_STRING', ''))
                 sales_product_id = self._parse_int(query_params.get('sales_product_id', [''])[0] or query_params.get('id', [''])[0])
                 variant_id_param = self._parse_int(query_params.get('variant_id', [''])[0])
+                list_thumb = self._parse_bool_flag(query_params.get('list_thumb', ['0'])[0] or '0', default=False)
+                thumb_image_type = str(query_params.get('thumb_image_type', [''])[0] or '').strip()
 
                 if variant_id_param and not sales_product_id:
+                    ensure_folder = not list_thumb
                     with self._get_db_connection() as conn:
                         try:
-                            folder_info = self._resolve_sales_variant_folder_by_variant_id(variant_id_param, ensure_folder=True)
+                            folder_info = self._resolve_sales_variant_folder_by_variant_id(
+                                variant_id_param, ensure_folder=ensure_folder
+                            )
                         except Exception as e:
                             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
                         variant_id = int(variant_id_param)
                         has_variant_col = self._table_has_column(conn, 'sales_variant_image_mappings', 'variant_id')
                         items = []
                         if variant_id and has_variant_col:
-                            items = self._read_sales_product_image_items(conn, sales_product_id=None, variant_id=variant_id) or []
+                            if list_thumb:
+                                items = self._read_sales_product_image_list_thumb(
+                                    conn, variant_id, thumb_image_type
+                                ) or []
+                            else:
+                                items = self._read_sales_product_image_items(
+                                    conn, sales_product_id=None, variant_id=variant_id
+                                ) or []
                         fabric_id = self._parse_int(folder_info.get('fabric_id')) or 0
                         fabric_items = []
-                        if fabric_id and self._has_required_tables(['fabric_image_mappings', 'image_assets']):
+                        if (not list_thumb) and fabric_id and self._has_required_tables(
+                            ['fabric_image_mappings', 'image_assets']
+                        ):
                             try:
                                 fabric_items = self._read_fabric_image_items(conn, fabric_id)
                             except Exception:

@@ -699,22 +699,22 @@ section.card.pm-card .pm-divider {
     align-self: center;
 }
 
-/* 规格主图管理：顶栏筛选与表格辅助 */
-.specmi-lead {
+/* 通用：页头副文案 / 工具栏内联筛选 / 表单说明（规格主图管理等页共用） */
+.pm-page-lead {
     color: var(--morandi-slate);
     font-size: 0.9rem;
     margin: 0.35rem 0 0;
     line-height: 1.5;
 }
 
-.specmi-filter-fields {
+.pm-toolbar-filters {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-end;
     gap: 0.35rem 0.55rem;
 }
 
-.specmi-filter-fields .form-group {
+.pm-toolbar-filters .form-group {
     margin: 0;
     display: flex;
     flex-direction: column;
@@ -722,14 +722,14 @@ section.card.pm-card .pm-divider {
     min-width: min(100%, 148px);
 }
 
-.specmi-filter-fields .form-group label {
+.pm-toolbar-filters .form-group label {
     font-size: 0.62rem;
     font-weight: 700;
     letter-spacing: 0.02em;
     color: rgba(42, 36, 32, 0.48);
 }
 
-.specmi-filter-fields .form-group input {
+.pm-toolbar-filters .form-group input {
     padding: 0.24rem 0.44rem;
     min-height: 30px;
     font-size: 0.82rem;
@@ -737,24 +737,28 @@ section.card.pm-card .pm-divider {
     border-radius: 8px;
 }
 
-.specmi-toolbar-note {
+.pm-form-hint {
     margin: 0.28rem 0 0;
     font-size: 0.66rem;
     line-height: 1.35;
     color: rgba(74, 78, 87, 0.82);
 }
 
-.specmi-muted {
+.pm-form-hint--flush {
+    margin-top: 0;
+}
+
+.pm-muted {
     color: var(--morandi-slate);
     font-size: 0.9rem;
 }
 
-/* 与父体管理等页一致：表格块与上方工具卡片留出间距（通用表格由 header.js 注入 pm-table-wrap / 工具栏） */
-.specmi-table-section {
+/* 与父体管理等页一致：表格块与上方工具卡片留出间距 */
+.pm-table-block {
     margin-top: 0.35rem;
 }
 
-.specmi-create-status {
+.pm-inline-status {
     display: none;
     margin-top: 0.65rem;
     font-size: 0.82rem;
@@ -762,8 +766,138 @@ section.card.pm-card .pm-divider {
     color: var(--morandi-ink);
 }
 
-.specmi-create-status.is-visible {
+.pm-inline-status.is-visible {
     display: block;
+}
+
+.pm-inline-status.is-error {
+    color: #8f2f2f;
+}
+
+.pm-ok {
+    color: #1a7f37;
+    font-weight: 600;
+}
+.pm-warn {
+    color: #b42318;
+    font-weight: 600;
+}
+.pm-sub {
+    font-size: 0.82rem;
+    font-weight: 400;
+    color: var(--pm-muted, #666);
+    margin-top: 0.15rem;
+}
+
+.pm-u-hidden {
+    display: none !important;
+}
+
+.pm-text-center {
+    text-align: center;
+}
+
+.pm-table-cell-error {
+    color: #a33;
+}
+
+.pm-table-note-wrap {
+    white-space: normal;
+}
+
+.pm-modal-actions.pm-modal-actions--wrap {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.pm-ack-label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    cursor: pointer;
+    margin-right: auto;
+}
+
+.pm-modal-table-scroll {
+    overflow: auto;
+    max-height: min(62vh, 640px);
+    margin-top: 0.5rem;
+}
+
+.pm-table.pm-table--min-820 {
+    min-width: 820px;
+}
+
+.pm-modal-title-block {
+    margin-bottom: 0.75rem;
+}
+
+.pm-modal-title-block h3 {
+    margin: 0;
+}
+
+/* 弹窗内「关联下单 SKU」多行编辑（销售产品 / 规格主图等共用） */
+.order-link-box {
+    border: 2px solid var(--morandi-sand);
+    border-radius: 8px;
+    padding: 0.65rem;
+    background: #fff;
+    display: grid;
+    gap: 0.45rem;
+}
+.order-link-head {
+    display: grid;
+    grid-template-columns: minmax(200px, 1fr) 110px 64px;
+    gap: 0.45rem;
+    font-size: 0.82rem;
+    color: var(--morandi-slate);
+    padding: 0 0.2rem;
+}
+.order-link-selected {
+    display: grid;
+    gap: 0.4rem;
+}
+.order-link-row {
+    display: grid;
+    grid-template-columns: minmax(200px, 1fr) 110px 64px;
+    gap: 0.45rem;
+    align-items: center;
+}
+.order-link-row .btn-danger {
+    padding: 0.35rem 0.45rem;
+    font-size: 0.82rem;
+    line-height: 1.15;
+}
+
+.pm-section-header.pm-section-header--split {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+.pm-section-header.pm-section-header--split h4 {
+    margin: 0;
+}
+
+.pm-grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.9rem;
+    align-items: start;
+}
+.pm-grid-3 .form-group {
+    margin: 0;
+}
+.pm-grid-3 .pm-span-1 {
+    grid-column: span 1;
+}
+.pm-grid-3 .pm-span-2 {
+    grid-column: span 2;
+}
+.pm-grid-3 .pm-span-3 {
+    grid-column: 1 / -1;
 }
 
 /* 表内复选框：点击单元格空白处也可切换（与 header.js 全局委托配合） */
@@ -773,23 +907,8 @@ td.sj-toggle-cb-cell {
     vertical-align: middle;
 }
 
-.specmi-ok {
-  color: #1a7f37;
-  font-weight: 600;
-}
-.specmi-warn {
-  color: #b42318;
-  font-weight: 600;
-}
-.specmi-sub {
-  font-size: 0.82rem;
-  font-weight: 400;
-  color: var(--pm-muted, #666);
-  margin-top: 0.15rem;
-}
-
-.specmi-create-status.is-error {
-    color: #8f2f2f;
+th.pm-th-cb-narrow {
+    width: 44px;
 }
 
 /* 列表卡内分区：横向排列、可换行，避免纵向堆叠浪费高度 */
@@ -2655,7 +2774,6 @@ table.sf-table td.sf-cell-thumb {
 .sj-table-thumb-img,
 .sf-variant-thumb,
 .fabric-table-thumb,
-.specmi-thumb,
 .order-preview-thumb {
     width: 44px;
     height: 44px;
@@ -4066,6 +4184,13 @@ body {
 /* 下市前发货方案迁移：须叠在编辑弹窗与 NAS 导入弹窗之上 */
 #offMarketShipMigrateModal.pm-modal.active {
     z-index: 15200;
+}
+
+/* 叠在普通 pm-modal(15000) / NAS(15100) 之上：在已有弹窗上再开短流程。
+   短表单勿包在 .pm-modal-scroll 内，否则部分浏览器下原生 <select> 选项层会被 overflow 裁切或叠层异常。 */
+.pm-modal.pm-modal--stack.active {
+    z-index: 15150;
+    overflow: visible;
 }
 
 #nas-main-image-import-modal .pm-form label {
