@@ -797,6 +797,11 @@ section.card.pm-card .pm-divider {
     text-align: center;
 }
 
+.pm-muted-block {
+    text-align: center;
+    padding: 1rem 0.75rem;
+}
+
 .pm-table-cell-error {
     color: #a33;
 }
@@ -817,6 +822,13 @@ section.card.pm-card .pm-divider {
     gap: 0.35rem;
     cursor: pointer;
     margin-right: auto;
+}
+
+.inline-btn-row {
+    display: flex;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+    align-items: center;
 }
 
 .pm-modal-table-scroll {
@@ -4102,6 +4114,10 @@ body {
     align-items: center;
     gap: 0.45rem;
     min-width: 0;
+}
+
+.nas-main-image-title h3 {
+    margin: 0;
 }
 
 .nas-main-image-header-actions {

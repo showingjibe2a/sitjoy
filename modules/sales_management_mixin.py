@@ -3756,6 +3756,93 @@ class SalesManagementMixin:
         )
         return cur.fetchone() or None
 
+    def _forecast_dedupe_bulk_cells(self, parsed):
+        """同一 (row_key, forecast_month) 仅保留最后一条，避免单条 INSERT 多 VALUES 内重复唯一键。"""
+        by_key = {}
+        for cell in parsed or []:
+            if not isinstance(cell, dict):
+                continue
+            rk = self._parse_int(cell.get('row_key'))
+            ms = self._forecast_normalize_month(cell.get('forecast_month'))
+            if not rk or not ms:
+                continue
+            by_key[(rk, ms)] = cell
+        out = list(by_key.values())
+        out.sort(key=lambda c: (c.get('forecast_month') or '', c.get('row_key') or 0))
+        return out
+
+    def _forecast_bulk_upsert_cells_chunked(self, cur, table, id_col_name, parsed, chunk_size=450):
+        """多行 INSERT … ON DUPLICATE KEY UPDATE，显著减少大批量保存的往返次数。"""
+        if not parsed:
+            return
+        col_list = (
+            f'{id_col_name}, forecast_month, initial_qty, prev_qty, latest_qty, '
+            f'created_at, prev_updated_at, latest_updated_at'
+        )
+        dup_sql = (
+            'prev_qty = latest_qty, prev_updated_at = latest_updated_at, '
+            'latest_qty = VALUES(latest_qty), latest_updated_at = CURRENT_TIMESTAMP'
+        )
+        for i in range(0, len(parsed), chunk_size):
+            chunk = parsed[i : i + chunk_size]
+            placeholders = []
+            params = []
+            for cell in chunk:
+                rid = int(cell['row_key'])
+                month = cell['forecast_month']
+                q = max(0, int(cell['latest_qty'] or 0))
+                placeholders.append('(%s, %s, %s, NULL, %s, CURRENT_TIMESTAMP, NULL, CURRENT_TIMESTAMP)')
+                params.extend([rid, month, q, q])
+            sql = (
+                f'INSERT INTO {table} ({col_list}) VALUES '
+                + ','.join(placeholders)
+                + f' ON DUPLICATE KEY UPDATE {dup_sql}'
+            )
+            cur.execute(sql, tuple(params))
+
+    def _forecast_bulk_fetch_cells_meta(self, cur, table, id_col_name, key_cols, parsed, fetch_chunk=500):
+        """按本批 keys 批量读回单元格，供前端刷新 cell_meta。"""
+        if not parsed:
+            return []
+        refreshed = []
+        keys = [(int(c['row_key']), c['forecast_month']) for c in parsed]
+        sel_cols = [
+            'id',
+            id_col_name,
+            'forecast_month',
+            'initial_qty',
+            'prev_qty',
+            'latest_qty',
+            'created_at',
+            'prev_updated_at',
+            'latest_updated_at',
+        ]
+        sel_sql = ','.join(sel_cols)
+        k0 = id_col_name
+        for i in range(0, len(keys), fetch_chunk):
+            part = keys[i : i + fetch_chunk]
+            in_ph = ','.join(['(%s,%s)'] * len(part))
+            flat = []
+            for rk, ms in part:
+                flat.extend([rk, ms])
+            cur.execute(
+                f'SELECT {sel_sql} FROM {table} WHERE ({k0}, forecast_month) IN ({in_ph})',
+                tuple(flat),
+            )
+            for row in cur.fetchall() or []:
+                row_key = self._parse_int(row.get(k0))
+                month_str = self._forecast_month_to_str(row.get('forecast_month'))
+                if not row_key or not month_str:
+                    continue
+                refreshed.append({
+                    'row_key': str(row_key),
+                    'forecast_month': month_str,
+                    'cell_meta': self._forecast_serialize_cell(
+                        row, month_str, extra_keys={key_cols[0]: row_key}
+                    ),
+                })
+        return refreshed
+
     def handle_sales_forecast_bulk_update_api(self, environ, method, start_response):
         try:
             if method != 'POST':
@@ -3781,31 +3868,32 @@ class SalesManagementMixin:
                     'latest_qty': max(0, latest_qty),
                 })
 
+            parsed = self._forecast_dedupe_bulk_cells(parsed)
             if not parsed:
                 return self.send_json({'status': 'error', 'message': '没有有效的更新数据'}, start_response)
 
             if forecast_mode == 'platform':
                 table = 'sales_forecast_platform_sku_monthly'
                 key_cols = ['sales_product_id', 'forecast_month']
+                id_col = 'sales_product_id'
             elif forecast_mode == 'order':
                 table = 'sales_forecast_order_sku_monthly'
                 key_cols = ['order_product_id', 'forecast_month']
+                id_col = 'order_product_id'
             else:
                 forecast_mode = 'spec'
                 table = 'sales_forecast_spec_monthly'
                 key_cols = ['variant_id', 'forecast_month']
+                id_col = 'variant_id'
 
-            saved_keys = []
+            refreshed = []
             with self._get_db_connection() as conn:
                 try:
                     with conn.cursor() as cur:
-                        for cell in parsed:
-                            self._forecast_upsert_cell(
-                                cur, table, key_cols,
-                                (cell['row_key'], cell['forecast_month']),
-                                cell['latest_qty']
-                            )
-                            saved_keys.append((cell['row_key'], cell['forecast_month']))
+                        self._forecast_bulk_upsert_cells_chunked(cur, table, id_col, parsed)
+                        refreshed = self._forecast_bulk_fetch_cells_meta(
+                            cur, table, id_col, key_cols, parsed
+                        )
                     conn.commit()
                 except Exception as inner:
                     try:
@@ -3814,25 +3902,11 @@ class SalesManagementMixin:
                         pass
                     return self.send_json({'status': 'error', 'message': str(inner)}, start_response)
 
-                refreshed = []
-                with conn.cursor() as cur:
-                    for row_key, month_str in saved_keys:
-                        row = self._forecast_select_cell(cur, table, key_cols, (row_key, month_str))
-                        if not row:
-                            continue
-                        month_str_out = self._forecast_month_to_str(row.get('forecast_month'), fallback=month_str)
-                        refreshed.append({
-                            'row_key': str(row_key),
-                            'forecast_month': month_str_out,
-                            'cell_meta': self._forecast_serialize_cell(row, month_str_out, extra_keys={
-                                key_cols[0]: row_key,
-                            }),
-                        })
-
             return self.send_json({
                 'status': 'success',
                 'forecast_mode': forecast_mode,
                 'cells': refreshed,
+                'saved_count': len(parsed),
             }, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)

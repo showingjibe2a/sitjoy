@@ -60,3 +60,35 @@
 .mim-status-segment-spaced {
     margin-right: 0.25rem;
 }
+
+/* 主图网格中「面料图」角标（原内联样式迁入） */
+.sj-media-image-card .sj-fabric-badge-anchor {
+    position: absolute;
+    left: 8px;
+    top: 8px;
+    z-index: 11;
+}
+
+.sj-fabric-badge {
+    display: inline-flex;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    background: rgba(73, 110, 92, 0.12);
+    color: #3d6a52;
+    font-weight: 700;
+    font-size: 0.72rem;
+}
+
+.sj-media-image-card.placeholder {
+    min-height: 80px;
+    border-style: dashed;
+    opacity: 0.6;
+}
+
+.sj-media-image-card--drag {
+    cursor: move;
+}
+
+.sj-media-image-card--static {
+    cursor: default;
+}
