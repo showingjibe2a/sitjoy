@@ -2504,6 +2504,82 @@ class SalesManagementMixin:
                 bucket[oid] = int(bucket.get(oid) or 0) + qp
         return {vid: sorted(links.items(), key=lambda x: x[0]) for vid, links in out.items()}
 
+    def _forecast_load_default_substitute_plan_items_by_owner(self, conn, owner_order_product_ids):
+        """owner_order_product_id -> [(substitute_order_product_id, qty_per_owner_unit), ...]
+
+        取该下单 SKU 下 id 最小、且至少含一条 order_product_shipping_plan_items 的发货方案；
+        无方案或无明细时返回空列表，库存仍按 sales_variant_order_links 中的本体 SKU 计算。
+        """
+        ids = sorted({int(x) for x in (owner_order_product_ids or []) if self._parse_int(x)})
+        out = {i: [] for i in ids}
+        if not ids:
+            return out
+        ph = ','.join(['%s'] * len(ids))
+        tpl = tuple(ids)
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT ops.order_product_id AS owner_id, MIN(ops.id) AS plan_id
+                FROM order_product_shipping_plans ops
+                WHERE ops.order_product_id IN ({ph})
+                  AND EXISTS (
+                      SELECT 1 FROM order_product_shipping_plan_items i
+                      WHERE i.shipping_plan_id = ops.id
+                  )
+                GROUP BY ops.order_product_id
+                """,
+                tpl,
+            )
+            plan_map = {}
+            for rr in cur.fetchall() or []:
+                oid = self._parse_int(rr.get('owner_id'))
+                pid = self._parse_int(rr.get('plan_id'))
+                if oid and pid:
+                    plan_map[oid] = pid
+            if not plan_map:
+                return out
+            plan_ids = sorted(set(plan_map.values()))
+            ph2 = ','.join(['%s'] * len(plan_ids))
+            cur.execute(
+                f"""
+                SELECT shipping_plan_id,
+                       substitute_order_product_id,
+                       GREATEST(1, COALESCE(quantity, 1)) AS quantity
+                FROM order_product_shipping_plan_items
+                WHERE shipping_plan_id IN ({ph2})
+                ORDER BY shipping_plan_id ASC, sort_order ASC, id ASC
+                """,
+                tuple(plan_ids),
+            )
+            items_by_plan = {}
+            for rr in cur.fetchall() or []:
+                pid = self._parse_int(rr.get('shipping_plan_id'))
+                sid = self._parse_int(rr.get('substitute_order_product_id'))
+                q = max(1, self._parse_int(rr.get('quantity')) or 1)
+                if not pid or not sid:
+                    continue
+                items_by_plan.setdefault(pid, []).append((sid, q))
+            for oid, pid in plan_map.items():
+                out[oid] = list(items_by_plan.get(pid) or [])
+        return out
+
+    @staticmethod
+    def _forecast_expand_owner_pairs_with_substitute_plans(owner_pairs, plan_items_by_owner):
+        """将 [(owner_oid, link_weight), ...] 按各 owner 的默认替代方案展开为替代下单 SKU 的等效件数。"""
+        merged = {}
+        for oid, w in owner_pairs or []:
+            oid = int(oid)
+            w = max(1, int(w))
+            subs = plan_items_by_owner.get(oid) if plan_items_by_owner else None
+            if not subs:
+                merged[oid] = int(merged.get(oid) or 0) + w
+                continue
+            for sid, mult in subs:
+                sid = int(sid)
+                mult = max(1, int(mult))
+                merged[sid] = int(merged.get(sid) or 0) + w * mult
+        return sorted(merged.items(), key=lambda x: x[0])
+
     def _forecast_bom_tier_assembled_counts(self, inv_by_op, bom_links):
         """按 BOM 成套计算各阶可售套数；上一阶用剩的散件并入下一阶再算 min 瓶颈。"""
         z = self._forecast_inventory_zero()
@@ -2539,15 +2615,25 @@ class SalesManagementMixin:
         return avg if avg > 1e-9 else None
 
     def _forecast_attach_inventory_to_rows(self, conn, rows, forecast_mode, history_months):
+        """按各下单 SKU 最早一条含明细的替代发货方案折算库存（海外/在途/在库/在制），再与变体 BOM 成套汇总。"""
         if not rows:
             return
         inv_by_op = {}
         variant_bom_links = {}
+        variant_expanded = {}
+        plan_items_by_owner = {}
 
         if forecast_mode == 'order':
             op_ids = [self._parse_int((r.get('labels') or {}).get('order_product_id')) for r in rows]
             op_ids = [x for x in op_ids if x]
-            inv_by_op = self._forecast_load_inventory_by_order_product(conn, op_ids)
+            plan_items_by_owner = self._forecast_load_default_substitute_plan_items_by_owner(conn, op_ids)
+            extra_subs = []
+            for oid in op_ids:
+                for sid, _m in plan_items_by_owner.get(oid) or []:
+                    if sid:
+                        extra_subs.append(sid)
+            load_ids = sorted(set(op_ids).union(extra_subs))
+            inv_by_op = self._forecast_load_inventory_by_order_product(conn, load_ids)
         else:
             variant_ids = sorted({
                 self._parse_int((r.get('labels') or {}).get('variant_id'))
@@ -2555,21 +2641,35 @@ class SalesManagementMixin:
                 if self._parse_int((r.get('labels') or {}).get('variant_id'))
             })
             variant_bom_links = self._forecast_load_variant_order_links_for_inventory(conn, variant_ids)
-            all_ops = []
+            all_owners = []
             for pairs in variant_bom_links.values():
-                all_ops.extend([oid for oid, _qp in pairs])
-            inv_by_op = self._forecast_load_inventory_by_order_product(conn, all_ops)
+                for oid, _qp in pairs:
+                    if oid:
+                        all_owners.append(oid)
+            plan_items_by_owner = self._forecast_load_default_substitute_plan_items_by_owner(conn, all_owners)
+            extra_subs = []
+            for oid in set(all_owners):
+                for sid, _m in plan_items_by_owner.get(oid) or []:
+                    if sid:
+                        extra_subs.append(sid)
+            for vid, pairs in variant_bom_links.items():
+                variant_expanded[vid] = self._forecast_expand_owner_pairs_with_substitute_plans(pairs, plan_items_by_owner)
+            all_ops = []
+            for pairs in variant_expanded.values():
+                all_ops.extend([o for o, _q in pairs])
+            inv_by_op = self._forecast_load_inventory_by_order_product(conn, sorted(set(all_ops).union(extra_subs)))
 
         for row in rows:
             labels = row.get('labels') or {}
             agg = self._forecast_inventory_zero()
             if forecast_mode == 'order':
                 oid = self._parse_int(labels.get('order_product_id'))
-                if oid and oid in inv_by_op:
-                    agg = dict(inv_by_op[oid])
+                if oid:
+                    bom = self._forecast_expand_owner_pairs_with_substitute_plans([(oid, 1)], plan_items_by_owner)
+                    agg = self._forecast_bom_tier_assembled_counts(inv_by_op, bom)
             else:
                 vid = self._parse_int(labels.get('variant_id'))
-                bom = variant_bom_links.get(vid) or []
+                bom = variant_expanded.get(vid) or []
                 agg = self._forecast_bom_tier_assembled_counts(inv_by_op, bom)
 
             o = int(agg['overseas_qty'])
