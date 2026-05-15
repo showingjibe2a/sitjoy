@@ -58,7 +58,20 @@
             cursor: pointer;
         }
         .sf-toolbar input[type="text"] { min-width: 120px; }
-        #sfShopFilterDropdown .pm-table-columns-trigger {
+        .sf-toolbar input.sf-compact-text[type="text"] {
+            box-sizing: border-box;
+            width: 6.5rem;
+            min-width: 6.5rem;
+            max-width: 8.5rem;
+            min-height: 24px;
+            height: 24px;
+            padding: 0.1rem 0.28rem !important;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            line-height: 1.2;
+        }
+        #sfShopFilterDropdown .pm-table-columns-trigger,
+        #sfStatusFilterDropdown .pm-table-columns-trigger {
             cursor: pointer;
             padding: 0.22rem 0.55rem !important;
             min-height: 28px !important;
@@ -96,6 +109,33 @@
             margin: 0;
             font-size: 0.78rem;
             color: rgba(42, 36, 32, 0.55);
+        }
+        .sf-status-filter-panel {
+            min-width: 9.5rem;
+            display: grid;
+            gap: 0.35rem;
+            padding: 0.45rem 0.5rem;
+        }
+        .sf-status-filter-item label {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            cursor: pointer;
+            font-size: 0.8rem;
+            color: #3a342d;
+            white-space: nowrap;
+        }
+        .sf-cell-remark {
+            font-size: 0.72rem;
+            line-height: 1.35;
+            color: #6b3f2a;
+            max-width: 220px;
+            white-space: normal;
+            word-break: break-word;
+        }
+        .sf-cell-remark.is-anomaly {
+            color: #a33b2a;
+            font-weight: 500;
         }
         .sf-toolbar .btn-secondary,
         .sf-toolbar .btn-primary,
@@ -460,8 +500,8 @@
         td.sf-cell-forecast.preview-edit-cell {
             text-align: right;
             position: relative;
-            padding: 0.12rem 0.22rem !important;
-            vertical-align: middle;
+            padding: 0.08rem 0.22rem 0.1rem !important;
+            vertical-align: top;
         }
         td.sf-cell-inv,
         td.sf-cell-turn {
@@ -514,34 +554,51 @@
         .sf-cell-wrap {
             position: relative;
             display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            justify-content: flex-start;
+            width: 100%;
+            min-width: 0;
+            gap: 0.1rem;
+        }
+        .sf-forecast-cell-top {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            min-height: 11px;
+            width: 100%;
+            padding: 0 1px;
+            flex: 0 0 auto;
+        }
+        .sf-forecast-cell-main {
+            display: flex;
             align-items: center;
             justify-content: flex-end;
             width: 100%;
             min-width: 0;
             gap: 0.2rem;
+            position: relative;
         }
         /* 角标 tooltip 容器勿铺满整格，否则会叠在 input 上拦截点击 */
-        .sf-cell-wrap > .sf-tooltip-wrap {
+        .sf-forecast-cell-main > .sf-tooltip-wrap {
             flex: 0 0 auto;
             width: auto;
             max-width: 38%;
             min-width: 0;
             pointer-events: none;
         }
-        .sf-cell-wrap > .sf-tooltip-wrap .sf-tooltip-content {
+        .sf-forecast-cell-main > .sf-tooltip-wrap .sf-tooltip-content {
             pointer-events: auto;
         }
-        .sf-cell-wrap > input.inline-input.sf-num-input {
+        .sf-forecast-cell-main > input.inline-input.sf-num-input {
             position: relative;
             z-index: 2;
         }
-        /* 相对已存储数量的变化：绿增黄减（莫兰迪），不拦截点击 */
+        /* 相对已存储数量的变化：显示在输入框上方右侧 */
         .sf-forecast-delta-badge {
-            position: absolute;
-            top: -1px;
-            right: 3px;
+            position: static;
             z-index: 4;
-            font-size: 9px;
+            font-size: 8px;
             font-weight: 700;
             line-height: 1.1;
             letter-spacing: -0.02em;
@@ -550,9 +607,122 @@
             display: none;
             align-items: center;
             gap: 0.15em;
-            max-width: 58%;
+            max-width: 100%;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+        .sf-surplus-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            gap: 0.15rem;
+            width: 100%;
+            min-height: 10px;
+            font-size: 8px;
+            line-height: 1.1;
+            font-variant-numeric: tabular-nums;
+            pointer-events: none;
+        }
+        .sf-surplus-transit,
+        .sf-surplus-total {
+            max-width: 48%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .sf-surplus-transit { color: #5d7a64; text-align: left; }
+        .sf-surplus-total { color: #6b7a9a; text-align: right; }
+        .sf-surplus-neg { color: #a33b2a !important; font-weight: 600; }
+        .sf-leadtime-modal-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 12050;
+            background: rgba(30, 26, 22, 0.38);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+        .sf-leadtime-modal-overlay.is-open { display: flex; }
+        .sf-leadtime-modal {
+            width: min(720px, 96vw);
+            max-height: min(80vh, 640px);
+            background: #fff;
+            border-radius: 10px;
+            border: 1px solid rgba(207, 199, 189, 0.85);
+            box-shadow: 0 12px 40px rgba(35, 28, 20, 0.18);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .sf-leadtime-modal-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.65rem 0.85rem;
+            border-bottom: 1px solid rgba(207, 199, 189, 0.55);
+            background: rgba(255, 255, 255, 0.92);
+        }
+        .sf-leadtime-modal-head h3 {
+            margin: 0;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--morandi-ink);
+        }
+        .sf-leadtime-modal-body {
+            padding: 0.75rem 0.85rem;
+            overflow: auto;
+        }
+        .sf-leadtime-modal-foot {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.45rem;
+            padding: 0.55rem 0.85rem;
+            border-top: 1px solid rgba(207, 199, 189, 0.55);
+        }
+        .sf-leadtime-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+        }
+        .sf-leadtime-table th,
+        .sf-leadtime-table td {
+            border: 1px solid rgba(207, 199, 189, 0.55);
+            padding: 0.35rem 0.45rem;
+            text-align: center;
+            vertical-align: middle;
+        }
+        .sf-leadtime-table th {
+            background: rgba(245, 241, 235, 0.9);
+            font-weight: 600;
+            color: #4a433c;
+        }
+        .sf-leadtime-table td:first-child,
+        .sf-leadtime-table th:first-child {
+            text-align: left;
+            min-width: 6.5rem;
+        }
+        .sf-leadtime-table input[type="number"] {
+            width: 4.5rem;
+            min-height: 24px;
+            height: 24px;
+            padding: 0.08rem 0.28rem;
+            border: 1px solid rgba(207, 199, 189, 0.72);
+            border-radius: 6px;
+            font-size: 0.75rem;
+            text-align: right;
+        }
+        .sf-surplus-region-group {
+            display: none;
+            align-items: center;
+            gap: 0.45rem;
+            flex-wrap: wrap;
+        }
+        .sf-surplus-region-group.is-visible { display: flex; }
+        .sf-surplus-region-label {
+            font-size: 0.85rem;
+            color: var(--morandi-slate);
+            white-space: nowrap;
         }
         .sf-forecast-delta-badge.is-visible {
             display: inline-flex;
@@ -1084,9 +1254,26 @@
                         <button type="button" class="pm-table-columns-trigger btn-secondary" id="sfShopFilterTrigger" aria-expanded="false" aria-controls="sfShopFilterPanel">店铺</button>
                         <div class="pm-table-columns-panel sf-shop-filter-panel" id="sfShopFilterPanel" role="region" aria-label="店铺筛选"></div>
                     </div>
-                    <input type="text" id="filterSku" placeholder="货号/平台SKU">
-                    <input type="text" id="filterSpec" placeholder="规格">
-                    <input type="text" id="filterFabric" placeholder="面料">
+                    <div class="pm-table-columns sf-shop-filter-dropdown" id="sfStatusFilterDropdown" title="平台/规格维度：按关联平台SKU的产品状态筛选；默认仅启用">
+                        <button type="button" class="pm-table-columns-trigger btn-secondary" id="sfStatusFilterTrigger" aria-expanded="false" aria-controls="sfStatusFilterPanel">状态</button>
+                        <div class="pm-table-columns-panel sf-status-filter-panel" id="sfStatusFilterPanel" role="region" aria-label="产品状态筛选">
+                            <div class="sf-status-filter-item"><label><input type="checkbox" data-sf-status="enabled" checked><span>启用</span></label></div>
+                            <div class="sf-status-filter-item"><label><input type="checkbox" data-sf-status="retained"><span>留用</span></label></div>
+                            <div class="sf-status-filter-item"><label><input type="checkbox" data-sf-status="discarded"><span>弃用</span></label></div>
+                        </div>
+                    </div>
+                    <input type="text" id="filterSku" class="sf-compact-text" placeholder="货号/平台SKU">
+                    <input type="text" id="filterSpec" class="sf-compact-text" placeholder="规格">
+                    <input type="text" id="filterFabric" class="sf-compact-text" placeholder="面料">
+                </div>
+                <span class="sf-divider sf-surplus-toolbar-divider" aria-hidden="true" style="display:none;"></span>
+                <div class="sf-toolbar-group sf-surplus-region-group" id="sfSurplusRegionGroup">
+                    <span class="sf-surplus-region-label">盈余区域：</span>
+                    <input type="hidden" id="sfSurplusRegionVal" value="">
+                    <div class="status-segment status-segment--inline" id="sfSurplusRegionSegment" data-value=""></div>
+                </div>
+                <div class="sf-toolbar-group" id="sfSurplusToolbarActions" style="display:none;">
+                    <button type="button" class="btn-secondary" id="btnSfFactoryLeadtime">预估工厂库存时效</button>
                 </div>
                 <span class="sf-divider" aria-hidden="true"></span>
                 <div class="sf-toolbar-group">
@@ -1151,6 +1338,34 @@
         </div>
     </div>
 
+    <div class="sf-leadtime-modal-overlay" id="sfLeadtimeModalOverlay" aria-hidden="true">
+        <div class="sf-leadtime-modal" role="dialog" aria-labelledby="sfLeadtimeModalTitle" aria-modal="true">
+            <div class="sf-leadtime-modal-head">
+                <h3 id="sfLeadtimeModalTitle">预估工厂库存时效</h3>
+                <button type="button" class="modal-close" id="sfLeadtimeModalClose" aria-label="关闭">×</button>
+            </div>
+            <div class="sf-leadtime-modal-body">
+                <p style="margin:0 0 0.55rem;font-size:0.78rem;color:rgba(42,36,32,0.62);">按目的区域填写工厂在库/在制发至海外仓并上架所需天数，用于下单SKU维度预测月份的库存盈余估算。</p>
+                <div class="sf-leadtime-table-wrap">
+                    <table class="sf-leadtime-table" aria-label="工厂库存时效">
+                        <thead>
+                            <tr>
+                                <th>目的区域</th>
+                                <th>在库→海外仓上架（日）</th>
+                                <th>在制完成→海外仓上架（日）</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sfLeadtimeTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="sf-leadtime-modal-foot">
+                <button type="button" class="btn-secondary" id="sfLeadtimeModalCancel">取消</button>
+                <button type="button" class="btn-primary" id="sfLeadtimeModalSave">保存</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const FORECAST_MODES = ['platform', 'spec', 'order'];
         const SF_PREF_HISTORY_EXPANDED_KEY = 'sales_forecast_history_expanded_v1';
@@ -1162,9 +1377,12 @@
         const SF_PREF_PERF_METRIC_FIELDS_V1 = 'sales_forecast_sf_perf_metric_fields_v1';
         const SF_METRIC_COL_KEY = 'sf_metric_col';
         const SF_PREF_COL_WIDTHS_PREFIX = 'sales_forecast_col_widths_v1_';
+        const SF_PREF_FACTORY_LEAD_TIMES_KEY = 'sales_forecast_factory_lead_times_v1';
+        const SF_PREF_SURPLUS_REGION_KEY = 'sales_forecast_surplus_region_v1';
         const SF_TURNOVER_COLS = 3;
         const SF_STOCK_COLS = 4;
-        const SF_TAIL_COL_COUNT = SF_TURNOVER_COLS + SF_STOCK_COLS;
+        const SF_REMARK_COLS = 1;
+        const SF_TAIL_COL_COUNT = SF_TURNOVER_COLS + SF_STOCK_COLS + SF_REMARK_COLS;
         const SF_TURNOVER_HEADERS = [
             { label: '海外仓', tip: '动销月 = 仅海外仓可用量 ÷ 历史月销量区间最后三个月月均销量。规格/平台行：取所链接各下单 SKU（按替代发货方案折算库存后单独成套）在该列动销月的最小值。' },
             { label: '海外仓+在途', tip: '动销月 =（海外仓 + 在途）÷ 同上。规格/平台行：各下单 SKU 含替代方案折算后分别计算，再取最小值。' },
@@ -1209,7 +1427,11 @@
             sfPerfFieldsPanelOpen: false,
             shops: [],                      // [{ id, shop_name }] 店铺筛选下拉数据
             sfShopFilterPanelOpen: false,
+            sfStatusFilterPanelOpen: false,
             sfShopFilterHydrated: false,   // 是否已渲染过店铺勾选（用于保留勾选状态）
+            destinationRegions: [],          // 下单SKU维度：目的区域列表
+            sfSurplusRegion: '',           // 盈余估算所选目的区域
+            factoryLeadTimes: {},          // { [region_name]: { stock_days, wip_days } }
         };
 
         function readBoolPref(key, fallback) {
@@ -1272,7 +1494,7 @@
             const history = Number(pref && pref.history);
             const forecast = Number(pref && pref.forecast);
             const mtd = Number(pref && pref.mtd);
-            const invDefaults = [86, 86, 86, 92, 92, 92, 92];
+            const invDefaults = [86, 86, 86, 92, 92, 92, 92, 160];
             const invRaw = pref && pref.inventory;
             const inventory = invDefaults.slice();
             if (Array.isArray(invRaw)) {
@@ -1322,7 +1544,7 @@
             if (meta && meta.mtdStart != null && meta.mtdStart >= 0 && meta.mtdCols > 0) {
                 mtdW = Math.round(Number(leafColWidths[meta.mtdStart] || mtdW));
             }
-            let inventory = pref.inventory || [86, 86, 86, 92, 92, 92, 92];
+            let inventory = pref.inventory || [86, 86, 86, 92, 92, 92, 92, 160];
             if (meta && meta.invCols > 0 && meta.invStart != null) {
                 inventory = [];
                 for (let j = 0; j < meta.invCols; j++) {
@@ -1627,6 +1849,431 @@
             applySfGridSelectionStyles();
             persistForecastMode(mode);
             updateSfPerfToolbarGroupMode();
+            updateSfStatusFilterVisibility();
+            updateSfSurplusToolbarVisibility();
+        }
+
+        function readFactoryLeadTimesPrefs() {
+            const raw = readJsonPref(SF_PREF_FACTORY_LEAD_TIMES_KEY, {}) || {};
+            return (raw && typeof raw === 'object' && raw.times && typeof raw.times === 'object') ? raw.times : {};
+        }
+
+        function writeFactoryLeadTimesPrefs(times) {
+            writeJsonPref(SF_PREF_FACTORY_LEAD_TIMES_KEY, { v: 1, times: times || {}, updated_at: Date.now() });
+        }
+
+        function readSavedSurplusRegion() {
+            try { return String(localStorage.getItem(SF_PREF_SURPLUS_REGION_KEY) || '').trim(); } catch (e) { return ''; }
+        }
+
+        function persistSurplusRegion(name) {
+            try {
+                if (name) localStorage.setItem(SF_PREF_SURPLUS_REGION_KEY, String(name));
+                else localStorage.removeItem(SF_PREF_SURPLUS_REGION_KEY);
+            } catch (e) {}
+        }
+
+        function updateSfSurplusToolbarVisibility() {
+            const show = state.forecastMode === 'order';
+            const group = document.getElementById('sfSurplusRegionGroup');
+            const actions = document.getElementById('sfSurplusToolbarActions');
+            const divider = document.querySelector('.sf-surplus-toolbar-divider');
+            if (group) group.classList.toggle('is-visible', show);
+            if (actions) actions.style.display = show ? '' : 'none';
+            if (divider) divider.style.display = show ? '' : 'none';
+        }
+
+        function renderSfSurplusRegionSegment() {
+            const seg = document.getElementById('sfSurplusRegionSegment');
+            const hidden = document.getElementById('sfSurplusRegionVal');
+            if (!seg) return;
+            const regions = (state.destinationRegions || []).map(r => String(r.region_name || '').trim()).filter(Boolean);
+            if (!regions.length) {
+                seg.innerHTML = '<span class="sf-muted" style="font-size:0.78rem;">暂无目的区域</span>';
+                state.sfSurplusRegion = '';
+                if (hidden) hidden.value = '';
+                return;
+            }
+            let active = String(state.sfSurplusRegion || readSavedSurplusRegion() || '').trim();
+            if (!regions.includes(active)) active = regions[0];
+            state.sfSurplusRegion = active;
+            if (hidden) hidden.value = active;
+            seg.dataset.value = active;
+            seg.innerHTML = regions.map((name) => {
+                const cls = name === active ? 'status-pill status-pill--enabled is-active' : 'status-pill status-pill--enabled';
+                return `<button type="button" class="${cls}" data-value="${escapeHtml(name)}">${escapeHtml(name)}</button>`;
+            }).join('');
+        }
+
+        function bindSfSurplusRegionSegmentOnce() {
+            if (document.body.dataset.sfSurplusRegionBound === '1') return;
+            document.body.dataset.sfSurplusRegionBound = '1';
+            const seg = document.getElementById('sfSurplusRegionSegment');
+            if (!seg) return;
+            seg.addEventListener('click', (e) => {
+                const btn = e.target && e.target.closest ? e.target.closest('.status-pill[data-value]') : null;
+                if (!btn) return;
+                const next = String(btn.dataset.value || '').trim();
+                if (!next || next === state.sfSurplusRegion) return;
+                state.sfSurplusRegion = next;
+                persistSurplusRegion(next);
+                const hidden = document.getElementById('sfSurplusRegionVal');
+                if (hidden) hidden.value = next;
+                seg.dataset.value = next;
+                seg.querySelectorAll('.status-pill').forEach(b => b.classList.toggle('is-active', String(b.dataset.value || '') === next));
+                (state.rows || []).forEach(r => { delete r._sfSurplusCache; });
+                renderForecastTable();
+            });
+        }
+
+        function sfTodayYmd() {
+            const d = new Date();
+            return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+        }
+
+        function sfMonthKeyFromYmd(ymd) {
+            const s = String(ymd || '').slice(0, 10);
+            if (s.length < 7) return '';
+            return `${s.slice(0, 7)}-01`;
+        }
+
+        function sfAddDaysYmd(ymd, days) {
+            const base = String(ymd || sfTodayYmd()).slice(0, 10);
+            const d = new Date(`${base}T12:00:00`);
+            if (Number.isNaN(d.getTime())) return sfTodayYmd();
+            d.setDate(d.getDate() + Math.max(0, Number(days) || 0));
+            return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+        }
+
+        function getForecastDemandForRowMonth(row, monthKey) {
+            const rk = String(row && row.row_key || '');
+            const dirtyKey = rk + '|' + monthKey;
+            if (state.dirty.has(dirtyKey)) return Math.max(0, Number(state.dirty.get(dirtyKey).latest_qty) || 0);
+            const f = (row && row.forecasts && row.forecasts[monthKey]) || null;
+            return Math.max(0, Number(f && f.value_qty) || 0);
+        }
+
+        function sfSurplusCacheKey() {
+            return `${String(state.sfSurplusRegion || '')}|${JSON.stringify(state.factoryLeadTimes || {})}`;
+        }
+
+        function computeOrderSkuSurplusSeries(row, months, regionName, leadTimes) {
+            const detail = (row && row.inventory_surplus_detail) || {};
+            const lt = (leadTimes && regionName) ? (leadTimes[regionName] || {}) : {};
+            const stockDays = Math.max(0, parseInt(lt.stock_days, 10) || 0);
+            const wipDays = Math.max(0, parseInt(lt.wip_days, 10) || 0);
+            const today = sfTodayYmd();
+            const overseasByRegion = detail.overseas_by_region || {};
+            const overseas0 = Math.max(0, Number(overseasByRegion[regionName]) || 0);
+            const transitBatches = (detail.transit_batches || []).filter((b) => String(b.region_name || '') === String(regionName || ''));
+            const factoryStock = Math.max(0, Number(detail.factory_stock_qty) || 0);
+            const wipBatches = detail.wip_batches || [];
+
+            const transitArrivals = new Map();
+            transitBatches.forEach((b) => {
+                const mk = sfMonthKeyFromYmd(b.expected_listed_date || today);
+                const q = Math.max(0, Number(b.qty) || 0);
+                if (!mk || q <= 0) return;
+                transitArrivals.set(mk, (transitArrivals.get(mk) || 0) + q);
+            });
+
+            const fullArrivals = new Map(transitArrivals);
+            if (factoryStock > 0 && regionName) {
+                const mk = sfMonthKeyFromYmd(sfAddDaysYmd(today, stockDays));
+                fullArrivals.set(mk, (fullArrivals.get(mk) || 0) + factoryStock);
+            }
+            wipBatches.forEach((w) => {
+                const q = Math.max(0, Number(w.qty) || 0);
+                if (!q || !regionName) return;
+                const comp = String(w.expected_completion_date || today).slice(0, 10) || today;
+                const mk = sfMonthKeyFromYmd(sfAddDaysYmd(comp, wipDays));
+                if (!mk) return;
+                fullArrivals.set(mk, (fullArrivals.get(mk) || 0) + q);
+            });
+
+            const sortedMonths = (months || []).slice().sort(compareForecastMonthKeys);
+            let transitBal = overseas0;
+            let fullBal = overseas0;
+            const transitSurplus = {};
+            const fullSurplus = {};
+            sortedMonths.forEach((mk) => {
+                const demand = getForecastDemandForRowMonth(row, mk);
+                const trIn = transitArrivals.get(mk) || 0;
+                const fullIn = fullArrivals.get(mk) || 0;
+                transitBal += trIn;
+                fullBal += fullIn;
+                transitSurplus[mk] = transitBal - demand;
+                fullSurplus[mk] = fullBal - demand;
+                transitBal -= demand;
+                fullBal -= demand;
+            });
+            return { transitSurplus, fullSurplus };
+        }
+
+        function getOrderSkuSurplusMaps(row) {
+            if (!row || state.forecastMode !== 'order' || !state.sfSurplusRegion) {
+                return { transitSurplus: {}, fullSurplus: {} };
+            }
+            const ck = sfSurplusCacheKey();
+            if (row._sfSurplusCache && row._sfSurplusCache.key === ck) return row._sfSurplusCache.maps;
+            const maps = computeOrderSkuSurplusSeries(row, state.months, state.sfSurplusRegion, state.factoryLeadTimes);
+            row._sfSurplusCache = { key: ck, maps };
+            return maps;
+        }
+
+        function formatSurplusLabel(n) {
+            const v = Math.round(Number(n) || 0);
+            if (v === 0) return '0';
+            return (v > 0 ? '+' : '−') + formatNumber(Math.abs(v));
+        }
+
+        function appendSfSurplusRow(wrap, row, monthKey) {
+            if (state.forecastMode !== 'order' || !state.sfSurplusRegion) return;
+            const maps = getOrderSkuSurplusMaps(row);
+            const trVal = maps.transitSurplus[monthKey];
+            const totVal = maps.fullSurplus[monthKey];
+            const rowEl = document.createElement('span');
+            rowEl.className = 'sf-surplus-row';
+            rowEl.dataset.sfSurplusRow = '1';
+            const tr = document.createElement('span');
+            tr.className = 'sf-surplus-transit' + (Number(trVal) < 0 ? ' sf-surplus-neg' : '');
+            tr.textContent = trVal == null ? '—' : formatSurplusLabel(trVal);
+            tr.title = '预估当月在途盈余：现有海外仓 + 当月在途到货 − 本月预测销量（区域：' + state.sfSurplusRegion + '）';
+            const tot = document.createElement('span');
+            tot.className = 'sf-surplus-total' + (Number(totVal) < 0 ? ' sf-surplus-neg' : '');
+            tot.textContent = totVal == null ? '—' : formatSurplusLabel(totVal);
+            tot.title = '预估当月全部库存盈余：含在途、工厂在库/在制（按时效折算上架）− 本月预测销量（区域：' + state.sfSurplusRegion + '）';
+            rowEl.appendChild(tr);
+            rowEl.appendChild(tot);
+            wrap.appendChild(rowEl);
+        }
+
+        function refreshSfSurplusInCell(input) {
+            if (state.forecastMode !== 'order' || !state.sfSurplusRegion || !input) return;
+            const wrap = input.closest('.sf-cell-wrap');
+            if (!wrap) return;
+            const rowKey = input.dataset.rowKey;
+            const month = input.dataset.month;
+            const row = (state.rows || []).find(r => String(r.row_key) === String(rowKey));
+            if (!row) return;
+            delete row._sfSurplusCache;
+            wrap.querySelectorAll('[data-sf-surplus-row="1"]').forEach(el => el.remove());
+            appendSfSurplusRow(wrap, row, month);
+        }
+
+        function renderSfLeadtimeTableBody() {
+            const tbody = document.getElementById('sfLeadtimeTableBody');
+            if (!tbody) return;
+            const regions = (state.destinationRegions || []).map(r => String(r.region_name || '').trim()).filter(Boolean);
+            if (!regions.length) {
+                tbody.innerHTML = '<tr><td colspan="3" class="sf-muted">暂无目的区域，请先在海外仓仓库管理中维护。</td></tr>';
+                return;
+            }
+            const times = state.factoryLeadTimes || {};
+            tbody.innerHTML = regions.map((name) => {
+                const t = times[name] || {};
+                const stock = t.stock_days != null ? String(t.stock_days) : '';
+                const wip = t.wip_days != null ? String(t.wip_days) : '';
+                return `<tr data-region="${escapeHtml(name)}">`
+                    + `<td>${escapeHtml(name)}</td>`
+                    + `<td><input type="number" min="0" step="1" data-lead-kind="stock" value="${escapeHtml(stock)}" placeholder="天"></td>`
+                    + `<td><input type="number" min="0" step="1" data-lead-kind="wip" value="${escapeHtml(wip)}" placeholder="天"></td>`
+                    + '</tr>';
+            }).join('');
+        }
+
+        function openSfLeadtimeModal() {
+            const overlay = document.getElementById('sfLeadtimeModalOverlay');
+            if (!overlay) return;
+            renderSfLeadtimeTableBody();
+            overlay.classList.add('is-open');
+            overlay.setAttribute('aria-hidden', 'false');
+        }
+
+        function closeSfLeadtimeModal() {
+            const overlay = document.getElementById('sfLeadtimeModalOverlay');
+            if (!overlay) return;
+            overlay.classList.remove('is-open');
+            overlay.setAttribute('aria-hidden', 'true');
+        }
+
+        function saveSfLeadtimeFromModal() {
+            const tbody = document.getElementById('sfLeadtimeTableBody');
+            const times = {};
+            if (tbody) {
+                tbody.querySelectorAll('tr[data-region]').forEach((tr) => {
+                    const name = String(tr.dataset.region || '').trim();
+                    if (!name) return;
+                    const stockEl = tr.querySelector('input[data-lead-kind="stock"]');
+                    const wipEl = tr.querySelector('input[data-lead-kind="wip"]');
+                    times[name] = {
+                        stock_days: Math.max(0, parseInt(String(stockEl && stockEl.value || '0'), 10) || 0),
+                        wip_days: Math.max(0, parseInt(String(wipEl && wipEl.value || '0'), 10) || 0),
+                    };
+                });
+            }
+            state.factoryLeadTimes = times;
+            writeFactoryLeadTimesPrefs(times);
+            (state.rows || []).forEach(r => { delete r._sfSurplusCache; });
+            closeSfLeadtimeModal();
+            renderForecastTable();
+        }
+
+        function bindSfLeadtimeModalOnce() {
+            if (document.body.dataset.sfLeadtimeModalBound === '1') return;
+            document.body.dataset.sfLeadtimeModalBound = '1';
+            const btn = document.getElementById('btnSfFactoryLeadtime');
+            const overlay = document.getElementById('sfLeadtimeModalOverlay');
+            if (btn) btn.addEventListener('click', openSfLeadtimeModal);
+            ['sfLeadtimeModalClose', 'sfLeadtimeModalCancel'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener('click', closeSfLeadtimeModal);
+            });
+            const saveBtn = document.getElementById('sfLeadtimeModalSave');
+            if (saveBtn) saveBtn.addEventListener('click', saveSfLeadtimeFromModal);
+            if (overlay) {
+                overlay.addEventListener('click', (e) => {
+                    if (e.target === overlay) closeSfLeadtimeModal();
+                });
+            }
+            document.addEventListener('keydown', (e) => {
+                if (e.key !== 'Escape') return;
+                const ov = document.getElementById('sfLeadtimeModalOverlay');
+                if (ov && ov.classList.contains('is-open')) closeSfLeadtimeModal();
+            });
+        }
+
+        function updateSfStatusFilterVisibility() {
+            const wrap = document.getElementById('sfStatusFilterDropdown');
+            if (!wrap) return;
+            wrap.style.display = (state.forecastMode === 'order') ? 'none' : '';
+        }
+
+        function getSfStatusFilterChecked() {
+            const panel = document.getElementById('sfStatusFilterPanel');
+            if (!panel) return ['enabled'];
+            const out = [];
+            panel.querySelectorAll('input[type="checkbox"][data-sf-status]').forEach((cb) => {
+                if (!cb.checked) return;
+                const v = String(cb.dataset.sfStatus || '').trim();
+                if (v) out.push(v);
+            });
+            return out.length ? out : ['enabled'];
+        }
+
+        function updateSfStatusFilterTriggerLabel() {
+            const trig = document.getElementById('sfStatusFilterTrigger');
+            if (!trig) return;
+            if (state.forecastMode === 'order') {
+                trig.textContent = '状态';
+                return;
+            }
+            const checked = getSfStatusFilterChecked();
+            const labels = { enabled: '启用', retained: '留用', discarded: '弃用' };
+            if (checked.length === 1 && checked[0] === 'enabled') {
+                trig.textContent = '状态（启用）';
+            } else if (checked.length >= 3) {
+                trig.textContent = '状态（全部）';
+            } else {
+                trig.textContent = '状态（' + checked.map((k) => labels[k] || k).join('、') + '）';
+            }
+        }
+
+        function closeSfStatusFilterPanel() {
+            const panel = document.getElementById('sfStatusFilterPanel');
+            const trig = document.getElementById('sfStatusFilterTrigger');
+            if (!panel) return;
+            panel.classList.remove('open');
+            panel.style.display = 'none';
+            panel.style.visibility = 'hidden';
+            panel.style.pointerEvents = 'none';
+            panel.style.left = '';
+            panel.style.top = '';
+            if (trig) trig.setAttribute('aria-expanded', 'false');
+            state.sfStatusFilterPanelOpen = false;
+        }
+
+        function repositionSfStatusFilterPanel() {
+            const trigger = document.getElementById('sfStatusFilterTrigger');
+            const panel = document.getElementById('sfStatusFilterPanel');
+            if (!trigger || !panel || !panel.classList.contains('open')) return;
+            const triggerRect = trigger.getBoundingClientRect();
+            panel.style.visibility = 'hidden';
+            panel.style.display = 'grid';
+            const panelRect = panel.getBoundingClientRect();
+            const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+            const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+            let left = triggerRect.right - panelRect.width;
+            left = Math.max(8, Math.min(left, viewportWidth - panelRect.width - 8));
+            let top = triggerRect.bottom + 6;
+            if (top + panelRect.height > viewportHeight - 8) {
+                top = Math.max(8, triggerRect.top - panelRect.height - 6);
+            }
+            top = Math.max(8, Math.min(top, viewportHeight - panelRect.height - 8));
+            panel.style.left = `${left}px`;
+            panel.style.top = `${top}px`;
+            panel.style.visibility = 'visible';
+        }
+
+        function openSfStatusFilterPanel() {
+            const panel = document.getElementById('sfStatusFilterPanel');
+            const trig = document.getElementById('sfStatusFilterTrigger');
+            if (!panel || !trig) return;
+            closeSfShopFilterPanel();
+            panel.classList.add('open');
+            panel.style.pointerEvents = 'auto';
+            trig.setAttribute('aria-expanded', 'true');
+            state.sfStatusFilterPanelOpen = true;
+            requestAnimationFrame(() => repositionSfStatusFilterPanel());
+        }
+
+        function toggleSfStatusFilterPanel(e) {
+            if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+            const panel = document.getElementById('sfStatusFilterPanel');
+            if (panel && panel.classList.contains('open')) closeSfStatusFilterPanel();
+            else openSfStatusFilterPanel();
+        }
+
+        function bindSfStatusFilterDropdownOnce() {
+            if (document.body.dataset.sfStatusFilterDdBound === '1') return;
+            document.body.dataset.sfStatusFilterDdBound = '1';
+            const trig = document.getElementById('sfStatusFilterTrigger');
+            const panel = document.getElementById('sfStatusFilterPanel');
+            if (trig) {
+                trig.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    toggleSfStatusFilterPanel(e);
+                });
+            }
+            if (panel) {
+                panel.addEventListener('change', (e) => {
+                    const t = e.target;
+                    if (!t || !t.matches || !t.matches('input[type="checkbox"][data-sf-status]')) return;
+                    const checked = getSfStatusFilterChecked();
+                    if (!checked.length) {
+                        const enabledCb = panel.querySelector('input[data-sf-status="enabled"]');
+                        if (enabledCb) enabledCb.checked = true;
+                    }
+                    updateSfStatusFilterTriggerLabel();
+                    loadForecastData();
+                });
+            }
+            document.addEventListener('mousedown', (e) => {
+                if (!state.sfStatusFilterPanelOpen) return;
+                const t = e.target;
+                if (t && t.closest && t.closest('#sfStatusFilterDropdown')) return;
+                closeSfStatusFilterPanel();
+            }, true);
+            document.addEventListener('keydown', (e) => {
+                if (e.key !== 'Escape') return;
+                if (!state.sfStatusFilterPanelOpen) return;
+                closeSfStatusFilterPanel();
+            }, true);
+            window.addEventListener('resize', () => {
+                if (state.sfStatusFilterPanelOpen) repositionSfStatusFilterPanel();
+            });
+            updateSfStatusFilterTriggerLabel();
         }
 
         function buildSalesForecastQueryParams(extra) {
@@ -1646,6 +2293,10 @@
             if (skuEl && skuEl.value.trim()) params.set('sku', skuEl.value.trim());
             if (specEl && specEl.value.trim()) params.set('spec', specEl.value.trim());
             if (fabricEl && fabricEl.value.trim()) params.set('fabric', fabricEl.value.trim());
+            if (state.forecastMode !== 'order') {
+                const statuses = getSfStatusFilterChecked();
+                if (statuses.length) params.set('sf_status', statuses.join(','));
+            }
             const ex = extra || {};
             if (ex.lazy) params.set('lazy', '1');
             if (ex.sf_group) params.set('sf_group', String(ex.sf_group));
@@ -1737,6 +2388,7 @@
             const panel = document.getElementById('sfShopFilterPanel');
             const trig = document.getElementById('sfShopFilterTrigger');
             if (!panel || !trig) return;
+            closeSfStatusFilterPanel();
             renderSfShopFilterPanel();
             panel.classList.add('open');
             panel.style.pointerEvents = 'auto';
@@ -1911,6 +2563,10 @@
             state.mtdContext = (data && data.mtd && typeof data.mtd === 'object') ? data.mtd : {};
             state.shops = Array.isArray(data.shops) ? data.shops.slice() : [];
             renderSfShopFilterPanel();
+            if (Array.isArray(data.destination_regions)) {
+                state.destinationRegions = data.destination_regions.slice();
+                renderSfSurplusRegionSegment();
+            }
             const lazyFlag = data && (data.lazy === true || data.lazy === 1);
             const groupsFromServer = Array.isArray(data.groups) ? data.groups : null;
             if (lazyFlag) {
@@ -2197,6 +2853,7 @@
             }
             for (let i = 0; i < SF_TURNOVER_COLS; i += 1) L.push({ kind: 'T', idx: i });
             for (let i = 0; i < SF_STOCK_COLS; i += 1) L.push({ kind: 'I', idx: i });
+            L.push({ kind: 'R' });
             return L;
         }
 
@@ -2233,6 +2890,14 @@
                 ci += 1;
                 tr.appendChild(td);
             });
+            const remarks = Array.isArray(row.remarks) ? row.remarks.filter(Boolean) : [];
+            const remarkTd = document.createElement('td');
+            remarkTd.className = 'sf-cell-history sf-cell-remark' + (remarks.some((t) => String(t).indexOf('异常') >= 0) ? ' is-anomaly' : '');
+            remarkTd.textContent = remarks.length ? remarks.join('；') : '—';
+            if (remarks.length) remarkTd.title = remarks.join('\n');
+            markSfGridCell(remarkTd, rowKey, ci);
+            ci += 1;
+            tr.appendChild(remarkTd);
             return ci;
         }
 
@@ -2265,12 +2930,16 @@
             for (let i = 0; i < fcCols; i++) leafColWidths.push(forecastWidth);
             const turnCols = SF_TURNOVER_COLS;
             const stockCols = SF_STOCK_COLS;
+            const remarkCols = SF_REMARK_COLS;
             const tailCols = SF_TAIL_COL_COUNT;
             const invCols = tailCols;
             const invPref = (pref.inventory && pref.inventory.length === invCols) ? pref.inventory : null;
             for (let i = 0; i < invCols; i++) {
-                const w = invPref ? invPref[i] : (i < turnCols ? 86 : 92);
-                leafColWidths.push((Number.isFinite(Number(w)) && Number(w) > 40) ? Math.round(Number(w)) : (i < turnCols ? 86 : 92));
+                let defW = 160;
+                if (i < turnCols) defW = 86;
+                else if (i < turnCols + stockCols) defW = 92;
+                const w = invPref ? invPref[i] : defW;
+                leafColWidths.push((Number.isFinite(Number(w)) && Number(w) > 40) ? Math.round(Number(w)) : defW);
             }
             const meta = {
                 specCount: cols.length,
@@ -2279,6 +2948,7 @@
                 fcCols,
                 turnCols,
                 stockCols,
+                remarkCols,
                 invCols,
                 historyStart: cols.length,
                 historyEnd: cols.length + Math.max(0, histCols - 1),
@@ -2326,7 +2996,8 @@
                 (mtdCols ? `<th class="sf-th-section sf-th-mtd" colspan="1"><span class="help-dot" data-tip="${escapeHtml(mtdHeadTip)}"></span>本月完成率</th>` : '') +
                 (fcCols ? `<th class="sf-th-section" colspan="${fcCols}"><span class="sf-th-section-toggle" data-section="forecast"><span class="sf-group-toggle">${state.forecastExpanded ? '▼' : '▶'}</span><span>预测月份</span></span></th>` : '') +
                 `<th class="sf-th-section" colspan="${turnCols}"><span>动销月</span></th>` +
-                `<th class="sf-th-section" colspan="${stockCols}"><span>库存</span></th>`;
+                `<th class="sf-th-section" colspan="${stockCols}"><span>库存</span></th>` +
+                `<th class="sf-th-section" colspan="${remarkCols}"><span>备注</span></th>`;
 
             const trBottom = document.createElement('tr');
             trBottom.className = 'sf-thead-row-2';
@@ -2335,7 +3006,8 @@
                 + (mtdCols ? `<th class="sf-th-mtd" title="${escapeHtml(mtdHeadTip)}"><div class="sf-month-two-line"><div class="sf-month-y">日表最新</div><div class="sf-month-m">${escapeHtml(perfSub)}</div></div><div class="sf-mtd-subhead">时间进度 ${escapeHtml(mtdProg)}</div></th>` : '')
                 + (state.forecastExpanded ? visibleFcMonths.map(m => `<th class="sf-th-month">${monthHeaderTwoLineHtml(m)}</th>`).join('') : (fcCols ? '<th class="sf-th-month">预测合计</th>' : ''))
                 + SF_TURNOVER_HEADERS.map(h => `<th class="sf-th-turn" title="${escapeHtml(h.tip || h.label)}">${escapeHtml(h.label)}</th>`).join('')
-                + SF_STOCK_HEADERS.map(h => `<th class="sf-th-inv" title="${escapeHtml(h.tip || h.label)}">${escapeHtml(h.label)}</th>`).join('');
+                + SF_STOCK_HEADERS.map(h => `<th class="sf-th-inv" title="${escapeHtml(h.tip || h.label)}">${escapeHtml(h.label)}</th>`).join('')
+                + `<th class="sf-th-remark" title="异常情况说明（如下市无替代、多替代SKU等）">备注</th>`;
             thead.innerHTML = '';
             thead.appendChild(trTop);
             thead.appendChild(trBottom);
@@ -4195,12 +4867,20 @@
                 try { ev.preventDefault(); } catch (_) {}
             });
 
-            wrap.appendChild(input);
-
             const deltaBadge = document.createElement('span');
             deltaBadge.className = 'sf-forecast-delta-badge';
             deltaBadge.setAttribute('aria-hidden', 'true');
-            wrap.appendChild(deltaBadge);
+
+            const top = document.createElement('span');
+            top.className = 'sf-forecast-cell-top';
+            top.appendChild(deltaBadge);
+
+            const main = document.createElement('span');
+            main.className = 'sf-forecast-cell-main';
+            main.appendChild(input);
+
+            wrap.appendChild(top);
+            wrap.appendChild(main);
             updateSfForecastDeltaBadgeForInput(input, deltaBadge);
 
             // 角标：来自来源（继承）或来自数据库（已存储）
@@ -4210,14 +4890,16 @@
                 badge.textContent = forecast.source.type === 'platform_sku' ? '继' : '承';
                 badge.title = '继承自' + (forecast.source.type === 'platform_sku' ? '销售平台SKU' : '规格+面料') + '：' + formatNumber(forecast.source.total_qty);
                 const tipped = makeTooltipWrap(buildSourceTooltip(forecast, monthKey), badge);
-                wrap.appendChild(tipped);
+                main.appendChild(tipped);
             } else if (forecast && forecast.source && forecast.source.items && forecast.source.items.length) {
                 const badge = document.createElement('span');
                 badge.className = 'sf-source-badge';
                 badge.textContent = formatNumber(forecast.source.total_qty);
                 const tipped = makeTooltipWrap(buildSourceTooltip(forecast, monthKey, true), badge);
-                wrap.appendChild(tipped);
+                main.appendChild(tipped);
             }
+
+            appendSfSurplusRow(wrap, row, monthKey);
 
             // 让 cell-meta 时间戳也可悬浮查看
             if (forecast && forecast.cell_meta) {
@@ -4294,6 +4976,7 @@
                 input.classList.add('is-dirty');
             }
             updateSfForecastDeltaBadgeForInput(input);
+            refreshSfSurplusInCell(input);
             refreshBatchPopup();
             if (!state.forecastExpanded) renderForecastTableBodyOnly();
             const curM = state.mtdContext && state.mtdContext.current_month_key;
@@ -4428,6 +5111,12 @@
             bindSfPerfPanelOnce();
             updateSfPerfToolbarGroupMode();
             bindSfShopFilterDropdownOnce();
+            bindSfStatusFilterDropdownOnce();
+            updateSfStatusFilterVisibility();
+            state.factoryLeadTimes = readFactoryLeadTimesPrefs();
+            bindSfSurplusRegionSegmentOnce();
+            bindSfLeadtimeModalOnce();
+            updateSfSurplusToolbarVisibility();
 
             bindModeSegment();
             {

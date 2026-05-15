@@ -1250,6 +1250,7 @@ class SalesManagementMixin:
     # ==============================================
 
     FORECAST_MODES = ('platform', 'spec', 'order')
+    FORECAST_PRODUCT_STATUSES = ('enabled', 'retained', 'discarded')
 
     def _forecast_normalize_month(self, value):
         """将输入归一化为本月首日的 YYYY-MM-01 字符串。支持 YYYY-MM、YYYY-MM-DD、YYYY/MM。"""
@@ -1503,6 +1504,251 @@ class SalesManagementMixin:
         clauses.append("COALESCE(NULLIF(TRIM(pf.sku_family),''), '-') = %s")
         params.extend([shop_g or '-', fam_g or '-'])
 
+    def _forecast_parse_sf_status_filter(self, query_params):
+        """平台/规格维度产品状态筛选；默认仅 enabled。"""
+        raw = ''
+        if query_params:
+            raw = (query_params.get('sf_status', [''])[0] or '').strip().lower()
+        if not raw:
+            return ['enabled']
+        parts = [p.strip() for p in raw.split(',') if p.strip()]
+        valid = [p for p in parts if p in self.FORECAST_PRODUCT_STATUSES]
+        return valid if valid else ['enabled']
+
+    def _forecast_apply_platform_status_filter(self, clauses, params, statuses):
+        if not statuses or set(statuses) >= set(self.FORECAST_PRODUCT_STATUSES):
+            return
+        ph = ','.join(['%s'] * len(statuses))
+        clauses.append(f"COALESCE(NULLIF(TRIM(sp.product_status),''), 'enabled') IN ({ph})")
+        params.extend(statuses)
+
+    def _forecast_apply_variant_linked_status_filter(self, clauses, params, statuses):
+        """规格维度：至少有一条关联平台 SKU 的状态落在所选集合内。"""
+        if not statuses or set(statuses) >= set(self.FORECAST_PRODUCT_STATUSES):
+            return
+        ph = ','.join(['%s'] * len(statuses))
+        clauses.append(
+            f"""EXISTS (
+                SELECT 1 FROM sales_products sp_sf
+                WHERE sp_sf.variant_id = v.id
+                  AND COALESCE(NULLIF(TRIM(sp_sf.product_status),''), 'enabled') IN ({ph})
+            )"""
+        )
+        params.extend(statuses)
+
+    @staticmethod
+    def _forecast_order_dim_visibility_sql():
+        """下单 SKU 维度可见性：默认仅在市；下市且无可用在市替代方案时仍展示并标异常。"""
+        return """(
+            COALESCE(op.is_on_market, 0) = 1
+            OR (
+                COALESCE(op.is_on_market, 0) = 0
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM order_product_shipping_plans ops0
+                    INNER JOIN order_product_shipping_plan_items i0 ON i0.shipping_plan_id = ops0.id
+                    INNER JOIN order_products sub0 ON sub0.id = i0.substitute_order_product_id
+                    WHERE ops0.order_product_id = op.id
+                      AND ops0.id = (
+                          SELECT MIN(ops2.id)
+                          FROM order_product_shipping_plans ops2
+                          WHERE ops2.order_product_id = op.id
+                            AND EXISTS (
+                                SELECT 1 FROM order_product_shipping_plan_items ii
+                                WHERE ii.shipping_plan_id = ops2.id
+                            )
+                      )
+                      AND COALESCE(sub0.is_on_market, 0) = 1
+                )
+            )
+        )"""
+
+    def _forecast_load_order_product_brief_map(self, conn, order_product_ids):
+        ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+        out = {}
+        if not ids:
+            return out
+        ph = ','.join(['%s'] * len(ids))
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT id, sku, COALESCE(is_on_market, 0) AS is_on_market
+                FROM order_products
+                WHERE id IN ({ph})
+                """,
+                tuple(ids),
+            )
+            for rr in cur.fetchall() or []:
+                oid = self._parse_int(rr.get('id'))
+                if oid:
+                    out[oid] = {
+                        'sku': rr.get('sku') or '',
+                        'is_on_market': self._parse_int(rr.get('is_on_market')) or 0,
+                    }
+        return out
+
+    def _forecast_load_delisted_owner_refs_by_substitute_ids(self, conn, substitute_ids):
+        """下市 owner 的默认替代方案引用到 substitute_ids 时，供备注列使用。"""
+        ids = sorted({int(x) for x in (substitute_ids or []) if self._parse_int(x)})
+        out = {i: [] for i in ids}
+        if not ids:
+            return out
+        ph = ','.join(['%s'] * len(ids))
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT owner.id AS owner_id,
+                       owner.sku AS owner_sku,
+                       sub.id AS sub_id
+                FROM order_products owner
+                INNER JOIN order_product_shipping_plans ops ON ops.order_product_id = owner.id
+                INNER JOIN order_product_shipping_plan_items i ON i.shipping_plan_id = ops.id
+                INNER JOIN order_products sub ON sub.id = i.substitute_order_product_id
+                WHERE COALESCE(owner.is_on_market, 0) = 0
+                  AND ops.id = (
+                      SELECT MIN(ops2.id)
+                      FROM order_product_shipping_plans ops2
+                      WHERE ops2.order_product_id = owner.id
+                        AND EXISTS (
+                            SELECT 1 FROM order_product_shipping_plan_items ii
+                            WHERE ii.shipping_plan_id = ops2.id
+                        )
+                  )
+                  AND sub.id IN ({ph})
+                ORDER BY owner.id ASC, sub.id ASC
+                """,
+                tuple(ids),
+            )
+            rows = cur.fetchall() or []
+        owner_ids = sorted({
+            self._parse_int(rr.get('owner_id'))
+            for rr in rows
+            if self._parse_int(rr.get('owner_id'))
+        })
+        plan_by_owner = self._forecast_load_default_substitute_plan_items_by_owner(conn, owner_ids)
+        all_ids = set(owner_ids)
+        for _oid, items in plan_by_owner.items():
+            for sid, _m in items:
+                if sid:
+                    all_ids.add(int(sid))
+        brief = self._forecast_load_order_product_brief_map(conn, sorted(all_ids))
+        for rr in rows:
+            sub_id = self._parse_int(rr.get('sub_id'))
+            owner_id = self._parse_int(rr.get('owner_id'))
+            if not sub_id or not owner_id:
+                continue
+            items = plan_by_owner.get(owner_id) or []
+            on_market_sub_skus = []
+            for sid, _m in items:
+                if (self._parse_int((brief.get(sid) or {}).get('is_on_market')) or 0) == 1:
+                    on_market_sub_skus.append((brief.get(sid) or {}).get('sku') or f'#{sid}')
+            out.setdefault(sub_id, []).append({
+                'owner_sku': rr.get('owner_sku') or (brief.get(owner_id) or {}).get('sku') or '',
+                'on_market_sub_count': len(on_market_sub_skus),
+                'on_market_sub_skus': on_market_sub_skus,
+            })
+        return out
+
+    def _forecast_attach_remarks_to_rows(self, conn, rows, forecast_mode):
+        if not rows:
+            return
+        for row in rows:
+            row['remarks'] = []
+
+        if forecast_mode == 'platform':
+            status_labels = {'retained': '留用', 'discarded': '弃用'}
+            for row in rows:
+                ps = str((row.get('labels') or {}).get('product_status') or 'enabled').strip()
+                if ps in status_labels:
+                    row['remarks'].append(f"平台SKU状态：{status_labels[ps]}")
+            return
+
+        if forecast_mode == 'spec':
+            variant_ids = sorted({
+                self._parse_int((r.get('labels') or {}).get('variant_id'))
+                for r in rows
+                if self._parse_int((r.get('labels') or {}).get('variant_id'))
+            })
+            platforms_by_vid = self._forecast_load_variant_platform_skus(conn, variant_ids)
+            for row in rows:
+                vid = self._parse_int((row.get('labels') or {}).get('variant_id'))
+                skus = platforms_by_vid.get(vid) or []
+                if not skus:
+                    row['remarks'].append('未关联任何平台SKU')
+                    continue
+                enabled = [
+                    s for s in skus
+                    if str(s.get('product_status') or 'enabled').strip() == 'enabled'
+                ]
+                if not enabled:
+                    statuses = {str(s.get('product_status') or 'enabled').strip() for s in skus}
+                    if statuses == {'discarded'}:
+                        row['remarks'].append('关联平台SKU均已弃用')
+                    else:
+                        row['remarks'].append('关联平台SKU均无启用状态')
+            return
+
+        if forecast_mode != 'order':
+            return
+
+        op_ids = sorted({
+            self._parse_int((r.get('labels') or {}).get('order_product_id'))
+            for r in rows
+            if self._parse_int((r.get('labels') or {}).get('order_product_id'))
+        })
+        if not op_ids:
+            return
+        plan_by_owner = self._forecast_load_default_substitute_plan_items_by_owner(conn, op_ids)
+        sub_refs = self._forecast_load_delisted_owner_refs_by_substitute_ids(conn, op_ids)
+        brief_ids = set(op_ids)
+        for oid, items in plan_by_owner.items():
+            brief_ids.add(int(oid))
+            for sid, _m in items:
+                if sid:
+                    brief_ids.add(int(sid))
+        brief = self._forecast_load_order_product_brief_map(conn, sorted(brief_ids))
+
+        for row in rows:
+            labels = row.get('labels') or {}
+            oid = self._parse_int(labels.get('order_product_id'))
+            if not oid:
+                continue
+            is_on = self._parse_int(labels.get('is_on_market')) or 0
+            links = labels.get('variant_links') or []
+            plan_items = plan_by_owner.get(oid) or []
+
+            if not links:
+                row['remarks'].append('未关联销售规格')
+
+            if is_on == 0:
+                row['remarks'].append('已下市且无可用在市替代发货方案')
+                if not plan_items:
+                    row['remarks'].append('无替代发货方案')
+                else:
+                    on_market_subs = [
+                        sid for sid, _m in plan_items
+                        if (self._parse_int((brief.get(sid) or {}).get('is_on_market')) or 0) == 1
+                    ]
+                    if not on_market_subs:
+                        row['remarks'].append('替代方案SKU均在市外')
+                continue
+
+            on_market_subs_in_plan = [
+                sid for sid, _m in plan_items
+                if (self._parse_int((brief.get(sid) or {}).get('is_on_market')) or 0) == 1
+            ]
+            if plan_items and not on_market_subs_in_plan:
+                row['remarks'].append('替代发货方案均在市外，按本体SKU计库存')
+
+            for ref in sub_refs.get(oid) or []:
+                if int(ref.get('on_market_sub_count') or 0) > 1:
+                    owner_sku = ref.get('owner_sku') or ''
+                    sub_skus = ref.get('on_market_sub_skus') or []
+                    joined = '、'.join([s for s in sub_skus if s])
+                    row['remarks'].append(
+                        f"异常：下市下单SKU「{owner_sku}」的替代方案含多个在市SKU（{joined}）"
+                    )
+
     def _forecast_load_platform_sku_dim(self, conn, query_params=None, sf_group=None):
         """加载平台SKU维度行：sales_products + variant + family + fabric + 在售标识。"""
         sku_keyword = ''
@@ -1526,6 +1772,9 @@ class SalesManagementMixin:
             clauses.append("(fm.fabric_code LIKE %s OR fm.fabric_name_en LIKE %s)")
             like_val = f"%{fabric_keyword}%"
             params.extend([like_val, like_val])
+        self._forecast_apply_platform_status_filter(
+            clauses, params, self._forecast_parse_sf_status_filter(query_params)
+        )
         self._forecast_apply_sf_group_platform(sf_group, clauses, params)
 
         where_sql = ' AND '.join(clauses)
@@ -1580,6 +1829,9 @@ class SalesManagementMixin:
             clauses.append("(fm.fabric_code LIKE %s OR fm.fabric_name_en LIKE %s)")
             like_val = f"%{fabric_keyword}%"
             params.extend([like_val, like_val])
+        self._forecast_apply_platform_status_filter(
+            clauses, params, self._forecast_parse_sf_status_filter(query_params)
+        )
         where_sql = ' AND '.join(clauses)
         out = []
         with conn.cursor() as cur:
@@ -1636,6 +1888,9 @@ class SalesManagementMixin:
             if gk:
                 clauses.append("COALESCE(NULLIF(TRIM(pf.sku_family),''), '-') = %s")
                 params.append(gk)
+        self._forecast_apply_variant_linked_status_filter(
+            clauses, params, self._forecast_parse_sf_status_filter(query_params)
+        )
 
         where_sql = ' AND '.join(clauses)
         with conn.cursor() as cur:
@@ -1680,6 +1935,9 @@ class SalesManagementMixin:
             clauses.append("(fm.fabric_code LIKE %s OR fm.fabric_name_en LIKE %s)")
             like_val = f"%{fabric_keyword}%"
             params.extend([like_val, like_val])
+        self._forecast_apply_variant_linked_status_filter(
+            clauses, params, self._forecast_parse_sf_status_filter(query_params)
+        )
         where_sql = ' AND '.join(clauses)
         out = []
         with conn.cursor() as cur:
@@ -1713,6 +1971,7 @@ class SalesManagementMixin:
                 f"""
                 SELECT sp.id AS sales_product_id,
                        sp.platform_sku,
+                       sp.product_status,
                        sp.variant_id,
                        sh.shop_name
                 FROM sales_products sp
@@ -1730,6 +1989,7 @@ class SalesManagementMixin:
                     'sales_product_id': self._parse_int(row.get('sales_product_id')),
                     'platform_sku': row.get('platform_sku') or '',
                     'shop_name': row.get('shop_name') or '',
+                    'product_status': row.get('product_status') or 'enabled',
                 })
         return out
 
@@ -1762,6 +2022,7 @@ class SalesManagementMixin:
                 clauses.append("COALESCE(NULLIF(TRIM(pf.sku_family),''), '-') = %s")
                 params.append(gk)
 
+        clauses.append(self._forecast_order_dim_visibility_sql())
         where_sql = ' AND '.join(clauses)
         with conn.cursor() as cur:
             cur.execute(
@@ -1832,7 +2093,7 @@ class SalesManagementMixin:
             sku_keyword = (query_params.get('sku', [''])[0] or '').strip()
             spec_keyword = (query_params.get('spec', [''])[0] or '').strip()
             fabric_keyword = (query_params.get('fabric', [''])[0] or '').strip()
-        clauses = ["1=1", "COALESCE(op.is_reship_accessory, 0) = 0"]
+        clauses = ["1=1", "COALESCE(op.is_reship_accessory, 0) = 0", self._forecast_order_dim_visibility_sql()]
         params = []
         if sku_keyword:
             clauses.append("(op.sku LIKE %s OR pf.sku_family LIKE %s)")
@@ -2893,6 +3154,185 @@ class SalesManagementMixin:
                 'wip_qty': wp,
             }
 
+    def _forecast_empty_surplus_detail(self):
+        return {
+            'overseas_by_region': {},
+            'transit_batches': [],
+            'factory_stock_qty': 0,
+            'wip_batches': [],
+        }
+
+    def _forecast_list_destination_regions(self, conn):
+        out = []
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, region_name, sort_order FROM logistics_destination_regions ORDER BY sort_order ASC, id ASC"
+            )
+            for rr in cur.fetchall() or []:
+                rid = self._parse_int(rr.get('id'))
+                name = str(rr.get('region_name') or '').strip()
+                if rid and name:
+                    out.append({
+                        'id': rid,
+                        'region_name': name,
+                        'sort_order': self._parse_int(rr.get('sort_order')) or 0,
+                    })
+        return out
+
+    def _forecast_load_inventory_surplus_detail_by_order_product(self, conn, order_product_ids):
+        """下单 SKU 盈余估算：按目的区域拆分海外仓/在途批次，及工厂在库/在制明细。"""
+        ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
+        out = {i: self._forecast_empty_surplus_detail() for i in ids}
+        if not ids:
+            return out
+        ph = ','.join(['%s'] * len(ids))
+        tpl = tuple(ids)
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT oi.order_product_id,
+                       COALESCE(NULLIF(TRIM(dr.region_name),''), NULLIF(TRIM(w.region),''), '-') AS region_name,
+                       COALESCE(SUM(oi.available_qty), 0) AS q
+                FROM logistics_overseas_inventory oi
+                INNER JOIN logistics_overseas_warehouses w ON w.id = oi.warehouse_id
+                LEFT JOIN logistics_destination_regions dr ON dr.id = w.destination_region_id
+                WHERE oi.order_product_id IN ({ph})
+                  AND COALESCE(w.is_enabled, 1) = 1
+                GROUP BY oi.order_product_id,
+                         COALESCE(NULLIF(TRIM(dr.region_name),''), NULLIF(TRIM(w.region),''), '-')
+                """,
+                tpl,
+            )
+            for rr in cur.fetchall() or []:
+                oid = self._parse_int(rr.get('order_product_id'))
+                rname = str(rr.get('region_name') or '-').strip() or '-'
+                if oid in out:
+                    out[oid]['overseas_by_region'][rname] = int(float(rr.get('q') or 0))
+
+            cur.execute(
+                f"""
+                SELECT li.order_product_id,
+                       COALESCE(NULLIF(TRIM(drt.region_name),''), NULLIF(TRIM(dr.region_name),''), NULLIF(TRIM(w.region),''), '-') AS region_name,
+                       COALESCE(t.expected_listed_date_latest, t.expected_warehouse_date, t.eta_latest) AS expected_listed_date,
+                       COALESCE(SUM(li.shipped_qty), 0) AS q
+                FROM logistics_in_transit_items li
+                INNER JOIN logistics_in_transit t ON t.id = li.transit_id
+                LEFT JOIN logistics_overseas_warehouses w ON w.id = t.destination_warehouse_id
+                LEFT JOIN logistics_destination_regions drt ON drt.id = t.destination_region_id
+                LEFT JOIN logistics_destination_regions dr ON dr.id = w.destination_region_id
+                WHERE li.order_product_id IN ({ph})
+                  AND COALESCE(t.inventory_registered, 0) = 0
+                GROUP BY li.order_product_id,
+                         COALESCE(NULLIF(TRIM(drt.region_name),''), NULLIF(TRIM(dr.region_name),''), NULLIF(TRIM(w.region),''), '-'),
+                         COALESCE(t.expected_listed_date_latest, t.expected_warehouse_date, t.eta_latest)
+                HAVING COALESCE(SUM(li.shipped_qty), 0) > 0
+                """,
+                tpl,
+            )
+            for rr in cur.fetchall() or []:
+                oid = self._parse_int(rr.get('order_product_id'))
+                if oid not in out:
+                    continue
+                qty = int(float(rr.get('q') or 0))
+                if qty <= 0:
+                    continue
+                out[oid]['transit_batches'].append({
+                    'region_name': str(rr.get('region_name') or '-').strip() or '-',
+                    'expected_listed_date': self._forecast_format_date_only(rr.get('expected_listed_date')),
+                    'qty': qty,
+                })
+
+            cur.execute(
+                f"""
+                SELECT order_product_id, COALESCE(SUM(quantity), 0) AS q
+                FROM factory_stock_inventory
+                WHERE order_product_id IN ({ph})
+                GROUP BY order_product_id
+                """,
+                tpl,
+            )
+            for rr in cur.fetchall() or []:
+                oid = self._parse_int(rr.get('order_product_id'))
+                if oid in out:
+                    out[oid]['factory_stock_qty'] = int(float(rr.get('q') or 0))
+
+            cur.execute(
+                f"""
+                SELECT order_product_id, quantity, expected_completion_date
+                FROM factory_wip_inventory
+                WHERE order_product_id IN ({ph}) AND COALESCE(is_completed, 0) = 0
+                ORDER BY order_product_id ASC, expected_completion_date ASC, id ASC
+                """,
+                tpl,
+            )
+            for rr in cur.fetchall() or []:
+                oid = self._parse_int(rr.get('order_product_id'))
+                qty = int(float(rr.get('quantity') or 0))
+                if oid not in out or qty <= 0:
+                    continue
+                out[oid]['wip_batches'].append({
+                    'qty': qty,
+                    'expected_completion_date': self._forecast_format_date_only(rr.get('expected_completion_date')),
+                })
+        return out
+
+    def _forecast_merge_surplus_detail_for_pairs(self, pairs, detail_by_op):
+        merged = self._forecast_empty_surplus_detail()
+        if not pairs:
+            return merged
+        for sid, mult in pairs:
+            sid = int(sid)
+            mult = max(1, int(mult or 1))
+            d = detail_by_op.get(sid) or self._forecast_empty_surplus_detail()
+            for rname, qty in (d.get('overseas_by_region') or {}).items():
+                rname = str(rname or '').strip() or '-'
+                merged['overseas_by_region'][rname] = int(merged['overseas_by_region'].get(rname) or 0) + int(int(qty or 0) // mult)
+            for batch in d.get('transit_batches') or []:
+                q = int(int(batch.get('qty') or 0) // mult)
+                if q <= 0:
+                    continue
+                merged['transit_batches'].append({
+                    'region_name': batch.get('region_name') or '-',
+                    'expected_listed_date': batch.get('expected_listed_date'),
+                    'qty': q,
+                })
+            merged['factory_stock_qty'] += int(int(d.get('factory_stock_qty') or 0) // mult)
+            for wb in d.get('wip_batches') or []:
+                q = int(int(wb.get('qty') or 0) // mult)
+                if q <= 0:
+                    continue
+                merged['wip_batches'].append({
+                    'qty': q,
+                    'expected_completion_date': wb.get('expected_completion_date'),
+                })
+        return merged
+
+    def _forecast_attach_surplus_detail_to_order_rows(self, conn, rows):
+        if not rows:
+            return
+        op_ids = sorted({
+            self._parse_int((r.get('labels') or {}).get('order_product_id'))
+            for r in rows
+            if self._parse_int((r.get('labels') or {}).get('order_product_id'))
+        })
+        if not op_ids:
+            return
+        plan_items_by_owner = self._forecast_load_default_substitute_plan_items_by_owner(conn, op_ids)
+        extra_subs = []
+        for oid in op_ids:
+            for sid, _m in plan_items_by_owner.get(oid) or []:
+                if sid:
+                    extra_subs.append(int(sid))
+        load_ids = sorted(set(op_ids).union(extra_subs))
+        detail_by_op = self._forecast_load_inventory_surplus_detail_by_order_product(conn, load_ids)
+        for row in rows:
+            oid = self._parse_int((row.get('labels') or {}).get('order_product_id'))
+            if not oid:
+                row['inventory_surplus_detail'] = self._forecast_empty_surplus_detail()
+                continue
+            pairs = self._forecast_expand_owner_pairs_with_substitute_plans([(oid, 1)], plan_items_by_owner)
+            row['inventory_surplus_detail'] = self._forecast_merge_surplus_detail_for_pairs(pairs, detail_by_op)
+
     def handle_sales_forecast_api(self, environ, method, start_response):
         try:
             if method != 'GET':
@@ -2921,9 +3361,12 @@ class SalesManagementMixin:
             sf_group = (query_params.get('sf_group', [''])[0] or '').strip()
             sf_shop_ids = self._forecast_parse_sf_shop_ids(query_params)
             shops_list = []
+            destination_regions = []
 
             with self._get_db_connection() as conn:
                 shops_list = self._forecast_list_shops_for_forecast(conn)
+                if forecast_mode == 'order':
+                    destination_regions = self._forecast_list_destination_regions(conn)
                 perf_max_record_date = self._forecast_perf_max_record_date(conn)
                 mtd_in = cur_key in set(history_months or [])
                 mtd_ctx = self._forecast_mtd_time_context(perf_max_record_date, cur_key) if mtd_in else None
@@ -2953,6 +3396,9 @@ class SalesManagementMixin:
                         conn, rows, forecast_mode, history_months,
                         hist_start=hist_start, hist_end=hist_end, shop_ids=sf_shop_ids,
                     )
+                    self._forecast_attach_remarks_to_rows(conn, rows, forecast_mode)
+                    if forecast_mode == 'order':
+                        self._forecast_attach_surplus_detail_to_order_rows(conn, rows)
                     for row in rows:
                         row['mtd_completion'] = self._forecast_row_mtd_completion(
                             row.get('history') or {}, row.get('forecasts') or {}, mtd_ctx
@@ -2980,6 +3426,8 @@ class SalesManagementMixin:
                 'rows': rows,
                 'shops': shops_list,
             }
+            if forecast_mode == 'order':
+                payload['destination_regions'] = destination_regions
             if lazy_groups_only and not sf_group:
                 payload['lazy'] = True
                 payload['groups'] = groups_meta or []
