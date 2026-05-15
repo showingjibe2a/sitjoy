@@ -4022,8 +4022,10 @@
 
         const bar = document.createElement('div');
         bar.className = 'pm-batch-float-bar';
+        const isOrderProductExtras = state.table && String(state.table.dataset.orderProductBatchExtras || '') === '1';
         bar.innerHTML = [
             '<span class="pm-batch-float-count">已勾选 0 条</span>',
+            isOrderProductExtras ? '<button type="button" class="btn-secondary" data-action="shipping-plan-batch">批量替换发货方案</button>' : '',
             '<button type="button" class="btn-secondary" data-action="download">批量下载数据</button>',
             '<button type="button" class="btn-danger" data-action="delete">批量删除</button>'
         ].join('');
@@ -4043,6 +4045,21 @@
 
         const downloadBtn = bar.querySelector('[data-action="download"]');
         const deleteBtn = bar.querySelector('[data-action="delete"]');
+        const shipPlanBatchBtn = bar.querySelector('[data-action="shipping-plan-batch"]');
+
+        if(shipPlanBatchBtn){
+            shipPlanBatchBtn.addEventListener('click', () => {
+                const ids = getManagedSelectedIds(state);
+                if(!ids.length) return;
+                try {
+                    document.dispatchEvent(new CustomEvent('sitjoy:order-product-batch-shipping-plan-verify', {
+                        bubbles: true,
+                        detail: { ids: ids.slice(), table: state.table }
+                    }));
+                } catch(_err){
+                }
+            });
+        }
 
         if(downloadBtn){
             downloadBtn.addEventListener('click', () => {

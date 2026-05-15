@@ -44,6 +44,10 @@ class OrderManagementMixin:
                 return self._handle_order_product_factory_links_import(environ, method, start_response)
 
             if method == 'GET':
+                if action == 'off_market_ship_plan_preview':
+                    return self._handle_off_market_ship_plan_preview(environ, start_response, query_params)
+                if action == 'off_market_ship_plan_batch_preview':
+                    return self._handle_off_market_ship_plan_batch_preview(environ, start_response, query_params)
                 keyword = query_params.get('q', [''])[0].strip()
                 exclude_reship_accessory = str((query_params.get('exclude_reship_accessory', ['0'])[0] or '0')).strip().lower() in ('1', 'true', 'yes', 'on')
                 with self._get_db_connection() as conn:
@@ -60,6 +64,8 @@ class OrderManagementMixin:
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             if method == 'POST':
+                if action == 'off_market_ship_plan_migrate':
+                    return self._handle_off_market_ship_plan_migrate(environ, start_response, query_params)
                 data = self._read_json_body(environ)
                 sku_family_id = self._parse_int(data.get('sku_family_id'))
                 sku = (data.get('sku') or '').strip()
@@ -494,6 +500,399 @@ class OrderManagementMixin:
                         }, start_response)
 
             return self.send_json({'status': 'error', 'message': 'Unsupported target'}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def _off_market_eligible_target_plans(self, conn, owner_order_product_id):
+        """归属为 owner 的方案：含至少一条替代；替代 SKU 全部在市且不得为 owner 自身（排除「直发本 SKU」）。"""
+        oid = self._parse_int(owner_order_product_id)
+        if not oid:
+            return []
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT ops.id, ops.plan_name
+                FROM order_product_shipping_plans ops
+                WHERE ops.order_product_id = %s
+                  AND EXISTS (SELECT 1 FROM order_product_shipping_plan_items i WHERE i.shipping_plan_id = ops.id)
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM order_product_shipping_plan_items i
+                      JOIN order_products sop ON sop.id = i.substitute_order_product_id
+                      WHERE i.shipping_plan_id = ops.id
+                        AND (
+                            COALESCE(sop.is_on_market, 0) = 0
+                            OR i.substitute_order_product_id = %s
+                        )
+                  )
+                ORDER BY ops.id ASC
+                """,
+                (oid, oid),
+            )
+            return cur.fetchall() or []
+
+    def _off_market_load_plan_items_bulk(self, conn, plan_ids):
+        ids = sorted({int(x) for x in (plan_ids or []) if self._parse_int(x)})
+        if not ids:
+            return {}
+        placeholders = ','.join(['%s'] * len(ids))
+        out = {}
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT opsi.shipping_plan_id,
+                       opsi.substitute_order_product_id,
+                       GREATEST(1, COALESCE(opsi.quantity, 1)) AS quantity,
+                       op.sku AS substitute_sku,
+                       opsi.sort_order,
+                       opsi.id
+                FROM order_product_shipping_plan_items opsi
+                JOIN order_products op ON op.id = opsi.substitute_order_product_id
+                WHERE opsi.shipping_plan_id IN ({placeholders})
+                ORDER BY opsi.shipping_plan_id ASC, opsi.sort_order ASC, opsi.id ASC
+                """,
+                tuple(ids),
+            )
+            for row in cur.fetchall() or []:
+                pid = self._parse_int(row.get('shipping_plan_id'))
+                if not pid:
+                    continue
+                out.setdefault(pid, []).append({
+                    'substitute_order_product_id': self._parse_int(row.get('substitute_order_product_id')),
+                    'sku': (row.get('substitute_sku') or '').strip(),
+                    'quantity': max(1, self._parse_int(row.get('quantity')) or 1),
+                })
+        return out
+
+    @staticmethod
+    def _off_market_format_plan_qty(items, scale):
+        scale = max(1, int(scale) if int(scale) > 0 else 1)
+        parts = []
+        for it in items or []:
+            q = max(1, int(it.get('quantity') or 1)) * scale
+            sku = (it.get('sku') or '').strip() or ('#' + str(it.get('substitute_order_product_id') or ''))
+            parts.append(f"{sku}×{q}")
+        return ' + '.join(parts) if parts else '（空）'
+
+    def _handle_off_market_ship_plan_preview(self, environ, start_response, query_params):
+        oid = self._parse_int((query_params.get('order_product_id', [''])[0] or '').strip())
+        if not oid:
+            return self.send_json({'status': 'error', 'message': 'Missing order_product_id'}, start_response)
+        limit = self._parse_int((query_params.get('limit', ['400'])[0] or '').strip()) or 400
+        limit = max(1, min(int(limit), 800))
+        try:
+            with self._get_db_connection() as conn:
+                owner_sku = ''
+                with conn.cursor() as cur:
+                    cur.execute("SELECT sku FROM order_products WHERE id=%s LIMIT 1", (oid,))
+                    _or = cur.fetchone() or {}
+                    owner_sku = (_or.get('sku') or '').strip()
+                targets = self._off_market_eligible_target_plans(conn, oid)
+                if not targets:
+                    return self.send_json({
+                        'status': 'success',
+                        'has_eligible_plan': False,
+                        'eligible_targets': [],
+                        'target_plan_id': None,
+                        'target_plan_name': None,
+                        'rows': [],
+                        'owner_order_product_id': oid,
+                        'owner_sku': owner_sku,
+                    }, start_response)
+
+                forced_tid = self._parse_int((query_params.get('target_plan_id', [''])[0] or '').strip())
+                use_row = targets[0]
+                if forced_tid:
+                    hit = next((t for t in targets if self._parse_int(t.get('id')) == forced_tid), None)
+                    if hit:
+                        use_row = hit
+                target_plan_id = self._parse_int(use_row.get('id'))
+                target_plan_name = (use_row.get('plan_name') or '').strip()
+                eligible_targets = [
+                    {'plan_id': self._parse_int(r.get('id')), 'plan_name': (r.get('plan_name') or '').strip()}
+                    for r in targets
+                    if self._parse_int(r.get('id'))
+                ]
+
+                platform_rows = []
+                shipment_rows = []
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT
+                            sopi.id AS ref_id,
+                            'platform' AS ref_type,
+                            sor.id AS registration_id,
+                            sor.order_no AS order_no,
+                            sp.variant_id AS variant_id,
+                            sopi.quantity AS platform_qty,
+                            sopi.shipping_plan_id AS old_plan_id,
+                            oldp.plan_name AS old_plan_name,
+                            GREATEST(1, COALESCE(svol.quantity, 1)) AS bom_qty_for_owner,
+                            pf.sku_family AS sku_family,
+                            v.spec_name AS spec_name,
+                            fm.fabric_code AS fabric_code
+                        FROM sales_order_registration_platform_items sopi
+                        INNER JOIN sales_order_registrations sor ON sor.id = sopi.registration_id
+                        INNER JOIN sales_products sp ON sp.id = sopi.sales_product_id
+                        INNER JOIN order_product_shipping_plans oldp
+                            ON oldp.id = sopi.shipping_plan_id AND oldp.order_product_id = %s
+                        LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
+                        LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                        LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id
+                        LEFT JOIN sales_variant_order_links svol
+                            ON svol.variant_id = sp.variant_id AND svol.order_product_id = %s
+                        WHERE sopi.shipping_plan_id <> %s
+                        ORDER BY sor.id DESC, sopi.id ASC
+                        LIMIT %s
+                        """,
+                        (oid, oid, target_plan_id, limit),
+                    )
+                    platform_rows = cur.fetchall() or []
+
+                    cur.execute(
+                        """
+                        SELECT
+                            sosi.id AS ref_id,
+                            'shipment' AS ref_type,
+                            sor.id AS registration_id,
+                            sor.order_no AS order_no,
+                            rv.variant_id AS variant_id,
+                            sosi.quantity AS line_qty,
+                            sosi.shipping_plan_id AS old_plan_id,
+                            oldp.plan_name AS old_plan_name,
+                            pf.sku_family AS sku_family,
+                            v.spec_name AS spec_name,
+                            fm.fabric_code AS fabric_code
+                        FROM sales_order_registration_shipment_items sosi
+                        INNER JOIN sales_order_registrations sor ON sor.id = sosi.registration_id
+                        INNER JOIN order_product_shipping_plans oldp
+                            ON oldp.id = sosi.shipping_plan_id AND oldp.order_product_id = %s
+                        LEFT JOIN (
+                            SELECT pi2.registration_id, MIN(sp2.variant_id) AS variant_id
+                            FROM sales_order_registration_platform_items pi2
+                            INNER JOIN sales_products sp2 ON sp2.id = pi2.sales_product_id
+                            GROUP BY pi2.registration_id
+                        ) rv ON rv.registration_id = sor.id
+                        LEFT JOIN sales_product_variants v ON v.id = rv.variant_id
+                        LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                        LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id
+                        WHERE sosi.order_product_id = %s
+                          AND sosi.shipping_plan_id IS NOT NULL
+                          AND sosi.shipping_plan_id <> %s
+                        ORDER BY sor.id DESC, sosi.id ASC
+                        LIMIT %s
+                        """,
+                        (oid, oid, target_plan_id, limit),
+                    )
+                    shipment_rows = cur.fetchall() or []
+
+                plan_ids = {target_plan_id}
+                for chunk in (platform_rows, shipment_rows):
+                    for r in chunk or []:
+                        pid = self._parse_int(r.get('old_plan_id'))
+                        if pid:
+                            plan_ids.add(pid)
+                items_map = self._off_market_load_plan_items_bulk(conn, list(plan_ids))
+                target_items = items_map.get(target_plan_id, [])
+
+                rows_out = []
+                for r in (platform_rows or []) + (shipment_rows or []):
+                    old_pid = self._parse_int(r.get('old_plan_id'))
+                    ref_type = (r.get('ref_type') or '').strip()
+                    if ref_type == 'platform':
+                        scale = max(1, self._parse_int(r.get('platform_qty')) or 1) * max(
+                            1, self._parse_int(r.get('bom_qty_for_owner')) or 1
+                        )
+                    else:
+                        scale = max(1, self._parse_int(r.get('line_qty')) or 1)
+                    old_items = items_map.get(old_pid, [])
+                    old_txt = self._off_market_format_plan_qty(old_items, scale)
+                    new_txt = self._off_market_format_plan_qty(target_items, scale)
+                    fam = (r.get('sku_family') or '').strip()
+                    spec = (r.get('spec_name') or '').strip()
+                    fab = (r.get('fabric_code') or '').strip()
+                    label = ' '.join(x for x in (fam, spec, fab) if x).strip() or '-'
+                    rows_out.append({
+                        'ref_type': ref_type,
+                        'ref_id': self._parse_int(r.get('ref_id')),
+                        'registration_id': self._parse_int(r.get('registration_id')),
+                        'order_no': (r.get('order_no') or '').strip(),
+                        'variant_id': self._parse_int(r.get('variant_id')),
+                        'variant_label': label,
+                        'old_plan_name': (r.get('old_plan_name') or '').strip(),
+                        'new_plan_name': target_plan_name,
+                        'old_plan_summary': f"{(r.get('old_plan_name') or '').strip() or '方案'}：{old_txt}",
+                        'new_plan_summary': f"{target_plan_name}：{new_txt}",
+                    })
+
+                return self.send_json({
+                    'status': 'success',
+                    'has_eligible_plan': True,
+                    'eligible_targets': eligible_targets,
+                    'target_plan_id': target_plan_id,
+                    'target_plan_name': target_plan_name,
+                    'rows': rows_out,
+                    'owner_order_product_id': oid,
+                    'owner_sku': owner_sku,
+                }, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def _off_market_count_pending_registrations(self, conn, owner_id, target_plan_id):
+        """登记中仍指向 owner 名下其它方案、且可改为 target 的行数（与单笔迁移 UPDATE 条件一致）。"""
+        oid = self._parse_int(owner_id)
+        tid = self._parse_int(target_plan_id)
+        if not oid or not tid:
+            return 0, 0
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COUNT(*) AS c
+                FROM sales_order_registration_platform_items sopi
+                INNER JOIN order_product_shipping_plans oldp
+                    ON oldp.id = sopi.shipping_plan_id AND oldp.order_product_id = %s
+                WHERE sopi.shipping_plan_id <> %s
+                """,
+                (oid, tid),
+            )
+            p = int((cur.fetchone() or {}).get('c') or 0)
+            cur.execute(
+                """
+                SELECT COUNT(*) AS c
+                FROM sales_order_registration_shipment_items sosi
+                INNER JOIN order_product_shipping_plans oldp
+                    ON oldp.id = sosi.shipping_plan_id AND oldp.order_product_id = %s
+                WHERE sosi.order_product_id = %s
+                  AND sosi.shipping_plan_id IS NOT NULL
+                  AND sosi.shipping_plan_id <> %s
+                """,
+                (oid, oid, tid),
+            )
+            s = int((cur.fetchone() or {}).get('c') or 0)
+        return p, s
+
+    def _handle_off_market_ship_plan_batch_preview(self, environ, start_response, query_params):
+        """批量核验：已下市 SKU 是否存在「全部在市」替代发货方案及待迁移登记行数。"""
+        raw_parts = query_params.get('ids') or []
+        ids = []
+        for chunk in raw_parts:
+            for token in re.split(r'[,，;\s]+', str(chunk or '').strip()):
+                if not token:
+                    continue
+                pid = self._parse_int(token)
+                if pid:
+                    ids.append(pid)
+        ids = sorted(set(ids))[:200]
+        if not ids:
+            return self.send_json({'status': 'error', 'message': '请提供 ids（逗号分隔的 order_product_id）'}, start_response)
+        try:
+            out_items = []
+            not_found = []
+            skipped_on_market = []
+            placeholders = ','.join(['%s'] * len(ids))
+            with self._get_db_connection() as conn:
+                op_map = {}
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"SELECT id, sku, COALESCE(is_on_market, 0) AS is_on_market FROM order_products WHERE id IN ({placeholders})",
+                        tuple(ids),
+                    )
+                    for r in cur.fetchall() or []:
+                        op_map[self._parse_int(r.get('id'))] = r
+                for oid in ids:
+                    row = op_map.get(oid)
+                    if not row:
+                        not_found.append(oid)
+                        continue
+                    if self._parse_int(row.get('is_on_market')) == 1:
+                        skipped_on_market.append({
+                            'order_product_id': oid,
+                            'sku': (row.get('sku') or '').strip(),
+                        })
+                        continue
+                    targets = self._off_market_eligible_target_plans(conn, oid)
+                    sku = (row.get('sku') or '').strip()
+                    if not targets:
+                        out_items.append({
+                            'order_product_id': oid,
+                            'sku': sku,
+                            'has_eligible_plan': False,
+                            'target_plan_id': None,
+                            'target_plan_name': None,
+                            'pending_platform_rows': 0,
+                            'pending_shipment_rows': 0,
+                        })
+                        continue
+                    tid = self._parse_int(targets[0].get('id'))
+                    tname = (targets[0].get('plan_name') or '').strip()
+                    p_cnt, s_cnt = self._off_market_count_pending_registrations(conn, oid, tid)
+                    out_items.append({
+                        'order_product_id': oid,
+                        'sku': sku,
+                        'has_eligible_plan': True,
+                        'target_plan_id': tid,
+                        'target_plan_name': tname,
+                        'pending_platform_rows': p_cnt,
+                        'pending_shipment_rows': s_cnt,
+                    })
+            return self.send_json({
+                'status': 'success',
+                'items': out_items,
+                'skipped_on_market': skipped_on_market,
+                'not_found_ids': not_found,
+            }, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def _handle_off_market_ship_plan_migrate(self, environ, start_response, query_params):
+        data = self._read_json_body(environ) or {}
+        oid = self._parse_int(data.get('order_product_id'))
+        target_plan_id = self._parse_int(data.get('target_plan_id'))
+        if not oid or not target_plan_id:
+            return self.send_json({'status': 'error', 'message': '缺少 order_product_id 或 target_plan_id'}, start_response)
+        if not data.get('acknowledge'):
+            return self.send_json({'status': 'error', 'message': '请先勾选「我已知晓」后再确认'}, start_response)
+        n_platform = 0
+        n_shipment = 0
+        try:
+            with self._get_db_connection() as conn:
+                eligible_ids = {
+                    self._parse_int(x.get('id'))
+                    for x in self._off_market_eligible_target_plans(conn, oid)
+                    if self._parse_int(x.get('id'))
+                }
+                if target_plan_id not in eligible_ids:
+                    return self.send_json({'status': 'error', 'message': '所选方案不是有效的「全部在市」替代方案'}, start_response)
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        UPDATE sales_order_registration_platform_items sopi
+                        INNER JOIN order_product_shipping_plans ops ON ops.id = sopi.shipping_plan_id
+                        SET sopi.shipping_plan_id = %s
+                        WHERE ops.order_product_id = %s AND sopi.shipping_plan_id <> %s
+                        """,
+                        (target_plan_id, oid, target_plan_id),
+                    )
+                    n_platform = cur.rowcount or 0
+                    cur.execute(
+                        """
+                        UPDATE sales_order_registration_shipment_items sosi
+                        INNER JOIN order_product_shipping_plans ops ON ops.id = sosi.shipping_plan_id
+                        SET sosi.shipping_plan_id = %s
+                        WHERE ops.order_product_id = %s
+                          AND sosi.order_product_id = %s
+                          AND sosi.shipping_plan_id IS NOT NULL
+                          AND sosi.shipping_plan_id <> %s
+                        """,
+                        (target_plan_id, oid, oid, target_plan_id),
+                    )
+                    n_shipment = cur.rowcount or 0
+            return self.send_json({
+                'status': 'success',
+                'updated_platform_rows': int(n_platform),
+                'updated_shipment_rows': int(n_shipment),
+            }, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 

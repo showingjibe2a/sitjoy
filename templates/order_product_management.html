@@ -934,9 +934,66 @@
         </div>
     </div>
 
+    <div class="pm-modal" id="orderBatchShipPlanVerifyModal">
+        <div class="pm-modal-content pm-modal-content--wide" style="max-width: 920px;">
+            <h3 id="orderBatchShipPlanVerifyTitle" style="margin-top:0;">批量核验发货方案</h3>
+            <p id="orderBatchShipPlanVerifySummary" class="dialog-message" style="margin:0 0 0.65rem 0;"></p>
+            <div class="pm-modal-scroll" style="max-height: 52vh;">
+                <table class="pm-table pm-table--compact" id="orderBatchShipPlanVerifyTable">
+                    <thead>
+                        <tr>
+                            <th>下单 SKU</th>
+                            <th>是否有「全部在市」可替换方案</th>
+                            <th>默认目标方案</th>
+                            <th style="text-align:right;">待迁平台登记行</th>
+                            <th style="text-align:right;">待迁发货登记行</th>
+                        </tr>
+                    </thead>
+                    <tbody id="orderBatchShipPlanVerifyTbody"></tbody>
+                </table>
+            </div>
+            <div class="pm-modal-actions">
+                <button type="button" class="btn-primary" onclick="closeOrderBatchShipPlanVerifyModal()">关闭</button>
+            </div>
+        </div>
+    </div>
+
     <div id="uploadProgress" class="upload-progress" aria-live="polite">
         <div id="uploadProgressText" class="upload-progress-title">准备上传...</div>
         <div class="upload-progress-bar"><span id="uploadProgressFill"></span></div>
+    </div>
+
+    <div class="pm-modal" id="offMarketShipMigrateModal">
+        <div class="pm-modal-content pm-modal-content--wide" style="max-width: 960px;">
+            <h3 id="offMarketShipMigrateTitle" style="margin-top:0;">下市前：关联订单登记发货方案迁移</h3>
+            <p id="offMarketShipMigrateIntro" class="dialog-message" style="margin:0 0 0.5rem 0;"></p>
+            <div class="form-group" id="offMarketShipMigratePlanWrap" style="margin:0 0 0.65rem 0; display:none;">
+                <label for="offMarketShipMigratePlanSelect" style="display:block; font-size:0.88rem; margin-bottom:0.25rem;">迁移目标方案（全部在市）</label>
+                <select id="offMarketShipMigratePlanSelect" class="required-field" style="width:100%; max-width:520px;"></select>
+            </div>
+            <div class="pm-modal-scroll" style="max-height:48vh;">
+                <table class="pm-table pm-table--compact" id="offMarketShipMigrateTable">
+                    <thead>
+                        <tr>
+                            <th>订单号</th>
+                            <th>来源</th>
+                            <th>货号 / 规格 / 面料</th>
+                            <th>原方案（折算数量）</th>
+                            <th>更新后方案（折算数量）</th>
+                        </tr>
+                    </thead>
+                    <tbody id="offMarketShipMigrateTbody"></tbody>
+                </table>
+            </div>
+            <label class="off-market-migrate-ack" style="display:flex; align-items:flex-start; gap:0.5rem; margin:0.75rem 0; font-size:0.9rem; cursor:pointer;">
+                <input type="checkbox" id="offMarketShipMigrateAck" value="1" style="margin-top:0.2rem;">
+                <span>我已知晓上表变更将影响已登记的订单发货方案，并确认将关联行批量更新为所选「全部在市」方案。</span>
+            </label>
+            <div class="pm-modal-actions">
+                <button type="button" class="btn-secondary" id="offMarketShipMigrateCancelBtn" onclick="closeOffMarketShipMigrateModal(false)">取消</button>
+                <button type="button" class="btn-primary" id="offMarketShipMigrateConfirmBtn" disabled onclick="confirmOffMarketShipMigrateSave()">确认迁移并保存</button>
+            </div>
+        </div>
     </div>
 
     <div class="pm-modal" id="uploadDialogModal">
@@ -1058,6 +1115,14 @@
         const NAS_MAIN_IMAGE_ACTION_MODE_KEY = 'sj.orderMainImage.actionMode.v1';
         const NAS_MAIN_IMAGE_THUMB_SIZE_KEY = 'sj.orderMainImage.thumbSize.v1';
         let previewEditDraft = {};
+        let offMarketMigrateState = {
+            preview: null,
+            payload: null,
+            method: 'PUT',
+            orderProductId: null,
+            pendingPreviewItems: null,
+            revertPreviewOnMarket: null
+        };
         let editOriginalItem = null;
         let isEditModalMode = false;
         let modalSavePendingTimer = null;
@@ -2453,6 +2518,117 @@
             updatePreviewDraft(itemId, 'carton_qty', qty);
         }
 
+        function buildFullPreviewUpdateRowFromItem(item, overrides) {
+            const o = overrides && typeof overrides === 'object' ? overrides : {};
+            const g = (field) => (Object.prototype.hasOwnProperty.call(o, field) ? o[field] : getPreviewEffectiveValue(item, field));
+            return {
+                id: Number(item.id),
+                is_on_market: normalizePreviewFieldValue('is_on_market', g('is_on_market')),
+                is_reship_accessory: normalizePreviewFieldValue('is_reship_accessory', g('is_reship_accessory')),
+                cost_usd: normalizePreviewFieldValue('cost_usd', g('cost_usd')),
+                finished_length_in: normalizePreviewFieldValue('finished_length_in', g('finished_length_in')),
+                finished_width_in: normalizePreviewFieldValue('finished_width_in', g('finished_width_in')),
+                finished_height_in: normalizePreviewFieldValue('finished_height_in', g('finished_height_in')),
+                net_weight_lbs: normalizePreviewFieldValue('net_weight_lbs', g('net_weight_lbs')),
+                package_length_in: normalizePreviewFieldValue('package_length_in', g('package_length_in')),
+                package_width_in: normalizePreviewFieldValue('package_width_in', g('package_width_in')),
+                package_height_in: normalizePreviewFieldValue('package_height_in', g('package_height_in')),
+                gross_weight_lbs: normalizePreviewFieldValue('gross_weight_lbs', g('gross_weight_lbs')),
+                package_size_class: normalizePreviewFieldValue('package_size_class', g('package_size_class')),
+                carton_qty: normalizePreviewFieldValue('carton_qty', g('carton_qty')),
+                last_mile_avg_freight_usd: normalizePreviewFieldValue('last_mile_avg_freight_usd', g('last_mile_avg_freight_usd'))
+            };
+        }
+
+        function submitPreviewUpdateItems(items) {
+            if (!items || !items.length) return Promise.resolve();
+            return fetch('/api/order-product?action=preview_update', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items })
+            })
+                .then(r => r.json())
+                .then((data) => {
+                    if (!data || data.status !== 'success') {
+                        const msg = (data && data.message) || '保存失败';
+                        if (window.showAppToast) window.showAppToast(msg, true, 3200);
+                        else showUploadDialog({ title: '保存失败', message: msg });
+                        return Promise.reject(new Error(msg));
+                    }
+                    items.forEach((up) => {
+                        const row = orderProductItemsCache.find((x) => String(x.id) === String(up.id));
+                        if (!row) return;
+                        row.is_on_market = up.is_on_market;
+                        row.is_reship_accessory = up.is_reship_accessory;
+                        row.cost_usd = up.cost_usd;
+                        row.finished_length_in = up.finished_length_in;
+                        row.finished_width_in = up.finished_width_in;
+                        row.finished_height_in = up.finished_height_in;
+                        row.net_weight_lbs = up.net_weight_lbs;
+                        row.package_length_in = up.package_length_in;
+                        row.package_width_in = up.package_width_in;
+                        row.package_height_in = up.package_height_in;
+                        row.gross_weight_lbs = up.gross_weight_lbs;
+                        row.package_size_class = up.package_size_class;
+                        row.carton_qty = up.carton_qty;
+                        row.last_mile_avg_freight_usd = up.last_mile_avg_freight_usd;
+                        delete previewEditDraft[String(up.id)];
+                    });
+                    renderOrderProductTable(orderProductItemsCache);
+                    syncPreviewSaveBar();
+                    if (window.showAppToast) window.showAppToast('已保存', false, 2000);
+                    return data;
+                });
+        }
+
+        function handlePreviewTableIsOnMarketImmediate(itemId, newValue, hiddenId) {
+            const item = orderProductItemsCache.find((x) => String(x.id) === String(itemId));
+            if (!item) return;
+            const wasOn = Number(item.is_on_market || 0) === 1;
+            const nowOn = String(newValue || '0') === '1';
+            if (wasOn === nowOn) return;
+
+            const runPut = (overrides) => {
+                const live = orderProductItemsCache.find((x) => String(x.id) === String(itemId)) || item;
+                const row = buildFullPreviewUpdateRowFromItem(live, overrides);
+                return submitPreviewUpdateItems([row]).catch(() => {
+                    revertPreviewIsOnMarketIfNeeded({ revertPreviewOnMarket: { hiddenId, previousValue: wasOn ? '1' : '0' } });
+                });
+            };
+
+            if (!wasOn && nowOn) {
+                runPut({ is_on_market: 1 });
+                return;
+            }
+
+            if (wasOn && !nowOn) {
+                if (window.showAppToast) window.showAppToast('正在校验关联发货方案…', false, 1600);
+                fetch(`/api/order-product?action=off_market_ship_plan_preview&order_product_id=${encodeURIComponent(item.id)}`)
+                    .then(r => r.json())
+                    .then((prev) => {
+                        if (!prev || prev.status !== 'success') {
+                            revertPreviewIsOnMarketIfNeeded({ revertPreviewOnMarket: { hiddenId, previousValue: '1' } });
+                            if (window.showAppToast) window.showAppToast((prev && prev.message) || '预览失败', true, 3200);
+                            return;
+                        }
+                        if (prev.has_eligible_plan && (prev.rows || []).length > 0) {
+                            const live = orderProductItemsCache.find((x) => String(x.id) === String(itemId)) || item;
+                            const pending = [buildFullPreviewUpdateRowFromItem(live, { is_on_market: 0 })];
+                            openOffMarketShipMigrateModal(prev, null, 'PUT', {
+                                pendingPreviewItems: pending,
+                                revertPreviewOnMarket: { hiddenId, previousValue: '1' }
+                            });
+                            return;
+                        }
+                        runPut({ is_on_market: 0 });
+                    })
+                    .catch((err) => {
+                        revertPreviewIsOnMarketIfNeeded({ revertPreviewOnMarket: { hiddenId, previousValue: '1' } });
+                        if (window.showAppToast) window.showAppToast('请求失败: ' + err, true, 3200);
+                    });
+            }
+        }
+
         function getPreviewEffectiveValue(item, field) {
             const id = String(item.id);
             if (previewEditDraft[id] && Object.prototype.hasOwnProperty.call(previewEditDraft[id], field)) {
@@ -2482,7 +2658,6 @@
             const normalized = normalizePreviewFieldValue(field, rawValue);
             if (!previewEditDraft[id]) {
                 previewEditDraft[id] = {
-                    is_on_market: item.is_on_market,
                     is_reship_accessory: item.is_reship_accessory,
                     cost_usd: item.cost_usd,
                     finished_length_in: item.finished_length_in,
@@ -2502,8 +2677,6 @@
 
             const draft = previewEditDraft[id];
             const unchanged =
-                normalizePreviewFieldValue('is_on_market', draft.is_on_market) === normalizePreviewFieldValue('is_on_market', item.is_on_market)
-                &&
                 normalizePreviewFieldValue('is_reship_accessory', draft.is_reship_accessory) === normalizePreviewFieldValue('is_reship_accessory', item.is_reship_accessory)
                 &&
                 normalizePreviewFieldValue('cost_usd', draft.cost_usd) === normalizePreviewFieldValue('cost_usd', item.cost_usd)
@@ -2558,6 +2731,10 @@
                     }
                     const itemId = input.getAttribute('data-id');
                     const field = input.getAttribute('data-field');
+                    if (field === 'is_on_market') {
+                        handlePreviewTableIsOnMarketImmediate(itemId, value, hiddenId);
+                        return;
+                    }
                     updatePreviewDraft(itemId, field, value);
                 });
             });
@@ -2577,7 +2754,6 @@
             }
             const items = ids.map(id => ({
                 id: Number(id),
-                is_on_market: normalizePreviewFieldValue('is_on_market', previewEditDraft[id].is_on_market),
                 is_reship_accessory: normalizePreviewFieldValue('is_reship_accessory', previewEditDraft[id].is_reship_accessory),
                 cost_usd: normalizePreviewFieldValue('cost_usd', previewEditDraft[id].cost_usd),
                 finished_length_in: normalizePreviewFieldValue('finished_length_in', previewEditDraft[id].finished_length_in),
@@ -2612,7 +2788,6 @@
                 items.forEach(update => {
                     const item = orderProductItemsCache.find(row => String(row.id) === String(update.id));
                     if (!item) return;
-                    item.is_on_market = update.is_on_market;
                     item.is_reship_accessory = update.is_reship_accessory;
                     item.cost_usd = update.cost_usd;
                     item.finished_length_in = update.finished_length_in;
@@ -3104,6 +3279,237 @@
             dropdown.classList.remove('expanded');
         }
 
+        function revertPreviewIsOnMarketIfNeeded(st) {
+            const r = st && st.revertPreviewOnMarket;
+            if (!r || !r.hiddenId) return;
+            const input = document.getElementById(r.hiddenId);
+            const pv = String(r.previousValue || '0') === '1' ? '1' : '0';
+            if (input) input.value = pv;
+            const wrap = input && input.closest('[data-preview-switch]');
+            if (wrap) {
+                wrap.querySelectorAll('.preview-yesno-btn').forEach((x) => {
+                    x.classList.toggle('is-active', String(x.getAttribute('data-switch-value') || '') === pv);
+                });
+            }
+        }
+
+        function closeOffMarketShipMigrateModal(skipRevert) {
+            if (!skipRevert) revertPreviewIsOnMarketIfNeeded(offMarketMigrateState);
+            const modal = document.getElementById('offMarketShipMigrateModal');
+            if (modal) modal.classList.remove('active');
+            if (window.syncModalScrollLock) window.syncModalScrollLock();
+            offMarketMigrateState = {
+                preview: null,
+                payload: null,
+                method: 'PUT',
+                orderProductId: null,
+                pendingPreviewItems: null,
+                revertPreviewOnMarket: null
+            };
+            const ack = document.getElementById('offMarketShipMigrateAck');
+            if (ack) ack.checked = false;
+            syncOffMarketMigrateConfirmBtn();
+        }
+
+        function syncOffMarketMigrateConfirmBtn() {
+            const btn = document.getElementById('offMarketShipMigrateConfirmBtn');
+            const ack = document.getElementById('offMarketShipMigrateAck');
+            if (!btn || !ack) return;
+            btn.disabled = !ack.checked;
+        }
+
+        function renderOffMarketShipMigrateTable(rows) {
+            const tbody = document.getElementById('offMarketShipMigrateTbody');
+            if (!tbody) return;
+            const list = rows || [];
+            const srcLabel = (t) => (t === 'shipment' ? '发货行' : '平台行');
+            if (!list.length) {
+                tbody.innerHTML = '<tr><td colspan="5">无待迁移行</td></tr>';
+                return;
+            }
+            tbody.innerHTML = list.map(row => `
+                <tr>
+                    <td>${escapeHtml(row.order_no || '-')}</td>
+                    <td>${escapeHtml(srcLabel(row.ref_type))}</td>
+                    <td>${escapeHtml(row.variant_label || '-')}</td>
+                    <td style="white-space:pre-wrap;max-width:240px;">${escapeHtml(row.old_plan_summary || '')}</td>
+                    <td style="white-space:pre-wrap;max-width:240px;">${escapeHtml(row.new_plan_summary || '')}</td>
+                </tr>
+            `).join('');
+        }
+
+        function openOffMarketShipMigrateModal(preview, payload, method, extraOpts) {
+            const opts = extraOpts || {};
+            offMarketMigrateState = {
+                preview,
+                payload: payload !== undefined && payload !== null ? payload : null,
+                method: method || 'PUT',
+                orderProductId: preview.owner_order_product_id,
+                pendingPreviewItems: opts.pendingPreviewItems || null,
+                revertPreviewOnMarket: opts.revertPreviewOnMarket || null
+            };
+            const modal = document.getElementById('offMarketShipMigrateModal');
+            const intro = document.getElementById('offMarketShipMigrateIntro');
+            const selWrap = document.getElementById('offMarketShipMigratePlanWrap');
+            const sel = document.getElementById('offMarketShipMigratePlanSelect');
+            const title = document.getElementById('offMarketShipMigrateTitle');
+            const sku = (preview.owner_sku || '').trim();
+            if (title) {
+                title.textContent = `下市前：发货方案迁移（下单 SKU：${sku || preview.owner_order_product_id}）`;
+            }
+            if (intro) {
+                intro.textContent = '检测到存在「替代 SKU 全部在市」的发货方案。可将下方订单登记中仍指向其它方案的关联行统一改为所选方案；数量按平台销售数量与规格 BOM 用量折算（与销售登记发货预览一致）。';
+            }
+            const targets = preview.eligible_targets || [];
+            if (sel && selWrap) {
+                if (targets.length > 1) {
+                    selWrap.style.display = '';
+                    sel.innerHTML = targets.map(t =>
+                        `<option value="${Number(t.plan_id)}">${escapeHtml(t.plan_name || '')} (#${Number(t.plan_id)})</option>`
+                    ).join('');
+                    sel.value = String(preview.target_plan_id || '');
+                    sel.onchange = function() {
+                        const tid = Number(sel.value || 0);
+                        const opId = offMarketMigrateState.orderProductId;
+                        if (!opId || !tid) return;
+                        fetch(`/api/order-product?action=off_market_ship_plan_preview&order_product_id=${encodeURIComponent(opId)}&target_plan_id=${encodeURIComponent(tid)}`)
+                            .then(r => r.json())
+                            .then(data => {
+                                if (data.status !== 'success' || !data.rows) return;
+                                offMarketMigrateState.preview = data;
+                                renderOffMarketShipMigrateTable(data.rows);
+                            });
+                    };
+                } else {
+                    selWrap.style.display = 'none';
+                    sel.onchange = null;
+                }
+            }
+            renderOffMarketShipMigrateTable(preview.rows || []);
+            const ack = document.getElementById('offMarketShipMigrateAck');
+            if (ack) {
+                ack.checked = false;
+                ack.onchange = syncOffMarketMigrateConfirmBtn;
+            }
+            syncOffMarketMigrateConfirmBtn();
+            if (modal) {
+                modal.classList.add('active');
+                if (window.syncModalScrollLock) window.syncModalScrollLock();
+            }
+            const saveBtn = document.getElementById('modalSaveBtn');
+            if (saveBtn && offMarketMigrateState.payload) {
+                saveBtn.disabled = false;
+                saveBtn.innerText = '保存';
+            }
+            if (modalSavePendingTimer) {
+                clearTimeout(modalSavePendingTimer);
+                modalSavePendingTimer = null;
+            }
+        }
+
+        function submitOrderProductModalSave(payload, method) {
+            const saveBtn = document.getElementById('modalSaveBtn');
+            showModalStatus('正在保存，请稍候...', false);
+            if (modalSavePendingTimer) clearTimeout(modalSavePendingTimer);
+            modalSavePendingTimer = setTimeout(() => {
+                showTimeoutToast('保存仍在进行中，请稍候...');
+            }, 5000);
+            fetch('/api/order-product', {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showModalStatus(editId ? '更新成功' : '新增成功', false);
+                    setTimeout(() => {
+                        closeModal();
+                        loadOrderProductList();
+                    }, 400);
+                } else {
+                    showModalStatus(data.message || '操作失败', true);
+                }
+            })
+            .catch(err => showModalStatus('请求失败: ' + err, true))
+            .finally(() => {
+                if (modalSavePendingTimer) {
+                    clearTimeout(modalSavePendingTimer);
+                    modalSavePendingTimer = null;
+                }
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.innerText = '保存';
+                }
+            });
+        }
+
+        function confirmOffMarketShipMigrateSave() {
+            const st = offMarketMigrateState;
+            if (!st.preview) return;
+            if (!st.payload && !(st.pendingPreviewItems && st.pendingPreviewItems.length)) return;
+            const ack = document.getElementById('offMarketShipMigrateAck');
+            if (!ack || !ack.checked) return;
+            const sel = document.getElementById('offMarketShipMigratePlanSelect');
+            let tid = Number(st.preview.target_plan_id || 0);
+            if (sel && offMarketShipMigratePlanWrapIsVisible()) {
+                tid = Number(sel.value || 0) || tid;
+            }
+            const confirmBtn = document.getElementById('offMarketShipMigrateConfirmBtn');
+            if (confirmBtn) confirmBtn.disabled = true;
+            const pendingItems = (st.pendingPreviewItems || []).slice();
+            const modalPayload = st.payload;
+            const putMethod = st.method || 'PUT';
+            fetch('/api/order-product?action=off_market_ship_plan_migrate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    order_product_id: st.preview.owner_order_product_id,
+                    target_plan_id: tid,
+                    acknowledge: true
+                })
+            })
+            .then(r => r.json())
+            .then(m => {
+                if (m.status !== 'success') {
+                    if (window.showAppToast) window.showAppToast(m.message || '迁移失败', true, 3600);
+                    else showUploadDialog({ title: '迁移失败', message: m.message || '迁移失败' });
+                    if (confirmBtn) confirmBtn.disabled = false;
+                    return;
+                }
+                const revertOnMarketAfterMigrate = st.revertPreviewOnMarket;
+                closeOffMarketShipMigrateModal(true);
+                if (pendingItems && pendingItems.length) {
+                    submitPreviewUpdateItems(pendingItems).catch(() => {
+                        if (revertOnMarketAfterMigrate) {
+                            revertPreviewIsOnMarketIfNeeded({ revertPreviewOnMarket: revertOnMarketAfterMigrate });
+                        }
+                    });
+                    return;
+                }
+                const saveBtn = document.getElementById('modalSaveBtn');
+                if (saveBtn) {
+                    saveBtn.disabled = true;
+                    saveBtn.innerText = '保存中...';
+                }
+                showModalStatus('正在保存，请稍候...', false);
+                if (modalSavePendingTimer) clearTimeout(modalSavePendingTimer);
+                modalSavePendingTimer = setTimeout(() => {
+                    showTimeoutToast('保存仍在进行中，请稍候...');
+                }, 5000);
+                submitOrderProductModalSave(modalPayload, putMethod);
+            })
+            .catch(err => {
+                if (confirmBtn) confirmBtn.disabled = false;
+                showUploadDialog({ title: '请求失败', message: String(err) });
+            });
+        }
+
+        function offMarketShipMigratePlanWrapIsVisible() {
+            const w = document.getElementById('offMarketShipMigratePlanWrap');
+            return w && w.style.display !== 'none';
+        }
+
         function saveOrderProductFromModal() {
             const saveBtn = document.getElementById('modalSaveBtn');
             if (saveBtn && saveBtn.disabled) {
@@ -3211,6 +3617,54 @@
                 method = 'PUT';
             }
 
+            const guardOpId = (method === 'PUT' && editId && editOriginalItem
+                && Number(editOriginalItem.is_on_market || 0) === 1
+                && Number(payload.is_on_market || 0) === 0)
+                ? editId : null;
+
+            if (guardOpId) {
+                if (saveBtn) {
+                    saveBtn.disabled = true;
+                    saveBtn.innerText = '校验中...';
+                }
+                showModalStatus('正在校验关联发货方案...', false);
+                fetch(`/api/order-product?action=off_market_ship_plan_preview&order_product_id=${encodeURIComponent(guardOpId)}`)
+                    .then(r => r.json())
+                    .then(prev => {
+                        if (!prev || prev.status !== 'success') {
+                            showModalStatus((prev && prev.message) || '预览失败', true);
+                            if (saveBtn) {
+                                saveBtn.disabled = false;
+                                saveBtn.innerText = '保存';
+                            }
+                            return;
+                        }
+                        if (prev.has_eligible_plan && (prev.rows || []).length > 0) {
+                            showModalStatus('', false);
+                            openOffMarketShipMigrateModal(prev, payload, method);
+                            return;
+                        }
+                        if (saveBtn) {
+                            saveBtn.disabled = true;
+                            saveBtn.innerText = '保存中...';
+                        }
+                        showModalStatus('正在保存，请稍候...', false);
+                        if (modalSavePendingTimer) clearTimeout(modalSavePendingTimer);
+                        modalSavePendingTimer = setTimeout(() => {
+                            showTimeoutToast('保存仍在进行中，请稍候...');
+                        }, 5000);
+                        submitOrderProductModalSave(payload, method);
+                    })
+                    .catch(err => {
+                        showModalStatus('预览请求失败: ' + err, true);
+                        if (saveBtn) {
+                            saveBtn.disabled = false;
+                            saveBtn.innerText = '保存';
+                        }
+                    });
+                return;
+            }
+
             if (saveBtn) {
                 saveBtn.disabled = true;
                 saveBtn.innerText = '保存中...';
@@ -3223,34 +3677,7 @@
                 showTimeoutToast('保存仍在进行中，请稍候...');
             }, 5000);
 
-            fetch('/api/order-product', {
-                method: method,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    showModalStatus(editId ? '更新成功' : '新增成功', false);
-                    setTimeout(() => {
-                        closeModal();
-                        loadOrderProductList();
-                    }, 400);
-                } else {
-                    showModalStatus(data.message || '操作失败', true);
-                }
-            })
-            .catch(err => showModalStatus('请求失败: ' + err, true))
-            .finally(() => {
-                if (modalSavePendingTimer) {
-                    clearTimeout(modalSavePendingTimer);
-                    modalSavePendingTimer = null;
-                }
-                if (saveBtn) {
-                    saveBtn.disabled = false;
-                    saveBtn.innerText = '保存';
-                }
-            });
+            submitOrderProductModalSave(payload, method);
         }
 
         function fetchDeleteImpact(target, id) {
@@ -4004,6 +4431,88 @@
         }
 
         document.addEventListener('sitjoy:order-product-batch-toolbar-sync', () => syncOrderBatchFloatBar());
+
+        function closeOrderBatchShipPlanVerifyModal() {
+            const m = document.getElementById('orderBatchShipPlanVerifyModal');
+            if (m) m.classList.remove('active');
+            if (window.syncModalScrollLock) window.syncModalScrollLock();
+        }
+
+        function openOrderBatchShipPlanVerifyModal(summaryHtml, tbodyHtml) {
+            const m = document.getElementById('orderBatchShipPlanVerifyModal');
+            const s = document.getElementById('orderBatchShipPlanVerifySummary');
+            const tb = document.getElementById('orderBatchShipPlanVerifyTbody');
+            if (!m || !s || !tb) return;
+            s.innerHTML = summaryHtml;
+            tb.innerHTML = tbodyHtml;
+            m.classList.add('active');
+            if (window.syncModalScrollLock) window.syncModalScrollLock();
+        }
+
+        document.addEventListener('sitjoy:order-product-batch-shipping-plan-verify', (ev) => {
+            const rawIds = (ev.detail && Array.isArray(ev.detail.ids)) ? ev.detail.ids : [];
+            const idStrSet = new Set(rawIds.map(x => String(x)));
+            const offIds = [];
+            let skippedOnMarket = 0;
+            idStrSet.forEach((idStr) => {
+                const item = orderProductItemsCache.find(x => String(x.id) === idStr);
+                if (!item) return;
+                if (Number(item.is_on_market || 0) === 0) {
+                    offIds.push(String(item.id));
+                } else {
+                    skippedOnMarket += 1;
+                }
+            });
+            if (!offIds.length) {
+                if (window.showAppToast) {
+                    window.showAppToast('请先勾选已下市（是否在市为否）的下单 SKU 后再核验', true, 3400);
+                } else {
+                    showUploadDialog({ title: '提示', message: '请先勾选已下市（是否在市为否）的下单 SKU 后再核验' });
+                }
+                return;
+            }
+            const qs = offIds.map(encodeURIComponent).join(',');
+            if (window.showAppToast) window.showAppToast('正在核验…', false, 1600);
+            fetch(`/api/order-product?action=off_market_ship_plan_batch_preview&ids=${qs}`, { credentials: 'include' })
+                .then(r => r.json())
+                .then((data) => {
+                    if (!data || data.status !== 'success') {
+                        if (window.showAppToast) window.showAppToast((data && data.message) || '核验失败', true, 3600);
+                        else showUploadDialog({ title: '核验失败', message: (data && data.message) || '核验失败' });
+                        return;
+                    }
+                    const nf = data.not_found_ids || [];
+                    const items = data.items || [];
+                    const withPlan = items.filter(x => x.has_eligible_plan).length;
+                    const withoutPlan = items.length - withPlan;
+                    const pendP = items.reduce((a, x) => a + Number(x.pending_platform_rows || 0), 0);
+                    const pendS = items.reduce((a, x) => a + Number(x.pending_shipment_rows || 0), 0);
+                    let summary = `勾选 <strong>${idStrSet.size}</strong> 条；其中下市参与核验 <strong>${offIds.length}</strong> 条`;
+                    if (skippedOnMarket) summary += `；在市已忽略 <strong>${skippedOnMarket}</strong> 条`;
+                    summary += `。<br>有「全部在市」可替换方案 <strong>${withPlan}</strong> 个 SKU；无可替换方案 <strong>${withoutPlan}</strong> 个 SKU。`;
+                    summary += ` 待迁移登记行合计：平台 <strong>${pendP}</strong> 行、发货 <strong>${pendS}</strong> 行。`;
+                    if (nf.length) summary += ` <br><span style="color:#a33;">未找到 id：${escapeHtml(nf.slice(0, 12).join(', '))}${nf.length > 12 ? '…' : ''}</span>`;
+                    const rows = items.map((row) => {
+                        const ok = row.has_eligible_plan;
+                        const planCell = ok
+                            ? `${escapeHtml(row.target_plan_name || '')} <span style="color:var(--morandi-slate);">(#${Number(row.target_plan_id || 0)})</span>`
+                            : '<span style="color:#a33;">无</span>';
+                        const flag = ok ? '<span style="color:#2f6f2f;">是</span>' : '<span style="color:#a33;">否</span>';
+                        return `<tr>
+                            <td>${escapeHtml(row.sku || '')} <span style="color:var(--morandi-slate);">(${Number(row.order_product_id || 0)})</span></td>
+                            <td>${flag}</td>
+                            <td>${planCell}</td>
+                            <td style="text-align:right;">${Number(row.pending_platform_rows || 0)}</td>
+                            <td style="text-align:right;">${Number(row.pending_shipment_rows || 0)}</td>
+                        </tr>`;
+                    }).join('');
+                    openOrderBatchShipPlanVerifyModal(summary, rows || '<tr><td colspan="5" style="text-align:center;">无数据</td></tr>');
+                })
+                .catch((err) => {
+                    if (window.showAppToast) window.showAppToast('请求失败: ' + err, true, 3600);
+                    else showUploadDialog({ title: '请求失败', message: String(err) });
+                });
+        });
 
         function closeOrderBatchCalcModal() {
             if (orderBatchCalcApplyAbort) {
