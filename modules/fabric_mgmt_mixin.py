@@ -259,6 +259,9 @@ class FabricManagementMixin:
                             return '.png'
                         if b.startswith(b"GIF8"):
                             return '.gif'
+                        # TIFF: little-endian II*\0 or big-endian MM\0*
+                        if len(b) >= 4 and (b.startswith(b"II*\x00") or b.startswith(b"MM\x00*")):
+                            return '.tif'
                         return ''
 
                     ext = ''

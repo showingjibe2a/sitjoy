@@ -7793,7 +7793,7 @@ class SalesProductMixin:
                 if not normalized:
                     return self.send_json({
                         'status': 'error',
-                        'message': '未检测到可上传图片：仅支持 jpg/jpeg/png/gif/bmp/webp',
+                        'message': '未检测到可上传图片：仅支持 jpg/jpeg/png/gif/bmp/webp/tif/tiff',
                         'file_count': 0,
                         'skipped_files': skipped_files,
                     }, start_response)

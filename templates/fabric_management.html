@@ -270,7 +270,7 @@
                             <div class="fabric-images-toolbar">
                                 <button type="button" class="btn-secondary" id="btnSelectExisting" onclick="toggleExistingImagePanel()">选择已有图片</button>
                                 <button type="button" class="btn-secondary" onclick="document.getElementById('modalImageUpload').click()">从外部导入图片</button>
-                                <input type="file" id="modalImageUpload" accept="image/*" multiple style="display:none;">
+                                <input type="file" id="modalImageUpload" accept="image/*,image/tiff,.tif,.tiff" multiple style="display:none;">
                             </div>
                             <div class="fabric-existing-panel" id="existingImagePanel" style="display:none;">
                                 <input type="text" id="modalImageFilter" class="fabric-image-search" placeholder="搜索图片">

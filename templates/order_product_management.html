@@ -666,7 +666,7 @@
                 <div class="pm-section">
                     <h4>主图管理</h4>
                     <div class="pm-section-body">
-                        <input type="file" id="orderMainImageUploadInput" accept="image/*" multiple style="display:none;">
+                        <input type="file" id="orderMainImageUploadInput" accept="image/*,image/tiff,.tif,.tiff" multiple style="display:none;">
                         <div class="form-group pm-form-full">
                             <div class="mim-toolbar-row">
                                 <label class="mim-toolbar-label">规格-面料主图</label>
@@ -1660,7 +1660,7 @@
                             const actionMode = window.NasMainImageBrowserUi
                                 ? window.NasMainImageBrowserUi.readActionModeFromSegment('nasActionModeSegment')
                                 : (modeSeg ? String(modeSeg.getAttribute('data-value') || 'multi') : String(nasMainImageActionMode || 'multi'));
-                            const thumbUrl = `/api/image-preview?id=${encodeURIComponent(fullPathB64)}`;
+                            const thumbUrl = `/api/image-preview?id=${encodeURIComponent(fullPathB64)}&mode=thumb&w=240&q=72`;
                             if (window.NasMainImageBrowserUi) {
                                 window.NasMainImageBrowserUi.wireNasImageBrowseCard(card, actionMode, {
                                     onMultiClick: () => nasMainImageToggle(fullPathB64),

@@ -356,7 +356,7 @@
                 const card = document.createElement('div');
                 const isSelected = selectedItems.has(image.path);
                 card.className = 'item-card item-card--compact' + (isSelected ? ' item-card--selected' : '');
-                const thumbnailUrl = `/api/image-preview?id=${encodeURIComponent(image.path)}`;
+                const thumbnailUrl = `/api/image-preview?id=${encodeURIComponent(image.path)}&mode=thumb&w=240&q=72`;
                 card.innerHTML = `
                     <div class="item-select" onclick="event.stopPropagation();">
                         <input type="checkbox" data-path="${image.path}" data-type="image" ${isSelected ? 'checked' : ''}>

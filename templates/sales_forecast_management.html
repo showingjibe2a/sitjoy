@@ -3869,7 +3869,8 @@
             const pickGridTdFromEvent = (e) => {
                 const t = e.target;
                 if (t && t.closest && t.closest('input.sf-num-input, select, textarea, button')) {
-                    if (!(e.ctrlKey || e.metaKey || e.shiftKey)) return null;
+                    /* 无修饰键时默认让输入框接收焦点；正在拖拽时必须仍能解析到 TD，否则光标经过输入框会中断框选 */
+                    if (!(e.ctrlKey || e.metaKey || e.shiftKey) && !dragging) return null;
                 }
                 let td = t && t.closest ? t.closest('tr[data-row-key] td.sf-grid-selectable[data-sf-ci]') : null;
                 if (!td && typeof document.elementsFromPoint === 'function') {
@@ -3888,9 +3889,18 @@
                 lastPointerMods = { ctrl: !!(e.ctrlKey || e.metaKey), shift: !!e.shiftKey };
                 dragging = true;
                 dragStart = { rowKey: String(td.dataset.rowKey || ''), colIdx: Number(td.dataset.sfCi) };
-                state.selectionAnchor = dragStart;
                 marqueeUnionBase = e.shiftKey ? new Set(state.sfGridSelected) : null;
-                e.preventDefault();
+                /* Shift+点选/框选：锚点须保持为第一次点中的角，不能在 Shift 按下时再改成当前格 */
+                if (!e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+                    state.selectionAnchor = dragStart;
+                } else if (e.shiftKey
+                    && (!state.selectionAnchor || !Number.isFinite(Number(state.selectionAnchor.colIdx)))) {
+                    state.selectionAnchor = dragStart;
+                }
+                /* Shift/Ctrl 时勿 preventDefault，避免部分浏览器不派发 click，导致 Shift+点选矩形无效 */
+                if (!(e.shiftKey || e.ctrlKey || e.metaKey)) {
+                    try { e.preventDefault(); } catch (_) {}
+                }
             }, true);
 
             document.addEventListener('mousemove', (e) => {
@@ -3900,14 +3910,18 @@
                 blurSfForecastInputLeavingCell(td);
                 gridDragMoved = true;
                 const cur = { rowKey: String(td.dataset.rowKey || ''), colIdx: Number(td.dataset.sfCi) };
+                const rectStart = (lastPointerMods.shift && state.selectionAnchor
+                    && Number.isFinite(Number(state.selectionAnchor.colIdx)))
+                    ? state.selectionAnchor
+                    : dragStart;
                 if (lastPointerMods.shift && marqueeUnionBase) {
                     state.sfGridSelected = new Set(marqueeUnionBase);
-                    selectRect(dragStart, cur, false);
+                    selectRect(rectStart, cur, false);
                 } else {
                     selectRect(dragStart, cur, true);
                 }
                 applySfGridSelectionStyles();
-                updateSfGridMarquee(dragStart, cur);
+                updateSfGridMarquee(rectStart, cur);
             }, true);
 
             document.addEventListener('mouseup', () => {
@@ -3959,11 +3973,17 @@
                 const colIdx = Number(td.dataset.sfCi);
                 const isCtrl = e.ctrlKey || e.metaKey;
                 const isShift = e.shiftKey;
-                if (isShift && state.selectionAnchor && Number.isFinite(Number(state.selectionAnchor.colIdx))) {
-                    selectRect(state.selectionAnchor, { rowKey, colIdx }, !isCtrl);
+                if (isShift) {
+                    const anchor = (state.selectionAnchor && Number.isFinite(Number(state.selectionAnchor.colIdx)))
+                        ? state.selectionAnchor
+                        : { rowKey, colIdx };
+                    selectRect(anchor, { rowKey, colIdx }, !isCtrl);
                 } else if (isCtrl) {
                     if (state.sfGridSelected.has(key)) state.sfGridSelected.delete(key);
                     else state.sfGridSelected.add(key);
+                    state.selectionAnchor = { rowKey, colIdx };
+                } else {
+                    selectRect({ rowKey, colIdx }, { rowKey, colIdx }, true);
                     state.selectionAnchor = { rowKey, colIdx };
                 }
                 applySfGridSelectionStyles();

@@ -402,7 +402,7 @@
             if (!p) return '';
             try {
                 const b64 = btoa(unescape(encodeURIComponent(p)));
-                return '/api/image-preview?id=' + encodeURIComponent(b64);
+                return '/api/image-preview?id=' + encodeURIComponent(b64) + '&mode=thumb&w=480&q=78';
             } catch {
                 return '';
             }

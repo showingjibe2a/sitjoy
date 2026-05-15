@@ -16,7 +16,9 @@ class ImageProcessingMixin:
                 name = os.fsdecode(name)
             except Exception:
                 name = name.decode('utf-8', errors='ignore')
-        return str(name).lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'))
+        return str(name).lower().endswith((
+            '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff',
+        ))
 
     def handle_images_api(self, environ, start_response):
         """获取图片列表（用 Base64 编码路径避免编码问题）。"""
