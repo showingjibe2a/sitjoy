@@ -1147,6 +1147,13 @@
         return `sitjoy:${pathKey}:${tableKey}:${suffix}`;
     }
 
+    /** 月份等宽表：与 column-widths 分文件存「统一月份列宽」，避免换一批月份键时 JSON 里旧 m_* 与整表重写互相覆盖 */
+    const PM_MONTH_COL_GROUP_WIDTH_KEY = '__pm_month_col_group__';
+
+    function makePmMonthGroupWidthStorageKey(table){
+        return makeStorageKey(table, 'pm-month-group-w');
+    }
+
     function enhanceHeroLikeBlock(block, opts){
         const addStandardClass = opts && opts.addStandardClass;
         const title = block.querySelector('h2') || block.querySelector('h1');
@@ -1439,14 +1446,23 @@
     function readPersistedColumnWidths(table){
         try {
             const raw = localStorage.getItem(makeStorageKey(table, 'column-widths'));
-            const data = raw ? JSON.parse(raw) : {};
-            return data && typeof data === 'object' ? data : {};
+            let data = raw ? JSON.parse(raw) : {};
+            if(!data || typeof data !== 'object') data = {};
+            if(table && isPmMonthColWidthSyncTable(table)){
+                try {
+                    const sw = localStorage.getItem(makePmMonthGroupWidthStorageKey(table));
+                    const gw = Number(sw);
+                    if(Number.isFinite(gw) && gw >= 36){
+                        data[PM_MONTH_COL_GROUP_WIDTH_KEY] = Math.round(gw);
+                    }
+                } catch (_e) {
+                }
+            }
+            return data;
         } catch (_) {
             return {};
         }
     }
-
-    const PM_MONTH_COL_GROUP_WIDTH_KEY = '__pm_month_col_group__';
 
     function getPmMetricColKeyForWidthSync(table){
         return String(table && table.dataset && table.dataset.pmMetricColKey || 'sf_metric_col').trim();
@@ -1491,9 +1507,23 @@
         try {
             const raw = Object.assign({}, state.columnWidths || {});
             if(state && state.table && isPmMonthColWidthSyncTable(state.table)){
-                const monthKeys = collectPmMonthColKeysForWidthSync(state);
-                const sample = monthKeys.find(k => Number.isFinite(Number(raw[k])) && Number(raw[k]) >= 36);
-                if(sample) raw[PM_MONTH_COL_GROUP_WIDTH_KEY] = Number(raw[sample]);
+                let monthKeys = collectPmMonthColKeysForWidthSync(state);
+                if(!monthKeys.length){
+                    monthKeys = Object.keys(raw).filter(k => isPmMonthColKeyForWidthSync(state.table, k));
+                }
+                const nums = monthKeys.map(k => Number(raw[k])).filter(n => Number.isFinite(n) && n >= 36);
+                let gw = nums.length ? Math.max.apply(null, nums) : Number(raw[PM_MONTH_COL_GROUP_WIDTH_KEY]);
+                if(Number.isFinite(gw) && gw >= 36){
+                    gw = Math.round(gw);
+                    raw[PM_MONTH_COL_GROUP_WIDTH_KEY] = gw;
+                    monthKeys.forEach((k) => {
+                        raw[k] = gw;
+                    });
+                    try {
+                        localStorage.setItem(makePmMonthGroupWidthStorageKey(state.table), String(gw));
+                    } catch (_e2) {
+                    }
+                }
             }
             localStorage.setItem(makeStorageKey(state.table, 'column-widths'), JSON.stringify(raw));
         } catch (_) {}

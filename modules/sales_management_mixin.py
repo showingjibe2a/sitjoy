@@ -2477,6 +2477,53 @@ class SalesManagementMixin:
                     out[oid]['wip_qty'] = int(float(rr.get('q') or 0))
         return out
 
+    def _forecast_load_variant_order_links_for_inventory(self, conn, variant_ids):
+        """variant_id -> [(order_product_id, qty_per_unit), ...]；同一变体同一下单 SKU 合并件数。"""
+        ids = sorted({int(x) for x in (variant_ids or []) if self._parse_int(x)})
+        out = {}
+        if not ids:
+            return out
+        ph = ','.join(['%s'] * len(ids))
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT variant_id, order_product_id, GREATEST(1, COALESCE(quantity, 1)) AS quantity
+                FROM sales_variant_order_links
+                WHERE variant_id IN ({ph})
+                ORDER BY variant_id ASC, order_product_id ASC
+                """,
+                tuple(ids),
+            )
+            for rr in cur.fetchall() or []:
+                vid = self._parse_int(rr.get('variant_id'))
+                oid = self._parse_int(rr.get('order_product_id'))
+                qp = max(1, self._parse_int(rr.get('quantity')) or 1)
+                if not vid or not oid:
+                    continue
+                bucket = out.setdefault(vid, {})
+                bucket[oid] = int(bucket.get(oid) or 0) + qp
+        return {vid: sorted(links.items(), key=lambda x: x[0]) for vid, links in out.items()}
+
+    def _forecast_bom_tier_assembled_counts(self, inv_by_op, bom_links):
+        """按 BOM 成套计算各阶可售套数；上一阶用剩的散件并入下一阶再算 min 瓶颈。"""
+        z = self._forecast_inventory_zero()
+        if not bom_links:
+            return z
+        links = [(int(oid), max(1, int(qp))) for oid, qp in bom_links]
+        tier_keys = ['overseas_qty', 'transit_qty', 'factory_stock_qty', 'wip_qty']
+        carry = {}
+        out = {}
+        for tier in tier_keys:
+            pool = {}
+            for oid, qp in links:
+                base = int((inv_by_op.get(oid) or {}).get(tier) or 0)
+                pool[oid] = base + int(carry.get(oid) or 0)
+            assembled = min(int(pool.get(oid, 0)) // qp for oid, qp in links)
+            out[tier] = assembled
+            for oid, qp in links:
+                carry[oid] = int(pool.get(oid, 0)) - assembled * qp
+        return out
+
     def _forecast_row_history_sales_avg_tail(self, row, history_months, tail=3):
         """取 history_months 末尾最多 tail 个月的月均销量（用于动销月列）。"""
         if not history_months:
@@ -2495,7 +2542,7 @@ class SalesManagementMixin:
         if not rows:
             return
         inv_by_op = {}
-        variant_to_ops = {}
+        variant_bom_links = {}
 
         if forecast_mode == 'order':
             op_ids = [self._parse_int((r.get('labels') or {}).get('order_product_id')) for r in rows]
@@ -2507,26 +2554,10 @@ class SalesManagementMixin:
                 for r in rows
                 if self._parse_int((r.get('labels') or {}).get('variant_id'))
             })
-            if variant_ids:
-                ph = ','.join(['%s'] * len(variant_ids))
-                with conn.cursor() as cur:
-                    cur.execute(
-                        f"""
-                        SELECT variant_id, order_product_id
-                        FROM sales_variant_order_links
-                        WHERE variant_id IN ({ph})
-                        """,
-                        tuple(variant_ids),
-                    )
-                    for rr in cur.fetchall() or []:
-                        vid = self._parse_int(rr.get('variant_id'))
-                        oid = self._parse_int(rr.get('order_product_id'))
-                        if not vid or not oid:
-                            continue
-                        variant_to_ops.setdefault(vid, set()).add(oid)
+            variant_bom_links = self._forecast_load_variant_order_links_for_inventory(conn, variant_ids)
             all_ops = []
-            for s in variant_to_ops.values():
-                all_ops.extend(s)
+            for pairs in variant_bom_links.values():
+                all_ops.extend([oid for oid, _qp in pairs])
             inv_by_op = self._forecast_load_inventory_by_order_product(conn, all_ops)
 
         for row in rows:
@@ -2538,14 +2569,8 @@ class SalesManagementMixin:
                     agg = dict(inv_by_op[oid])
             else:
                 vid = self._parse_int(labels.get('variant_id'))
-                for oid in (variant_to_ops.get(vid) or ()):
-                    src = inv_by_op.get(oid)
-                    if not src:
-                        continue
-                    agg['overseas_qty'] += int(src['overseas_qty'])
-                    agg['transit_qty'] += int(src['transit_qty'])
-                    agg['factory_stock_qty'] += int(src['factory_stock_qty'])
-                    agg['wip_qty'] += int(src['wip_qty'])
+                bom = variant_bom_links.get(vid) or []
+                agg = self._forecast_bom_tier_assembled_counts(inv_by_op, bom)
 
             o = int(agg['overseas_qty'])
             t = int(agg['transit_qty'])

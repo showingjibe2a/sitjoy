@@ -869,23 +869,49 @@
         }
         .sf-perf-fields-panel .pm-table-columns-item--with-reorder {
             display: grid;
-            grid-template-columns: auto 1fr;
-            gap: 0.35rem 0.45rem;
+            grid-template-columns: 1fr auto;
+            gap: 0.35rem 0.4rem;
             align-items: center;
         }
-        .sf-perf-field-reorder {
+        .sf-perf-fields-panel .pm-table-columns-item--with-reorder .pm-table-columns-item-main {
+            min-width: 0;
+        }
+        .sf-perf-fields-panel .sf-perf-field-reorder {
             display: inline-flex;
-            flex-direction: column;
-            gap: 0.1rem;
+            flex-direction: row;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.08rem;
+            flex-shrink: 0;
+            justify-self: end;
         }
-        .sf-perf-field-reorder .sf-perf-field-move {
-            padding: 0.06rem 0.32rem;
-            font-size: 0.7rem;
-            line-height: 1.15;
-            min-height: 0;
+        .sf-perf-fields-panel .sf-perf-field-move.sf-perf-field-move {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-sizing: border-box;
+            margin: 0 !important;
+            padding: 0.04rem 0.18rem !important;
+            min-width: 1.05rem !important;
+            width: 1.05rem !important;
+            height: 1.05rem !important;
+            min-height: 1.05rem !important;
+            line-height: 1 !important;
+            font-size: 0.62rem !important;
+            font-weight: 700 !important;
+            color: #2a2420 !important;
+            border: 0 !important;
+            border-radius: 3px;
+            background: transparent !important;
+            box-shadow: none !important;
         }
-        .sf-perf-field-reorder .sf-perf-field-move:disabled {
-            opacity: 0.35;
+        .sf-perf-fields-panel .sf-perf-field-move.sf-perf-field-move:hover:not(:disabled) {
+            color: #2a2420 !important;
+            background: rgba(42, 36, 32, 0.06) !important;
+        }
+        .sf-perf-fields-panel .sf-perf-field-move.sf-perf-field-move:disabled {
+            color: rgba(42, 36, 32, 0.28) !important;
+            opacity: 1;
             cursor: not-allowed;
         }
         .sf-perf-float-drag-hint {
@@ -3470,13 +3496,27 @@
                 rec.attach = state.sfPerfPanelAttachMode || 'follow';
                 if (panel && !panel.hidden) {
                     const r = panel.getBoundingClientRect();
-                    rec.left = Math.round(r.left);
-                    rec.top = Math.round(r.top);
-                    rec.width = Math.round(r.width);
-                    rec.height = Math.round(r.height);
+                    if (r.width > 48 && r.height > 48) {
+                        rec.left = Math.round(r.left);
+                        rec.top = Math.round(r.top);
+                        rec.width = Math.round(r.width);
+                        rec.height = Math.round(r.height);
+                    }
                 }
                 localStorage.setItem(SF_PREF_PERF_PANEL_KEY, JSON.stringify(rec));
             } catch (_) {}
+        }
+
+        function applySfPerfPanelSizeFromPrefs() {
+            const panel = document.getElementById('sfPerfFloatingPanel');
+            const pref = readSfPerfPanelPrefs();
+            if (!panel || !pref) return;
+            if (Number.isFinite(Number(pref.width)) && Number(pref.width) >= 200) {
+                panel.style.width = `${Math.round(Number(pref.width))}px`;
+            }
+            if (Number.isFinite(Number(pref.height)) && Number(pref.height) >= 120) {
+                panel.style.height = `${Math.round(Number(pref.height))}px`;
+            }
         }
 
         function applySfPerfPanelPrefsToDom() {
@@ -3491,15 +3531,10 @@
             state.sfPerfPanelAttachMode = attach;
             setSfPerfPanelAttachModeUI(attach);
             state.sfPerfPanelFollowBlurDismissed = (attach === 'follow');
+            applySfPerfPanelSizeFromPrefs();
             if (attach === 'free' && Number.isFinite(Number(pref.left)) && Number.isFinite(Number(pref.top))) {
                 panel.style.left = Math.round(Number(pref.left)) + 'px';
                 panel.style.top = Math.round(Number(pref.top)) + 'px';
-                if (Number.isFinite(Number(pref.width)) && Number(pref.width) >= 200) {
-                    panel.style.width = Math.round(Number(pref.width)) + 'px';
-                }
-                if (Number.isFinite(Number(pref.height)) && Number(pref.height) >= 120) {
-                    panel.style.height = Math.round(Number(pref.height)) + 'px';
-                }
                 clampSfPerfFloatingPanelToViewport();
             }
         }
@@ -3547,13 +3582,15 @@
                 if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
                 closeSfPerfFieldsPanel();
                 state.sfPerfPanelFollowBlurDismissed = false;
+                try {
+                    writeSfPerfPanelPrefs();
+                } catch (_) {}
                 panel.hidden = true;
                 state.sfPerfPanelManuallyHidden = true;
                 const raw = getSfPerfPanelPayloadRaw();
                 state.sfPerfPanelHiddenSig = state.sfPerfPanelLastShownIdentity
                     || sfPerfPanelPayloadIdentity(raw)
                     || '';
-                writeSfPerfPanelPrefs();
             };
             if (closeBtn && panel) {
                 closeBtn.addEventListener('mousedown', (e) => {
@@ -3719,6 +3756,7 @@
             }
             renderSfPerfMatrixIntoTable(row, displayMonths);
             panel.hidden = false;
+            applySfPerfPanelSizeFromPrefs();
             requestAnimationFrame(() => {
                 positionSfPerfFloatingPanel(payloadRaw);
                 if (state.sfPerfPanelAttachMode === 'free') clampSfPerfFloatingPanelToViewport();
@@ -3820,12 +3858,12 @@
                 const lab = escapeHtml(labelByKey.get(fkey) || fkey);
                 const ch = visible.has(fkey) ? ' checked' : '';
                 return '<div class="pm-table-columns-item pm-table-columns-item--with-reorder" data-field-key="' + k + '">'
-                    + '<div class="sf-perf-field-reorder">'
+                    + '<div class="pm-table-columns-item-main">'
+                    + `<label><input type="checkbox" data-field-key="${k}"${ch}><span>${lab}</span></label></div>`
+                    + '<div class="sf-perf-field-reorder" aria-label="调整顺序">'
                     + '<button type="button" class="btn-ghost sf-perf-field-move" data-dir="up" title="上移">↑</button>'
                     + '<button type="button" class="btn-ghost sf-perf-field-move" data-dir="down" title="下移">↓</button>'
-                    + '</div>'
-                    + '<div class="pm-table-columns-item-main">'
-                    + `<label><input type="checkbox" data-field-key="${k}"${ch}><span>${lab}</span></label></div></div>`;
+                    + '</div></div>';
             }).join('');
             fldPanel.innerHTML = hint + items;
             fldPanel.querySelectorAll('input[type="checkbox"][data-field-key]').forEach((inp) => {
