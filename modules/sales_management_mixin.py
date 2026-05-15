@@ -2921,6 +2921,60 @@ class SalesManagementMixin:
         avg = total / float(len(keys))
         return avg if avg > 1e-9 else None
 
+    def _forecast_grow_linked_orders_variants_bidir(self, conn, touch_orders, touch_variants):
+        """沿 sales_variant_order_links 双向扩闭包：与当前订单/变体通过任一边相连的 order_product_id、variant_id。
+
+        用于下单 SKU 继承预测：下市本体 B 仍挂在某规格上时，需把该规格预估值经替代方案折算到在市替代 SKU（如 A×2）。"""
+        orders = {int(x) for x in (touch_orders or []) if self._parse_int(x)}
+        variants = {int(x) for x in (touch_variants or []) if self._parse_int(x)}
+        if not orders and not variants:
+            return orders, variants
+        max_pass = 16
+        with conn.cursor() as cur:
+            for _ in range(max_pass):
+                grew = False
+                if variants:
+                    ph = ','.join(['%s'] * len(variants))
+                    cur.execute(
+                        f"""
+                        SELECT DISTINCT order_product_id, variant_id
+                        FROM sales_variant_order_links
+                        WHERE variant_id IN ({ph})
+                        """,
+                        tuple(sorted(variants)),
+                    )
+                    for rr in cur.fetchall() or []:
+                        oid = self._parse_int(rr.get('order_product_id'))
+                        vid = self._parse_int(rr.get('variant_id'))
+                        if oid and oid not in orders:
+                            orders.add(oid)
+                            grew = True
+                        if vid and vid not in variants:
+                            variants.add(vid)
+                            grew = True
+                if orders:
+                    ph = ','.join(['%s'] * len(orders))
+                    cur.execute(
+                        f"""
+                        SELECT DISTINCT order_product_id, variant_id
+                        FROM sales_variant_order_links
+                        WHERE order_product_id IN ({ph})
+                        """,
+                        tuple(sorted(orders)),
+                    )
+                    for rr in cur.fetchall() or []:
+                        oid = self._parse_int(rr.get('order_product_id'))
+                        vid = self._parse_int(rr.get('variant_id'))
+                        if oid and oid not in orders:
+                            orders.add(oid)
+                            grew = True
+                        if vid and vid not in variants:
+                            variants.add(vid)
+                            grew = True
+                if not grew:
+                    break
+        return orders, variants
+
     def _forecast_load_order_variant_links_by_order_product_ids(self, conn, order_product_ids):
         """order_product_id -> [{ variant_id, quantity }, ...]（与下单 SKU 行 variant_links 同源）。"""
         ids = sorted({int(x) for x in (order_product_ids or []) if self._parse_int(x)})
@@ -3587,13 +3641,26 @@ class SalesManagementMixin:
         order_cells = self._forecast_load_order_cells(conn, order_ids, months)
         thumb_by_order = self._forecast_load_order_product_thumb_b64(conn, order_ids)
 
-        # spec 预测的覆盖（包含继承自 platform 的逻辑），用于推导默认值
-        all_variant_ids = sorted({
-            vl.get('variant_id')
-            for r in dim_rows
-            for vl in (r.get('variant_links') or [])
-            if vl.get('variant_id')
-        })
+        # spec 预测的覆盖（包含继承自 platform 的逻辑），用于推导默认值。
+        # 沿 sales_variant_order_links 扩订单/变体闭包：下市本体仍挂在某规格上时，继承预测需经替代方案折算到在市 SKU。
+        links_by_dim = self._forecast_load_order_variant_links_by_order_product_ids(conn, order_ids)
+        seed_variants = {
+            self._parse_int(vl.get('variant_id'))
+            for oid in order_ids
+            for vl in (links_by_dim.get(oid) or [])
+            if self._parse_int(vl.get('variant_id'))
+        }
+        touch_orders, touch_variants = self._forecast_grow_linked_orders_variants_bidir(conn, order_ids, seed_variants)
+        for oid in order_ids:
+            oi = self._parse_int(oid)
+            if oi:
+                touch_orders.add(int(oi))
+
+        all_variant_ids = sorted(touch_variants)
+        links_by_op_all = self._forecast_load_order_variant_links_by_order_product_ids(conn, sorted(touch_orders))
+        plan_items_by_owner = self._forecast_load_default_substitute_plan_items_by_owner(conn, sorted(touch_orders))
+        brief_by_op = self._forecast_load_order_product_brief_map(conn, sorted(touch_orders))
+
         spec_cells = self._forecast_load_spec_cells(conn, all_variant_ids, months)
         platforms_by_variant = self._forecast_load_variant_platform_skus(conn, all_variant_ids)
         all_sp_ids = sorted({
@@ -3606,12 +3673,7 @@ class SalesManagementMixin:
 
         # 历史月销量：聚合为变体粒度。下单 SKU 行「销量」= 各关联变体月销 × sales_variant_order_links.quantity 之和（BOM 件数）；
         # 净销售额/订单/会话/退款仍按链接数量占该变体全局链接权重比例分摊，避免金额重复全额记入每个下单 SKU。
-        variant_hist_ids = sorted({
-            self._parse_int(vl.get('variant_id'))
-            for r in dim_rows
-            for vl in (r.get('variant_links') or [])
-            if self._parse_int(vl.get('variant_id'))
-        })
+        variant_hist_ids = sorted(touch_variants)
         history_by_variant = (
             self._forecast_load_history_by_variant(conn, variant_hist_ids, hist_start, hist_end, shop_ids=shop_ids)
             if variant_hist_ids else {}
@@ -3629,6 +3691,52 @@ class SalesManagementMixin:
                 pc = platform_cells.get((spid, month)) if spid else None
                 total += (pc.get('latest_qty') or 0) if pc else 0
             return total
+
+        # 下市本体 SKU：规格预估值 × BOM 经默认发货替代方案折算到各在市 substitute（与库存展开逻辑一致）
+        subst_addon_total = {}
+        subst_addon_items = {}
+        for m in months:
+            for owner_oid in touch_orders:
+                oowner = int(owner_oid)
+                obrief = brief_by_op.get(oowner) or {}
+                if self._parse_int(obrief.get('is_on_market')) != 0:
+                    continue
+                plan = plan_items_by_owner.get(oowner) or []
+                if not plan:
+                    continue
+                owner_skul = (obrief.get('sku') or '').strip() or f'#{oowner}'
+                for vl in links_by_op_all.get(oowner) or []:
+                    vid = self._parse_int(vl.get('variant_id'))
+                    if not vid:
+                        continue
+                    qty_per = max(1, self._parse_int(vl.get('quantity')) or 1)
+                    spec_qty = spec_effective_qty(vid, m)
+                    if not spec_qty:
+                        continue
+                    expanded = self._forecast_expand_owner_pairs_with_substitute_plans(
+                        [(oowner, qty_per)], plan_items_by_owner
+                    )
+                    for sid, w_eff in expanded:
+                        sid = self._parse_int(sid)
+                        w_eff = int(w_eff) if w_eff else 0
+                        if not sid or sid == oowner:
+                            continue
+                        sub = int(spec_qty) * w_eff
+                        if sub <= 0:
+                            continue
+                        key = (sid, m)
+                        subst_addon_total[key] = int(subst_addon_total.get(key) or 0) + sub
+                        lab_var = f"{vl.get('sku_family') or ''} {vl.get('spec_name') or ''}".strip() or f'V#{vid}'
+                        subst_addon_items.setdefault(key, []).append({
+                            'id': vid,
+                            'kind': 'substitute',
+                            'owner_order_product_id': oowner,
+                            'owner_sku': owner_skul,
+                            'label': f"{lab_var}（下市 {owner_skul} 替代→×{w_eff}）",
+                            'qty': sub,
+                            'spec_qty': spec_qty,
+                            'ratio': w_eff,
+                        })
 
         out = []
         for r in dim_rows:
@@ -3683,6 +3791,12 @@ class SalesManagementMixin:
                             'ratio': qty_per,
                         })
                         inherited_total += sub
+
+                sk = (op_id, m)
+                extra = int(subst_addon_total.get(sk) or 0)
+                if extra:
+                    inherited_total += extra
+                    inherited_items.extend(subst_addon_items.get(sk) or [])
 
                 if stored_qty is None and inherited_total > 0:
                     row['forecasts'][m] = {

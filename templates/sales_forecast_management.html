@@ -572,38 +572,64 @@
             min-width: 0;
             gap: 0.1rem;
         }
+        /* 顶栏：左侧来源合计角标 + 右侧变更提示同一行，不占用输入框宽度 */
         .sf-forecast-cell-top {
             display: flex;
-            justify-content: flex-end;
             align-items: center;
+            justify-content: flex-start;
+            gap: 0.15rem;
             min-height: 11px;
             width: 100%;
             padding: 0 1px;
             flex: 0 0 auto;
         }
-        .sf-forecast-cell-main {
+        .sf-forecast-cell-top-left {
+            flex: 1 1 auto;
+            min-width: 0;
             display: flex;
             align-items: center;
-            justify-content: flex-end;
-            width: 100%;
-            min-width: 0;
-            gap: 0.2rem;
-            position: relative;
+            flex-wrap: nowrap;
+            gap: 0.12rem;
+            overflow: hidden;
         }
-        /* 角标 tooltip 容器勿铺满整格，否则会叠在 input 上拦截点击 */
-        .sf-forecast-cell-main > .sf-tooltip-wrap {
+        .sf-forecast-cell-top .sf-forecast-delta-badge {
             flex: 0 0 auto;
+            margin-left: auto;
+            max-width: 55%;
+        }
+        .sf-forecast-cell-top-left .sf-tooltip-wrap {
+            flex: 0 1 auto;
             width: auto;
-            max-width: 38%;
+            max-width: 100%;
             min-width: 0;
+            display: inline-block;
             pointer-events: none;
         }
-        .sf-forecast-cell-main > .sf-tooltip-wrap .sf-tooltip-content {
+        .sf-forecast-cell-top-left .sf-tooltip-wrap .sf-tooltip-content {
             pointer-events: auto;
+            display: inline-block;
+            width: auto;
+            text-align: left;
         }
-        .sf-forecast-cell-main > input.inline-input.sf-num-input {
-            position: relative;
-            z-index: 2;
+        .sf-forecast-cell-top-left .sf-tooltip-bubble {
+            left: 0;
+            right: auto;
+        }
+        .sf-forecast-cell-main {
+            display: block;
+            width: 100%;
+            min-width: 0;
+        }
+        /* 仅包裹输入框，与角标分离后须覆盖全局 input 的 width:0（原用于 flex 行内拉伸） */
+        .sf-num-input-stack {
+            display: block;
+            width: 100%;
+            min-width: 0;
+        }
+        table.sf-table .sf-cell-wrap .sf-num-input-stack input.inline-input.preview-edit-input.sf-num-input {
+            width: 100%;
+            max-width: none;
+            flex: none;
         }
         /* 相对已存储数量的变化：显示在输入框上方右侧 */
         .sf-forecast-delta-badge {
@@ -745,9 +771,9 @@
             color: #a68f4a;
         }
         .sf-source-badge {
-            position: absolute;
-            top: -7px;
-            right: -7px;
+            position: relative;
+            top: 0;
+            left: 0;
             min-width: 20px;
             height: 16px;
             padding: 0 4px;
@@ -1404,7 +1430,7 @@
                 <button type="button" class="modal-close" id="sfLeadtimeModalClose" aria-label="关闭">×</button>
             </div>
             <div class="sf-leadtime-modal-body">
-                <p style="margin:0 0 0.55rem;font-size:0.78rem;color:rgba(42,36,32,0.62);">按目的区域填写工厂在库/在制发至海外仓并上架所需天数，用于下单SKU维度预测月份的库存盈余估算。</p>
+                <p style="margin:0 0 0.55rem;font-size:0.78rem;color:rgba(42,36,32,0.62);">在途批次<strong>始终统计全部</strong>（不按目的区域过滤），便于看在途总量能否跟上预测。所选「目的区域」仅用于<strong>工厂在库/在制经该流向到美国上架</strong>的天数，用来对比不同时效假设下工厂侧能否补足需求。若列为<strong>本月</strong>且落在历史范围内，消耗量取「整月预测 − 本月已售（MTD）」。</p>
                 <div class="sf-leadtime-table-wrap">
                     <table class="sf-leadtime-table" aria-label="工厂库存时效">
                         <thead>
@@ -2063,8 +2089,22 @@
             return Math.max(0, Number(f && f.value_qty) || 0);
         }
 
+        /** 盈余滚动：本月在历史范围内时用「整月预测 − 本月已售」作为剩余消耗，其余月用整月预测 */
+        function getSurplusNetDemandForRowMonth(row, monthKey) {
+            const gross = getForecastDemandForRowMonth(row, monthKey);
+            const ctx = state.mtdContext || {};
+            if (!ctx.in_history_range) return Math.max(0, gross);
+            const curKey = String(ctx.current_month_key || '');
+            if (!curKey || String(monthKey) !== String(curKey)) return Math.max(0, gross);
+            const hist = (row && row.history && row.history[monthKey]) || {};
+            const soldMtd = Math.max(0, Number(hist.sales_qty) || 0);
+            return Math.max(0, gross - soldMtd);
+        }
+
         function sfSurplusCacheKey() {
-            return `${String(state.sfSurplusRegion || '')}|${JSON.stringify(state.factoryLeadTimes || {})}`;
+            const ctx = state.mtdContext || {};
+            const mtdSig = `${String(ctx.current_month_key || '')}|${ctx.in_history_range ? '1' : '0'}`;
+            return `${String(state.sfSurplusRegion || '')}|${mtdSig}|${JSON.stringify(state.factoryLeadTimes || {})}`;
         }
 
         function computeOrderSkuSurplusSeries(row, months, regionName, leadTimes) {
@@ -2073,9 +2113,8 @@
             const stockDays = Math.max(0, parseInt(lt.stock_days, 10) || 0);
             const wipDays = Math.max(0, parseInt(lt.wip_days, 10) || 0);
             const today = sfTodayYmd();
-            const overseasByRegion = detail.overseas_by_region || {};
-            const overseas0 = Math.max(0, Number(overseasByRegion[regionName]) || 0);
-            const transitBatches = (detail.transit_batches || []).filter((b) => String(b.region_name || '') === String(regionName || ''));
+            /* 在途：全部批次；所选区域仅用于工厂在库/在制→上架天数；不用该区域海外仓现货作初始结余 */
+            const transitBatches = detail.transit_batches || [];
             const factoryStock = Math.max(0, Number(detail.factory_stock_qty) || 0);
             const wipBatches = detail.wip_batches || [];
 
@@ -2102,12 +2141,12 @@
             });
 
             const sortedMonths = (months || []).slice().sort(compareForecastMonthKeys);
-            let transitBal = overseas0;
-            let fullBal = overseas0;
+            let transitBal = 0;
+            let fullBal = 0;
             const transitSurplus = {};
             const fullSurplus = {};
             sortedMonths.forEach((mk) => {
-                const demand = getForecastDemandForRowMonth(row, mk);
+                const demand = getSurplusNetDemandForRowMonth(row, mk);
                 const trIn = transitArrivals.get(mk) || 0;
                 const fullIn = fullArrivals.get(mk) || 0;
                 transitBal += trIn;
@@ -2148,11 +2187,11 @@
             const tr = document.createElement('span');
             tr.className = 'sf-surplus-transit' + (Number(trVal) < 0 ? ' sf-surplus-neg' : '');
             tr.textContent = trVal == null ? '—' : formatSurplusLabel(trVal);
-            tr.title = '预估当月在途盈余：现有海外仓 + 当月在途到货 − 本月预测销量（区域：' + state.sfSurplusRegion + '）';
+            tr.title = '在途（全部流向）按预计上架月入账后，抵减当月净消耗（本月为「预测−MTD已售」）后的滚动结余';
             const tot = document.createElement('span');
             tot.className = 'sf-surplus-total' + (Number(totVal) < 0 ? ' sf-surplus-neg' : '');
             tot.textContent = totVal == null ? '—' : formatSurplusLabel(totVal);
-            tot.title = '预估当月全部库存盈余：含在途、工厂在库/在制（按时效折算上架）− 本月预测销量（区域：' + state.sfSurplusRegion + '）';
+            tot.title = '在途 + 工厂在库/在制（按「' + state.sfSurplusRegion + '」时效折算美国上架月）抵减当月净消耗（本月为「预测−MTD已售」）后的滚动结余';
             rowEl.appendChild(tr);
             rowEl.appendChild(tot);
             wrap.appendChild(rowEl);
@@ -3336,6 +3375,26 @@
             return tbody.querySelector(`tr[data-row-key="${esc}"] td[data-sf-ci="${ci}"]`);
         }
 
+        /** 框选/单选预测格后按 Delete：清空格内预测数量输入并同步脏状态 */
+        function clearSfGridSelectionInputs() {
+            if (!state.sfGridSelected || !state.sfGridSelected.size) return false;
+            const tbody = document.getElementById('forecastTbody');
+            if (!tbody) return false;
+            let n = 0;
+            state.sfGridSelected.forEach((key) => {
+                const { rowKey, colIdx } = parseSfGridCellKey(key);
+                const td = getSfGridTd(tbody, rowKey, colIdx);
+                if (!td) return;
+                const inp = td.querySelector('input.sf-num-input');
+                if (!inp || inp.readOnly || inp.disabled) return;
+                inp.value = '';
+                onForecastInputChange({ target: inp });
+                n += 1;
+            });
+            if (n && !state.forecastExpanded) renderForecastTableBodyOnly();
+            return n > 0;
+        }
+
         function exportSfGridTdPlain(td) {
             if (!td) return '';
             const inp = td.querySelector('input.sf-num-input');
@@ -3551,6 +3610,14 @@
                 if (e.key === 'Escape') {
                     if (state.sfGridSelected && state.sfGridSelected.size) {
                         clearHistorySelection();
+                        try { e.preventDefault(); } catch (_) {}
+                    }
+                    return;
+                }
+                if (e.key === 'Delete') {
+                    if (!state.sfGridSelected || !state.sfGridSelected.size) return;
+                    if (sfActiveElementBlocksForecastMatrixPaste()) return;
+                    if (clearSfGridSelectionInputs()) {
                         try { e.preventDefault(); } catch (_) {}
                     }
                     return;
@@ -5018,8 +5085,11 @@
             const dirtyKey = row.row_key + '|' + monthKey;
             const dirtyVal = state.dirty.has(dirtyKey) ? Number(state.dirty.get(dirtyKey).latest_qty) : null;
 
-            const baseValue = forecast ? Number(forecast.value_qty || 0) : 0;
-            const value = dirtyVal !== null ? dirtyVal : baseValue;
+            /* 本层已存储数量（用于输入框基线）；继承合计仍在 row.forecasts[].value_qty 供 MTD/盈余等使用 */
+            const storedBaseline = forecast && forecast.is_inherited
+                ? 0
+                : (forecast ? Number(forecast.value_qty || 0) : 0);
+            const value = dirtyVal !== null ? dirtyVal : storedBaseline;
 
             const input = document.createElement('input');
             // Use text+numeric inputmode to avoid number spinners wasting width.
@@ -5033,7 +5103,7 @@
             input.value = String(value || 0);
             input.dataset.rowKey = row.row_key;
             input.dataset.month = monthKey;
-            input.dataset.original = String(baseValue || 0);
+            input.dataset.original = String(storedBaseline || 0);
             input.addEventListener('input', onForecastInputChange);
             input.addEventListener('blur', onForecastInputBlur);
             input.addEventListener('beforeinput', (ev) => {
@@ -5053,37 +5123,44 @@
 
             const top = document.createElement('span');
             top.className = 'sf-forecast-cell-top';
+            const topLeft = document.createElement('span');
+            topLeft.className = 'sf-forecast-cell-top-left';
+            top.appendChild(topLeft);
             top.appendChild(deltaBadge);
 
             const main = document.createElement('span');
             main.className = 'sf-forecast-cell-main';
-            main.appendChild(input);
+            const inputStack = document.createElement('span');
+            inputStack.className = 'sf-num-input-stack';
+            inputStack.appendChild(input);
 
             wrap.appendChild(top);
             wrap.appendChild(main);
+            main.appendChild(inputStack);
             updateSfForecastDeltaBadgeForInput(input, deltaBadge);
 
-            // 角标：来自来源（继承）或来自数据库（已存储）
+            // 顶栏左侧：上层合计角标（与右侧变更提示同一行，不占输入框宽度）
             if (forecast && forecast.is_inherited && forecast.source && forecast.source.items && forecast.source.items.length) {
                 const badge = document.createElement('span');
                 badge.className = 'sf-source-badge is-inherited';
-                badge.textContent = forecast.source.type === 'platform_sku' ? '继' : '承';
-                badge.title = '继承自' + (forecast.source.type === 'platform_sku' ? '销售平台SKU' : '规格+面料') + '：' + formatNumber(forecast.source.total_qty);
+                badge.textContent = formatNumber(forecast.source.total_qty || 0);
+                badge.title = '继承自' + (forecast.source.type === 'platform_sku' ? '销售平台SKU' : '规格+面料') + '合计 ' + formatNumber(forecast.source.total_qty || 0) + '（未写入本层；编辑后保存仅更新当前模式）';
                 const tipped = makeTooltipWrap(buildSourceTooltip(forecast, monthKey), badge);
-                main.appendChild(tipped);
+                topLeft.appendChild(tipped);
             } else if (forecast && forecast.source && forecast.source.items && forecast.source.items.length) {
                 const badge = document.createElement('span');
                 badge.className = 'sf-source-badge';
                 badge.textContent = formatNumber(forecast.source.total_qty);
+                badge.title = '上一层级口径合计 ' + formatNumber(forecast.source.total_qty || 0) + '（本格已存本层预测）';
                 const tipped = makeTooltipWrap(buildSourceTooltip(forecast, monthKey, true), badge);
-                main.appendChild(tipped);
+                topLeft.appendChild(tipped);
             }
 
             appendSfSurplusRow(wrap, row, monthKey);
 
             // 让 cell-meta 时间戳也可悬浮查看
             if (forecast && forecast.cell_meta) {
-                const stored = Number(forecast.cell_meta.latest_qty != null ? forecast.cell_meta.latest_qty : baseValue);
+                const stored = Number(forecast.cell_meta.latest_qty != null ? forecast.cell_meta.latest_qty : (Number(forecast.value_qty || 0)));
                 input.title = '初始：' + formatNumber(forecast.cell_meta.initial_qty || 0)
                     + '\n上次：' + formatNumber(forecast.cell_meta.prev_qty || 0)
                     + '\n最新：' + formatNumber(forecast.cell_meta.latest_qty || 0)

@@ -1982,6 +1982,21 @@
         field.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
+    /** 框选/单选单元格后按 Delete：清空格内可编辑输入（与矩阵粘贴同一套字段识别） */
+    function clearEditableFieldsInActiveGridSelection(){
+        if(!activeGridSelection || !activeGridSelection.state || !activeGridSelection.selectedCells.size) return false;
+        let applied = 0;
+        activeGridSelection.selectedCells.forEach(cell => {
+            if(!cell || !cell.isConnected) return;
+            const field = getEditableFieldFromCell(cell);
+            if(field){
+                setFieldValueByPaste(field, '');
+                applied += 1;
+            }
+        });
+        return applied > 0;
+    }
+
     function applyMatrixPasteToActiveSelection(state, matrix){
         if(!state || !Array.isArray(matrix) || !matrix.length) return false;
         if(!activeGridSelection || activeGridSelection.state !== state || !activeGridSelection.selectedCells.size) return false;
@@ -5883,6 +5898,13 @@
             if(copyGridSelectionToClipboard()){
                 e.preventDefault();
                 return;
+            }
+        }
+        if(e.key === 'Delete'){
+            const hasManagedSelection = !!(activeGridSelection && activeGridSelection.selectedCells && activeGridSelection.selectedCells.size > 0);
+            if(!hasManagedSelection) return;
+            if(clearEditableFieldsInActiveGridSelection()){
+                e.preventDefault();
             }
         }
         if(e.key === 'Escape'){
