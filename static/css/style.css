@@ -40,11 +40,20 @@ button.modal-close {
     border-radius: 50%;
     font-size: 0.8125rem;
     font-weight: 700;
-    line-height: 1;
-    letter-spacing: -0.03em;
+    /* 行高为 1 时拉丁/Segoe 下 “×” 字框上下留白不均，flex 居中仍显偏；0 收紧行盒便于真正几何居中 */
+    line-height: 0;
+    letter-spacing: 0;
+    text-align: center;
     cursor: pointer;
     flex-shrink: 0;
+    -webkit-appearance: none;
+    appearance: none;
     transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+button.modal-close::-moz-focus-inner {
+    border: 0;
+    padding: 0;
 }
 
 button.modal-close:hover {
@@ -1300,6 +1309,72 @@ input.optional-date-input[type="text"]:focus {
     color: #b00020;
     font-weight: 700;
     margin-left: 0.25rem;
+}
+
+/* 销售产品管理 / 工厂在制等：汇总模式下首列「整组展开/收起」表头按钮（.sj-agg-all-toggle） */
+.sj-sales-table-host.sj-aggregate-active .sj-agg-toggle-col,
+.sj-sales-table-host.sj-aggregate-active .sj-agg-toggle-cell,
+.sj-wip-table-host.sj-aggregate-active .sj-agg-toggle-col,
+.sj-wip-table-host.sj-aggregate-active .sj-agg-toggle-cell {
+    width: var(--sj-agg-toggle-w, 1.45rem);
+    min-width: var(--sj-agg-toggle-w, 1.45rem);
+    max-width: 1.6rem;
+    padding-left: 0.12rem;
+    padding-right: 0.12rem;
+    text-align: center;
+    vertical-align: middle;
+}
+.sj-sales-table-host.sj-aggregate-active .sj-agg-toggle-head-inner,
+.sj-wip-table-host.sj-aggregate-active .sj-agg-toggle-head-inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    padding: 0;
+}
+.sj-sales-table-host.sj-aggregate-active .sj-agg-all-toggle,
+.sj-wip-table-host.sj-aggregate-active .sj-agg-all-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+    width: 0.7rem;
+    height: 0.7rem;
+    border: 0 !important;
+    outline: none;
+    border-radius: 0;
+    background: transparent !important;
+    box-shadow: none !important;
+    cursor: pointer;
+    font-size: 0.55rem;
+    line-height: 1;
+    font-weight: 700;
+    color: #5a4f42;
+    -webkit-appearance: none;
+    appearance: none;
+    overflow: visible;
+}
+.sj-sales-table-host.sj-aggregate-active .sj-agg-all-toggle:focus,
+.sj-wip-table-host.sj-aggregate-active .sj-agg-all-toggle:focus {
+    outline: none;
+}
+.sj-sales-table-host.sj-aggregate-active .sj-agg-all-toggle:focus-visible,
+.sj-wip-table-host.sj-aggregate-active .sj-agg-all-toggle:focus-visible {
+    outline: 2px solid rgba(90, 79, 66, 0.35);
+    outline-offset: 1px;
+}
+.sj-sales-table-host:not(.sj-aggregate-active) th.sj-agg-toggle-col,
+.sj-sales-table-host:not(.sj-aggregate-active) td.sj-agg-toggle-cell,
+.sj-wip-table-host:not(.sj-aggregate-active) th.sj-agg-toggle-col,
+.sj-wip-table-host:not(.sj-aggregate-active) td.sj-agg-toggle-cell {
+    display: none !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    border: none !important;
 }
 
 .pm-table {

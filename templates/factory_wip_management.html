@@ -186,52 +186,15 @@
   }
   .wip-group-toggle {
     display: inline-block;
-    width: 18px;
+    width: 1em;
     text-align: center;
-    margin-right: 0.25rem;
+    margin-right: 0.2rem;
     color: #6f6659;
     font-weight: 700;
+    font-size: 0.62rem;
+    line-height: 1;
   }
   .wip-row-hidden { display: none; }
-  .sj-wip-table-host.sj-aggregate-active .sj-agg-toggle-col,
-  .sj-wip-table-host.sj-aggregate-active .sj-agg-toggle-cell {
-    width: var(--sj-agg-toggle-w, 40px);
-    min-width: var(--sj-agg-toggle-w, 40px);
-    max-width: var(--sj-agg-toggle-w, 40px);
-    text-align: center;
-    vertical-align: middle;
-  }
-  .sj-wip-table-host.sj-aggregate-active .sj-agg-toggle-head-inner { display: flex; align-items: center; justify-content: center; min-height: 2.1rem; }
-  .sj-wip-table-host.sj-aggregate-active .sj-agg-all-toggle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    margin: 0;
-    border: none;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
-    cursor: pointer;
-    font-size: 0.88rem;
-    line-height: 1;
-    color: #5a4f42;
-    font-weight: 700;
-    -webkit-appearance: none;
-    appearance: none;
-  }
-  .sj-wip-table-host.sj-aggregate-active .sj-agg-all-toggle:focus-visible {
-    outline: 2px solid rgba(90, 79, 66, 0.35);
-    outline-offset: 2px;
-  }
-  .sj-wip-table-host:not(.sj-aggregate-active) th.sj-agg-toggle-col,
-  .sj-wip-table-host:not(.sj-aggregate-active) td.sj-agg-toggle-cell {
-    display: none !important;
-    width: 0 !important;
-    min-width: 0 !important;
-    padding: 0 !important;
-    border: none !important;
-  }
   .wip-group-row .sj-agg-toggle-cell { cursor: pointer; }
   .wip-group-row .sj-agg-toggle-cell .wip-group-toggle { margin-right: 0; }
   .wip-group-row td:first-child { text-align: center; vertical-align: middle; }
@@ -1294,7 +1257,7 @@ function wipSyncAggregateToggleHeaderUi(){
     const targetSet = wipAggregateMode === 'order' ? wipCollapsedOrderGroups : wipCollapsedFamilyGroups;
     const keys = wipCollectGroupKeysForToggle(applyWipColumnFilters(listCache), wipAggregateMode);
     const allExpanded = keys.length > 0 && keys.every(k => !targetSet.has(k));
-    text = allExpanded ? '▶' : '▼';
+    text = allExpanded ? '▼' : '▶';
     title = allExpanded ? '单击：全部收起' : '单击：全部展开';
   }
   btns.forEach(b => {

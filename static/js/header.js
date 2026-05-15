@@ -2861,6 +2861,9 @@
             }
             w = Math.max(1, Math.round(th.getBoundingClientRect().width || 0));
         }
+        if(th.classList && th.classList.contains('sj-agg-toggle-col') && w > 0){
+            w = Math.min(w, 28);
+        }
         try {
             state.table.style.setProperty('--sj-agg-toggle-w', `${w}px`);
         } catch (_e) {
@@ -3601,7 +3604,11 @@
         const state = managedTableState.get(t);
         if(!state) return;
         try{
-            t.dataset.sjManageLayoutSig = String(Date.now());
+            // 月份等宽同步表由页面在重绘 thead 前写入稳定的 sjManageLayoutSig；此处若再刷 Date.now()
+            // 会导致 headerSignature 每次变化，反复走列宽全量解析并写回 storage，覆盖用户拖拽宽度。
+            if(!isPmMonthColWidthSyncTable(t)){
+                t.dataset.sjManageLayoutSig = String(Date.now());
+            }
         } catch(_e){
         }
         state.headerSignature = '';

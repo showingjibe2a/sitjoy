@@ -315,50 +315,13 @@
         }
         .sales-parent-group-toggle {
             display: inline-block;
-            width: 1.1em;
-            margin-right: 0.35rem;
+            width: 1em;
+            margin-right: 0.2rem;
             text-align: center;
+            font-size: 0.62rem;
+            line-height: 1;
         }
         .sales-row-hidden { display: none; }
-        .sj-sales-table-host.sj-aggregate-active .sj-agg-toggle-col,
-        .sj-sales-table-host.sj-aggregate-active .sj-agg-toggle-cell {
-            width: var(--sj-agg-toggle-w, 40px);
-            min-width: var(--sj-agg-toggle-w, 40px);
-            max-width: var(--sj-agg-toggle-w, 40px);
-            text-align: center;
-            vertical-align: middle;
-        }
-        .sj-sales-table-host.sj-aggregate-active .sj-agg-toggle-head-inner { display: flex; align-items: center; justify-content: center; min-height: 2.1rem; }
-        .sj-sales-table-host.sj-aggregate-active .sj-agg-all-toggle {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: 0;
-            margin: 0;
-            border: none;
-            border-radius: 0;
-            background: transparent;
-            box-shadow: none;
-            cursor: pointer;
-            font-size: 0.88rem;
-            line-height: 1;
-            color: #5a4f42;
-            font-weight: 700;
-            -webkit-appearance: none;
-            appearance: none;
-        }
-        .sj-sales-table-host.sj-aggregate-active .sj-agg-all-toggle:focus-visible {
-            outline: 2px solid rgba(90, 79, 66, 0.35);
-            outline-offset: 2px;
-        }
-        .sj-sales-table-host:not(.sj-aggregate-active) th.sj-agg-toggle-col,
-        .sj-sales-table-host:not(.sj-aggregate-active) td.sj-agg-toggle-cell {
-            display: none !important;
-            width: 0 !important;
-            min-width: 0 !important;
-            padding: 0 !important;
-            border: none !important;
-        }
         .sales-parent-group-row .sj-agg-toggle-cell { cursor: pointer; }
         .sales-parent-group-row .sj-agg-toggle-cell .sales-parent-group-toggle { margin-right: 0; }
         .sales-parent-group-row td:first-child { text-align: center; vertical-align: middle; }
@@ -1539,7 +1502,7 @@
             if (salesProductAggregateMode === 'parent') {
                 const keys = salesCollectParentGroupKeysForToggle(salesProductItems || []);
                 const allExpanded = keys.length > 0 && keys.every(k => !salesProductCollapsedParentGroups.has(k));
-                text = allExpanded ? '▶' : '▼';
+                text = allExpanded ? '▼' : '▶';
                 title = allExpanded ? '单击：全部收起' : '单击：全部展开';
             }
             btns.forEach(b => {
