@@ -1575,7 +1575,6 @@
             const snap = preserveScroll ? getNasMainImageModalScrollSnapshot() : null;
             let out = false;
             try {
-                list.classList.toggle('is-thumb-sm', nasMainImageThumbSize === 'sm');
                 syncNasMainImageBrowserGridMode();
                 list.innerHTML = '<div class="pm-select-empty nas-main-image-grid-loading">加载中...</div>';
                 showNasMainImageStatus('', false);
@@ -1599,9 +1598,21 @@
                 persistNasOrderMainImageBrowseLocation();
                 if (!nasMainImageEntries.length) {
                     list.innerHTML = '<div class="pm-select-empty nas-main-image-grid-empty">当前目录暂无可用文件</div>';
+                    if (window.NasMainImageBrowserUi) {
+                        window.NasMainImageBrowserUi.syncGridThumbClassFromSegment('nasThumbSizeSegment', 'nasMainImageList');
+                    } else {
+                        list.classList.toggle('is-thumb-sm', nasMainImageThumbSize === 'sm');
+                    }
+                    syncNasMainImageBrowserGridMode();
                     out = true;
                 } else {
                     list.innerHTML = '';
+                    if (window.NasMainImageBrowserUi) {
+                        window.NasMainImageBrowserUi.syncGridThumbClassFromSegment('nasThumbSizeSegment', 'nasMainImageList');
+                    } else {
+                        list.classList.toggle('is-thumb-sm', nasMainImageThumbSize === 'sm');
+                    }
+                    syncNasMainImageBrowserGridMode();
                     nasMainImageEntries.forEach(entry => {
                         if (entry.kind === 'folder') {
                             const folder = entry.item || {};
@@ -1609,16 +1620,20 @@
                             const name = browseSegDisplayName({ name: String(folder.name || '') }, 0) || '未命名文件夹';
                             const card = document.createElement('div');
                             card.className = 'item-card item-card--folder item-card--nas-browse';
-                            card.setAttribute('role', 'button');
-                            card.tabIndex = 0;
-                            card.setAttribute('title', '双击进入文件夹');
-                            card.addEventListener('dblclick', () => nasMainImageEnterFolder(pathB64));
-                            card.addEventListener('keydown', (e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                    e.preventDefault();
-                                    nasMainImageEnterFolder(pathB64);
-                                }
-                            });
+                            if (window.NasMainImageBrowserUi) {
+                                window.NasMainImageBrowserUi.wireNasFolderBrowseCard(card, () => nasMainImageEnterFolder(pathB64));
+                            } else {
+                                card.setAttribute('role', 'button');
+                                card.tabIndex = 0;
+                                card.setAttribute('title', '双击进入文件夹');
+                                card.addEventListener('dblclick', () => nasMainImageEnterFolder(pathB64));
+                                card.addEventListener('keydown', (e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        nasMainImageEnterFolder(pathB64);
+                                    }
+                                });
+                            }
                             const thumb = document.createElement('div');
                             thumb.className = 'item-thumbnail folder';
                             const icon = document.createElement('div');
@@ -1642,9 +1657,16 @@
                             const card = document.createElement('div');
                             card.className = 'item-card item-card--nas-browse' + (isSelected ? ' item-card--selected' : '');
                             const modeSeg = document.getElementById('nasActionModeSegment');
-                            const actionMode = modeSeg ? String(modeSeg.getAttribute('data-value') || 'multi') : String(nasMainImageActionMode || 'multi');
+                            const actionMode = window.NasMainImageBrowserUi
+                                ? window.NasMainImageBrowserUi.readActionModeFromSegment('nasActionModeSegment')
+                                : (modeSeg ? String(modeSeg.getAttribute('data-value') || 'multi') : String(nasMainImageActionMode || 'multi'));
                             const thumbUrl = `/api/image-preview?id=${encodeURIComponent(fullPathB64)}`;
-                            if (actionMode === 'double') {
+                            if (window.NasMainImageBrowserUi) {
+                                window.NasMainImageBrowserUi.wireNasImageBrowseCard(card, actionMode, {
+                                    onMultiClick: () => nasMainImageToggle(fullPathB64),
+                                    onDoubleImport: () => { nasMainImageImport(fullPathB64); },
+                                });
+                            } else if (actionMode === 'double') {
                                 card.addEventListener('dblclick', () => { nasMainImageImport(fullPathB64); });
                                 card.addEventListener('click', (e) => {
                                     e.preventDefault();
@@ -1654,23 +1676,32 @@
                             }
                             const selectWrap = document.createElement('div');
                             selectWrap.className = 'item-select';
-                            selectWrap.addEventListener('click', (e) => e.stopPropagation());
                             const cb = document.createElement('input');
                             cb.type = 'checkbox';
                             cb.dataset.path = fullPathB64;
                             cb.checked = isSelected;
-                            cb.addEventListener('click', (e) => e.stopPropagation());
-                            cb.addEventListener('change', (e) => {
-                                const seg = document.getElementById('nasActionModeSegment');
-                                const m = seg ? String(seg.getAttribute('data-value') || 'multi') : 'multi';
-                                if (m === 'double') {
-                                    e.target.checked = false;
-                                    return;
-                                }
-                                nasMainImageToggle(fullPathB64, true, e.target.checked);
-                                card.classList.toggle('item-card--selected', !!e.target.checked);
-                                updateNasMainImageMeta(images.length);
-                            });
+                            if (window.NasMainImageBrowserUi) {
+                                window.NasMainImageBrowserUi.wireNasImageCheckboxInteractions(selectWrap, cb, card, {
+                                    actionModeSegmentId: 'nasActionModeSegment',
+                                    pathB64: fullPathB64,
+                                    onToggle: nasMainImageToggle,
+                                    updateMeta: () => updateNasMainImageMeta(images.length),
+                                });
+                            } else {
+                                selectWrap.addEventListener('click', (e) => e.stopPropagation());
+                                cb.addEventListener('click', (e) => e.stopPropagation());
+                                cb.addEventListener('change', (e) => {
+                                    const seg = document.getElementById('nasActionModeSegment');
+                                    const m = seg ? String(seg.getAttribute('data-value') || 'multi') : 'multi';
+                                    if (m === 'double') {
+                                        e.target.checked = false;
+                                        return;
+                                    }
+                                    nasMainImageToggle(fullPathB64, true, e.target.checked);
+                                    card.classList.toggle('item-card--selected', !!e.target.checked);
+                                    updateNasMainImageMeta(images.length);
+                                });
+                            }
                             selectWrap.appendChild(cb);
                             const thumb = document.createElement('div');
                             thumb.className = 'item-thumbnail';
@@ -5379,7 +5410,17 @@
             nasMainImageThumbSize = safeGetLocalStorage(NAS_MAIN_IMAGE_THUMB_SIZE_KEY) || 'sm';
             applyOrderMainImageSwitchUI();
             applyNasSegmentState('nasActionModeSegment', nasMainImageActionMode);
-            applyNasSegmentState('nasThumbSizeSegment', nasMainImageThumbSize);
+            if (window.NasMainImageBrowserUi) {
+                window.NasMainImageBrowserUi.bindThumbSizeSegment({
+                    segmentId: 'nasThumbSizeSegment',
+                    gridId: 'nasMainImageList',
+                    storageKey: NAS_MAIN_IMAGE_THUMB_SIZE_KEY,
+                    defaultMode: 'sm',
+                    onApply: function (m) { nasMainImageThumbSize = m; },
+                });
+            } else {
+                applyNasSegmentState('nasThumbSizeSegment', nasMainImageThumbSize);
+            }
         });
         window.setTimeout(function() {
             var el = document.getElementById('pm-modal');
@@ -5486,15 +5527,6 @@
                 if (document.getElementById('nas-main-image-import-modal')?.classList.contains('active')) {
                     void renderNasMainImageList({ preserveScroll: true });
                 }
-            });
-        });
-        document.querySelectorAll('#nasThumbSizeSegment .status-pill[data-value]').forEach(btn => {
-            btn.addEventListener('click', function() {
-                nasMainImageThumbSize = String(this.getAttribute('data-value') || 'sm');
-                safeSetLocalStorage(NAS_MAIN_IMAGE_THUMB_SIZE_KEY, nasMainImageThumbSize);
-                applyNasSegmentState('nasThumbSizeSegment', nasMainImageThumbSize);
-                const list = document.getElementById('nasMainImageList');
-                if (list) list.classList.toggle('is-thumb-sm', nasMainImageThumbSize === 'sm');
             });
         });
         document.getElementById('nasMainImageSelectAllBox')?.addEventListener('change', function() {
@@ -5665,6 +5697,7 @@
     </script>
 </body>
     <script src="/static/js/header.js"></script>
+    <script src="/static/js/nas_main_image_browser_ui.js"></script>
     <script src="/static/js/sitjoy_row_image_refresh.js"></script>
     <script src="/static/js/pm_image_edit_modal.js"></script>
 </html>

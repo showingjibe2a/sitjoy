@@ -776,7 +776,7 @@ function getWarehouseSelectHTML(regionId,warehouseId,transitId){
   const mergedWarehouses = filteredWarehouses.slice();
   if(selectedWarehouse && !mergedWarehouses.some(w=>String(w.id||'')===selectedWarehouseId)) mergedWarehouses.unshift(selectedWarehouse);
   const opts=[placeholder].concat(mergedWarehouses.map(w=>{const wid=String(w.id||'');const selected=hasSelection&&wid===selectedWarehouseId?' selected':'';return `<option value="${wid}"${selected}>${escapeHtml(w.warehouse_name||'')}</option>`})).join('');
-  return `<select class="transit-inline-input transit-inline-warehouse transit-inline-edit ${hasSelection?'':'is-empty'}" data-id="${transitId}" data-field="destination_warehouse_id" data-region-id="${regionIdNum}">${opts}</select>`;
+  return `<select class="transit-inline-input transit-inline-warehouse transit-inline-edit ${hasSelection?'':'is-empty'}" data-universal-compact="1" data-id="${transitId}" data-field="destination_warehouse_id" data-region-id="${regionIdNum}">${opts}</select>`;
 }
 function getForwarderSelectHTML(forwarderId,transitId){
   const selectedForwarderId=String(forwarderId||'').trim();
@@ -786,7 +786,7 @@ function getForwarderSelectHTML(forwarderId,transitId){
   const mergedForwarders = (optionForwarders || []).slice();
   if(selectedForwarder && !mergedForwarders.some(f=>String(f.id||'')===selectedForwarderId)) mergedForwarders.unshift(selectedForwarder);
   const opts=[placeholder].concat(mergedForwarders.map(f=>{const fid=String(f.id||'');const selected=hasSelection&&fid===selectedForwarderId?' selected':'';return `<option value="${fid}"${selected}>${escapeHtml(f.forwarder_name||'')}</option>`})).join('');
-  return `<select class="transit-inline-input transit-inline-forwarder transit-inline-edit ${hasSelection?'':'is-empty'}" data-id="${transitId}" data-field="forwarder_id">${opts}</select>`;
+  return `<select class="transit-inline-input transit-inline-forwarder transit-inline-edit ${hasSelection?'':'is-empty'}" data-universal-compact="1" data-id="${transitId}" data-field="forwarder_id">${opts}</select>`;
 }
 function getInlineText(field,value,id,extraClass=''){const cls=['transit-inline-input','transit-inline-edit',extraClass].filter(Boolean).join(' ');const esc=escapeHtml(value||'');return `<input type="text" class="${cls}" data-id="${id}" data-field="${field}" value="${esc}" title="${esc}">`;}
 function escapeHtml(v){return String(v==null?'':v).replace(/[&<>'"]/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;','\'':'&#39;','"':'&quot;'}[s]))}

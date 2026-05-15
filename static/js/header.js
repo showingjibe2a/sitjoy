@@ -81,6 +81,11 @@
         state.trigger.classList.toggle('has-value', !!(select.value || '').toString().trim());
         state.trigger.disabled = !!select.disabled;
         state.lastValue = String(select.value || '');
+        if(state.trigger.classList.contains('universal-select-trigger--compact')){
+            state.trigger.title = String(state.trigger.textContent || '').trim();
+        } else {
+            state.trigger.removeAttribute('title');
+        }
     }
 
     function renderDropdownOptions(select, state){
@@ -212,6 +217,12 @@
         trigger.className = 'universal-select-trigger';
         trigger.textContent = '请选择';
 
+        const compact = String(select.dataset.universalCompact || '') === '1';
+        if(compact){
+            wrapper.classList.add('universal-select-dropdown--compact');
+            trigger.classList.add('universal-select-trigger--compact');
+        }
+
         const menu = document.createElement('div');
         menu.className = 'feature-category-menu';
 
@@ -224,6 +235,7 @@
             searchInput.type = 'text';
             searchInput.className = 'universal-select-search';
             searchInput.placeholder = select.dataset.searchPlaceholder || '搜索';
+            if(compact) searchInput.classList.add('universal-select-search--compact');
             menu.appendChild(searchInput);
         } else {
             menu.classList.add('menu-no-search');

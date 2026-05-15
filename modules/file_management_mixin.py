@@ -16,6 +16,35 @@ except Exception:
     Image = None
 
 
+def _flatten_image_to_rgb_or_l_for_jpeg(img, bg=(255, 255, 255)):
+    """
+    生成 JPEG 缩略图前统一为 RGB 或 L。
+    RGBA / LA / 带透明索引的 P 等若直接 convert('RGB')，透明区域会变成黑色；
+    先衬到浅色底（默认白）再转 RGB，与「白底图」及前端 --sj-media-image-canvas 一致。
+    """
+    if Image is None:
+        raise RuntimeError('PIL unavailable')
+    if img.mode == 'RGBA':
+        base = Image.new('RGB', img.size, bg)
+        base.paste(img, mask=img.split()[3])
+        return base
+    if img.mode == 'LA':
+        rgba = img.convert('RGBA')
+        base = Image.new('RGB', rgba.size, bg)
+        base.paste(rgba, mask=rgba.split()[3])
+        return base
+    if img.mode == 'P':
+        if 'transparency' in img.info:
+            rgba = img.convert('RGBA')
+            base = Image.new('RGB', rgba.size, bg)
+            base.paste(rgba, mask=rgba.split()[3])
+            return base
+        return img.convert('RGB')
+    if img.mode in ('RGB', 'L'):
+        return img
+    return img.convert('RGB')
+
+
 def _effective_wsgi_query_string(environ):
     """
     部分反向代理 / 隧道（云端访问）只保留 REQUEST_URI 中的查询串，或把查询放在 REDIRECT_QUERY_STRING。
@@ -423,8 +452,7 @@ class FileManagementMixin:
                     quality = max(35, min(90, quality))
 
                     output = io.BytesIO()
-                    if img.mode not in ('RGB', 'L'):
-                        img = img.convert('RGB')
+                    img = _flatten_image_to_rgb_or_l_for_jpeg(img)
                     img.save(output, format='JPEG', quality=quality, optimize=True)
                     image_data = output.getvalue()
                     mime_type = 'image/jpeg'

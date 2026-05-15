@@ -387,6 +387,13 @@
               <button type="button" class="status-pill is-active" data-value="multi">多选</button>
             </div>
           </div>
+          <div class="nas-header-control">
+            <span class="nas-header-control-label">图标尺寸</span>
+            <div class="status-segment status-segment--inline nas-thumb-segment" id="specmiNasThumbSizeSegment" data-value="lg">
+              <button type="button" class="status-pill status-pill--shipped" data-value="lg" title="大图标">大</button>
+              <button type="button" class="status-pill status-pill--pending" data-value="sm" title="更小缩略图">小</button>
+            </div>
+          </div>
         </div>
       </div>
       <div class="pm-form">
@@ -421,6 +428,7 @@
 <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
 
 <script src="/static/js/header.js"></script>
+<script src="/static/js/nas_main_image_browser_ui.js"></script>
 <script src="/static/js/sitjoy_row_image_refresh.js"></script>
 <script src="/static/js/pm_image_edit_modal.js"></script>
 <script>
@@ -430,6 +438,7 @@
   const SPECMI_LS_FAB = 'sj.specmi.showFabric.v1';
   const SPECMI_LS_NAS = 'sj.specmi.nasPathB64.v1';
   const SPECMI_LS_STACK = 'sj.specmi.nasStack.v1';
+  const SPECMI_LS_THUMB = 'sj.specmi.nasThumbSize.v1';
   /** 列表「图片」列仅展示该类型的第一张主图（与销售侧白底图筛选一致） */
   const SPECMI_LIST_THUMB_IMAGE_TYPE = '白底纯图';
 
@@ -1746,6 +1755,16 @@
     });
   }
 
+  function specmiInitNasThumbSeg() {
+    if (!window.NasMainImageBrowserUi) return;
+    window.NasMainImageBrowserUi.bindThumbSizeSegment({
+      segmentId: 'specmiNasThumbSizeSegment',
+      gridId: 'specmiNasList',
+      storageKey: SPECMI_LS_THUMB,
+      defaultMode: 'lg',
+    });
+  }
+
   function specmiNasCrumbs() {
     const nav = $('#specmiNasCrumbs');
     if (!nav) return;
@@ -1797,21 +1816,50 @@
       const folders = Array.isArray(data.folders) ? data.folders : [];
       const images = Array.isArray(data.images) ? data.images : [];
       list.innerHTML = '';
-      const mode = specmiNasMode();
+      if (window.NasMainImageBrowserUi) {
+        window.NasMainImageBrowserUi.syncGridThumbClassFromSegment('specmiNasThumbSizeSegment', 'specmiNasList');
+      }
+      const mode = window.NasMainImageBrowserUi
+        ? window.NasMainImageBrowserUi.readActionModeFromSegment('specmiNasActionMode')
+        : specmiNasMode();
       list.classList.toggle('is-mode-double', mode === 'double');
       folders.forEach(f => {
+        const pathB64 = String(f.path || '');
+        const displayName = decodeB64Utf8(f.name) || '';
         const card = document.createElement('div');
         card.className = 'item-card item-card--folder item-card--nas-browse';
         card.innerHTML = `<div class="item-thumbnail folder"><div class="folder-icon">📁</div></div><div class="item-info"><div class="item-name"></div></div>`;
-        card.querySelector('.item-name').textContent = decodeB64Utf8(f.name) || '';
-        card.addEventListener('click', () => {
-          const pathB64 = String(f.path || '');
-          specmiNasPathB64 = pathB64;
-          specmiNasNavStack.push({ name: decodeB64Utf8(f.name) || '文件夹', pathB64 });
-          specmiRenderNasList();
-          localStorage.setItem(SPECMI_LS_NAS, specmiNasPathB64 || '');
-          localStorage.setItem(SPECMI_LS_STACK, JSON.stringify(specmiNasNavStack || []));
-        });
+        card.querySelector('.item-name').textContent = displayName || '';
+        if (window.NasMainImageBrowserUi) {
+          window.NasMainImageBrowserUi.wireNasFolderBrowseCard(card, async () => {
+            specmiNasPathB64 = pathB64;
+            specmiNasNavStack.push({ name: displayName || '文件夹', pathB64 });
+            await specmiRenderNasList();
+            localStorage.setItem(SPECMI_LS_NAS, specmiNasPathB64 || '');
+            localStorage.setItem(SPECMI_LS_STACK, JSON.stringify(specmiNasNavStack || []));
+          });
+        } else {
+          card.setAttribute('role', 'button');
+          card.tabIndex = 0;
+          card.setAttribute('title', '双击进入文件夹');
+          card.addEventListener('dblclick', async () => {
+            specmiNasPathB64 = pathB64;
+            specmiNasNavStack.push({ name: displayName || '文件夹', pathB64 });
+            await specmiRenderNasList();
+            localStorage.setItem(SPECMI_LS_NAS, specmiNasPathB64 || '');
+            localStorage.setItem(SPECMI_LS_STACK, JSON.stringify(specmiNasNavStack || []));
+          });
+          card.addEventListener('keydown', async (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              specmiNasPathB64 = pathB64;
+              specmiNasNavStack.push({ name: displayName || '文件夹', pathB64 });
+              await specmiRenderNasList();
+              localStorage.setItem(SPECMI_LS_NAS, specmiNasPathB64 || '');
+              localStorage.setItem(SPECMI_LS_STACK, JSON.stringify(specmiNasNavStack || []));
+            }
+          });
+        }
         list.appendChild(card);
       });
       images.forEach(img => {
@@ -1821,22 +1869,34 @@
         card.className = 'item-card item-card--nas-browse' + (specmiNasSelected.has(fullPathB64) ? ' item-card--selected' : '');
         const cbWrap = document.createElement('div');
         cbWrap.className = 'item-select';
-        cbWrap.addEventListener('click', (e) => e.stopPropagation());
         const cb = document.createElement('input');
         cb.type = 'checkbox';
         cb.dataset.path = fullPathB64;
         cb.checked = specmiNasSelected.has(fullPathB64);
-        cb.addEventListener('click', (e) => e.stopPropagation());
-        cb.addEventListener('change', (e) => {
-          if (specmiNasMode() === 'double') {
-            e.target.checked = false;
-            return;
-          }
-          if (e.target.checked) specmiNasSelected.add(fullPathB64);
-          else specmiNasSelected.delete(fullPathB64);
-          card.classList.toggle('item-card--selected', e.target.checked);
-          specmiUpdateNasMeta(images.length);
-        });
+        if (window.NasMainImageBrowserUi) {
+          window.NasMainImageBrowserUi.wireNasImageCheckboxInteractions(cbWrap, cb, card, {
+            actionModeSegmentId: 'specmiNasActionMode',
+            pathB64: fullPathB64,
+            onToggle: (path, _fromCb, checked) => {
+              if (checked) specmiNasSelected.add(path);
+              else specmiNasSelected.delete(path);
+            },
+            updateMeta: () => specmiUpdateNasMeta(images.length),
+          });
+        } else {
+          cbWrap.addEventListener('click', (e) => e.stopPropagation());
+          cb.addEventListener('click', (e) => e.stopPropagation());
+          cb.addEventListener('change', (e) => {
+            if (specmiNasMode() === 'double') {
+              e.target.checked = false;
+              return;
+            }
+            if (e.target.checked) specmiNasSelected.add(fullPathB64);
+            else specmiNasSelected.delete(fullPathB64);
+            card.classList.toggle('item-card--selected', e.target.checked);
+            specmiUpdateNasMeta(images.length);
+          });
+        }
         cbWrap.appendChild(cb);
         const thumb = document.createElement('div');
         thumb.className = 'item-thumbnail';
@@ -1853,14 +1913,24 @@
         card.appendChild(cbWrap);
         card.appendChild(thumb);
         card.appendChild(info);
-        if (mode === 'double') {
-          card.addEventListener('dblclick', () => specmiNasImportOne(fullPathB64));
-          card.addEventListener('click', (e) => e.preventDefault());
-        } else {
-          card.addEventListener('click', () => {
-            cb.checked = !cb.checked;
-            cb.dispatchEvent(new Event('change'));
+        if (window.NasMainImageBrowserUi) {
+          window.NasMainImageBrowserUi.wireNasImageBrowseCard(card, mode, {
+            onMultiClick: () => {
+              cb.checked = !cb.checked;
+              cb.dispatchEvent(new Event('change'));
+            },
+            onDoubleImport: () => specmiNasImportOne(fullPathB64),
           });
+        } else {
+          if (mode === 'double') {
+            card.addEventListener('dblclick', () => specmiNasImportOne(fullPathB64));
+            card.addEventListener('click', (e) => e.preventDefault());
+          } else {
+            card.addEventListener('click', () => {
+              cb.checked = !cb.checked;
+              cb.dispatchEvent(new Event('change'));
+            });
+          }
         }
         list.appendChild(card);
       });
@@ -2109,6 +2179,7 @@
       try { window.syncModalScrollLock(); } catch (_) {}
     }
     specmiInitNasModeSeg();
+    specmiInitNasThumbSeg();
     specmiInitNasSelectAllBox();
     specmiRenderNasTypeBar();
     specmiRenderNasList();

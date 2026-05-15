@@ -503,6 +503,17 @@
             padding: 0.08rem 0.22rem 0.1rem !important;
             vertical-align: top;
         }
+        /* Shift+拖拽框选时的矩形预览（fixed，不拦截指针） */
+        .sf-grid-marquee {
+            display: none;
+            position: fixed;
+            box-sizing: border-box;
+            border: 2px dashed rgba(72, 112, 160, 0.88);
+            border-radius: 4px;
+            background: rgba(72, 112, 160, 0.09);
+            z-index: 12500;
+            pointer-events: none;
+        }
         td.sf-cell-inv,
         td.sf-cell-turn {
             text-align: right;
@@ -3195,6 +3206,8 @@
         }
 
         function clearHistorySelection() {
+            const mq = document.getElementById('sfGridMarquee');
+            if (mq) mq.style.display = 'none';
             state.sfGridSelected.clear();
             state.selectionAnchor = null;
             applySfGridSelectionStyles();
@@ -3583,6 +3596,64 @@
             let gridDragMoved = false;
             let suppressNextGridClick = false;
             let lastPointerMods = { ctrl: false, shift: false };
+            let marqueeUnionBase = null;
+
+            const hideSfGridMarquee = () => {
+                const el = document.getElementById('sfGridMarquee');
+                if (el) el.style.display = 'none';
+            };
+
+            const updateSfGridMarquee = (dragStartCell, curCell) => {
+                if (!dragStartCell || !curCell) {
+                    hideSfGridMarquee();
+                    return;
+                }
+                let el = document.getElementById('sfGridMarquee');
+                if (!el) {
+                    el = document.createElement('div');
+                    el.id = 'sfGridMarquee';
+                    el.className = 'sf-grid-marquee';
+                    el.setAttribute('aria-hidden', 'true');
+                    document.body.appendChild(el);
+                }
+                const rowOrder = getOrderedDataRowKeys();
+                const colCount = (state.sfColLayout || []).length;
+                if (!rowOrder.length || !colCount) {
+                    hideSfGridMarquee();
+                    return;
+                }
+                const aRow = String(dragStartCell.rowKey || '');
+                const bRow = String(curCell.rowKey || '');
+                const ri1 = rowOrder.indexOf(aRow);
+                const ri2 = rowOrder.indexOf(bRow);
+                if (ri1 < 0 || ri2 < 0) {
+                    hideSfGridMarquee();
+                    return;
+                }
+                const rLo = Math.min(ri1, ri2);
+                const rHi = Math.max(ri1, ri2);
+                let cLo = Math.min(Number(dragStartCell.colIdx), Number(curCell.colIdx));
+                let cHi = Math.max(Number(dragStartCell.colIdx), Number(curCell.colIdx));
+                cLo = Math.max(0, Math.min(colCount - 1, cLo));
+                cHi = Math.max(0, Math.min(colCount - 1, cHi));
+                const td1 = getSfGridTd(tbody, rowOrder[rLo], cLo);
+                const td2 = getSfGridTd(tbody, rowOrder[rHi], cHi);
+                if (!td1 || !td2) {
+                    hideSfGridMarquee();
+                    return;
+                }
+                const r1 = td1.getBoundingClientRect();
+                const r2 = td2.getBoundingClientRect();
+                const left = Math.min(r1.left, r2.left);
+                const top = Math.min(r1.top, r2.top);
+                const w = Math.max(0, Math.max(r1.right, r2.right) - left);
+                const h = Math.max(0, Math.max(r1.bottom, r2.bottom) - top);
+                el.style.display = 'block';
+                el.style.left = `${left}px`;
+                el.style.top = `${top}px`;
+                el.style.width = `${w}px`;
+                el.style.height = `${h}px`;
+            };
 
             const getCellKeyFromTd = (td) => {
                 if (!td) return '';
@@ -3652,6 +3723,7 @@
                 dragging = true;
                 dragStart = { rowKey: String(td.dataset.rowKey || ''), colIdx: Number(td.dataset.sfCi) };
                 state.selectionAnchor = dragStart;
+                marqueeUnionBase = e.shiftKey ? new Set(state.sfGridSelected) : null;
                 e.preventDefault();
             }, true);
 
@@ -3662,11 +3734,18 @@
                 blurSfForecastInputLeavingCell(td);
                 gridDragMoved = true;
                 const cur = { rowKey: String(td.dataset.rowKey || ''), colIdx: Number(td.dataset.sfCi) };
-                selectRect(dragStart, cur, true);
+                if (lastPointerMods.shift && marqueeUnionBase) {
+                    state.sfGridSelected = new Set(marqueeUnionBase);
+                    selectRect(dragStart, cur, false);
+                } else {
+                    selectRect(dragStart, cur, true);
+                }
                 applySfGridSelectionStyles();
+                updateSfGridMarquee(dragStart, cur);
             }, true);
 
             document.addEventListener('mouseup', () => {
+                hideSfGridMarquee();
                 if (!dragging || !dragStart) return;
                 const hadMove = gridDragMoved;
                 const ds = dragStart;
@@ -3674,6 +3753,7 @@
                 const shift = lastPointerMods.shift;
                 dragging = false;
                 dragStart = null;
+                marqueeUnionBase = null;
                 if (!ctrl && !shift) {
                     if (hadMove) {
                         suppressNextGridClick = true;
@@ -3688,7 +3768,8 @@
                         suppressNextGridClick = true;
                     }
                     applySfGridSelectionStyles();
-                } else if (hadMove) {
+                } else {
+                    if (hadMove) suppressNextGridClick = true;
                     applySfGridSelectionStyles();
                 }
                 gridDragMoved = false;

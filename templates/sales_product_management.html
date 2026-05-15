@@ -957,30 +957,14 @@
             applyNasActionMode(initial);
         }
 
-        function applyNasThumbSize(mode) {
-            const m = (mode === 'sm') ? 'sm' : 'lg';
-            const seg = document.getElementById('nasThumbSizeSegment');
-            if (seg) seg.setAttribute('data-value', m);
-            if (seg) {
-                seg.querySelectorAll('button.status-pill[data-value]').forEach(btn => {
-                    btn.classList.toggle('is-active', String(btn.getAttribute('data-value')) === m);
-                });
-            }
-            const grid = document.getElementById('nasMainImageList');
-            if (grid) grid.classList.toggle('is-thumb-sm', m === 'sm');
-            safeSetLocalStorage(NAS_MAIN_IMAGE_THUMB_SIZE_KEY, m);
-        }
-
         function initNasThumbSizeSegment() {
-            const seg = document.getElementById('nasThumbSizeSegment');
-            if (!seg) return;
-            seg.querySelectorAll('button.status-pill[data-value]').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    applyNasThumbSize(String(this.getAttribute('data-value') || 'lg'));
-                });
+            if (!window.NasMainImageBrowserUi) return;
+            window.NasMainImageBrowserUi.bindThumbSizeSegment({
+                segmentId: 'nasThumbSizeSegment',
+                gridId: 'nasMainImageList',
+                storageKey: NAS_MAIN_IMAGE_THUMB_SIZE_KEY,
+                defaultMode: 'lg',
             });
-            const initial = String(safeGetLocalStorage(NAS_MAIN_IMAGE_THUMB_SIZE_KEY) || seg.getAttribute('data-value') || 'lg');
-            applyNasThumbSize(initial);
         }
 
         function productStatusLabel(value) {
@@ -3223,9 +3207,13 @@
                 renderNasBreadcrumbs();
 
                 list.innerHTML = '';
-                const seg = document.getElementById('nasThumbSizeSegment');
-                const mode = seg ? String(seg.getAttribute('data-value') || 'lg') : 'lg';
-                list.classList.toggle('is-thumb-sm', mode === 'sm');
+                if (window.NasMainImageBrowserUi) {
+                    window.NasMainImageBrowserUi.syncGridThumbClassFromSegment('nasThumbSizeSegment', 'nasMainImageList');
+                } else {
+                    const segThumb = document.getElementById('nasThumbSizeSegment');
+                    const thumbMode = segThumb ? String(segThumb.getAttribute('data-value') || 'lg') : 'lg';
+                    list.classList.toggle('is-thumb-sm', thumbMode === 'sm');
+                }
                 updateNasMainImageMeta(images.length);
                 if (!folders.length && !images.length) {
                     const empty = document.createElement('div');
@@ -3239,16 +3227,20 @@
                     const displayName = decodeB64Utf8(f.name) || '';
                     const card = document.createElement('div');
                     card.className = 'item-card item-card--folder item-card--nas-browse';
-                    card.setAttribute('role', 'button');
-                    card.tabIndex = 0;
-                    card.setAttribute('title', '双击进入文件夹');
-                    card.addEventListener('dblclick', () => nasMainImageEnterFolder(pathB64, displayName));
-                    card.addEventListener('keydown', (e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            nasMainImageEnterFolder(pathB64, displayName);
-                        }
-                    });
+                    if (window.NasMainImageBrowserUi) {
+                        window.NasMainImageBrowserUi.wireNasFolderBrowseCard(card, () => nasMainImageEnterFolder(pathB64, displayName));
+                    } else {
+                        card.setAttribute('role', 'button');
+                        card.tabIndex = 0;
+                        card.setAttribute('title', '双击进入文件夹');
+                        card.addEventListener('dblclick', () => nasMainImageEnterFolder(pathB64, displayName));
+                        card.addEventListener('keydown', (e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                nasMainImageEnterFolder(pathB64, displayName);
+                            }
+                        });
+                    }
 
                     const thumb = document.createElement('div');
                     thumb.className = 'item-thumbnail folder';
@@ -3278,11 +3270,17 @@
                     const card = document.createElement('div');
                     card.className = 'item-card item-card--nas-browse' + (isSelected ? ' item-card--selected' : '');
                     const modeSeg = document.getElementById('nasActionModeSegment');
-                    const actionMode = modeSeg ? String(modeSeg.getAttribute('data-value') || 'multi') : 'multi';
-                    if (actionMode === 'double') {
+                    const actionMode = window.NasMainImageBrowserUi
+                        ? window.NasMainImageBrowserUi.readActionModeFromSegment('nasActionModeSegment')
+                        : (modeSeg ? String(modeSeg.getAttribute('data-value') || 'multi') : 'multi');
+                    if (window.NasMainImageBrowserUi) {
+                        window.NasMainImageBrowserUi.wireNasImageBrowseCard(card, actionMode, {
+                            onMultiClick: () => nasMainImageToggle(fullPathB64),
+                            onDoubleImport: () => nasMainImageImport(fullPathB64),
+                        });
+                    } else if (actionMode === 'double') {
                         card.addEventListener('dblclick', () => nasMainImageImport(fullPathB64));
                         card.addEventListener('click', (e) => {
-                            // avoid confusing selection in double-click mode
                             e.preventDefault();
                         });
                     } else {
@@ -3291,24 +3289,32 @@
 
                     const selectWrap = document.createElement('div');
                     selectWrap.className = 'item-select';
-                    selectWrap.addEventListener('click', (e) => e.stopPropagation());
                     const cb = document.createElement('input');
                     cb.type = 'checkbox';
                     cb.dataset.path = fullPathB64;
                     cb.checked = isSelected;
-                    cb.addEventListener('click', (e) => e.stopPropagation());
-                    cb.addEventListener('change', (e) => {
-                        const seg = document.getElementById('nasActionModeSegment');
-                        const m = seg ? String(seg.getAttribute('data-value') || 'multi') : 'multi';
-                        if (m === 'double') {
-                            // multi-select disabled in double-click mode
-                            e.target.checked = false;
-                            return;
-                        }
-                        nasMainImageToggle(fullPathB64, true, e.target.checked);
-                        card.classList.toggle('item-card--selected', !!e.target.checked);
-                        updateNasMainImageMeta(images.length);
-                    });
+                    if (window.NasMainImageBrowserUi) {
+                        window.NasMainImageBrowserUi.wireNasImageCheckboxInteractions(selectWrap, cb, card, {
+                            actionModeSegmentId: 'nasActionModeSegment',
+                            pathB64: fullPathB64,
+                            onToggle: nasMainImageToggle,
+                            updateMeta: () => updateNasMainImageMeta(images.length),
+                        });
+                    } else {
+                        selectWrap.addEventListener('click', (e) => e.stopPropagation());
+                        cb.addEventListener('click', (e) => e.stopPropagation());
+                        cb.addEventListener('change', (e) => {
+                            const seg = document.getElementById('nasActionModeSegment');
+                            const m = seg ? String(seg.getAttribute('data-value') || 'multi') : 'multi';
+                            if (m === 'double') {
+                                e.target.checked = false;
+                                return;
+                            }
+                            nasMainImageToggle(fullPathB64, true, e.target.checked);
+                            card.classList.toggle('item-card--selected', !!e.target.checked);
+                            updateNasMainImageMeta(images.length);
+                        });
+                    }
                     selectWrap.appendChild(cb);
 
                     const thumb = document.createElement('div');
@@ -4835,6 +4841,7 @@
         window.addEventListener('load', initPage);
     </script>
     <script src="/static/js/header.js"></script>
+    <script src="/static/js/nas_main_image_browser_ui.js"></script>
     <script src="/static/js/sitjoy_grouped_aggregate.js"></script>
     <script src="/static/js/sitjoy_row_image_refresh.js"></script>
     <script src="/static/js/pm_image_edit_modal.js"></script>
