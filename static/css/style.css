@@ -4061,6 +4061,11 @@ body {
     z-index: 15100;
 }
 
+/* 下市前发货方案迁移：须叠在编辑弹窗与 NAS 导入弹窗之上 */
+#offMarketShipMigrateModal.pm-modal.active {
+    z-index: 15200;
+}
+
 #nas-main-image-import-modal .pm-form label {
     margin-bottom: 4px;
 }

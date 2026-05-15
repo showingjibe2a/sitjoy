@@ -123,6 +123,14 @@
             line-height: 1.55;
             font-size: 0.95rem;
         }
+        /* 勿用 class「response」：全局 style.css 对 .response 使用 display:none !important，会导致弹窗内状态条永远不显示 */
+        .op-modal-status {
+            margin-top: 0.75rem;
+            padding: 0.45rem 0.55rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            line-height: 1.45;
+        }
         .dialog-detail-wrap {
             margin-top: 0.8rem;
             border: 1px solid var(--morandi-sand);
@@ -825,7 +833,7 @@
                 </div>
                 </div>
             </div>
-            <div id="modalStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div id="modalStatus" class="op-modal-status" style="display:none;"></div>
             <div class="pm-modal-actions">
                 <button class="btn-secondary" onclick="closeModal()">取消</button>
                 <button class="btn-primary" id="modalSaveBtn" onclick="saveOrderProductFromModal()">保存</button>
@@ -945,8 +953,7 @@
                             <th>下单 SKU</th>
                             <th>是否有「全部在市」可替换方案</th>
                             <th>默认目标方案</th>
-                            <th style="text-align:right;">待迁平台登记行</th>
-                            <th style="text-align:right;">待迁发货登记行</th>
+                            <th style="text-align:right;">待迁移规格关联行</th>
                         </tr>
                     </thead>
                     <tbody id="orderBatchShipPlanVerifyTbody"></tbody>
@@ -965,7 +972,7 @@
 
     <div class="pm-modal" id="offMarketShipMigrateModal">
         <div class="pm-modal-content pm-modal-content--wide" style="max-width: 960px;">
-            <h3 id="offMarketShipMigrateTitle" style="margin-top:0;">下市前：关联订单登记发货方案迁移</h3>
+            <h3 id="offMarketShipMigrateTitle" style="margin-top:0;">下市前：销售规格与下单 SKU 绑定迁移</h3>
             <p id="offMarketShipMigrateIntro" class="dialog-message" style="margin:0 0 0.5rem 0;"></p>
             <div class="form-group" id="offMarketShipMigratePlanWrap" style="margin:0 0 0.65rem 0; display:none;">
                 <label for="offMarketShipMigratePlanSelect" style="display:block; font-size:0.88rem; margin-bottom:0.25rem;">迁移目标方案（全部在市）</label>
@@ -975,11 +982,11 @@
                 <table class="pm-table pm-table--compact" id="offMarketShipMigrateTable">
                     <thead>
                         <tr>
-                            <th>订单号</th>
+                            <th>销售产品（平台 SKU 提示）</th>
                             <th>来源</th>
                             <th>货号 / 规格 / 面料</th>
-                            <th>原方案（折算数量）</th>
-                            <th>更新后方案（折算数量）</th>
+                            <th>原关联下单 SKU（折算）</th>
+                            <th>更新后关联下单 SKU（折算）</th>
                         </tr>
                     </thead>
                     <tbody id="offMarketShipMigrateTbody"></tbody>
@@ -987,10 +994,11 @@
             </div>
             <label class="off-market-migrate-ack" style="display:flex; align-items:flex-start; gap:0.5rem; margin:0.75rem 0; font-size:0.9rem; cursor:pointer;">
                 <input type="checkbox" id="offMarketShipMigrateAck" value="1" style="margin-top:0.2rem;">
-                <span>我已知晓上表变更将影响已登记的订单发货方案，并确认将关联行批量更新为所选「全部在市」方案。</span>
+                <span>我已知晓上表变更将影响「销售产品管理中规格」与下单 SKU 的绑定（sales_variant_order_links），并按所选「全部在市」方案中的替代比例改写数量；确认后先执行迁移再保存下市。若暂不调整规格绑定，可点「不迁移并保存」仅保存是否在市。</span>
             </label>
             <div class="pm-modal-actions">
                 <button type="button" class="btn-secondary" id="offMarketShipMigrateCancelBtn" onclick="closeOffMarketShipMigrateModal(false)">取消</button>
+                <button type="button" class="btn-secondary" id="offMarketShipMigrateSaveOnlyBtn" onclick="offMarketShipMigrateSaveWithoutMigrate()">不迁移并保存</button>
                 <button type="button" class="btn-primary" id="offMarketShipMigrateConfirmBtn" disabled onclick="confirmOffMarketShipMigrateSave()">确认迁移并保存</button>
             </div>
         </div>
@@ -1210,6 +1218,7 @@
 
         function showModalStatus(message, isError) {
             const el = document.getElementById('modalStatus');
+            if (!el) return;
             el.style.display = 'block';
             el.style.background = isError ? '#ffecec' : '#f0fff0';
             el.style.color = isError ? '#a33' : '#2f6f2f';
@@ -1218,6 +1227,7 @@
 
         function resetModalStatus() {
             const el = document.getElementById('modalStatus');
+            if (!el) return;
             el.style.display = 'none';
             el.innerText = '';
         }
@@ -2611,7 +2621,7 @@
                             if (window.showAppToast) window.showAppToast((prev && prev.message) || '预览失败', true, 3200);
                             return;
                         }
-                        if (prev.has_eligible_plan && (prev.rows || []).length > 0) {
+                        if (prev.has_eligible_plan) {
                             const live = orderProductItemsCache.find((x) => String(x.id) === String(itemId)) || item;
                             const pending = [buildFullPreviewUpdateRowFromItem(live, { is_on_market: 0 })];
                             openOffMarketShipMigrateModal(prev, null, 'PUT', {
@@ -3309,6 +3319,8 @@
             const ack = document.getElementById('offMarketShipMigrateAck');
             if (ack) ack.checked = false;
             syncOffMarketMigrateConfirmBtn();
+            const saveOnlyBtn = document.getElementById('offMarketShipMigrateSaveOnlyBtn');
+            if (saveOnlyBtn) saveOnlyBtn.disabled = false;
         }
 
         function syncOffMarketMigrateConfirmBtn() {
@@ -3322,7 +3334,11 @@
             const tbody = document.getElementById('offMarketShipMigrateTbody');
             if (!tbody) return;
             const list = rows || [];
-            const srcLabel = (t) => (t === 'shipment' ? '发货行' : '平台行');
+            const srcLabel = (t) => {
+                if (t === 'variant_link') return '规格关联';
+                if (t === 'shipment') return '发货行';
+                return '平台行';
+            };
             if (!list.length) {
                 tbody.innerHTML = '<tr><td colspan="5">无待迁移行</td></tr>';
                 return;
@@ -3338,6 +3354,18 @@
             `).join('');
         }
 
+        function setOffMarketShipMigrateIntro(preview) {
+            const intro = document.getElementById('offMarketShipMigrateIntro');
+            if (!intro || !preview) return;
+            const n = (preview.rows || []).length;
+            const base = '本下单 SKU 在「替代发货方案」中已维护「全部在市」的替代组合。下市前迁移的是「销售产品管理」里各规格（变体）在 sales_variant_order_links 中对本下单 SKU 的绑定及数量：删除本 SKU 的绑定行，再按方案中各替代下单 SKU 的维护数量×原绑定数量写入新行（例：方案为 1 个本品对应 B×2+C，某规格原绑定本品×2，则变为 B×4+C×2）。';
+            if (n === 0) {
+                intro.textContent = base + ' 当前无规格仍绑定本下单 SKU；仍请勾选知晓后确认（迁移 0 条），然后保存「不在市」。';
+            } else {
+                intro.textContent = base + ' 请核对下表后勾选知晓并确认。';
+            }
+        }
+
         function openOffMarketShipMigrateModal(preview, payload, method, extraOpts) {
             const opts = extraOpts || {};
             offMarketMigrateState = {
@@ -3349,17 +3377,14 @@
                 revertPreviewOnMarket: opts.revertPreviewOnMarket || null
             };
             const modal = document.getElementById('offMarketShipMigrateModal');
-            const intro = document.getElementById('offMarketShipMigrateIntro');
             const selWrap = document.getElementById('offMarketShipMigratePlanWrap');
             const sel = document.getElementById('offMarketShipMigratePlanSelect');
             const title = document.getElementById('offMarketShipMigrateTitle');
             const sku = (preview.owner_sku || '').trim();
             if (title) {
-                title.textContent = `下市前：发货方案迁移（下单 SKU：${sku || preview.owner_order_product_id}）`;
+                title.textContent = `下市前：规格绑定迁移（下单 SKU：${sku || preview.owner_order_product_id}）`;
             }
-            if (intro) {
-                intro.textContent = '检测到存在「替代 SKU 全部在市」的发货方案。可将下方订单登记中仍指向其它方案的关联行统一改为所选方案；数量按平台销售数量与规格 BOM 用量折算（与销售登记发货预览一致）。';
-            }
+            setOffMarketShipMigrateIntro(preview);
             const targets = preview.eligible_targets || [];
             if (sel && selWrap) {
                 if (targets.length > 1) {
@@ -3375,9 +3400,10 @@
                         fetch(`/api/order-product?action=off_market_ship_plan_preview&order_product_id=${encodeURIComponent(opId)}&target_plan_id=${encodeURIComponent(tid)}`)
                             .then(r => r.json())
                             .then(data => {
-                                if (data.status !== 'success' || !data.rows) return;
+                                if (data.status !== 'success') return;
                                 offMarketMigrateState.preview = data;
-                                renderOffMarketShipMigrateTable(data.rows);
+                                renderOffMarketShipMigrateTable(data.rows || []);
+                                setOffMarketShipMigrateIntro(data);
                             });
                     };
                 } else {
@@ -3392,6 +3418,8 @@
                 ack.onchange = syncOffMarketMigrateConfirmBtn;
             }
             syncOffMarketMigrateConfirmBtn();
+            const saveOnlyBtn = document.getElementById('offMarketShipMigrateSaveOnlyBtn');
+            if (saveOnlyBtn) saveOnlyBtn.disabled = false;
             if (modal) {
                 modal.classList.add('active');
                 if (window.syncModalScrollLock) window.syncModalScrollLock();
@@ -3456,7 +3484,9 @@
                 tid = Number(sel.value || 0) || tid;
             }
             const confirmBtn = document.getElementById('offMarketShipMigrateConfirmBtn');
+            const saveOnlyBtn = document.getElementById('offMarketShipMigrateSaveOnlyBtn');
             if (confirmBtn) confirmBtn.disabled = true;
+            if (saveOnlyBtn) saveOnlyBtn.disabled = true;
             const pendingItems = (st.pendingPreviewItems || []).slice();
             const modalPayload = st.payload;
             const putMethod = st.method || 'PUT';
@@ -3475,6 +3505,7 @@
                     if (window.showAppToast) window.showAppToast(m.message || '迁移失败', true, 3600);
                     else showUploadDialog({ title: '迁移失败', message: m.message || '迁移失败' });
                     if (confirmBtn) confirmBtn.disabled = false;
+                    if (saveOnlyBtn) saveOnlyBtn.disabled = false;
                     return;
                 }
                 const revertOnMarketAfterMigrate = st.revertPreviewOnMarket;
@@ -3501,8 +3532,42 @@
             })
             .catch(err => {
                 if (confirmBtn) confirmBtn.disabled = false;
+                if (saveOnlyBtn) saveOnlyBtn.disabled = false;
                 showUploadDialog({ title: '请求失败', message: String(err) });
             });
+        }
+
+        function offMarketShipMigrateSaveWithoutMigrate() {
+            const st = offMarketMigrateState;
+            if (!st.preview) return;
+            if (!st.payload && !(st.pendingPreviewItems && st.pendingPreviewItems.length)) return;
+            const confirmBtn = document.getElementById('offMarketShipMigrateConfirmBtn');
+            const saveOnlyBtn = document.getElementById('offMarketShipMigrateSaveOnlyBtn');
+            if (confirmBtn) confirmBtn.disabled = true;
+            if (saveOnlyBtn) saveOnlyBtn.disabled = true;
+            const pendingItems = (st.pendingPreviewItems || []).slice();
+            const modalPayload = st.payload;
+            const putMethod = st.method || 'PUT';
+            const revertOnMarket = st.revertPreviewOnMarket;
+            closeOffMarketShipMigrateModal(true);
+            if (window.showAppToast) window.showAppToast('跳过迁移，正在保存…', false, 2200);
+            if (pendingItems && pendingItems.length) {
+                submitPreviewUpdateItems(pendingItems).catch(() => {
+                    if (revertOnMarket) revertPreviewIsOnMarketIfNeeded({ revertPreviewOnMarket: revertOnMarket });
+                });
+                return;
+            }
+            const saveBtn = document.getElementById('modalSaveBtn');
+            if (saveBtn) {
+                saveBtn.disabled = true;
+                saveBtn.innerText = '保存中...';
+            }
+            showModalStatus('正在保存，请稍候...', false);
+            if (modalSavePendingTimer) clearTimeout(modalSavePendingTimer);
+            modalSavePendingTimer = setTimeout(() => {
+                showTimeoutToast('保存仍在进行中，请稍候...');
+            }, 5000);
+            submitOrderProductModalSave(modalPayload, putMethod);
         }
 
         function offMarketShipMigratePlanWrapIsVisible() {
@@ -3629,19 +3694,68 @@
                 }
                 showModalStatus('正在校验关联发货方案...', false);
                 fetch(`/api/order-product?action=off_market_ship_plan_preview&order_product_id=${encodeURIComponent(guardOpId)}`)
-                    .then(r => r.json())
-                    .then(prev => {
-                        if (!prev || prev.status !== 'success') {
-                            showModalStatus((prev && prev.message) || '预览失败', true);
+                    .then((r) => r.text().then((text) => {
+                        let data = null;
+                        if (String(text || '').trim()) {
+                            try {
+                                data = JSON.parse(text);
+                            } catch (e) {
+                                const msg = '发货方案校验返回非 JSON（HTTP ' + r.status + '）';
+                                showModalStatus(msg, true);
+                                if (window.showAppToast) window.showAppToast(msg, true, 4500);
+                                else showUploadDialog({ title: '校验失败', message: msg });
+                                if (saveBtn) {
+                                    saveBtn.disabled = false;
+                                    saveBtn.innerText = '保存';
+                                }
+                                return null;
+                            }
+                        }
+                        return { ok: r.ok, httpStatus: r.status, data };
+                    }))
+                    .then((pack) => {
+                        if (!pack) return;
+                        const prev = pack.data;
+                        if (!pack.ok) {
+                            const msg = (prev && prev.message) || ('发货方案校验失败（HTTP ' + pack.httpStatus + '）');
+                            showModalStatus(msg, true);
+                            if (window.showAppToast) window.showAppToast(msg, true, 4500);
+                            else showUploadDialog({ title: '校验失败', message: msg });
                             if (saveBtn) {
                                 saveBtn.disabled = false;
                                 saveBtn.innerText = '保存';
                             }
                             return;
                         }
-                        if (prev.has_eligible_plan && (prev.rows || []).length > 0) {
+                        if (!prev || prev.status !== 'success') {
+                            const msg = (prev && prev.message) || '发货方案预览失败';
+                            showModalStatus(msg, true);
+                            if (window.showAppToast) window.showAppToast(msg, true, 4500);
+                            else showUploadDialog({ title: '预览失败', message: msg });
+                            if (saveBtn) {
+                                saveBtn.disabled = false;
+                                saveBtn.innerText = '保存';
+                            }
+                            return;
+                        }
+                        if (prev.has_eligible_plan) {
                             showModalStatus('', false);
-                            openOffMarketShipMigrateModal(prev, payload, method);
+                            try {
+                                openOffMarketShipMigrateModal(prev, payload, method);
+                            } catch (e) {
+                                const msg = '打开发货方案迁移弹窗失败: ' + (e && e.message ? e.message : String(e));
+                                showModalStatus(msg, true);
+                                if (window.showAppToast) window.showAppToast(msg, true, 5000);
+                                else showUploadDialog({ title: '提示', message: msg });
+                                if (saveBtn) {
+                                    saveBtn.disabled = false;
+                                    saveBtn.innerText = '保存';
+                                }
+                                return;
+                            }
+                            if (window.showAppToast) {
+                                window.showAppToast('请在弹窗中确认发货方案迁移后再保存下市', false, 3800);
+                            }
                             return;
                         }
                         if (saveBtn) {
@@ -3656,7 +3770,10 @@
                         submitOrderProductModalSave(payload, method);
                     })
                     .catch(err => {
-                        showModalStatus('预览请求失败: ' + err, true);
+                        const msg = '发货方案校验请求失败: ' + (err && err.message ? err.message : String(err));
+                        showModalStatus(msg, true);
+                        if (window.showAppToast) window.showAppToast(msg, true, 4500);
+                        else showUploadDialog({ title: '请求失败', message: msg });
                         if (saveBtn) {
                             saveBtn.disabled = false;
                             saveBtn.innerText = '保存';
@@ -4485,12 +4602,11 @@
                     const items = data.items || [];
                     const withPlan = items.filter(x => x.has_eligible_plan).length;
                     const withoutPlan = items.length - withPlan;
-                    const pendP = items.reduce((a, x) => a + Number(x.pending_platform_rows || 0), 0);
-                    const pendS = items.reduce((a, x) => a + Number(x.pending_shipment_rows || 0), 0);
+                    const pendL = items.reduce((a, x) => a + Number(x.pending_variant_link_rows != null ? x.pending_variant_link_rows : (x.pending_platform_rows || 0)), 0);
                     let summary = `勾选 <strong>${idStrSet.size}</strong> 条；其中下市参与核验 <strong>${offIds.length}</strong> 条`;
                     if (skippedOnMarket) summary += `；在市已忽略 <strong>${skippedOnMarket}</strong> 条`;
                     summary += `。<br>有「全部在市」可替换方案 <strong>${withPlan}</strong> 个 SKU；无可替换方案 <strong>${withoutPlan}</strong> 个 SKU。`;
-                    summary += ` 待迁移登记行合计：平台 <strong>${pendP}</strong> 行、发货 <strong>${pendS}</strong> 行。`;
+                    summary += ` 待迁移「规格↔下单SKU」关联行合计：<strong>${pendL}</strong> 行。`;
                     if (nf.length) summary += ` <br><span style="color:#a33;">未找到 id：${escapeHtml(nf.slice(0, 12).join(', '))}${nf.length > 12 ? '…' : ''}</span>`;
                     const rows = items.map((row) => {
                         const ok = row.has_eligible_plan;
@@ -4498,15 +4614,15 @@
                             ? `${escapeHtml(row.target_plan_name || '')} <span style="color:var(--morandi-slate);">(#${Number(row.target_plan_id || 0)})</span>`
                             : '<span style="color:#a33;">无</span>';
                         const flag = ok ? '<span style="color:#2f6f2f;">是</span>' : '<span style="color:#a33;">否</span>';
+                        const lc = Number(row.pending_variant_link_rows != null ? row.pending_variant_link_rows : (row.pending_platform_rows || 0));
                         return `<tr>
                             <td>${escapeHtml(row.sku || '')} <span style="color:var(--morandi-slate);">(${Number(row.order_product_id || 0)})</span></td>
                             <td>${flag}</td>
                             <td>${planCell}</td>
-                            <td style="text-align:right;">${Number(row.pending_platform_rows || 0)}</td>
-                            <td style="text-align:right;">${Number(row.pending_shipment_rows || 0)}</td>
+                            <td style="text-align:right;">${lc}</td>
                         </tr>`;
                     }).join('');
-                    openOrderBatchShipPlanVerifyModal(summary, rows || '<tr><td colspan="5" style="text-align:center;">无数据</td></tr>');
+                    openOrderBatchShipPlanVerifyModal(summary, rows || '<tr><td colspan="4" style="text-align:center;">无数据</td></tr>');
                 })
                 .catch((err) => {
                     if (window.showAppToast) window.showAppToast('请求失败: ' + err, true, 3600);

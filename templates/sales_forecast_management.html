@@ -587,7 +587,7 @@
         }
         .sf-tooltip-bubble dt { color: #d6cfbf; font-weight: 500; }
         .sf-tooltip-bubble dd { margin: 0; color: #fff; word-break: break-all; }
-        /* 产品表现：悬浮 / 侧栏统一为深色表格（横向月份、纵向指标） */
+        /* 产品表现：侧栏统一为深色表格（横向月份、纵向指标） */
         .sf-perf-matrix-outer {
             margin-top: 0.2rem;
             overflow: auto;
@@ -1011,7 +1011,6 @@
                     <span class="sf-perf-ui-label">显示产品信息：</span>
                     <div id="sfPerfUiToolbarInteractWrap" class="sf-perf-ui-interact-wrap">
                         <label class="sf-perf-ui-toggle"><input type="checkbox" id="sfPerfUiNone"> 不显示</label>
-                        <label class="sf-perf-ui-toggle"><input type="checkbox" id="sfPerfUiHover"> 悬浮</label>
                         <label class="sf-perf-ui-toggle"><input type="checkbox" id="sfPerfUiClick"> 点击</label>
                         <label class="sf-perf-ui-toggle"><input type="checkbox" id="sfPerfUiRect"> 框选</label>
                     </div>
@@ -1157,8 +1156,7 @@
             sfGridSelected: new Set(),       // JSON.stringify([rowKey, colIdx])，colIdx 为叶子列下标，与 data-sf-ci 一致
             selectionAnchor: null,           // { rowKey, colIdx }
             sfColLayout: [],                // 与叶子列顺序一一对应，用于复制/产品表现等
-            perfUi: { none: false, hover: true, click: false, rect: false },
-            sfPerfHoverCtx: null,
+            perfUi: { none: false, hover: false, click: true, rect: false },
             sfPerfPanelAttachMode: 'follow',
             sfPerfPanelManuallyHidden: false,
             sfPerfPanelHiddenSig: '',
@@ -1593,7 +1591,6 @@
             state.sortKey = '';
             state.sortDir = 'asc';
             state.colFilters = {};
-            state.sfPerfHoverCtx = null;
             applySfGridSelectionStyles();
             persistForecastMode(mode);
             updateSfPerfToolbarGroupMode();
@@ -3261,23 +3258,23 @@
         function normalizePerfUiPatch(patch) {
             const cur = Object.assign({}, state.perfUi, patch);
             if (cur.none) return { none: true, hover: false, click: false, rect: false };
-            if (!cur.hover && !cur.click && !cur.rect) return { none: true, hover: false, click: false, rect: false };
-            return { none: false, hover: !!cur.hover, click: !!cur.click, rect: !!cur.rect };
+            if (!cur.click && !cur.rect) return { none: true, hover: false, click: false, rect: false };
+            return { none: false, hover: false, click: !!cur.click, rect: !!cur.rect };
         }
 
         function readPerfUiPrefs() {
             try {
                 const raw = localStorage.getItem(SF_PREF_PERF_UI_KEY);
-                if (!raw) return { none: false, hover: true, click: false, rect: false };
+                if (!raw) return { none: false, hover: false, click: true, rect: false };
                 const o = JSON.parse(raw);
                 return normalizePerfUiPatch({
                     none: !!o.none,
-                    hover: !!o.hover,
+                    hover: false,
                     click: !!o.click,
                     rect: !!o.rect,
                 });
             } catch (_) {
-                return { none: false, hover: true, click: false, rect: false };
+                return { none: false, hover: false, click: true, rect: false };
             }
         }
 
@@ -3290,17 +3287,12 @@
         function syncPerfUiCheckboxesFromState() {
             const ok = isSalesForecastHistoryPerfMode();
             const n = document.getElementById('sfPerfUiNone');
-            const h = document.getElementById('sfPerfUiHover');
             const c = document.getElementById('sfPerfUiClick');
             const r = document.getElementById('sfPerfUiRect');
             const u = state.perfUi || {};
             if (n) {
                 n.checked = !!u.none;
                 n.disabled = !ok;
-            }
-            if (h) {
-                h.checked = !!u.hover;
-                h.disabled = !ok || !!u.none;
             }
             if (c) {
                 c.checked = !!u.click;
@@ -3382,12 +3374,10 @@
 
         function getSfPerfPanelPayloadRaw() {
             if (!isSalesForecastHistoryPerfMode()) {
-                state.sfPerfHoverCtx = null;
                 return null;
             }
             const ui = state.perfUi || {};
             if (ui.none) return null;
-            if (!ui.hover && state.sfPerfHoverCtx) state.sfPerfHoverCtx = null;
             const sel = getSelectedHistoryCellsForSingleRow();
             if (ui.rect && sel && sel.months && sel.months.length) {
                 const row = resolveRowByKey(sel.rowKey);
@@ -3396,11 +3386,6 @@
             if (ui.click && sel && sel.months && sel.months.length) {
                 const row = resolveRowByKey(sel.rowKey);
                 if (row) return { tier: 2, row, months: sel.months.slice() };
-            }
-            if (ui.hover && state.sfPerfHoverCtx && state.sfPerfHoverCtx.rowKey && state.sfPerfHoverCtx.monthKey) {
-                const row = resolveRowByKey(state.sfPerfHoverCtx.rowKey);
-                const mk = String(state.sfPerfHoverCtx.monthKey || '').trim();
-                if (row && mk) return { tier: 3, row, months: [mk], hoverEl: state.sfPerfHoverCtx.el || null };
             }
             return null;
         }
@@ -3411,7 +3396,7 @@
             return String(payload.tier) + '|' + String(payload.row.row_key || '') + '|' + ms.join(',');
         }
 
-        /** 不含 tier：同一行+月份区间在悬浮/框选/点击间切换时仍视为同一内容，用于 × 关闭后的手动隐藏判断 */
+        /** 不含 tier：同一行+月份区间在框选/点击间切换时仍视为同一内容，用于 × 关闭后的手动隐藏判断 */
         function sfPerfPanelPayloadIdentity(payload) {
             if (!payload || !payload.row) return '';
             const ms = (payload.months || []).map((m) => String(m || '').trim()).sort((a, b) => String(a).localeCompare(String(b)));
@@ -3442,9 +3427,7 @@
             if (!panel || panel.hidden) return;
             const mode = state.sfPerfPanelAttachMode || 'follow';
             if (mode === 'follow') {
-                let anchor = null;
-                if (payload && payload.tier < 3) anchor = getFirstSelectedHistoryTd();
-                else if (payload && payload.tier === 3) anchor = payload.hoverEl || null;
+                const anchor = getFirstSelectedHistoryTd();
                 if (anchor && typeof anchor.getBoundingClientRect === 'function') {
                     const a = anchor.getBoundingClientRect();
                     const pad = 10;
@@ -3652,28 +3635,6 @@
             });
             const wrap = document.getElementById('forecastTableWrap');
             if (wrap) {
-                wrap.addEventListener('mouseover', (e) => {
-                    if (!isSalesForecastHistoryPerfMode()) return;
-                    const td = e.target && e.target.closest ? e.target.closest('td.sf-cell-history[data-month]') : null;
-                    if (!td || (state.perfUi && state.perfUi.none)) return;
-                    if (!(state.perfUi || {}).hover) return;
-                    const tr = td.closest('tr[data-row-key]');
-                    const rk = tr && String(tr.dataset.rowKey || '').trim();
-                    const mk = String(td.dataset.month || '').trim();
-                    if (!rk || !mk) return;
-                    state.sfPerfHoverCtx = { rowKey: rk, monthKey: mk, el: td };
-                    requestAnimationFrame(() => updateSfPerfPanel());
-                });
-                wrap.addEventListener('mouseleave', (e) => {
-                    if (!isSalesForecastHistoryPerfMode()) {
-                        state.sfPerfHoverCtx = null;
-                        return;
-                    }
-                    const rel = e.relatedTarget;
-                    if (rel && rel.closest && (rel.closest('#sfPerfFloatingPanel') || rel.closest('#forecastTableWrap'))) return;
-                    state.sfPerfHoverCtx = null;
-                    requestAnimationFrame(() => updateSfPerfPanel());
-                });
                 /* 跟随选中：焦点离开预测表区域且不在产品表现弹窗内时，同步隐藏（不视为用户“永久关闭”） */
                 wrap.addEventListener('focusout', () => {
                     if (state.sfPerfPanelAttachMode !== 'follow') return;
@@ -3719,14 +3680,8 @@
                 closeSfPerfFieldsPanel();
                 return;
             }
-            /* 无 payload 时只隐藏面板，勿重置手动关闭状态；否则用户点 × 后若随即触发无 payload 的更新（如 mouseleave 清空 hover），会清掉 sfPerfPanelManuallyHidden，弹窗会立刻再次出现 */
+            /* 无 payload 时只隐藏面板，勿重置手动关闭状态；否则用户点 × 后若随即触发无 payload 的更新会清掉 sfPerfPanelManuallyHidden，弹窗会立刻再次出现 */
             if (!payloadRaw) {
-                panel.hidden = true;
-                closeSfPerfFieldsPanel();
-                return;
-            }
-            /* 跟随选中：仅框选/点击（有选中数据）时展示，不因悬浮历史格单独弹出 */
-            if (state.sfPerfPanelAttachMode === 'follow' && Number(payloadRaw.tier) === 3) {
                 panel.hidden = true;
                 closeSfPerfFieldsPanel();
                 return;
@@ -3775,7 +3730,7 @@
             if (interact) {
                 interact.style.opacity = ok ? '' : '0.45';
                 interact.style.pointerEvents = ok ? '' : 'none';
-                interact.title = ok ? '' : '下单 SKU 维度不支持产品表现（悬浮 / 点击 / 框选）';
+                interact.title = ok ? '' : '下单 SKU 维度不支持产品表现（点击 / 框选）';
                 if (ok) interact.removeAttribute('inert');
                 else interact.setAttribute('inert', '');
             }
@@ -3789,18 +3744,18 @@
         function bindPerfUiToolbarOnce() {
             if (document.body.dataset.sfPerfUiBound === '1') return;
             document.body.dataset.sfPerfUiBound = '1';
-            ['sfPerfUiNone', 'sfPerfUiHover', 'sfPerfUiClick', 'sfPerfUiRect'].forEach((id) => {
+            ['sfPerfUiNone', 'sfPerfUiClick', 'sfPerfUiRect'].forEach((id) => {
                 const el = document.getElementById(id);
                 if (!el) return;
                 el.addEventListener('change', () => {
                     if (id === 'sfPerfUiNone' && el.checked) {
                         state.perfUi = { none: true, hover: false, click: false, rect: false };
                     } else if (id === 'sfPerfUiNone' && !el.checked) {
-                        state.perfUi = normalizePerfUiPatch({ none: false, hover: true, click: false, rect: false });
+                        state.perfUi = normalizePerfUiPatch({ none: false, hover: false, click: true, rect: false });
                     } else {
                         state.perfUi = normalizePerfUiPatch({
                             none: !!(document.getElementById('sfPerfUiNone') || {}).checked,
-                            hover: !!(document.getElementById('sfPerfUiHover') || {}).checked,
+                            hover: false,
                             click: !!(document.getElementById('sfPerfUiClick') || {}).checked,
                             rect: !!(document.getElementById('sfPerfUiRect') || {}).checked,
                         });
