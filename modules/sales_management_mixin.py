@@ -1536,6 +1536,20 @@ class SalesManagementMixin:
         )
         params.extend(statuses)
 
+    def _forecast_apply_spec_sku_keyword_filter(self, sku_keyword, clauses, params, variant_alias='v'):
+        """规格维度 SKU 筛选：货号或关联平台 SKU（与筛选框「货号/平台SKU」一致）。"""
+        if not sku_keyword:
+            return
+        like_val = f"%{sku_keyword}%"
+        clauses.append(
+            f"""(pf.sku_family LIKE %s OR EXISTS (
+                SELECT 1 FROM sales_products sp_sf
+                WHERE sp_sf.variant_id = {variant_alias}.id
+                  AND sp_sf.platform_sku LIKE %s
+            ))"""
+        )
+        params.extend([like_val, like_val])
+
     @staticmethod
     def _forecast_order_dim_visibility_sql():
         """下单 SKU 维度可见性：默认仅在市；下市且无可用在市替代方案时仍展示并标异常。"""
@@ -1873,9 +1887,7 @@ class SalesManagementMixin:
 
         clauses = ["1=1"]
         params = []
-        if sku_keyword:
-            clauses.append("pf.sku_family LIKE %s")
-            params.append(f"%{sku_keyword}%")
+        self._forecast_apply_spec_sku_keyword_filter(sku_keyword, clauses, params)
         if spec_keyword:
             clauses.append("v.spec_name LIKE %s")
             params.append(f"%{spec_keyword}%")
@@ -1925,9 +1937,7 @@ class SalesManagementMixin:
             fabric_keyword = (query_params.get('fabric', [''])[0] or '').strip()
         clauses = ["1=1"]
         params = []
-        if sku_keyword:
-            clauses.append("pf.sku_family LIKE %s")
-            params.append(f"%{sku_keyword}%")
+        self._forecast_apply_spec_sku_keyword_filter(sku_keyword, clauses, params)
         if spec_keyword:
             clauses.append("v.spec_name LIKE %s")
             params.append(f"%{spec_keyword}%")

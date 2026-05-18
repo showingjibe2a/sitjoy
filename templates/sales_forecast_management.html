@@ -2461,6 +2461,15 @@
             }, 320);
         }
 
+        let sfTopFilterReloadTimer = null;
+        function scheduleSfTopFilterDataReload() {
+            if (sfTopFilterReloadTimer) clearTimeout(sfTopFilterReloadTimer);
+            sfTopFilterReloadTimer = setTimeout(() => {
+                sfTopFilterReloadTimer = null;
+                loadForecastData();
+            }, 320);
+        }
+
         function getSfShopFilterCheckedIds() {
             const panel = document.getElementById('sfShopFilterPanel');
             const shops = state.shops || [];
@@ -5480,19 +5489,16 @@
 
             // 工具栏按钮
             document.getElementById('btnLoadForecast').addEventListener('click', loadForecastData);
-            const bindTopFilter = (id, key) => {
+            const bindTopFilter = (id) => {
                 const el = document.getElementById(id);
                 if (!el) return;
                 el.addEventListener('input', () => {
-                    const v = String(el.value || '').trim();
-                    if (v) state.colFilters[key] = v;
-                    else delete state.colFilters[key];
-                    renderForecastTable();
+                    scheduleSfTopFilterDataReload();
                 });
             };
-            bindTopFilter('filterSku', 'sku_family');
-            bindTopFilter('filterSpec', 'spec_name');
-            bindTopFilter('filterFabric', 'fabric_code');
+            bindTopFilter('filterSku');
+            bindTopFilter('filterSpec');
+            bindTopFilter('filterFabric');
 
             // 弹窗
             document.getElementById('sfBatchSaveBtn').addEventListener('click', saveAllChanges);
