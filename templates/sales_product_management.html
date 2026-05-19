@@ -107,6 +107,35 @@
             width: 0%;
             background: var(--morandi-sand);
         }
+        .preview-edit-input {
+            min-width: 88px;
+            height: 28px !important;
+            min-height: 28px !important;
+            padding: 0.18rem 0.4rem !important;
+            font-size: 0.8rem !important;
+        }
+        .preview-edit-cell {
+            min-width: 100px;
+            box-sizing: border-box;
+        }
+        .preview-savebar {
+            position: fixed;
+            left: 50%;
+            bottom: 20px;
+            transform: translateX(-50%);
+            z-index: 55;
+            display: none;
+            align-items: center;
+            gap: 0.7rem;
+            padding: 0.65rem 0.95rem;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 12px;
+            background: #fff;
+            box-shadow: 0 10px 26px rgba(15, 23, 42, 0.14);
+        }
+        .preview-savebar.active {
+            display: inline-flex;
+        }
         .dialog-message {
             white-space: pre-wrap;
             color: var(--morandi-ink);
@@ -379,6 +408,7 @@
                             </th>
                             <th class="sj-th-thumb cell-center">图片</th>
                             <th data-sort-key="product_status">状态</th>
+                            <th data-sort-key="shop_name">店铺</th>
                             <th data-sort-key="sku_family">货号</th>
                             <th data-sort-key="fabric">面料</th>
                             <th data-sort-key="spec_name">规格名称</th>
@@ -391,7 +421,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="13" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="14" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -706,6 +736,12 @@
         </div>
     </div>
 
+    <div id="salesPreviewSaveBar" class="preview-savebar" aria-live="polite">
+        <span id="salesPreviewSaveText">已修改 0 条预览数据</span>
+        <button type="button" class="btn-secondary" onclick="cancelSalesPreviewEdits()">取消修改</button>
+        <button type="button" class="btn-primary" onclick="saveSalesPreviewEdits()">统一保存</button>
+    </div>
+
     <div id="timeoutToast" class="toast-notice"></div>
 
     <script>
@@ -734,6 +770,7 @@
         let originalFabric = '';
         const salesProductDetailCache = {};
         let selectedSalesProductIds = new Set();
+        let salesPreviewEditDraft = {};
         const SALES_PRODUCT_AGGREGATE_MODE_KEY = 'sj.salesProduct.aggregateMode.v1';
         let salesProductAggregateMode = 'none';
         let salesProductGroupSort = { key: '', dir: 'asc' };
@@ -779,6 +816,130 @@
         let mainImagePromptDuplicate = true;
         let mainImageShowFabric = true;
         let nasMainImageSelected = new Set();
+
+        function escapeAttr(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;');
+        }
+
+        function parseNumber(raw) {
+            const text = String(raw == null ? '' : raw).trim();
+            if (!text) return null;
+            const num = Number(text);
+            return Number.isFinite(num) ? num : null;
+        }
+
+        function normalizeSalesPreviewFieldValue(field, rawValue) {
+            if (field === 'child_code') {
+                return String(rawValue == null ? '' : rawValue).trim();
+            }
+            if (field === 'sale_price_usd') {
+                return parseNumber(rawValue);
+            }
+            return rawValue;
+        }
+
+        function getSalesPreviewEffectiveValue(item, field) {
+            const id = String(item.id);
+            if (salesPreviewEditDraft[id] && Object.prototype.hasOwnProperty.call(salesPreviewEditDraft[id], field)) {
+                return salesPreviewEditDraft[id][field];
+            }
+            return item[field];
+        }
+
+        function countSalesPreviewEditedRows() {
+            return Object.keys(salesPreviewEditDraft).length;
+        }
+
+        function syncSalesPreviewSaveBar() {
+            const bar = document.getElementById('salesPreviewSaveBar');
+            const text = document.getElementById('salesPreviewSaveText');
+            if (!bar || !text) return;
+            const count = countSalesPreviewEditedRows();
+            text.textContent = `已修改 ${count} 条预览数据`;
+            bar.classList.toggle('active', count > 0);
+        }
+
+        function updateSalesPreviewDraft(itemId, field, rawValue) {
+            const item = (salesProductItems || []).find(x => String(x.id) === String(itemId));
+            if (!item) return;
+            const id = String(itemId);
+            const normalized = normalizeSalesPreviewFieldValue(field, rawValue);
+            if (!salesPreviewEditDraft[id]) {
+                salesPreviewEditDraft[id] = {
+                    child_code: item.child_code == null ? '' : String(item.child_code),
+                    sale_price_usd: item.sale_price_usd,
+                };
+            }
+            salesPreviewEditDraft[id][field] = normalized;
+            const draft = salesPreviewEditDraft[id];
+            const origChild = item.child_code == null ? '' : String(item.child_code);
+            const childSame = normalizeSalesPreviewFieldValue('child_code', draft.child_code)
+                === normalizeSalesPreviewFieldValue('child_code', origChild);
+            const priceSame = normalizeSalesPreviewFieldValue('sale_price_usd', draft.sale_price_usd)
+                === normalizeSalesPreviewFieldValue('sale_price_usd', item.sale_price_usd);
+            if (childSame && priceSame) {
+                delete salesPreviewEditDraft[id];
+            }
+            syncSalesPreviewSaveBar();
+        }
+
+        function bindSalesPreviewEditEvents() {
+            document.querySelectorAll('#salesProductTable .preview-edit-field').forEach(el => {
+                if (el.dataset._salesPreviewBound === '1') return;
+                el.dataset._salesPreviewBound = '1';
+                const handler = function() {
+                    updateSalesPreviewDraft(this.getAttribute('data-id'), this.getAttribute('data-field'), this.value);
+                };
+                el.addEventListener('change', handler);
+                el.addEventListener('input', handler);
+            });
+        }
+
+        function cancelSalesPreviewEdits() {
+            salesPreviewEditDraft = {};
+            renderSalesGroupedTable(salesProductItems || []);
+        }
+
+        function saveSalesPreviewEdits() {
+            const ids = Object.keys(salesPreviewEditDraft);
+            if (!ids.length) {
+                syncSalesPreviewSaveBar();
+                return;
+            }
+            const items = ids.map(id => ({
+                id: Number(id),
+                child_code: normalizeSalesPreviewFieldValue('child_code', salesPreviewEditDraft[id].child_code),
+                sale_price_usd: normalizeSalesPreviewFieldValue('sale_price_usd', salesPreviewEditDraft[id].sale_price_usd),
+            }));
+            fetch('/api/sales-product?action=preview_update', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items }),
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        if (window.showAppToast) window.showAppToast(data.message || '批量保存失败', true, 3200);
+                        return;
+                    }
+                    items.forEach(up => {
+                        const row = (salesProductItems || []).find(x => String(x.id) === String(up.id));
+                        if (!row) return;
+                        row.child_code = up.child_code ? up.child_code : null;
+                        row.sale_price_usd = up.sale_price_usd;
+                        delete salesPreviewEditDraft[String(up.id)];
+                    });
+                    renderSalesGroupedTable(salesProductItems || []);
+                    syncSalesPreviewSaveBar();
+                    if (window.showAppToast) window.showAppToast('预览修改已保存', false, 2200);
+                })
+                .catch(err => {
+                    if (window.showAppToast) window.showAppToast('请求失败: ' + err, true, 3200);
+                });
+        }
 
         function escapeHtml(value) {
             return String(value == null ? '' : value)
@@ -1086,6 +1247,10 @@
         }
 
         function showTimeoutToast(message) {
+            if (window.showAppToast) {
+                window.showAppToast(message || '', false, 2600);
+                return;
+            }
             let toast = document.getElementById('timeoutToast');
             if (!toast) {
                 toast = document.createElement('div');
@@ -1284,20 +1449,37 @@
             const code = String(item && item.parent_code || '').trim();
             const shop = String(item && item.shop_name || '').trim();
             const marker = String(item && item.parent_sku_marker || '').trim();
-            const key = code ? `parent:${code}` : 'parent:__none__';
+            const platform = String(item && item.platform_type_name || '').trim();
+            if (code) {
+                return {
+                    key: `parent:${code}`,
+                    code,
+                    shop,
+                    marker,
+                    platform,
+                    isOrphan: false,
+                };
+            }
+            const platformSlug = platform || '__unknown__';
             return {
-                key,
-                code,
+                key: `orphan:platform:${platformSlug}`,
+                code: '',
                 shop,
-                marker,
-                label: code || '（未关联父体）',
+                marker: '',
+                platform,
+                isOrphan: true,
             };
         }
 
         function formatSalesParentGroupRowLabel(meta, itemCount) {
             const n = Math.max(0, Number(itemCount) || 0);
-            if (!meta || meta.key === 'parent:__none__') {
-                return `${escapeHtml(meta && meta.label || '（未关联父体）')}（${n}）`;
+            if (!meta) return `（${n}）`;
+            if (meta.isOrphan) {
+                const bits = [
+                    `平台：${escapeHtml(meta.platform || '未指定')}`,
+                    '未关联父体',
+                ];
+                return `${bits.join(' ｜ ')}（${n}）`;
             }
             const bits = [
                 `店铺：${escapeHtml(meta.shop || '—')}`,
@@ -1305,6 +1487,21 @@
                 `父体编号：${escapeHtml(meta.code || '—')}`,
             ];
             return `${bits.join(' ｜ ')}（${n}）`;
+        }
+
+        function compareSalesParentGroupEntries(a, b) {
+            const keyA = String((a && a[0]) || '');
+            const keyB = String((b && b[0]) || '');
+            const orphanA = keyA.startsWith('orphan:platform:');
+            const orphanB = keyB.startsWith('orphan:platform:');
+            if (orphanA !== orphanB) return orphanA ? 1 : -1;
+            const itemA = (a[1] && Array.isArray(a[1].items) && a[1].items[0]) ? a[1].items[0] : {};
+            const itemB = (b[1] && Array.isArray(b[1].items) && b[1].items[0]) ? b[1].items[0] : {};
+            const metaA = salesParentGroupMetaOf(itemA);
+            const metaB = salesParentGroupMetaOf(itemB);
+            const labelA = metaA.isOrphan ? (metaA.platform || '') : (metaA.code || keyA);
+            const labelB = metaB.isOrphan ? (metaB.platform || '') : (metaB.code || keyB);
+            return String(labelA).localeCompare(String(labelB), 'zh-CN');
         }
 
         function compareSalesItemsByGroupSortKey(a, b) {
@@ -1369,6 +1566,14 @@
                 ? `<img class="sj-table-thumb-img" src="/api/image-preview?id=${encodeURIComponent(previewB64)}&mode=thumb&w=120&q=60" alt="预览" loading="lazy">`
                 : `<span class="sj-table-thumb-empty">暂无</span>`;
             const createdDateStr = item.created_at ? new Date(item.created_at).toLocaleDateString('zh-CN') : '-';
+            const childCodeVal = getSalesPreviewEffectiveValue(item, 'child_code');
+            const childCodeText = childCodeVal == null ? '' : String(childCodeVal);
+            const salePriceVal = getSalesPreviewEffectiveValue(item, 'sale_price_usd');
+            const salePriceNum = Number(salePriceVal || 0);
+            const salePriceLow = salePriceNum > 0
+                && Number(item.warehouse_cost_usd || 0) + Number(item.last_mile_cost_usd || 0) > 0
+                && salePriceNum < (Number(item.warehouse_cost_usd || 0) + Number(item.last_mile_cost_usd || 0));
+            const salePriceInputVal = salePriceVal == null || salePriceVal === '' ? '' : String(salePriceVal);
             const gk = escapeSalesGroupKeyAttr(groupKey);
             const rowCls = hidden ? 'sales-row-hidden' : '';
             return `
@@ -1377,13 +1582,14 @@
                     <td class="sj-agg-toggle-cell" data-manage-col-key="__sj_agg__"></td>
                     <td class="sj-cell-thumb" style="text-align:center;" data-sj-preview="1">${previewCell}</td>
                     <td>${renderInlineProductStatus(item)}</td>
+                    <td>${escapeHtml(item.shop_name || '')}</td>
                     <td>${item.sku_family || ''}</td>
                     <td>${item.fabric || ''}</td>
                     <td>${item.spec_name || ''}</td>
                     <td>${item.platform_sku || ''}</td>
-                    <td>${item.child_code || ''}</td>
+                    <td class="preview-edit-cell"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="child_code" type="text" value="${escapeAttr(childCodeText)}"></td>
                     <td class="sales-order-sku-cell">${orderSkuDisplay}</td>
-                    <td class="${(Number(item.sale_price_usd || 0) > 0 && Number(item.warehouse_cost_usd || 0) + Number(item.last_mile_cost_usd || 0) > 0 && Number(item.sale_price_usd || 0) < (Number(item.warehouse_cost_usd || 0) + Number(item.last_mile_cost_usd || 0))) ? 'danger-note' : ''}">${item.sale_price_usd || ''}</td>
+                    <td class="preview-edit-cell ${salePriceLow ? 'danger-note' : ''}"><input class="inline-input preview-edit-input preview-edit-field" data-id="${item.id}" data-field="sale_price_usd" type="number" step="0.01" min="0" value="${escapeAttr(salePriceInputVal)}"></td>
                     <td>${createdDateStr}</td>
                     <td>
                         <div class="pm-actions">
@@ -1546,7 +1752,7 @@
             const tbody = document.querySelector('#salesProductTable tbody');
             if (!tbody) return;
             if (!(items || []).length) {
-                tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="14" style="text-align:center;">暂无数据</td></tr>';
                 const host = document.getElementById('salesProductTableHost');
                 if (host) host.classList.toggle('sj-aggregate-active', salesProductAggregateMode === 'parent');
                 salesApplyAggregateToggleLockedAndRefresh();
@@ -1558,6 +1764,9 @@
 
             const availableIdSet = new Set((items || []).map(x => String(x.id)));
             selectedSalesProductIds = new Set(Array.from(selectedSalesProductIds).filter(id => availableIdSet.has(String(id))));
+            Object.keys(salesPreviewEditDraft).forEach(id => {
+                if (!availableIdSet.has(String(id))) delete salesPreviewEditDraft[id];
+            });
 
             const rows = Array.isArray(items) ? items : [];
             const html = [];
@@ -1574,7 +1783,7 @@
                     if (!groups.has(meta.key)) groups.set(meta.key, { label: meta.label, items: [] });
                     groups.get(meta.key).items.push(item);
                 });
-                Array.from(groups.entries()).forEach(([groupKey, groupData]) => {
+                Array.from(groups.entries()).sort(compareSalesParentGroupEntries).forEach(([groupKey, groupData]) => {
                     const groupItems = (groupData && Array.isArray(groupData.items)) ? groupData.items : [];
                     const sorted = salesProductGroupSort.key
                         ? groupItems.slice().sort(compareSalesItemsByGroupSortKey)

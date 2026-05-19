@@ -382,10 +382,15 @@
     function showAppToast(message, isError, duration){
         const text = String(message || '').trim();
         if(!text) return;
+        const isErr = !!isError;
+        /* 成功类提示出现时立即收起右下角「上传/保存中」进度条，避免与成功 toast 叠在一起 */
+        if(!isErr){
+            hideAppUploadProgress();
+        }
         syncAppToastStackOffset();
         const stack = ensureToastStack();
         const toast = document.createElement('div');
-        toast.className = `app-toast ${isError ? 'error' : 'success'}`;
+        toast.className = `app-toast ${isErr ? 'error' : 'success'}`;
 
         const messageEl = document.createElement('div');
         messageEl.className = 'app-toast-message';
@@ -395,18 +400,18 @@
         const actions = document.createElement('div');
         actions.className = 'app-toast-actions';
 
+        const copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = 'btn-secondary btn-small';
+        copyBtn.textContent = '复制';
+        actions.appendChild(copyBtn);
+
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
-        closeBtn.className = 'app-toast-btn close';
+        closeBtn.className = 'modal-close';
         closeBtn.setAttribute('aria-label', '关闭提示');
         closeBtn.textContent = '×';
         actions.appendChild(closeBtn);
-
-        const copyBtn = document.createElement('button');
-        copyBtn.type = 'button';
-        copyBtn.className = 'app-toast-btn copy';
-        copyBtn.textContent = '复制';
-        actions.appendChild(copyBtn);
 
         toast.appendChild(actions);
         stack.appendChild(toast);

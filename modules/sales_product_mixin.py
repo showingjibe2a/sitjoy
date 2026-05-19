@@ -4325,7 +4325,54 @@ class SalesProductMixin:
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
 
             if method == 'PUT':
+                query_params_put = parse_qs(environ.get('QUERY_STRING', ''))
+                preview_action = (query_params_put.get('action', [''])[0] or '').strip().lower()
                 data = self._read_json_body(environ)
+                if preview_action == 'preview_update':
+                    batch_items = data.get('items') if isinstance(data, dict) else None
+                    if not isinstance(batch_items, list) or not batch_items:
+                        return self.send_json({'status': 'error', 'message': 'Missing preview items'}, start_response)
+
+                    row_map = {}
+                    for item in batch_items:
+                        if not isinstance(item, dict):
+                            continue
+                        item_id = self._parse_int(item.get('id'))
+                        if not item_id:
+                            continue
+                        child_code_raw = item.get('child_code')
+                        child_code = None
+                        if child_code_raw is not None:
+                            child_code = (str(child_code_raw).strip() or None)
+                        row_map[int(item_id)] = {
+                            'child_code': child_code,
+                            'sale_price_usd': self._parse_float(item.get('sale_price_usd')),
+                        }
+
+                    if not row_map:
+                        return self.send_json({'status': 'error', 'message': 'No valid preview items'}, start_response)
+
+                    ids = list(row_map.keys())
+                    case_params = []
+
+                    def build_case(field_name):
+                        parts = []
+                        for rid in ids:
+                            parts.append('WHEN %s THEN %s')
+                            case_params.extend([rid, row_map[rid][field_name]])
+                        return f"CASE id {' '.join(parts)} ELSE {field_name} END"
+
+                    set_clause = [
+                        f"child_code = {build_case('child_code')}",
+                        f"sale_price_usd = {build_case('sale_price_usd')}",
+                    ]
+                    where_placeholders = ','.join(['%s'] * len(ids))
+                    sql = f"UPDATE sales_products SET {', '.join(set_clause)} WHERE id IN ({where_placeholders})"
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute(sql, tuple(case_params + ids))
+                    return self.send_json({'status': 'success', 'updated': len(ids)}, start_response)
+
                 item_id = self._parse_int(data.get('id'))
                 platform_sku_manual = (data.get('platform_sku') or '').strip()
                 product_status = (data.get('product_status') or 'enabled').strip().lower()

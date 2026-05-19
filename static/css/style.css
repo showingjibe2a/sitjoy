@@ -3098,30 +3098,31 @@ button:hover {
 
 .app-toast-actions {
     display: inline-flex;
-    align-items: flex-start;
-    gap: 0.35rem;
+    align-items: center;
+    gap: 0.4rem;
+    flex-shrink: 0;
 }
 
-.app-toast-btn {
-    border: 1px solid rgba(255, 255, 255, 0.45);
-    background: rgba(255, 255, 255, 0.14);
-    color: #fff;
-    border-radius: 999px;
-    cursor: pointer;
-    font-size: 0.72rem;
-    line-height: 1;
-    padding: 0.28rem 0.5rem;
+.app-toast-actions .btn-secondary.btn-small {
+    min-height: 26px;
+    height: 26px;
+    padding: 0 0.55rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    border-radius: 8px;
+    line-height: 1.2;
+    flex-shrink: 0;
+    transform: none;
+    box-shadow: none;
 }
 
-.app-toast-btn:hover {
-    background: rgba(255, 255, 255, 0.28);
+.app-toast-actions .btn-secondary.btn-small:hover,
+.app-toast-actions .btn-secondary.btn-small:active {
+    transform: none;
 }
 
-.app-toast-btn.close {
-    width: 22px;
-    height: 22px;
-    padding: 0;
-    font-size: 0.95rem;
+.app-toast-actions .modal-close {
+    flex-shrink: 0;
 }
 
 .app-result-panel {
