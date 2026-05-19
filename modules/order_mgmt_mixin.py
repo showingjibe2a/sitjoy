@@ -66,6 +66,8 @@ class OrderManagementMixin:
             if method == 'POST':
                 if action == 'off_market_ship_plan_migrate':
                     return self._handle_off_market_ship_plan_migrate(environ, start_response, query_params)
+                if action == 'off_market_ship_plan_batch_migrate':
+                    return self._handle_off_market_ship_plan_batch_migrate(environ, start_response, query_params)
                 data = self._read_json_body(environ)
                 sku_family_id = self._parse_int(data.get('sku_family_id'))
                 sku = (data.get('sku') or '').strip()
@@ -574,6 +576,125 @@ class OrderManagementMixin:
             parts.append(f"{sku}×{q}")
         return ' + '.join(parts) if parts else '（空）'
 
+    def _off_market_list_variant_link_changes(self, conn, owner_id, owner_sku, target_plan_id, target_plan_name, limit=400):
+        """各销售规格（含平台 SKU 提示）对本下单 SKU 的绑定将如何按方案改写。"""
+        oid = self._parse_int(owner_id)
+        tid = self._parse_int(target_plan_id)
+        if not oid or not tid:
+            return []
+        limit = max(1, min(int(limit or 400), 800))
+        owner_sku = (owner_sku or '').strip()
+        target_plan_name = (target_plan_name or '').strip()
+        items_map = self._off_market_load_plan_items_bulk(conn, [tid])
+        target_items = items_map.get(tid, [])
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    svol.variant_id AS variant_id,
+                    GREATEST(1, COALESCE(svol.quantity, 1)) AS link_qty,
+                    pf.sku_family AS sku_family,
+                    v.spec_name AS spec_name,
+                    fm.fabric_code AS fabric_code,
+                    (
+                        SELECT TRIM(MIN(COALESCE(sp2.platform_sku, '')))
+                        FROM sales_products sp2
+                        WHERE sp2.variant_id = svol.variant_id
+                    ) AS platform_sku_hint
+                FROM sales_variant_order_links svol
+                INNER JOIN sales_product_variants v ON v.id = svol.variant_id
+                LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id
+                WHERE svol.order_product_id = %s
+                ORDER BY svol.variant_id ASC
+                LIMIT %s
+                """,
+                (oid, limit),
+            )
+            link_rows = cur.fetchall() or []
+        out = []
+        for r in link_rows or []:
+            link_qty = max(1, self._parse_int(r.get('link_qty')) or 1)
+            old_txt = f"{owner_sku}×{link_qty}"
+            new_txt = self._off_market_format_plan_qty(target_items, link_qty)
+            fam = (r.get('sku_family') or '').strip()
+            spec = (r.get('spec_name') or '').strip()
+            fab = (r.get('fabric_code') or '').strip()
+            label = ' '.join(x for x in (fam, spec, fab) if x).strip() or '-'
+            platform_sku = (r.get('platform_sku_hint') or '').strip()
+            out.append({
+                'variant_id': self._parse_int(r.get('variant_id')),
+                'platform_sku': platform_sku,
+                'variant_label': label,
+                'old_binding': old_txt,
+                'new_binding': f"{target_plan_name}：{new_txt}" if target_plan_name else new_txt,
+            })
+        return out
+
+    def _off_market_apply_ship_plan_migrate(self, conn, owner_id, target_plan_id):
+        """按目标方案改写 sales_variant_order_links；返回 removed / upserted 计数。"""
+        oid = self._parse_int(owner_id)
+        tid = self._parse_int(target_plan_id)
+        if not oid or not tid:
+            raise ValueError('缺少 order_product_id 或 target_plan_id')
+        eligible_ids = {
+            self._parse_int(x.get('id'))
+            for x in self._off_market_eligible_target_plans(conn, oid)
+            if self._parse_int(x.get('id'))
+        }
+        if tid not in eligible_ids:
+            raise ValueError('所选方案不是有效的「全部在市」替代方案')
+        items_map = self._off_market_load_plan_items_bulk(conn, [tid])
+        target_items = items_map.get(tid, [])
+        if not target_items:
+            raise ValueError('目标方案无替代明细，无法迁移')
+        n_removed = 0
+        n_upserts = 0
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT variant_id, GREATEST(1, COALESCE(quantity, 1)) AS q
+                FROM sales_variant_order_links
+                WHERE order_product_id = %s
+                """,
+                (oid,),
+            )
+            links = cur.fetchall() or []
+            merges = {}
+            for row in links:
+                v = self._parse_int(row.get('variant_id'))
+                q = max(1, self._parse_int(row.get('q')) or 1)
+                if not v:
+                    continue
+                for it in target_items:
+                    sid = self._parse_int(it.get('substitute_order_product_id'))
+                    if not sid:
+                        continue
+                    mul = max(1, self._parse_int(it.get('quantity')) or 1)
+                    key = (v, sid)
+                    merges[key] = merges.get(key, 0) + q * mul
+
+            cur.execute(
+                "DELETE FROM sales_variant_order_links WHERE order_product_id = %s",
+                (oid,),
+            )
+            n_removed = cur.rowcount if cur.rowcount is not None else len(links)
+
+            for (v, sid), tot in merges.items():
+                tot_i = int(tot)
+                if tot_i <= 0:
+                    continue
+                cur.execute(
+                    """
+                    INSERT INTO sales_variant_order_links (variant_id, order_product_id, quantity)
+                    VALUES (%s, %s, %s)
+                    ON DUPLICATE KEY UPDATE quantity = GREATEST(1, COALESCE(quantity, 1)) + VALUES(quantity)
+                    """,
+                    (v, sid, tot_i),
+                )
+                n_upserts += 1
+        return {'removed': int(n_removed), 'upserted': int(n_upserts)}
+
     def _handle_off_market_ship_plan_preview(self, environ, start_response, query_params):
         oid = self._parse_int((query_params.get('order_product_id', [''])[0] or '').strip())
         if not oid:
@@ -614,62 +735,25 @@ class OrderManagementMixin:
                     if self._parse_int(r.get('id'))
                 ]
 
-                # 销售产品管理：规格（variant）↔ 下单 SKU 绑定在 sales_variant_order_links。
-                # 下市迁移按「所选全部在市方案」中的替代比例，改写各规格对本下单 SKU 的 quantity（非改订单登记发货方案）。
-                link_rows = []
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        SELECT
-                            svol.variant_id AS ref_id,
-                            'variant_link' AS ref_type,
-                            svol.variant_id AS registration_id,
-                            GREATEST(1, COALESCE(svol.quantity, 1)) AS link_qty,
-                            pf.sku_family AS sku_family,
-                            v.spec_name AS spec_name,
-                            fm.fabric_code AS fabric_code,
-                            (
-                                SELECT TRIM(MIN(COALESCE(sp2.platform_sku, '')))
-                                FROM sales_products sp2
-                                WHERE sp2.variant_id = svol.variant_id
-                            ) AS platform_sku_hint
-                        FROM sales_variant_order_links svol
-                        INNER JOIN sales_product_variants v ON v.id = svol.variant_id
-                        LEFT JOIN product_families pf ON pf.id = v.sku_family_id
-                        LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id
-                        WHERE svol.order_product_id = %s
-                        ORDER BY svol.variant_id ASC
-                        LIMIT %s
-                        """,
-                        (oid, limit),
-                    )
-                    link_rows = cur.fetchall() or []
-
-                items_map = self._off_market_load_plan_items_bulk(conn, [target_plan_id])
-                target_items = items_map.get(target_plan_id, [])
-
+                changes = self._off_market_list_variant_link_changes(
+                    conn, oid, owner_sku, target_plan_id, target_plan_name, limit=limit,
+                )
                 rows_out = []
-                for r in link_rows or []:
-                    link_qty = max(1, self._parse_int(r.get('link_qty')) or 1)
-                    old_txt = f"{owner_sku}×{link_qty}"
-                    new_txt = self._off_market_format_plan_qty(target_items, link_qty)
-                    fam = (r.get('sku_family') or '').strip()
-                    spec = (r.get('spec_name') or '').strip()
-                    fab = (r.get('fabric_code') or '').strip()
-                    label = ' '.join(x for x in (fam, spec, fab) if x).strip() or '-'
-                    sku_hint = (r.get('platform_sku_hint') or '').strip()
-                    order_hint = sku_hint or f"variant #{self._parse_int(r.get('ref_id'))}"
+                for ch in changes:
+                    vid = self._parse_int(ch.get('variant_id'))
+                    sku_hint = (ch.get('platform_sku') or '').strip() or f"variant #{vid}"
+                    old_txt = ch.get('old_binding') or ''
                     rows_out.append({
                         'ref_type': 'variant_link',
-                        'ref_id': self._parse_int(r.get('ref_id')),
-                        'registration_id': self._parse_int(r.get('registration_id')),
-                        'order_no': order_hint,
-                        'variant_id': self._parse_int(r.get('ref_id')),
-                        'variant_label': label,
+                        'ref_id': vid,
+                        'registration_id': vid,
+                        'order_no': sku_hint,
+                        'variant_id': vid,
+                        'variant_label': ch.get('variant_label') or '-',
                         'old_plan_name': owner_sku,
                         'new_plan_name': target_plan_name,
                         'old_plan_summary': f"规格绑定：{old_txt}",
-                        'new_plan_summary': f"{target_plan_name}：{new_txt}",
+                        'new_plan_summary': ch.get('new_binding') or '',
                     })
 
                 return self.send_json({
@@ -752,11 +836,15 @@ class OrderManagementMixin:
                             'pending_platform_rows': 0,
                             'pending_shipment_rows': 0,
                             'pending_variant_link_rows': 0,
+                            'sales_sku_changes': [],
                         })
                         continue
                     tid = self._parse_int(targets[0].get('id'))
                     tname = (targets[0].get('plan_name') or '').strip()
                     link_cnt = self._off_market_count_pending_variant_links(conn, oid)
+                    sales_changes = self._off_market_list_variant_link_changes(
+                        conn, oid, sku, tid, tname, limit=400,
+                    )
                     out_items.append({
                         'order_product_id': oid,
                         'sku': sku,
@@ -766,6 +854,7 @@ class OrderManagementMixin:
                         'pending_platform_rows': link_cnt,
                         'pending_shipment_rows': 0,
                         'pending_variant_link_rows': link_cnt,
+                        'sales_sku_changes': sales_changes,
                     })
             return self.send_json({
                 'status': 'success',
@@ -784,70 +873,73 @@ class OrderManagementMixin:
             return self.send_json({'status': 'error', 'message': '缺少 order_product_id 或 target_plan_id'}, start_response)
         if not data.get('acknowledge'):
             return self.send_json({'status': 'error', 'message': '请先勾选「我已知晓」后再确认'}, start_response)
-        n_removed = 0
-        n_upserts = 0
         try:
             with self._get_db_connection() as conn:
-                eligible_ids = {
-                    self._parse_int(x.get('id'))
-                    for x in self._off_market_eligible_target_plans(conn, oid)
-                    if self._parse_int(x.get('id'))
-                }
-                if target_plan_id not in eligible_ids:
-                    return self.send_json({'status': 'error', 'message': '所选方案不是有效的「全部在市」替代方案'}, start_response)
-                items_map = self._off_market_load_plan_items_bulk(conn, [target_plan_id])
-                target_items = items_map.get(target_plan_id, [])
-                if not target_items:
-                    return self.send_json({'status': 'error', 'message': '目标方案无替代明细，无法迁移'}, start_response)
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        SELECT variant_id, GREATEST(1, COALESCE(quantity, 1)) AS q
-                        FROM sales_variant_order_links
-                        WHERE order_product_id = %s
-                        """,
-                        (oid,),
-                    )
-                    links = cur.fetchall() or []
-                    merges = {}
-                    for row in links:
-                        v = self._parse_int(row.get('variant_id'))
-                        q = max(1, self._parse_int(row.get('q')) or 1)
-                        if not v:
-                            continue
-                        for it in target_items:
-                            sid = self._parse_int(it.get('substitute_order_product_id'))
-                            if not sid:
-                                continue
-                            mul = max(1, self._parse_int(it.get('quantity')) or 1)
-                            key = (v, sid)
-                            merges[key] = merges.get(key, 0) + q * mul
-
-                    cur.execute(
-                        "DELETE FROM sales_variant_order_links WHERE order_product_id = %s",
-                        (oid,),
-                    )
-                    n_removed = cur.rowcount if cur.rowcount is not None else len(links)
-
-                    for (v, sid), tot in merges.items():
-                        tot_i = int(tot)
-                        if tot_i <= 0:
-                            continue
-                        cur.execute(
-                            """
-                            INSERT INTO sales_variant_order_links (variant_id, order_product_id, quantity)
-                            VALUES (%s, %s, %s)
-                            ON DUPLICATE KEY UPDATE quantity = GREATEST(1, COALESCE(quantity, 1)) + VALUES(quantity)
-                            """,
-                            (v, sid, tot_i),
-                        )
-                        n_upserts += 1
+                stats = self._off_market_apply_ship_plan_migrate(conn, oid, target_plan_id)
+            n_removed = int(stats.get('removed') or 0)
+            n_upserts = int(stats.get('upserted') or 0)
             return self.send_json({
                 'status': 'success',
-                'updated_platform_rows': int(n_removed),
-                'updated_shipment_rows': int(n_upserts),
-                'removed_owner_variant_links': int(n_removed),
-                'upserted_substitute_variant_links': int(n_upserts),
+                'updated_platform_rows': n_removed,
+                'updated_shipment_rows': n_upserts,
+                'removed_owner_variant_links': n_removed,
+                'upserted_substitute_variant_links': n_upserts,
+            }, start_response)
+        except ValueError as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
+    def _handle_off_market_ship_plan_batch_migrate(self, environ, start_response, query_params):
+        data = self._read_json_body(environ) or {}
+        if not data.get('acknowledge'):
+            return self.send_json({'status': 'error', 'message': '请先勾选确认后再提交'}, start_response)
+        raw_items = data.get('items') or []
+        items = []
+        for row in raw_items:
+            if not isinstance(row, dict):
+                continue
+            oid = self._parse_int(row.get('order_product_id'))
+            tid = self._parse_int(row.get('target_plan_id'))
+            if oid and tid:
+                items.append({'order_product_id': oid, 'target_plan_id': tid})
+        if not items:
+            return self.send_json({'status': 'error', 'message': '无有效迁移项'}, start_response)
+        if len(items) > 200:
+            items = items[:200]
+        results = []
+        ok_n = 0
+        try:
+            with self._get_db_connection() as conn:
+                for row in items:
+                    oid = row['order_product_id']
+                    tid = row['target_plan_id']
+                    try:
+                        stats = self._off_market_apply_ship_plan_migrate(conn, oid, tid)
+                        ok_n += 1
+                        results.append({
+                            'order_product_id': oid,
+                            'status': 'success',
+                            'removed_owner_variant_links': int(stats.get('removed') or 0),
+                            'upserted_substitute_variant_links': int(stats.get('upserted') or 0),
+                        })
+                    except ValueError as e:
+                        results.append({
+                            'order_product_id': oid,
+                            'status': 'error',
+                            'message': str(e),
+                        })
+                    except Exception as e:
+                        results.append({
+                            'order_product_id': oid,
+                            'status': 'error',
+                            'message': str(e),
+                        })
+            return self.send_json({
+                'status': 'success',
+                'migrated_count': ok_n,
+                'failed_count': len(results) - ok_n,
+                'results': results,
             }, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)

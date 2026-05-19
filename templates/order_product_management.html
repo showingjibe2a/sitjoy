@@ -235,6 +235,22 @@
             width: 100%;
             font-size: 0.86rem;
         }
+        .order-batch-ship-plan-changes {
+            margin: 0;
+            padding-left: 1.1rem;
+            font-size: 0.82rem;
+            line-height: 1.45;
+            max-width: 420px;
+        }
+        .order-batch-ship-plan-changes li {
+            margin-bottom: 0.35rem;
+        }
+        .order-batch-ship-plan-changes li:last-child {
+            margin-bottom: 0;
+        }
+        .order-batch-ship-plan-arrow {
+            color: var(--morandi-slate, #7b8088);
+        }
         .order-batch-calc-apply-hint {
             display: none;
             margin: 0.35rem 0 0.5rem;
@@ -943,7 +959,7 @@
     </div>
 
     <div class="pm-modal" id="orderBatchShipPlanVerifyModal">
-        <div class="pm-modal-content pm-modal-content--wide" style="max-width: 920px;">
+        <div class="pm-modal-content pm-modal-content--wide" style="max-width: 1100px;">
             <h3 id="orderBatchShipPlanVerifyTitle" style="margin-top:0;">批量核验发货方案</h3>
             <p id="orderBatchShipPlanVerifySummary" class="dialog-message" style="margin:0 0 0.65rem 0;"></p>
             <div class="pm-modal-scroll" style="max-height: 52vh;">
@@ -953,14 +969,23 @@
                             <th>下单 SKU</th>
                             <th>是否有「全部在市」可替换方案</th>
                             <th>默认目标方案</th>
+                            <th>关联销售 SKU 及绑定替换</th>
                             <th style="text-align:right;">待迁移规格关联行</th>
                         </tr>
                     </thead>
                     <tbody id="orderBatchShipPlanVerifyTbody"></tbody>
                 </table>
             </div>
+            <div class="app-confirm-check-row" id="orderBatchShipPlanVerifyAckRow">
+                <label class="app-confirm-check-label" for="orderBatchShipPlanVerifyAck">
+                    <input type="checkbox" id="orderBatchShipPlanVerifyAck" class="app-confirm-check-input" value="1">
+                    <span class="app-confirm-check-text" id="orderBatchShipPlanVerifyAckText">我已知晓：将按默认「全部在市」方案自动修改所有关联销售规格与下单 SKU 的绑定（发货方案），且不可恢复。</span>
+                </label>
+            </div>
+            <p id="orderBatchShipPlanVerifyApplyHint" class="order-batch-calc-apply-hint" aria-live="polite" style="display:none;"></p>
             <div class="pm-modal-actions">
-                <button type="button" class="btn-primary" onclick="closeOrderBatchShipPlanVerifyModal()">关闭</button>
+                <button type="button" class="btn-secondary" id="orderBatchShipPlanVerifyCancelBtn" onclick="closeOrderBatchShipPlanVerifyModal()">取消</button>
+                <button type="button" class="btn-primary" id="orderBatchShipPlanVerifyConfirmBtn" disabled>确认并提交修改</button>
             </div>
         </div>
     </div>
@@ -4580,21 +4605,139 @@
 
         document.addEventListener('sitjoy:order-product-batch-toolbar-sync', () => syncOrderBatchFloatBar());
 
+        let orderBatchShipPlanVerifyState = { migrateItems: [] };
+
+        function formatBatchShipPlanSalesChangesCell(changes, hasPlan) {
+            if (!hasPlan) return '<span style="color:var(--morandi-slate);">—</span>';
+            const list = Array.isArray(changes) ? changes : [];
+            if (!list.length) {
+                return '<span style="color:var(--morandi-slate);">无关联销售 SKU</span>';
+            }
+            return '<ul class="order-batch-ship-plan-changes">' + list.map((c) => {
+                const sku = escapeHtml((c.platform_sku || '').trim() || '（无平台 SKU）');
+                const spec = (c.variant_label || '').trim();
+                const specHtml = spec ? ` <span style="color:var(--morandi-slate);">(${escapeHtml(spec)})</span>` : '';
+                const oldB = escapeHtml(c.old_binding || '—');
+                const newB = escapeHtml(c.new_binding || '—');
+                return `<li><strong>${sku}</strong>${specHtml}<br>${oldB} <span class="order-batch-ship-plan-arrow">→</span> ${newB}</li>`;
+            }).join('') + '</ul>';
+        }
+
+        function syncOrderBatchShipPlanVerifyConfirmBtn() {
+            const btn = document.getElementById('orderBatchShipPlanVerifyConfirmBtn');
+            const ack = document.getElementById('orderBatchShipPlanVerifyAck');
+            const migratable = (orderBatchShipPlanVerifyState.migrateItems || []).length;
+            if (!btn) return;
+            btn.disabled = !(ack && ack.checked) || migratable <= 0;
+        }
+
         function closeOrderBatchShipPlanVerifyModal() {
             const m = document.getElementById('orderBatchShipPlanVerifyModal');
             if (m) m.classList.remove('active');
             if (window.syncModalScrollLock) window.syncModalScrollLock();
+            orderBatchShipPlanVerifyState = { migrateItems: [] };
+            const ack = document.getElementById('orderBatchShipPlanVerifyAck');
+            if (ack) ack.checked = false;
+            const hint = document.getElementById('orderBatchShipPlanVerifyApplyHint');
+            if (hint) {
+                hint.textContent = '';
+                hint.style.display = 'none';
+            }
+            const confirmBtn = document.getElementById('orderBatchShipPlanVerifyConfirmBtn');
+            const cancelBtn = document.getElementById('orderBatchShipPlanVerifyCancelBtn');
+            if (confirmBtn) {
+                confirmBtn.disabled = true;
+                confirmBtn.textContent = '确认并提交修改';
+            }
+            if (cancelBtn) cancelBtn.disabled = false;
+            syncOrderBatchShipPlanVerifyConfirmBtn();
         }
 
-        function openOrderBatchShipPlanVerifyModal(summaryHtml, tbodyHtml) {
+        function openOrderBatchShipPlanVerifyModal(summaryHtml, tbodyHtml, migrateItems) {
             const m = document.getElementById('orderBatchShipPlanVerifyModal');
             const s = document.getElementById('orderBatchShipPlanVerifySummary');
             const tb = document.getElementById('orderBatchShipPlanVerifyTbody');
             if (!m || !s || !tb) return;
+            orderBatchShipPlanVerifyState = {
+                migrateItems: (migrateItems || []).filter(x => x && x.order_product_id && x.target_plan_id),
+            };
             s.innerHTML = summaryHtml;
             tb.innerHTML = tbodyHtml;
+            const ack = document.getElementById('orderBatchShipPlanVerifyAck');
+            const ackRow = document.getElementById('orderBatchShipPlanVerifyAckRow');
+            const migratable = (orderBatchShipPlanVerifyState.migrateItems || []).length;
+            if (ackRow) ackRow.style.display = migratable > 0 ? '' : 'none';
+            if (ack) {
+                ack.checked = false;
+                ack.onchange = syncOrderBatchShipPlanVerifyConfirmBtn;
+            }
+            syncOrderBatchShipPlanVerifyConfirmBtn();
+            const confirmBtn = document.getElementById('orderBatchShipPlanVerifyConfirmBtn');
+            if (confirmBtn) {
+                confirmBtn.onclick = submitOrderBatchShipPlanVerifyMigrate;
+            }
             m.classList.add('active');
             if (window.syncModalScrollLock) window.syncModalScrollLock();
+        }
+
+        function submitOrderBatchShipPlanVerifyMigrate() {
+            const items = (orderBatchShipPlanVerifyState.migrateItems || []).slice();
+            const ack = document.getElementById('orderBatchShipPlanVerifyAck');
+            if (!ack || !ack.checked || !items.length) return;
+            const confirmBtn = document.getElementById('orderBatchShipPlanVerifyConfirmBtn');
+            const cancelBtn = document.getElementById('orderBatchShipPlanVerifyCancelBtn');
+            const hint = document.getElementById('orderBatchShipPlanVerifyApplyHint');
+            if (confirmBtn) {
+                confirmBtn.disabled = true;
+                confirmBtn.textContent = '提交中…';
+            }
+            if (cancelBtn) cancelBtn.disabled = true;
+            if (hint) {
+                hint.textContent = '正在提交修改，请稍候…';
+                hint.style.display = 'block';
+            }
+            fetch('/api/order-product?action=off_market_ship_plan_batch_migrate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ acknowledge: true, items }),
+            })
+                .then(r => r.json())
+                .then((data) => {
+                    if (!data || data.status !== 'success') {
+                        const msg = (data && data.message) || '提交失败';
+                        if (window.showAppToast) window.showAppToast(msg, true, 4000);
+                        else showUploadDialog({ title: '提交失败', message: msg });
+                        if (confirmBtn) {
+                            confirmBtn.disabled = false;
+                            confirmBtn.textContent = '确认并提交修改';
+                        }
+                        if (cancelBtn) cancelBtn.disabled = false;
+                        if (hint) hint.style.display = 'none';
+                        syncOrderBatchShipPlanVerifyConfirmBtn();
+                        return;
+                    }
+                    const ok = Number(data.migrated_count || 0);
+                    const fail = Number(data.failed_count || 0);
+                    closeOrderBatchShipPlanVerifyModal();
+                    const msg = fail > 0
+                        ? `已迁移 ${ok} 个下单 SKU，失败 ${fail} 个`
+                        : `已成功迁移 ${ok} 个下单 SKU 的规格绑定`;
+                    if (window.showAppToast) window.showAppToast(msg, fail > 0, 4500);
+                    else showUploadDialog({ title: fail > 0 ? '部分完成' : '完成', message: msg });
+                    if (typeof loadOrderProductList === 'function') loadOrderProductList();
+                })
+                .catch((err) => {
+                    if (window.showAppToast) window.showAppToast('请求失败: ' + err, true, 4000);
+                    else showUploadDialog({ title: '请求失败', message: String(err) });
+                    if (confirmBtn) {
+                        confirmBtn.disabled = false;
+                        confirmBtn.textContent = '确认并提交修改';
+                    }
+                    if (cancelBtn) cancelBtn.disabled = false;
+                    if (hint) hint.style.display = 'none';
+                    syncOrderBatchShipPlanVerifyConfirmBtn();
+                });
         }
 
         document.addEventListener('sitjoy:order-product-batch-shipping-plan-verify', (ev) => {
@@ -4639,21 +4782,39 @@
                     summary += `。<br>有「全部在市」可替换方案 <strong>${withPlan}</strong> 个 SKU；无可替换方案 <strong>${withoutPlan}</strong> 个 SKU。`;
                     summary += ` 待迁移「规格↔下单SKU」关联行合计：<strong>${pendL}</strong> 行。`;
                     if (nf.length) summary += ` <br><span style="color:#a33;">未找到 id：${escapeHtml(nf.slice(0, 12).join(', '))}${nf.length > 12 ? '…' : ''}</span>`;
+                    const migrateItems = [];
                     const rows = items.map((row) => {
                         const ok = row.has_eligible_plan;
+                        if (ok && row.target_plan_id) {
+                            migrateItems.push({
+                                order_product_id: Number(row.order_product_id || 0),
+                                target_plan_id: Number(row.target_plan_id || 0),
+                            });
+                        }
                         const planCell = ok
                             ? `${escapeHtml(row.target_plan_name || '')} <span style="color:var(--morandi-slate);">(#${Number(row.target_plan_id || 0)})</span>`
                             : '<span style="color:#a33;">无</span>';
                         const flag = ok ? '<span style="color:#2f6f2f;">是</span>' : '<span style="color:#a33;">否</span>';
                         const lc = Number(row.pending_variant_link_rows != null ? row.pending_variant_link_rows : (row.pending_platform_rows || 0));
+                        const salesCell = formatBatchShipPlanSalesChangesCell(row.sales_sku_changes, ok);
                         return `<tr>
                             <td>${escapeHtml(row.sku || '')} <span style="color:var(--morandi-slate);">(${Number(row.order_product_id || 0)})</span></td>
                             <td>${flag}</td>
                             <td>${planCell}</td>
+                            <td>${salesCell}</td>
                             <td style="text-align:right;">${lc}</td>
                         </tr>`;
                     }).join('');
-                    openOrderBatchShipPlanVerifyModal(summary, rows || '<tr><td colspan="4" style="text-align:center;">无数据</td></tr>');
+                    if (!migrateItems.length) {
+                        summary += '<br><span style="color:#a33;">当前无可提交迁移的 SKU（需存在「全部在市」可替换方案）。</span>';
+                    } else {
+                        summary += `<br>可提交迁移 <strong>${migrateItems.length}</strong> 个下单 SKU；勾选确认后点击「确认并提交修改」。`;
+                    }
+                    openOrderBatchShipPlanVerifyModal(
+                        summary,
+                        rows || '<tr><td colspan="5" style="text-align:center;">无数据</td></tr>',
+                        migrateItems
+                    );
                 })
                 .catch((err) => {
                     if (window.showAppToast) window.showAppToast('请求失败: ' + err, true, 3600);
