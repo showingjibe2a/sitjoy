@@ -933,6 +933,7 @@ CREATE TABLE `sales_products` (
   `variant_id` int(10) UNSIGNED NOT NULL,
   `parent_id` int(10) UNSIGNED DEFAULT NULL,
   `child_code` varchar(64) DEFAULT NULL,
+  `sale_price_usd` decimal(10,2) DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -974,7 +975,6 @@ CREATE TABLE `sales_product_variants` (
   `sku_family_id` int(10) UNSIGNED NOT NULL,
   `spec_name` varchar(255) NOT NULL,
   `fabric_id` int(10) UNSIGNED DEFAULT NULL,
-  `sale_price_usd` decimal(10,2) DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

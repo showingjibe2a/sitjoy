@@ -3796,6 +3796,14 @@ body {
     white-space: nowrap;
 }
 
+.feature-category-picker.is-multi-check .feature-category-option.is-active {
+    border-color: rgba(176, 166, 152, 0.65);
+    background: #f6f2eb;
+    box-shadow: none;
+    color: var(--morandi-ink);
+    font-weight: 500;
+}
+
 .feature-category-picker.is-multi-check #assigneeMenu {
     min-width: 280px;
 }

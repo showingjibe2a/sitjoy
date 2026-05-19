@@ -325,6 +325,10 @@
         .sales-parent-group-row .sj-agg-toggle-cell { cursor: pointer; }
         .sales-parent-group-row .sj-agg-toggle-cell .sales-parent-group-toggle { margin-right: 0; }
         .sales-parent-group-row td:first-child { text-align: center; vertical-align: middle; }
+        .sales-parent-group-head {
+            font-weight: 700;
+            line-height: 1.45;
+        }
     </style>
 </head>
 <body>
@@ -1277,10 +1281,30 @@
         }
 
         function salesParentGroupMetaOf(item) {
-            const raw = String(item && item.parent_code || '').trim();
-            const key = raw ? `parent:${raw}` : 'parent:__none__';
-            const label = raw || '（未关联父体）';
-            return { key, label };
+            const code = String(item && item.parent_code || '').trim();
+            const shop = String(item && item.shop_name || '').trim();
+            const marker = String(item && item.parent_sku_marker || '').trim();
+            const key = code ? `parent:${code}` : 'parent:__none__';
+            return {
+                key,
+                code,
+                shop,
+                marker,
+                label: code || '（未关联父体）',
+            };
+        }
+
+        function formatSalesParentGroupRowLabel(meta, itemCount) {
+            const n = Math.max(0, Number(itemCount) || 0);
+            if (!meta || meta.key === 'parent:__none__') {
+                return `${escapeHtml(meta && meta.label || '（未关联父体）')}（${n}）`;
+            }
+            const bits = [
+                `店铺：${escapeHtml(meta.shop || '—')}`,
+                `父体标识：${escapeHtml(meta.marker || '—')}`,
+                `父体编号：${escapeHtml(meta.code || '—')}`,
+            ];
+            return `${bits.join(' ｜ ')}（${n}）`;
         }
 
         function compareSalesItemsByGroupSortKey(a, b) {
@@ -1551,18 +1575,19 @@
                     groups.get(meta.key).items.push(item);
                 });
                 Array.from(groups.entries()).forEach(([groupKey, groupData]) => {
-                    const groupLabel = String((groupData && groupData.label) || '').trim() || '（未关联父体）';
                     const groupItems = (groupData && Array.isArray(groupData.items)) ? groupData.items : [];
                     const sorted = salesProductGroupSort.key
                         ? groupItems.slice().sort(compareSalesItemsByGroupSortKey)
                         : groupItems.slice();
+                    const headerMeta = salesParentGroupMetaOf(sorted[0] || groupItems[0]);
+                    const groupLabelHtml = formatSalesParentGroupRowLabel(headerMeta, sorted.length);
                     const collapsed = activeCollapsedSet ? activeCollapsedSet.has(groupKey) : false;
                     const safeKey = escapeSalesGroupKeyAttr(groupKey);
                     html.push(`
                 <tr class="sales-parent-group-row" data-group-key="${safeKey}">
                     <td style="text-align:center;"><input type="checkbox" class="sales-parent-group-checkbox" data-group-key="${safeKey}" title="选中该父体下全部子条目" aria-label="选中该父体下全部子条目"></td>
                     <td class="sj-agg-toggle-cell" data-manage-col-key="__sj_agg__"><span class="sales-parent-group-toggle" aria-hidden="true">${collapsed ? '▶' : '▼'}</span></td>
-                    <td colspan="11">${escapeHtml(groupLabel)}（${sorted.length}）</td>
+                    <td colspan="11" class="sales-parent-group-head">${groupLabelHtml}</td>
                 </tr>
             `);
                     sorted.forEach(item => {

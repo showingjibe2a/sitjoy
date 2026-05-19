@@ -553,7 +553,7 @@ class SalesProductMixin:
         try:
             has_fabric_id = self._table_has_column(conn, 'sales_product_variants', 'fabric_id')
             has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
-            has_sale_price = self._table_has_column(conn, 'sales_product_variants', 'sale_price_usd')
+            has_sale_price = self._table_has_column(conn, 'sales_products', 'sale_price_usd')
             fabric_join = "LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id" if has_fabric_id else ""
             if has_fabric_id and has_fabric_text:
                 fabric_select = "COALESCE(fm.fabric_name_en, v.fabric) AS fabric_name_en"
@@ -562,7 +562,10 @@ class SalesProductMixin:
             else:
                 fabric_select = ("v.fabric AS fabric_name_en" if has_fabric_text else "'' AS fabric_name_en")
             fabric_code_select = "COALESCE(fm.fabric_code, '') AS fabric_code" if has_fabric_id else "'' AS fabric_code"
-            sale_select = "v.sale_price_usd" if has_sale_price else "NULL AS sale_price_usd"
+            sale_select = (
+                "(SELECT MIN(sp0.sale_price_usd) FROM sales_products sp0 WHERE sp0.variant_id = v.id) AS sale_price_usd"
+                if has_sale_price else "NULL AS sale_price_usd"
+            )
             with conn.cursor() as cur:
                 cur.execute(
                     f"""
@@ -635,12 +638,6 @@ class SalesProductMixin:
                     return self.send_json({'status': 'error', 'message': 'Missing variant_id'}, start_response)
                 if not links:
                     return self.send_json({'status': 'error', 'message': '请至少保留一条关联下单SKU及数量'}, start_response)
-                sale_price_usd = None
-                if 'sale_price_usd' in data:
-                    if data.get('sale_price_usd') is None or str(data.get('sale_price_usd')).strip() == '':
-                        sale_price_usd = None
-                    else:
-                        sale_price_usd = self._parse_float(data.get('sale_price_usd'))
 
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
@@ -659,12 +656,6 @@ class SalesProductMixin:
                     if inferred_fid and inferred_fid != int(sku_family_id):
                         return self.send_json({'status': 'error', 'message': '关联下单SKU须属于当前规格所属货号'}, start_response)
                     self._replace_sales_variant_order_links(conn, variant_id, links)
-                    if 'sale_price_usd' in data and self._table_has_column(conn, 'sales_product_variants', 'sale_price_usd'):
-                        with conn.cursor() as cur:
-                            cur.execute(
-                                "UPDATE sales_product_variants SET sale_price_usd=%s WHERE id=%s",
-                                (sale_price_usd, int(variant_id)),
-                            )
                     variant_out = self._spec_main_images_variant_detail(conn, variant_id)
                 return self.send_json({'status': 'success', 'variant': variant_out}, start_response)
 
@@ -706,12 +697,6 @@ class SalesProductMixin:
             spec_name = str(data.get('spec_name') or '').strip()
             fabric_id = self._parse_int(data.get('fabric_id')) or None
             fabric = str(data.get('fabric') or '').strip()
-            sale_price_usd = None
-            if data.get('sale_price_usd') is not None and str(data.get('sale_price_usd')).strip() != '':
-                try:
-                    sale_price_usd = float(data.get('sale_price_usd'))
-                except (TypeError, ValueError):
-                    sale_price_usd = None
             if not sku_family_id:
                 return self.send_json({'status': 'error', 'message': '请选择货号（父体）'}, start_response)
             if not spec_name:
@@ -724,7 +709,7 @@ class SalesProductMixin:
                 if not has_fid and has_fab_txt and not fabric:
                     return self.send_json({'status': 'error', 'message': '请填写或选择面料'}, start_response)
                 variant_id = self._get_or_create_sales_variant(
-                    conn, sku_family_id, spec_name, fabric, sale_price_usd, fabric_id
+                    conn, sku_family_id, spec_name, fabric, fabric_id=fabric_id
                 )
                 links = self._normalize_sales_order_links(data.get('order_sku_links'))
                 if links:
@@ -3373,7 +3358,7 @@ class SalesProductMixin:
                             SELECT sp.id, sp.product_status, sh.shop_name, pa.parent_code, pa.sku_marker,
                                 sp.platform_sku, sp.child_code,
                                 pf.sku_family, v.spec_name, {('COALESCE(fm.fabric_code, v.fabric)' if (self._table_has_column(conn,'sales_product_variants','fabric_id') and self._table_has_column(conn,'sales_product_variants','fabric')) else ('fm.fabric_code' if self._table_has_column(conn,'sales_product_variants','fabric_id') else ('v.fabric' if self._table_has_column(conn,'sales_product_variants','fabric') else "''")))} AS fabric,
-                                v.sale_price_usd
+                                sp.sale_price_usd
                             FROM sales_products sp
                             LEFT JOIN sales_parents pa ON pa.id = sp.parent_id
                             LEFT JOIN shops sh ON sh.id = {shop_expr}
@@ -4047,11 +4032,8 @@ class SalesProductMixin:
                         try:
                             variant_id = variant_identity_map.get(variant_key)
                             if not variant_id:
-                                variant_id = self._get_or_create_sales_variant(conn, sku_family_id, final_spec_name, final_fabric, sale_price_usd, fabric_id=resolved_fabric_id)
+                                variant_id = self._get_or_create_sales_variant(conn, sku_family_id, final_spec_name, final_fabric, fabric_id=resolved_fabric_id)
                                 variant_identity_map[variant_key] = variant_id
-                            else:
-                                with conn.cursor() as vcur:
-                                    vcur.execute("UPDATE sales_product_variants SET sale_price_usd=COALESCE(%s, sale_price_usd) WHERE id=%s", (sale_price_usd, variant_id))
 
                             target_id = sales_map.get((int(shop_id), final_platform_sku))
                             if target_id:
@@ -4060,9 +4042,10 @@ class SalesProductMixin:
                                     "product_status=%s",
                                     "variant_id=%s",
                                     "parent_id=%s",
-                                    "child_code=%s"
+                                    "child_code=%s",
+                                    "sale_price_usd=%s",
                                 ]
-                                update_values = [final_platform_sku, product_status, variant_id, parent_id, child_code]
+                                update_values = [final_platform_sku, product_status, variant_id, parent_id, child_code, sale_price_usd]
                                 if sp_has_shop_col:
                                     update_fields.insert(0, "shop_id=%s")
                                     update_values.insert(0, shop_id)
@@ -4080,8 +4063,8 @@ class SalesProductMixin:
                                     insert_values.append(shop_id)
                                 insert_columns.extend(['platform_sku', 'product_status'])
                                 insert_values.extend([final_platform_sku, product_status])
-                                insert_columns.extend(['variant_id', 'parent_id', 'child_code'])
-                                insert_values.extend([variant_id, parent_id, child_code])
+                                insert_columns.extend(['variant_id', 'parent_id', 'child_code', 'sale_price_usd'])
+                                insert_values.extend([variant_id, parent_id, child_code, sale_price_usd])
                                 placeholders_insert = ', '.join(['%s'] * len(insert_columns))
                                 row_cur.execute(
                                     f"INSERT INTO sales_products ({', '.join(insert_columns)}) VALUES ({placeholders_insert})",
@@ -4153,13 +4136,14 @@ class SalesProductMixin:
                                 v.spec_name,
                                 {fabric_select} AS fabric,
                                 {fabric_id_select} AS fabric_id,
-                                v.sale_price_usd,
+                                sp.sale_price_usd,
                                 sp.created_at,
                                 sp.updated_at,
                                 s.shop_name,
                                 pt.name AS platform_type_name,
                                 b.name AS brand_name,
-                                p.parent_code
+                                p.parent_code,
+                                p.sku_marker AS parent_sku_marker
                             FROM sales_products sp
                             LEFT JOIN sales_parents p ON p.id = sp.parent_id
                             LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
@@ -4308,7 +4292,7 @@ class SalesProductMixin:
                             resolved_fabric_id = None
                     if not resolved_fabric_id:
                         return self.send_json({'status': 'error', 'message': '面料不能为空：请在“面料”下拉中选择面料（fabric_id 必填）'}, start_response)
-                    variant_id = self._get_or_create_sales_variant(conn, sku_family_id, final_spec_name, final_fabric, sale_price_usd, fabric_id=resolved_fabric_id)
+                    variant_id = self._get_or_create_sales_variant(conn, sku_family_id, final_spec_name, final_fabric, fabric_id=resolved_fabric_id)
                     
                     # 如果没有手动编辑，使用自动生成的platform_sku；否则使用手动输入的
                     if manual_platform_sku:
@@ -4327,8 +4311,8 @@ class SalesProductMixin:
                             insert_values.append(final_shop_id)
                         insert_columns.extend(['platform_sku', 'product_status'])
                         insert_values.extend([platform_sku, product_status])
-                        insert_columns.extend(['variant_id', 'parent_id', 'child_code'])
-                        insert_values.extend([variant_id, parent_id, child_code])
+                        insert_columns.extend(['variant_id', 'parent_id', 'child_code', 'sale_price_usd'])
+                        insert_values.extend([variant_id, parent_id, child_code, sale_price_usd])
                         placeholders_insert = ', '.join(['%s'] * len(insert_columns))
                         cur.execute(
                             f"INSERT INTO sales_products ({', '.join(insert_columns)}) VALUES ({placeholders_insert})",
@@ -4438,7 +4422,7 @@ class SalesProductMixin:
                             resolved_fabric_id = None
                     if not resolved_fabric_id:
                         return self.send_json({'status': 'error', 'message': '面料不能为空：请在“面料”下拉中选择面料（fabric_id 必填）'}, start_response)
-                    variant_id = self._get_or_create_sales_variant(conn, sku_family_id, final_spec_name, final_fabric, sale_price_usd, fabric_id=resolved_fabric_id)
+                    variant_id = self._get_or_create_sales_variant(conn, sku_family_id, final_spec_name, final_fabric, fabric_id=resolved_fabric_id)
                     
                     # 如果没有手动编辑，使用自动生成的platform_sku；否则使用手动输入的
                     if manual_platform_sku:
@@ -4482,9 +4466,10 @@ class SalesProductMixin:
                             "product_status=%s",
                             "variant_id=%s",
                             "parent_id=%s",
-                            "child_code=%s"
+                            "child_code=%s",
+                            "sale_price_usd=%s",
                         ]
-                        update_values = [platform_sku, product_status, variant_id, parent_id, child_code]
+                        update_values = [platform_sku, product_status, variant_id, parent_id, child_code, sale_price_usd]
                         if sp_has_shop_col:
                             update_fields.insert(0, "shop_id=%s")
                             update_values.insert(0, final_shop_id)
@@ -10240,14 +10225,12 @@ class SalesProductMixin:
                     "+ GREATEST(SUM(COALESCE(a.net_sales_amount,0)) - 200, 0) * 0.10 "
                     "AS est_referral_commission_usd"
                 )
-                # 销售额 = 销售变体售价(USD)×周期销量；折扣率=(销售额−净销售额)/销售额；退款率=退款金额/净销售额
-                gross_sales_sql_day = (
-                    "(COALESCE(v.sale_price_usd, 0) * SUM(COALESCE(spp.sales_qty, 0))) AS gross_sales_amount"
-                )
+                # 销售额 = 销售产品售价(USD)×周期销量；折扣率=(销售额−净销售额)/销售额；退款率=退款金额/净销售额
+                gross_expr_day = "SUM(COALESCE(sp.sale_price_usd, 0) * COALESCE(spp.sales_qty, 0))"
+                gross_sales_sql_day = f"({gross_expr_day}) AS gross_sales_amount"
                 discount_rate_sql_day = (
-                    "CASE WHEN (COALESCE(v.sale_price_usd, 0) * SUM(COALESCE(spp.sales_qty, 0))) > 0 THEN "
-                    "((COALESCE(v.sale_price_usd, 0) * SUM(COALESCE(spp.sales_qty, 0))) - SUM(COALESCE(spp.net_sales_amount, 0))) "
-                    "/ (COALESCE(v.sale_price_usd, 0) * SUM(COALESCE(spp.sales_qty, 0))) "
+                    f"CASE WHEN ({gross_expr_day}) > 0 THEN "
+                    f"(({gross_expr_day}) - SUM(COALESCE(spp.net_sales_amount, 0))) / ({gross_expr_day}) "
                     "ELSE 0 END AS discount_rate"
                 )
                 refund_rate_sql_day = (
@@ -10255,13 +10238,11 @@ class SalesProductMixin:
                     "SUM(COALESCE(spp.refund_amount, 0)) / SUM(COALESCE(spp.net_sales_amount, 0)) "
                     "ELSE 0 END AS refund_rate"
                 )
-                gross_sales_sql_week = (
-                    "(COALESCE(v.sale_price_usd, 0) * SUM(COALESCE(a.sales_qty, 0))) AS gross_sales_amount"
-                )
+                gross_expr_week = "SUM(COALESCE(sp.sale_price_usd, 0) * COALESCE(a.sales_qty, 0))"
+                gross_sales_sql_week = f"({gross_expr_week}) AS gross_sales_amount"
                 discount_rate_sql_week = (
-                    "CASE WHEN (COALESCE(v.sale_price_usd, 0) * SUM(COALESCE(a.sales_qty, 0))) > 0 THEN "
-                    "((COALESCE(v.sale_price_usd, 0) * SUM(COALESCE(a.sales_qty, 0))) - SUM(COALESCE(a.net_sales_amount, 0))) "
-                    "/ (COALESCE(v.sale_price_usd, 0) * SUM(COALESCE(a.sales_qty, 0))) "
+                    f"CASE WHEN ({gross_expr_week}) > 0 THEN "
+                    f"(({gross_expr_week}) - SUM(COALESCE(a.net_sales_amount, 0))) / ({gross_expr_week}) "
                     "ELSE 0 END AS discount_rate"
                 )
                 refund_rate_sql_week = (
@@ -10701,7 +10682,7 @@ class SalesProductMixin:
             items.append({'order_product_id': order_product_id, 'quantity': max(1, quantity)})
         return items
 
-    def _get_or_create_sales_variant(self, conn, sku_family_id, spec_name, fabric, sale_price_usd=None, fabric_id=None):
+    def _get_or_create_sales_variant(self, conn, sku_family_id, spec_name, fabric, fabric_id=None):
         family_id = self._parse_int(sku_family_id)
         if not family_id:
             raise ValueError('Missing sku_family_id')
@@ -10740,9 +10721,6 @@ class SalesProductMixin:
             if existing_id:
                 sets = []
                 params = []
-                if sale_price_usd is not None and self._table_has_column(conn, 'sales_product_variants', 'sale_price_usd'):
-                    sets.append("sale_price_usd=COALESCE(%s, sale_price_usd)")
-                    params.append(sale_price_usd)
                 # fabric_id identity is fixed for a variant; never mutate it here.
                 if has_fabric_text and fab:
                     sets.append("fabric=COALESCE(NULLIF(%s,''), fabric)")
@@ -10758,11 +10736,11 @@ class SalesProductMixin:
             else:
                 # 2) Insert when truly missing.
                 if has_fid:
-                    cols = ["sku_family_id", "spec_name", "fabric_id", "sale_price_usd"]
-                    vals = [family_id, spec, fid, sale_price_usd]
+                    cols = ["sku_family_id", "spec_name", "fabric_id"]
+                    vals = [family_id, spec, fid]
                     if has_fabric_text:
-                        cols.insert(3, "fabric")
-                        vals.insert(3, fab)
+                        cols.append("fabric")
+                        vals.append(fab)
                     ph = ", ".join(["%s"] * len(cols))
                     cur.execute(
                         f"INSERT INTO sales_product_variants ({', '.join(cols)}) VALUES ({ph})",
@@ -10770,8 +10748,8 @@ class SalesProductMixin:
                     )
                 else:
                     cur.execute(
-                        "INSERT INTO sales_product_variants (sku_family_id, spec_name, fabric, sale_price_usd) VALUES (%s, %s, %s, %s)",
-                        (family_id, spec, fab, sale_price_usd),
+                        "INSERT INTO sales_product_variants (sku_family_id, spec_name, fabric) VALUES (%s, %s, %s)",
+                        (family_id, spec, fab),
                     )
                 variant_id = cur.lastrowid
 

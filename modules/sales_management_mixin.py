@@ -1551,29 +1551,26 @@ class SalesManagementMixin:
         params.extend([like_val, like_val])
 
     @staticmethod
+    def _forecast_order_has_on_market_substitute_exists_sql(owner_alias='op'):
+        """任一发货方案（不限默认 MIN 方案）是否含在市替代 SKU。"""
+        return f"""EXISTS (
+            SELECT 1
+            FROM order_product_shipping_plans ops0
+            INNER JOIN order_product_shipping_plan_items i0 ON i0.shipping_plan_id = ops0.id
+            INNER JOIN order_products sub0 ON sub0.id = i0.substitute_order_product_id
+            WHERE ops0.order_product_id = {owner_alias}.id
+              AND COALESCE(sub0.is_on_market, 0) = 1
+        )"""
+
+    @staticmethod
     def _forecast_order_dim_visibility_sql():
-        """下单 SKU 维度可见性：默认仅在市；下市且无可用在市替代方案时仍展示并标异常。"""
-        return """(
+        """下单 SKU 维度可见性：仅在市 SKU；下市且任一方案均无在市替代时展示并标异常。"""
+        has_on_sub = SalesManagementMixin._forecast_order_has_on_market_substitute_exists_sql('op')
+        return f"""(
             COALESCE(op.is_on_market, 0) = 1
             OR (
                 COALESCE(op.is_on_market, 0) = 0
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM order_product_shipping_plans ops0
-                    INNER JOIN order_product_shipping_plan_items i0 ON i0.shipping_plan_id = ops0.id
-                    INNER JOIN order_products sub0 ON sub0.id = i0.substitute_order_product_id
-                    WHERE ops0.order_product_id = op.id
-                      AND ops0.id = (
-                          SELECT MIN(ops2.id)
-                          FROM order_product_shipping_plans ops2
-                          WHERE ops2.order_product_id = op.id
-                            AND EXISTS (
-                                SELECT 1 FROM order_product_shipping_plan_items ii
-                                WHERE ii.shipping_plan_id = ops2.id
-                            )
-                      )
-                      AND COALESCE(sub0.is_on_market, 0) = 1
-                )
+                AND NOT ({has_on_sub})
             )
         )"""
 
@@ -1619,15 +1616,6 @@ class SalesManagementMixin:
                 INNER JOIN order_product_shipping_plan_items i ON i.shipping_plan_id = ops.id
                 INNER JOIN order_products sub ON sub.id = i.substitute_order_product_id
                 WHERE COALESCE(owner.is_on_market, 0) = 0
-                  AND ops.id = (
-                      SELECT MIN(ops2.id)
-                      FROM order_product_shipping_plans ops2
-                      WHERE ops2.order_product_id = owner.id
-                        AND EXISTS (
-                            SELECT 1 FROM order_product_shipping_plan_items ii
-                            WHERE ii.shipping_plan_id = ops2.id
-                        )
-                  )
                   AND sub.id IN ({ph})
                 ORDER BY owner.id ASC, sub.id ASC
                 """,
@@ -2505,12 +2493,11 @@ class SalesManagementMixin:
                        m.ad_sales_amount,
                        m.refund_amount,
                        m.sub_category_rank_avg,
-                       (COALESCE(v.sale_price_usd, 0) * COALESCE(m.sales_qty, 0)) AS gross_sales_amount,
+                       (COALESCE(sp.sale_price_usd, 0) * COALESCE(m.sales_qty, 0)) AS gross_sales_amount,
                        (COALESCE(est_unit_cost.unit_bom_cost_usd, 0) * COALESCE(m.sales_qty, 0)) AS estimated_product_cost_usd,
                        (COALESCE(est_unit_cost.unit_last_mile_freight_usd, 0) * COALESCE(m.sales_qty, 0)) AS estimated_last_mile_freight_usd
                 FROM sales_perf_agg_month m
                 JOIN sales_products sp ON sp.id = m.sales_product_id
-                LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
                 {cost_join}
                 WHERE m.sales_product_id IN ({placeholders})
                   AND m.month_start >= %s
@@ -2560,12 +2547,11 @@ class SalesManagementMixin:
                        SUM(COALESCE(m.ad_sales_amount, 0)) AS ad_sales_amount,
                        SUM(COALESCE(m.refund_amount, 0)) AS refund_amount,
                        AVG(m.sub_category_rank_avg) AS sub_category_rank_avg,
-                       (COALESCE(MAX(v.sale_price_usd), 0) * SUM(COALESCE(m.sales_qty, 0))) AS gross_sales_amount,
+                       SUM(COALESCE(sp.sale_price_usd, 0) * COALESCE(m.sales_qty, 0)) AS gross_sales_amount,
                        (MAX(COALESCE(est_unit_cost.unit_bom_cost_usd, 0)) * SUM(COALESCE(m.sales_qty, 0))) AS estimated_product_cost_usd,
                        (MAX(COALESCE(est_unit_cost.unit_last_mile_freight_usd, 0)) * SUM(COALESCE(m.sales_qty, 0))) AS estimated_last_mile_freight_usd
                 FROM sales_perf_agg_month m
                 JOIN sales_products sp ON sp.id = m.sales_product_id
-                LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
                 {cost_join}
                 WHERE sp.variant_id IN ({placeholders})
                   AND m.month_start >= %s

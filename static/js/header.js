@@ -3039,6 +3039,21 @@
             .slice(0, Math.max(1, Number(limit || 120) || 120));
     }
 
+    function snapshotHasActiveColumnFilters(snapshot){
+        if(!snapshot || typeof snapshot !== 'object') return false;
+        return Object.keys(snapshot).some(key => isColumnFilterActive(snapshot[key]));
+    }
+
+    function reapplyManagedColumnFiltersFromHandle(state){
+        if(!state) return;
+        const handle = state.columnFilterHandle
+            || (state.table ? (columnFilterRegistry.get(state.table) || null) : null);
+        if(!handle || typeof handle.getFilters !== 'function') return;
+        const snapshot = handle.getFilters();
+        if(!snapshotHasActiveColumnFilters(snapshot)) return;
+        applyManagedColumnFilters(state, snapshot);
+    }
+
     function applyManagedColumnFilters(state, snapshot){
         const filters = snapshot || {};
         const rows = getDataRows(state);
@@ -3698,6 +3713,13 @@
     window.SitjoyManagedPmTable = Object.assign({}, window.SitjoyManagedPmTable || {}, {
         resolveBodyTableFromHeaderTh,
         invalidateLayout: invalidateManagedTableLayout,
+        /** 表体 DOM 重绘后按当前列筛选状态重新隐藏行（一般由 refreshManagedTable 自动调用） */
+        reapplyColumnFilters(tableOrSelector){
+            const t = typeof tableOrSelector === 'string' ? document.querySelector(tableOrSelector) : tableOrSelector;
+            if(!t) return;
+            const state = managedTableState.get(t);
+            if(state) reapplyManagedColumnFiltersFromHandle(state);
+        },
         /** 对 root 下尚未托管的 table.pm-table 执行 createManagedTable（如弹窗内动态插入的表） */
         enhance(root){
             enhanceManagedTables(root && root.querySelectorAll ? root : document);
@@ -3713,6 +3735,12 @@
             const handle = columnFilterRegistry.get(table) || null;
             if(handle) handle.refreshButtons();
             return handle;
+        },
+        reapply(tableOrSelector){
+            const table = resolveColumnFilterTable(tableOrSelector);
+            if(!table) return;
+            const state = managedTableState.get(table);
+            if(state) reapplyManagedColumnFiltersFromHandle(state);
         },
         get(tableOrSelector){
             const table = resolveColumnFilterTable(tableOrSelector);
@@ -4433,6 +4461,7 @@
             ensureResizeHandles(state);
         }
         ensureManagedTableColumnFilter(state);
+        reapplyManagedColumnFiltersFromHandle(state);
 
         state.isRefreshing = false;
         if(state.needRefresh){

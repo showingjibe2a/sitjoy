@@ -1849,9 +1849,9 @@
                 const checked = selectedIds.has(String(id));
                 const title = item.name || ('平台#' + id);
                 return `
-                    <div class="feature-category-item ${checked ? 'is-selected' : ''}" data-pt-id="${id}">
+                    <button type="button" class="feature-category-option ${checked ? 'is-active' : ''}" data-pt-id="${id}">
                         <span>${escapeHtml(title)}</span>
-                    </div>
+                    </button>
                 `;
             }).join('');
             list.querySelectorAll('[data-pt-id]').forEach(row => {
@@ -1893,9 +1893,9 @@
                 const checked = selectedIds.has(String(id));
                 const title = (item.sku_family || '') + (item.category ? (' · ' + item.category) : '');
                 return `
-                    <div class="feature-category-item ${checked ? 'is-selected' : ''}" data-sf-id="${id}">
+                    <button type="button" class="feature-category-option ${checked ? 'is-active' : ''}" data-sf-id="${id}">
                         <span>${escapeHtml(title || ('货号#' + id))}</span>
-                    </div>
+                    </button>
                 `;
             }).join('');
             list.querySelectorAll('[data-sf-id]').forEach(row => {
@@ -1933,9 +1933,9 @@
                     (item.sku_family ? (' · ' + item.sku_family) : '') +
                     (item.spec_name ? (' · ' + item.spec_name) : '');
                 return `
-                    <div class="feature-category-item ${checked ? 'is-selected' : ''}" data-sp-id="${id}" data-sp-sf="${parseInt(item.sku_family_id,10)||0}">
+                    <button type="button" class="feature-category-option ${checked ? 'is-active' : ''}" data-sp-id="${id}" data-sp-sf="${parseInt(item.sku_family_id,10)||0}">
                         <span>${escapeHtml(title || ('SKU#' + id))}</span>
-                    </div>
+                    </button>
                 `;
             }).join('');
             list.querySelectorAll('[data-sp-id]').forEach(row => {
