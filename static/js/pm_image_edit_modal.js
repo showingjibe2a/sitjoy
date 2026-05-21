@@ -52,17 +52,36 @@
   }
 
   async function ensureInjectedOnce() {
-    if (document.body && $('pmImageEditModal')) return true;
     if (!document.body) return false;
-    try {
-      const resp = await fetch('/static/html/pm_image_edit_modal.html', { cache: 'no-store' });
-      const html = await resp.text();
-      const wrap = document.createElement('div');
-      wrap.innerHTML = html;
-      while (wrap.firstChild) document.body.appendChild(wrap.firstChild);
-      return !!$('pmImageEditModal');
-    } catch (e) {
-      return false;
+    if (!$('pmImageEditModal')) {
+      try {
+        const resp = await fetch('/static/html/pm_image_edit_modal.html', { cache: 'no-store' });
+        const html = await resp.text();
+        const wrap = document.createElement('div');
+        wrap.innerHTML = html;
+        while (wrap.firstChild) document.body.appendChild(wrap.firstChild);
+      } catch (e) {
+        return false;
+      }
+    }
+    bindPmImageEditModalOnce();
+    return !!$('pmImageEditModal');
+  }
+
+  function clearPmImageEditBatchSelection(kind) {
+    if (kind === 'fabric') {
+      selectedFabricIds = new Set();
+      updateSelectedFabricTable();
+      return;
+    }
+    if (kind === 'variant') {
+      selectedVariantIds = new Set();
+      updateSelectedVariantTable();
+      return;
+    }
+    if (kind === 'order_product') {
+      selectedOrderProductIds = new Set();
+      updateSelectedOrderProductTable();
     }
   }
 
@@ -177,7 +196,6 @@
   }
 
   // ====== module state ======
-  let inited = false;
   let ctx = null; // { mode, hooks }
 
   let current = null; // { pathB64, name }
@@ -1281,30 +1299,26 @@
 
     let orphanFileAction = '';
     if (clearedAllBindings) {
-      if (!window.showAppConfirmAsync) {
-        showStatus(statusDiv, '缺少通用确认弹窗（showAppConfirmAsync），无法提交', 'error');
+      const confirmFn = window.confirmUnlinkAllBindingsMoveToRecycleAsync || window.showAppConfirmAsync;
+      if (!confirmFn) {
+        showStatus(statusDiv, '缺少通用确认弹窗，无法提交', 'error');
         return;
       }
-      const choice = await window.showAppConfirmAsync({
-        title: '移除全部绑定',
-        message: '将移除该图片与面料、销售规格、下单产品的全部关联。\n\n请选择：「仅移除绑定（保留文件）」保留磁盘文件；「移除绑定并移入回收站」将把文件移入『上架资源』回收站并删除图片库记录（若仍被 A+ 等引用将无法删除）。',
-        confirmText: '仅移除绑定（保留文件）',
-        cancelText: '取消',
-        requireConfirmCheck: false,
-        extraButtons: [{ id: 'recycle', text: '移除绑定并移入回收站', danger: true }],
-      }).catch(() => false);
-      if (!choice) {
+      const ok = window.confirmUnlinkAllBindingsMoveToRecycleAsync
+        ? await window.confirmUnlinkAllBindingsMoveToRecycleAsync().catch(() => false)
+        : await confirmFn({
+          title: '解除全部关联',
+          message: '将解除该图片与面料、销售规格、下单产品的全部关联。\n\n解除后若无其他引用，图片文件将移入「上架资源」/回收站，且无法从回收站自动还原到原路径。',
+          confirmText: '确认解除并移入回收站',
+          cancelText: '取消',
+          requireConfirmCheck: true,
+          confirmCheckText: '我已知晓：解除全部关联将把图片移入回收站',
+        }).catch(() => false);
+      if (!ok) {
         showStatus(statusDiv, '已取消', 'error');
         return;
       }
-      if (choice === true) {
-        orphanFileAction = 'keep';
-      } else if (choice && choice.id === 'recycle') {
-        orphanFileAction = 'recycle';
-      } else {
-        showStatus(statusDiv, '已取消', 'error');
-        return;
-      }
+      orphanFileAction = 'recycle';
     }
 
     showStatus(statusDiv, '处理中...', 'info');
@@ -1397,8 +1411,6 @@
       window.showAppToast && window.showAppToast('弹窗注入失败：未能加载共享模板', true, 10000);
       return;
     }
-    if (!inited) initOnce();
-
     current = { pathB64: String(opts?.pathB64 || ''), name: String(opts?.name || '') };
     touched = { type: false, enabled: false, desc: false, recommendName: false };
     initial = { enabled: 1, desc: '' };
@@ -1444,19 +1456,30 @@
     updatePickerButtonsState();
   }
 
-  function initOnce() {
-    inited = true;
-
-    // base bindings
+  function bindPmImageEditModalOnce() {
     const modal = $('pmImageEditModal');
-    if (modal && modal.dataset._bound !== '1') {
-      modal.dataset._bound = '1';
-      window.setTimeout(() => {
-        if (typeof window.bindPmModalBackdropClose === 'function') {
-          window.bindPmModalBackdropClose(modal, closeModal);
-        }
-      }, 0);
-    }
+    if (!modal || modal.dataset.pmUiBound === '1') return;
+    modal.dataset.pmUiBound = '1';
+
+    window.setTimeout(() => {
+      if (typeof window.bindPmModalBackdropClose === 'function') {
+        window.bindPmModalBackdropClose(modal, closeModal);
+      }
+    }, 0);
+
+    modal.addEventListener('click', (e) => {
+      const t = e.target;
+      if (!t || !t.closest) return;
+      const clearBtn = t.closest('#pmImageEditFabricClearBtn, #pmImageEditVariantClearBtn, #pmImageEditOrderProductClearBtn');
+      if (clearBtn && modal.contains(clearBtn)) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (clearBtn.id === 'pmImageEditFabricClearBtn') clearPmImageEditBatchSelection('fabric');
+        else if (clearBtn.id === 'pmImageEditVariantClearBtn') clearPmImageEditBatchSelection('variant');
+        else if (clearBtn.id === 'pmImageEditOrderProductClearBtn') clearPmImageEditBatchSelection('order_product');
+        return;
+      }
+    });
 
     $('pmImageEditCancelBtn')?.addEventListener('click', closeModal);
     $('pmImageEditSubmitBtn')?.addEventListener('click', confirmSubmit);
@@ -1494,21 +1517,8 @@
     $('pmImageEditNewNameInput')?.addEventListener('input', () => { touched.recommendName = true; });
     $('pmImageEditDescInput')?.addEventListener('input', () => { touched.desc = true; });
 
-    // variant actions
-    $('pmImageEditVariantClearBtn')?.addEventListener('click', () => {
-      selectedVariantIds = new Set();
-      updateSelectedVariantTable();
-    });
     $('pmImageEditPickVariantBtn')?.addEventListener('click', openVariantPicker);
-    $('pmImageEditFabricClearBtn')?.addEventListener('click', () => {
-      selectedFabricIds = new Set();
-      updateSelectedFabricTable();
-    });
     $('pmImageEditPickFabricBtn')?.addEventListener('click', openFabricPicker);
-    $('pmImageEditOrderProductClearBtn')?.addEventListener('click', () => {
-      selectedOrderProductIds = new Set();
-      updateSelectedOrderProductTable();
-    });
     $('pmImageEditPickOrderProductBtn')?.addEventListener('click', openOrderProductPicker);
   }
 

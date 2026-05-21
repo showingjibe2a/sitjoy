@@ -2888,6 +2888,14 @@ table.sf-table td.sf-cell-thumb {
     margin-top: 1rem;
 }
 
+#app-confirm-modal.app-confirm-modal--danger .app-confirm-title {
+    color: #6f2f2f;
+}
+
+#app-confirm-modal.app-confirm-modal--danger .app-confirm-message {
+    color: #4a3f38;
+}
+
 .app-confirm-check-row {
     margin-top: 0.75rem;
     padding: 0.55rem 0.65rem;

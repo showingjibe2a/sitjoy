@@ -500,8 +500,9 @@
         td.sf-cell-forecast.preview-edit-cell {
             text-align: right;
             position: relative;
-            padding: 0.08rem 0.22rem 0.1rem !important;
-            vertical-align: top;
+            padding: 0.12rem 0.22rem 0.1rem !important;
+            vertical-align: middle;
+            overflow: visible;
         }
         /* Shift+拖拽框选时的矩形预览（fixed，不拦截指针） */
         .sf-grid-marquee {
@@ -567,60 +568,78 @@
             display: flex;
             flex-direction: column;
             align-items: stretch;
-            justify-content: flex-start;
+            justify-content: center;
             width: 100%;
             min-width: 0;
+            min-height: 38px;
             gap: 0.1rem;
-        }
-        /* 顶栏固定高度：角标绝对定位，避免有/无角标时输入框高低不齐 */
-        .sf-forecast-cell-top {
-            display: block;
-            position: relative;
-            width: 100%;
-            min-height: 11px;
-            height: 11px;
-            flex: 0 0 11px;
-            padding: 0 1px;
             overflow: visible;
         }
-        .sf-forecast-cell-top-left {
+        /* 来源/变更顶栏：叠在输入框正上方，不占 flex 高度，避免有顶数时撑高行 */
+        .sf-forecast-meta-row.sf-forecast-cell-top {
             position: absolute;
-            left: 1px;
-            top: 0;
-            right: 30px;
+            left: 0;
+            right: 0;
+            bottom: 100%;
+            display: none;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 0.15rem;
+            width: 100%;
+            height: 10px;
+            min-height: 0;
+            margin: 0 0 1px 0;
+            padding: 0 1px;
+            overflow: visible;
+            box-sizing: border-box;
+            pointer-events: none;
+            z-index: 2;
+        }
+        .sf-forecast-cell-main:has(.sf-source-badge) .sf-forecast-meta-row.sf-forecast-cell-top,
+        .sf-forecast-cell-main:has(.sf-forecast-delta-badge.is-visible) .sf-forecast-meta-row.sf-forecast-cell-top {
+            display: flex;
+        }
+        .sf-forecast-cell-top-left {
+            flex: 1 1 auto;
             min-width: 0;
-            display: block;
+            display: flex;
+            align-items: flex-end;
             overflow: visible;
             pointer-events: none;
         }
         .sf-forecast-cell-top .sf-forecast-delta-badge {
-            position: absolute;
-            right: 1px;
-            top: 0;
+            flex: 0 0 auto;
             margin-left: 0;
-            max-width: none;
+            max-width: 48%;
+            overflow: visible;
+            text-overflow: clip;
         }
         .sf-forecast-cell-top-left .sf-tooltip-wrap {
             width: auto;
-            max-width: none;
+            max-width: 100%;
             min-width: 0;
             display: inline-block;
             pointer-events: none;
+            vertical-align: middle;
         }
         .sf-forecast-cell-top-left .sf-tooltip-wrap .sf-tooltip-content {
             pointer-events: auto;
             display: inline-block;
             width: auto;
+            max-width: none;
             text-align: left;
+            overflow: visible;
         }
         .sf-forecast-cell-top-left .sf-tooltip-bubble {
             left: 0;
             right: auto;
         }
         .sf-forecast-cell-main {
+            position: relative;
             display: block;
             width: 100%;
             min-width: 0;
+            flex: 0 0 auto;
         }
         /* 仅包裹输入框，与角标分离后须覆盖全局 input 的 width:0（原用于 flex 行内拉伸） */
         .sf-num-input-stack {
@@ -633,7 +652,7 @@
             max-width: none;
             flex: none;
         }
-        /* 相对已存储数量的变化：显示在输入框上方右侧 */
+        /* 相对已存储数量的变化：显示在输入框外侧顶栏右侧 */
         .sf-forecast-delta-badge {
             position: static;
             z-index: 4;
@@ -656,9 +675,12 @@
             align-items: flex-end;
             gap: 0.15rem;
             width: 100%;
-            min-height: 10px;
+            min-height: 8px;
+            margin-top: 0.12rem;
+            padding-top: 0.04rem;
+            flex: 0 0 auto;
             font-size: 8px;
-            line-height: 1.1;
+            line-height: 1;
             font-variant-numeric: tabular-nums;
             pointer-events: none;
         }
@@ -697,19 +719,9 @@
             max-width: 100%;
         }
         .sf-surplus-row .sf-tooltip-bubble.sf-surplus-tooltip-bubble {
-            top: auto;
-            bottom: calc(100% + 4px);
             min-width: 260px;
             max-width: min(340px, 92vw);
             font-size: 11px;
-        }
-        .sf-surplus-transit .sf-tooltip-bubble.sf-surplus-tooltip-bubble {
-            left: 0;
-            right: auto;
-        }
-        .sf-surplus-total .sf-tooltip-bubble.sf-surplus-tooltip-bubble {
-            left: auto;
-            right: 0;
         }
         .sf-leadtime-modal-overlay {
             position: fixed;
@@ -802,6 +814,62 @@
             color: var(--morandi-slate);
             white-space: nowrap;
         }
+        /* 下单 SKU：库存多来源指示（⋯） */
+        td.sf-cell-sku-composition,
+        td.sf-cell-inv.sf-cell-inv-composition {
+            position: relative;
+            vertical-align: middle;
+        }
+        .sf-spec-cell-wrap {
+            position: relative;
+            display: block;
+            width: 100%;
+            min-height: 1.15em;
+            padding-bottom: 2px;
+        }
+        .sf-spec-cell-text {
+            display: block;
+            padding: 0 0.1rem 0 0.85rem;
+            word-break: break-all;
+        }
+        .sf-inv-cell-inner {
+            display: block;
+            width: 100%;
+            text-align: right;
+            padding: 0.08rem 0.1rem 0.08rem 0.75rem;
+            box-sizing: border-box;
+        }
+        .sf-inv-composition-dot {
+            position: absolute;
+            left: 1px;
+            bottom: 1px;
+            z-index: 2;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 11px;
+            height: 11px;
+            border-radius: 50%;
+            font-size: 9px;
+            line-height: 1;
+            font-weight: 700;
+            letter-spacing: -0.08em;
+            color: var(--morandi-slate, #7a7268);
+            background: rgba(214, 207, 198, 0.55);
+            border: 1px solid rgba(122, 114, 104, 0.28);
+            cursor: help;
+            pointer-events: auto;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .sf-inv-composition-dot:hover {
+            background: rgba(200, 192, 182, 0.85);
+        }
+        .sf-tooltip-bubble.sf-inv-composition-tooltip-bubble {
+            min-width: 260px;
+            max-width: min(380px, 94vw);
+            font-size: 11px;
+        }
         .sf-forecast-delta-badge.is-visible {
             display: inline-flex;
         }
@@ -814,6 +882,7 @@
         .sf-source-badge {
             display: inline-block;
             min-width: 0;
+            max-width: none;
             height: auto;
             padding: 0;
             border: none;
@@ -821,12 +890,15 @@
             background: transparent;
             box-shadow: none;
             color: var(--morandi-slate, #7a7268);
-            font-size: 9px;
-            line-height: 1.15;
+            font-size: 8px;
+            line-height: 10px;
             text-align: left;
             font-weight: 600;
             font-variant-numeric: tabular-nums;
             white-space: nowrap;
+            overflow: visible;
+            text-overflow: clip;
+            vertical-align: bottom;
             cursor: help;
         }
         .sf-source-badge.is-inherited {
@@ -872,6 +944,28 @@
         .sf-tooltip-wrap:focus-within .sf-tooltip-bubble,
         .sf-tooltip-wrap.is-pinned .sf-tooltip-bubble {
             display: block;
+        }
+        /* 预测格：气泡相对整格 fixed 定位，由 JS 控制显隐（勿依赖 :hover，避免 inline display 残留） */
+        .sf-tooltip-wrap.sf-tooltip-wrap--cell-anchor:not(.is-anchor-open):not(.is-pinned) .sf-tooltip-bubble {
+            display: none !important;
+        }
+        .sf-tooltip-wrap.sf-tooltip-wrap--cell-anchor.is-anchor-open .sf-tooltip-bubble,
+        .sf-tooltip-wrap.sf-tooltip-wrap--cell-anchor.is-pinned .sf-tooltip-bubble {
+            display: block;
+        }
+        .sf-tooltip-wrap.sf-tooltip-wrap--cell-anchor .sf-tooltip-bubble {
+            position: fixed;
+            top: auto;
+            bottom: auto;
+            left: auto;
+            right: auto;
+            z-index: 13050;
+            pointer-events: none;
+        }
+        td.sf-cell-forecast:has(.sf-tooltip-wrap:hover),
+        td.sf-cell-forecast:has(.sf-tooltip-wrap:focus-within),
+        td.sf-cell-forecast:has(.sf-tooltip-wrap.is-pinned) {
+            z-index: 4;
         }
         .sf-tooltip-bubble dl {
             margin: 0;
@@ -1388,7 +1482,7 @@
                 </div>
                 <span class="sf-divider sf-surplus-toolbar-divider" aria-hidden="true" style="display:none;"></span>
                 <div class="sf-toolbar-group sf-surplus-region-group" id="sfSurplusRegionGroup">
-                    <span class="sf-surplus-region-label">盈余区域：</span>
+                    <span class="sf-surplus-region-label">时效计算区域：</span>
                     <input type="hidden" id="sfSurplusRegionVal" value="">
                     <div class="status-segment status-segment--inline" id="sfSurplusRegionSegment" data-value=""></div>
                 </div>
@@ -1475,7 +1569,7 @@
                 <button type="button" class="modal-close" id="sfLeadtimeModalClose" aria-label="关闭">×</button>
             </div>
             <div class="sf-leadtime-modal-body">
-                <p style="margin:0 0 0.55rem;font-size:0.78rem;color:rgba(42,36,32,0.62);">在途批次<strong>始终统计全部</strong>（不按目的区域过滤），便于看在途总量能否跟上预测。所选「目的区域」仅用于<strong>工厂在库/在制经该流向到美国上架</strong>的天数，用来对比不同时效假设下工厂侧能否补足需求。若列为<strong>本月</strong>且落在历史范围内，消耗量取「整月预测 − 本月已售（MTD）」。</p>
+                <p style="margin:0 0 0.55rem;font-size:0.78rem;color:rgba(42,36,32,0.62);">预测表下方盈余按<strong>全部目的区域</strong>的海外仓、在途汇总；工具栏「时效计算区域」仅决定本表<strong>在库→上架、在制→上架</strong>所用天数。当前月另加 MTD 已售；每月「期初结余 + 到货 − 当月预测」滚入下月。</p>
                 <div class="sf-leadtime-table-wrap">
                     <table class="sf-leadtime-table" aria-label="工厂库存时效">
                         <thead>
@@ -1560,7 +1654,7 @@
             sfStatusFilterPanelOpen: false,
             sfShopFilterHydrated: false,   // 是否已渲染过店铺勾选（用于保留勾选状态）
             destinationRegions: [],          // 下单SKU维度：目的区域列表
-            sfSurplusRegion: '',           // 盈余估算所选目的区域
+            sfSurplusRegion: '',           // 时效计算区域（仅工厂在库/在制上架天数）
             factoryLeadTimes: {},          // { [region_name]: { stock_days, wip_days } }
         };
 
@@ -2134,16 +2228,10 @@
             return Math.max(0, Number(f && f.value_qty) || 0);
         }
 
-        /** 盈余滚动：本月在历史范围内时用「整月预测 − 本月已售」作为剩余消耗，其余月用整月预测 */
-        function getSurplusNetDemandForRowMonth(row, monthKey) {
-            const gross = getForecastDemandForRowMonth(row, monthKey);
-            const ctx = state.mtdContext || {};
-            if (!ctx.in_history_range) return Math.max(0, gross);
-            const curKey = String(ctx.current_month_key || '');
-            if (!curKey || String(monthKey) !== String(curKey)) return Math.max(0, gross);
-            const hist = (row && row.history && row.history[monthKey]) || {};
-            const soldMtd = Math.max(0, Number(hist.sales_qty) || 0);
-            return Math.max(0, gross - soldMtd);
+        /** 盈余期初：各目的区域海外仓现货合计 */
+        function getTotalOverseasQty(detail) {
+            const by = (detail && detail.overseas_by_region) || {};
+            return Object.keys(by).reduce((sum, k) => sum + Math.max(0, Number(by[k]) || 0), 0);
         }
 
         function sfSurplusCacheKey() {
@@ -2152,13 +2240,15 @@
             return `${String(state.sfSurplusRegion || '')}|${mtdSig}|${JSON.stringify(state.factoryLeadTimes || {})}`;
         }
 
-        function computeOrderSkuSurplusSeries(row, months, regionName, leadTimes) {
+        function computeOrderSkuSurplusSeries(row, months, leadTimeRegion, leadTimes) {
             const detail = (row && row.inventory_surplus_detail) || {};
+            const regionName = String(leadTimeRegion || '').trim();
             const lt = (leadTimes && regionName) ? (leadTimes[regionName] || {}) : {};
             const stockDays = Math.max(0, parseInt(lt.stock_days, 10) || 0);
             const wipDays = Math.max(0, parseInt(lt.wip_days, 10) || 0);
             const today = sfTodayYmd();
-            /* 在途：全部批次；所选区域仅用于工厂在库/在制→上架天数；不用该区域海外仓现货作初始结余 */
+            /* 海外仓/在途：全部目的区域；regionName 仅用于工厂在库/在制→上架月 */
+            const overseasInit = getTotalOverseasQty(detail);
             const transitBatches = detail.transit_batches || [];
             const factoryStock = Math.max(0, Number(detail.factory_stock_qty) || 0);
             const wipBatches = detail.wip_batches || [];
@@ -2192,37 +2282,40 @@
 
             const sortedMonths = (months || []).slice().sort(compareForecastMonthKeys);
             const monthSet = new Set(sortedMonths);
-            let transitBal = 0;
-            let fullBal = 0;
+            const ctx = state.mtdContext || {};
+            const curKey = String(ctx.current_month_key || '');
+            let transitBal = overseasInit;
+            let fullBal = overseasInit;
             const transitSurplus = {};
             const fullSurplus = {};
             const monthDetail = {};
-            sortedMonths.forEach((mk) => {
+            sortedMonths.forEach((mk, monthIdx) => {
                 const gross = getForecastDemandForRowMonth(row, mk);
-                const ctx = state.mtdContext || {};
-                const curKey = String(ctx.current_month_key || '');
                 let soldMtd = 0;
-                let netDemand = Math.max(0, gross);
                 if (ctx.in_history_range && curKey && String(mk) === curKey) {
                     const hist = (row && row.history && row.history[mk]) || {};
                     soldMtd = Math.max(0, Number(hist.sales_qty) || 0);
-                    netDemand = Math.max(0, gross - soldMtd);
                 }
                 const trIn = transitArrivals.get(mk) || 0;
                 const fullIn = fullArrivals.get(mk) || 0;
                 const factoryIn = Math.max(0, fullIn - trIn);
                 const transitBefore = transitBal;
                 const fullBefore = fullBal;
+                const isFirstMonth = monthIdx === 0;
+                if (soldMtd > 0) {
+                    transitBal += soldMtd;
+                    fullBal += soldMtd;
+                }
                 transitBal += trIn;
                 fullBal += fullIn;
-                const trSnap = transitBal - netDemand;
-                const fullSnap = fullBal - netDemand;
+                const trSnap = transitBal - gross;
+                const fullSnap = fullBal - gross;
                 transitSurplus[mk] = trSnap;
                 fullSurplus[mk] = fullSnap;
                 monthDetail[mk] = {
                     grossDemand: gross,
                     soldMtd,
-                    netDemand,
+                    overseasInit: isFirstMonth ? overseasInit : 0,
                     transitArrival: trIn,
                     factoryArrival: factoryIn,
                     fullArrival: fullIn,
@@ -2231,8 +2324,8 @@
                     transitSurplus: trSnap,
                     fullSurplus: fullSnap,
                 };
-                transitBal -= netDemand;
-                fullBal -= netDemand;
+                transitBal = trSnap;
+                fullBal = fullSnap;
                 monthDetail[mk].transitBalanceAfter = transitBal;
                 monthDetail[mk].fullBalanceAfter = fullBal;
             });
@@ -2256,7 +2349,8 @@
                 fullSurplus,
                 monthDetail,
                 meta: {
-                    regionName: regionName || '',
+                    leadTimeRegion: regionName || '',
+                    overseasInit,
                     stockDays,
                     wipDays,
                     today,
@@ -2316,10 +2410,11 @@
             const meta = bundle.meta || {};
             const isTransit = kind === 'transit';
             const monthLbl = monthShortLabel(monthKey);
-            const region = meta.regionName || state.sfSurplusRegion || '';
+            const leadRegion = meta.leadTimeRegion || state.sfSurplusRegion || '';
             const title = isTransit
                 ? ('在途滚动盈余 · ' + monthLbl)
-                : ('全链路滚动盈余 · ' + monthLbl + (region ? ' · ' + escapeHtml(region) : ''));
+                : ('全链路滚动盈余 · ' + monthLbl
+                    + (leadRegion ? ' · 工厂时效「' + escapeHtml(leadRegion) + '」' : ''));
 
             if (!d) {
                 return '<div class="sf-tip-title">' + escapeHtml(title) + '</div>'
@@ -2335,11 +2430,14 @@
                 + '</dl>';
 
             const demandLines = [];
-            demandLines.push('<dt>当月预测</dt><dd>' + formatNumber(d.grossDemand) + '</dd>');
-            if (d.soldMtd > 0) {
-                demandLines.push('<dt>当月已售（MTD）</dt><dd>−' + formatNumber(d.soldMtd) + '</dd>');
+            if (d.overseasInit > 0) {
+                demandLines.push('<dt>期初海外仓（全部区域）</dt><dd>+' + formatNumber(d.overseasInit) + '</dd>');
+            } else {
+                demandLines.push('<dt>上月结转结余</dt><dd>' + formatSurplusLabel(balBefore) + '</dd>');
             }
-            demandLines.push('<dt>当月净消耗</dt><dd>−' + formatNumber(d.netDemand) + '</dd>');
+            if (d.soldMtd > 0) {
+                demandLines.push('<dt>当月已售（MTD）</dt><dd>+' + formatNumber(d.soldMtd) + '</dd>');
+            }
 
             const arrivalLines = [];
             if (isTransit) {
@@ -2359,9 +2457,9 @@
 
             const formula = '<div class="sf-tip-title" style="margin-top:0.5rem;font-size:10px;font-weight:500;color:#d6cfbf;">滚动计算</div>'
                 + '<dl style="margin:0.2rem 0 0;">'
-                + '<dt>上月结转结余</dt><dd>' + formatSurplusLabel(balBefore) + '</dd>'
-                + arrivalLines.join('')
                 + demandLines.join('')
+                + arrivalLines.join('')
+                + '<dt>当月预测</dt><dd>−' + formatNumber(d.grossDemand) + '</dd>'
                 + '<dt>= 本月剩余</dt><dd>' + formatSurplusLabel(surplus) + '</dd>'
                 + '</dl>';
 
@@ -2387,7 +2485,7 @@
             const factoryNote = (!isTransit && meta.factoryStock > 0 && meta.factoryStockListedDate)
                 ? ('<li>工厂在库 ' + formatNumber(meta.factoryStock)
                     + ' · 预计上架 ' + escapeHtml(String(meta.factoryStockListedDate).slice(0, 10))
-                    + '（' + escapeHtml(region) + ' 在库+' + (meta.stockDays || 0) + '天）</li>')
+                    + '（时效「' + escapeHtml(leadRegion || '—') + '」在库+' + (meta.stockDays || 0) + '天）</li>')
                 : '';
 
             const wipList = (!isTransit ? (meta.wipBatches || []) : []).map((w) => {
@@ -2416,8 +2514,8 @@
             }
 
             const foot = isTransit
-                ? '<p style="margin:0.45rem 0 0;font-size:10px;opacity:0.82;line-height:1.35;">在途含全部目的区域；按预计美国上架月入账，逐月抵减净消耗后滚动。</p>'
-                : '<p style="margin:0.45rem 0 0;font-size:10px;opacity:0.82;line-height:1.35;">含在途 + 工厂在库（今日+' + (meta.stockDays || 0) + '天）+ 在制（完工+' + (meta.wipDays || 0) + '天），按「' + escapeHtml(region) + '」折算上架月。</p>';
+                ? '<p style="margin:0.45rem 0 0;font-size:10px;opacity:0.82;line-height:1.35;">期初=全部区域海外仓；在途含全部目的区域；当前月另加 MTD 已售；每月到货后减当月预测，结余滚入下月。</p>'
+                : '<p style="margin:0.45rem 0 0;font-size:10px;opacity:0.82;line-height:1.35;">在途/海外仓统计全部区域；工厂在库（今日+' + (meta.stockDays || 0) + '天）/在制（完工+' + (meta.wipDays || 0) + '天）上架月按时效区域「' + escapeHtml(leadRegion || '—') + '」折算。</p>';
 
             return head + formula + rangeBody + foot;
         }
@@ -2436,7 +2534,9 @@
             rowEl.appendChild(makeTooltipWrap(
                 buildSurplusTooltipHtml('transit', monthKey, row),
                 trInner,
-                'sf-surplus-tooltip-bubble'
+                'sf-surplus-tooltip-bubble',
+                false,
+                true
             ));
             const totInner = document.createElement('span');
             totInner.className = 'sf-surplus-total ' + sfSurplusToneClass(totVal);
@@ -2444,22 +2544,42 @@
             rowEl.appendChild(makeTooltipWrap(
                 buildSurplusTooltipHtml('full', monthKey, row),
                 totInner,
-                'sf-surplus-tooltip-bubble'
+                'sf-surplus-tooltip-bubble',
+                false,
+                true
             ));
             wrap.appendChild(rowEl);
         }
 
-        function refreshSfSurplusInCell(input) {
-            if (state.forecastMode !== 'order' || !state.sfSurplusRegion || !input) return;
-            const wrap = input.closest('.sf-cell-wrap');
-            if (!wrap) return;
-            const rowKey = input.dataset.rowKey;
-            const month = input.dataset.month;
-            const row = (state.rows || []).find(r => String(r.row_key) === String(rowKey));
+        /** 盈余为按月滚动累计：从 fromMonthKey 起刷新该行后续预测月的角标（含当月） */
+        function refreshSfSurplusForRow(rowKey, fromMonthKey) {
+            if (state.forecastMode !== 'order' || !state.sfSurplusRegion) return;
+            const rk = String(rowKey || '');
+            if (!rk) return;
+            const row = (state.rows || []).find(r => String(r.row_key) === rk);
             if (!row) return;
             delete row._sfSurplusCache;
-            wrap.querySelectorAll('[data-sf-surplus-row="1"]').forEach(el => el.remove());
-            appendSfSurplusRow(wrap, row, month);
+            getOrderSkuSurplusBundle(row);
+
+            if (!state.forecastExpanded) return;
+            const tr = sfFindForecastTableRow(rk);
+            if (!tr) return;
+
+            const fromMk = fromMonthKey ? String(fromMonthKey) : '';
+            tr.querySelectorAll('td.sf-cell-forecast input.sf-num-input[data-month]').forEach((inp) => {
+                const mk = String(inp.dataset.month || '');
+                if (!mk) return;
+                if (fromMk && compareForecastMonthKeys(mk, fromMk) < 0) return;
+                const wrap = inp.closest('.sf-cell-wrap');
+                if (!wrap) return;
+                wrap.querySelectorAll('[data-sf-surplus-row="1"]').forEach(el => el.remove());
+                appendSfSurplusRow(wrap, row, mk);
+            });
+        }
+
+        function refreshSfSurplusInCell(input) {
+            if (!input) return;
+            refreshSfSurplusForRow(input.dataset.rowKey, input.dataset.month);
         }
 
         function renderSfLeadtimeTableBody() {
@@ -3129,6 +3249,87 @@
             groups.forEach(g => target.add(g.key));
         }
 
+        const SF_INV_TIER_KEYS = ['overseas_qty', 'transit_qty', 'factory_stock_qty', 'wip_qty'];
+
+        function invCompositionRoleLabel(role) {
+            switch (String(role || '')) {
+                case 'self': return '本体';
+                case 'substitute': return '替代发货';
+                case 'delisted_substitute': return '替代发货';
+                case 'delisted_owner': return '替代发货';
+                default: return '来源';
+            }
+        }
+
+        function buildInventoryCompositionTooltipHtml(row, tierKey, tierLabel) {
+            const comp = row.inventory_composition || {};
+            const rowSku = escapeHtml(comp.row_sku || (row.labels && row.labels.sku) || '');
+            const breakdown = comp.tier_breakdown || {};
+            const tierKeys = tierKey ? [tierKey] : SF_INV_TIER_KEYS;
+            const tierLabels = {
+                overseas_qty: '海外仓',
+                transit_qty: '在途',
+                factory_stock_qty: '在库',
+                wip_qty: '在制',
+            };
+            let title = tierKey
+                ? (`库存来源 · ${escapeHtml(tierLabel || tierLabels[tierKey] || '')}`)
+                : '库存来源（全链路）';
+            if (rowSku) title += ` · ${rowSku}`;
+            let body = '';
+            tierKeys.forEach((tk) => {
+                const entries = breakdown[tk] || [];
+                if (!entries.length) return;
+                const tierTotal = entries.reduce((a, e) => a + Number(e.assembled_qty || 0), 0);
+                if (tierKey) {
+                    body += `<dl style="margin:0.2rem 0 0;">`
+                        + `<dt>合计（折算后）</dt><dd><strong>${formatNumber(tierTotal)}</strong></dd>`
+                        + `</dl>`;
+                } else {
+                    body += `<div class="sf-tip-title" style="margin-top:0.45rem;font-size:10px;color:#d6cfbf;">${escapeHtml(tierLabels[tk] || tk)}</div>`;
+                    body += `<dl style="margin:0.15rem 0 0;">`
+                        + `<dt>合计</dt><dd><strong>${formatNumber(tierTotal)}</strong></dd>`
+                        + `</dl>`;
+                }
+                const li = entries.map((e) => {
+                    const sku = escapeHtml(e.sku || '');
+                    const mult = Number(e.qty_per_unit || 1);
+                    const role = invCompositionRoleLabel(e.role);
+                    const raw = formatNumber(Number(e.raw_qty || 0));
+                    const asm = formatNumber(Number(e.assembled_qty || 0));
+                    const off = Number(e.is_on_market || 0) === 0 ? ' <span style="opacity:0.85;">（已下市）</span>' : '';
+                    let line = `<strong>${sku}</strong>${off} · ${role}`;
+                    if (mult > 1) line += ` · 方案配比×${formatNumber(mult)}`;
+                    line += `<br><span style="opacity:0.9;">原始 ${raw} → 计入 ${asm}</span>`;
+                    return `<li>${line}</li>`;
+                }).join('');
+                if (li) body += `<ul class="sf-tip-list">${li}</ul>`;
+            });
+            if (!body) {
+                body = '<p style="margin:0.25rem 0 0;opacity:0.9;">无可用来源明细</p>';
+            }
+            const plans = comp.substitute_plans || [];
+            if (plans.length && !tierKey) {
+                body += '<div class="sf-tip-title" style="margin-top:0.5rem;font-size:10px;color:#d6cfbf;">替代发货方案</div>';
+                plans.forEach((pl) => {
+                    const pname = escapeHtml(pl.plan_name || '');
+                    const items = pl.items || [];
+                    if (!items.length) return;
+                    const lis = items.map((it) => {
+                        const sid = it[0] != null ? it[0] : it.substitute_order_product_id;
+                        const q = it[1] != null ? it[1] : it.quantity;
+                        const sku = escapeHtml(String(sid));
+                        return `<li>${sku} × ${formatNumber(Number(q) || 1)}</li>`;
+                    }).join('');
+                    body += `<div style="margin:0.2rem 0 0.15rem;font-size:10px;font-weight:600;">${pname}</div>`
+                        + `<ul class="sf-tip-list">${lis}</ul>`;
+                });
+            }
+            const foot = '合计 = 本体库存 + 全部替代发货方案中的替代 SKU 库存（已合并全部方案；同一替代 SKU 跨多方案配比累加后折算，不重复计下市原 SKU）。';
+            return `<div class="sf-tip-title">${title}</div>${body}`
+                + `<p style="margin:0.45rem 0 0;font-size:10px;opacity:0.82;line-height:1.35;">${escapeHtml(foot)}</p>`;
+        }
+
         function renderSpecCell(td, col, row) {
             if (col.key === 'thumb') {
                 const b64 = String(col.get(row) || '').trim();
@@ -3146,7 +3347,32 @@
                 else td.innerHTML = `<span>${escapeHtml(txt || '—')}</span>`;
                 return;
             }
-            td.innerHTML = `<div>${escapeHtml(String(col.get(row) || '—') || '—')}</div>`;
+            const text = escapeHtml(String(col.get(row) || '—') || '—');
+            if (col.key === 'sku' && state.forecastMode === 'order' && row.inventory_composition && row.inventory_composition.has_indicator) {
+                td.className = (col.cellClass || 'sf-cell-spec') + ' sf-cell-sku-composition';
+                const wrap = document.createElement('div');
+                wrap.className = 'sf-spec-cell-wrap';
+                const label = document.createElement('div');
+                label.className = 'sf-spec-cell-text';
+                label.innerHTML = text;
+                wrap.appendChild(label);
+                const dot = document.createElement('span');
+                dot.className = 'sf-inv-composition-dot';
+                dot.textContent = '⋯';
+                dot.setAttribute('data-sf-copy-exclude', '1');
+                dot.setAttribute('aria-hidden', 'true');
+                dot.setAttribute('aria-label', '查看库存来源');
+                wrap.appendChild(makeTooltipWrap(
+                    buildInventoryCompositionTooltipHtml(row, null, null),
+                    dot,
+                    'sf-inv-composition-tooltip-bubble',
+                    false,
+                    true
+                ));
+                td.appendChild(wrap);
+                return;
+            }
+            td.innerHTML = '<div>' + text + '</div>';
         }
 
         function getEffectiveForecastQty(row, monthKey) {
@@ -3295,11 +3521,29 @@
                 formatNumber(Number(inv.in_stock_qty) || 0),
                 formatNumber(Number(inv.wip_qty) || 0),
             ];
+            const invComp = row.inventory_composition || {};
+            const tierKeys = SF_INV_TIER_KEYS;
             SF_STOCK_HEADERS.forEach((h, i) => {
                 const td = document.createElement('td');
                 td.className = 'sf-cell-history sf-cell-inv';
-                if (h.tip) td.title = h.tip;
-                td.textContent = stockVals[i];
+                if (state.forecastMode === 'order' && invComp.has_indicator) {
+                    td.classList.add('sf-cell-inv-composition');
+                }
+                const inner = document.createElement('span');
+                inner.className = 'sf-inv-cell-inner';
+                inner.textContent = stockVals[i];
+                if (state.forecastMode === 'order' && invComp.has_indicator) {
+                    td.appendChild(makeTooltipWrap(
+                        buildInventoryCompositionTooltipHtml(row, tierKeys[i], h.label),
+                        inner,
+                        'sf-inv-composition-tooltip-bubble',
+                        true,
+                        true
+                    ));
+                } else {
+                    if (h.tip) td.title = h.tip;
+                    td.appendChild(inner);
+                }
                 markSfGridCell(td, rowKey, ci);
                 ci += 1;
                 tr.appendChild(td);
@@ -3664,7 +3908,20 @@
             if (!td) return '';
             const inp = td.querySelector('input.sf-num-input');
             if (inp) return String(inp.value != null ? inp.value : '').trim();
-            let t = String(td.innerText || '').replace(/\u00a0/g, ' ').trim();
+            const skuText = td.querySelector('.sf-spec-cell-text');
+            if (skuText) {
+                return String(skuText.textContent || '').replace(/\u00a0/g, ' ').trim().replace(/\s+/g, ' ');
+            }
+            const invInner = td.querySelector('.sf-inv-cell-inner');
+            if (invInner) {
+                return String(invInner.textContent || '').replace(/\u00a0/g, ' ').trim().replace(/\s+/g, ' ');
+            }
+            const clone = td.cloneNode(true);
+            clone.querySelectorAll(
+                '.sf-inv-composition-dot, .sf-tooltip-bubble, [data-sf-copy-exclude="1"]'
+            ).forEach((el) => el.remove());
+            let t = String(clone.textContent || '').replace(/\u00a0/g, ' ').trim();
+            t = t.replace(/\u22ef/g, '').replace(/⋯/g, '').trim();
             return t.replace(/\s+/g, ' ');
         }
 
@@ -3750,6 +4007,15 @@
                 if (window.showAppToast) window.showAppToast('已复制选中区域', false, 1200);
             } catch (_) {}
             document.body.removeChild(area);
+            return true;
+        }
+
+        function pasteSingleValueToForecastInput(inp, rawText) {
+            if (!inp) return false;
+            const raw = String(rawText != null ? rawText : '').trim();
+            const d = normalizeForecastDigitString(raw.replace(/[^\d]/g, ''));
+            inp.value = d === '' ? '0' : String(Math.max(0, parseInt(d, 10) || 0));
+            inp.dispatchEvent(new Event('input', { bubbles: true }));
             return true;
         }
 
@@ -3902,9 +4168,12 @@
                 const matrix = parseClipboardMatrixSf(text);
                 if (!matrix.length) return;
                 const single = matrix.length === 1 && (matrix[0] || []).length <= 1;
+                const singleVal = single ? String((matrix[0] || [''])[0] || '') : '';
 
-                /* 多选后焦点常在 body 或表格外控件，paste 的 target 不在 #forecastTable，原先逻辑永远进不来 */
-                if (!single && state.sfGridSelected && state.sfGridSelected.size && !sfActiveElementBlocksForecastMatrixPaste()) {
+                if (sfActiveElementBlocksForecastMatrixPaste()) return;
+
+                /* 框选区域粘贴（含单个数字 → 锚点格；多选后焦点常在表格外） */
+                if (state.sfGridSelected && state.sfGridSelected.size) {
                     if (applySfMatrixPasteFromGridSelection(matrix)) {
                         e.preventDefault();
                         if (window.showAppToast) window.showAppToast('已粘贴到预测输入区域', false, 1800);
@@ -3913,15 +4182,30 @@
                 }
 
                 const el = e.target;
-                if (!el || !el.closest || !el.closest('#forecastTable')) return;
-                const field = el.closest('input.sf-num-input');
-                if (field) {
-                    if (single) return;
+                const field = (el && el.closest)
+                    ? (el.closest('input.sf-num-input') || null)
+                    : null;
+                if (field && field.closest && field.closest('#forecastTable')) {
                     e.preventDefault();
-                    if (applyForecastMatrixPasteFromInput(field, matrix) && window.showAppToast) {
+                    const ok = single
+                        ? pasteSingleValueToForecastInput(field, singleVal)
+                        : applyForecastMatrixPasteFromInput(field, matrix);
+                    if (ok && window.showAppToast) {
                         window.showAppToast('已粘贴到预测输入区域', false, 1800);
                     }
                     return;
+                }
+
+                /* 仅复制一个数字、无框选时：写入当前聚焦的预测输入框 */
+                if (single) {
+                    const ae = document.activeElement;
+                    if (ae && ae.matches && ae.matches('input.sf-num-input')
+                        && ae.closest && ae.closest('#forecastTable')) {
+                        if (pasteSingleValueToForecastInput(ae, singleVal)) {
+                            e.preventDefault();
+                            if (window.showAppToast) window.showAppToast('已粘贴到预测输入区域', false, 1800);
+                        }
+                    }
                 }
             }, true);
 
@@ -5406,12 +5690,12 @@
             deltaBadge.className = 'sf-forecast-delta-badge';
             deltaBadge.setAttribute('aria-hidden', 'true');
 
-            const top = document.createElement('span');
-            top.className = 'sf-forecast-cell-top';
+            const metaRow = document.createElement('span');
+            metaRow.className = 'sf-forecast-meta-row sf-forecast-cell-top';
             const topLeft = document.createElement('span');
             topLeft.className = 'sf-forecast-cell-top-left';
-            top.appendChild(topLeft);
-            top.appendChild(deltaBadge);
+            metaRow.appendChild(topLeft);
+            metaRow.appendChild(deltaBadge);
 
             const main = document.createElement('span');
             main.className = 'sf-forecast-cell-main';
@@ -5419,8 +5703,8 @@
             inputStack.className = 'sf-num-input-stack';
             inputStack.appendChild(input);
 
-            wrap.appendChild(top);
             wrap.appendChild(main);
+            main.appendChild(metaRow);
             main.appendChild(inputStack);
             updateSfForecastDeltaBadgeForInput(input, deltaBadge);
 
@@ -5429,13 +5713,13 @@
                 const badge = document.createElement('span');
                 badge.className = 'sf-source-badge is-inherited';
                 badge.textContent = formatNumber(forecast.source.total_qty || 0);
-                const tipped = makeTooltipWrap(buildSourceTooltip(forecast, monthKey), badge);
+                const tipped = makeTooltipWrap(buildSourceTooltip(forecast, monthKey), badge, '', false, true);
                 topLeft.appendChild(tipped);
             } else if (forecast && forecast.source && forecast.source.items && forecast.source.items.length) {
                 const badge = document.createElement('span');
                 badge.className = 'sf-source-badge';
                 badge.textContent = formatNumber(forecast.source.total_qty);
-                const tipped = makeTooltipWrap(buildSourceTooltip(forecast, monthKey, true), badge);
+                const tipped = makeTooltipWrap(buildSourceTooltip(forecast, monthKey, true), badge, '', false, true);
                 topLeft.appendChild(tipped);
             }
 
@@ -5534,10 +5818,116 @@
             onForecastInputChange({ target: input });
         }
 
-        function makeTooltipWrap(html, contentNode, bubbleExtraClass, cellWide) {
+        function sfGetStickyTheadBottom() {
+            const thead = document.querySelector('table.sf-table thead');
+            return thead ? thead.getBoundingClientRect().bottom : 0;
+        }
+
+        function positionSfCellTooltipBubble(wrap) {
+            if (!wrap || !wrap.classList.contains('sf-tooltip-wrap--cell-anchor')) return;
+            if (!wrap.classList.contains('is-anchor-open') && !wrap.classList.contains('is-pinned')) return;
+            const bubble = wrap.querySelector('.sf-tooltip-bubble');
+            const td = wrap.closest('td.sf-cell-forecast') || wrap.closest('td');
+            if (!bubble || !td) return;
+            const prevVis = bubble.style.visibility;
+            bubble.style.visibility = 'hidden';
+            const bW = Math.min(bubble.offsetWidth || 280, Math.max(240, window.innerWidth - 16));
+            const bH = bubble.offsetHeight || 120;
+            bubble.style.visibility = prevVis || '';
+            const cellR = td.getBoundingClientRect();
+            const theadBottom = sfGetStickyTheadBottom();
+            const gap = 6;
+            const spaceBelow = window.innerHeight - cellR.bottom - gap;
+            const spaceAbove = cellR.top - Math.max(theadBottom, gap) - gap;
+            const placeBelow = spaceBelow >= bH || spaceBelow >= spaceAbove;
+            let top = placeBelow ? (cellR.bottom + gap) : (cellR.top - bH - gap);
+            if (top < theadBottom + gap) top = theadBottom + gap;
+            if (top + bH > window.innerHeight - 8) top = Math.max(theadBottom + gap, window.innerHeight - bH - 8);
+            let left = cellR.left;
+            if (left + bW > window.innerWidth - 8) left = window.innerWidth - bW - 8;
+            if (left < 8) left = 8;
+            bubble.style.top = Math.round(top) + 'px';
+            bubble.style.left = Math.round(left) + 'px';
+            bubble.style.bottom = 'auto';
+            bubble.style.right = 'auto';
+            bubble.style.maxWidth = Math.min(360, window.innerWidth - 16) + 'px';
+        }
+
+        function clearSfCellTooltipBubblePosition(wrap) {
+            if (!wrap) return;
+            const bubble = wrap.querySelector('.sf-tooltip-bubble');
+            if (!bubble) return;
+            bubble.style.top = '';
+            bubble.style.left = '';
+            bubble.style.bottom = '';
+            bubble.style.right = '';
+            bubble.style.maxWidth = '';
+            bubble.style.visibility = '';
+            bubble.style.display = '';
+        }
+
+        function showSfCellAnchorTooltip(wrap) {
+            if (!wrap || wrap.classList.contains('is-pinned')) return;
+            wrap.classList.add('is-anchor-open');
+            positionSfCellTooltipBubble(wrap);
+        }
+
+        function hideSfCellAnchorTooltip(wrap) {
+            if (!wrap || wrap.classList.contains('is-pinned')) return;
+            wrap.classList.remove('is-anchor-open');
+            clearSfCellTooltipBubblePosition(wrap);
+        }
+
+        function sfTooltipLeaveTarget(wrap, related) {
+            if (!related) return false;
+            if (wrap.contains(related)) return true;
+            return false;
+        }
+
+        function bindSfCellTooltipAnchor(wrap) {
+            if (!wrap) return;
+            const reposition = () => {
+                if (wrap.classList.contains('is-anchor-open') || wrap.classList.contains('is-pinned')) {
+                    positionSfCellTooltipBubble(wrap);
+                }
+            };
+            wrap.addEventListener('mouseenter', () => showSfCellAnchorTooltip(wrap));
+            wrap.addEventListener('mouseleave', (e) => {
+                if (sfTooltipLeaveTarget(wrap, e.relatedTarget)) return;
+                hideSfCellAnchorTooltip(wrap);
+            });
+            wrap.addEventListener('focusin', () => showSfCellAnchorTooltip(wrap));
+            wrap.addEventListener('focusout', (e) => {
+                window.setTimeout(() => {
+                    if (wrap.classList.contains('is-pinned')) return;
+                    if (sfTooltipLeaveTarget(wrap, e.relatedTarget)) return;
+                    if (wrap.matches(':focus-within')) return;
+                    hideSfCellAnchorTooltip(wrap);
+                }, 0);
+            });
+            if (!wrap._sfCellTooltipScrollBound) {
+                wrap._sfCellTooltipScrollBound = true;
+                const scrollParent = wrap.closest('.sf-table-wrap');
+                const onScroll = () => {
+                    if (wrap.classList.contains('is-anchor-open') || wrap.classList.contains('is-pinned')) {
+                        if (!wrap.matches(':hover') && !wrap.matches(':focus-within') && !wrap.classList.contains('is-pinned')) {
+                            hideSfCellAnchorTooltip(wrap);
+                            return;
+                        }
+                        reposition();
+                    }
+                };
+                if (scrollParent) scrollParent.addEventListener('scroll', onScroll, { passive: true });
+                window.addEventListener('scroll', onScroll, { passive: true });
+                window.addEventListener('resize', onScroll, { passive: true });
+            }
+        }
+
+        function makeTooltipWrap(html, contentNode, bubbleExtraClass, cellWide, cellAnchor) {
             const wrap = document.createElement('span');
             wrap.className = 'sf-tooltip-wrap';
             if (cellWide) wrap.classList.add('sf-tooltip-wrap--cell-wide');
+            if (cellAnchor) wrap.classList.add('sf-tooltip-wrap--cell-anchor');
             wrap.tabIndex = 0;
             const extra = String(bubbleExtraClass || '').trim();
             const content = document.createElement('span');
@@ -5551,6 +5941,7 @@
             wrap.addEventListener('click', (e) => {
                 e.stopPropagation();
             });
+            if (cellAnchor) bindSfCellTooltipAnchor(wrap);
             return wrap;
         }
 
@@ -5609,6 +6000,7 @@
             if (!Array.isArray(refreshed) || !refreshed.length) return;
             const curM = state.mtdContext && state.mtdContext.current_month_key;
             const mtdKeys = new Set();
+            const surplusRefreshByRow = {};
             refreshed.forEach((item) => {
                 const rowKey = String(item.row_key || '');
                 const monthKey = String(item.forecast_month || '');
@@ -5636,8 +6028,17 @@
                 if (curM && monthKey === String(curM) && state.mtdContext.in_history_range) {
                     mtdKeys.add(rowKey);
                 }
+                if (state.forecastMode === 'order' && state.sfSurplusRegion) {
+                    const prev = surplusRefreshByRow[rowKey];
+                    if (!prev || compareForecastMonthKeys(monthKey, prev) < 0) {
+                        surplusRefreshByRow[rowKey] = monthKey;
+                    }
+                }
             });
             mtdKeys.forEach(rk => refreshMtdCellForRowKey(rk));
+            Object.keys(surplusRefreshByRow).forEach((rk) => {
+                refreshSfSurplusForRow(rk, surplusRefreshByRow[rk]);
+            });
         }
 
         async function saveAllChanges() {

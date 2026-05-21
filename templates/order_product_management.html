@@ -2077,9 +2077,22 @@
         async function deleteOrderMainImage(encodedName) {
             const imageName = decodeURIComponent(String(encodedName || ''));
             if (!editId || !imageName) return;
-            const ok = window.showAppConfirmAsync
-                ? await window.showAppConfirmAsync({ title: '删除确认', message: `确认删除图片：${imageName}？`, confirmText: '确认删除' })
-                : confirm(`确认删除图片：${imageName}？`);
+            const ok = window.confirmUnlinkAllBindingsMoveToRecycleAsync
+                ? await window.confirmUnlinkAllBindingsMoveToRecycleAsync({
+                    title: '删除确认',
+                    message: `确认删除图片：${imageName}？\n若该图片仍被其他引用，将仅解除当前关联，不会移动/删除磁盘文件。`,
+                    confirmText: '确认删除',
+                    confirmCheckText: '我已知晓：当图片不再被任何引用时，系统会删除数据库记录，并将原文件移入『上架资源』/回收站'
+                })
+                : (window.showAppConfirmAsync
+                    ? await window.showAppConfirmAsync({
+                        title: '删除确认',
+                        message: `确认删除图片：${imageName}？`,
+                        confirmText: '确认删除',
+                        requireConfirmCheck: true,
+                        confirmCheckText: '我已知晓此操作不可恢复，确认继续删除'
+                    })
+                    : confirm(`确认删除图片：${imageName}？`));
             if (!ok) return;
             fetch('/api/order-product-main-images', {
                 method: 'DELETE',

@@ -576,60 +576,204 @@ class OrderManagementMixin:
             parts.append(f"{sku}×{q}")
         return ' + '.join(parts) if parts else '（空）'
 
-    def _off_market_list_variant_link_changes(self, conn, owner_id, owner_sku, target_plan_id, target_plan_name, limit=400):
-        """各销售规格（含平台 SKU 提示）对本下单 SKU 的绑定将如何按方案改写。"""
-        oid = self._parse_int(owner_id)
-        tid = self._parse_int(target_plan_id)
-        if not oid or not tid:
-            return []
-        limit = max(1, min(int(limit or 400), 800))
+    def _off_market_fetch_platform_sku_hints_bulk(self, conn, variant_ids):
+        """variant_id -> MIN(platform_sku)，避免逐行关联子查询。"""
+        ids = sorted({int(x) for x in (variant_ids or []) if self._parse_int(x)})
+        if not ids:
+            return {}
+        out = {}
+        chunk_size = 400
+        with conn.cursor() as cur:
+            for i in range(0, len(ids), chunk_size):
+                chunk = ids[i:i + chunk_size]
+                ph = ','.join(['%s'] * len(chunk))
+                cur.execute(
+                    f"""
+                    SELECT variant_id, TRIM(MIN(COALESCE(platform_sku, ''))) AS platform_sku_hint
+                    FROM sales_products
+                    WHERE variant_id IN ({ph})
+                    GROUP BY variant_id
+                    """,
+                    tuple(chunk),
+                )
+                for row in cur.fetchall() or []:
+                    vid = self._parse_int(row.get('variant_id'))
+                    if vid:
+                        out[vid] = (row.get('platform_sku_hint') or '').strip()
+        return out
+
+    def _off_market_fetch_variant_link_rows_bulk(self, conn, owner_ids):
+        """批量读取 sales_variant_order_links 及规格标签字段。"""
+        oids = sorted({int(x) for x in (owner_ids or []) if self._parse_int(x)})
+        if not oids:
+            return {}
+        by_owner = {}
+        chunk_size = 120
+        with conn.cursor() as cur:
+            for i in range(0, len(oids), chunk_size):
+                chunk = oids[i:i + chunk_size]
+                ph = ','.join(['%s'] * len(chunk))
+                cur.execute(
+                    f"""
+                    SELECT
+                        svol.order_product_id,
+                        svol.variant_id AS variant_id,
+                        GREATEST(1, COALESCE(svol.quantity, 1)) AS link_qty,
+                        pf.sku_family AS sku_family,
+                        v.spec_name AS spec_name,
+                        fm.fabric_code AS fabric_code
+                    FROM sales_variant_order_links svol
+                    INNER JOIN sales_product_variants v ON v.id = svol.variant_id
+                    LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                    LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id
+                    WHERE svol.order_product_id IN ({ph})
+                    ORDER BY svol.order_product_id ASC, svol.variant_id ASC
+                    """,
+                    tuple(chunk),
+                )
+                for row in cur.fetchall() or []:
+                    oid = self._parse_int(row.get('order_product_id'))
+                    if not oid:
+                        continue
+                    by_owner.setdefault(oid, []).append(row)
+        return by_owner
+
+    def _off_market_format_variant_link_change_row(self, row, owner_sku, target_items, target_plan_name):
+        link_qty = max(1, self._parse_int(row.get('link_qty')) or 1)
         owner_sku = (owner_sku or '').strip()
         target_plan_name = (target_plan_name or '').strip()
-        items_map = self._off_market_load_plan_items_bulk(conn, [tid])
-        target_items = items_map.get(tid, [])
+        old_txt = f"{owner_sku}×{link_qty}"
+        new_txt = self._off_market_format_plan_qty(target_items, link_qty)
+        fam = (row.get('sku_family') or '').strip()
+        spec = (row.get('spec_name') or '').strip()
+        fab = (row.get('fabric_code') or '').strip()
+        label = ' '.join(x for x in (fam, spec, fab) if x).strip() or '-'
+        platform_sku = (row.get('platform_sku_hint') or '').strip()
+        return {
+            'variant_id': self._parse_int(row.get('variant_id')),
+            'platform_sku': platform_sku,
+            'variant_label': label,
+            'old_binding': old_txt,
+            'new_binding': f"{target_plan_name}：{new_txt}" if target_plan_name else new_txt,
+        }
+
+    def _off_market_eligible_target_plans_bulk(self, conn, owner_ids):
+        """owner_order_product_id -> 首个「全部在市」替代方案（id/plan_name）。"""
+        oids = sorted({int(x) for x in (owner_ids or []) if self._parse_int(x)})
+        if not oids:
+            return {}
+        out = {}
+        chunk_size = 120
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT
-                    svol.variant_id AS variant_id,
-                    GREATEST(1, COALESCE(svol.quantity, 1)) AS link_qty,
-                    pf.sku_family AS sku_family,
-                    v.spec_name AS spec_name,
-                    fm.fabric_code AS fabric_code,
-                    (
-                        SELECT TRIM(MIN(COALESCE(sp2.platform_sku, '')))
-                        FROM sales_products sp2
-                        WHERE sp2.variant_id = svol.variant_id
-                    ) AS platform_sku_hint
-                FROM sales_variant_order_links svol
-                INNER JOIN sales_product_variants v ON v.id = svol.variant_id
-                LEFT JOIN product_families pf ON pf.id = v.sku_family_id
-                LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id
-                WHERE svol.order_product_id = %s
-                ORDER BY svol.variant_id ASC
-                LIMIT %s
-                """,
-                (oid, limit),
-            )
-            link_rows = cur.fetchall() or []
-        out = []
-        for r in link_rows or []:
-            link_qty = max(1, self._parse_int(r.get('link_qty')) or 1)
-            old_txt = f"{owner_sku}×{link_qty}"
-            new_txt = self._off_market_format_plan_qty(target_items, link_qty)
-            fam = (r.get('sku_family') or '').strip()
-            spec = (r.get('spec_name') or '').strip()
-            fab = (r.get('fabric_code') or '').strip()
-            label = ' '.join(x for x in (fam, spec, fab) if x).strip() or '-'
-            platform_sku = (r.get('platform_sku_hint') or '').strip()
-            out.append({
-                'variant_id': self._parse_int(r.get('variant_id')),
-                'platform_sku': platform_sku,
-                'variant_label': label,
-                'old_binding': old_txt,
-                'new_binding': f"{target_plan_name}：{new_txt}" if target_plan_name else new_txt,
-            })
+            for i in range(0, len(oids), chunk_size):
+                chunk = oids[i:i + chunk_size]
+                ph = ','.join(['%s'] * len(chunk))
+                cur.execute(
+                    f"""
+                    SELECT ops.order_product_id, ops.id, ops.plan_name
+                    FROM order_product_shipping_plans ops
+                    WHERE ops.order_product_id IN ({ph})
+                      AND EXISTS (
+                          SELECT 1 FROM order_product_shipping_plan_items i
+                          WHERE i.shipping_plan_id = ops.id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM order_product_shipping_plan_items i
+                          JOIN order_products sop ON sop.id = i.substitute_order_product_id
+                          WHERE i.shipping_plan_id = ops.id
+                            AND (
+                                COALESCE(sop.is_on_market, 0) = 0
+                                OR i.substitute_order_product_id = ops.order_product_id
+                            )
+                      )
+                    ORDER BY ops.order_product_id ASC, ops.id ASC
+                    """,
+                    tuple(chunk),
+                )
+                for row in cur.fetchall() or []:
+                    oid = self._parse_int(row.get('order_product_id'))
+                    if not oid or oid in out:
+                        continue
+                    out[oid] = {
+                        'id': self._parse_int(row.get('id')),
+                        'plan_name': (row.get('plan_name') or '').strip(),
+                    }
         return out
+
+    def _off_market_count_pending_variant_links_bulk(self, conn, owner_ids):
+        oids = sorted({int(x) for x in (owner_ids or []) if self._parse_int(x)})
+        if not oids:
+            return {}
+        out = {oid: 0 for oid in oids}
+        chunk_size = 200
+        with conn.cursor() as cur:
+            for i in range(0, len(oids), chunk_size):
+                chunk = oids[i:i + chunk_size]
+                ph = ','.join(['%s'] * len(chunk))
+                cur.execute(
+                    f"""
+                    SELECT order_product_id, COUNT(*) AS c
+                    FROM sales_variant_order_links
+                    WHERE order_product_id IN ({ph})
+                    GROUP BY order_product_id
+                    """,
+                    tuple(chunk),
+                )
+                for row in cur.fetchall() or []:
+                    oid = self._parse_int(row.get('order_product_id'))
+                    if oid in out:
+                        out[oid] = int(row.get('c') or 0)
+        return out
+
+    def _off_market_list_variant_link_changes_bulk(self, conn, entries, limit_per_owner=400):
+        """批量构建 sales_sku_changes；entries 含 owner_id/owner_sku/target_plan_id/target_plan_name。"""
+        entries = [e for e in (entries or []) if self._parse_int(e.get('owner_id')) and self._parse_int(e.get('target_plan_id'))]
+        if not entries:
+            return {}
+        limit_per_owner = max(1, min(int(limit_per_owner or 400), 800))
+        owner_ids = sorted({int(e['owner_id']) for e in entries})
+        plan_ids = sorted({int(e['target_plan_id']) for e in entries})
+        entry_by_owner = {int(e['owner_id']): e for e in entries}
+        items_map = self._off_market_load_plan_items_bulk(conn, plan_ids)
+        links_by_owner = self._off_market_fetch_variant_link_rows_bulk(conn, owner_ids)
+        variant_ids = []
+        for rows in links_by_owner.values():
+            for r in rows:
+                vid = self._parse_int(r.get('variant_id'))
+                if vid:
+                    variant_ids.append(vid)
+        sku_hints = self._off_market_fetch_platform_sku_hints_bulk(conn, variant_ids)
+        out = {}
+        for oid in owner_ids:
+            ent = entry_by_owner.get(oid) or {}
+            tid = self._parse_int(ent.get('target_plan_id'))
+            target_items = items_map.get(tid, [])
+            owner_sku = (ent.get('owner_sku') or '').strip()
+            target_plan_name = (ent.get('target_plan_name') or '').strip()
+            changes = []
+            for r in (links_by_owner.get(oid) or [])[:limit_per_owner]:
+                vid = self._parse_int(r.get('variant_id'))
+                row = dict(r)
+                row['platform_sku_hint'] = sku_hints.get(vid, '')
+                changes.append(self._off_market_format_variant_link_change_row(
+                    row, owner_sku, target_items, target_plan_name,
+                ))
+            out[oid] = changes
+        return out
+
+    def _off_market_list_variant_link_changes(self, conn, owner_id, owner_sku, target_plan_id, target_plan_name, limit=400):
+        """各销售规格（含平台 SKU 提示）对本下单 SKU 的绑定将如何按方案改写。"""
+        return (self._off_market_list_variant_link_changes_bulk(
+            conn,
+            [{
+                'owner_id': owner_id,
+                'owner_sku': owner_sku,
+                'target_plan_id': target_plan_id,
+                'target_plan_name': target_plan_name,
+            }],
+            limit_per_owner=limit,
+        ).get(self._parse_int(owner_id)) or [])
 
     def _off_market_apply_ship_plan_migrate(self, conn, owner_id, target_plan_id):
         """按目标方案改写 sales_variant_order_links；返回 removed / upserted 计数。"""
@@ -803,6 +947,7 @@ class OrderManagementMixin:
             out_items = []
             not_found = []
             skipped_on_market = []
+            off_market_ids = []
             placeholders = ','.join(['%s'] * len(ids))
             with self._get_db_connection() as conn:
                 op_map = {}
@@ -824,9 +969,32 @@ class OrderManagementMixin:
                             'sku': (row.get('sku') or '').strip(),
                         })
                         continue
-                    targets = self._off_market_eligible_target_plans(conn, oid)
+                    off_market_ids.append(oid)
+
+                plans_by_owner = self._off_market_eligible_target_plans_bulk(conn, off_market_ids)
+                link_counts = self._off_market_count_pending_variant_links_bulk(conn, off_market_ids)
+
+                bulk_entries = []
+                for oid in off_market_ids:
+                    row = op_map.get(oid) or {}
+                    plan = plans_by_owner.get(oid)
+                    if not plan or not self._parse_int(plan.get('id')):
+                        continue
+                    bulk_entries.append({
+                        'owner_id': oid,
+                        'owner_sku': (row.get('sku') or '').strip(),
+                        'target_plan_id': self._parse_int(plan.get('id')),
+                        'target_plan_name': (plan.get('plan_name') or '').strip(),
+                    })
+                changes_by_owner = self._off_market_list_variant_link_changes_bulk(
+                    conn, bulk_entries, limit_per_owner=400,
+                )
+
+                for oid in off_market_ids:
+                    row = op_map.get(oid) or {}
                     sku = (row.get('sku') or '').strip()
-                    if not targets:
+                    plan = plans_by_owner.get(oid)
+                    if not plan or not self._parse_int(plan.get('id')):
                         out_items.append({
                             'order_product_id': oid,
                             'sku': sku,
@@ -839,12 +1007,9 @@ class OrderManagementMixin:
                             'sales_sku_changes': [],
                         })
                         continue
-                    tid = self._parse_int(targets[0].get('id'))
-                    tname = (targets[0].get('plan_name') or '').strip()
-                    link_cnt = self._off_market_count_pending_variant_links(conn, oid)
-                    sales_changes = self._off_market_list_variant_link_changes(
-                        conn, oid, sku, tid, tname, limit=400,
-                    )
+                    tid = self._parse_int(plan.get('id'))
+                    tname = (plan.get('plan_name') or '').strip()
+                    link_cnt = int(link_counts.get(oid) or 0)
                     out_items.append({
                         'order_product_id': oid,
                         'sku': sku,
@@ -854,7 +1019,7 @@ class OrderManagementMixin:
                         'pending_platform_rows': link_cnt,
                         'pending_shipment_rows': 0,
                         'pending_variant_link_rows': link_cnt,
-                        'sales_sku_changes': sales_changes,
+                        'sales_sku_changes': changes_by_owner.get(oid) or [],
                     })
             return self.send_json({
                 'status': 'success',

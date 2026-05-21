@@ -731,6 +731,8 @@
         if(checkTextEl) checkTextEl.textContent = checkText;
         if(checkRow) checkRow.style.display = requireCheck ? '' : 'none';
         if(checkInput) checkInput.checked = false;
+        if(requireCheck) modal.classList.add('app-confirm-modal--danger');
+        else modal.classList.remove('app-confirm-modal--danger');
 
         // rebuild extra buttons each time to avoid stale handlers
         const extraCreated = [];
@@ -762,6 +764,7 @@
 
         const cleanup = () => {
             modal.classList.remove('active');
+            modal.classList.remove('app-confirm-modal--danger');
             if(confirmBtn) confirmBtn.removeEventListener('click', onConfirm);
             if(cancelBtn) cancelBtn.removeEventListener('click', onCancel);
             if(checkInput) checkInput.removeEventListener('change', updateConfirmState);
@@ -837,6 +840,26 @@
                 onClose: (result) => resolve(result)
             }));
         });
+    }
+
+    /**
+     * 解除全部图片关联并移入「上架资源」/回收站。须先勾选确认框再点确认。
+     * @returns {Promise<boolean>}
+     */
+    function confirmUnlinkAllBindingsMoveToRecycleAsync(options) {
+        const opt = options && typeof options === 'object' ? options : {};
+        const message = String(opt.message || '').trim()
+            || '将解除该图片与面料、销售规格、下单产品的全部关联。\n\n解除全部关联后，若无其他引用，图片文件将移入「上架资源」/回收站，且无法从回收站自动还原到原路径。';
+        const checkText = String(opt.confirmCheckText || '').trim()
+            || '我已知晓：解除全部关联将把图片移入回收站';
+        return showAppConfirmAsync({
+            title: String(opt.title || '解除全部关联').trim() || '解除全部关联',
+            message,
+            confirmText: String(opt.confirmText || '确认解除并移入回收站').trim() || '确认解除并移入回收站',
+            cancelText: String(opt.cancelText || '取消').trim() || '取消',
+            requireConfirmCheck: true,
+            confirmCheckText: checkText,
+        }).then((result) => result === true);
     }
 
     function ensureHelpDotTooltip(){
@@ -6126,6 +6149,7 @@
         };
         window.showAppConfirm = showAppConfirm;
         window.showAppConfirmAsync = showAppConfirmAsync;
+        window.confirmUnlinkAllBindingsMoveToRecycleAsync = confirmUnlinkAllBindingsMoveToRecycleAsync;
 
         if(typeof window.onManagedTableBatchDownload !== 'function'){
             window.onManagedTableBatchDownload = function(ids, table, state){

@@ -2722,12 +2722,11 @@
             const legacyBasename = (!it && rowKey.startsWith('n:')) ? rowKey.slice(2) : '';
             const displayName = it ? String(it.image_name || '').trim() : (legacyBasename || rowKey);
             if (!editId || !rowKey) return;
-            const ok = window.showAppConfirmAsync
-                ? await window.showAppConfirmAsync({
+            const ok = window.confirmUnlinkAllBindingsMoveToRecycleAsync
+                ? await window.confirmUnlinkAllBindingsMoveToRecycleAsync({
                     title: '删除确认',
                     message: `确认删除图片：${displayName}？\n若该图片仍被其他面料或规格引用，将仅解除当前关联，不会移动/删除磁盘文件。`,
                     confirmText: '确认删除',
-                    requireConfirmCheck: true,
                     confirmCheckText: '我已知晓：当图片不再被任何面料/规格引用时，系统会删除数据库记录，并将原文件移入『上架资源』/回收站（用于备份，不是应用内可访问路径）'
                 })
                 : false;
