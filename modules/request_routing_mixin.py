@@ -265,6 +265,7 @@ API_ROUTE_MAP = {
     '/api/aplus-version-layout': ('method', 'handle_aplus_version_layout_api'),
     '/api/aplus-upload': ('start', 'handle_aplus_upload_api'),
     '/api/go-play': ('method', 'handle_go_play_api'),
+    '/api/audit-log': ('method', 'handle_audit_log_api'),
 }
 
 
@@ -311,6 +312,11 @@ class RequestRoutingMixin:
         user_id = self._get_session_user(environ)
         if not user_id:
             return self.send_json({'status': 'error', 'message': '未登录'}, start_response)
+        if path == '/api/audit-log':
+            is_super = getattr(self, '_is_super_admin_user', None)
+            if not callable(is_super) or not is_super(user_id):
+                return self.send_json({'status': 'error', 'message': '仅超级管理员（ID=1）可查看审计日志'}, start_response)
+            return None
         # 规格主图管理（gallery）与销售产品管理共用主图 API，任一模块权限即可
         dual_access = {
             # 上架资源缩略图：多模块列表/弹窗内嵌 <img src="/api/image-preview">，浏览器请求不带「当前页」信息，
@@ -365,6 +371,9 @@ class RequestRoutingMixin:
                 return [b'']
             if not self._user_has_page_access(user_id, 'home'):
                 return self.send_error(403, '无权限访问首页', start_response)
+            log_page = getattr(self, '_audit_try_log_page_access', None)
+            if callable(log_page):
+                log_page(environ, user_id, path, 'home')
             return self.serve_file('templates/index.html', 'text/html', start_response)
 
         if path == '/login' or path == '/login.html':

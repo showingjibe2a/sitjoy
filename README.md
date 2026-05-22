@@ -134,6 +134,13 @@ python app.py
 | 页面 500 / 字段缺失 | 确认是否已执行对应 `scripts/sql` 迁移 |
 | 围棋状态不同步 | 确认多 worker 共享同一房间数据目录；重启服务 |
 
+## 审计日志（超级管理员）
+
+- **表：** `access_logs`（页面访问）、`operation_logs`（写 API 操作）；迁移脚本 `scripts/sql/20260522_01_audit_logs.sql`
+- **记录：** 登录用户访问业务页面；`POST`/`PUT`/`PATCH`/`DELETE` 的 `/api/*`（排除 auth、围棋、审计接口本身）；密码等字段脱敏
+- **查看：** 仅 **用户 ID=1** 在首页「员工账号管理」下方「系统审计日志」中搜索、分页
+- **清理：** 同上权限，可按天数删除过期记录
+
 ## 开发说明
 
 - 新页面：在 `request_routing_mixin.py` 注册路由与 API，在 `app.py` 的 `label_map` / `PAGE_PERMISSION_GROUPS` 中加入权限与菜单项

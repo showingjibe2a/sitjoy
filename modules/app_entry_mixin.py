@@ -20,7 +20,12 @@ class AppEntryMixin:
         try:
             path = self._normalize_request_path(environ.get('PATH_INFO'))
             environ['PATH_INFO'] = path
-            method = environ['REQUEST_METHOD']
+            method = (environ.get('REQUEST_METHOD') or 'GET').upper()
+            environ['REQUEST_METHOD'] = method
+
+            cache_body = getattr(self, '_audit_cache_request_body', None)
+            if callable(cache_body):
+                cache_body(environ, path, method)
 
             permission_result = self._validate_api_permission(path, environ, start_response)
             if permission_result is not None:
@@ -32,6 +37,9 @@ class AppEntryMixin:
 
             api_result = self._dispatch_api_request(path, environ, method, start_response)
             if api_result is not None:
+                log_op = getattr(self, '_audit_try_log_operation', None)
+                if callable(log_op):
+                    log_op(environ, path, method)
                 return api_result
 
             if path.startswith('/static/'):

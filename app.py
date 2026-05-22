@@ -10,6 +10,7 @@ import threading
 from modules.amazon_account_health_mixin import AmazonAccountHealthMixin
 from modules.amazon_ad_mixin import AmazonAdMixin
 from modules.app_entry_mixin import AppEntryMixin
+from modules.audit_log_mixin import AuditLogMixin
 from modules.auth_employee_mixin import AuthEmployeeMixin
 from modules.core_app_mixin import CoreAppMixin
 from modules.encoding_utils_mixin import EncodingUtilsMixin
@@ -46,6 +47,7 @@ if hasattr(sys.stderr, 'reconfigure'):
 class WSGIApp(
     AppEntryMixin,            # 启动入口逻辑
     RequestRoutingMixin,      # 路由分发逻辑
+    AuditLogMixin,            # 访问/操作审计日志
     PagePermissionMixin,      # 页面权限控制
     CoreAppMixin,             # 核心基础逻辑
     AuthEmployeeMixin,        # 员工权限认证

@@ -88,6 +88,10 @@ class PagePermissionMixin:
         if permission_key and not self._user_has_page_access(user_id, permission_key):
             start_response('302 Found', [('Location', '/')])
             return [b'']
+        page_path = self._normalize_request_path(environ.get('PATH_INFO'))
+        log_page = getattr(self, '_audit_try_log_page_access', None)
+        if callable(log_page):
+            log_page(environ, user_id, page_path, permission_key)
         return self.serve_file(template_path, 'text/html', start_response)
 
     def _get_user_factory_scope_ids(self, user_id):
