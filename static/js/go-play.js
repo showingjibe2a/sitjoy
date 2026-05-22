@@ -17,8 +17,15 @@
   let currentPlayer = BLACK;
   let gameStatus = '';
   const ROOM_STORAGE_KEY = 'sitjoy.go-play.room.v1';
-  let undoCount = 0;
-  let undoLimit = 20;
+  let pendingInfo = null;
+  let pendingForYou = false;
+  let youRequestedPending = false;
+  let winner = 0;
+  let endReason = '';
+  let blackName = '';
+  let whiteName = '';
+  let rematchYou = false;
+  let rematchOpponent = false;
   let watchActive = false;
   let watchAbort = false;
   let lastVersion = -1;
@@ -121,12 +128,136 @@
       board,
       currentPlayer,
       gameStatus,
-      undoCount,
-      undoLimit,
       lastMoveKey,
       lastMove: lastMoveX >= 0 ? { x: lastMoveX, y: lastMoveY } : null,
-      canPlay: gameStatus === 'playing' && yourColor && yourColor === currentPlayer,
+      canPlay: gameStatus === 'playing' && yourColor && yourColor === currentPlayer && !pendingInfo,
+      pending: pendingInfo,
+      pendingForYou,
+      youRequestedPending,
+      winner,
+      endReason,
+      blackName,
+      whiteName,
+      rematchYou,
+      rematchOpponent,
     };
+  }
+
+  function escHtml(text) {
+    const d = document.createElement('div');
+    d.textContent = String(text || '');
+    return d.innerHTML;
+  }
+
+  function overlayBtn(label, className, onClick) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = className;
+    b.textContent = label;
+    b.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onClick();
+    });
+    return b;
+  }
+
+  function respondPending(accept) {
+    if (!roomCode) return;
+    api('respond', { room_code: roomCode, accept: !!accept }).then((d) => {
+      if (!applyState(d)) toast((d && d.message) || '操作失败', true);
+      else if (accept) toast('已确认', false);
+      else toast('已拒绝', false);
+    }).catch((err) => toast(err.message || '网络错误', true));
+  }
+
+  function cancelPendingRequest() {
+    if (!roomCode) return;
+    api('cancel_request', { room_code: roomCode }).then((d) => {
+      if (!applyState(d)) toast((d && d.message) || '取消失败', true);
+    }).catch((err) => toast(err.message || '网络错误', true));
+  }
+
+  function voteRematch() {
+    if (!roomCode) return;
+    api('rematch', { room_code: roomCode }).then((d) => {
+      if (!applyState(d)) toast((d && d.message) || '操作失败', true);
+      else if (d && d.game_status === 'playing') toast('已重开对局', false);
+    }).catch((err) => toast(err.message || '网络错误', true));
+  }
+
+  function updateBoardOverlay(data) {
+    const overlay = $('goBoardOverlay');
+    const titleEl = $('goOverlayTitle');
+    const msgEl = $('goOverlayMsg');
+    const actionsEl = $('goOverlayActions');
+    if (!overlay || !titleEl || !msgEl || !actionsEl) return;
+
+    actionsEl.innerHTML = '';
+    titleEl.textContent = '';
+    msgEl.textContent = '';
+    let show = false;
+    const d = data || {};
+
+    if (pendingInfo && pendingInfo.type) {
+      const fromName = pendingInfo.from_name || colorName(pendingInfo.from_color);
+      if (pendingInfo.type === 'undo') {
+        if (pendingForYou) {
+          show = true;
+          titleEl.textContent = '悔棋请求';
+          msgEl.textContent = `${fromName} 请求撤销上一手，是否同意？`;
+          actionsEl.appendChild(overlayBtn('同意悔棋', 'btn-accent', () => respondPending(true)));
+          actionsEl.appendChild(overlayBtn('拒绝', 'btn-secondary', () => respondPending(false)));
+        } else if (youRequestedPending && !isPopup) {
+          show = true;
+          titleEl.textContent = '等待对方确认';
+          msgEl.textContent = '您已请求悔棋，等待对方同意…';
+          actionsEl.appendChild(overlayBtn('取消请求', 'btn-secondary', cancelPendingRequest));
+        }
+      } else if (pendingInfo.type === 'resign') {
+        if (pendingForYou) {
+          show = true;
+          titleEl.textContent = '认输确认';
+          msgEl.textContent = `${fromName} 请求认输并结束对局，是否确认？`;
+          actionsEl.appendChild(overlayBtn('确认认输', 'btn-accent', () => respondPending(true)));
+          actionsEl.appendChild(overlayBtn('拒绝', 'btn-secondary', () => respondPending(false)));
+        } else if (youRequestedPending && !isPopup) {
+          show = true;
+          titleEl.textContent = '等待对方确认';
+          msgEl.textContent = '您已请求认输，等待对方确认…';
+          actionsEl.appendChild(overlayBtn('取消请求', 'btn-secondary', cancelPendingRequest));
+        }
+      }
+    } else if (gameStatus === 'ended' && yourColor && !isPopup) {
+      show = true;
+      const w = Number(d.winner != null ? d.winner : winner);
+      const reason = String(d.end_reason || endReason || '').trim();
+      titleEl.textContent = '对局结果';
+      let html = '';
+      if (w) {
+        html += `<div class="go-play-board-dialog-result">${escHtml(colorName(w) + '胜')}</div>`;
+      }
+      if (reason) {
+        html += `<span>${escHtml(reason)}</span>`;
+      }
+      if (!html) {
+        html = '<span>对局结束</span>';
+      }
+      if (rematchYou && !rematchOpponent) {
+        html += '<p style="margin:0.35rem 0 0;font-size:0.8rem;color:#6b6560;">等待对方同意重开…</p>';
+      }
+      msgEl.innerHTML = html;
+      if (!rematchYou) {
+        actionsEl.appendChild(overlayBtn('同意重开', 'btn-accent', voteRematch));
+      }
+    }
+
+    overlay.classList.toggle('pm-u-hidden', !show);
+    if (show) {
+      overlay.removeAttribute('hidden');
+    } else {
+      overlay.setAttribute('hidden', '');
+    }
   }
 
   function applyLastMoveFromData(data) {
@@ -268,8 +399,15 @@
     board = data.board || [];
     currentPlayer = Number(data.current_player || BLACK);
     gameStatus = String(data.game_status || data.room_status || '');
-    undoCount = Number(data.undo_count || 0);
-    undoLimit = Number(data.undo_limit || 20);
+    pendingInfo = data.pending || null;
+    pendingForYou = !!data.pending_for_you;
+    youRequestedPending = !!data.you_requested_pending;
+    winner = Number(data.winner || 0);
+    endReason = String(data.end_reason || '');
+    blackName = String(data.black_name || '');
+    whiteName = String(data.white_name || '');
+    rematchYou = !!data.rematch_you;
+    rematchOpponent = !!data.rematch_opponent;
     lastVersion = Number(data.version || 0);
     applyLastMoveFromData(data);
 
@@ -288,7 +426,11 @@
         else turnText = `${colorName(w)}胜 — ${data.end_reason || ''}`;
       }
       if ($('goTurnLine')) $('goTurnLine').textContent = `状态：${turnText}`;
-      if ($('goUndoLine')) $('goUndoLine').textContent = `悔棋：${undoCount} / ${undoLimit}`;
+      if ($('goUndoLine')) {
+        $('goUndoLine').textContent = pendingInfo
+          ? (youRequestedPending ? '悔棋：等待对方确认' : (pendingForYou ? '悔棋：待您确认' : '悔棋需对方同意'))
+          : '悔棋需对方同意';
+      }
 
       const inRoom = !!roomCode;
       $('goRoomPanel')?.classList.toggle('pm-u-hidden', !inRoom);
@@ -298,9 +440,12 @@
         hintEl.classList.add('pm-u-hidden');
       }
 
-      const canPlay = gameStatus === 'playing' && yourColor && yourColor === currentPlayer;
-      if ($('goUndoBtn')) $('goUndoBtn').disabled = gameStatus !== 'playing' || undoCount >= undoLimit;
-      if ($('goResignBtn')) $('goResignBtn').disabled = gameStatus !== 'playing' || !yourColor;
+      const canPlay = gameStatus === 'playing' && yourColor && yourColor === currentPlayer && !pendingInfo;
+      const hasMoves = Number(data.moves_count || 0) > 0;
+      if ($('goUndoBtn')) {
+        $('goUndoBtn').disabled = gameStatus !== 'playing' || !yourColor || !hasMoves || !!pendingInfo;
+      }
+      if ($('goResignBtn')) $('goResignBtn').disabled = gameStatus !== 'playing' || !yourColor || !!pendingInfo;
       if ($('goPassBtn')) $('goPassBtn').disabled = !canPlay;
       if ($('goPopoutBtn')) $('goPopoutBtn').disabled = !roomCode;
 
@@ -308,6 +453,7 @@
     }
 
     renderBoard($('goBoard'));
+    updateBoardOverlay(data);
     updatePopupStatusBar(data);
     postStateToPopup();
     return true;
@@ -388,6 +534,10 @@
 
   function playMoveAt(x, y) {
     if (!roomCode) return;
+    if (pendingInfo) {
+      toast('有待确认的请求，请先处理', true);
+      return;
+    }
     if (gameStatus !== 'playing' || yourColor !== currentPlayer) {
       toast('尚未轮到您落子', true);
       return;
@@ -563,6 +713,13 @@
     roomCode = '';
     yourColor = 0;
     gameStatus = '';
+    pendingInfo = null;
+    pendingForYou = false;
+    youRequestedPending = false;
+    winner = 0;
+    endReason = '';
+    rematchYou = false;
+    rematchOpponent = false;
     lastMoveX = -1;
     lastMoveY = -1;
     lastMoveKey = '';
@@ -578,6 +735,7 @@
     }
     board = Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY));
     renderBoard($('goBoard'));
+    updateBoardOverlay({});
     try {
       const u = new URL(win.location.href);
       u.searchParams.delete('room');
@@ -669,18 +827,17 @@
 
     $('goUndoBtn')?.addEventListener('click', () => {
       if (!roomCode) return;
-      if (!win.confirm('确认悔棋一手？（本局最多 ' + undoLimit + ' 次）')) return;
       api('undo', { room_code: roomCode }).then((d) => {
-        if (!applyState(d)) toast((d && d.message) || '悔棋失败', true);
-        else toast('已悔棋', false);
+        if (!applyState(d)) toast((d && d.message) || '悔棋请求失败', true);
+        else toast('已向对方请求悔棋', false);
       }).catch((err) => toast(err.message || '网络错误', true));
     });
 
     $('goResignBtn')?.addEventListener('click', () => {
       if (!roomCode) return;
-      if (!win.confirm('确认认输？')) return;
       api('resign', { room_code: roomCode }).then((d) => {
-        if (!applyState(d)) toast((d && d.message) || '操作失败', true);
+        if (!applyState(d)) toast((d && d.message) || '认输请求失败', true);
+        else toast('已向对方请求认输', false);
       }).catch((err) => toast(err.message || '网络错误', true));
     });
 
@@ -700,6 +857,7 @@
     board = Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY));
     renderBoard(boardEl);
     bindBoardFrame(getBoardFrame(boardEl));
+    updateBoardOverlay({});
 
     document.title = '围棋棋盘';
 
@@ -726,8 +884,13 @@
         board = p.board || board;
         currentPlayer = p.currentPlayer || BLACK;
         gameStatus = p.gameStatus || '';
-        undoCount = p.undoCount || 0;
-        undoLimit = p.undoLimit || 20;
+        pendingInfo = p.pending || null;
+        pendingForYou = !!p.pendingForYou;
+        youRequestedPending = !!p.youRequestedPending;
+        winner = Number(p.winner || 0);
+        endReason = String(p.endReason || '');
+        rematchYou = !!p.rematchYou;
+        rematchOpponent = !!p.rematchOpponent;
         lastMoveKey = p.lastMoveKey || '';
         if (p.lastMove && Number.isFinite(Number(p.lastMove.x)) && Number.isFinite(Number(p.lastMove.y))) {
           lastMoveX = Number(p.lastMove.x);
@@ -737,6 +900,10 @@
           lastMoveY = -1;
         }
         renderBoard(boardEl);
+        updateBoardOverlay({
+          winner,
+          end_reason: endReason,
+        });
         updatePopupDocumentTitle({});
       }
     });
@@ -789,6 +956,7 @@
     bindMainMessageBridge();
     renderBoard($('goBoard'));
     bindBoardFrame(getBoardFrame($('goBoard')));
+    updateBoardOverlay({});
     tryAutoRejoin();
   });
 

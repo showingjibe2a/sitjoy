@@ -14,7 +14,7 @@
     <div class="container">
         <section class="hero" style="margin-bottom: 1rem;">
             <h2>围棋对弈</h2>
-            <p>19 路在线对弈：创建房间、分享房间号；支持提子、虚手、认输；每局最多悔棋 20 步。</p>
+            <p>19 路在线对弈：创建房间、分享房间号；支持提子、虚手；悔棋与认输需对方确认，终局后可双方同意重开。</p>
         </section>
 
         <section class="pm-layout go-play-layout-root">
@@ -38,7 +38,7 @@
                         <span>房间 <strong class="go-play-room-code" id="goRoomCode">------</strong></span>
                         <span id="goPlayersLine">黑：- ｜ 白：-</span>
                         <span id="goTurnLine">状态：-</span>
-                        <span id="goUndoLine">悔棋：0 / 20</span>
+                        <span id="goUndoLine">悔棋需对方同意</span>
                     </div>
                     <div class="pm-toolbar go-play-toolbar go-play-toolbar--room">
                         <div class="pm-toolbar-actions">
@@ -54,6 +54,9 @@
             </div>
 
             <div class="card pm-card go-play-board-card">
+                <div class="go-play-board-notices">
+                    <p class="go-play-window-placeholder pm-u-hidden" id="goWindowPlaceholder">棋盘已在独立窗口中打开，本页仍负责房间操作与同步；请保持本页不要关闭</p>
+                </div>
                 <div class="go-play-stage">
                     <div id="goBoardSlot" class="go-play-board-slot">
                     <div class="go-play-board-wrap go-play-board-wrap--inline" id="goInlineBoardWrap">
@@ -70,11 +73,19 @@
                                 </g>
                             </svg>
                             <div class="go-play-board" id="goBoard" aria-label="19路围棋棋盘"></div>
+                            <div class="go-play-board-overlay pm-u-hidden" id="goBoardOverlay" hidden aria-live="polite">
+                                <div class="go-play-board-dialog" role="dialog" aria-modal="true" aria-labelledby="goOverlayTitle">
+                                    <p class="go-play-board-dialog-title" id="goOverlayTitle"></p>
+                                    <p class="go-play-board-dialog-msg" id="goOverlayMsg"></p>
+                                    <div class="go-play-board-dialog-actions" id="goOverlayActions"></div>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <p class="go-play-window-placeholder pm-u-hidden" id="goWindowPlaceholder">棋盘已在独立窗口中打开，本页仍负责房间操作与同步；请保持本页不要关闭</p>
-                    <p class="go-play-hint go-play-board-sync-hint">在棋盘上点击落子；请保持对弈<strong>主页面</strong>窗口打开（主页面负责联网同步）。独立棋盘小窗仅显示棋盘，可拖动窗口边缘调整大小。</p>
                     </div>
+                </div>
+                <div class="go-play-board-footer-hints">
+                    <p class="go-play-hint go-play-board-sync-hint">在棋盘上点击落子；请保持对弈<strong>主页面</strong>窗口打开（主页面负责联网同步）。独立棋盘小窗仅显示棋盘，可拖动窗口边缘调整大小。</p>
                 </div>
             </div>
         </section>
