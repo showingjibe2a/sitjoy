@@ -1,5 +1,5 @@
 /**
- * 围棋对弈：主控页 + 棋盘浮动面板（将主棋盘移到固定层，非浏览器 Video PiP）
+ * 围棋对弈：主控页 + 棋盘独立窗口（window.open，postMessage 同步）
  */
 (function (global) {
   'use strict';
@@ -23,6 +23,8 @@
   let watchAbort = false;
   let lastVersion = -1;
   let lastMoveKey = '';
+  let lastMoveX = -1;
+  let lastMoveY = -1;
   const BOARD_POPUP_NAME = 'sitjoy_go_board_popup';
   let popupOpen = false;
   let popupMonitorTimer = null;
@@ -122,8 +124,24 @@
       undoCount,
       undoLimit,
       lastMoveKey,
+      lastMove: lastMoveX >= 0 ? { x: lastMoveX, y: lastMoveY } : null,
       canPlay: gameStatus === 'playing' && yourColor && yourColor === currentPlayer,
     };
+  }
+
+  function applyLastMoveFromData(data) {
+    const lm = data && data.last_move;
+    if (lm && Number.isFinite(Number(lm.x)) && Number.isFinite(Number(lm.y))) {
+      lastMoveX = Number(lm.x);
+      lastMoveY = Number(lm.y);
+      lastMoveKey = `${lastMoveX},${lastMoveY}`;
+      return;
+    }
+    if (!data || !Number(data.moves_count)) {
+      lastMoveX = -1;
+      lastMoveY = -1;
+      lastMoveKey = '';
+    }
   }
 
   let boardPopup = null;
@@ -193,7 +211,7 @@
     boardPopup = win.open(
       url,
       BOARD_POPUP_NAME,
-      'popup=yes,width=540,height=620,resizable=yes,scrollbars=no'
+      'popup=yes,width=520,height=540,resizable=yes,scrollbars=no'
     );
     if (!boardPopup) {
       toast('无法打开新窗口：请在浏览器地址栏允许本站「弹出式窗口」后重试', true);
@@ -241,6 +259,10 @@
 
   function applyState(data) {
     if (!data || data.status !== 'success') return false;
+    const ver = Number(data.version || 0);
+    if (lastVersion >= 0 && ver > 0 && ver < lastVersion) {
+      return false;
+    }
     roomCode = String(data.room_code || roomCode || '').toUpperCase();
     yourColor = Number(data.your_color || 0);
     board = data.board || [];
@@ -249,6 +271,7 @@
     undoCount = Number(data.undo_count || 0);
     undoLimit = Number(data.undo_limit || 20);
     lastVersion = Number(data.version || 0);
+    applyLastMoveFromData(data);
 
     if (!isPopup) {
       if ($('goRoomCode')) $('goRoomCode').textContent = roomCode || '------';
@@ -290,16 +313,29 @@
     return true;
   }
 
-  function updatePopupStatusBar(data) {
-    const bar = $('goPopupStatus');
-    if (!bar) return;
-    let turnText = '等待对手';
+  function popupTurnText(data) {
     if (gameStatus === 'playing') {
-      turnText = yourColor === currentPlayer ? `轮到你 · ${colorName(currentPlayer)}` : `对方 · ${colorName(currentPlayer)}`;
-    } else if (gameStatus === 'ended') {
-      turnText = data.end_reason || '对局结束';
+      return yourColor === currentPlayer
+        ? `轮到你 · ${colorName(currentPlayer)}`
+        : `对方 · ${colorName(currentPlayer)}`;
     }
-    bar.textContent = `房间 ${roomCode} ｜ ${turnText}`;
+    if (gameStatus === 'ended') {
+      return (data && data.end_reason) || '对局结束';
+    }
+    if (gameStatus === 'waiting') {
+      return '等待对手加入';
+    }
+    return '等待对手';
+  }
+
+  function updatePopupDocumentTitle(data) {
+    if (!isPopup || !roomCode) return;
+    const turnText = popupTurnText(data);
+    document.title = `围棋 ${roomCode} · ${turnText}`;
+  }
+
+  function updatePopupStatusBar(data) {
+    updatePopupDocumentTitle(data);
   }
 
   function getBoardFrame(el) {
@@ -331,19 +367,8 @@
     const frame = getBoardFrame(el);
     bindBoardFrame(frame);
     el.innerHTML = '';
-    let lastX = -1;
-    let lastY = -1;
-    if (Array.isArray(board) && board.length === SIZE) {
-      for (let y = 0; y < SIZE; y++) {
-        for (let x = 0; x < SIZE; x++) {
-          if (board[y][x]) {
-            lastX = x;
-            lastY = y;
-          }
-        }
-      }
-    }
-    lastMoveKey = `${lastX},${lastY}`;
+    const markX = lastMoveX;
+    const markY = lastMoveY;
 
     for (let y = 0; y < SIZE; y++) {
       for (let x = 0; x < SIZE; x++) {
@@ -353,7 +378,9 @@
         stone.className = 'go-play-stone ' + (v === BLACK ? 'go-play-stone--black' : 'go-play-stone--white');
         stone.style.setProperty('--gx', String(x));
         stone.style.setProperty('--gy', String(y));
-        if (x === lastX && y === lastY) stone.classList.add('go-play-stone--last');
+        if (markX >= 0 && markY >= 0 && x === markX && y === markY) {
+          stone.classList.add('go-play-stone--last');
+        }
         el.appendChild(stone);
       }
     }
@@ -437,6 +464,12 @@
       })
       .catch((err) => {
         if (watchAbort || (err && err.name === 'AbortError')) return;
+        const msg = String((err && err.message) || '');
+        if (msg.indexOf('不存在') >= 0 || msg.indexOf('不在该房间') >= 0) {
+          resetLocalRoomUi();
+          toast(msg.indexOf('不存在') >= 0 ? '房间已关闭' : msg, false);
+          return;
+        }
         if (!watchAbort && roomCode) {
           win.setTimeout(watchLoop, 1500);
         }
@@ -525,6 +558,65 @@
     });
   }
 
+  function resetLocalRoomUi() {
+    closeBoardPopup();
+    roomCode = '';
+    yourColor = 0;
+    gameStatus = '';
+    lastMoveX = -1;
+    lastMoveY = -1;
+    lastMoveKey = '';
+    lastVersion = -1;
+    persistRoomCode('');
+    stopWatch();
+    $('goRoomPanel')?.classList.add('pm-u-hidden');
+    $('goLobbyHint')?.classList.remove('pm-u-hidden');
+    if ($('goPopoutBtn')) $('goPopoutBtn').disabled = true;
+    if ($('goRoomHint')) {
+      $('goRoomHint').textContent = '';
+      $('goRoomHint').classList.add('pm-u-hidden');
+    }
+    board = Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY));
+    renderBoard($('goBoard'));
+    try {
+      const u = new URL(win.location.href);
+      u.searchParams.delete('room');
+      win.history.replaceState({}, '', u);
+    } catch (_) {}
+  }
+
+  function notifyServerLeave() {
+    const code = String(roomCode || '').trim().toUpperCase();
+    if (!code || yourColor !== WHITE) return;
+    const body = JSON.stringify({ action: 'leave', room_code: code });
+    const url = apiUrl('/api/go-play');
+    try {
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        credentials: 'include',
+        keepalive: true,
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
+  function leaveRoom() {
+    const code = String(roomCode || '').trim().toUpperCase();
+    if (!code) {
+      resetLocalRoomUi();
+      return Promise.resolve();
+    }
+    stopWatch();
+    return api('leave', { room_code: code }).then((d) => {
+      if (d && d.status !== 'success' && !(d && d.room_deleted)) {
+        toast((d && d.message) || '离开房间失败', true);
+      }
+    }).catch(() => {}).finally(() => {
+      resetLocalRoomUi();
+    });
+  }
+
   function bindMainUi() {
     $('goCreateBtn')?.addEventListener('click', () => {
       const btn = $('goCreateBtn');
@@ -593,26 +685,7 @@
     });
 
     $('goLeaveBtn')?.addEventListener('click', () => {
-      closeBoardPopup();
-      roomCode = '';
-      yourColor = 0;
-      gameStatus = '';
-      persistRoomCode('');
-      stopWatch();
-      $('goRoomPanel')?.classList.add('pm-u-hidden');
-      $('goLobbyHint')?.classList.remove('pm-u-hidden');
-      if ($('goPopoutBtn')) $('goPopoutBtn').disabled = true;
-      if ($('goRoomHint')) {
-        $('goRoomHint').textContent = '';
-        $('goRoomHint').classList.add('pm-u-hidden');
-      }
-      board = Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY));
-      renderBoard($('goBoard'));
-      try {
-        const u = new URL(win.location.href);
-        u.searchParams.delete('room');
-        win.history.replaceState({}, '', u);
-      } catch (_) {}
+      leaveRoom();
     });
 
     $('goPopoutBtn')?.addEventListener('click', (e) => {
@@ -628,9 +701,11 @@
     renderBoard(boardEl);
     bindBoardFrame(getBoardFrame(boardEl));
 
+    document.title = '围棋棋盘';
+
     const syncFromOpener = () => {
       if (!win.opener || win.opener.closed) {
-        if ($('goPopupStatus')) $('goPopupStatus').textContent = '主窗口已关闭，可关闭本窗口';
+        document.title = '围棋 — 主窗口已关闭';
         return;
       }
       try {
@@ -654,19 +729,15 @@
         undoCount = p.undoCount || 0;
         undoLimit = p.undoLimit || 20;
         lastMoveKey = p.lastMoveKey || '';
-        renderBoard(boardEl);
-        updatePopupStatusBar({ end_reason: $('goPopupStatus')?.textContent });
-        if ($('goPopupStatus')) {
-          let turnText = '同步中…';
-          if (gameStatus === 'playing') {
-            turnText = yourColor === currentPlayer ? `轮到你 · ${colorName(currentPlayer)}` : `对方 · ${colorName(currentPlayer)}`;
-          } else if (gameStatus === 'ended') {
-            turnText = '对局结束';
-          } else if (gameStatus === 'waiting') {
-            turnText = '等待对手加入';
-          }
-          $('goPopupStatus').textContent = `房间 ${roomCode} ｜ ${turnText}`;
+        if (p.lastMove && Number.isFinite(Number(p.lastMove.x)) && Number.isFinite(Number(p.lastMove.y))) {
+          lastMoveX = Number(p.lastMove.x);
+          lastMoveY = Number(p.lastMove.y);
+        } else {
+          lastMoveX = -1;
+          lastMoveY = -1;
         }
+        renderBoard(boardEl);
+        updatePopupDocumentTitle({});
       }
     });
 
@@ -722,7 +793,8 @@
   });
 
   if (!isPopup) {
-    win.addEventListener('beforeunload', () => {
+    win.addEventListener('pagehide', () => {
+      notifyServerLeave();
       stopWatch();
       closeBoardPopup();
     });

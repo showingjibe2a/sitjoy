@@ -17,7 +17,7 @@ GO_MAX_UNDO = 20
 GO_ROOM_TTL_SEC = 24 * 3600
 GO_WAIT_TIMEOUT_SEC = 8
 GO_WAIT_POLL_SEC = 0.3
-GO_CLEANUP_ACTIONS = frozenset({'create', 'join', 'state', 'move', 'pass', 'undo', 'resign'})
+GO_CLEANUP_ACTIONS = frozenset({'create', 'join', 'leave', 'state', 'move', 'pass', 'undo', 'resign'})
 
 _go_file_lock = threading.RLock()
 _go_waiters = {}
@@ -285,13 +285,19 @@ class GoPlayMixin:
         elif uid and uid == self._parse_int(room.get('white_user_id')):
             color = GO_WHITE
         board = self._go_replay_board(room.get('moves'))
+        moves = room.get('moves') or []
+        last_move = None
+        if moves:
+            m = moves[-1]
+            last_move = {'x': int(m['x']), 'y': int(m['y'])}
         return {
             'room_code': room.get('code'),
             'game_status': room.get('status'),
             'your_color': color,
             'current_player': room.get('current_player'),
             'board': board,
-            'moves_count': len(room.get('moves') or []),
+            'last_move': last_move,
+            'moves_count': len(moves),
             'undo_count': int(room.get('undo_count') or 0),
             'undo_limit': GO_MAX_UNDO,
             'black_name': room.get('black_name') or '',
@@ -341,6 +347,8 @@ class GoPlayMixin:
             return self._go_action_create(user_id, start_response)
         if action == 'join':
             return self._go_action_join(user_id, data, start_response)
+        if action == 'leave':
+            return self._go_action_leave(user_id, data, start_response)
         if action == 'state':
             return self._go_action_state(user_id, query, start_response)
         if action == 'wait':
@@ -401,6 +409,32 @@ class GoPlayMixin:
                 room['status'] = 'playing'
                 room['version'] = int(room.get('version') or 0) + 1
                 self._go_save_room(room)
+        out = self._go_room_for_user(room, user_id)
+        out['status'] = 'success'
+        return self.send_json(out, start_response)
+
+    def _go_action_leave(self, user_id, data, start_response):
+        """离开房间：白方离开则回到等待；房主离开则删除房间文件。"""
+        code = str(data.get('room_code') or '').strip().upper()
+        with self._go_room_store(code) as (room, err):
+            if err:
+                return self.send_json({'status': 'error', 'message': err}, start_response)
+            uid = int(user_id)
+            bu = self._parse_int(room.get('black_user_id'))
+            wu = self._parse_int(room.get('white_user_id'))
+            if uid == wu:
+                room['white_user_id'] = None
+                room['white_name'] = None
+                if room.get('status') == 'playing':
+                    room['status'] = 'waiting'
+                room['pass_streak'] = 0
+                room['version'] = int(room.get('version') or 0) + 1
+                self._go_save_room(room)
+            elif uid == bu:
+                self._go_delete_room_file(code)
+                return self.send_json({'status': 'success', 'room_deleted': True}, start_response)
+            else:
+                return self.send_json({'status': 'error', 'message': '您不在该房间中'}, start_response)
         out = self._go_room_for_user(room, user_id)
         out['status'] = 'success'
         return self.send_json(out, start_response)
