@@ -15,10 +15,11 @@ GO_BLACK = 1
 GO_WHITE = 2
 GO_MAX_UNDO = 20
 GO_ROOM_TTL_SEC = 24 * 3600
-GO_WAIT_TIMEOUT_SEC = 25
-GO_WAIT_POLL_SEC = 0.35
+GO_WAIT_TIMEOUT_SEC = 8
+GO_WAIT_POLL_SEC = 0.3
+GO_CLEANUP_ACTIONS = frozenset({'create', 'join', 'state', 'move', 'pass', 'undo', 'resign'})
 
-_go_file_lock = threading.Lock()
+_go_file_lock = threading.RLock()
 _go_waiters = {}
 _go_waiters_lock = threading.Lock()
 
@@ -105,27 +106,38 @@ class GoPlayMixin:
             return None
         return None
 
-    def _go_write_room_file(self, room):
+    def _go_write_room_file_unlocked(self, room):
         code = str(room.get('code') or '').strip().upper()
         if not code:
             return
         path = self._go_room_path(code)
         tmp = path + '.tmp'
         payload = json.dumps(room, ensure_ascii=False, separators=(',', ':'))
-        with _go_file_lock:
-            with open(tmp, 'w', encoding='utf-8') as fh:
-                self._go_flock(fh, True)
+        with open(tmp, 'w', encoding='utf-8') as fh:
+            self._go_flock(fh, True)
+            try:
+                fh.write(payload)
+                fh.flush()
                 try:
-                    fh.write(payload)
-                    fh.flush()
-                    try:
-                        os.fsync(fh.fileno())
-                    except Exception:
-                        pass
-                finally:
-                    self._go_funlock(fh)
+                    os.fsync(fh.fileno())
+                except Exception:
+                    pass
+            finally:
+                self._go_funlock(fh)
+        try:
             os.replace(tmp, path)
+        except Exception:
+            try:
+                if os.path.isfile(path):
+                    os.remove(path)
+            except Exception:
+                pass
+            os.rename(tmp, path)
         _go_signal_waiters(code)
+
+    def _go_write_room_file(self, room):
+        with _go_file_lock:
+            self._go_write_room_file_unlocked(room)
 
     def _go_delete_room_file(self, code):
         path = self._go_room_path(code)
@@ -138,19 +150,21 @@ class GoPlayMixin:
 
     @contextmanager
     def _go_room_store(self, code, create=False):
+        """读-改-写；持锁仅包裹磁盘读写，不包裹 yield 内业务逻辑（避免阻塞 create/wait）。"""
         code = str(code or '').strip().upper()
         with _go_file_lock:
             room = self._go_read_room_file(code) if code else None
             if room is None and not create:
                 yield None, '房间不存在或已过期'
                 return
-            mutated = False
-            try:
-                yield room, None
-            except _GoRoomMutated:
-                mutated = True
-            if mutated and room is not None:
-                self._go_write_room_file(room)
+        mutated = False
+        try:
+            yield room, None
+        except _GoRoomMutated:
+            mutated = True
+        if mutated and room is not None:
+            with _go_file_lock:
+                self._go_write_room_file_unlocked(room)
 
     def _go_empty_board(self):
         return [[GO_EMPTY for _ in range(GO_BOARD_SIZE)] for _ in range(GO_BOARD_SIZE)]
@@ -321,7 +335,8 @@ class GoPlayMixin:
         else:
             action = str(data.get('action') or '').strip().lower()
 
-        self._go_cleanup_rooms()
+        if action in GO_CLEANUP_ACTIONS:
+            self._go_cleanup_rooms()
         if action == 'create':
             return self._go_action_create(user_id, start_response)
         if action == 'join':
@@ -359,7 +374,10 @@ class GoPlayMixin:
             'pass_streak': 0,
             'version': 1,
         }
-        self._go_write_room_file(room)
+        try:
+            self._go_write_room_file(room)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': f'创建房间失败：{e}'}, start_response)
         out = self._go_room_for_user(room, user_id)
         out['status'] = 'success'
         return self.send_json(out, start_response)

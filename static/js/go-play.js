@@ -1,7 +1,9 @@
 /**
- * 围棋对弈：主控页 + 棋盘画中画（页面内浮动，置顶可固定）
+ * 围棋对弈：主控页 + 棋盘浮动面板（将主棋盘移到固定层，非浏览器 Video PiP）
  */
 (function (global) {
+  'use strict';
+  const win = global || (typeof window !== 'undefined' ? window : typeof globalThis !== 'undefined' ? globalThis : {});
   const SIZE = 19;
   const BLACK = 1;
   const WHITE = 2;
@@ -21,17 +23,36 @@
   let watchAbort = false;
   let lastVersion = -1;
   let lastMoveKey = '';
-  let pipOpen = false;
-  let pipPinned = true;
-  let pipDrag = null;
+  const BOARD_POPUP_NAME = 'sitjoy_go_board_popup';
+  let popupOpen = false;
+  let popupMonitorTimer = null;
+  let watchAbortCtrl = null;
 
   const $ = (id) => document.getElementById(id);
 
+  function getAppBasePath() {
+    if (win.SITJOY_BASE_PATH) {
+      return String(win.SITJOY_BASE_PATH).replace(/\/$/, '');
+    }
+    const path = win.location.pathname || '/';
+    const m = path.match(/^(.*)\/widgets\/go-play\/?/i);
+    if (m && m[1]) return m[1];
+    return '';
+  }
+
   function resolveAppUrl(pathAndQuery) {
     const raw = String(pathAndQuery || '').trim();
-    const rel = raw.startsWith('/') ? '..' + raw : raw;
+    const qIdx = raw.indexOf('?');
+    const pathPart = qIdx >= 0 ? raw.slice(0, qIdx) : raw;
+    const queryPart = qIdx >= 0 ? raw.slice(qIdx) : '';
+    const normalized = pathPart.startsWith('/') ? pathPart : '/' + pathPart;
+    const base = getAppBasePath();
+    if (base) {
+      return base + normalized + queryPart;
+    }
+    const rel = normalized.startsWith('/') ? '..' + normalized + queryPart : raw;
     try {
-      return new URL(rel, global.location.href).href;
+      return new URL(rel, win.location.href).href;
     } catch (e) {
       return raw;
     }
@@ -46,7 +67,8 @@
   }
 
   function fetchJson(url, options) {
-    return fetch(url, Object.assign({ credentials: 'include' }, options || {})).then(async (r) => {
+    const opts = Object.assign({ credentials: 'include' }, options || {});
+    return fetch(url, opts).then(async (r) => {
       const text = await r.text();
       let data = null;
       try {
@@ -55,28 +77,32 @@
         const snippet = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 80);
         throw new Error(r.status === 404 ? '接口未找到(404)，请重启应用服务后重试' : (snippet || `HTTP ${r.status}`));
       }
-      if (!r.ok && data && data.status !== 'success') {
-        throw new Error(data.message || `HTTP ${r.status}`);
+      if (data && data.status === 'error') {
+        throw new Error(data.message || '请求失败');
+      }
+      if (!r.ok) {
+        throw new Error((data && data.message) || `HTTP ${r.status}`);
       }
       return data;
     });
   }
 
-  function api(action, payload, method) {
+  function api(action, payload, method, signal) {
     const m = method || 'POST';
+    const fetchOpts = signal ? { signal } : {};
     if (m === 'GET') {
       const qs = new URLSearchParams(Object.assign({ action }, payload || {}));
-      return fetchJson(apiUrl('/api/go-play?' + qs.toString()));
+      return fetchJson(apiUrl('/api/go-play?' + qs.toString()), fetchOpts);
     }
-    return fetchJson(apiUrl('/api/go-play'), {
+    return fetchJson(apiUrl('/api/go-play'), Object.assign({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(Object.assign({ action }, payload || {})),
-    });
+    }, fetchOpts));
   }
 
   function toast(msg, isError) {
-    if (global.showAppToast) global.showAppToast(msg, !!isError, isError ? 6000 : 3500);
+    if (win.showAppToast) win.showAppToast(msg, !!isError, isError ? 6000 : 3500);
     else alert(msg);
   }
 
@@ -100,27 +126,99 @@
     };
   }
 
+  let boardPopup = null;
+
   function postStateToPopup() {
-    syncPipBoard();
     if (!boardPopup || boardPopup.closed) return;
     try {
-      boardPopup.postMessage({ type: 'go-play-state', payload: snapshotState() }, global.location.origin);
+      boardPopup.postMessage({ type: 'go-play-state', payload: snapshotState() }, win.location.origin);
     } catch (_) {}
   }
-
-  let boardPopup = null;
 
   function updatePopoutBtnUi() {
     const btn = $('goPopoutBtn');
     if (!btn) return;
-    if (pipOpen) {
-      btn.textContent = '关闭画中画';
+    const alive = popupOpen && boardPopup && !boardPopup.closed;
+    if (alive) {
+      btn.textContent = '关闭棋盘窗口';
       btn.classList.add('go-play-popout-btn--active');
-      btn.title = '关闭页面右上角棋盘画中画';
+      btn.title = '关闭已打开的棋盘独立窗口';
     } else {
-      btn.textContent = '棋盘画中画';
+      btn.textContent = '棋盘独立窗口';
       btn.classList.remove('go-play-popout-btn--active');
-      btn.title = '在页面顶部显示可固定的棋盘画中画';
+      btn.title = '在新浏览器窗口中打开棋盘（需允许弹出窗口）';
+    }
+  }
+
+  function setWindowPlaceholderVisible(show) {
+    const ph = $('goWindowPlaceholder');
+    if (!ph) return;
+    ph.classList.toggle('pm-u-hidden', !show);
+  }
+
+  function stopPopupMonitor() {
+    if (popupMonitorTimer) {
+      win.clearInterval(popupMonitorTimer);
+      popupMonitorTimer = null;
+    }
+  }
+
+  function onBoardWindowClosed() {
+    boardPopup = null;
+    popupOpen = false;
+    stopPopupMonitor();
+    setWindowPlaceholderVisible(false);
+    updatePopoutBtnUi();
+  }
+
+  function startPopupMonitor() {
+    stopPopupMonitor();
+    popupMonitorTimer = win.setInterval(() => {
+      if (!boardPopup || boardPopup.closed) onBoardWindowClosed();
+    }, 400);
+  }
+
+  /** 须在按钮 click 里同步调用，否则会被浏览器拦截 */
+  function openBoardWindow() {
+    if (!roomCode) {
+      toast('请先创建或加入房间', true);
+      return false;
+    }
+    if (boardPopup && !boardPopup.closed) {
+      boardPopup.focus();
+      postStateToPopup();
+      return true;
+    }
+    const url = pageUrl('/widgets/go-play/board?room=' + encodeURIComponent(roomCode));
+    boardPopup = win.open(
+      url,
+      BOARD_POPUP_NAME,
+      'popup=yes,width=540,height=620,resizable=yes,scrollbars=no'
+    );
+    if (!boardPopup) {
+      toast('无法打开新窗口：请在浏览器地址栏允许本站「弹出式窗口」后重试', true);
+      return false;
+    }
+    popupOpen = true;
+    setWindowPlaceholderVisible(true);
+    updatePopoutBtnUi();
+    startPopupMonitor();
+    toast('棋盘已在独立窗口中打开，请保持本页开启以同步对局', false);
+    return true;
+  }
+
+  function closeBoardWindow() {
+    if (boardPopup && !boardPopup.closed) {
+      try { boardPopup.close(); } catch (_) {}
+    }
+    onBoardWindowClosed();
+  }
+
+  function toggleBoardWindow() {
+    if (popupOpen && boardPopup && !boardPopup.closed) {
+      closeBoardWindow();
+    } else {
+      openBoardWindow();
     }
   }
 
@@ -137,128 +235,8 @@
     return turnText;
   }
 
-  function updatePipChrome(data) {
-    const title = $('goPipTitle');
-    const status = $('goPipStatus');
-    if (title) title.textContent = roomCode ? `围棋 · ${roomCode}` : '围棋棋盘';
-    if (status) status.textContent = turnStatusText(data || {});
-  }
-
-  function syncPipBoard(data) {
-    if (!pipOpen) return;
-    const pipBoard = $('goPipBoard');
-    if (pipBoard) renderBoard(pipBoard);
-    updatePipChrome(data);
-  }
-
-  function applyPipPinnedUi() {
-    const root = $('goPipRoot');
-    const pinBtn = $('goPipPinBtn');
-    if (!root) return;
-    root.classList.toggle('is-pinned', pipPinned);
-    if (pipPinned) {
-      root.style.left = '';
-      root.style.top = '';
-      root.style.right = '';
-      root.style.bottom = '';
-    }
-    if (pinBtn) {
-      pinBtn.classList.toggle('is-active', pipPinned);
-      pinBtn.setAttribute('aria-pressed', pipPinned ? 'true' : 'false');
-      pinBtn.title = pipPinned ? '已固定右上角，点击后可拖动' : '点击固定到页面右上角';
-    }
-  }
-
-  function openBoardPip() {
-    if (!roomCode) {
-      toast('请先创建或加入房间', true);
-      return;
-    }
-    const root = $('goPipRoot');
-    if (!root) return;
-    pipOpen = true;
-    pipPinned = true;
-    root.classList.remove('pm-u-hidden');
-    root.setAttribute('aria-hidden', 'false');
-    applyPipPinnedUi();
-    const pipBoard = $('goPipBoard');
-    if (pipBoard) {
-      renderBoard(pipBoard);
-      bindBoardFrame($('goPipBoardFrame'));
-    }
-    updatePipChrome({});
-    updatePopoutBtnUi();
-    toast('棋盘画中画已打开，可置顶固定或拖动标题栏移动', false);
-  }
-
-  function closeBoardPip() {
-    const root = $('goPipRoot');
-    pipOpen = false;
-    if (root) {
-      root.classList.add('pm-u-hidden');
-      root.setAttribute('aria-hidden', 'true');
-      root.classList.remove('is-dragging');
-    }
-    pipDrag = null;
-    updatePopoutBtnUi();
-  }
-
-  function toggleBoardPip() {
-    if (pipOpen) closeBoardPip();
-    else openBoardPip();
-  }
-
   function closeBoardPopup() {
-    closeBoardPip();
-    if (boardPopup && !boardPopup.closed) {
-      try { boardPopup.close(); } catch (_) {}
-    }
-    boardPopup = null;
-  }
-
-  function openBoardPopup() {
-    toggleBoardPip();
-  }
-
-  function bindPipUi() {
-    $('goPipCloseBtn')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      closeBoardPip();
-    });
-    $('goPipPinBtn')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      pipPinned = !pipPinned;
-      applyPipPinnedUi();
-    });
-
-    const root = $('goPipRoot');
-    const chrome = root && root.querySelector('.go-play-pip-chrome');
-    if (!chrome) return;
-
-    chrome.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;
-      if (e.target.closest('button')) return;
-      if (pipPinned || !root) return;
-      e.preventDefault();
-      const rect = root.getBoundingClientRect();
-      root.style.right = 'auto';
-      root.style.bottom = 'auto';
-      root.style.left = `${rect.left}px`;
-      root.style.top = `${rect.top}px`;
-      pipDrag = { sx: e.clientX, sy: e.clientY, left: rect.left, top: rect.top };
-      root.classList.add('is-dragging');
-    });
-
-    global.addEventListener('mousemove', (e) => {
-      if (!pipDrag || !root) return;
-      root.style.left = `${pipDrag.left + e.clientX - pipDrag.sx}px`;
-      root.style.top = `${pipDrag.top + e.clientY - pipDrag.sy}px`;
-    });
-
-    global.addEventListener('mouseup', () => {
-      if (pipDrag && root) root.classList.remove('is-dragging');
-      pipDrag = null;
-    });
+    closeBoardWindow();
   }
 
   function applyState(data) {
@@ -308,7 +286,6 @@
 
     renderBoard($('goBoard'));
     updatePopupStatusBar(data);
-    syncPipBoard(data);
     postStateToPopup();
     return true;
   }
@@ -399,16 +376,16 @@
     const coord = coordFromPointer(e, frame);
     if (!coord) return;
     if (isPopup) {
-      if (!global.opener || global.opener.closed) {
+      if (!win.opener || win.opener.closed) {
         toast('主窗口已关闭', true);
         return;
       }
       try {
-        global.opener.postMessage({
+        win.opener.postMessage({
           type: 'go-play-move',
           x: coord.x,
           y: coord.y,
-        }, global.location.origin);
+        }, win.location.origin);
       } catch (_) {
         toast('无法与主窗口通信', true);
       }
@@ -423,6 +400,7 @@
 
   function startWatch() {
     if (isPopup) return;
+    stopWatch();
     watchAbort = false;
     watchActive = true;
     watchLoop();
@@ -431,11 +409,25 @@
   function stopWatch() {
     watchAbort = true;
     watchActive = false;
+    if (watchAbortCtrl) {
+      try { watchAbortCtrl.abort(); } catch (_) {}
+      watchAbortCtrl = null;
+    }
+  }
+
+  function clearRoomFromUrl() {
+    try {
+      const u = new URL(win.location.href);
+      u.searchParams.delete('room');
+      win.history.replaceState({}, '', u);
+    } catch (_) {}
   }
 
   function watchLoop() {
     if (watchAbort || !watchActive || !roomCode) return;
-    api('wait', { room_code: roomCode, since_version: lastVersion }, 'GET')
+    watchAbortCtrl = new AbortController();
+    const signal = watchAbortCtrl.signal;
+    api('wait', { room_code: roomCode, since_version: lastVersion }, 'GET', signal)
       .then((d) => {
         if (watchAbort || !roomCode) return;
         if (d && d.status === 'success' && !d.unchanged) {
@@ -443,9 +435,10 @@
         }
         if (!watchAbort && roomCode) watchLoop();
       })
-      .catch(() => {
+      .catch((err) => {
+        if (watchAbort || (err && err.name === 'AbortError')) return;
         if (!watchAbort && roomCode) {
-          global.setTimeout(watchLoop, 1200);
+          win.setTimeout(watchLoop, 1500);
         }
       });
   }
@@ -466,22 +459,62 @@
     }
   }
 
-  function rejoinRoom(code, silent) {
+  function joinRoom(code) {
     const c = String(code || '').trim().toUpperCase();
-    if (!c) return Promise.resolve(false);
+    if (!c) {
+      toast('请输入房间号', true);
+      return Promise.resolve(false);
+    }
+    stopWatch();
     return api('join', { room_code: c }).then((d) => {
-      if (!applyState(d)) {
-        if (!silent) toast((d && d.message) || '回到房间失败', true);
+      if (!d || d.status !== 'success') {
+        toast((d && d.message) || '加入房间失败', true);
         if (d && d.message && String(d.message).indexOf('不存在') >= 0) {
           persistRoomCode('');
         }
         return false;
       }
+      if (!applyState(d)) {
+        toast('加入成功但界面更新失败，请刷新页面', true);
+        return false;
+      }
       if ($('goJoinInput')) $('goJoinInput').value = c;
       try {
-        const u = new URL(global.location.href);
+        const u = new URL(win.location.href);
         u.searchParams.set('room', c);
-        global.history.replaceState({}, '', u);
+        win.history.replaceState({}, '', u);
+      } catch (_) {}
+      startWatch();
+      toast('已加入房间 ' + c, false);
+      return true;
+    }).catch((err) => {
+      toast(err.message || '网络错误', true);
+      return false;
+    });
+  }
+
+  function rejoinRoom(code, silent) {
+    const c = String(code || '').trim().toUpperCase();
+    if (!c) return Promise.resolve(false);
+    stopWatch();
+    return api('join', { room_code: c }).then((d) => {
+      if (!d || d.status !== 'success') {
+        if (!silent) toast((d && d.message) || '回到房间失败', true);
+        if (d && d.message && String(d.message).indexOf('不存在') >= 0) {
+          persistRoomCode('');
+          clearRoomFromUrl();
+        }
+        return false;
+      }
+      if (!applyState(d)) {
+        if (!silent) toast('回到房间失败', true);
+        return false;
+      }
+      if ($('goJoinInput')) $('goJoinInput').value = c;
+      try {
+        const u = new URL(win.location.href);
+        u.searchParams.set('room', c);
+        win.history.replaceState({}, '', u);
       } catch (_) {}
       startWatch();
       if (!silent) toast('已进入房间 ' + c, false);
@@ -494,31 +527,45 @@
 
   function bindMainUi() {
     $('goCreateBtn')?.addEventListener('click', () => {
+      const btn = $('goCreateBtn');
+      stopWatch();
+      closeBoardWindow();
+      if (btn) btn.disabled = true;
       api('create', {}).then((d) => {
-        if (!applyState(d)) {
+        if (!d || d.status !== 'success') {
           toast((d && d.message) || '创建失败', true);
+          return;
+        }
+        if (!applyState(d)) {
+          toast('房间已创建但界面更新失败，请刷新页面', true);
           return;
         }
         toast('房间已创建：' + roomCode, false);
         persistRoomCode(roomCode);
         try {
-          const u = new URL(global.location.href);
+          const u = new URL(win.location.href);
           u.searchParams.set('room', roomCode);
-          global.history.replaceState({}, '', u);
+          win.history.replaceState({}, '', u);
         } catch (_) {}
         startWatch();
-      }).catch((err) => toast(err.message || '网络错误', true));
+      }).catch((err) => {
+        if (err && err.name !== 'AbortError') toast(err.message || '网络错误', true);
+      }).finally(() => {
+        if (btn) btn.disabled = false;
+      });
     });
 
-    $('goJoinBtn')?.addEventListener('click', () => {
-      const code = String($('goJoinInput')?.value || '').trim().toUpperCase();
-      if (!code) {
-        toast('请输入房间号', true);
-        return;
+    $('goJoinBtn')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      joinRoom(String($('goJoinInput')?.value || ''));
+    });
+
+    $('goJoinInput')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        joinRoom(String($('goJoinInput')?.value || ''));
       }
-      rejoinRoom(code, true).then((ok) => {
-        if (ok) toast('已加入房间 ' + code, false);
-      });
     });
 
     $('goPassBtn')?.addEventListener('click', () => {
@@ -530,7 +577,7 @@
 
     $('goUndoBtn')?.addEventListener('click', () => {
       if (!roomCode) return;
-      if (!global.confirm('确认悔棋一手？（本局最多 ' + undoLimit + ' 次）')) return;
+      if (!win.confirm('确认悔棋一手？（本局最多 ' + undoLimit + ' 次）')) return;
       api('undo', { room_code: roomCode }).then((d) => {
         if (!applyState(d)) toast((d && d.message) || '悔棋失败', true);
         else toast('已悔棋', false);
@@ -539,7 +586,7 @@
 
     $('goResignBtn')?.addEventListener('click', () => {
       if (!roomCode) return;
-      if (!global.confirm('确认认输？')) return;
+      if (!win.confirm('确认认输？')) return;
       api('resign', { room_code: roomCode }).then((d) => {
         if (!applyState(d)) toast((d && d.message) || '操作失败', true);
       }).catch((err) => toast(err.message || '网络错误', true));
@@ -562,14 +609,17 @@
       board = Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY));
       renderBoard($('goBoard'));
       try {
-        const u = new URL(global.location.href);
+        const u = new URL(win.location.href);
         u.searchParams.delete('room');
-        global.history.replaceState({}, '', u);
+        win.history.replaceState({}, '', u);
       } catch (_) {}
     });
 
-    $('goPopoutBtn')?.addEventListener('click', toggleBoardPip);
-    bindPipUi();
+    $('goPopoutBtn')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleBoardWindow();
+    });
   }
 
   function bindPopupUi() {
@@ -579,20 +629,20 @@
     bindBoardFrame(getBoardFrame(boardEl));
 
     const syncFromOpener = () => {
-      if (!global.opener || global.opener.closed) {
+      if (!win.opener || win.opener.closed) {
         if ($('goPopupStatus')) $('goPopupStatus').textContent = '主窗口已关闭，可关闭本窗口';
         return;
       }
       try {
-        global.opener.postMessage({ type: 'go-play-request-state' }, global.location.origin);
+        win.opener.postMessage({ type: 'go-play-request-state' }, win.location.origin);
       } catch (_) {}
     };
 
     syncFromOpener();
-    global.setInterval(syncFromOpener, 1200);
+    win.setInterval(syncFromOpener, 1200);
 
-    global.addEventListener('message', (e) => {
-      if (e.origin !== global.location.origin) return;
+    win.addEventListener('message', (e) => {
+      if (e.origin !== win.location.origin) return;
       const msg = e.data || {};
       if (msg.type === 'go-play-state' && msg.payload) {
         const p = msg.payload;
@@ -621,13 +671,13 @@
     });
 
     try {
-      global.opener && global.opener.postMessage({ type: 'go-play-popup-ready' }, global.location.origin);
+      win.opener && win.opener.postMessage({ type: 'go-play-popup-ready' }, win.location.origin);
     } catch (_) {}
   }
 
   function bindMainMessageBridge() {
-    global.addEventListener('message', (e) => {
-      if (e.origin !== global.location.origin) return;
+    win.addEventListener('message', (e) => {
+      if (e.origin !== win.location.origin) return;
       const msg = e.data || {};
       if (msg.type === 'go-play-move') {
         handleMoveFromPopup(Number(msg.x), Number(msg.y));
@@ -641,14 +691,19 @@
   function tryAutoRejoin() {
     let code = '';
     try {
-      code = new URL(global.location.href).searchParams.get('room') || '';
+      code = new URL(win.location.href).searchParams.get('room') || '';
     } catch (_) {}
     code = String(code || readStoredRoomCode() || '').trim().toUpperCase();
     if (!code) return;
     if ($('goJoinInput')) $('goJoinInput').value = code;
     rejoinRoom(code, true).then((ok) => {
-      if (!ok && $('goRoomHint')) {
-        $('goRoomHint').textContent = '无法自动回到房间（可能已过期或服务器已重启），请重新创建或加入。';
+      if (!ok) {
+        persistRoomCode('');
+        clearRoomFromUrl();
+        if ($('goRoomHint')) {
+          $('goRoomHint').textContent = '无法自动回到房间（可能已过期或服务器已重启），请重新创建或加入。';
+          $('goRoomHint').classList.remove('pm-u-hidden');
+        }
       }
     });
   }
@@ -667,11 +722,17 @@
   });
 
   if (!isPopup) {
-    global.addEventListener('beforeunload', () => {
+    win.addEventListener('beforeunload', () => {
       stopWatch();
       closeBoardPopup();
     });
   }
 
-  global.SitjoyGoPlay = { openBoardPip, closeBoardPip, toggleBoardPip, openBoardPopup: toggleBoardPip, apiUrl };
-})();
+  win.SitjoyGoPlay = {
+    openBoardWindow,
+    closeBoardWindow,
+    toggleBoardWindow,
+    openBoardPopup: openBoardWindow,
+    apiUrl,
+  };
+})(typeof window !== 'undefined' ? window : typeof globalThis !== 'undefined' ? globalThis : this);

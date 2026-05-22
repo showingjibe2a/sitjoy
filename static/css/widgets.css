@@ -206,116 +206,115 @@
     margin: 0;
 }
 
-/* 棋盘画中画（页面内浮动，类似视频 PiP） */
-.go-play-pip {
-    position: fixed;
-    z-index: 15450;
-    width: min(300px, 38vw);
-    min-width: 220px;
-    max-width: 92vw;
-    resize: both;
-    overflow: auto;
-    background: #fff;
-    border: 1px solid rgba(61, 69, 67, 0.2);
-    border-radius: 12px;
-    box-shadow: 0 12px 40px rgba(15, 23, 42, 0.22), 0 0 0 1px rgba(255, 255, 255, 0.6) inset;
-    padding: 0;
+/* 浮动棋盘：把主棋盘 DOM 移到固定层（非浏览器 Video PiP API） */
+.go-play-board-slot {
+    min-height: min(420px, 55vh);
     display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.go-play-window-placeholder,
+.go-play-float-placeholder {
+    text-align: center;
+    color: var(--morandi-slate);
+    font-size: 0.88rem;
+    padding: 2.5rem 1rem;
+    margin: 0;
+}
+
+/* 旧版页内浮动层（已弃用，保留样式避免残留页面错乱） */
+.go-play-float-dock {
+    position: fixed;
+    top: 72px;
+    right: 16px;
+    z-index: 2147483000;
+    width: min(300px, 42vw);
+    min-width: 240px;
+    max-width: 96vw;
+    max-height: calc(100vh - 88px);
+    display: none;
     flex-direction: column;
-    gap: 0;
+    background: #fff;
+    border: 1px solid rgba(61, 69, 67, 0.22);
+    border-radius: 12px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+    pointer-events: auto;
 }
 
-.go-play-pip.is-pinned {
-    top: calc(var(--sitjoy-nav-height, 52px) + 10px);
-    right: 14px;
-    left: auto;
-    bottom: auto;
+.go-play-float-dock.is-open {
+    display: flex;
 }
 
-.go-play-pip:not(.is-pinned) {
-    top: 120px;
-    left: auto;
-    right: 14px;
-}
-
-.go-play-pip-chrome {
+.go-play-float-chrome {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 0.35rem;
-    padding: 0.4rem 0.45rem 0.35rem 0.55rem;
-    background: linear-gradient(180deg, #f8f6f2 0%, #f0ebe3 100%);
+    padding: 0.45rem 0.5rem 0.4rem;
+    background: linear-gradient(180deg, #f8f6f2 0%, #ebe4da 100%);
     border-bottom: 1px solid rgba(61, 69, 67, 0.12);
-    border-radius: 12px 12px 0 0;
     cursor: grab;
     user-select: none;
     flex-shrink: 0;
 }
 
-.go-play-pip.is-dragging .go-play-pip-chrome {
+.go-play-float-dock.is-dragging .go-play-float-chrome {
     cursor: grabbing;
 }
 
-.go-play-pip-title {
-    font-size: 0.8rem;
+.go-play-float-title {
+    font-size: 0.82rem;
     font-weight: 700;
-    color: var(--morandi-ink);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    color: #2d3432;
 }
 
-.go-play-pip-actions {
+.go-play-float-actions {
     display: flex;
-    align-items: center;
-    gap: 0.2rem;
-    flex-shrink: 0;
+    gap: 0.25rem;
 }
 
-.go-play-pip-btn {
-    width: 28px;
-    height: 28px;
+.go-play-float-btn {
+    width: 30px;
+    height: 30px;
     border: none;
     border-radius: 6px;
-    background: rgba(127, 168, 139, 0.15);
-    color: var(--morandi-ink);
-    font-size: 0.95rem;
-    line-height: 1;
+    background: rgba(127, 168, 139, 0.2);
+    color: #2d3432;
+    font-size: 1rem;
     cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
+    line-height: 1;
 }
 
-.go-play-pip-btn:hover {
-    background: rgba(127, 168, 139, 0.32);
+.go-play-float-btn:hover {
+    background: rgba(127, 168, 139, 0.4);
 }
 
-.go-play-pip-btn.is-active {
+.go-play-float-btn.is-active {
     background: #7fa88b;
     color: #fff;
 }
 
-.go-play-pip-status {
+.go-play-float-status {
     margin: 0;
-    padding: 0.28rem 0.55rem 0.2rem;
+    padding: 0.3rem 0.55rem;
     font-size: 0.72rem;
-    color: var(--morandi-slate);
-    line-height: 1.35;
+    color: #6b6560;
     flex-shrink: 0;
 }
 
-.go-play-board-wrap--pip {
-    width: 100%;
-    margin: 0;
-    padding: 8px;
-    border-radius: 0 0 12px 12px;
-    box-sizing: border-box;
+.go-play-float-body {
+    overflow: auto;
+    padding: 6px;
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
-.go-play-pip .go-play-board-wrap {
+.go-play-float-body .go-play-board-wrap {
+    width: 100%;
     max-width: none;
+    margin: 0;
 }
 
 .go-play-popout-btn--active {
