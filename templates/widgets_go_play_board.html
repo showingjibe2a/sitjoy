@@ -8,7 +8,9 @@
     <link rel="stylesheet" href="/static/css/widgets.css">
 </head>
 <body class="go-play-popup-body" data-go-play-mode="popup">
-    <div class="go-play-board-wrap go-play-board-wrap--popup">
+    <div id="goPlayToastStack" class="go-play-toast-stack" aria-live="polite"></div>
+    <div class="go-play-popup-stage" id="goPopupStage">
+        <div class="go-play-board-wrap go-play-board-wrap--popup">
         <div class="go-play-board-frame" id="goBoardFrame">
             <svg class="go-play-grid-svg" viewBox="0 0 18 18" preserveAspectRatio="none" aria-hidden="true">
                 <g stroke="#3a3020" stroke-width="0.045" vector-effect="non-scaling-stroke" fill="none">
@@ -30,6 +32,15 @@
                 </div>
             </div>
         </div>
+        </div>
+        <aside class="go-play-popup-tools" id="goPopupTools" aria-label="对弈操作">
+            <button type="button" class="go-play-popup-btn" id="goPopupPassBtn" disabled>虚手</button>
+            <button type="button" class="go-play-popup-btn" id="goPopupUndoBtn" disabled>悔棋</button>
+            <button type="button" class="go-play-popup-btn" id="goPopupResignBtn" disabled>认输</button>
+            <button type="button" class="go-play-popup-btn" id="goPopupPracticeBtn" disabled>演习</button>
+            <button type="button" class="go-play-popup-btn pm-u-hidden" id="goPopupPracticeRevertBtn">撤回一步</button>
+            <button type="button" class="go-play-popup-btn pm-u-hidden" id="goPopupPracticeEndBtn">结束演习</button>
+        </aside>
     </div>
     <script src="/static/js/go-play.js"></script>
 </body>

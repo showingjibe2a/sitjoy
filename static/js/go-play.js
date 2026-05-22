@@ -26,6 +26,12 @@
   let whiteName = '';
   let rematchYou = false;
   let rematchOpponent = false;
+  let koPoint = null;
+  let youInPractice = false;
+  let opponentInPractice = false;
+  let practiceByColor = 0;
+  let practiceLocal = null;
+  let localBoardMode = false;
   let watchActive = false;
   let watchAbort = false;
   let lastVersion = -1;
@@ -44,9 +50,11 @@
       return String(win.SITJOY_BASE_PATH).replace(/\/$/, '');
     }
     const path = win.location.pathname || '/';
-    const m = path.match(/^(.*)\/widgets\/go-play\/?/i);
-    if (m && m[1]) return m[1];
-    return '';
+    const idx = path.toLowerCase().indexOf('/widgets/go-play');
+    if (idx >= 0) {
+      return path.slice(0, idx);
+    }
+    return null;
   }
 
   function resolveAppUrl(pathAndQuery) {
@@ -56,8 +64,8 @@
     const queryPart = qIdx >= 0 ? raw.slice(qIdx) : '';
     const normalized = pathPart.startsWith('/') ? pathPart : '/' + pathPart;
     const base = getAppBasePath();
-    if (base) {
-      return base + normalized + queryPart;
+    if (base !== null) {
+      return (base || '') + normalized + queryPart;
     }
     const rel = normalized.startsWith('/') ? '..' + normalized + queryPart : raw;
     try {
@@ -110,15 +118,535 @@
     }, fetchOpts));
   }
 
+  let goToastStack = null;
+
+  function ensureGoToastStack() {
+    if (goToastStack && document.body.contains(goToastStack)) return goToastStack;
+    goToastStack = document.getElementById('goPlayToastStack');
+    if (!goToastStack) {
+      goToastStack = document.createElement('div');
+      goToastStack.id = 'goPlayToastStack';
+      goToastStack.className = 'go-play-toast-stack';
+      goToastStack.setAttribute('aria-live', 'polite');
+      document.body.appendChild(goToastStack);
+    }
+    return goToastStack;
+  }
+
+  function showGoPlayToast(message, isError, duration) {
+    const stack = ensureGoToastStack();
+    const isErr = !!isError;
+    const ms = duration != null ? duration : (isErr ? 6000 : 3500);
+    const el = document.createElement('div');
+    el.className = 'go-play-toast ' + (isErr ? 'go-play-toast--error' : 'go-play-toast--success');
+    const msgEl = document.createElement('div');
+    msgEl.className = 'go-play-toast-message';
+    msgEl.textContent = String(message || '');
+    el.appendChild(msgEl);
+    stack.appendChild(el);
+    win.requestAnimationFrame(() => el.classList.add('is-show'));
+    if (ms > 0) {
+      win.setTimeout(() => {
+        el.classList.remove('is-show');
+        win.setTimeout(() => el.remove(), 220);
+      }, ms);
+    }
+  }
+
+  function toastToPopup(msg, isError) {
+    if (!boardPopup || boardPopup.closed) return;
+    try {
+      boardPopup.postMessage({
+        type: 'go-play-toast',
+        msg: String(msg || ''),
+        isError: !!isError,
+      }, win.location.origin);
+    } catch (_) {}
+  }
+
   function toast(msg, isError) {
-    if (win.showAppToast) win.showAppToast(msg, !!isError, isError ? 6000 : 3500);
-    else alert(msg);
+    const err = !!isError;
+    const dur = err ? 6000 : 3500;
+    if (!isPopup && win.showAppToast) {
+      win.showAppToast(msg, err, dur);
+    } else {
+      showGoPlayToast(msg, err, dur);
+    }
+    if (!isPopup && err) toastToPopup(msg, true);
   }
 
   function colorName(c) {
     if (c === BLACK) return '黑';
     if (c === WHITE) return '白';
     return '-';
+  }
+
+  function undoRequestPlies(pending) {
+    const n = Number(pending && pending.undo_plies) || 0;
+    if (n === 2) return 2;
+    if (n === 1) return 1;
+    return 0;
+  }
+
+  function undoRequestDesc(pending) {
+    const n = undoRequestPlies(pending);
+    if (n === 2) {
+      return '撤回对方上一手及您上次落子（共 2 手），回到您上次落子之前';
+    }
+    if (n === 1) {
+      return '撤回您上一手落子';
+    }
+    return '撤回上一手';
+  }
+
+  function cloneBoard2d(src) {
+    const b = [];
+    for (let y = 0; y < SIZE; y++) {
+      b.push((src[y] || []).slice());
+    }
+    return b;
+  }
+
+  function localGroupLiberties(board, x, y) {
+    const color = board[y][x];
+    if (!color) return { stones: [], liberties: new Set() };
+    const stack = [[x, y]];
+    const visited = new Set();
+    const liberties = new Set();
+    const stones = [];
+    while (stack.length) {
+      const [cx, cy] = stack.pop();
+      const key = cx + ',' + cy;
+      if (visited.has(key)) continue;
+      visited.add(key);
+      stones.push([cx, cy]);
+      const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+      for (let i = 0; i < dirs.length; i++) {
+        const nx = cx + dirs[i][0];
+        const ny = cy + dirs[i][1];
+        if (nx < 0 || nx >= SIZE || ny < 0 || ny >= SIZE) continue;
+        const v = board[ny][nx];
+        if (v === EMPTY) liberties.add(nx + ',' + ny);
+        else if (v === color && !visited.has(nx + ',' + ny)) stack.push([nx, ny]);
+      }
+    }
+    return { stones, liberties };
+  }
+
+  function localRemoveDead(board, color) {
+    const removed = [];
+    const checked = new Set();
+    for (let y = 0; y < SIZE; y++) {
+      for (let x = 0; x < SIZE; x++) {
+        if (board[y][x] !== color || checked.has(x + ',' + y)) continue;
+        const g = localGroupLiberties(board, x, y);
+        g.stones.forEach(([sx, sy]) => checked.add(sx + ',' + sy));
+        if (g.liberties.size) continue;
+        g.stones.forEach(([sx, sy]) => {
+          board[sy][sx] = EMPTY;
+          removed.push({ x: sx, y: sy });
+        });
+      }
+    }
+    return removed;
+  }
+
+  function localTryPlay(board, x, y, color) {
+    if (board[y][x] !== EMPTY) {
+      return { ok: false, msg: '该点已有棋子', captured: [] };
+    }
+    const opp = color === BLACK ? WHITE : BLACK;
+    board[y][x] = color;
+    const captured = localRemoveDead(board, opp);
+    const g = localGroupLiberties(board, x, y);
+    if (!g.liberties.size) {
+      board[y][x] = EMPTY;
+      return {
+        ok: false,
+        msg: captured.length ? '禁着点（落子后己方无气）' : '禁着点（落子后己方无气且未提子）',
+        captured: [],
+      };
+    }
+    return { ok: true, msg: '', captured };
+  }
+
+  function syncPracticeFlagsFromData(data) {
+    const d = data || {};
+    practiceByColor = Number(d.practice_by_color || 0);
+    const yc = Number(d.your_color != null ? d.your_color : yourColor) || 0;
+    const pColor = practiceByColor;
+    if (d.practice_active && pColor && yc) {
+      youInPractice = pColor === yc;
+      opponentInPractice = pColor !== yc;
+      return;
+    }
+    youInPractice = !!d.you_in_practice;
+    opponentInPractice = !!d.opponent_in_practice;
+    if (!youInPractice && !opponentInPractice) {
+      practiceByColor = 0;
+    }
+  }
+
+  function ensurePracticeLocalReady() {
+    if (!youInPractice || practiceLocal || !roomCode) return;
+    startLocalPracticeFromServer();
+  }
+
+  function isLocalPracticeActive() {
+    if (youInPractice && !practiceLocal && roomCode) {
+      ensurePracticeLocalReady();
+    }
+    return youInPractice && !!practiceLocal;
+  }
+
+  function isFreeLocalBoard() {
+    return localBoardMode && !roomCode && !!practiceLocal;
+  }
+
+  function isLocalBoardActive() {
+    return isLocalPracticeActive() || isFreeLocalBoard();
+  }
+
+  function getViewBoard() {
+    return isLocalBoardActive() ? practiceLocal.board : board;
+  }
+
+  function getViewKo() {
+    return isLocalBoardActive() ? practiceLocal.ko : koPoint;
+  }
+
+  function getViewLastMove() {
+    if (isLocalBoardActive()) {
+      return { x: practiceLocal.lastMoveX, y: practiceLocal.lastMoveY };
+    }
+    return { x: lastMoveX, y: lastMoveY };
+  }
+
+  function enterFreeLocalBoard() {
+    if (roomCode) return;
+    localBoardMode = true;
+    gameStatus = 'local';
+    yourColor = 0;
+    const empty = Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY));
+    practiceLocal = {
+      board: cloneBoard2d(empty),
+      baseBoard: cloneBoard2d(empty),
+      moves: [],
+      currentPlayer: BLACK,
+      baseCurrentPlayer: BLACK,
+      ko: null,
+      baseKo: null,
+      lastMoveX: -1,
+      lastMoveY: -1,
+      baseLastMoveX: -1,
+      baseLastMoveY: -1,
+    };
+    board = cloneBoard2d(practiceLocal.board);
+    koPoint = null;
+    lastMoveX = -1;
+    lastMoveY = -1;
+    lastMoveKey = '';
+    if (!isPopup) {
+      $('goLocalPanel')?.classList.remove('pm-u-hidden');
+      $('goRoomPanel')?.classList.add('pm-u-hidden');
+      $('goLobbyHint')?.classList.add('pm-u-hidden');
+      if ($('goLocalHint')) {
+        $('goLocalHint').textContent = '本地摆棋：点击棋盘落子，黑白轮流；虚手换手，悔一手撤销上一手。';
+      }
+      if ($('goPopoutBtn')) $('goPopoutBtn').disabled = false;
+      updateLocalTurnHint();
+    }
+    renderBoard($('goBoard'));
+    updatePracticeUi();
+    updateBoardOverlay({});
+    postStateToPopup();
+  }
+
+  function ensurePracticeLocalBaseSnapshot() {
+    if (!practiceLocal) return;
+    if (!practiceLocal.baseBoard) {
+      practiceLocal.baseBoard = cloneBoard2d(practiceLocal.board);
+      practiceLocal.baseCurrentPlayer = practiceLocal.currentPlayer;
+      practiceLocal.baseKo = practiceLocal.ko
+        ? { x: Number(practiceLocal.ko.x), y: Number(practiceLocal.ko.y) }
+        : null;
+      practiceLocal.baseLastMoveX = practiceLocal.lastMoveX;
+      practiceLocal.baseLastMoveY = practiceLocal.lastMoveY;
+    }
+  }
+
+  function cloneKoPoint(ko) {
+    if (!ko) return null;
+    return { x: Number(ko.x), y: Number(ko.y) };
+  }
+
+  function rebuildPracticeLocalFromMoves() {
+    if (!practiceLocal) return;
+    ensurePracticeLocalBaseSnapshot();
+
+    if (!practiceLocal.moves.length) {
+      practiceLocal.board = cloneBoard2d(practiceLocal.baseBoard);
+      practiceLocal.currentPlayer = practiceLocal.baseCurrentPlayer;
+      practiceLocal.ko = cloneKoPoint(practiceLocal.baseKo);
+      practiceLocal.lastMoveX = practiceLocal.baseLastMoveX;
+      practiceLocal.lastMoveY = practiceLocal.baseLastMoveY;
+      return;
+    }
+
+    const b = cloneBoard2d(practiceLocal.baseBoard);
+    let ko = cloneKoPoint(practiceLocal.baseKo);
+    let lx = practiceLocal.baseLastMoveX;
+    let ly = practiceLocal.baseLastMoveY;
+    let cp = practiceLocal.baseCurrentPlayer;
+
+    for (const m of practiceLocal.moves) {
+      if (ko && (Number(ko.x) !== m.x || Number(ko.y) !== m.y)) {
+        ko = null;
+      }
+      const res = localTryPlay(b, m.x, m.y, m.color);
+      if (!res.ok) continue;
+      if (res.captured.length === 1) {
+        ko = { x: res.captured[0].x, y: res.captured[0].y };
+      } else {
+        ko = null;
+      }
+      lx = m.x;
+      ly = m.y;
+      cp = m.color === BLACK ? WHITE : BLACK;
+    }
+    practiceLocal.board = b;
+    practiceLocal.ko = ko;
+    practiceLocal.currentPlayer = cp;
+    practiceLocal.lastMoveX = lx;
+    practiceLocal.lastMoveY = ly;
+  }
+
+  function localPassMove() {
+    if (!practiceLocal) return;
+    practiceLocal.ko = null;
+    practiceLocal.currentPlayer = practiceLocal.currentPlayer === BLACK ? WHITE : BLACK;
+    renderBoard($('goBoard'));
+    updateLocalTurnHint();
+    postStateToPopup();
+    updatePracticeUi();
+  }
+
+  function localUndoMove() {
+    if (!practiceLocal || !practiceLocal.moves.length) {
+      toast('没有可悔的手', true);
+      return;
+    }
+    practiceLocal.moves.pop();
+    rebuildPracticeLocalFromMoves();
+    renderBoard($('goBoard'));
+    updateLocalTurnHint();
+    postStateToPopup();
+    updatePracticeUi();
+  }
+
+  /** 在线对局演习：撤回本地试下的一手（最多撤到开启演习时） */
+  function practiceUndoStep() {
+    if (!youInPractice || !practiceLocal) {
+      toast('当前未在演习中', true);
+      return;
+    }
+    if (!practiceLocal.moves.length) {
+      const msg = '已是开启演习时的局面，无法继续撤回';
+      showGoPlayToast(msg, true);
+      if (!isPopup) toastToPopup(msg, true);
+      return;
+    }
+    practiceLocal.moves.pop();
+    rebuildPracticeLocalFromMoves();
+    renderBoard($('goBoard'));
+    postStateToPopup();
+    updatePracticeUi();
+  }
+
+  function notifyOpenerPracticeUndo() {
+    if (!isPopup || !win.opener || win.opener.closed) return false;
+    try {
+      win.opener.postMessage({ type: 'go-play-practice-undo' }, win.location.origin);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function localClearBoard() {
+    if (!isFreeLocalBoard()) return;
+    const empty = Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY));
+    practiceLocal = {
+      board: cloneBoard2d(empty),
+      baseBoard: cloneBoard2d(empty),
+      moves: [],
+      currentPlayer: BLACK,
+      baseCurrentPlayer: BLACK,
+      ko: null,
+      baseKo: null,
+      lastMoveX: -1,
+      lastMoveY: -1,
+      baseLastMoveX: -1,
+      baseLastMoveY: -1,
+    };
+    board = cloneBoard2d(practiceLocal.board);
+    renderBoard($('goBoard'));
+    updateLocalTurnHint();
+    postStateToPopup();
+    updatePracticeUi();
+    toast('棋盘已清空', false);
+  }
+
+  function updateLocalTurnHint() {
+    const el = $('goLocalStatus');
+    if (!el || !isFreeLocalBoard() || !practiceLocal) return;
+    const n = practiceLocal.moves.length;
+    el.textContent = `本地摆棋 · ${colorName(practiceLocal.currentPlayer)}行棋（${n} 手）`;
+  }
+
+  function notifyOpenerLocalAction(action) {
+    if (!isPopup || !win.opener || win.opener.closed) return false;
+    try {
+      win.opener.postMessage({ type: action }, win.location.origin);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function startLocalPracticeFromServer() {
+    const base = cloneBoard2d(board);
+    const ko = koPoint ? { x: Number(koPoint.x), y: Number(koPoint.y) } : null;
+    practiceLocal = {
+      board: cloneBoard2d(base),
+      baseBoard: base,
+      moves: [],
+      currentPlayer: currentPlayer,
+      baseCurrentPlayer: currentPlayer,
+      ko: ko ? { x: ko.x, y: ko.y } : null,
+      baseKo: ko ? { x: ko.x, y: ko.y } : null,
+      lastMoveX: lastMoveX,
+      lastMoveY: lastMoveY,
+      baseLastMoveX: lastMoveX,
+      baseLastMoveY: lastMoveY,
+    };
+    youInPractice = true;
+  }
+
+  function stopLocalPractice() {
+    practiceLocal = null;
+    youInPractice = false;
+    practiceByColor = 0;
+  }
+
+  function practicePlayAt(x, y) {
+    if (!practiceLocal) return;
+    if (practiceLocal.ko && Number(practiceLocal.ko.x) === x && Number(practiceLocal.ko.y) === y) {
+      toast('禁着点（打劫，不可立即反提）', true);
+      return;
+    }
+    if (practiceLocal.ko && (Number(practiceLocal.ko.x) !== x || Number(practiceLocal.ko.y) !== y)) {
+      practiceLocal.ko = null;
+    }
+    const color = practiceLocal.currentPlayer;
+    const b = cloneBoard2d(practiceLocal.board);
+    const res = localTryPlay(b, x, y, color);
+    if (!res.ok) {
+      toast(res.msg, true);
+      return;
+    }
+    practiceLocal.board = b;
+    if (res.captured.length === 1) {
+      practiceLocal.ko = { x: res.captured[0].x, y: res.captured[0].y };
+    } else {
+      practiceLocal.ko = null;
+    }
+    practiceLocal.moves.push({ x, y, color, captures: res.captured });
+    practiceLocal.currentPlayer = color === BLACK ? WHITE : BLACK;
+    practiceLocal.lastMoveX = x;
+    practiceLocal.lastMoveY = y;
+    renderBoard($('goBoard'));
+    postStateToPopup();
+    updateLocalTurnHint();
+    updatePracticeUi();
+  }
+
+  function updatePracticeUi() {
+    if (isFreeLocalBoard()) {
+      const passBtns = ['goPassBtn', 'goPopupPassBtn', 'goLocalPassBtn'];
+      const undoBtns = ['goUndoBtn', 'goPopupUndoBtn', 'goLocalUndoBtn'];
+      const resignBtns = ['goResignBtn', 'goPopupResignBtn'];
+      const practiceBtns = ['goPracticeBtn', 'goPopupPracticeBtn'];
+      const practiceRevertBtns = ['goPracticeRevertBtn', 'goPopupPracticeRevertBtn'];
+      const practiceEndBtns = ['goPracticeEndBtn', 'goPopupPracticeEndBtn'];
+      const hasMoves = !!(practiceLocal && practiceLocal.moves.length);
+      setToolbarBtns(passBtns, { disabled: false, hidden: false });
+      setToolbarBtns(undoBtns, { disabled: !hasMoves, hidden: false });
+      setToolbarBtns(resignBtns, { hidden: true });
+      setToolbarBtns(practiceBtns, { hidden: true });
+      setToolbarBtns(practiceRevertBtns, { hidden: true });
+      setToolbarBtns(practiceEndBtns, { hidden: true });
+      const banner = $('goPracticeBanner');
+      if (banner && !isPopup) {
+        banner.classList.remove('pm-u-hidden');
+        banner.textContent = '本地摆棋：点击棋盘落子，黑白轮流；虚手换手，悔一手撤销上一手。';
+      }
+      if (isPopup) {
+        document.title = `本地摆棋 · ${colorName(practiceLocal ? practiceLocal.currentPlayer : BLACK)}`;
+      }
+      return;
+    }
+
+    const practiceBtns = ['goPracticeBtn', 'goPopupPracticeBtn'];
+    const practiceRevertBtns = ['goPracticeRevertBtn', 'goPopupPracticeRevertBtn'];
+    const practiceEndBtns = ['goPracticeEndBtn', 'goPopupPracticeEndBtn'];
+    const passBtns = ['goPassBtn', 'goPopupPassBtn'];
+    const undoBtns = ['goUndoBtn', 'goPopupUndoBtn'];
+    const resignBtns = ['goResignBtn', 'goPopupResignBtn'];
+    const banner = $('goPracticeBanner');
+    const roomBusy = youInPractice || opponentInPractice;
+    const canStart = gameStatus === 'playing' && yourColor && yourColor === currentPlayer && !pendingInfo && !roomBusy;
+    const practiceLabel = opponentInPractice ? '对方演习中' : '演习模式';
+    const practiceLabelShort = opponentInPractice ? '对方演习' : '演习';
+
+    if (youInPractice) {
+      setToolbarBtns(practiceBtns, { hidden: true });
+      setToolbarBtns(practiceRevertBtns, {
+        hidden: false,
+        text: isPopup ? '撤回' : '撤回一步',
+        danger: false,
+      });
+      setToolbarBtns(practiceEndBtns, { hidden: false, danger: true });
+    } else {
+      setToolbarBtns(practiceBtns, {
+        hidden: false,
+        disabled: !canStart && !opponentInPractice,
+        text: isPopup ? practiceLabelShort : practiceLabel,
+      });
+      setToolbarBtns(practiceRevertBtns, { hidden: true, danger: false });
+      setToolbarBtns(practiceEndBtns, { hidden: true, danger: false });
+    }
+
+    if (banner && !isPopup) {
+      if (youInPractice) {
+        banner.classList.remove('pm-u-hidden');
+        banner.textContent = `演习中：可本地模拟双方落子（已 ${practiceLocal ? practiceLocal.moves.length : 0} 手）。「撤回一步」仅撤销试下；「结束演习」恢复开局并继续正式对弈。`;
+      } else if (opponentInPractice) {
+        banner.classList.remove('pm-u-hidden');
+        banner.textContent = '对方正在演习中，请稍候…';
+      } else {
+        banner.classList.add('pm-u-hidden');
+        banner.textContent = '';
+      }
+    }
+
+    const canPlay = gameStatus === 'playing' && yourColor && yourColor === currentPlayer && !pendingInfo && !roomBusy;
+    const hasMoves = board.length > 0 && board.some((row) => row && row.some((v) => v));
+    const undoDisabled = roomBusy || gameStatus !== 'playing' || !yourColor || !hasMoves || !!pendingInfo;
+    const resignDisabled = roomBusy || gameStatus !== 'playing' || !yourColor || !!pendingInfo;
+    setToolbarBtns(passBtns, { disabled: !canPlay });
+    setToolbarBtns(undoBtns, { disabled: undoDisabled });
+    setToolbarBtns(resignBtns, { disabled: resignDisabled });
   }
 
   function snapshotState() {
@@ -140,6 +668,36 @@
       whiteName,
       rematchYou,
       rematchOpponent,
+      ko: koPoint,
+      youInPractice,
+      opponentInPractice,
+      practiceByColor,
+      localBoardMode,
+      freeLocalActive: isFreeLocalBoard(),
+      practiceActive: isLocalBoardActive(),
+      practiceBoard: isLocalBoardActive() ? practiceLocal.board : board,
+      practiceBaseBoard: isLocalBoardActive() && practiceLocal.baseBoard
+        ? practiceLocal.baseBoard
+        : (isLocalBoardActive() ? practiceLocal.board : null),
+      practiceBaseCurrentPlayer: isLocalBoardActive()
+        ? practiceLocal.baseCurrentPlayer
+        : currentPlayer,
+      practiceBaseKo: isLocalBoardActive() ? practiceLocal.baseKo : koPoint,
+      practiceBaseLastMove: isLocalBoardActive()
+        ? { x: practiceLocal.baseLastMoveX, y: practiceLocal.baseLastMoveY }
+        : null,
+      practiceMoves: isLocalBoardActive()
+        ? (practiceLocal.moves || []).map((m) => ({
+          x: m.x,
+          y: m.y,
+          color: m.color,
+        }))
+        : [],
+      practiceCurrentPlayer: isLocalBoardActive() ? practiceLocal.currentPlayer : currentPlayer,
+      practiceKo: isLocalBoardActive() ? practiceLocal.ko : koPoint,
+      practiceLastMove: isLocalBoardActive()
+        ? { x: practiceLocal.lastMoveX, y: practiceLocal.lastMoveY }
+        : (lastMoveX >= 0 ? { x: lastMoveX, y: lastMoveY } : null),
     };
   }
 
@@ -162,27 +720,76 @@
     return b;
   }
 
+  function refreshMainStateFromServer() {
+    if (isPopup || !roomCode) return;
+    api('state', { room_code: roomCode }, 'GET').then((d) => {
+      if (d && d.status === 'success') applyState(d);
+    }).catch(() => {});
+  }
+
+  function notifyOpenerRefresh() {
+    if (!isPopup || !win.opener || win.opener.closed) return;
+    try {
+      win.opener.postMessage({ type: 'go-play-popup-changed' }, win.location.origin);
+    } catch (_) {}
+  }
+
+  function applyApiResult(d, okMsg, opts) {
+    const ok = applyState(d, opts);
+    if (!ok) {
+      toast((d && d.message) || '操作失败', true);
+      return false;
+    }
+    if (isPopup) {
+      notifyOpenerRefresh();
+    }
+    if (okMsg) toast(okMsg, false);
+    return true;
+  }
+
+  function setToolbarBtns(ids, opts) {
+    (ids || []).forEach((id) => {
+      const el = $(id);
+      if (!el) return;
+      if (opts.disabled != null) el.disabled = !!opts.disabled;
+      if (opts.text != null) el.textContent = opts.text;
+      if (opts.hidden != null) el.classList.toggle('pm-u-hidden', !!opts.hidden);
+      if (opts.danger != null) {
+        const popup = el.classList.contains('go-play-popup-btn');
+        if (popup) {
+          el.classList.toggle('go-play-popup-btn--danger', !!opts.danger);
+        } else {
+          el.classList.toggle('btn-danger', !!opts.danger);
+          if (opts.danger) {
+            el.classList.remove('btn-secondary');
+          } else if (!el.classList.contains('btn-accent')) {
+            el.classList.add('btn-secondary');
+          }
+        }
+      }
+    });
+  }
+
   function respondPending(accept) {
     if (!roomCode) return;
     api('respond', { room_code: roomCode, accept: !!accept }).then((d) => {
-      if (!applyState(d)) toast((d && d.message) || '操作失败', true);
-      else if (accept) toast('已确认', false);
-      else toast('已拒绝', false);
+      applyApiResult(d, accept ? '已确认' : '已拒绝');
     }).catch((err) => toast(err.message || '网络错误', true));
   }
 
   function cancelPendingRequest() {
     if (!roomCode) return;
     api('cancel_request', { room_code: roomCode }).then((d) => {
-      if (!applyState(d)) toast((d && d.message) || '取消失败', true);
+      applyApiResult(d, null);
     }).catch((err) => toast(err.message || '网络错误', true));
   }
 
   function voteRematch() {
     if (!roomCode) return;
     api('rematch', { room_code: roomCode }).then((d) => {
-      if (!applyState(d)) toast((d && d.message) || '操作失败', true);
-      else if (d && d.game_status === 'playing') toast('已重开对局', false);
+      if (!applyApiResult(d, null)) return;
+      if (d && d.game_status === 'playing') toast('已重开对局', false);
+      else if (d && d.rematch_you) toast('已同意重开，等待对方确认', false);
     }).catch((err) => toast(err.message || '网络错误', true));
   }
 
@@ -202,16 +809,17 @@
     if (pendingInfo && pendingInfo.type) {
       const fromName = pendingInfo.from_name || colorName(pendingInfo.from_color);
       if (pendingInfo.type === 'undo') {
+        const undoDesc = undoRequestDesc(pendingInfo);
         if (pendingForYou) {
           show = true;
           titleEl.textContent = '悔棋请求';
-          msgEl.textContent = `${fromName} 请求撤销上一手，是否同意？`;
+          msgEl.textContent = `${fromName} 请求悔棋：${undoDesc}，是否同意？`;
           actionsEl.appendChild(overlayBtn('同意悔棋', 'btn-accent', () => respondPending(true)));
           actionsEl.appendChild(overlayBtn('拒绝', 'btn-secondary', () => respondPending(false)));
         } else if (youRequestedPending && !isPopup) {
           show = true;
           titleEl.textContent = '等待对方确认';
-          msgEl.textContent = '您已请求悔棋，等待对方同意…';
+          msgEl.textContent = `您已请求悔棋（${undoDesc}），等待对方同意…`;
           actionsEl.appendChild(overlayBtn('取消请求', 'btn-secondary', cancelPendingRequest));
         }
       } else if (pendingInfo.type === 'resign') {
@@ -228,7 +836,7 @@
           actionsEl.appendChild(overlayBtn('取消请求', 'btn-secondary', cancelPendingRequest));
         }
       }
-    } else if (gameStatus === 'ended' && yourColor && !isPopup) {
+    } else if (gameStatus === 'ended' && yourColor) {
       show = true;
       const w = Number(d.winner != null ? d.winner : winner);
       const reason = String(d.end_reason || endReason || '').trim();
@@ -329,20 +937,21 @@
 
   /** 须在按钮 click 里同步调用，否则会被浏览器拦截 */
   function openBoardWindow() {
-    if (!roomCode) {
-      toast('请先创建或加入房间', true);
-      return false;
+    if (!roomCode && !localBoardMode) {
+      enterFreeLocalBoard();
     }
     if (boardPopup && !boardPopup.closed) {
       boardPopup.focus();
       postStateToPopup();
       return true;
     }
-    const url = pageUrl('/widgets/go-play/board?room=' + encodeURIComponent(roomCode));
+    const url = roomCode
+      ? pageUrl('/widgets/go-play/board?room=' + encodeURIComponent(roomCode))
+      : pageUrl('/widgets/go-play/board?local=1');
     boardPopup = win.open(
       url,
       BOARD_POPUP_NAME,
-      'popup=yes,width=520,height=540,resizable=yes,scrollbars=no'
+      'popup=yes,width=580,height=540,resizable=yes,scrollbars=no'
     );
     if (!boardPopup) {
       toast('无法打开新窗口：请在浏览器地址栏允许本站「弹出式窗口」后重试', true);
@@ -352,7 +961,12 @@
     setWindowPlaceholderVisible(true);
     updatePopoutBtnUi();
     startPopupMonitor();
-    toast('棋盘已在独立窗口中打开，请保持本页开启以同步对局', false);
+    toast(
+      roomCode
+        ? '棋盘已在独立窗口中打开，请保持本页开启以同步对局'
+        : '本地棋盘窗口已打开，可与本页同步落子',
+      false
+    );
     return true;
   }
 
@@ -388,15 +1002,19 @@
     closeBoardWindow();
   }
 
-  function applyState(data) {
+  function applyState(data, opts) {
     if (!data || data.status !== 'success') return false;
     const ver = Number(data.version || 0);
-    if (lastVersion >= 0 && ver > 0 && ver < lastVersion) {
+    const force = !!(opts && opts.force);
+    if (!force && lastVersion >= 0 && ver > 0 && ver <= lastVersion) {
       return false;
     }
     roomCode = String(data.room_code || roomCode || '').toUpperCase();
+    if (roomCode) {
+      localBoardMode = false;
+      $('goLocalPanel')?.classList.add('pm-u-hidden');
+    }
     yourColor = Number(data.your_color || 0);
-    board = data.board || [];
     currentPlayer = Number(data.current_player || BLACK);
     gameStatus = String(data.game_status || data.room_status || '');
     pendingInfo = data.pending || null;
@@ -408,8 +1026,27 @@
     whiteName = String(data.white_name || '');
     rematchYou = !!data.rematch_you;
     rematchOpponent = !!data.rematch_opponent;
+    koPoint = data.ko || null;
+    const prevYouPractice = youInPractice;
+    syncPracticeFlagsFromData(data);
+
+    if (!youInPractice) {
+      stopLocalPractice();
+      board = data.board || [];
+      applyLastMoveFromData(data);
+    } else {
+      if (!prevYouPractice || !practiceLocal) {
+        board = data.board || [];
+        startLocalPracticeFromServer();
+      }
+      if (practiceLocal) {
+        lastMoveX = practiceLocal.lastMoveX;
+        lastMoveY = practiceLocal.lastMoveY;
+        lastMoveKey = lastMoveX >= 0 ? `${lastMoveX},${lastMoveY}` : '';
+      }
+    }
+
     lastVersion = Number(data.version || 0);
-    applyLastMoveFromData(data);
 
     if (!isPopup) {
       if ($('goRoomCode')) $('goRoomCode').textContent = roomCode || '------';
@@ -417,7 +1054,11 @@
         $('goPlayersLine').textContent = `黑：${data.black_name || '-'} ｜ 白：${data.white_name || '等待对手'}`;
       }
       let turnText = '等待对手加入';
-      if (gameStatus === 'playing') {
+      if (youInPractice) {
+        turnText = `演习中 · 本地 ${colorName(practiceLocal ? practiceLocal.currentPlayer : currentPlayer)}行棋`;
+      } else if (opponentInPractice) {
+        turnText = '对方演习中';
+      } else if (gameStatus === 'playing') {
         const mine = yourColor === currentPlayer;
         turnText = mine ? `轮到你（${colorName(currentPlayer)}）` : `对方思考中（${colorName(currentPlayer)}）`;
       } else if (gameStatus === 'ended') {
@@ -429,29 +1070,23 @@
       if ($('goUndoLine')) {
         $('goUndoLine').textContent = pendingInfo
           ? (youRequestedPending ? '悔棋：等待对方确认' : (pendingForYou ? '悔棋：待您确认' : '悔棋需对方同意'))
-          : '悔棋需对方同意';
+          : '悔棋需对方同意（对方已应手时默认撤回双方上一手）';
       }
 
       const inRoom = !!roomCode;
       $('goRoomPanel')?.classList.toggle('pm-u-hidden', !inRoom);
-      $('goLobbyHint')?.classList.toggle('pm-u-hidden', inRoom);
+      $('goLocalPanel')?.classList.toggle('pm-u-hidden', inRoom || !localBoardMode);
+      $('goLobbyHint')?.classList.add('pm-u-hidden');
       const hintEl = $('goRoomHint');
       if (hintEl && !hintEl.textContent.trim()) {
         hintEl.classList.add('pm-u-hidden');
       }
 
-      const canPlay = gameStatus === 'playing' && yourColor && yourColor === currentPlayer && !pendingInfo;
-      const hasMoves = Number(data.moves_count || 0) > 0;
-      if ($('goUndoBtn')) {
-        $('goUndoBtn').disabled = gameStatus !== 'playing' || !yourColor || !hasMoves || !!pendingInfo;
-      }
-      if ($('goResignBtn')) $('goResignBtn').disabled = gameStatus !== 'playing' || !yourColor || !!pendingInfo;
-      if ($('goPassBtn')) $('goPassBtn').disabled = !canPlay;
-      if ($('goPopoutBtn')) $('goPopoutBtn').disabled = !roomCode;
-
+      if ($('goPopoutBtn')) $('goPopoutBtn').disabled = !roomCode && !localBoardMode;
       persistRoomCode(roomCode);
     }
 
+    updatePracticeUi();
     renderBoard($('goBoard'));
     updateBoardOverlay(data);
     updatePopupStatusBar(data);
@@ -460,6 +1095,12 @@
   }
 
   function popupTurnText(data) {
+    if (youInPractice) {
+      return `演习 · ${colorName(practiceLocal ? practiceLocal.currentPlayer : currentPlayer)}`;
+    }
+    if (opponentInPractice) {
+      return '对方演习中';
+    }
     if (gameStatus === 'playing') {
       return yourColor === currentPlayer
         ? `轮到你 · ${colorName(currentPlayer)}`
@@ -475,7 +1116,12 @@
   }
 
   function updatePopupDocumentTitle(data) {
-    if (!isPopup || !roomCode) return;
+    if (!isPopup) return;
+    if (isFreeLocalBoard()) {
+      document.title = `本地摆棋 · ${colorName(practiceLocal ? practiceLocal.currentPlayer : BLACK)}`;
+      return;
+    }
+    if (!roomCode) return;
     const turnText = popupTurnText(data);
     document.title = `围棋 ${roomCode} · ${turnText}`;
   }
@@ -513,12 +1159,16 @@
     const frame = getBoardFrame(el);
     bindBoardFrame(frame);
     el.innerHTML = '';
-    const markX = lastMoveX;
-    const markY = lastMoveY;
+    const viewBoard = getViewBoard();
+    const viewKo = getViewKo();
+    const lastMv = getViewLastMove();
+    const markX = lastMv.x;
+    const markY = lastMv.y;
+    const showKoMark = viewKo && (isLocalBoardActive() || canPlayNow());
 
     for (let y = 0; y < SIZE; y++) {
       for (let x = 0; x < SIZE; x++) {
-        const v = (board[y] && board[y][x]) || EMPTY;
+        const v = (viewBoard[y] && viewBoard[y][x]) || EMPTY;
         if (!v) continue;
         const stone = document.createElement('span');
         stone.className = 'go-play-stone ' + (v === BLACK ? 'go-play-stone--black' : 'go-play-stone--white');
@@ -530,16 +1180,70 @@
         el.appendChild(stone);
       }
     }
+
+    if (showKoMark) {
+      const kx = Number(viewKo.x);
+      const ky = Number(viewKo.y);
+      if (Number.isFinite(kx) && Number.isFinite(ky) && kx >= 0 && ky >= 0 && kx < SIZE && ky < SIZE) {
+        const empty = !(viewBoard[ky] && viewBoard[ky][kx]);
+        if (empty) {
+          const koMark = document.createElement('span');
+          koMark.className = 'go-play-ko-mark';
+          koMark.title = '打劫禁着点（不可立即反提）';
+          koMark.setAttribute('aria-label', '打劫禁着点');
+          koMark.style.setProperty('--gx', String(kx));
+          koMark.style.setProperty('--gy', String(ky));
+          el.appendChild(koMark);
+        }
+      }
+    }
+  }
+
+  function canPlayNow() {
+    if (isLocalBoardActive()) return true;
+    return gameStatus === 'playing' && yourColor && yourColor === currentPlayer && !pendingInfo && !opponentInPractice;
+  }
+
+  function isKoForbidden(x, y) {
+    const ko = getViewKo();
+    if (!ko) return false;
+    if (isLocalBoardActive()) {
+      return Number(ko.x) === x && Number(ko.y) === y;
+    }
+    if (!canPlayNow() || youInPractice || opponentInPractice) return false;
+    return Number(ko.x) === x && Number(ko.y) === y;
+  }
+
+  function getMoveBlockedReason(x, y) {
+    if (isFreeLocalBoard()) {
+      if (isKoForbidden(x, y)) return '禁着点（打劫，不可立即反提）';
+      return null;
+    }
+    if (!roomCode) {
+      return isPopup ? '未加入对局；请从主页面打开本地摆棋，或使用 ?local=1 独立棋盘' : null;
+    }
+    if (isLocalPracticeActive()) {
+      if (isKoForbidden(x, y)) return '禁着点（打劫，不可立即反提）';
+      return null;
+    }
+    if (opponentInPractice) return '对方正在演习，请稍候';
+    if (pendingInfo) return '有待确认的请求，请先处理';
+    if (gameStatus !== 'playing') return '对局未进行中';
+    if (!yourColor) return '尚未加入对局';
+    if (!canPlayNow()) return '尚未轮到您落子';
+    if (isKoForbidden(x, y)) return '禁着点（打劫，不可立即反提）';
+    return null;
   }
 
   function playMoveAt(x, y) {
-    if (!roomCode) return;
-    if (pendingInfo) {
-      toast('有待确认的请求，请先处理', true);
+    if (isLocalBoardActive()) {
+      practicePlayAt(x, y);
       return;
     }
-    if (gameStatus !== 'playing' || yourColor !== currentPlayer) {
-      toast('尚未轮到您落子', true);
+    if (!roomCode) return;
+    const block = getMoveBlockedReason(x, y);
+    if (block) {
+      toast(block, true);
       return;
     }
     api('move', { room_code: roomCode, x, y }).then((d) => {
@@ -549,12 +1253,22 @@
 
   function onBoardFrameClick(e) {
     const frame = e.currentTarget;
-    if (!frame || !roomCode) return;
+    if (!frame) return;
+    if (!roomCode && !isFreeLocalBoard()) return;
     const coord = coordFromPointer(e, frame);
     if (!coord) return;
     if (isPopup) {
+      if (isFreeLocalBoard() && (!win.opener || win.opener.closed)) {
+        practicePlayAt(coord.x, coord.y);
+        return;
+      }
       if (!win.opener || win.opener.closed) {
         toast('主窗口已关闭', true);
+        return;
+      }
+      const block = getMoveBlockedReason(coord.x, coord.y);
+      if (block) {
+        toast(block, true);
         return;
       }
       try {
@@ -572,6 +1286,15 @@
   }
 
   function handleMoveFromPopup(x, y) {
+    if (isLocalBoardActive()) {
+      const block = getMoveBlockedReason(x, y);
+      if (block) {
+        toast(block, true);
+        return;
+      }
+      practicePlayAt(x, y);
+      return;
+    }
     playMoveAt(x, y);
   }
 
@@ -720,6 +1443,10 @@
     endReason = '';
     rematchYou = false;
     rematchOpponent = false;
+    koPoint = null;
+    youInPractice = false;
+    opponentInPractice = false;
+    stopLocalPractice();
     lastMoveX = -1;
     lastMoveY = -1;
     lastMoveKey = '';
@@ -727,8 +1454,9 @@
     persistRoomCode('');
     stopWatch();
     $('goRoomPanel')?.classList.add('pm-u-hidden');
-    $('goLobbyHint')?.classList.remove('pm-u-hidden');
-    if ($('goPopoutBtn')) $('goPopoutBtn').disabled = true;
+    $('goLocalPanel')?.classList.remove('pm-u-hidden');
+    $('goLobbyHint')?.classList.add('pm-u-hidden');
+    if ($('goPopoutBtn')) $('goPopoutBtn').disabled = false;
     if ($('goRoomHint')) {
       $('goRoomHint').textContent = '';
       $('goRoomHint').classList.add('pm-u-hidden');
@@ -741,6 +1469,7 @@
       u.searchParams.delete('room');
       win.history.replaceState({}, '', u);
     } catch (_) {}
+    enterFreeLocalBoard();
   }
 
   function notifyServerLeave() {
@@ -829,7 +1558,10 @@
       if (!roomCode) return;
       api('undo', { room_code: roomCode }).then((d) => {
         if (!applyState(d)) toast((d && d.message) || '悔棋请求失败', true);
-        else toast('已向对方请求悔棋', false);
+        else {
+          const plies = undoRequestPlies(d.pending || pendingInfo);
+          toast(plies === 2 ? '已请求悔棋（将撤回双方上一手）' : '已向对方请求悔棋', false);
+        }
       }).catch((err) => toast(err.message || '网络错误', true));
     });
 
@@ -850,6 +1582,98 @@
       e.stopPropagation();
       toggleBoardWindow();
     });
+
+    $('goPracticeBtn')?.addEventListener('click', () => {
+      if (!roomCode || opponentInPractice) return;
+      api('practice_start', { room_code: roomCode }).then((d) => {
+        if (!d || d.status !== 'success') {
+          toast((d && d.message) || '无法开启演习', true);
+          return;
+        }
+        applyState(d, { force: true });
+        ensurePracticeLocalReady();
+        toast('已进入演习模式', false);
+        updatePracticeUi();
+        renderBoard($('goBoard'));
+        postStateToPopup();
+      }).catch((err) => toast(err.message || '网络错误', true));
+    });
+
+    $('goPracticeRevertBtn')?.addEventListener('click', () => {
+      practiceUndoStep();
+    });
+
+    $('goPracticeEndBtn')?.addEventListener('click', () => {
+      if (!roomCode || !youInPractice) return;
+      api('practice_end', { room_code: roomCode }).then((d) => {
+        if (!applyApiResult(d, '演习已结束，请继续落子', { force: true })) return;
+        updatePracticeUi();
+        renderBoard($('goBoard'));
+        postStateToPopup();
+      }).catch((err) => toast(err.message || '网络错误', true));
+    });
+
+    $('goLocalPassBtn')?.addEventListener('click', () => localPassMove());
+    $('goLocalUndoBtn')?.addEventListener('click', () => localUndoMove());
+    $('goLocalClearBtn')?.addEventListener('click', () => localClearBoard());
+  }
+
+  function bindPopupToolbar() {
+    $('goPopupPassBtn')?.addEventListener('click', () => {
+      if (isFreeLocalBoard()) {
+        if (!notifyOpenerLocalAction('go-play-local-pass')) localPassMove();
+        return;
+      }
+      if (!roomCode || isLocalPracticeActive()) return;
+      api('pass', { room_code: roomCode }).then((d) => {
+        if (!applyApiResult(d, null)) return;
+      }).catch((err) => toast(err.message || '网络错误', true));
+    });
+
+    $('goPopupUndoBtn')?.addEventListener('click', () => {
+      if (isFreeLocalBoard()) {
+        if (!notifyOpenerLocalAction('go-play-local-undo')) localUndoMove();
+        return;
+      }
+      if (!roomCode || isLocalPracticeActive()) return;
+      api('undo', { room_code: roomCode }).then((d) => {
+        if (!applyApiResult(d, '已请求悔棋')) return;
+      }).catch((err) => toast(err.message || '网络错误', true));
+    });
+
+    $('goPopupResignBtn')?.addEventListener('click', () => {
+      if (!roomCode || isLocalPracticeActive()) return;
+      api('resign', { room_code: roomCode }).then((d) => {
+        if (!applyApiResult(d, '已请求认输')) return;
+      }).catch((err) => toast(err.message || '网络错误', true));
+    });
+
+    $('goPopupPracticeBtn')?.addEventListener('click', () => {
+      if (!roomCode || opponentInPractice) return;
+      api('practice_start', { room_code: roomCode }).then((d) => {
+        if (!d || d.status !== 'success') {
+          toast((d && d.message) || '无法开启演习', true);
+          return;
+        }
+        applyState(d, { force: true });
+        ensurePracticeLocalReady();
+        toast('已进入演习', false);
+        notifyOpenerRefresh();
+        renderBoard($('goBoard'));
+      }).catch((err) => toast(err.message || '网络错误', true));
+    });
+
+    $('goPopupPracticeRevertBtn')?.addEventListener('click', () => {
+      if (!notifyOpenerPracticeUndo()) practiceUndoStep();
+    });
+
+    $('goPopupPracticeEndBtn')?.addEventListener('click', () => {
+      if (!roomCode || !youInPractice) return;
+      api('practice_end', { room_code: roomCode }).then((d) => {
+        if (!applyApiResult(d, '演习已结束', { force: true })) return;
+        renderBoard($('goBoard'));
+      }).catch((err) => toast(err.message || '网络错误', true));
+    });
   }
 
   function bindPopupUi() {
@@ -858,12 +1682,26 @@
     renderBoard(boardEl);
     bindBoardFrame(getBoardFrame(boardEl));
     updateBoardOverlay({});
+    bindPopupToolbar();
+
+    let urlLocal = false;
+    try {
+      urlLocal = new URL(win.location.href).searchParams.get('local') === '1';
+    } catch (_) {}
+    const hasOpener = !!(win.opener && !win.opener.closed);
+
+    if (!hasOpener && urlLocal) {
+      enterFreeLocalBoard();
+    } else {
+      updatePracticeUi();
+    }
 
     document.title = '围棋棋盘';
 
     const syncFromOpener = () => {
+      if (isFreeLocalBoard() && (!win.opener || win.opener.closed)) return;
       if (!win.opener || win.opener.closed) {
-        document.title = '围棋 — 主窗口已关闭';
+        if (!isFreeLocalBoard()) document.title = '围棋 — 主窗口已关闭';
         return;
       }
       try {
@@ -871,12 +1709,18 @@
       } catch (_) {}
     };
 
-    syncFromOpener();
-    win.setInterval(syncFromOpener, 1200);
+    if (hasOpener || !urlLocal) {
+      syncFromOpener();
+      win.setInterval(syncFromOpener, 1200);
+    }
 
     win.addEventListener('message', (e) => {
       if (e.origin !== win.location.origin) return;
       const msg = e.data || {};
+      if (msg.type === 'go-play-toast') {
+        showGoPlayToast(msg.msg, msg.isError);
+        return;
+      }
       if (msg.type === 'go-play-state' && msg.payload) {
         const p = msg.payload;
         roomCode = p.roomCode || '';
@@ -891,6 +1735,50 @@
         endReason = String(p.endReason || '');
         rematchYou = !!p.rematchYou;
         rematchOpponent = !!p.rematchOpponent;
+        koPoint = p.ko || null;
+        syncPracticeFlagsFromData({
+          you_in_practice: p.youInPractice,
+          opponent_in_practice: p.opponentInPractice,
+          practice_active: p.practiceActive,
+          practice_by_color: p.practiceByColor,
+          your_color: p.yourColor || yourColor,
+        });
+        if (youInPractice && !practiceLocal && roomCode) {
+          ensurePracticeLocalReady();
+        }
+        localBoardMode = !!p.freeLocalActive;
+        if (p.practiceActive && p.practiceBoard) {
+          const baseSrc = p.practiceBaseBoard || p.practiceBoard;
+          const baseKo = p.practiceBaseKo != null ? p.practiceBaseKo : p.practiceKo;
+          const baseLm = p.practiceBaseLastMove || p.practiceLastMove;
+          const ko = p.practiceKo || null;
+          practiceLocal = {
+            board: cloneBoard2d(p.practiceBoard),
+            baseBoard: cloneBoard2d(baseSrc),
+            moves: Array.isArray(p.practiceMoves)
+              ? p.practiceMoves.map((m) => ({
+                x: Number(m.x),
+                y: Number(m.y),
+                color: Number(m.color),
+              }))
+              : [],
+            currentPlayer: p.practiceCurrentPlayer || BLACK,
+            baseCurrentPlayer: p.practiceBaseCurrentPlayer || p.practiceCurrentPlayer || BLACK,
+            ko: ko ? { x: Number(ko.x), y: Number(ko.y) } : null,
+            baseKo: baseKo ? { x: Number(baseKo.x), y: Number(baseKo.y) } : null,
+            lastMoveX: p.practiceLastMove ? Number(p.practiceLastMove.x) : -1,
+            lastMoveY: p.practiceLastMove ? Number(p.practiceLastMove.y) : -1,
+            baseLastMoveX: baseLm && Number.isFinite(Number(baseLm.x)) ? Number(baseLm.x) : -1,
+            baseLastMoveY: baseLm && Number.isFinite(Number(baseLm.y)) ? Number(baseLm.y) : -1,
+          };
+          if (practiceLocal.moves.length) {
+            rebuildPracticeLocalFromMoves();
+          }
+          board = cloneBoard2d(practiceLocal.board);
+        } else if (!p.practiceActive) {
+          practiceLocal = null;
+          localBoardMode = false;
+        }
         lastMoveKey = p.lastMoveKey || '';
         if (p.lastMove && Number.isFinite(Number(p.lastMove.x)) && Number.isFinite(Number(p.lastMove.y))) {
           lastMoveX = Number(p.lastMove.x);
@@ -904,6 +1792,7 @@
           winner,
           end_reason: endReason,
         });
+        updatePracticeUi();
         updatePopupDocumentTitle({});
       }
     });
@@ -919,6 +1808,22 @@
       const msg = e.data || {};
       if (msg.type === 'go-play-move') {
         handleMoveFromPopup(Number(msg.x), Number(msg.y));
+      }
+      if (msg.type === 'go-play-local-pass') {
+        localPassMove();
+      }
+      if (msg.type === 'go-play-local-undo') {
+        localUndoMove();
+      }
+      if (msg.type === 'go-play-local-clear') {
+        localClearBoard();
+      }
+      if (msg.type === 'go-play-practice-undo') {
+        practiceUndoStep();
+      }
+      if (msg.type === 'go-play-popup-changed') {
+        refreshMainStateFromServer();
+        return;
       }
       if (msg.type === 'go-play-request-state' || msg.type === 'go-play-popup-ready') {
         postStateToPopup();
@@ -942,6 +1847,7 @@
           $('goRoomHint').textContent = '无法自动回到房间（可能已过期或服务器已重启），请重新创建或加入。';
           $('goRoomHint').classList.remove('pm-u-hidden');
         }
+        enterFreeLocalBoard();
       }
     });
   }
@@ -957,7 +1863,15 @@
     renderBoard($('goBoard'));
     bindBoardFrame(getBoardFrame($('goBoard')));
     updateBoardOverlay({});
-    tryAutoRejoin();
+    let hasRoomTarget = false;
+    try {
+      hasRoomTarget = !!(new URL(win.location.href).searchParams.get('room') || readStoredRoomCode());
+    } catch (_) {}
+    if (hasRoomTarget) {
+      tryAutoRejoin();
+    } else {
+      enterFreeLocalBoard();
+    }
   });
 
   if (!isPopup) {

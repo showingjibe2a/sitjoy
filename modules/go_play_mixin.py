@@ -19,6 +19,7 @@ GO_WAIT_POLL_SEC = 0.3
 GO_CLEANUP_ACTIONS = frozenset({
     'create', 'join', 'leave', 'state', 'move', 'pass',
     'undo', 'resign', 'respond', 'cancel_request', 'rematch',
+    'practice_start', 'practice_cancel', 'practice_end',
 })
 
 _go_file_lock = threading.RLock()
@@ -214,6 +215,36 @@ class GoPlayMixin:
                         removed.append({'x': sx, 'y': sy})
         return removed
 
+    def _go_ko_from_last_move(self, moves):
+        """上一手恰好提一子时，该提子点为打劫禁着点（仅下一手禁止立即反提）。"""
+        if not moves:
+            return None
+        last = moves[-1]
+        caps = last.get('captures') or []
+        if len(caps) != 1:
+            return None
+        c = caps[0]
+        return {'x': int(c['x']), 'y': int(c['y'])}
+
+    def _go_clear_ko(self, room):
+        room['ko'] = None
+
+    def _go_set_ko_after_move(self, room, captured):
+        if len(captured) == 1:
+            c = captured[0]
+            room['ko'] = {'x': int(c['x']), 'y': int(c['y'])}
+        else:
+            self._go_clear_ko(room)
+
+    def _go_check_ko_violation(self, room, x, y):
+        ko = room.get('ko')
+        if not isinstance(ko, dict):
+            return True, ''
+        kx, ky = int(ko.get('x', -1)), int(ko.get('y', -1))
+        if kx == int(x) and ky == int(y):
+            return False, '禁着点（打劫，不可立即反提）'
+        return True, ''
+
     def _go_try_play(self, board, x, y, color):
         if board[y][x] != GO_EMPTY:
             return False, '该点已有棋子', []
@@ -223,7 +254,9 @@ class GoPlayMixin:
         stones, libs = self._go_group_and_liberties(board, x, y)
         if not libs:
             board[y][x] = GO_EMPTY
-            return False, '禁着点（无气且未提子）', []
+            if captured:
+                return False, '禁着点（落子后己方无气）', []
+            return False, '禁着点（落子后己方无气且未提子）', []
         return True, '', captured
 
     def _go_replay_board(self, moves):
@@ -297,10 +330,40 @@ class GoPlayMixin:
                 'type': pending.get('type'),
                 'from_color': int(pending.get('from_color') or 0),
                 'from_name': pending.get('from_name') or '',
+                'undo_plies': int(pending.get('undo_plies') or 0) if pending.get('type') == 'undo' else 0,
             },
             'pending_for_you': from_uid and from_uid != uid,
             'you_requested_pending': from_uid == uid,
         }
+
+    def _go_clear_practice(self, room):
+        room['practice'] = None
+
+    def _go_practice_summary(self, room, user_id):
+        p = room.get('practice')
+        if not isinstance(p, dict) or not self._parse_int(p.get('user_id')):
+            return {
+                'practice_active': False,
+                'you_in_practice': False,
+                'opponent_in_practice': False,
+            }
+        pid = self._parse_int(p.get('user_id'))
+        uid = self._parse_int(user_id) or 0
+        return {
+            'practice_active': True,
+            'practice_by_color': int(p.get('color') or 0),
+            'you_in_practice': pid == uid,
+            'opponent_in_practice': pid != uid,
+        }
+
+    def _go_practice_blocks_action(self, room, user_id):
+        p = room.get('practice')
+        if not isinstance(p, dict) or not self._parse_int(p.get('user_id')):
+            return True, ''
+        pid = self._parse_int(p.get('user_id'))
+        if pid == int(user_id):
+            return False, '请先结束或撤销演习'
+        return False, '对方正在演习，请稍候'
 
     def _go_rematch_summary(self, room, user_id):
         uid = int(user_id)
@@ -323,16 +386,40 @@ class GoPlayMixin:
     def _go_bump_version(self, room):
         room['version'] = int(room.get('version') or 0) + 1
 
-    def _go_apply_undo_move(self, room):
+    def _go_undo_pop_count(self, room, requester_color):
+        """悔棋默认回到「己方上次落子」之前：末手为对方则撤双方各一手，末手为己方则撤一手。"""
+        moves = room.get('moves') or []
+        if not moves:
+            return 0
+        c = int(requester_color or 0)
+        if not c:
+            return 1
+        last_c = int(moves[-1].get('color') or 0)
+        if last_c == c:
+            return 1
+        if len(moves) >= 2 and int(moves[-2].get('color') or 0) == c:
+            return 2
+        return 1
+
+    def _go_apply_undo_move(self, room, requester_color=None):
         if not room.get('moves'):
             return False, '尚无棋步可悔'
-        room['moves'].pop()
+        if not requester_color:
+            pending = room.get('pending')
+            if isinstance(pending, dict) and pending.get('type') == 'undo':
+                requester_color = int(pending.get('from_color') or 0)
+        n = self._go_undo_pop_count(room, requester_color)
+        if n <= 0:
+            return False, '尚无棋步可悔'
+        for _ in range(n):
+            room['moves'].pop()
         if room['moves']:
             last = room['moves'][-1]
             room['current_player'] = GO_WHITE if int(last['color']) == GO_BLACK else GO_BLACK
         else:
             room['current_player'] = GO_BLACK
         room['pass_streak'] = 0
+        room['ko'] = self._go_ko_from_last_move(room.get('moves'))
         return True, ''
 
     def _go_apply_resign(self, room, resign_color):
@@ -356,6 +443,8 @@ class GoPlayMixin:
         room['pending'] = None
         room['rematch_black'] = False
         room['rematch_white'] = False
+        self._go_clear_ko(room)
+        self._go_clear_practice(room)
 
     def _go_user_color(self, room, user_id):
         uid = self._parse_int(user_id) or 0
@@ -388,9 +477,11 @@ class GoPlayMixin:
             'end_reason': room.get('end_reason') or '',
             'version': int(room.get('version') or 0),
             'pass_streak': int(room.get('pass_streak') or 0),
+            'ko': room.get('ko'),
         }
         out.update(self._go_pending_summary(room, user_id))
         out.update(self._go_rematch_summary(room, user_id))
+        out.update(self._go_practice_summary(room, user_id))
         return out
 
     def _go_get_room_locked(self, code):
@@ -452,6 +543,12 @@ class GoPlayMixin:
             return self._go_action_cancel_request(user_id, data, start_response)
         if action == 'rematch':
             return self._go_action_rematch(user_id, data, start_response)
+        if action == 'practice_start':
+            return self._go_action_practice_start(user_id, data, start_response)
+        if action == 'practice_cancel':
+            return self._go_action_practice_cancel(user_id, data, start_response)
+        if action == 'practice_end':
+            return self._go_action_practice_end(user_id, data, start_response)
         return self.send_json({'status': 'error', 'message': '未知操作'}, start_response)
 
     def _go_action_create(self, user_id, start_response):
@@ -473,6 +570,8 @@ class GoPlayMixin:
             'pending': None,
             'rematch_black': False,
             'rematch_white': False,
+            'ko': None,
+            'practice': None,
             'version': 1,
         }
         try:
@@ -522,6 +621,7 @@ class GoPlayMixin:
                     room['status'] = 'waiting'
                 room['pass_streak'] = 0
                 self._go_clear_pending(room)
+                self._go_clear_practice(room)
                 room['rematch_black'] = False
                 room['rematch_white'] = False
                 self._go_bump_version(room)
@@ -595,6 +695,9 @@ class GoPlayMixin:
                 return self.send_json({'status': 'error', 'message': '对局未开始或已结束'}, start_response)
             if room.get('pending'):
                 return self.send_json({'status': 'error', 'message': '有待确认的请求，请先处理'}, start_response)
+            ok, msg = self._go_practice_blocks_action(room, user_id)
+            if not ok:
+                return self.send_json({'status': 'error', 'message': msg}, start_response)
             uid = int(user_id)
             color = self._go_user_color(room, user_id)
             if not color:
@@ -609,12 +712,21 @@ class GoPlayMixin:
             if not (0 <= x < GO_BOARD_SIZE and 0 <= y < GO_BOARD_SIZE):
                 return self.send_json({'status': 'error', 'message': '坐标超出棋盘'}, start_response)
 
+            ko_ok, ko_msg = self._go_check_ko_violation(room, x, y)
+            if not ko_ok:
+                return self.send_json({'status': 'error', 'message': ko_msg}, start_response)
+
+            ko = room.get('ko')
+            if isinstance(ko, dict) and (int(ko.get('x', -1)) != int(x) or int(ko.get('y', -1)) != int(y)):
+                self._go_clear_ko(room)
+
             board = self._go_replay_board(room.get('moves'))
             ok, msg, captured = self._go_try_play(board, x, y, color)
             if not ok:
                 return self.send_json({'status': 'error', 'message': msg}, start_response)
 
             room['moves'].append({'x': x, 'y': y, 'color': color, 'captures': captured})
+            self._go_set_ko_after_move(room, captured)
             room['current_player'] = GO_WHITE if color == GO_BLACK else GO_BLACK
             room['pass_streak'] = 0
             room['version'] = int(room.get('version') or 0) + 1
@@ -632,6 +744,9 @@ class GoPlayMixin:
                 return self.send_json({'status': 'error', 'message': '对局未开始或已结束'}, start_response)
             if room.get('pending'):
                 return self.send_json({'status': 'error', 'message': '有待确认的请求，请先处理'}, start_response)
+            ok, msg = self._go_practice_blocks_action(room, user_id)
+            if not ok:
+                return self.send_json({'status': 'error', 'message': msg}, start_response)
             uid = int(user_id)
             color = self._go_user_color(room, user_id)
             if not color:
@@ -640,6 +755,7 @@ class GoPlayMixin:
                 return self.send_json({'status': 'error', 'message': '尚未轮到您'}, start_response)
 
             room['pass_streak'] = int(room.get('pass_streak') or 0) + 1
+            self._go_clear_ko(room)
             room['current_player'] = GO_WHITE if color == GO_BLACK else GO_BLACK
             room['version'] = int(room.get('version') or 0) + 1
             if room['pass_streak'] >= 2:
@@ -665,14 +781,21 @@ class GoPlayMixin:
                 return self.send_json({'status': 'error', 'message': '对手未加入，无法悔棋'}, start_response)
             if room.get('pending'):
                 return self.send_json({'status': 'error', 'message': '已有待确认的请求'}, start_response)
-            if not room.get('moves'):
-                return self.send_json({'status': 'error', 'message': '尚无棋步可悔'}, start_response)
+            ok, msg = self._go_practice_blocks_action(room, user_id)
+            if not ok:
+                return self.send_json({'status': 'error', 'message': msg}, start_response)
             color = self._go_user_color(room, user_id)
+            if not color:
+                return self.send_json({'status': 'error', 'message': '您不在该房间中'}, start_response)
+            undo_plies = self._go_undo_pop_count(room, color)
+            if undo_plies <= 0:
+                return self.send_json({'status': 'error', 'message': '尚无棋步可悔'}, start_response)
             room['pending'] = {
                 'type': 'undo',
                 'from_user_id': int(user_id),
                 'from_color': color,
                 'from_name': room.get('black_name') if color == GO_BLACK else room.get('white_name'),
+                'undo_plies': undo_plies,
             }
             self._go_bump_version(room)
             self._go_save_room(room)
@@ -692,6 +815,9 @@ class GoPlayMixin:
                 return self.send_json({'status': 'error', 'message': '对手未加入'}, start_response)
             if room.get('pending'):
                 return self.send_json({'status': 'error', 'message': '已有待确认的请求'}, start_response)
+            ok, msg = self._go_practice_blocks_action(room, user_id)
+            if not ok:
+                return self.send_json({'status': 'error', 'message': msg}, start_response)
             color = self._go_user_color(room, user_id)
             if not color:
                 return self.send_json({'status': 'error', 'message': '您不在该房间中'}, start_response)
@@ -724,7 +850,8 @@ class GoPlayMixin:
             ptype = pending.get('type')
             if accept:
                 if ptype == 'undo':
-                    ok, msg = self._go_apply_undo_move(room)
+                    req_color = int(pending.get('from_color') or 0)
+                    ok, msg = self._go_apply_undo_move(room, req_color)
                     if not ok:
                         return self.send_json({'status': 'error', 'message': msg}, start_response)
                 elif ptype == 'resign':
@@ -775,6 +902,84 @@ class GoPlayMixin:
                 return self.send_json({'status': 'error', 'message': '您不在该房间中'}, start_response)
             if room.get('rematch_black') and room.get('rematch_white'):
                 self._go_reset_for_rematch(room)
+            self._go_bump_version(room)
+            self._go_save_room(room)
+        out = self._go_room_for_user(room, user_id)
+        out['status'] = 'success'
+        return self.send_json(out, start_response)
+
+    def _go_action_practice_start(self, user_id, data, start_response):
+        code = str(data.get('room_code') or '').strip().upper()
+        with self._go_room_store(code) as (room, err):
+            if err:
+                return self.send_json({'status': 'error', 'message': err}, start_response)
+            if room.get('status') != 'playing':
+                return self.send_json({'status': 'error', 'message': '对局未开始或已结束'}, start_response)
+            if not room.get('white_user_id'):
+                return self.send_json({'status': 'error', 'message': '对手未加入'}, start_response)
+            if room.get('pending'):
+                return self.send_json({'status': 'error', 'message': '有待确认的请求'}, start_response)
+            existing = room.get('practice')
+            uid = self._parse_int(user_id) or 0
+            if isinstance(existing, dict):
+                pid = self._parse_int(existing.get('user_id'))
+                if pid and pid == uid:
+                    out = self._go_room_for_user(room, user_id)
+                    out['status'] = 'success'
+                    return self.send_json(out, start_response)
+                return self.send_json({'status': 'error', 'message': '已有玩家在演习'}, start_response)
+            color = self._go_user_color(room, user_id)
+            if not color:
+                return self.send_json({'status': 'error', 'message': '您不在该房间中'}, start_response)
+            if int(room.get('current_player') or 0) != color:
+                return self.send_json({'status': 'error', 'message': '仅轮到己方时可开启演习'}, start_response)
+            room['practice'] = {
+                'user_id': uid,
+                'color': color,
+                'moves_count_at_start': len(room.get('moves') or []),
+                'current_player_at_start': int(room.get('current_player') or GO_BLACK),
+                'ko_at_start': room.get('ko'),
+            }
+            self._go_bump_version(room)
+            self._go_save_room(room)
+        out = self._go_room_for_user(room, user_id)
+        out['status'] = 'success'
+        return self.send_json(out, start_response)
+
+    def _go_action_practice_cancel(self, user_id, data, start_response):
+        code = str(data.get('room_code') or '').strip().upper()
+        with self._go_room_store(code) as (room, err):
+            if err:
+                return self.send_json({'status': 'error', 'message': err}, start_response)
+            p = room.get('practice')
+            if not isinstance(p, dict):
+                return self.send_json({'status': 'error', 'message': '当前没有进行中的演习'}, start_response)
+            if self._parse_int(p.get('user_id')) != int(user_id):
+                return self.send_json({'status': 'error', 'message': '只能撤销自己的演习'}, start_response)
+            self._go_clear_practice(room)
+            self._go_bump_version(room)
+            self._go_save_room(room)
+        out = self._go_room_for_user(room, user_id)
+        out['status'] = 'success'
+        return self.send_json(out, start_response)
+
+    def _go_action_practice_end(self, user_id, data, start_response):
+        """结束演习：丢弃本地试下手顺，恢复开启演习前的对局状态，轮到己方继续。"""
+        code = str(data.get('room_code') or '').strip().upper()
+        with self._go_room_store(code) as (room, err):
+            if err:
+                return self.send_json({'status': 'error', 'message': err}, start_response)
+            p = room.get('practice')
+            if not isinstance(p, dict):
+                return self.send_json({'status': 'error', 'message': '当前没有进行中的演习'}, start_response)
+            if self._parse_int(p.get('user_id')) != int(user_id):
+                return self.send_json({'status': 'error', 'message': '只能结束自己的演习'}, start_response)
+            room['current_player'] = int(p.get('current_player_at_start') or GO_BLACK)
+            if isinstance(p.get('ko_at_start'), dict):
+                room['ko'] = p.get('ko_at_start')
+            else:
+                self._go_clear_ko(room)
+            self._go_clear_practice(room)
             self._go_bump_version(room)
             self._go_save_room(room)
         out = self._go_room_for_user(room, user_id)
