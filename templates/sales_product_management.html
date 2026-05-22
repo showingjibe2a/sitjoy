@@ -2176,6 +2176,25 @@
             return (mainImageItems || []).find(x => mainImageRowKey(x) === k) || null;
         }
 
+        function mainImageFabricNameCandidates() {
+            const out = [];
+            try {
+                const hid = document.getElementById('modalFabric');
+                if (hid && hid.value) {
+                    String(hid.value).split('/').map(s => String(s || '').trim()).filter(Boolean).forEach(s => out.push(s));
+                }
+                const fid = Number(document.getElementById('modalFabricId')?.value || 0);
+                if (fid && Array.isArray(fabricOptions)) {
+                    const f = fabricOptions.find(x => Number(x.id) === fid);
+                    if (f) {
+                        if (f.fabric_name_en) out.push(String(f.fabric_name_en).trim());
+                        if (f.fabric_code) out.push(String(f.fabric_code).trim());
+                    }
+                }
+            } catch (e) {}
+            return [...new Set(out.filter(Boolean))];
+        }
+
         function renderMainImageGrid() {
             const grid = document.getElementById('mainImagesGrid');
             const tip = document.getElementById('mainImageFolderTip');
@@ -2220,8 +2239,6 @@
                 const rowKey = mainImageRowKey(item);
                 const encRowKey = encodeURIComponent(rowKey);
                 const safeName = rawName.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                const safeDesc = String(item.description || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                const safeType = String(item.image_type_name || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 const card = document.createElement('div');
                 card.className = 'sj-media-image-card';
                 card.style.cursor = 'move';
@@ -2234,11 +2251,9 @@
                     <div class="sj-media-image-preview-wrap">
                         <img src="/api/image-preview?id=${encodeURIComponent(item.image_b64 || '')}&mode=thumb&w=540&q=72" alt="${safeName}" class="sj-media-image-preview" loading="lazy">
                     </div>
-                    <div class="sj-media-image-info">
-                        <div class="sj-media-image-type">类型：${safeType}</div>
-                        <div class="sj-media-image-desc">${safeDesc || '双击添加卖点描述'}</div>
-                        <div class="sj-media-image-name">${safeName}</div>
-                    </div>
+                    ${(window.SjMediaImageCard && window.SjMediaImageCard.buildInfoHtml)
+                        ? window.SjMediaImageCard.buildInfoHtml(item, { fabricCandidates: mainImageFabricNameCandidates() })
+                        : ''}
                 `;
                 card.addEventListener('dblclick', () => openMainImageDescModal(rowKey));
                 card.addEventListener('dragstart', handleMainImageDragStart);
@@ -2267,27 +2282,46 @@
                 fabricList.forEach(item => {
                     const rawName = String(item.image_name || '');
                     const safeName = rawName.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                    const safeDesc = String(item.description || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                    const safeType = String(item.image_type_name || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                     const card = document.createElement('div');
                     card.className = 'sj-media-image-card';
                     card.style.cursor = 'default';
                     card.setAttribute('draggable', 'false');
+                    const infoHtml = (window.SjMediaImageCard && window.SjMediaImageCard.buildInfoHtml)
+                        ? window.SjMediaImageCard.buildInfoHtml(item, { readonly: true, fabricCandidates: mainImageFabricNameCandidates() })
+                        : '';
                     card.innerHTML = `
                         <div style="position:absolute;left:8px;top:8px;z-index:11;"><span style="${badgeStyle}">面料</span></div>
                         <div class="sj-media-image-preview-wrap">
                             <img src="/api/image-preview?id=${encodeURIComponent(item.image_b64 || '')}&mode=thumb&w=540&q=72" alt="${safeName}" class="sj-media-image-preview" loading="lazy">
                         </div>
-                        <div class="sj-media-image-info">
-                            <div class="sj-media-image-type">类型：${safeType}</div>
-                            <div class="sj-media-image-desc">${safeDesc || '（空）'}</div>
-                            <div class="sj-media-image-name">${safeName}</div>
-                        </div>
+                        ${infoHtml}
                     `;
                     grid.appendChild(card);
                 });
             }
             grid.appendChild(placeholder);
+
+            if (window.SjMediaImageCard && window.SjMediaImageCard.bindStatusSegments) {
+                window.SjMediaImageCard.bindStatusSegments(grid, {
+                    onEnabledChange: async ({ pathB64, enabled }) => {
+                        const resp = await fetch('/api/gallery-image-meta', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ id: pathB64, is_enabled: enabled ? 1 : 0 }),
+                        });
+                        const data = await resp.json();
+                        if (!data || data.status !== 'success') {
+                            throw new Error((data && data.message) ? data.message : '保存失败');
+                        }
+                        (mainImageItems || []).forEach(it => {
+                            if (String(it.image_b64 || '').trim() === pathB64) {
+                                it.is_deprecated = enabled ? 0 : 1;
+                            }
+                        });
+                        if (window.showAppToast) window.showAppToast(enabled ? '已启用' : '已弃用', false, 3000);
+                    },
+                });
+            }
 
             grid.ondragover = handleMainImageDragOverGrid;
             grid.ondrop = handleMainImageDrop;
@@ -5116,6 +5150,7 @@
     <script src="/static/js/sitjoy_grouped_aggregate.js"></script>
     <script src="/static/js/sitjoy_row_image_refresh.js"></script>
     <script src="/static/js/pm_image_edit_modal.js"></script>
+    <script src="/static/js/sj_media_image_card.js"></script>
 </body>
 </html>
 

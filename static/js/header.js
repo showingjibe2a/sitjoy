@@ -5892,6 +5892,8 @@
                     const elS = document.querySelector('.nav-sales'); if(elS) elS.classList.add('active');
                 } else if(path.startsWith('/about')){
                     const elA = document.querySelector('.nav-about'); if(elA) elA.classList.add('active');
+                } else if(path.startsWith('/widgets')){
+                    const elW = document.querySelector('.nav-widgets'); if(elW) elW.classList.add('active');
                 }
             })
             .catch(err => console.error('Load header failed', err));

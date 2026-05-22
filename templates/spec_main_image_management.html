@@ -412,6 +412,7 @@
 <script src="/static/js/nas_main_image_browser_ui.js"></script>
 <script src="/static/js/sitjoy_row_image_refresh.js"></script>
 <script src="/static/js/pm_image_edit_modal.js"></script>
+<script src="/static/js/sj_media_image_card.js"></script>
 <script>
 (function () {
   const $ = (s) => document.querySelector(s);
@@ -1373,6 +1374,18 @@
     specmiRenderMainGrid();
   }
 
+  function specmiFabricNameCandidates() {
+    const out = [];
+    const fabEl = document.getElementById('specmiModalFabric');
+    if (fabEl && fabEl.value) out.push(String(fabEl.value).trim());
+    const v = (specmiAllVariants || []).find(x => Number(x.variant_id || 0) === Number(specmiEditingVid || 0));
+    if (v) {
+      if (v.fabric_name_en) out.push(String(v.fabric_name_en).trim());
+      if (v.fabric_code) out.push(String(v.fabric_code).trim());
+    }
+    return [...new Set(out.filter(Boolean))];
+  }
+
   function specmiRenderMainGrid() {
     const grid = $('#specmiMainImagesGrid');
     if (!grid) return;
@@ -1402,8 +1415,9 @@
       const rawName = String(item.image_name || '');
       const enc = encodeURIComponent(rawName);
       const safeName = rawName.replace(/</g, '&lt;').replace(/"/g, '&quot;');
-      const safeDesc = String(item.description || '').replace(/</g, '&lt;');
-      const safeType = String(item.image_type_name || '').replace(/</g, '&lt;');
+      const infoHtml = (window.SjMediaImageCard && window.SjMediaImageCard.buildInfoHtml)
+        ? window.SjMediaImageCard.buildInfoHtml(item, { fabricCandidates: specmiFabricNameCandidates() })
+        : '';
       const card = document.createElement('div');
       card.className = 'sj-media-image-card sj-media-image-card--drag';
       card.setAttribute('draggable', 'true');
@@ -1414,11 +1428,7 @@
         <div class="sj-media-image-preview-wrap">
           <img src="${specmiPreviewThumbUrl(item.image_b64 || '', 540, 72)}" alt="${safeName}" class="sj-media-image-preview" loading="lazy">
         </div>
-        <div class="sj-media-image-info">
-          <div class="sj-media-image-type">类型：${safeType}</div>
-          <div class="sj-media-image-desc">${safeDesc || '双击添加卖点描述'}</div>
-          <div class="sj-media-image-name">${safeName}</div>
-        </div>`;
+        ${infoHtml}`;
       card.querySelector('[data-del]')?.addEventListener('click', (e) => {
         e.stopPropagation();
         specmiDeleteImage(decodeURIComponent(card.querySelector('[data-del]').getAttribute('data-del')));
@@ -1439,19 +1449,40 @@
           const card = document.createElement('div');
           card.className = 'sj-media-image-card sj-media-image-card--static';
           card.setAttribute('draggable', 'false');
+          const fabInfo = (window.SjMediaImageCard && window.SjMediaImageCard.buildInfoHtml)
+            ? window.SjMediaImageCard.buildInfoHtml(item, { readonly: true, fabricCandidates: specmiFabricNameCandidates() })
+            : '';
           card.innerHTML = `
             <div class="sj-fabric-badge-anchor"><span class="sj-fabric-badge">面料</span></div>
             <div class="sj-media-image-preview-wrap">
               <img src="${specmiPreviewThumbUrl(item.image_b64 || '', 540, 72)}" alt="" class="sj-media-image-preview" loading="lazy">
             </div>
-            <div class="sj-media-image-info">
-              <div class="sj-media-image-type">类型：${String(item.image_type_name || '').replace(/</g, '&lt;')}</div>
-              <div class="sj-media-image-name">${rawName.replace(/</g, '&lt;')}</div>
-            </div>`;
+            ${fabInfo}`;
           grid.appendChild(card);
         });
     }
     grid.appendChild(placeholder);
+    if (window.SjMediaImageCard && window.SjMediaImageCard.bindStatusSegments) {
+      window.SjMediaImageCard.bindStatusSegments(grid, {
+        onEnabledChange: async ({ pathB64, enabled }) => {
+          const resp = await fetch('/api/gallery-image-meta', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: pathB64, is_enabled: enabled ? 1 : 0 }),
+          });
+          const data = await resp.json();
+          if (!data || data.status !== 'success') {
+            throw new Error((data && data.message) ? data.message : '保存失败');
+          }
+          (specmiMainItems || []).forEach(it => {
+            if (String(it.image_b64 || '').trim() === pathB64) {
+              it.is_deprecated = enabled ? 0 : 1;
+            }
+          });
+          if (window.showAppToast) window.showAppToast(enabled ? '已启用' : '已弃用', false, 3000);
+        },
+      });
+    }
     grid.ondragover = (e) => { e.preventDefault(); };
   }
 

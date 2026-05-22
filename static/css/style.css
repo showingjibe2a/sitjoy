@@ -5401,31 +5401,7 @@ button.btn-small:active {
     background-color: var(--sj-media-image-canvas);
 }
 
-.sj-media-image-info {
-    padding: 0.35rem 0.45rem;
-    display: grid;
-    gap: 0.2rem;
-}
-
-.sj-media-image-type {
-    color: var(--morandi-slate);
-    font-size: 0.72rem;
-    font-weight: 600;
-    word-break: break-all;
-}
-
-.sj-media-image-desc {
-    color: var(--morandi-ink);
-    font-size: 0.8rem;
-    min-height: 1.2rem;
-    line-height: 1.4;
-}
-
-.sj-media-image-name {
-    color: var(--morandi-slate);
-    font-size: 0.66rem;
-    word-break: break-all;
-}
+/* 卡片信息区排版见 main-image-manager.css */
 
 .sj-media-image-remove {
     position: absolute;

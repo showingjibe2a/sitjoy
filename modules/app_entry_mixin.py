@@ -7,9 +7,19 @@ from urllib.parse import parse_qs
 class AppEntryMixin:
     """WSGI 入口相关能力。"""
 
+    @staticmethod
+    def _normalize_request_path(path):
+        p = str(path or '/').strip()
+        if not p.startswith('/'):
+            p = '/' + p
+        if len(p) > 1 and p.endswith('/'):
+            p = p.rstrip('/')
+        return p
+
     def __call__(self, environ, start_response):
         try:
-            path = environ['PATH_INFO']
+            path = self._normalize_request_path(environ.get('PATH_INFO'))
+            environ['PATH_INFO'] = path
             method = environ['REQUEST_METHOD']
 
             permission_result = self._validate_api_permission(path, environ, start_response)

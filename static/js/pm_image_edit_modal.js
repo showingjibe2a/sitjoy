@@ -1526,7 +1526,8 @@
   window.PmImageEditModal = {
     init: function (options) { ctx = options || {}; return true; },
     open: open,
-    isOpen: function () { return $('pmImageEditModal')?.classList.contains('active'); }
+    isOpen: function () { return $('pmImageEditModal')?.classList.contains('active'); },
+    stripDecorativeImageBaseName: stripDecorativeImageBaseName,
   };
 })();
 

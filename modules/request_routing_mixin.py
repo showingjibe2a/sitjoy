@@ -108,6 +108,7 @@ API_PERMISSION_MAP = {
     '/api/aplus-version-assets': 'aplus_management',
     '/api/aplus-version-layout': 'aplus_management',
     '/api/aplus-upload': 'aplus_management',
+    '/api/go-play': 'widgets_go_play',
 }
 
 PAGE_TEMPLATE_MAP = {
@@ -145,6 +146,9 @@ PAGE_TEMPLATE_MAP = {
     '/factory-stock-management': ('templates/factory_stock_management.html', 'factory_stock_management'),
     '/factory-wip-management': ('templates/factory_wip_management.html', 'factory_wip_management'),
     '/aplus-management': ('templates/aplus_management.html', 'aplus_management'),
+    '/widgets': ('templates/widgets.html', 'widgets'),
+    '/widgets/go-play': ('templates/widgets_go_play.html', 'widgets_go_play'),
+    '/widgets/go-play/board': ('templates/widgets_go_play_board.html', 'widgets_go_play'),
 }
 
 API_ROUTE_MAP = {
@@ -260,6 +264,7 @@ API_ROUTE_MAP = {
     '/api/aplus-version-assets': ('method', 'handle_aplus_version_assets_api'),
     '/api/aplus-version-layout': ('method', 'handle_aplus_version_layout_api'),
     '/api/aplus-upload': ('start', 'handle_aplus_upload_api'),
+    '/api/go-play': ('method', 'handle_go_play_api'),
 }
 
 
@@ -274,6 +279,15 @@ class RequestRoutingMixin:
             return self.handle_hello_api(environ, path, method, start_response)
         if path == '/status':
             return self.handle_status(start_response)
+
+        if path == '/api/go-play' or path.startswith('/api/go-play/'):
+            handler = getattr(self, 'handle_go_play_api', None)
+            if handler is None:
+                return self.send_json({'status': 'error', 'message': 'Handler not found: handle_go_play_api', 'path': path}, start_response)
+            try:
+                return handler(environ, method, start_response)
+            except Exception as e:
+                return self.send_json({'status': 'error', 'message': f'API内部错误: {str(e)}', 'path': path}, start_response)
 
         route = API_ROUTE_MAP.get(path)
         if not route:
@@ -336,6 +350,8 @@ class RequestRoutingMixin:
             return self.send_json({'status': 'error', 'message': '无权限访问该模块'}, start_response)
 
         permission_key = API_PERMISSION_MAP.get(path)
+        if not permission_key and path.startswith('/api/go-play'):
+            permission_key = 'widgets_go_play'
         if permission_key and not self._user_has_page_access(user_id, permission_key):
             return self.send_json({'status': 'error', 'message': '无权限访问该模块'}, start_response)
         return None

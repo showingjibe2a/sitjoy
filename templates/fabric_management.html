@@ -1118,16 +1118,21 @@
                 card.setAttribute('draggable', 'true');
                 card.dataset.index = index;
 
+                const cardItem = {
+                    image_name: img.image_name,
+                    image_type_name: typeLabel,
+                    description: descText,
+                    image_b64: String(img.image_name || ''),
+                };
+                const infoHtml = (window.SjMediaImageCard && window.SjMediaImageCard.buildInfoHtml)
+                    ? window.SjMediaImageCard.buildInfoHtml(cardItem, { readonly: true })
+                    : '';
                 card.innerHTML = `
                     <div class="sj-media-image-remove-badge" onclick="removeImageCard(${index}); event.stopPropagation();"><span class="sj-media-image-remove-icon">×</span></div>
                     <div class="sj-media-image-preview-wrap">
                         <img src="${getSelectedImagePreviewSrc(img, 520, 72)}" alt="${escapeHtml(img.image_name)}" class="sj-media-image-preview" loading="lazy">
                     </div>
-                    <div class="sj-media-image-info">
-                        <div class="sj-media-image-type">类型：${escapeHtml(typeLabel)}</div>
-                        <div class="sj-media-image-desc">${descText ? escapeHtml(descText) : '（空，双击编辑）'}</div>
-                        <div class="sj-media-image-name">${escapeHtml(img.image_name)}</div>
-                    </div>
+                    ${infoHtml}
                 `;
 
                 // bind events
@@ -1140,7 +1145,7 @@
 
                 // allow dragging when starting on inner image or text
                 try {
-                    const inners = card.querySelectorAll('img, .sj-media-image-name');
+                    const inners = card.querySelectorAll('img, .sj-media-image-original, .sj-media-image-desc');
                     inners.forEach(n => {
                         n.setAttribute('draggable', 'true');
                         n.addEventListener('dragstart', handleDragStartImage);
@@ -1492,6 +1497,8 @@
     </script>
 </body>
     <script src="/static/js/header.js"></script>
+    <script src="/static/js/pm_image_edit_modal.js"></script>
+    <script src="/static/js/sj_media_image_card.js"></script>
     <script src="/static/js/sitjoy_row_image_refresh.js"></script>
 </html>
 
