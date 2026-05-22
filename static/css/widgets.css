@@ -384,8 +384,8 @@
 
 .go-play-stone {
     position: absolute;
-    left: calc(var(--gx) * 100% / 18);
-    top: calc(var(--gy) * 100% / 18);
+    left: calc((var(--gx) + 0.5) * 100% / 19);
+    top: calc((var(--gy) + 0.5) * 100% / 19);
     width: calc(100% / 19 * 0.92);
     height: calc(100% / 19 * 0.92);
     max-width: 28px;
@@ -417,8 +417,8 @@
 
 .go-play-ko-mark {
     position: absolute;
-    left: calc(var(--gx) * 100% / 18);
-    top: calc(var(--gy) * 100% / 18);
+    left: calc((var(--gx) + 0.5) * 100% / 19);
+    top: calc((var(--gy) + 0.5) * 100% / 19);
     width: calc(100% / 19 * 0.55);
     height: calc(100% / 19 * 0.55);
     max-width: 18px;

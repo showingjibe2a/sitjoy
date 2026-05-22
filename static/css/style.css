@@ -3220,6 +3220,9 @@ pre code {
 }
 
 footer {
+    width: 100%;
+    min-width: var(--sitjoy-page-min-width);
+    box-sizing: border-box;
     background: rgba(0, 0, 0, 0.1);
     color: var(--morandi-sand);
     text-align: center;
@@ -4321,6 +4324,7 @@ a.nas-main-image-crumb:hover {
 
     #site-header,
     .navbar,
+    footer,
     .container {
         min-width: 0;
     }

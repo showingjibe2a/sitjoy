@@ -1144,8 +1144,12 @@
   function coordFromPointer(e, frame) {
     const rect = frame.getBoundingClientRect();
     if (!rect.width || !rect.height) return null;
+    const inset = 0.5 / SIZE;
+    const span = 1 - 2 * inset;
     let nx = (e.clientX - rect.left) / rect.width;
     let ny = (e.clientY - rect.top) / rect.height;
+    nx = (nx - inset) / span;
+    ny = (ny - inset) / span;
     nx = Math.max(0, Math.min(1, nx));
     ny = Math.max(0, Math.min(1, ny));
     const maxIdx = SIZE - 1;

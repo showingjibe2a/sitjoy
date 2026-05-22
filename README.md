@@ -1,313 +1,149 @@
-# Synology NAS Python 网页项目
+# SITJOY
 
-这是一个运行在 Synology NAS 上的 Python Flask Web 应用。
+运行在 Synology NAS 上的内部运营 Web 应用（Python WSGI + Flask 风格路由）。覆盖产品/面料/订单、销售与销量预测、物流仓储、Amazon 广告与账户健康、图片与 A+、待办日历等模块，并提供可扩展的**小组件**（如在线围棋对弈）。
 
-## 📋 项目结构
+## 项目结构
 
 ```
 sitjoy/
-├── app.py                      # WSGI 应用入口（5,351行）- 负责mixin组装和基础路由
-├── requirements.txt            # Python 依赖
-├── README.md                   # 说明文档
-├── db_config.json             # 数据库配置
-├── templates/                 # HTML 模板文件夹
-│   └── *.html                 # 各功能模块的页面模板
-├── static/                    # 静态资源文件夹
-│   ├── css/
-│   │   └── style.css         # 样式表
-│   ├── js/
-│   └── partials/
-├── modules/                   # 业务逻辑 Mixin 模块（23个）
-│   ├── app_entry_mixin.py         # WSGI 入口处理
-│   ├── auth_employee_mixin.py      # 员工认证和会话管理
-│   ├── core_app_mixin.py          # 核心基础设施（DB连接、JSON响应、缓存）
-│   ├── db_schema_basics_mixin.py   # 数据库 schema 初始化
-│   ├── page_permission_mixin.py    # 页面权限管理
-│   ├── request_routing_mixin.py    # API 请求路由分发
-│   ├── excel_tools_mixin.py        # Excel 导入导出处理
-│   ├── encoding_utils_mixin.py     # 编码和文本规范化工具
-│   ├── image_processing_mixin.py   # 图片识别和处理
-│   ├── file_utils_mixin.py         # 文件系统操作工具
-│   ├── file_management_mixin.py    # 文件管理和上传
-│   ├── product_mgmt_mixin.py       # SKU/分类/材料管理（新增）
-│   ├── fabric_mgmt_mixin.py        # 面料管理和图片处理（新增）
-│   ├── order_mgmt_mixin.py         # 订单产品管理（新增）
-│   ├── utility_mixin.py            # 待办/日历/卖点工具（新增）
-│   ├── amazon_ad_mixin.py          # Amazon 广告管理（新增）
-│   ├── support_domain_mixin.py     # 平台/品牌/店铺/认证管理（新增）
-│   ├── sales_product_mixin.py      # 销售产品管理
-│   ├── sales_management_mixin.py   # 订单登记管理
-│   ├── sales_schema_mixin.py       # 销售模块 schema
-│   ├── logistics_warehouse_mixin.py    # 海外仓库管理
-│   ├── logistics_in_transit_mixin.py   # 在途物流管理
-│   ├── logistics_schema_mixin.py       # 物流 schema
-│   ├── amazon_account_health_mixin.py  # Amazon 账户健康监控
-│   └── __pycache__/            # Python 编译缓存
-├── scripts/                   # 辅助脚本
-│   ├── list_fabric_files.py
-│   ├── diagnose_fabric_binding.py
-│   └── patch_*.py
-└── __pycache__/              # 缓存目录
-    ├── logistics_schema_ready.json
-    ├── opt_cache_*.json      # API 选项缓存
-    └── user_perm_*.json      # 用户权限缓存
+├── app.py                      # WSGI 入口：组装 Mixin、权限与菜单
+├── requirements.txt
+├── db_config.json              # 数据库连接（勿提交敏感信息到公开仓库）
+├── AGENTS.md                   # 协作约定（含数据库 schema 策略）
+├── modules/                    # 业务 Mixin（约 24 个）
+│   ├── app_entry_mixin.py
+│   ├── request_routing_mixin.py
+│   ├── page_permission_mixin.py
+│   ├── core_app_mixin.py
+│   ├── auth_employee_mixin.py
+│   ├── product_mgmt_mixin.py / fabric_mgmt_mixin.py / order_mgmt_mixin.py
+│   ├── sales_product_mixin.py / sales_management_mixin.py
+│   ├── logistics_*_mixin.py
+│   ├── amazon_*_mixin.py / aplus_mixin.py
+│   ├── go_play_mixin.py        # 围棋对弈 API 与房间持久化
+│   └── ...
+├── templates/                  # 页面模板（*.html）
+├── static/
+│   ├── css/                    # style.css、widgets.css 等
+│   └── js/                     # 各页面前端逻辑（如 go-play.js）
+├── scripts/
+│   └── sql/                    # 数据库迁移（唯一允许的 schema 变更方式）
+└── README.md
 ```
 
-## 🏗️ 架构设计
+## 架构
 
-### Mixin 继承结构
+`WSGIApp` 通过多重继承组合各 `*Mixin`，路由在 `request_routing_mixin.py` 的 `PAGE_TEMPLATE_MAP` / API 映射中集中维护，页面权限键与侧栏菜单在 `app.py` 初始化时绑定。
 
-WSGIApp 通过多重继承组装 23 个 Mixin 模块，实现关注点分离：
+**原则：** 单一职责、按业务域拆分；新增功能优先新增或扩展 Mixin，避免把业务逻辑堆回 `app.py`。
 
-```
-WSGIApp
-├── AppEntryMixin              # WSGI 入口
-├── RequestRoutingMixin        # 路由分发
-├── PagePermissionMixin        # 权限检查
-├── CoreAppMixin               # 核心基础
-├── AuthEmployeeMixin          # 认证管理
-├── UtilityMixin              # 工具函数
-├── [编码/图片/文件处理]      # 基础设施
-├── DbSchemaBasicsMixin        # 数据库初始化
-├── [Schema定义Mixin]         # 各模块 Schema
-├── [域驱动业务Mixin]         # 11 个业务模块
-```
+## 快速开始
 
-**优势**:
-- ✅ 单一职责：每个 Mixin 专注于特定功能
-- ✅ 高度内聚：相关代码聚合在一起
-- ✅ 低耦合：模块之间依赖清晰
-- ✅ 易测试：单个 Mixin 可独立验证
-- ✅ 易扩展：新功能只需添加新 Mixin
+### 环境
 
-### 重构历程  
+- Python 3.8+
+- MySQL / MariaDB
+- 可 SSH 访问的 Synology NAS（或同等 Linux 环境）
 
-| 阶段 | app.py 行数 | 新增 Mixin | 主要工作 |
-|------|-----------|----------|--------|
-| 初始 | 11,002 | 14 | 单体架构 |
-| 第一阶段 | 8,500 | +6 | 域驱动拆分 |
-| 第二阶段 | 6,200 | +3 | 功能细分 |
-| **最终** | **5,351** | **23** | **-51.4%** |
+### 安装与运行
 
-## 🚀 快速开始
-
-### 前置要求
-- Synology NAS 已安装 Python 3.8 或更高版本
-- SSH 访问 NAS
-- MySQL/MariaDB 数据库
-
-### 安装步骤
-
-1. **连接到 NAS**
-   ```bash
-   ssh admin@your-nas-ip
-   ```
-
-2. **进入项目目录**
-   ```bash
-   cd /volume1/web/sitjoy
-   ```
-
-3. **创建虚拟环境（推荐）**
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate  # Linux/NAS
-   ```
-
-4. **安装依赖**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-5. **运行应用**
-   ```bash
-   python app.py
-   ```
-
-应用将在 `http://localhost:5000` 启动
-
-## 🌐 访问网页
-
-从任何设备访问：
-- **本地 NAS：** `http://nas-ip:5000`
-- **本地机器：** `http://localhost:5000`（需要端口转发）
-
-## 📡 API 端点
-
-| 方法 | 路由 | 说明 |
-|------|------|------|
-| GET | `/` | 首页 |
-| GET | `/about` | 关于页面 |
-| POST | `/api/hello` | 问候 API（POST JSON：`{"name": "用户名"}`) |
-| GET | `/api/hello?name=用户名` | 问候 API（GET 方式） |
-| GET | `/status` | 系统状态信息 |
-
-## 📝 示例 API 调用
-
-### 测试问候 API
 ```bash
-curl -X POST http://localhost:5000/api/hello \
-  -H "Content-Type: application/json" \
-  -d '{"name": "张三"}'
+cd /volume1/web/sitjoy   # 或你的部署路径
+
+python3 -m venv venv
+source venv/bin/activate
+
+pip install -r requirements.txt
+python app.py
 ```
 
-响应：
-```json
-{
-  "message": "你好，张三！",
-  "timestamp": "2026-01-20T10:30:00.123456",
-  "status": "success"
-}
-```
+默认监听 `http://0.0.0.0:5000`（具体以 `app.py` / 部署配置为准）。生产环境请使用 Gunicorn/uWSGI 等 WSGI 服务器，并设置 `debug=False`。
 
-### 获取系统状态
-```bash
-curl http://localhost:5000/status
-```
+### 依赖
 
-## 🔧 配置说明
+| 包 | 用途 |
+|----|------|
+| Flask / Werkzeug | 路由与 WSGI 工具 |
+| PyMySQL | 数据库 |
+| openpyxl | Excel 导入导出 |
+| Pillow | 图片处理 |
 
-在 `app.py` 中修改以下内容：
+## 数据库迁移（重要）
 
-```python
-app.run(
-    host='0.0.0.0',    # 0.0.0.0 允许外部访问，localhost 仅本地
-    port=5000,         # 修改端口号
-    debug=True         # 生产环境改为 False
-)
-```
+**禁止**在 Python/JS 运行时自动建表、改表或探测 `information_schema`。
 
-## 📦 依赖列表
+所有 schema 变更必须通过 `scripts/sql/*.sql` 手工执行，命名建议：`YYYYMMDD_NN_描述.sql`。基线可参考 `scripts/sql/20260423_00_schema_baseline.sql`。
 
-- Flask 2.3.3 - Web 框架
-- Werkzeug 2.3.7 - WSGI 工具库
+详见仓库根目录 `AGENTS.md`。
 
-## 🛡️ 生产环境建议
+## 功能模块概览
 
-1. 设置 `debug=False`
-2. 使用 Gunicorn 作为 WSGI 服务器：
+| 菜单分组 | 典型页面 | 说明 |
+|----------|----------|------|
+| 店铺管理 | 店铺/品牌、Amazon 账户健康 | 平台与账户监控 |
+| 产品管理 | 品类货号、面料、卖点、材料、认证、下单产品 | 产品与供应链主数据 |
+| 物流仓储 | 工厂/货代/海外仓、在途、工厂库存、仓储看板 | 库存与物流 |
+| 图片管理 | 图库、图片类型、A+ | 素材与 listing 内容 |
+| 销售管理 | 销售产品、表现看板、**销量预测**、订单登记、父体 | 销售运营 |
+| Amazon 广告 | 广告信息、投放、商品、调整、关键词 | 广告域 |
+| 小组件 | 围棋对弈 | 见下文 |
+| 关于 | 关于页 | 站点信息 |
+
+页面路径与权限键以 `modules/request_routing_mixin.py` 为准。
+
+## 小组件：围棋对弈
+
+- **入口：** `/widgets` → `/widgets/go-play`
+- **前端：** `static/js/go-play.js`、`static/css/widgets.css`，模板 `templates/widgets_go_play.html`
+- **独立棋盘窗口：** `/widgets/go-play/board`（`postMessage` 与主窗同步）
+- **后端：** `modules/go_play_mixin.py`，API `/api/go-play`
+
+主要能力：
+
+- 19 路棋盘，9 星位，最后一手标记
+- 房间号创建/加入，长轮询同步；未进房可本地摆棋
+- 提子、打劫禁着、虚手、终局/重开
+- 悔棋、认输需对方确认；对方已应手可一次撤双方各一手
+- 演习模式（本地试下，结束演习恢复开局局面，不提交试下手顺）
+- 棋盘可弹出独立小窗；贴边棋子完整显示（网格与落子坐标内缩对齐）
+
+修改 `go_play_mixin.py` 后需**重启应用进程**；仅改前端/CSS/HTML 时刷新浏览器即可（必要时强刷缓存）。
+
+## 配置
+
+- **数据库：** `db_config.json`
+- **监听地址/端口、调试开关：** `app.py` 或 WSGI 启动命令
+- **页面最小宽度等全局样式：** `static/css/style.css`（如 `--sitjoy-page-min-width`）
+
+## 生产环境建议
+
+1. 关闭 debug，使用进程管理 + Gunicorn（示例）：
    ```bash
-   pip install gunicorn
-   gunicorn -w 4 -b 0.0.0.0:5000 app:app
+   gunicorn -w 4 -b 0.0.0.0:5000 app:application
    ```
+2. 前置 Nginx 反向代理与 HTTPS
+3. 定期备份数据库与 `db_config.json`（勿将密钥提交到版本库）
+4. 部署 SQL 迁移后再发布依赖新表结构的代码
 
-3. 在 Nginx 后面运行作为反向代理
+## 故障排除
 
-4. 设置 SSL/TLS 证书加密
+| 现象 | 处理 |
+|------|------|
+| 端口占用 | 修改端口或结束占用进程 |
+| 模块未找到 | `pip install -r requirements.txt` |
+| 页面 500 / 字段缺失 | 确认是否已执行对应 `scripts/sql` 迁移 |
+| 围棋状态不同步 | 确认多 worker 共享同一房间数据目录；重启服务 |
 
-## 🐛 故障排除
+## 开发说明
 
-### 端口被占用
-```bash
-# 更改 app.py 中的 port 参数
-# 或杀死占用端口的进程
-lsof -i :5000  # 查找进程
-kill -9 <PID>  # 杀死进程
-```
+- 新页面：在 `request_routing_mixin.py` 注册路由与 API，在 `app.py` 的 `label_map` / `PAGE_PERMISSION_GROUPS` 中加入权限与菜单项
+- 静态资源：业务 CSS 可放 `static/css/`，小组件样式放 `widgets.css`
+- 协作约束：阅读并遵守 `AGENTS.md`
 
-### 权限问题
-```bash
-chmod +x app.py
-```
-
-### 模块未找到
-```bash
-pip install -r requirements.txt --upgrade
-```
-
-## 🧹 清理临时文件
-
-在大规模重构过程中生成了以下临时文件，这些文件已不再需要，可以安全删除：
-
-### 需要删除的文件
-
-```
-extract_to_mixin.py                      # AST 方法提取脚本
-create_remaining_mixins_template.py      # Mixin 批量生成模板
-ADVANCED_SUBDIVISION_REPORT.md           # 详细重构分析报告（5+ 页）
-REFACTORING_REPORT.md                    # 重构摘要与统计
-final_cleanup.py                         # 旧的清理脚本
-cleanup_app.py                           # 旧的清理脚本
-extract_amazon.py                        # 旧的 Amazon 提取脚本
-```
-
-### 删除方法
-
-**使用 PowerShell（Windows）：**
-```powershell
-cd \\diskstation\web\sitjoy
-Remove-Item extract_to_mixin.py -Force
-Remove-Item create_remaining_mixins_template.py -Force
-Remove-Item ADVANCED_SUBDIVISION_REPORT.md -Force
-Remove-Item REFACTORING_REPORT.md -Force
-Remove-Item final_cleanup.py -Force
-Remove-Item cleanup_app.py -Force
-Remove-Item extract_amazon.py -Force
-```
-
-**使用 SSH（NAS）：**
-```bash
-cd /volume1/web/sitjoy
-rm -f extract_to_mixin.py
-rm -f create_remaining_mixins_template.py
-rm -f ADVANCED_SUBDIVISION_REPORT.md
-rm -f REFACTORING_REPORT.md
-rm -f final_cleanup.py
-rm -f cleanup_app.py
-rm -f extract_amazon.py
-```
-
-### 清理说明
-
-这些文件是 Mixin 重构过程（初始→第一阶段→第二阶段）中生成的临时产物：
-
-- **extract_* 脚本**：用于从 app.py 中自动提取方法到新 Mixin 模块
-- **REPORT 文件**：记录重构过程中的设计决策和变更历史
-- **cleanup_* 脚本**：之前版本的清理工具，已由新的 Mixin 架构取代
-
-删除这些文件不会影响应用功能，只会减少项目文件夹大小。
-
-## 🔄 最近大规模重构
-
-### 重构背景
-
-为了解决单体应用代码量过大的问题，将原始的 11,002 行 app.py 拆分为 23 个专注于特定功能域的 Mixin 模块。
-
-### 重构成果
-
-- ✅ **代码规模减少 51.4%**：11,002 行 → 5,351 行（app.py）
-- ✅ **模块数增加 64%**：14 个 → 23 个 Mixin
-- ✅ **代码可读性提升**：平均 250 行/模块，便于快速定位问题
-- ✅ **维护成本降低**：高内聚低耦合的双重目标
-
-### 新增核心 Mixin（6 个）
-
-| Mixin | 职责 | 页面 |
-|------|------|------|
-| `ProductMgtMixin` | SKU/分类/材料/卖点 | product_management, sales_product |
-| `FabricMgtMixin` | 面料库和图片关联 | fabric_management |
-| `OrderMgtMixin` | 订单产品与关联 | order_product_management |
-| `UtilityMixin` | 待办/日历/工具函数 | 跨模块 |
-| `AmazonAdMixin` | Amazon 广告管理 | amazon_ad_* |
-| `SupportDomainMixin` | 平台/品牌/店铺/认证 | shop/platform 相关 |
-
-## 📚 进一步学习
-
-- [Flask 官方文档](https://flask.palletsprojects.com/)
-- [Python 官方文档](https://docs.python.org/)
-- [Synology 开发者指南](https://developer.synology.com/)
-- [Mixin 模式最佳实践](https://en.wikipedia.org/wiki/Mixin)
-
-## 📄 许可证
+## 许可证
 
 MIT License
 
-## 👤 作者
-
-你的 Synology NAS
-
 ---
 
-**最后更新：** 2026-01-20  
-**重构版本：** 第二阶段（2026-01 完成）  
-**稳定性：** 已修复所有关键生产缺陷
+**最后更新：** 2026-05-22
