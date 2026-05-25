@@ -116,9 +116,75 @@
         });
     }
 
+    /**
+     * 汇总分组父行（托管表筛选/分页须排除，筛选后须同步显隐）。
+     * 约定：class 含 `-group-row`、`group-row`，或 `perf-group-parent-row`。
+     */
+    function isGroupRow(row) {
+        if (!row || !row.classList) return false;
+        if (row.classList.contains('perf-group-parent-row')) return true;
+        if (row.classList.contains('group-row')) return true;
+        for (let i = 0; i < row.classList.length; i++) {
+            const cls = row.classList[i];
+            if (cls && cls.endsWith('-group-row')) return true;
+        }
+        return false;
+    }
+
+    function isAggregateChildRowVisible(row) {
+        if (!row) return false;
+        if (String(row.dataset.pmFilterHidden || '0') === '1') return false;
+        if (row.style && row.style.display === 'none') return false;
+        if (row.classList) {
+            for (let i = 0; i < row.classList.length; i++) {
+                const cls = row.classList[i];
+                if (cls && cls.endsWith('-row-hidden')) return false;
+            }
+        }
+        return true;
+    }
+
+    function tableHasGroupRows(tbody) {
+        if (!tbody || !tbody.rows) return false;
+        return Array.from(tbody.rows).some((row) => isGroupRow(row));
+    }
+
+    /**
+     * 托管表列筛选 / 分页后：按子行可见性同步父组行，恢复展开三角与组头显示。
+     * @param {object} state — header.js managedTableState（需含 table、tbody）
+     */
+    function syncManagedTableGroupRows(state) {
+        const tbody = state && (state.tbody || (state.table && state.table.tBodies && state.table.tBodies[0]));
+        if (!tbody || !tableHasGroupRows(tbody)) return;
+
+        const bodyRows = Array.from(tbody.rows || []);
+        let i = 0;
+        while (i < bodyRows.length) {
+            const row = bodyRows[i];
+            if (!isGroupRow(row)) {
+                i++;
+                continue;
+            }
+            const children = [];
+            let j = i + 1;
+            while (j < bodyRows.length && !isGroupRow(bodyRows[j])) {
+                children.push(bodyRows[j]);
+                j++;
+            }
+            const anyVisible = children.some((child) => isAggregateChildRowVisible(child));
+            row.style.display = anyVisible ? '' : 'none';
+            row.dataset.pmFilterHidden = anyVisible ? '0' : '1';
+            i = j;
+        }
+    }
+
     global.SitjoyGroupedAggregate = {
         bindDocumentAggregateGroupSort,
         bindGroupRowToggle,
-        bindAggregateHeaderExpandCollapse
+        bindAggregateHeaderExpandCollapse,
+        isGroupRow,
+        isAggregateChildRowVisible,
+        tableHasGroupRows,
+        syncManagedTableGroupRows
     };
 })(typeof window !== 'undefined' ? window : this);

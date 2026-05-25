@@ -1576,10 +1576,70 @@
         return Number(onlyCell.colSpan || 1) >= Math.max(headerCount, 2);
     }
 
+    function isGroupedAggregateRow(row){
+        if(window.SitjoyGroupedAggregate && typeof window.SitjoyGroupedAggregate.isGroupRow === 'function'){
+            return window.SitjoyGroupedAggregate.isGroupRow(row);
+        }
+        if(!row || !row.classList) return false;
+        if(row.classList.contains('perf-group-parent-row')) return true;
+        if(row.classList.contains('group-row')) return true;
+        for(let i = 0; i < row.classList.length; i++){
+            const cls = row.classList[i];
+            if(cls && cls.endsWith('-group-row')) return true;
+        }
+        return false;
+    }
+
+    function isAggregateChildRowVisible(row){
+        if(window.SitjoyGroupedAggregate && typeof window.SitjoyGroupedAggregate.isAggregateChildRowVisible === 'function'){
+            return window.SitjoyGroupedAggregate.isAggregateChildRowVisible(row);
+        }
+        if(!row) return false;
+        if(String(row.dataset.pmFilterHidden || '0') === '1') return false;
+        if(row.style && row.style.display === 'none') return false;
+        if(row.classList){
+            for(let i = 0; i < row.classList.length; i++){
+                const cls = row.classList[i];
+                if(cls && cls.endsWith('-row-hidden')) return false;
+            }
+        }
+        return true;
+    }
+
+    function syncGroupedAggregateRowsAfterFilter(state){
+        if(!state) return;
+        if(window.SitjoyGroupedAggregate && typeof window.SitjoyGroupedAggregate.syncManagedTableGroupRows === 'function'){
+            window.SitjoyGroupedAggregate.syncManagedTableGroupRows(state);
+            return;
+        }
+        const tbody = state.tbody || (state.table && state.table.tBodies && state.table.tBodies[0]);
+        if(!tbody) return;
+        const bodyRows = Array.from(tbody.rows || []);
+        if(!bodyRows.some(row => isGroupedAggregateRow(row))) return;
+        let i = 0;
+        while(i < bodyRows.length){
+            const row = bodyRows[i];
+            if(!isGroupedAggregateRow(row)){
+                i++;
+                continue;
+            }
+            const children = [];
+            let j = i + 1;
+            while(j < bodyRows.length && !isGroupedAggregateRow(bodyRows[j])){
+                children.push(bodyRows[j]);
+                j++;
+            }
+            const anyVisible = children.some(child => isAggregateChildRowVisible(child));
+            row.style.display = anyVisible ? '' : 'none';
+            row.dataset.pmFilterHidden = anyVisible ? '0' : '1';
+            i = j;
+        }
+    }
+
     function getDataRows(state){
         const rows = Array.from(state.tbody.rows || []);
         if(rows.length === 1 && isPlaceholderRow(rows[0], state.headerCount)) return [];
-        return rows;
+        return rows.filter(row => !isGroupedAggregateRow(row));
     }
 
     function resolveManagedColumnKey(label, fallbackIndex){
@@ -2814,6 +2874,7 @@
                 row.style.display = 'none';
             });
             clearManagedBatchCheckboxesOnHiddenRows(state);
+            syncGroupedAggregateRowsAfterFilter(state);
             return;
         }
 
@@ -2838,6 +2899,7 @@
             state.prevBtn.disabled = state.currentPage <= 1;
             state.nextBtn.disabled = state.currentPage >= totalPages;
             clearManagedBatchCheckboxesOnHiddenRows(state);
+            syncGroupedAggregateRowsAfterFilter(state);
             return;
         }
 
@@ -2858,6 +2920,7 @@
         state.prevBtn.disabled = state.currentPage <= 1;
         state.nextBtn.disabled = state.currentPage >= totalPages;
         clearManagedBatchCheckboxesOnHiddenRows(state);
+        syncGroupedAggregateRowsAfterFilter(state);
     }
 
     function isMultiSelectColumn(headerCell, label){
@@ -3040,12 +3103,54 @@
         return mapRowByKey(row).get(key) || null;
     }
 
-    function collectManagedColumnFilterOptions(state, columnKey, query, exact, limit){
+    /** 行是否通过列筛选；excludeColumnKey 为当前正在编辑的列时跳过该列条件（用于联动可选项） */
+    function rowPassesManagedColumnFilters(row, filters, excludeColumnKey){
+        if(!row || !filters || typeof filters !== 'object') return true;
+        const skipKey = String(excludeColumnKey || '').trim();
+        for(const key of Object.keys(filters)){
+            const colKey = String(key || '').trim();
+            if(!colKey || colKey === skipKey) continue;
+            const filter = filters[key] || {};
+            const query = String(filter.query || '').trim();
+            const exact = !!filter.exact;
+            const selected = Array.isArray(filter.selected) ? filter.selected.map(v => String(v)) : [];
+            if(!query && !selected.length) continue;
+            const cell = getRowCellByKey(row, colKey);
+            const value = String(readCellFilterText(cell) || '');
+            if(selected.length && !selected.includes(value)) return false;
+            if(query){
+                if(exact){
+                    if(value !== query) return false;
+                } else if(!value.toLowerCase().includes(query.toLowerCase())) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    function columnFilterScopeSignature(filters, excludeColumnKey){
+        const skipKey = String(excludeColumnKey || '').trim();
+        return Object.keys(filters || {}).sort().map((key) => {
+            const colKey = String(key || '').trim();
+            if(!colKey || colKey === skipKey) return '';
+            const filter = filters[key] || {};
+            const query = String(filter.query || '').trim();
+            const selected = Array.isArray(filter.selected) ? filter.selected.slice().sort().join('\x1f') : '';
+            if(!query && !selected) return '';
+            return `${colKey}\x1e${query}\x1e${filter.exact ? 1 : 0}\x1e${selected}`;
+        }).filter(Boolean).join('\x1d');
+    }
+
+    function collectManagedColumnFilterOptions(state, columnKey, query, exact, limit, filtersSnapshot){
         const rows = getDataRows(state);
+        const filters = (filtersSnapshot && typeof filtersSnapshot === 'object') ? filtersSnapshot : {};
+        const excludeKey = String(columnKey || '').trim();
         const q = String(query || '').trim().toLowerCase();
         const isExact = !!exact;
         const counts = new Map();
         rows.forEach(row => {
+            if(!rowPassesManagedColumnFilters(row, filters, excludeKey)) return;
             const cell = getRowCellByKey(row, columnKey);
             const value = readCellFilterText(cell);
             const text = String(value === null || value === undefined ? '' : value).trim();
@@ -3082,36 +3187,35 @@
         applyManagedColumnFilters(state, snapshot);
     }
 
+    function pruneInvalidColumnFilterSelections(state){
+        const handle = state.columnFilterHandle
+            || (state.table ? (columnFilterRegistry.get(state.table) || null) : null);
+        if(!handle || !handle.filters || typeof handle.filters.forEach !== 'function') return;
+        const snapshot = columnFilterStateSnapshot(handle);
+        handle.filters.forEach((filterState, colKey) => {
+            if(!filterState || !Array.isArray(filterState.selected) || !filterState.selected.length) return;
+            const opts = collectManagedColumnFilterOptions(state, colKey, '', false, 10000, snapshot);
+            const allowed = new Set(opts.map((item) => String(item.value)));
+            filterState.selected = filterState.selected.filter((v) => allowed.has(String(v)));
+        });
+    }
+
     function applyManagedColumnFilters(state, snapshot){
         const filters = snapshot || {};
         const rows = getDataRows(state);
         rows.forEach(row => {
-            let pass = true;
-            for(const key of Object.keys(filters)){
-                const filter = filters[key] || {};
-                const query = String(filter.query || '').trim();
-                const exact = !!filter.exact;
-                const selected = Array.isArray(filter.selected) ? filter.selected.map(v => String(v)) : [];
-                if(!query && !selected.length) continue;
-                const cell = getRowCellByKey(row, key);
-                const value = String(readCellFilterText(cell) || '');
-                if(selected.length && !selected.includes(value)){
-                    pass = false;
-                    break;
-                }
-                if(query){
-                    if(exact){
-                        if(value !== query){ pass = false; break; }
-                    } else if(!value.toLowerCase().includes(query.toLowerCase())) {
-                        pass = false;
-                        break;
-                    }
-                }
-            }
+            const pass = rowPassesManagedColumnFilters(row, filters, null);
             row.dataset.pmFilterHidden = pass ? '0' : '1';
         });
+        const handle = state.columnFilterHandle
+            || (state.table ? (columnFilterRegistry.get(state.table) || null) : null);
+        if(handle && handle.optionCache && typeof handle.optionCache.clear === 'function'){
+            handle.optionCache.clear();
+        }
+        pruneInvalidColumnFilterSelections(state);
         state.currentPage = 1;
         applyPagination(state);
+        syncGroupedAggregateRowsAfterFilter(state);
         syncManagedBatchBar(state);
     }
 
@@ -3148,7 +3252,7 @@
         state.columnFilterHandle = window.SitjoyColumnFilter.attach(state.table, {
             columns,
             limit: 120,
-            fetchOptions: ({ columnKey, query, exact, limit }) => collectManagedColumnFilterOptions(state, columnKey, query, exact, limit),
+            fetchOptions: ({ columnKey, query, exact, limit, filters }) => collectManagedColumnFilterOptions(state, columnKey, query, exact, limit, filters),
             onApply: (filters) => applyManagedColumnFilters(state, filters),
             onReset: (filters) => applyManagedColumnFilters(state, filters)
         });
@@ -3361,10 +3465,12 @@
             normalized.push(normalizedItem);
         });
 
+        const popupSearchQuery = String(state.query || '').trim();
         selectedSet.forEach(value => {
             if(seen.has(value)) return;
+            if(!popupSearchQuery) return;
             seen.add(value);
-            normalized.unshift({ value, label: value, count: 0 });
+            normalized.unshift({ value, label: value === '' ? '[空]' : value, count: 0 });
         });
 
         const selectAllId = `pmColumnFilterSelectAll_${String(columnKey || '').replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, '_')}`;
@@ -3394,8 +3500,9 @@
         }
     }
 
-    function getColumnFilterFetchKey(columnKey, query, exact, limit){
-        return `${String(columnKey || '').trim().toLowerCase()}|${String(query || '').trim().toLowerCase()}|${exact ? 1 : 0}|${Number(limit) || 0}`;
+    function getColumnFilterFetchKey(columnKey, query, exact, limit, filtersSnapshot){
+        const scope = columnFilterScopeSignature(filtersSnapshot || {}, columnKey);
+        return `${String(columnKey || '').trim().toLowerCase()}|${String(query || '').trim().toLowerCase()}|${exact ? 1 : 0}|${Number(limit) || 0}|${scope}`;
     }
 
     function attachColumnFilter(tableOrSelector, config){
@@ -3433,7 +3540,8 @@
             const query = String(filterState.query || '').trim();
             const exact = !!filterState.exact;
             const limit = Number(columnConfig.limit || state.config.limit || 120) || 120;
-            const cacheKey = getColumnFilterFetchKey(columnKey, query, exact, limit);
+            const filtersSnapshot = columnFilterStateSnapshot(state);
+            const cacheKey = getColumnFilterFetchKey(columnKey, query, exact, limit, filtersSnapshot);
             if(!force && state.optionCache.has(cacheKey)){
                 renderColumnFilterOptions(state, columnKey, state.optionCache.get(cacheKey));
                 return Promise.resolve(state.optionCache.get(cacheKey));
@@ -3470,6 +3578,7 @@
         }
 
         function applyFilters(){
+            state.optionCache.clear();
             if(typeof state.config.onApply === 'function'){
                 state.config.onApply(columnFilterStateSnapshot(state), state);
             }
@@ -3492,6 +3601,7 @@
         }
 
         function resetFilter(columnKey){
+            state.optionCache.clear();
             state.filters.set(columnKey, { query: '', exact: false, selected: [] });
             if(typeof state.config.onReset === 'function'){
                 state.config.onReset(columnFilterStateSnapshot(state), state);
@@ -3757,6 +3867,9 @@
     window.SitjoyColumnFilter = {
         attach: attachColumnFilter,
         close: closeColumnFilterPopup,
+        rowPassesFilters: rowPassesManagedColumnFilters,
+        columnFilterScopeSignature,
+        collectOptionsFromTableState: collectManagedColumnFilterOptions,
         refresh(tableOrSelector){
             const table = resolveColumnFilterTable(tableOrSelector);
             if(!table) return null;
