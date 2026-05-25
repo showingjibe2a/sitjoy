@@ -417,6 +417,23 @@
             white-space: nowrap;
             box-sizing: border-box;
         }
+        /* 数字列：固定列宽内截断，避免长数字压到相邻列上（预测列除外，见下） */
+        table.sf-table tbody td.sf-cell-history:not(.sf-cell-remark),
+        table.sf-table tbody td.sf-cell-inv,
+        table.sf-table tbody td.sf-cell-turn {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 0;
+            min-width: 0;
+        }
+        table.sf-table tbody td.sf-cell-num-ellipsis,
+        table.sf-table tbody td.sf-cell-history .sf-cell-num-text,
+        table.sf-table tbody td.sf-cell-inv .sf-cell-num-text,
+        table.sf-table tbody td.sf-cell-turn .sf-cell-num-text {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
         table.sf-table tbody tr:nth-child(odd) td { background: #fdfbf6; }
         table.sf-table tbody tr:nth-child(even) td { background: #fbf6ec; }
         td.sf-cell-spec {
@@ -497,11 +514,17 @@
         th.sf-spotlight-col{
             box-shadow: inset 0 -2px 0 rgba(80, 120, 170, 0.75);
         }
-        td.sf-cell-forecast.preview-edit-cell {
+        /* 预测列：限制列宽但不裁切顶栏角标（来源合计 / 变更%） */
+        table.sf-table tbody td.sf-cell-forecast.preview-edit-cell {
+            max-width: 0;
+            min-width: 0;
+            overflow: visible;
             text-align: right;
             position: relative;
             padding: 0.12rem 0.22rem 0.1rem !important;
             vertical-align: middle;
+        }
+        td.sf-cell-forecast.preview-edit-cell .sf-cell-wrap {
             overflow: visible;
         }
         /* Shift+拖拽框选时的矩形预览（fixed，不拦截指针） */
@@ -521,14 +544,12 @@
             font-variant-numeric: tabular-nums;
             color: #5b5346;
         }
-
         /* 与全站 .inline-input.preview-edit-input 同系，但更紧凑；覆盖 inline-input 默认 min-width/min-height */
         table.sf-table .sf-cell-wrap input.inline-input.preview-edit-input.sf-num-input {
             display: block;
-            flex: 1 1 auto;
-            width: 0;
+            width: 100%;
             min-width: 0 !important;
-            max-width: none;
+            max-width: 100%;
             min-height: 24px !important;
             height: 24px !important;
             padding: 0.08rem 0.26rem !important;
@@ -542,11 +563,18 @@
             text-align: right;
             font-variant-numeric: tabular-nums;
             box-sizing: border-box;
+            -webkit-appearance: none;
+            -moz-appearance: textfield;
             appearance: none;
             outline: none;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+        }
+        table.sf-table .sf-cell-wrap input.inline-input.preview-edit-input.sf-num-input::-webkit-outer-spin-button,
+        table.sf-table .sf-cell-wrap input.inline-input.preview-edit-input.sf-num-input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
         }
         table.sf-table .sf-cell-wrap input.inline-input.preview-edit-input.sf-num-input:focus {
             border-color: var(--morandi-ink);
@@ -573,7 +601,8 @@
             min-width: 0;
             min-height: 38px;
             gap: 0.1rem;
-            overflow: visible;
+            overflow-x: hidden;
+            overflow-y: visible;
         }
         /* 来源/变更顶栏：叠在输入框正上方，不占 flex 高度，避免有顶数时撑高行 */
         .sf-forecast-meta-row.sf-forecast-cell-top {
@@ -593,7 +622,7 @@
             overflow: visible;
             box-sizing: border-box;
             pointer-events: none;
-            z-index: 2;
+            z-index: 5;
         }
         .sf-forecast-cell-main:has(.sf-source-badge) .sf-forecast-meta-row.sf-forecast-cell-top,
         .sf-forecast-cell-main:has(.sf-forecast-delta-badge.is-visible) .sf-forecast-meta-row.sf-forecast-cell-top {
@@ -641,16 +670,13 @@
             min-width: 0;
             flex: 0 0 auto;
         }
-        /* 仅包裹输入框，与角标分离后须覆盖全局 input 的 width:0（原用于 flex 行内拉伸） */
+        /* 仅包裹输入框，与顶栏角标分离 */
         .sf-num-input-stack {
             display: block;
             width: 100%;
             min-width: 0;
-        }
-        table.sf-table .sf-cell-wrap .sf-num-input-stack input.inline-input.preview-edit-input.sf-num-input {
-            width: 100%;
-            max-width: none;
-            flex: none;
+            position: relative;
+            z-index: 1;
         }
         /* 相对已存储数量的变化：显示在输入框外侧顶栏右侧 */
         .sf-forecast-delta-badge {
@@ -835,9 +861,13 @@
         .sf-inv-cell-inner {
             display: block;
             width: 100%;
+            max-width: 100%;
             text-align: right;
             padding: 0.08rem 0.1rem 0.08rem 0.75rem;
             box-sizing: border-box;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         .sf-inv-composition-dot {
             position: absolute;
@@ -1200,13 +1230,18 @@
             width: 100%;
             min-height: 1.35em;
         }
-        .sf-history-cell-inner {
+        .sf-history-cell-inner,
+        .sf-cell-num-text {
             display: block;
             width: 100%;
+            max-width: 100%;
             text-align: right;
             font-variant-numeric: tabular-nums;
             padding: 0.08rem 0;
             box-sizing: border-box;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         .sf-perf-float-panel {
             position: fixed;
@@ -2141,6 +2176,33 @@
             const num = Number(value);
             if (!isFinite(num)) return '';
             return num.toLocaleString('en-US', { maximumFractionDigits: 0 });
+        }
+
+        /** 数字列单元格：列宽内省略号，悬停 title 显示完整值 */
+        function setSfNumericTdText(td, text, opts) {
+            if (!td) return;
+            const o = (opts && typeof opts === 'object') ? opts : {};
+            const s = String(text == null || text === '' ? '—' : text);
+            let inner = td.querySelector('.sf-cell-num-text');
+            if (!inner) {
+                inner = document.createElement('span');
+                inner.className = 'sf-cell-num-text';
+                td.replaceChildren(inner);
+            }
+            inner.textContent = s;
+            const numTitle = (s && s !== '—') ? s : '';
+            inner.title = numTitle;
+            const tip = o.cellTip != null ? String(o.cellTip).trim() : '';
+            td.title = tip ? (tip + (numTitle ? '\n' + numTitle : '')) : numTitle;
+        }
+
+        function syncSfForecastInputDisplayTitle(input) {
+            if (!input) return;
+            const raw = normalizeForecastDigitString(input.value);
+            const n = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
+            const display = formatNumber(n);
+            const meta = String(input.dataset.sfMetaTitle || '').trim();
+            input.title = meta ? (display + '\n' + meta) : display;
         }
 
         function formatDateTime(value) {
@@ -3572,8 +3634,7 @@
                 td.className = 'sf-cell-history sf-cell-turn sf-cell-inv-hoverable';
                 td.dataset.sfInvColKind = 'T';
                 td.dataset.sfInvColIdx = String(i);
-                if (h.tip) td.title = h.tip;
-                td.textContent = turnVals[i];
+                setSfNumericTdText(td, turnVals[i], { cellTip: h.tip || '' });
                 markSfGridCell(td, rowKey, ci);
                 ci += 1;
                 tr.appendChild(td);
@@ -3589,11 +3650,9 @@
                 td.className = 'sf-cell-history sf-cell-inv sf-cell-inv-hoverable';
                 td.dataset.sfInvColKind = 'I';
                 td.dataset.sfInvColIdx = String(i);
-                const inner = document.createElement('span');
-                inner.className = 'sf-inv-cell-inner';
-                inner.textContent = stockVals[i];
-                if (h.tip) td.title = h.tip;
-                td.appendChild(inner);
+                setSfNumericTdText(td, stockVals[i], { cellTip: h.tip || '' });
+                const inner = td.querySelector('.sf-cell-num-text');
+                if (inner) inner.classList.add('sf-inv-cell-inner');
                 markSfGridCell(td, rowKey, ci);
                 ci += 1;
                 tr.appendChild(td);
@@ -3778,7 +3837,7 @@
                                 td.dataset.month = monthKey;
                                 const cell = (row.history && row.history[monthKey]) || null;
                                 const text = cell ? formatNumber(cell.sales_qty) : '0';
-                                td.textContent = text;
+                                setSfNumericTdText(td, text);
                                 markSfGridCell(td, row.row_key, ci);
                                 ci += 1;
                                 tr.appendChild(td);
@@ -3787,7 +3846,7 @@
                             const sum = state.historyMonths.reduce((acc, m) => acc + Number((((row.history || {})[m] || {}).sales_qty) || 0), 0);
                             const td = document.createElement('td');
                             td.className = 'sf-cell-history';
-                            td.textContent = formatNumber(sum || 0);
+                            setSfNumericTdText(td, formatNumber(sum || 0));
                             markSfGridCell(td, row.row_key, ci);
                             ci += 1;
                             tr.appendChild(td);
@@ -3819,7 +3878,7 @@
                             }, 0);
                             const td = document.createElement('td');
                             td.className = 'sf-cell-history';
-                            td.textContent = formatNumber(sum || 0);
+                            setSfNumericTdText(td, formatNumber(sum || 0));
                             markSfGridCell(td, row.row_key, ci);
                             ci += 1;
                             tr.appendChild(td);
@@ -3963,9 +4022,9 @@
             if (skuText) {
                 return String(skuText.textContent || '').replace(/\u00a0/g, ' ').trim().replace(/\s+/g, ' ');
             }
-            const invInner = td.querySelector('.sf-inv-cell-inner');
-            if (invInner) {
-                return String(invInner.textContent || '').replace(/\u00a0/g, ' ').trim().replace(/\s+/g, ' ');
+            const numInner = td.querySelector('.sf-cell-num-text, .sf-inv-cell-inner');
+            if (numInner) {
+                return String(numInner.textContent || '').replace(/\u00a0/g, ' ').trim().replace(/\s+/g, ' ');
             }
             const clone = td.cloneNode(true);
             clone.querySelectorAll(
@@ -4286,6 +4345,24 @@
             return out;
         }
 
+        function notifySfGridSelectionChange() {
+            const tbody = document.getElementById('forecastTbody');
+            const cells = [];
+            if (tbody && state.sfGridSelected && state.sfGridSelected.size) {
+                state.sfGridSelected.forEach((k) => {
+                    const { rowKey, colIdx } = parseSfGridCellKey(k);
+                    const td = getSfGridTd(tbody, rowKey, colIdx);
+                    if (td) cells.push(td);
+                });
+            }
+            const detail = { cells, extractCellText: exportSfGridTdPlain };
+            window.__sitjoyPendingGridSelection = detail;
+            if (window.SitjoyCellSelectionStats && typeof window.SitjoyCellSelectionStats.apply === 'function') {
+                window.SitjoyCellSelectionStats.apply(detail);
+            }
+            document.dispatchEvent(new CustomEvent('sitjoy:grid-selection-change', { detail }));
+        }
+
         function applySfGridSelectionStyles() {
             const tbody = document.getElementById('forecastTbody');
             const thead = document.getElementById('forecastThead');
@@ -4303,6 +4380,7 @@
                 clearSfPerfHoverPayload();
                 updateSfPerfPanel();
                 hideSfInvFloatingPanel();
+                notifySfGridSelectionChange();
                 return;
             }
 
@@ -4343,6 +4421,7 @@
             updateSfPerfPanel();
             /* 框选/点击选区变更仅驱动产品表现；库存弹窗不在框选时展示 */
             hideSfInvFloatingPanel();
+            notifySfGridSelectionChange();
         }
 
         /** 在表格内开始框选/点选另一格时，让仍聚焦的预测输入框失焦，避免焦点与选区不一致 */
@@ -6387,14 +6466,17 @@
             // 让 cell-meta 时间戳也可悬浮查看
             if (forecast && forecast.cell_meta) {
                 const stored = Number(forecast.cell_meta.latest_qty != null ? forecast.cell_meta.latest_qty : (Number(forecast.value_qty || 0)));
-                input.title = '初始：' + formatNumber(forecast.cell_meta.initial_qty || 0)
+                input.dataset.sfMetaTitle = '初始：' + formatNumber(forecast.cell_meta.initial_qty || 0)
                     + '\n上次：' + formatNumber(forecast.cell_meta.prev_qty || 0)
                     + '\n最新：' + formatNumber(forecast.cell_meta.latest_qty || 0)
                     + '\n创建：' + formatDateTime(forecast.cell_meta.created_at)
                     + '\n上次更新：' + formatDateTime(forecast.cell_meta.prev_updated_at)
                     + '\n最新更新：' + formatDateTime(forecast.cell_meta.latest_updated_at)
                     + '\n对比基线（已存储）：' + formatNumber(stored);
+            } else {
+                delete input.dataset.sfMetaTitle;
             }
+            syncSfForecastInputDisplayTitle(input);
 
             return wrap;
         }
@@ -6459,6 +6541,7 @@
                 input.classList.add('is-dirty');
             }
             updateSfForecastDeltaBadgeForInput(input);
+            syncSfForecastInputDisplayTitle(input);
             refreshSfSurplusInCell(input);
             refreshBatchPopup();
             if (!state.forecastExpanded) renderForecastTableBodyOnly();
@@ -6874,4 +6957,5 @@
     </script>
 </body>
 <script src="/static/js/header.js"></script>
+<script src="/static/js/sitjoy_cell_selection_stats.js" defer></script>
 </html>

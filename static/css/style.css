@@ -5624,3 +5624,69 @@ button.btn-small:active {
     border-color: #9b4a4a;
     color: #fff;
 }
+
+/* 全局：多选数字单元格时左下角求和/均值 */
+.sj-cell-stats-panel {
+    position: fixed;
+    left: 16px;
+    bottom: 16px;
+    z-index: 5600;
+    min-width: 168px;
+    max-width: min(320px, calc(100vw - 32px));
+    padding: 0.55rem 0.7rem 0.6rem;
+    border-radius: 10px;
+    border: 1px solid rgba(207, 199, 189, 0.85);
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 8px 28px rgba(42, 36, 32, 0.14);
+    font-size: 0.82rem;
+    color: var(--morandi-ink);
+    pointer-events: none;
+    backdrop-filter: blur(6px);
+}
+.sj-cell-stats-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.35rem;
+    padding-bottom: 0.3rem;
+    border-bottom: 1px solid rgba(207, 199, 189, 0.55);
+}
+.sj-cell-stats-title {
+    font-weight: 700;
+    font-size: 0.8rem;
+    color: var(--morandi-ink);
+    letter-spacing: 0.02em;
+}
+.sj-cell-stats-sub {
+    font-size: 0.72rem;
+    color: var(--morandi-slate);
+    white-space: nowrap;
+}
+.sj-cell-stats-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.28rem;
+}
+.sj-cell-stats-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.65rem;
+}
+.sj-cell-stats-label {
+    color: var(--morandi-slate);
+    font-size: 0.76rem;
+    white-space: nowrap;
+}
+.sj-cell-stats-value {
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    font-size: 0.92rem;
+    color: var(--morandi-ink);
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 12rem;
+}

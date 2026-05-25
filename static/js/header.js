@@ -1672,6 +1672,7 @@
         if(!activeGridSelection) return;
         clearGridSelectionClasses(activeGridSelection.state && activeGridSelection.state.table);
         activeGridSelection = null;
+        notifySitjoyGridSelectionChange();
     }
 
     function getVisibleRows(state){
@@ -1788,6 +1789,21 @@
         return out;
     }
 
+    function notifySitjoyGridSelectionChange(){
+        const cells = (activeGridSelection && activeGridSelection.selectedCells)
+            ? Array.from(activeGridSelection.selectedCells).filter(cell => cell && cell.isConnected)
+            : [];
+        const detail = {
+            cells,
+            extractCellText: (td) => extractCellClipboardText(td)
+        };
+        window.__sitjoyPendingGridSelection = detail;
+        if(window.SitjoyCellSelectionStats && typeof window.SitjoyCellSelectionStats.apply === 'function'){
+            window.SitjoyCellSelectionStats.apply(detail);
+        }
+        document.dispatchEvent(new CustomEvent('sitjoy:grid-selection-change', { detail }));
+    }
+
     function paintGridSelection(){
         if(!activeGridSelection || !activeGridSelection.state) return;
         const state = activeGridSelection.state;
@@ -1808,6 +1824,7 @@
         if(activeGridSelection.selectedCells.size > 0){
             state.table.classList.add('is-grid-selecting');
         }
+        notifySitjoyGridSelectionChange();
     }
 
     function ensureGridSelectionState(state){
@@ -6245,8 +6262,19 @@
         }, false);
     }
 
+    function loadSitjoyCellSelectionStats(){
+        if(window.SitjoyCellSelectionStats) return;
+        if(document.querySelector('script[data-sj-cell-stats="1"]')) return;
+        const script = document.createElement('script');
+        script.src = '/static/js/sitjoy_cell_selection_stats.js';
+        script.dataset.sjCellStats = '1';
+        script.defer = true;
+        document.head.appendChild(script);
+    }
+
     const boot = () => {
         loadHeader();
+        loadSitjoyCellSelectionStats();
         initGlobalTableCheckboxCellToggle();
         initUniversalSingleSelects(document);
         enhanceCustomDateInputs(document);
