@@ -87,6 +87,106 @@ class LogisticsInTransitMixin:
                 return 0
         return 1
 
+    def _transit_export_factory_display(self, row):
+        main = str((row or {}).get('factory_name') or '').strip()
+        extra_raw = str((row or {}).get('consolidation_factory_names') or '').strip()
+        parts = []
+        if main:
+            parts.append(main)
+        for token in re.split(r'[、,，;；]+', extra_raw):
+            token = str(token or '').strip()
+            if token and token not in parts:
+                parts.append(token)
+        return '、'.join(parts)
+
+    def _parse_consolidation_factory_ids(self, data, main_factory_id=None):
+        raw = (data or {}).get('consolidation_factory_ids')
+        if isinstance(raw, str):
+            raw = [x for x in re.split(r'[,，;；\s]+', raw) if str(x).strip()]
+        elif not isinstance(raw, list):
+            raw = []
+        main_id = self._parse_int(main_factory_id)
+        out = []
+        seen = set()
+        for entry in raw:
+            fid = self._parse_int(entry)
+            if not fid or fid == main_id or fid in seen:
+                continue
+            seen.add(fid)
+            out.append(int(fid))
+        return out
+
+    def _load_consolidation_factory_map(self, cur, transit_ids):
+        ids = sorted({int(x) for x in (transit_ids or []) if self._parse_int(x)})
+        out = {i: [] for i in ids}
+        if not ids:
+            return out
+        placeholders = ','.join(['%s'] * len(ids))
+        cur.execute(
+            f"""
+            SELECT cf.transit_id, cf.factory_id, f.factory_name
+            FROM logistics_in_transit_consolidation_factories cf
+            INNER JOIN logistics_factories f ON f.id = cf.factory_id
+            WHERE cf.transit_id IN ({placeholders})
+            ORDER BY cf.transit_id ASC, f.factory_name ASC
+            """,
+            tuple(ids),
+        )
+        for rr in cur.fetchall() or []:
+            tid = self._parse_int(rr.get('transit_id'))
+            if tid not in out:
+                continue
+            out[tid].append({
+                'factory_id': self._parse_int(rr.get('factory_id')),
+                'factory_name': str(rr.get('factory_name') or '').strip(),
+            })
+        return out
+
+    def _attach_consolidation_factories_to_rows(self, cur, rows):
+        if not rows:
+            return
+        ids = [int(r.get('id')) for r in rows if self._parse_int(r.get('id'))]
+        cmap = self._load_consolidation_factory_map(cur, ids)
+        for row in rows:
+            tid = int(row.get('id') or 0)
+            cons = cmap.get(tid) or []
+            row['consolidation_factory_ids'] = [
+                int(c['factory_id']) for c in cons if self._parse_int(c.get('factory_id'))
+            ]
+            row['consolidation_factory_names'] = [
+                str(c.get('factory_name') or '').strip() for c in cons if str(c.get('factory_name') or '').strip()
+            ]
+            main_name = str(row.get('factory_name') or '').strip()
+            extra = [n for n in row['consolidation_factory_names'] if n and n != main_name]
+            if main_name and extra:
+                row['factory_names_all'] = main_name + '、' + '、'.join(extra)
+            elif main_name:
+                row['factory_names_all'] = main_name
+            elif extra:
+                row['factory_names_all'] = '、'.join(extra)
+            else:
+                row['factory_names_all'] = ''
+
+    def _save_consolidation_factories(self, cur, transit_id, factory_ids):
+        transit_id = self._parse_int(transit_id)
+        if not transit_id:
+            return
+        cur.execute(
+            "DELETE FROM logistics_in_transit_consolidation_factories WHERE transit_id=%s",
+            (transit_id,),
+        )
+        for fid in factory_ids or []:
+            fid = self._parse_int(fid)
+            if not fid:
+                continue
+            cur.execute(
+                """
+                INSERT INTO logistics_in_transit_consolidation_factories (transit_id, factory_id)
+                VALUES (%s, %s)
+                """,
+                (transit_id, fid),
+            )
+
     def _refresh_transit_qty_consistent(self, transit_id):
         transit_id = self._parse_int(transit_id)
         if not transit_id:
@@ -202,7 +302,7 @@ class LogisticsInTransitMixin:
                         'id': ('记录ID', lambda r: r.get('id') or ''),
                         'logistics_box_no': ('箱号', lambda r: r.get('logistics_box_no') or ''),
                         'bill_of_lading_no': ('提单号', lambda r: r.get('bill_of_lading_no') or ''),
-                        'factory_name': ('工厂', lambda r: r.get('factory_name') or ''),
+                        'factory_name': ('工厂', self._transit_export_factory_display),
                         'forwarder_name': ('货代', lambda r: r.get('forwarder_name') or ''),
                         'destination_region_name': ('目的区域', lambda r: r.get('destination_region_name') or ''),
                         'destination_warehouse_name': ('目的仓库', lambda r: r.get('destination_warehouse_name') or ''),
@@ -245,6 +345,12 @@ class LogisticsInTransitMixin:
                             t.financial_verified,
                             t.remark,
                             f.factory_name,
+                            (
+                                SELECT GROUP_CONCAT(DISTINCT f2.factory_name ORDER BY f2.factory_name SEPARATOR '、')
+                                FROM logistics_in_transit_consolidation_factories cfx
+                                INNER JOIN logistics_factories f2 ON f2.id = cfx.factory_id
+                                WHERE cfx.transit_id = t.id
+                            ) AS consolidation_factory_names,
                             fw.forwarder_name,
                             dr.region_name AS destination_region_name,
                             ow.warehouse_name AS destination_warehouse_name,
@@ -358,6 +464,17 @@ class LogisticsInTransitMixin:
                                 placeholders = ','.join(['%s'] * len(matched_factory_ids))
                                 search_clauses.append(f"t.factory_id IN ({placeholders})")
                                 params.extend(matched_factory_ids)
+                                search_clauses.append(
+                                    f"""
+                                    EXISTS (
+                                        SELECT 1
+                                        FROM logistics_in_transit_consolidation_factories cf
+                                        WHERE cf.transit_id = t.id
+                                          AND cf.factory_id IN ({placeholders})
+                                    )
+                                    """
+                                )
+                                params.extend(matched_factory_ids)
                             if matched_forwarder_ids:
                                 placeholders = ','.join(['%s'] * len(matched_forwarder_ids))
                                 search_clauses.append(f"t.forwarder_id IN ({placeholders})")
@@ -460,6 +577,7 @@ class LogisticsInTransitMixin:
                             region_id = self._parse_int(row.get('destination_region_id'))
                             row['destination_region_name'] = destination_region_name_map.get(region_id, '') if region_id else ''
                             row['destination_warehouse_name'] = warehouse_name_map.get(wid, '') if wid else ''
+                        self._attach_consolidation_factories_to_rows(cur, rows)
                         self._perf_mark(perf_ctx, 'rows_transform')
 
                 if item_id:
@@ -901,6 +1019,8 @@ class LogisticsInTransitMixin:
                 if payload.get('qty_verified') and not payload.get('inventory_registered'):
                     return self.send_json({'status': 'error', 'message': '需要先登记上架才能确认已核对上架数量'}, start_response)
 
+                consolidation_factory_ids = self._parse_consolidation_factory_ids(data, factory_id)
+
                 payload['qty_consistent'] = self._calc_qty_consistent_from_items(normalized_items)
 
                 with self._get_db_connection() as conn:
@@ -1023,6 +1143,7 @@ class LogisticsInTransitMixin:
                             )
 
                         cur.execute("UPDATE logistics_in_transit SET qty_consistent=%s WHERE id=%s", (payload.get('qty_consistent', 0), item_id))
+                        self._save_consolidation_factories(cur, item_id, consolidation_factory_ids)
 
                         should_deduct = 1 if _to_bool_flag(data.get('apply_deduct_factory_stock')) else 0
                         now_confirmed = 1 if self._parse_int(payload.get('confirmed_boxed_qty')) else 0

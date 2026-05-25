@@ -3496,6 +3496,26 @@ class SalesManagementMixin:
                 'in_stock_qty': st,
                 'wip_qty': wp,
             }
+            if forecast_mode != 'order':
+                pairs_comp = [
+                    (int(o), max(1, int(q or 1)))
+                    for o, q in (pairs or [])
+                    if self._parse_int(o)
+                ]
+                row['inventory_composition'] = {
+                    'pairs': pairs_comp,
+                    'row_sku': (labels.get('sku') or labels.get('platform_sku') or '').strip(),
+                    'has_indicator': len(pairs_comp) > 1,
+                }
+
+    def _forecast_date_max_iso(self, a, b):
+        a = self._forecast_format_date_only(a)
+        b = self._forecast_format_date_only(b)
+        if not a:
+            return b
+        if not b:
+            return a
+        return a if a >= b else b
 
     def _forecast_empty_surplus_detail(self):
         return {
@@ -3503,6 +3523,10 @@ class SalesManagementMixin:
             'transit_batches': [],
             'factory_stock_qty': 0,
             'wip_batches': [],
+            'overseas_updated_at': None,
+            'transit_updated_at': None,
+            'factory_stock_updated_at': None,
+            'wip_updated_at': None,
         }
 
     def _forecast_list_destination_regions(self, conn):
@@ -3617,6 +3641,64 @@ class SalesManagementMixin:
                     'qty': qty,
                     'expected_completion_date': self._forecast_format_date_only(rr.get('expected_completion_date')),
                 })
+
+            cur.execute(
+                f"""
+                SELECT order_product_id, MAX(updated_at) AS dt
+                FROM logistics_overseas_inventory
+                WHERE order_product_id IN ({ph})
+                GROUP BY order_product_id
+                """,
+                tpl,
+            )
+            for rr in cur.fetchall() or []:
+                oid = self._parse_int(rr.get('order_product_id'))
+                if oid in out:
+                    out[oid]['overseas_updated_at'] = self._forecast_format_date_only(rr.get('dt'))
+
+            cur.execute(
+                f"""
+                SELECT li.order_product_id, MAX(t.updated_at) AS dt
+                FROM logistics_in_transit_items li
+                INNER JOIN logistics_in_transit t ON t.id = li.transit_id
+                WHERE li.order_product_id IN ({ph})
+                  AND COALESCE(t.inventory_registered, 0) = 0
+                GROUP BY li.order_product_id
+                """,
+                tpl,
+            )
+            for rr in cur.fetchall() or []:
+                oid = self._parse_int(rr.get('order_product_id'))
+                if oid in out:
+                    out[oid]['transit_updated_at'] = self._forecast_format_date_only(rr.get('dt'))
+
+            cur.execute(
+                f"""
+                SELECT order_product_id, MAX(updated_at) AS dt
+                FROM factory_stock_inventory
+                WHERE order_product_id IN ({ph})
+                GROUP BY order_product_id
+                """,
+                tpl,
+            )
+            for rr in cur.fetchall() or []:
+                oid = self._parse_int(rr.get('order_product_id'))
+                if oid in out:
+                    out[oid]['factory_stock_updated_at'] = self._forecast_format_date_only(rr.get('dt'))
+
+            cur.execute(
+                f"""
+                SELECT order_product_id, MAX(updated_at) AS dt
+                FROM factory_wip_inventory
+                WHERE order_product_id IN ({ph}) AND COALESCE(is_completed, 0) = 0
+                GROUP BY order_product_id
+                """,
+                tpl,
+            )
+            for rr in cur.fetchall() or []:
+                oid = self._parse_int(rr.get('order_product_id'))
+                if oid in out:
+                    out[oid]['wip_updated_at'] = self._forecast_format_date_only(rr.get('dt'))
         return out
 
     def _forecast_merge_surplus_detail_for_pairs(self, pairs, detail_by_op):
@@ -3648,6 +3730,18 @@ class SalesManagementMixin:
                     'qty': q,
                     'expected_completion_date': wb.get('expected_completion_date'),
                 })
+            merged['overseas_updated_at'] = self._forecast_date_max_iso(
+                merged.get('overseas_updated_at'), d.get('overseas_updated_at')
+            )
+            merged['transit_updated_at'] = self._forecast_date_max_iso(
+                merged.get('transit_updated_at'), d.get('transit_updated_at')
+            )
+            merged['factory_stock_updated_at'] = self._forecast_date_max_iso(
+                merged.get('factory_stock_updated_at'), d.get('factory_stock_updated_at')
+            )
+            merged['wip_updated_at'] = self._forecast_date_max_iso(
+                merged.get('wip_updated_at'), d.get('wip_updated_at')
+            )
         return merged
 
     def _forecast_attach_surplus_detail_to_order_rows(self, conn, rows):
@@ -3749,8 +3843,7 @@ class SalesManagementMixin:
                         hist_start=hist_start, hist_end=hist_end, shop_ids=sf_shop_ids,
                     )
                     self._forecast_attach_remarks_to_rows(conn, rows, forecast_mode)
-                    if forecast_mode == 'order':
-                        self._forecast_attach_surplus_detail_to_order_rows(conn, rows)
+                    self._forecast_attach_surplus_detail_to_order_rows(conn, rows)
                     for row in rows:
                         row['mtd_completion'] = self._forecast_row_mtd_completion(
                             row.get('history') or {}, row.get('forecasts') or {}, mtd_ctx

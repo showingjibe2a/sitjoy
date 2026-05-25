@@ -1229,12 +1229,21 @@
             overflow: hidden;
             resize: both;
         }
+        #sfInvFloatingPanel.sf-perf-float-panel {
+            width: min(560px, calc(100vw - 36px));
+            height: min(380px, calc(100vh - 100px));
+        }
         /* 本页 .sf-perf-float-panel 含 display:flex，会压过 [hidden] 的默认隐藏，导致 hidden=true / 点 × 仍可见 */
-        #sfPerfFloatingPanel.sf-perf-float-panel[hidden] {
+        #sfPerfFloatingPanel.sf-perf-float-panel[hidden],
+        #sfInvFloatingPanel.sf-perf-float-panel[hidden] {
             display: none !important;
             visibility: hidden !important;
             pointer-events: none !important;
             resize: none !important;
+        }
+        td.sf-cell-inv.sf-cell-inv-hoverable,
+        td.sf-cell-turn.sf-cell-inv-hoverable {
+            cursor: help;
         }
         .sf-perf-float-panel-header {
             flex: 0 0 auto;
@@ -1437,6 +1446,7 @@
                     <span class="sf-perf-ui-label">显示产品信息：</span>
                     <div id="sfPerfUiToolbarInteractWrap" class="sf-perf-ui-interact-wrap">
                         <label class="sf-perf-ui-toggle"><input type="checkbox" id="sfPerfUiNone"> 不显示</label>
+                        <label class="sf-perf-ui-toggle"><input type="checkbox" id="sfPerfUiHover"> 悬浮</label>
                         <label class="sf-perf-ui-toggle"><input type="checkbox" id="sfPerfUiClick"> 点击</label>
                         <label class="sf-perf-ui-toggle"><input type="checkbox" id="sfPerfUiRect"> 框选</label>
                     </div>
@@ -1511,6 +1521,51 @@
                         <div class="sf-save-progress-label" id="sfSaveProgressLabel"></div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="sfInvFloatingPanel" class="sf-perf-float-panel" hidden aria-label="库存来源明细">
+        <div class="sf-perf-float-panel-header" id="sfInvPanelHeader">
+            <div class="sf-perf-float-panel-header-left">
+                <span class="sf-perf-float-drag-hint" aria-hidden="true">⠿</span>
+                <span class="sf-perf-float-title" id="sfInvPanelTitle">库存来源</span>
+            </div>
+            <div class="sf-perf-float-panel-header-right">
+                <button type="button" class="modal-close" id="sfInvPanelClose" aria-label="关闭">×</button>
+            </div>
+        </div>
+        <div class="sf-perf-float-panel-body">
+            <div class="sf-perf-float-table-scroll">
+                <table id="sfInvDetailTable" class="pm-table sf-perf-pm-matrix"
+                    data-table-manage-mode="light"
+                    data-pm-light-sticky-layout="1"
+                    data-pm-default-pinned-first="1"
+                    data-pm-light-allow-col-resize="1"
+                    data-manage-key="sfInvDetailTable">
+                    <thead id="sfInvDetailThead"><tr>
+                        <th scope="col" data-manage-col-key="source_type">来源类型</th>
+                        <th scope="col" data-manage-col-key="segment">层级/细分</th>
+                        <th scope="col" data-manage-col-key="sku_region">SKU/区域</th>
+                        <th scope="col" data-manage-col-key="qty">数量</th>
+                        <th scope="col" data-manage-col-key="assembled_qty">折合数量</th>
+                        <th scope="col" data-manage-col-key="role">角色</th>
+                        <th scope="col" data-manage-col-key="ratio">配比</th>
+                        <th scope="col" data-manage-col-key="expected_date">预期日期</th>
+                        <th scope="col" data-manage-col-key="updated_at">数据更新</th>
+                    </tr></thead>
+                    <tbody id="sfInvDetailTbody"><tr>
+                        <td data-manage-col-key="source_type">—</td>
+                        <td data-manage-col-key="segment">—</td>
+                        <td data-manage-col-key="sku_region">—</td>
+                        <td data-manage-col-key="qty">—</td>
+                        <td data-manage-col-key="assembled_qty">—</td>
+                        <td data-manage-col-key="role">—</td>
+                        <td data-manage-col-key="ratio">—</td>
+                        <td data-manage-col-key="expected_date">—</td>
+                        <td data-manage-col-key="updated_at">—</td>
+                    </tr></tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -1597,6 +1652,7 @@
         const SF_PREF_FORECAST_MODE_KEY = 'sales_forecast_dimension_v1';
         const SF_PREF_PERF_UI_KEY = 'sales_forecast_perf_ui_v1';
         const SF_PREF_PERF_PANEL_KEY = 'sales_forecast_perf_panel_v1';
+        const SF_PREF_INV_PANEL_KEY = 'sales_forecast_inv_panel_v1';
         /** 产品表现矩阵「指标行」勾选 + 顺序（与托管表列 visible-columns 分离，避免被 header 覆盖） */
         const SF_PREF_PERF_METRIC_FIELDS_V1 = 'sales_forecast_sf_perf_metric_fields_v1';
         const SF_METRIC_COL_KEY = 'sf_metric_col';
@@ -1640,7 +1696,8 @@
             sfGridSelected: new Set(),       // JSON.stringify([rowKey, colIdx])，colIdx 为叶子列下标，与 data-sf-ci 一致
             selectionAnchor: null,           // { rowKey, colIdx }
             sfColLayout: [],                // 与叶子列顺序一一对应，用于复制/产品表现等
-            perfUi: { none: false, hover: false, click: true, rect: false },
+            perfUi: { none: false, hover: true, click: true, rect: false },
+            sfPerfHoverPayload: null,
             sfPerfPanelAttachMode: 'follow',
             sfPerfPanelManuallyHidden: false,
             sfPerfPanelHiddenSig: '',
@@ -1649,6 +1706,10 @@
             sfPerfPanelFollowBlurDismissed: true,
             mtdContext: {},                  // /api/sales-forecast 返回的 mtd 块（时间进度、聚合更新时间等）
             sfPerfFieldsPanelOpen: false,
+            sfInvPanelAnchorTd: null,
+            sfInvPanelHoverKey: '',
+            sfInvPanelManuallyHidden: false,
+            sfInvPanelHiddenKey: '',
             shops: [],                      // [{ id, shop_name }] 店铺筛选下拉数据
             sfShopFilterPanelOpen: false,
             sfStatusFilterPanelOpen: false,
@@ -3508,7 +3569,9 @@
             ];
             SF_TURNOVER_HEADERS.forEach((h, i) => {
                 const td = document.createElement('td');
-                td.className = 'sf-cell-history sf-cell-turn';
+                td.className = 'sf-cell-history sf-cell-turn sf-cell-inv-hoverable';
+                td.dataset.sfInvColKind = 'T';
+                td.dataset.sfInvColIdx = String(i);
                 if (h.tip) td.title = h.tip;
                 td.textContent = turnVals[i];
                 markSfGridCell(td, rowKey, ci);
@@ -3521,29 +3584,16 @@
                 formatNumber(Number(inv.in_stock_qty) || 0),
                 formatNumber(Number(inv.wip_qty) || 0),
             ];
-            const invComp = row.inventory_composition || {};
-            const tierKeys = SF_INV_TIER_KEYS;
             SF_STOCK_HEADERS.forEach((h, i) => {
                 const td = document.createElement('td');
-                td.className = 'sf-cell-history sf-cell-inv';
-                if (state.forecastMode === 'order' && invComp.has_indicator) {
-                    td.classList.add('sf-cell-inv-composition');
-                }
+                td.className = 'sf-cell-history sf-cell-inv sf-cell-inv-hoverable';
+                td.dataset.sfInvColKind = 'I';
+                td.dataset.sfInvColIdx = String(i);
                 const inner = document.createElement('span');
                 inner.className = 'sf-inv-cell-inner';
                 inner.textContent = stockVals[i];
-                if (state.forecastMode === 'order' && invComp.has_indicator) {
-                    td.appendChild(makeTooltipWrap(
-                        buildInventoryCompositionTooltipHtml(row, tierKeys[i], h.label),
-                        inner,
-                        'sf-inv-composition-tooltip-bubble',
-                        true,
-                        true
-                    ));
-                } else {
-                    if (h.tip) td.title = h.tip;
-                    td.appendChild(inner);
-                }
+                if (h.tip) td.title = h.tip;
+                td.appendChild(inner);
                 markSfGridCell(td, rowKey, ci);
                 ci += 1;
                 tr.appendChild(td);
@@ -3560,6 +3610,7 @@
         }
 
         function renderForecastTable() {
+            hideSfInvFloatingPanel();
             const thead = document.getElementById('forecastThead');
             const tbody = document.getElementById('forecastTbody');
             const table = document.getElementById('forecastTable');
@@ -4249,7 +4300,9 @@
                 thead.querySelectorAll('th.sf-spotlight-col').forEach(th => th.classList.remove('sf-spotlight-col'));
             }
             if (!n || !tbody) {
+                clearSfPerfHoverPayload();
                 updateSfPerfPanel();
+                hideSfInvFloatingPanel();
                 return;
             }
 
@@ -4286,7 +4339,10 @@
                     }
                 });
             }
+            clearSfPerfHoverPayload();
             updateSfPerfPanel();
+            /* 框选/点击选区变更仅驱动产品表现；库存弹窗不在框选时展示 */
+            hideSfInvFloatingPanel();
         }
 
         /** 在表格内开始框选/点选另一格时，让仍聚焦的预测输入框失焦，避免焦点与选区不一致 */
@@ -4976,24 +5032,55 @@
         function normalizePerfUiPatch(patch) {
             const cur = Object.assign({}, state.perfUi, patch);
             if (cur.none) return { none: true, hover: false, click: false, rect: false };
-            if (!cur.click && !cur.rect) return { none: true, hover: false, click: false, rect: false };
-            return { none: false, hover: false, click: !!cur.click, rect: !!cur.rect };
+            const hover = !!cur.hover;
+            const click = !!cur.click;
+            const rect = !!cur.rect;
+            if (!hover && !click && !rect) {
+                return { none: true, hover: false, click: false, rect: false };
+            }
+            return { none: false, hover, click, rect };
         }
 
         function readPerfUiPrefs() {
             try {
                 const raw = localStorage.getItem(SF_PREF_PERF_UI_KEY);
-                if (!raw) return { none: false, hover: false, click: true, rect: false };
+                if (!raw) return { none: false, hover: true, click: true, rect: false };
                 const o = JSON.parse(raw);
                 return normalizePerfUiPatch({
                     none: !!o.none,
-                    hover: false,
+                    hover: !!o.hover,
                     click: !!o.click,
                     rect: !!o.rect,
                 });
             } catch (_) {
-                return { none: false, hover: false, click: true, rect: false };
+                return { none: false, hover: true, click: true, rect: false };
             }
+        }
+
+        function canShowSfInvPanelByHover() {
+            const u = state.perfUi || {};
+            return !u.none && !!u.hover;
+        }
+
+        function canShowSfInvPanelByClick() {
+            const u = state.perfUi || {};
+            return !u.none && !!u.click;
+        }
+
+        function clearSfPerfHoverPayload() {
+            state.sfPerfHoverPayload = null;
+        }
+
+        function getHistoryPayloadFromTd(td) {
+            if (!td || !isSalesForecastHistoryPerfMode()) return null;
+            const tr = td.closest('tr[data-row-key]');
+            if (!tr) return null;
+            const row = resolveRowByKey(tr.dataset.rowKey);
+            if (!row) return null;
+            const ci = Number(td.dataset.sfCi);
+            const seg = (state.sfColLayout || [])[ci];
+            if (!seg || seg.kind !== 'H' || !seg.month) return null;
+            return { tier: 3, row, months: [seg.month] };
         }
 
         function writePerfUiPrefs() {
@@ -5003,22 +5090,27 @@
         }
 
         function syncPerfUiCheckboxesFromState() {
-            const ok = isSalesForecastHistoryPerfMode();
+            const histOk = isSalesForecastHistoryPerfMode();
             const n = document.getElementById('sfPerfUiNone');
+            const h = document.getElementById('sfPerfUiHover');
             const c = document.getElementById('sfPerfUiClick');
             const r = document.getElementById('sfPerfUiRect');
             const u = state.perfUi || {};
             if (n) {
                 n.checked = !!u.none;
-                n.disabled = !ok;
+            }
+            if (h) {
+                h.checked = !!u.hover;
+                h.disabled = !!u.none;
             }
             if (c) {
                 c.checked = !!u.click;
-                c.disabled = !ok || !!u.none;
+                c.disabled = !!u.none;
             }
             if (r) {
                 r.checked = !!u.rect;
-                r.disabled = !ok || !!u.none;
+                r.disabled = !histOk || !!u.none;
+                r.title = histOk ? '' : '下单 SKU 维度不支持框选产品表现';
             }
         }
 
@@ -5091,19 +5183,21 @@
         }
 
         function getSfPerfPanelPayloadRaw() {
-            if (!isSalesForecastHistoryPerfMode()) {
-                return null;
-            }
             const ui = state.perfUi || {};
             if (ui.none) return null;
-            const sel = getSelectedHistoryCellsForSingleRow();
-            if (ui.rect && sel && sel.months && sel.months.length) {
-                const row = resolveRowByKey(sel.rowKey);
-                if (row) return { tier: 1, row, months: sel.months.slice() };
+            if (isSalesForecastHistoryPerfMode()) {
+                const sel = getSelectedHistoryCellsForSingleRow();
+                if (ui.rect && sel && sel.months && sel.months.length) {
+                    const row = resolveRowByKey(sel.rowKey);
+                    if (row) return { tier: 1, row, months: sel.months.slice() };
+                }
+                if (ui.click && sel && sel.months && sel.months.length) {
+                    const row = resolveRowByKey(sel.rowKey);
+                    if (row) return { tier: 2, row, months: sel.months.slice() };
+                }
             }
-            if (ui.click && sel && sel.months && sel.months.length) {
-                const row = resolveRowByKey(sel.rowKey);
-                if (row) return { tier: 2, row, months: sel.months.slice() };
+            if (ui.hover && state.sfPerfHoverPayload) {
+                return state.sfPerfHoverPayload;
             }
             return null;
         }
@@ -5256,6 +5350,569 @@
         function scheduleWriteSfPerfPanelPrefs() {
             clearTimeout(_sfPerfPanelGeomWriteTimer);
             _sfPerfPanelGeomWriteTimer = setTimeout(() => writeSfPerfPanelPrefs(), 280);
+        }
+
+        const SF_INV_TIER_LABEL = {
+            overseas_qty: '海外仓',
+            transit_qty: '在途',
+            factory_stock_qty: '在库',
+            wip_qty: '在制',
+        };
+
+        function sfInvTierKeysForCol(kind, idx) {
+            const all = SF_INV_TIER_KEYS.slice();
+            if (kind === 'I') return [all[Number(idx)] || all[0]];
+            const i = Number(idx) || 0;
+            if (i <= 0) return [all[0]];
+            if (i === 1) return all.slice(0, 2);
+            return all.slice();
+        }
+
+        function sfInvColTitle(kind, idx) {
+            const i = Number(idx) || 0;
+            if (kind === 'T') return (SF_TURNOVER_HEADERS[i] && SF_TURNOVER_HEADERS[i].label) || '动销月';
+            return (SF_STOCK_HEADERS[i] && SF_STOCK_HEADERS[i].label) || '库存';
+        }
+
+        function rowHistorySalesAvgTail(row, tail) {
+            const months = state.historyMonths || [];
+            if (!months.length) return null;
+            const keys = months.length > (tail || 3) ? months.slice(-(tail || 3)) : months.slice();
+            if (!keys.length) return null;
+            let total = 0;
+            keys.forEach((k) => {
+                const h = (row.history || {})[k] || {};
+                total += Number(h.sales_qty || 0);
+            });
+            const avg = total / keys.length;
+            return avg > 1e-9 ? avg : null;
+        }
+
+        function sfInvNumeratorForCol(inv, kind, idx) {
+            const o = Number(inv.overseas_qty) || 0;
+            const t = Number(inv.transit_qty) || 0;
+            const st = Number(inv.in_stock_qty) || 0;
+            const wp = Number(inv.wip_qty) || 0;
+            if (kind === 'I') {
+                const tk = sfInvTierKeysForCol('I', idx)[0];
+                if (tk === 'overseas_qty') return o;
+                if (tk === 'transit_qty') return t;
+                if (tk === 'factory_stock_qty') return st;
+                return wp;
+            }
+            const i = Number(idx) || 0;
+            if (i === 0) return o;
+            if (i === 1) return o + t;
+            return o + t + st + wp;
+        }
+
+        function buildSfInvPanelDetailRows(row, kind, idx) {
+            const out = [];
+            const push = (rec) => {
+                out.push({
+                    source_type: rec.source_type || '—',
+                    segment: rec.segment || '—',
+                    sku_region: rec.sku_region || '—',
+                    qty: rec.qty != null && rec.qty !== '' ? String(rec.qty) : '—',
+                    assembled_qty: rec.assembled_qty != null && rec.assembled_qty !== '' ? String(rec.assembled_qty) : '—',
+                    role: rec.role || '—',
+                    ratio: rec.ratio != null && rec.ratio !== '' ? String(rec.ratio) : '—',
+                    expected_date: rec.expected_date || '—',
+                    updated_at: rec.updated_at || '—',
+                });
+            };
+            const inv = row.inventory || {};
+            const detail = row.inventory_surplus_detail || {};
+            const comp = row.inventory_composition || {};
+            const tierFilter = new Set(sfInvTierKeysForCol(kind, idx));
+            const colLabel = sfInvColTitle(kind, idx);
+            const skuLabel = (comp.row_sku || (row.labels && (row.labels.sku || row.labels.platform_sku)) || '').trim();
+
+            if (kind === 'T') {
+                const avg = rowHistorySalesAvgTail(row, 3);
+                const num = sfInvNumeratorForCol(inv, kind, idx);
+                const mcKeys = ['months_cover_overseas', 'months_cover_overseas_transit', 'months_cover_total'];
+                const mc = inv[mcKeys[Number(idx) || 0]]
+                    ?? (avg && num > 0 ? (num / avg).toFixed(2) : null);
+                push({
+                    source_type: '动销月',
+                    segment: colLabel,
+                    sku_region: skuLabel || '—',
+                    qty: mc != null ? String(mc) : '—',
+                    assembled_qty: '—',
+                    role: '—',
+                    ratio: '—',
+                    expected_date: '—',
+                    updated_at: '—',
+                });
+                push({
+                    source_type: '动销月',
+                    segment: '计算',
+                    sku_region: '分子（库存量）',
+                    qty: formatNumber(num),
+                    assembled_qty: '—',
+                    role: '—',
+                    ratio: '—',
+                    expected_date: '—',
+                    updated_at: '—',
+                });
+                push({
+                    source_type: '动销月',
+                    segment: '计算',
+                    sku_region: '分母（历史尾部三月均销量）',
+                    qty: avg != null ? formatNumber(Math.round(avg * 100) / 100) : '—',
+                    assembled_qty: '—',
+                    role: '—',
+                    ratio: '—',
+                    expected_date: '—',
+                    updated_at: (state.mtdContext && state.mtdContext.perf_max_record_date) || '—',
+                });
+            } else {
+                push({
+                    source_type: '列合计',
+                    segment: colLabel,
+                    sku_region: skuLabel || '—',
+                    qty: formatNumber(sfInvNumeratorForCol(inv, kind, idx)),
+                    assembled_qty: '—',
+                    role: '—',
+                    ratio: '—',
+                    expected_date: '—',
+                    updated_at: '—',
+                });
+            }
+
+            if (tierFilter.has('overseas_qty')) {
+                const upd = detail.overseas_updated_at || '—';
+                Object.keys(detail.overseas_by_region || {}).sort((a, b) => String(a).localeCompare(String(b), 'zh')).forEach((rname) => {
+                    const q = Number((detail.overseas_by_region || {})[rname] || 0);
+                    if (q <= 0) return;
+                    push({
+                        source_type: '海外仓批次',
+                        segment: '按目的区域',
+                        sku_region: rname,
+                        qty: formatNumber(q),
+                        assembled_qty: '—',
+                        role: '—',
+                        ratio: '—',
+                        expected_date: '—',
+                        updated_at: upd,
+                    });
+                });
+            }
+
+            if (tierFilter.has('transit_qty')) {
+                const upd = detail.transit_updated_at || '—';
+                (detail.transit_batches || []).forEach((b) => {
+                    const q = Number(b.qty || 0);
+                    if (q <= 0) return;
+                    push({
+                        source_type: '在途批次',
+                        segment: '未登记上架',
+                        sku_region: String(b.region_name || '—'),
+                        qty: formatNumber(q),
+                        assembled_qty: '—',
+                        role: '—',
+                        ratio: '—',
+                        expected_date: String(b.expected_listed_date || '—'),
+                        updated_at: upd,
+                    });
+                });
+            }
+
+            if (tierFilter.has('factory_stock_qty')) {
+                const q = Number(detail.factory_stock_qty || 0);
+                if (q > 0) {
+                    push({
+                        source_type: '工厂在库',
+                        segment: SF_INV_TIER_LABEL.factory_stock_qty,
+                        sku_region: skuLabel || '—',
+                        qty: formatNumber(q),
+                        assembled_qty: '—',
+                        role: '—',
+                        ratio: '—',
+                        expected_date: '—',
+                        updated_at: detail.factory_stock_updated_at || '—',
+                    });
+                }
+            }
+
+            if (tierFilter.has('wip_qty')) {
+                const upd = detail.wip_updated_at || '—';
+                (detail.wip_batches || []).forEach((b) => {
+                    const q = Number(b.qty || 0);
+                    if (q <= 0) return;
+                    push({
+                        source_type: '工厂在制',
+                        segment: '未完工',
+                        sku_region: skuLabel || '—',
+                        qty: formatNumber(q),
+                        assembled_qty: '—',
+                        role: '—',
+                        ratio: '—',
+                        expected_date: String(b.expected_completion_date || '—'),
+                        updated_at: upd,
+                    });
+                });
+            }
+
+            const breakdown = comp.tier_breakdown || {};
+            tierFilter.forEach((tk) => {
+                (breakdown[tk] || []).forEach((e) => {
+                    const raw = Number(e.raw_qty || 0);
+                    const asm = Number(e.assembled_qty || 0);
+                    if (raw <= 0 && asm <= 0) return;
+                    const off = Number(e.is_on_market || 0) === 0 ? '（已下市）' : '';
+                    push({
+                        source_type: 'SKU来源',
+                        segment: SF_INV_TIER_LABEL[tk] || tk,
+                        sku_region: String(e.sku || '') + off,
+                        qty: formatNumber(raw),
+                        assembled_qty: formatNumber(asm),
+                        role: invCompositionRoleLabel(e.role),
+                        ratio: Number(e.qty_per_unit || 1) > 1 ? ('×' + formatNumber(Number(e.qty_per_unit || 1))) : '×1',
+                        expected_date: '—',
+                        updated_at: ({
+                            overseas_qty: detail.overseas_updated_at,
+                            transit_qty: detail.transit_updated_at,
+                            factory_stock_qty: detail.factory_stock_updated_at,
+                            wip_qty: detail.wip_updated_at,
+                        })[tk] || '—',
+                    });
+                });
+            });
+
+            const plans = comp.substitute_plans || [];
+            if (plans.length && (kind === 'T' ? Number(idx) >= 1 : true)) {
+                plans.forEach((pl) => {
+                    const pname = String(pl.plan_name || '').trim() || '替代方案';
+                    (pl.items || []).forEach((it) => {
+                        const sid = it[0] != null ? it[0] : it.substitute_order_product_id;
+                        const q = it[1] != null ? it[1] : it.quantity;
+                        push({
+                            source_type: '替代发货方案',
+                            segment: pname,
+                            sku_region: '#' + String(sid),
+                            qty: '—',
+                            assembled_qty: '—',
+                            role: '替代发货',
+                            ratio: '×' + formatNumber(Number(q) || 1),
+                            expected_date: '—',
+                            updated_at: '—',
+                        });
+                    });
+                });
+            }
+
+            if (out.length <= (kind === 'T' ? 3 : 1)) {
+                push({
+                    source_type: '提示',
+                    segment: '—',
+                    sku_region: '—',
+                    qty: '—',
+                    assembled_qty: '—',
+                    role: '—',
+                    ratio: '—',
+                    expected_date: '—',
+                    updated_at: '无更细批次/来源记录',
+                });
+            }
+            return out;
+        }
+
+        const SF_INV_DETAIL_COL_KEYS = [
+            'source_type', 'segment', 'sku_region', 'qty', 'assembled_qty', 'role', 'ratio', 'expected_date', 'updated_at',
+        ];
+
+        function renderSfInvDetailTable(detailRows) {
+            const tbody = document.getElementById('sfInvDetailTbody');
+            const table = document.getElementById('sfInvDetailTable');
+            if (!tbody || !table) return;
+            const rows = detailRows || [];
+            if (!rows.length) {
+                tbody.innerHTML = '<tr>' + SF_INV_DETAIL_COL_KEYS.map((k) => '<td data-manage-col-key="' + k + '">—</td>').join('') + '</tr>';
+            } else {
+                tbody.innerHTML = rows.map((r) => {
+                    return '<tr>' + SF_INV_DETAIL_COL_KEYS.map((k) => {
+                        return '<td data-manage-col-key="' + k + '">' + escapeHtml(String(r[k] != null ? r[k] : '—')) + '</td>';
+                    }).join('') + '</tr>';
+                }).join('');
+            }
+            try {
+                table.dataset.sjManageLayoutSig = 'inv|' + rows.length;
+            } catch (_) {}
+            if (window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.invalidateLayout === 'function') {
+                window.SitjoyManagedPmTable.invalidateLayout(table);
+            }
+        }
+
+        function sfInvPanelPayloadKey(row, td) {
+            if (!row || !td) return '';
+            const rk = String(row.row_key || '');
+            const kind = String(td.dataset.sfInvColKind || '');
+            const idx = String(td.dataset.sfInvColIdx || '');
+            return rk + '|' + kind + '|' + idx;
+        }
+
+        function readSfInvPanelPrefs() {
+            try {
+                const raw = localStorage.getItem(SF_PREF_INV_PANEL_KEY);
+                if (!raw) return null;
+                const o = JSON.parse(raw);
+                return o && typeof o === 'object' ? o : null;
+            } catch (_) {
+                return null;
+            }
+        }
+
+        function writeSfInvPanelPrefs() {
+            try {
+                const panel = document.getElementById('sfInvFloatingPanel');
+                let rec = readSfInvPanelPrefs() || {};
+                if (panel && !panel.hidden) {
+                    const r = panel.getBoundingClientRect();
+                    if (r.width > 48 && r.height > 48) {
+                        rec.left = Math.round(r.left);
+                        rec.top = Math.round(r.top);
+                        rec.width = Math.round(r.width);
+                        rec.height = Math.round(r.height);
+                    }
+                }
+                localStorage.setItem(SF_PREF_INV_PANEL_KEY, JSON.stringify(rec));
+            } catch (_) {}
+        }
+
+        function applySfInvPanelSizeFromPrefs() {
+            const panel = document.getElementById('sfInvFloatingPanel');
+            const pref = readSfInvPanelPrefs();
+            if (!panel || !pref) return;
+            if (Number.isFinite(Number(pref.width)) && Number(pref.width) >= 280) {
+                panel.style.width = `${Math.round(Number(pref.width))}px`;
+            }
+            if (Number.isFinite(Number(pref.height)) && Number(pref.height) >= 140) {
+                panel.style.height = `${Math.round(Number(pref.height))}px`;
+            }
+            if (Number.isFinite(Number(pref.left)) && Number.isFinite(Number(pref.top))) {
+                panel.style.left = Math.round(Number(pref.left)) + 'px';
+                panel.style.top = Math.round(Number(pref.top)) + 'px';
+            }
+        }
+
+        let _sfInvPanelGeomWriteTimer = null;
+        function scheduleWriteSfInvPanelPrefs() {
+            clearTimeout(_sfInvPanelGeomWriteTimer);
+            _sfInvPanelGeomWriteTimer = setTimeout(() => writeSfInvPanelPrefs(), 280);
+        }
+
+        function clampSfInvFloatingPanelToViewport() {
+            const panel = document.getElementById('sfInvFloatingPanel');
+            if (!panel || panel.hidden) return;
+            const pad = 8;
+            const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+            const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+            const r = panel.getBoundingClientRect();
+            let left = r.left;
+            let top = r.top;
+            const w = r.width;
+            const h = r.height;
+            if (left + w > vw - pad) left = Math.max(pad, vw - pad - w);
+            if (left < pad) left = pad;
+            if (top + h > vh - pad) top = Math.max(pad, vh - pad - h);
+            if (top < pad) top = pad;
+            panel.style.left = Math.round(left) + 'px';
+            panel.style.top = Math.round(top) + 'px';
+        }
+
+        function positionSfInvFloatingPanel(anchorTd) {
+            const panel = document.getElementById('sfInvFloatingPanel');
+            if (!panel || panel.hidden || !anchorTd) return;
+            const a = anchorTd.getBoundingClientRect();
+            const pad = 10;
+            const gap = 6;
+            const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+            const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+            const pr = panel.getBoundingClientRect();
+            const pw = pr.width || panel.offsetWidth || 420;
+            const ph = pr.height || panel.offsetHeight || 280;
+            let left = a.left + (a.width - pw) / 2;
+            left = Math.max(pad, Math.min(left, vw - pad - pw));
+            const belowTop = a.bottom + gap;
+            const aboveTop = a.top - ph - gap;
+            let top = (belowTop + ph <= vh - pad) ? belowTop : (aboveTop >= pad ? aboveTop : belowTop);
+            if (top + ph > vh - pad) top = Math.max(pad, vh - pad - ph);
+            panel.style.left = Math.round(left) + 'px';
+            panel.style.top = Math.round(top) + 'px';
+            clampSfInvFloatingPanelToViewport();
+        }
+
+        function hideSfInvFloatingPanel() {
+            const panel = document.getElementById('sfInvFloatingPanel');
+            if (panel) panel.hidden = true;
+            state.sfInvPanelAnchorTd = null;
+            state.sfInvPanelHoverKey = '';
+        }
+
+        function updateSfInvFloatingPanel(anchorTd) {
+            const panel = document.getElementById('sfInvFloatingPanel');
+            const title = document.getElementById('sfInvPanelTitle');
+            if (!panel || !anchorTd) return;
+            const u = state.perfUi || {};
+            if (u.none) {
+                panel.hidden = true;
+                return;
+            }
+            const tr = anchorTd.closest('tr[data-row-key]');
+            if (!tr) return;
+            const row = resolveRowByKey(tr.dataset.rowKey);
+            if (!row) return;
+            const kind = String(anchorTd.dataset.sfInvColKind || '');
+            const idx = Number(anchorTd.dataset.sfInvColIdx || 0);
+            const hoverKey = sfInvPanelPayloadKey(row, anchorTd);
+            if (state.sfInvPanelManuallyHidden && hoverKey && hoverKey === state.sfInvPanelHiddenKey) {
+                panel.hidden = true;
+                return;
+            }
+            if (hoverKey !== state.sfInvPanelHoverKey) {
+                state.sfInvPanelManuallyHidden = false;
+            }
+            state.sfInvPanelHoverKey = hoverKey;
+            state.sfInvPanelAnchorTd = anchorTd;
+            const colTitle = sfInvColTitle(kind, idx);
+            const sku = (row.labels && (row.labels.sku || row.labels.platform_sku)) || '';
+            if (title) {
+                title.textContent = '库存来源 · ' + colTitle + (sku ? (' · ' + sku) : '');
+            }
+            renderSfInvDetailTable(buildSfInvPanelDetailRows(row, kind, idx));
+            panel.hidden = false;
+            applySfInvPanelSizeFromPrefs();
+            requestAnimationFrame(() => positionSfInvFloatingPanel(anchorTd));
+        }
+
+        let _sfInvPanelHideTimer = null;
+        function scheduleHideSfInvPanel() {
+            clearTimeout(_sfInvPanelHideTimer);
+            _sfInvPanelHideTimer = setTimeout(() => {
+                const panel = document.getElementById('sfInvFloatingPanel');
+                if (panel && panel.matches(':hover')) return;
+                hideSfInvFloatingPanel();
+            }, 120);
+        }
+
+        function bindSfInvPanelOnce() {
+            if (document.body.dataset.sfInvPanelBound === '1') return;
+            document.body.dataset.sfInvPanelBound = '1';
+            const panel = document.getElementById('sfInvFloatingPanel');
+            const header = document.getElementById('sfInvPanelHeader');
+            const closeBtn = document.getElementById('sfInvPanelClose');
+            applySfInvPanelSizeFromPrefs();
+            if (panel && window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.enhance === 'function') {
+                window.SitjoyManagedPmTable.enhance(panel);
+            }
+            const closePanel = (e) => {
+                if (!panel) return;
+                if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+                try { writeSfInvPanelPrefs(); } catch (_) {}
+                panel.hidden = true;
+                state.sfInvPanelManuallyHidden = true;
+                state.sfInvPanelHiddenKey = state.sfInvPanelHoverKey || '';
+                state.sfInvPanelAnchorTd = null;
+            };
+            if (closeBtn) {
+                closeBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); closePanel(e); }, true);
+                closeBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); closePanel(e); }, true);
+            }
+            document.addEventListener('keydown', (e) => {
+                if (e.key !== 'Escape') return;
+                const p = document.getElementById('sfInvFloatingPanel');
+                if (!p || p.hidden) return;
+                closePanel(e);
+            }, true);
+            let drag = null;
+            if (header && panel) {
+                header.addEventListener('mousedown', (e) => {
+                    if (e.button !== 0) return;
+                    if (e.target.closest('#sfInvPanelClose')) return;
+                    const r = panel.getBoundingClientRect();
+                    drag = { sx: e.clientX, sy: e.clientY, sl: r.left, st: r.top };
+                    e.preventDefault();
+                });
+            }
+            document.addEventListener('mousemove', (e) => {
+                if (!drag || !panel) return;
+                panel.style.left = Math.round(drag.sl + e.clientX - drag.sx) + 'px';
+                panel.style.top = Math.round(drag.st + e.clientY - drag.sy) + 'px';
+                clampSfInvFloatingPanelToViewport();
+            });
+            document.addEventListener('mouseup', () => {
+                if (drag) {
+                    drag = null;
+                    scheduleWriteSfInvPanelPrefs();
+                }
+            });
+            if (typeof ResizeObserver === 'function' && panel) {
+                const ro = new ResizeObserver(() => scheduleWriteSfInvPanelPrefs());
+                ro.observe(panel);
+            }
+            window.addEventListener('resize', () => {
+                if (panel && !panel.hidden) clampSfInvFloatingPanelToViewport();
+            });
+            if (panel) {
+                panel.addEventListener('mouseenter', () => clearTimeout(_sfInvPanelHideTimer));
+                panel.addEventListener('mouseleave', () => scheduleHideSfInvPanel());
+            }
+        }
+
+        function bindSfInvCellHoverOnce() {
+            if (document.body.dataset.sfInvHoverBound === '1') return;
+            document.body.dataset.sfInvHoverBound = '1';
+            const wrap = document.getElementById('forecastTableWrap');
+            if (!wrap) return;
+            wrap.addEventListener('mouseover', (e) => {
+                const histTd = e.target && e.target.closest ? e.target.closest('td.sf-cell-history.sf-grid-selectable[data-sf-ci]') : null;
+                if (histTd && wrap.contains(histTd) && (state.perfUi || {}).hover && !(state.perfUi || {}).none) {
+                    state.sfPerfHoverPayload = getHistoryPayloadFromTd(histTd);
+                    updateSfPerfPanel();
+                }
+                const td = e.target && e.target.closest ? e.target.closest('td.sf-cell-inv-hoverable[data-sf-inv-col-kind]') : null;
+                if (!td || !wrap.contains(td)) return;
+                if (!canShowSfInvPanelByHover()) return;
+                clearTimeout(_sfInvPanelHideTimer);
+                updateSfInvFloatingPanel(td);
+            });
+            wrap.addEventListener('mouseout', (e) => {
+                const histTd = e.target && e.target.closest ? e.target.closest('td.sf-cell-history.sf-grid-selectable[data-sf-ci]') : null;
+                if (histTd) {
+                    const relH = e.relatedTarget;
+                    if (!relH || (!histTd.contains(relH) && !(relH.closest && relH.closest('#sfPerfFloatingPanel')))) {
+                        clearSfPerfHoverPayload();
+                        updateSfPerfPanel();
+                    }
+                }
+                const td = e.target && e.target.closest ? e.target.closest('td.sf-cell-inv-hoverable[data-sf-inv-col-kind]') : null;
+                if (!td) return;
+                const rel = e.relatedTarget;
+                if (rel && (td.contains(rel) || rel.closest && rel.closest('#sfInvFloatingPanel'))) return;
+                scheduleHideSfInvPanel();
+            });
+            wrap.addEventListener('click', (e) => {
+                const td = e.target && e.target.closest ? e.target.closest('td.sf-cell-inv-hoverable[data-sf-inv-col-kind]') : null;
+                if (!td || !wrap.contains(td)) return;
+                if (!canShowSfInvPanelByClick()) return;
+                clearTimeout(_sfInvPanelHideTimer);
+                updateSfInvFloatingPanel(td);
+            });
+            const scrollParent = wrap.querySelector('.sf-table-wrap') || wrap;
+            const onScroll = () => {
+                const panel = document.getElementById('sfInvFloatingPanel');
+                if (!panel || panel.hidden || !state.sfInvPanelAnchorTd) return;
+                if (!state.sfInvPanelAnchorTd.isConnected) {
+                    hideSfInvFloatingPanel();
+                    return;
+                }
+                positionSfInvFloatingPanel(state.sfInvPanelAnchorTd);
+            };
+            scrollParent.addEventListener('scroll', onScroll, { passive: true });
+            window.addEventListener('scroll', onScroll, { passive: true });
+            window.addEventListener('resize', onScroll, { passive: true });
         }
 
         function bindSfPerfPanelOnce() {
@@ -5441,45 +6098,47 @@
             const interact = document.getElementById('sfPerfUiToolbarInteractWrap');
             const trig = document.getElementById('sfPerfFieldsTrigger');
             if (!grp) return;
-            const ok = isSalesForecastHistoryPerfMode();
+            const histOk = isSalesForecastHistoryPerfMode();
             grp.style.opacity = '';
             grp.style.pointerEvents = '';
-            grp.title = '';
+            grp.title = histOk ? '' : '下单 SKU 维度：悬浮/点击可看库存来源；框选产品表现不可用';
             if (interact) {
-                interact.style.opacity = ok ? '' : '0.45';
-                interact.style.pointerEvents = ok ? '' : 'none';
-                interact.title = ok ? '' : '下单 SKU 维度不支持产品表现（点击 / 框选）';
-                if (ok) interact.removeAttribute('inert');
-                else interact.setAttribute('inert', '');
+                interact.style.opacity = '';
+                interact.style.pointerEvents = '';
+                interact.title = '';
+                interact.removeAttribute('inert');
             }
             if (trig) {
-                trig.disabled = !ok;
-                trig.title = ok ? '' : '下单 SKU 维度不可用';
+                trig.disabled = !histOk;
+                trig.title = histOk ? '' : '下单 SKU 维度不可用';
             }
-            if (!ok) closeSfPerfFieldsPanel();
+            if (!histOk) closeSfPerfFieldsPanel();
+            syncPerfUiCheckboxesFromState();
         }
 
         function bindPerfUiToolbarOnce() {
             if (document.body.dataset.sfPerfUiBound === '1') return;
             document.body.dataset.sfPerfUiBound = '1';
-            ['sfPerfUiNone', 'sfPerfUiClick', 'sfPerfUiRect'].forEach((id) => {
+            ['sfPerfUiNone', 'sfPerfUiHover', 'sfPerfUiClick', 'sfPerfUiRect'].forEach((id) => {
                 const el = document.getElementById(id);
                 if (!el) return;
                 el.addEventListener('change', () => {
                     if (id === 'sfPerfUiNone' && el.checked) {
                         state.perfUi = { none: true, hover: false, click: false, rect: false };
                     } else if (id === 'sfPerfUiNone' && !el.checked) {
-                        state.perfUi = normalizePerfUiPatch({ none: false, hover: false, click: true, rect: false });
+                        state.perfUi = normalizePerfUiPatch({ none: false, hover: true, click: true, rect: false });
                     } else {
                         state.perfUi = normalizePerfUiPatch({
                             none: !!(document.getElementById('sfPerfUiNone') || {}).checked,
-                            hover: false,
+                            hover: !!(document.getElementById('sfPerfUiHover') || {}).checked,
                             click: !!(document.getElementById('sfPerfUiClick') || {}).checked,
                             rect: !!(document.getElementById('sfPerfUiRect') || {}).checked,
                         });
                     }
+                    clearSfPerfHoverPayload();
                     writePerfUiPrefs();
                     syncPerfUiCheckboxesFromState();
+                    hideSfInvFloatingPanel();
                     renderForecastTable();
                     updateSfPerfPanel();
                 });
@@ -6111,6 +6770,8 @@
             syncPerfUiCheckboxesFromState();
             bindPerfUiToolbarOnce();
             bindSfPerfPanelOnce();
+            bindSfInvPanelOnce();
+            bindSfInvCellHoverOnce();
             updateSfPerfToolbarGroupMode();
             bindSfShopFilterDropdownOnce();
             bindSfStatusFilterDropdownOnce();
