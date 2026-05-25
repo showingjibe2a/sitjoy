@@ -1520,6 +1520,34 @@ input.optional-date-input[type="text"]:focus {
     border: none !important;
 }
 
+/* 汇总分组父行：右侧通用小编辑按钮（销售父体、工厂在制等可复用） */
+.sj-group-row-actions-cell {
+    text-align: right;
+    vertical-align: middle;
+    white-space: nowrap;
+    width: 1%;
+    cursor: default;
+    user-select: none;
+}
+.sj-group-row-head {
+    display: block;
+    min-width: 0;
+}
+.sj-group-row-edit-btn.btn-secondary.btn-small,
+button.sj-group-row-edit-btn {
+    padding: 0.18rem 0.55rem;
+    font-size: 0.72rem;
+    line-height: 1.25;
+    border-radius: 6px;
+    min-height: 0;
+    font-weight: 600;
+    box-shadow: none;
+}
+.sj-group-row-edit-btn:hover {
+    background: var(--morandi-sand);
+    border-color: var(--morandi-bluegray);
+}
+
 .pm-table {
     width: 100%;
     border-collapse: collapse;

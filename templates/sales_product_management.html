@@ -374,6 +374,25 @@
             font-weight: 700;
             line-height: 1.45;
         }
+        .sales-parent-group-row .sj-group-row-actions-cell {
+            background: #f3ece0 !important;
+            cursor: default;
+        }
+        #spParentEditModal .percent-input {
+            position: relative;
+            width: 100%;
+        }
+        #spParentEditModal .percent-input input {
+            padding-right: 1.8rem !important;
+        }
+        #spParentEditModal .percent-suffix {
+            position: absolute;
+            right: 0.55rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--morandi-slate);
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
@@ -613,6 +632,61 @@
             <div class="pm-modal-actions">
                 <button class="btn-secondary" onclick="closeModal()">取消</button>
                 <button class="btn-primary" onclick="saveSalesProductFromModal()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="pm-modal" id="spParentEditModal">
+        <div class="pm-modal-content" style="max-width: 520px;">
+            <h3 style="margin-top:0;">编辑父体</h3>
+            <p class="helper-text" style="margin:0 0 0.75rem;">修改父体编号、店铺与费率预估；保存后刷新列表。</p>
+            <div class="pm-form">
+                <input type="hidden" id="spParentEditId">
+                <div class="form-group pm-form-full">
+                    <label for="spParentEditShopId">店铺/品牌<span class="required-asterisk">*</span></label>
+                    <select id="spParentEditShopId" class="required-field"></select>
+                </div>
+                <div class="form-group pm-form-full">
+                    <label for="spParentEditParentCode">父体编号<span class="required-asterisk">*</span></label>
+                    <input type="text" id="spParentEditParentCode" class="required-field">
+                </div>
+                <div class="form-group pm-form-full">
+                    <label for="spParentEditSkuMarker">父体SKU标识</label>
+                    <input type="text" id="spParentEditSkuMarker" class="optional-field" maxlength="128">
+                </div>
+                <div class="form-group pm-form-full">
+                    <label for="spParentEditIsEnabled">是否启用</label>
+                    <label class="switch-wrap">
+                        <input type="checkbox" id="spParentEditIsEnabled" checked>
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+                <div class="pm-section pm-form-full">
+                    <h4>费率预估</h4>
+                    <div class="pm-section-body pm-form">
+                        <div class="form-group">
+                            <label for="spParentEditEstimatedRefundRate">预估退款率</label>
+                            <div class="percent-input"><input type="number" step="0.01" id="spParentEditEstimatedRefundRate" class="optional-field"><span class="percent-suffix">%</span></div>
+                        </div>
+                        <div class="form-group">
+                            <label for="spParentEditEstimatedDiscountRate">预估折扣率</label>
+                            <div class="percent-input"><input type="number" step="0.01" id="spParentEditEstimatedDiscountRate" class="optional-field"><span class="percent-suffix">%</span></div>
+                        </div>
+                        <div class="form-group">
+                            <label for="spParentEditCommissionRate">佣金费率</label>
+                            <div class="percent-input"><input type="number" step="0.01" id="spParentEditCommissionRate" class="optional-field"><span class="percent-suffix">%</span></div>
+                        </div>
+                        <div class="form-group">
+                            <label for="spParentEditEstimatedAcoas">预估ACOAS</label>
+                            <div class="percent-input"><input type="number" step="0.01" id="spParentEditEstimatedAcoas" class="optional-field"><span class="percent-suffix">%</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="spParentEditStatus" class="response" style="display:none; margin-top:0.75rem;"></div>
+            <div class="pm-modal-actions">
+                <button type="button" class="btn-secondary" onclick="closeSalesParentGroupEditModal()">取消</button>
+                <button type="button" class="btn-primary" onclick="saveSalesParentGroupEdit()">保存</button>
             </div>
         </div>
     </div>
@@ -1466,6 +1540,7 @@
             const shop = String(item && item.shop_name || '').trim();
             const marker = String(item && item.parent_sku_marker || '').trim();
             const platform = String(item && item.platform_type_name || '').trim();
+            const parentId = Number(item && item.parent_id || 0) || 0;
             if (code) {
                 return {
                     key: `parent:${code}`,
@@ -1473,6 +1548,7 @@
                     shop,
                     marker,
                     platform,
+                    parentId,
                     isOrphan: false,
                 };
             }
@@ -1483,8 +1559,173 @@
                 shop,
                 marker: '',
                 platform,
+                parentId: 0,
                 isOrphan: true,
             };
+        }
+
+        function buildSalesParentGroupEditActionsHtml(meta) {
+            if (!window.SitjoyGroupedAggregate || typeof SitjoyGroupedAggregate.buildGroupRowActionsCellHtml !== 'function') {
+                return '<td class="sj-group-row-actions-cell"></td>';
+            }
+            if (!meta || meta.isOrphan) {
+                return SitjoyGroupedAggregate.buildGroupRowActionsCellHtml('');
+            }
+            const btn = SitjoyGroupedAggregate.buildGroupRowEditButtonHtml({
+                title: '编辑父体',
+                dataset: {
+                    'sj-parent-edit': '1',
+                    'parent-id': meta.parentId ? String(meta.parentId) : '',
+                    'parent-code': meta.code || '',
+                },
+            });
+            return SitjoyGroupedAggregate.buildGroupRowActionsCellHtml(btn);
+        }
+
+        function showSpParentEditStatus(message, isError) {
+            const el = document.getElementById('spParentEditStatus');
+            if (!el) return;
+            el.style.display = message ? 'block' : 'none';
+            if (!message) {
+                el.textContent = '';
+                return;
+            }
+            el.style.background = isError ? '#ffecec' : '#f0fff0';
+            el.style.color = isError ? '#a33' : '#2f6f2f';
+            el.textContent = message;
+        }
+
+        function renderSpParentEditShopOptions() {
+            const select = document.getElementById('spParentEditShopId');
+            if (!select) return;
+            const options = ['<option value="">请选择店铺/品牌</option>'].concat(
+                (shopOptions || []).map(item => `<option value="${item.id}">${escapeHtml(item.shop_name || '')} / ${escapeHtml(item.brand_name || '')} / ${escapeHtml(item.platform_type_name || '')}</option>`)
+            );
+            select.innerHTML = options.join('');
+        }
+
+        async function fetchSalesParentDetailById(parentId) {
+            const id = Number(parentId || 0);
+            if (!id) return null;
+            const res = await fetch(`/api/parent?id=${encodeURIComponent(id)}`);
+            const data = await res.json();
+            if (data.status !== 'success' || !data.item) {
+                throw new Error(data.message || '加载父体详情失败');
+            }
+            return data.item;
+        }
+
+        async function resolveSalesParentRecord(parentId, parentCode) {
+            const id = Number(parentId || 0);
+            if (id) {
+                try {
+                    return await fetchSalesParentDetailById(id);
+                } catch (e) {
+                    /* fall through by code */
+                }
+            }
+            const code = String(parentCode || '').trim();
+            if (!code) return null;
+            const hit = (parentItems || []).find(p => String(p.parent_code || '').trim() === code);
+            if (hit && hit.id) {
+                return fetchSalesParentDetailById(hit.id);
+            }
+            const res = await fetch(`/api/parent?q=${encodeURIComponent(code)}`);
+            const data = await res.json();
+            if (data.status !== 'success') throw new Error(data.message || '加载父体失败');
+            const items = data.items || [];
+            return items.find(p => String(p.parent_code || '').trim() === code) || items[0] || null;
+        }
+
+        function fillSpParentEditForm(item) {
+            document.getElementById('spParentEditId').value = item && item.id ? String(item.id) : '';
+            document.getElementById('spParentEditParentCode').value = (item && item.parent_code) || '';
+            document.getElementById('spParentEditSkuMarker').value = (item && item.sku_marker) || '';
+            document.getElementById('spParentEditIsEnabled').checked = String(item && item.is_enabled != null ? item.is_enabled : 1) !== '0';
+            document.getElementById('spParentEditShopId').value = item && item.shop_id ? String(item.shop_id) : '';
+            document.getElementById('spParentEditEstimatedRefundRate').value = item && item.estimated_refund_rate != null ? item.estimated_refund_rate : '';
+            document.getElementById('spParentEditEstimatedDiscountRate').value = item && item.estimated_discount_rate != null ? item.estimated_discount_rate : '';
+            document.getElementById('spParentEditCommissionRate').value = item && item.commission_rate != null ? item.commission_rate : '';
+            document.getElementById('spParentEditEstimatedAcoas').value = item && item.estimated_acoas != null ? item.estimated_acoas : '';
+        }
+
+        async function openSalesParentGroupEditModal(parentId, parentCode) {
+            showSpParentEditStatus('', false);
+            renderSpParentEditShopOptions();
+            try {
+                const item = await resolveSalesParentRecord(parentId, parentCode);
+                if (!item || !item.id) {
+                    if (window.showAppToast) window.showAppToast('未找到父体记录，请先在父体管理中创建', true, 3200);
+                    else alert('未找到父体记录，请先在父体管理中创建');
+                    return;
+                }
+                fillSpParentEditForm(item);
+                document.getElementById('spParentEditModal').classList.add('active');
+            } catch (err) {
+                const msg = (err && err.message) || '加载父体失败';
+                if (window.showAppToast) window.showAppToast(msg, true, 3200);
+                else alert(msg);
+            }
+        }
+
+        function closeSalesParentGroupEditModal() {
+            const modal = document.getElementById('spParentEditModal');
+            if (modal) modal.classList.remove('active');
+            showSpParentEditStatus('', false);
+        }
+
+        async function saveSalesParentGroupEdit() {
+            const id = document.getElementById('spParentEditId').value;
+            const parent_code = document.getElementById('spParentEditParentCode').value.trim();
+            const shop_id = document.getElementById('spParentEditShopId').value;
+            if (!id || !parent_code || !shop_id) {
+                showSpParentEditStatus('请填写店铺/品牌和父体编号', true);
+                return;
+            }
+            showSpParentEditStatus('正在保存…', false);
+            try {
+                const res = await fetch('/api/parent', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        id,
+                        parent_code,
+                        is_enabled: document.getElementById('spParentEditIsEnabled').checked ? 1 : 0,
+                        shop_id,
+                        sku_marker: document.getElementById('spParentEditSkuMarker').value.trim(),
+                        estimated_refund_rate: document.getElementById('spParentEditEstimatedRefundRate').value,
+                        estimated_discount_rate: document.getElementById('spParentEditEstimatedDiscountRate').value,
+                        commission_rate: document.getElementById('spParentEditCommissionRate').value,
+                        estimated_acoas: document.getElementById('spParentEditEstimatedAcoas').value,
+                    }),
+                });
+                const data = await res.json();
+                if (data.status !== 'success') {
+                    showSpParentEditStatus(data.message || '保存失败', true);
+                    return;
+                }
+                closeSalesParentGroupEditModal();
+                await loadParentOptions();
+                await loadSalesProductList();
+                showTimeoutToast('父体已更新', false);
+            } catch (err) {
+                showSpParentEditStatus((err && err.message) || '保存失败', true);
+            }
+        }
+
+        function bindSalesParentGroupEditEvents() {
+            const tbody = document.querySelector('#salesProductTable tbody');
+            if (!tbody || tbody.dataset.sjParentEditBound === '1') return;
+            tbody.dataset.sjParentEditBound = '1';
+            tbody.addEventListener('click', (e) => {
+                const btn = e.target && e.target.closest ? e.target.closest('.sj-group-row-edit-btn[data-sj-parent-edit="1"]') : null;
+                if (!btn) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const parentId = btn.getAttribute('data-parent-id') || '';
+                const parentCode = btn.getAttribute('data-parent-code') || '';
+                openSalesParentGroupEditModal(parentId, parentCode);
+            });
         }
 
         function formatSalesParentGroupRowLabel(meta, itemCount) {
@@ -1828,11 +2069,13 @@
                     const groupLabelHtml = formatSalesParentGroupRowLabel(headerMeta, sorted.length);
                     const collapsed = activeCollapsedSet ? activeCollapsedSet.has(groupKey) : false;
                     const safeKey = escapeSalesGroupKeyAttr(groupKey);
+                    const editActionsHtml = buildSalesParentGroupEditActionsHtml(headerMeta);
                     html.push(`
-                <tr class="sales-parent-group-row" data-group-key="${safeKey}">
+                <tr class="sales-parent-group-row" data-group-key="${safeKey}" data-parent-code="${escapeAttr(headerMeta.code || '')}">
                     <td style="text-align:center;"><input type="checkbox" class="sales-parent-group-checkbox" data-group-key="${safeKey}" title="选中该父体下全部子条目" aria-label="选中该父体下全部子条目"></td>
                     <td class="sj-agg-toggle-cell" data-manage-col-key="__sj_agg__"><span class="sales-parent-group-toggle" aria-hidden="true">${collapsed ? '▶' : '▼'}</span></td>
-                    <td colspan="12" class="sales-parent-group-head">${groupLabelHtml}</td>
+                    <td colspan="11" class="sales-parent-group-head"><span class="sj-group-row-head">${groupLabelHtml}</span></td>
+                    ${editActionsHtml}
                 </tr>
             `);
                     sorted.forEach(item => {
@@ -1848,6 +2091,7 @@
             refreshSalesProductTableHeaderSortUi();
             bindSalesRowSelectionEvents();
             bindSalesParentGroupSelectionEvents();
+            bindSalesParentGroupEditEvents();
             bindSalesPreviewEditEvents();
             syncSalesSelectAllCheckbox();
             syncSalesPreviewSaveBar();
@@ -4809,6 +5053,10 @@
         window.setTimeout(function() {
             var el = document.getElementById('nas-main-image-import-modal');
             if (el && typeof window.bindPmModalBackdropClose === 'function') window.bindPmModalBackdropClose(el, closeNasMainImageImportModal);
+            var spParentModal = document.getElementById('spParentEditModal');
+            if (spParentModal && typeof window.bindPmModalBackdropClose === 'function') {
+                window.bindPmModalBackdropClose(spParentModal, closeSalesParentGroupEditModal);
+            }
         }, 0);
 
         function renderCopyList() {

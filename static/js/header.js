@@ -1629,9 +1629,15 @@
                 children.push(bodyRows[j]);
                 j++;
             }
-            const anyVisible = children.some(child => isAggregateChildRowVisible(child));
-            row.style.display = anyVisible ? '' : 'none';
-            row.dataset.pmFilterHidden = anyVisible ? '0' : '1';
+            const inScope = window.SitjoyGroupedAggregate && typeof window.SitjoyGroupedAggregate.isAggregateChildRowInFilterScope === 'function'
+                ? children.some(child => window.SitjoyGroupedAggregate.isAggregateChildRowInFilterScope(child))
+                : children.some(child => {
+                    if(String(child.dataset.pmFilterHidden || '0') === '1') return false;
+                    if(child.style && child.style.display === 'none') return false;
+                    return true;
+                });
+            row.style.display = inScope ? '' : 'none';
+            row.dataset.pmFilterHidden = inScope ? '0' : '1';
             i = j;
         }
     }

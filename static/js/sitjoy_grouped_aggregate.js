@@ -67,6 +67,44 @@
      * @param {() => Set<string>} opts.getCollapsedSet
      * @param {() => void} opts.onAfterToggle
      */
+    function escapeAttrText(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    /** 分组父行右侧操作列（含编辑按钮等），与数据行最后一列对齐 */
+    function buildGroupRowActionsCellHtml(innerHtml) {
+        return `<td class="sj-group-row-actions-cell" data-manage-col-key="__sj_group_actions__">${innerHtml || ''}</td>`;
+    }
+
+    /**
+     * @param {object} [opts]
+     * @param {string} [opts.label]
+     * @param {string} [opts.title]
+     * @param {Record<string, string|number>} [opts.dataset] — 写入 data-*（不含 data- 前缀）
+     */
+    function buildGroupRowEditButtonHtml(opts) {
+        const o = opts || {};
+        const label = String(o.label || '编辑');
+        const title = String(o.title || label);
+        const parts = [
+            'type="button"',
+            'class="sj-group-row-edit-btn btn-secondary btn-small"',
+            `title="${escapeAttrText(title)}"`,
+            `aria-label="${escapeAttrText(title)}"`,
+        ];
+        const dataset = o.dataset || {};
+        Object.keys(dataset).forEach((key) => {
+            const k = String(key || '').trim().replace(/[^a-zA-Z0-9_\-]/g, '');
+            if (!k) return;
+            parts.push(`data-${k}="${escapeAttrText(dataset[key])}"`);
+        });
+        return `<button ${parts.join(' ')}>${escapeAttrText(label)}</button>`;
+    }
+
     function bindGroupRowToggle(opts) {
         const tbody = opts.tbody;
         if (!tbody || tbody.dataset.sjGroupRowToggleBound === '1') return;
@@ -75,7 +113,9 @@
         if (!sel) return;
 
         tbody.addEventListener('click', function(e) {
-            if (e.target && e.target.closest && e.target.closest('input, button, a, label, .pm-column-filter-btn')) return;
+            if (e.target && e.target.closest && e.target.closest(
+                'input, button, a, label, .pm-column-filter-btn, .sj-group-row-edit-btn, .sj-group-row-actions-cell'
+            )) return;
             const row = e.target && e.target.closest ? e.target.closest(sel) : null;
             if (!row) return;
             const key = String(row.dataset.groupKey || '').trim();
@@ -131,10 +171,18 @@
         return false;
     }
 
-    function isAggregateChildRowVisible(row) {
+    /** 列筛选 / 分页范围内是否保留（不含分组折叠的 *-row-hidden） */
+    function isAggregateChildRowInFilterScope(row) {
         if (!row) return false;
         if (String(row.dataset.pmFilterHidden || '0') === '1') return false;
         if (row.style && row.style.display === 'none') return false;
+        return true;
+    }
+
+    /** 勾选、全选等：须排除筛选隐藏、分页隐藏与折叠隐藏 */
+    function isAggregateChildRowVisible(row) {
+        if (!row) return false;
+        if (!isAggregateChildRowInFilterScope(row)) return false;
         if (row.classList) {
             for (let i = 0; i < row.classList.length; i++) {
                 const cls = row.classList[i];
@@ -171,9 +219,9 @@
                 children.push(bodyRows[j]);
                 j++;
             }
-            const anyVisible = children.some((child) => isAggregateChildRowVisible(child));
-            row.style.display = anyVisible ? '' : 'none';
-            row.dataset.pmFilterHidden = anyVisible ? '0' : '1';
+            const anyInScope = children.some((child) => isAggregateChildRowInFilterScope(child));
+            row.style.display = anyInScope ? '' : 'none';
+            row.dataset.pmFilterHidden = anyInScope ? '0' : '1';
             i = j;
         }
     }
@@ -182,7 +230,10 @@
         bindDocumentAggregateGroupSort,
         bindGroupRowToggle,
         bindAggregateHeaderExpandCollapse,
+        buildGroupRowActionsCellHtml,
+        buildGroupRowEditButtonHtml,
         isGroupRow,
+        isAggregateChildRowInFilterScope,
         isAggregateChildRowVisible,
         tableHasGroupRows,
         syncManagedTableGroupRows
