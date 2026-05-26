@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amazon广告管理 - 广告调整记录</title>
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .btn-quick-small {
+            padding: 0.3rem 0.55rem;
+            font-size: 0.78rem;
+            line-height: 1;
+        }
+        .aar-filter-hint {
+            font-size: 0.86rem;
+            color: var(--morandi-slate);
+            margin: 0.35rem 0 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="site-header"></div>
+
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1.2rem;">
+            <h2>Amazon广告管理 - 广告调整记录</h2>
+            <p>查看与管理广告调整提交记录，支持按广告筛选与关键字搜索</p>
+        </section>
+
+        <section class="pm-layout">
+            <div class="card pm-card">
+                <div class="pm-toolbar" style="margin-bottom: 0.6rem;">
+                    <div class="pm-toolbar-actions">
+                        <div class="form-group pm-search" style="margin:0;">
+                            <span class="pm-search-title">搜索</span>
+                            <input type="text" id="recordSearchInput" placeholder="广告名/操作/对象/原因等">
+                            <button type="button" class="btn-primary" onclick="applyRecordFilter()">搜索</button>
+                            <button type="button" class="btn-secondary" onclick="clearRecordFilter()">清空</button>
+                        </div>
+                        <span class="pm-divider" aria-hidden="true"></span>
+                        <button type="button" class="btn-secondary" onclick="loadRecords()">刷新</button>
+                        <a href="/amazon-ad-adjustment-management" class="btn-secondary" style="text-decoration:none;">前往广告调整</a>
+                    </div>
+                </div>
+                <p class="aar-filter-hint" id="recordFilterHint" style="display:none;"></p>
+                <div style="overflow:auto;">
+                    <table class="pm-table" id="recordTable" style="min-width: 1600px;">
+                        <thead>
+                            <tr>
+                                <th>调整日期</th>
+                                <th>关联广告</th>
+                                <th>操作</th>
+                                <th>对象</th>
+                                <th>修改前</th>
+                                <th>修改后</th>
+                                <th>原因</th>
+                                <th>开始时间</th>
+                                <th>结束时间</th>
+                                <th>曝光</th>
+                                <th>点击</th>
+                                <th>花费</th>
+                                <th>订单</th>
+                                <th>销售额</th>
+                                <th>ACOS</th>
+                                <th>CPC</th>
+                                <th>CTR</th>
+                                <th>CVR</th>
+                                <th>归因检查</th>
+                                <th>归因订单</th>
+                                <th>归因销售额</th>
+                                <th>备注</th>
+                                <th>类型</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td colspan="24" style="text-align:center;">加载中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 SITJOY | 内部使用</p>
+    </footer>
+
+    <script>
+        let recordsRaw = [];
+        let recordsFiltered = [];
+        let filterAdItemId = '';
+
+        function formatDateTime(value) {
+            if (!value) return '';
+            const d = new Date(value);
+            if (Number.isNaN(d.getTime())) return value;
+            return d.toLocaleString('zh-CN');
+        }
+
+        function aaToast(message, isError) {
+            const text = String(message || '').trim();
+            if (!text) return;
+            if (window.showAppToast) {
+                window.showAppToast(text, !!isError, isError ? 6500 : 4000);
+            } else {
+                alert(text);
+            }
+        }
+
+        function recordSearchText(item) {
+            return [
+                item.ad_name,
+                item.operation_name,
+                item.target_object,
+                item.before_value,
+                item.after_value,
+                item.reason_name,
+                item.remark,
+                item.impressions,
+                item.clicks,
+                item.cost,
+                item.orders,
+                item.sales
+            ].filter(Boolean).join(' ').toLowerCase();
+        }
+
+        function updateFilterHint() {
+            const el = document.getElementById('recordFilterHint');
+            if (!el) return;
+            if (filterAdItemId) {
+                el.style.display = 'block';
+                el.textContent = `当前仅显示广告 ID=${filterAdItemId} 的记录（来自广告调整页）。`;
+            } else {
+                el.style.display = 'none';
+                el.textContent = '';
+            }
+        }
+
+        function applyRecordFilter() {
+            const keyword = (document.getElementById('recordSearchInput')?.value || '').trim().toLowerCase();
+            recordsFiltered = (recordsRaw || []).filter(item => {
+                if (!keyword) return true;
+                return recordSearchText(item).includes(keyword);
+            });
+            renderRecordTable();
+        }
+
+        function clearRecordFilter() {
+            const input = document.getElementById('recordSearchInput');
+            if (input) input.value = '';
+            applyRecordFilter();
+        }
+
+        function renderRecordTable() {
+            const tbody = document.querySelector('#recordTable tbody');
+            if (!tbody) return;
+            const items = recordsFiltered || [];
+            if (!items.length) {
+                tbody.innerHTML = '<tr><td colspan="24" style="text-align:center;">暂无调整记录</td></tr>';
+                return;
+            }
+            tbody.innerHTML = items.map(item => {
+                const adName = item.ad_name || '';
+                const levelText = item.ad_level === 'group' ? '广告组' : (item.ad_level === 'campaign' ? '广告活动' : item.ad_level || '');
+                return `
+                    <tr>
+                        <td>${formatDateTime(item.adjust_date)}</td>
+                        <td>${adName}（${levelText}）</td>
+                        <td>${item.operation_name || ''}</td>
+                        <td>${item.target_object || ''}</td>
+                        <td>${item.before_value || ''}</td>
+                        <td>${item.after_value || ''}</td>
+                        <td>${item.reason_name || ''}</td>
+                        <td>${formatDateTime(item.start_time)}</td>
+                        <td>${formatDateTime(item.end_time)}</td>
+                        <td>${item.impressions || ''}</td>
+                        <td>${item.clicks || ''}</td>
+                        <td>${item.cost || ''}</td>
+                        <td>${item.orders || ''}</td>
+                        <td>${item.sales || ''}</td>
+                        <td>${item.acos || ''}</td>
+                        <td>${item.cpc || ''}</td>
+                        <td>${item.ctr || ''}</td>
+                        <td>${item.cvr || ''}</td>
+                        <td>${String(item.attribution_checked || '0') === '1' ? '是' : '否'}</td>
+                        <td>${item.attribution_orders || ''}</td>
+                        <td>${item.attribution_sales || ''}</td>
+                        <td>${item.remark || ''}</td>
+                        <td>${String(item.is_quick_submit || '0') === '1' ? '快速提交' : '完整提交'}</td>
+                        <td><button class="btn-danger btn-quick-small" onclick="deleteRecord(${item.id})">删除</button></td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        async function deleteRecord(id) {
+            const ok = window.showAppConfirmAsync
+                ? await window.showAppConfirmAsync({ title: '删除确认', message: '确定删除该条调整记录吗？', confirmText: '确认删除' })
+                : false;
+            if (!ok) return;
+            fetch('/api/amazon-ad-adjustment', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    aaToast(data.message || '删除失败', true);
+                    return;
+                }
+                aaToast('已删除', false);
+                loadRecords();
+            })
+            .catch(err => aaToast('删除失败: ' + err, true));
+        }
+
+        function loadRecords() {
+            const base = '/api/amazon-ad-adjustment';
+            const url = filterAdItemId ? `${base}?ad_item_id=${encodeURIComponent(filterAdItemId)}` : base;
+            const tbody = document.querySelector('#recordTable tbody');
+            if (tbody) {
+                tbody.innerHTML = '<tr><td colspan="24" style="text-align:center;">加载中...</td></tr>';
+            }
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        if (tbody) {
+                            tbody.innerHTML = `<tr><td colspan="24" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        }
+                        aaToast(data.message || '加载失败', true);
+                        return;
+                    }
+                    recordsRaw = data.items || [];
+                    applyRecordFilter();
+                })
+                .catch(err => {
+                    if (tbody) {
+                        tbody.innerHTML = `<tr><td colspan="24" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                    }
+                    aaToast('加载失败: ' + err, true);
+                });
+        }
+
+        function parseUrlFilter() {
+            try {
+                const params = new URLSearchParams(window.location.search || '');
+                filterAdItemId = String(params.get('ad_item_id') || '').trim();
+            } catch (e) {
+                filterAdItemId = '';
+            }
+            updateFilterHint();
+        }
+
+        document.getElementById('recordSearchInput')?.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') applyRecordFilter();
+        });
+
+        window.addEventListener('DOMContentLoaded', () => {
+            parseUrlFilter();
+            loadRecords();
+        });
+    </script>
+
+    <script src="/static/js/header.js"></script>
+</body>
+</html>

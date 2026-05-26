@@ -143,6 +143,7 @@ PAGE_TEMPLATE_MAP = {
     '/amazon-ad-delivery-management': ('templates/amazon_ad_delivery_management.html', 'amazon_ad_delivery_management'),
     '/amazon-ad-product-management': ('templates/amazon_ad_product_management.html', 'amazon_ad_product_management'),
     '/amazon-ad-adjustment-management': ('templates/amazon_ad_adjustment_management.html', 'amazon_ad_adjustment_management'),
+    '/amazon-ad-adjustment-records-management': ('templates/amazon_ad_adjustment_records_management.html', 'amazon_ad_adjustment_records_management'),
     '/amazon-ad-subtype-management': ('templates/amazon_ad_subtype_management.html', 'amazon_ad_subtype_management'),
     '/amazon-ad-keyword-management': ('templates/amazon_ad_keyword_management.html', 'amazon_ad_keyword_management'),
     '/factory-stock-management': ('templates/factory_stock_management.html', 'factory_stock_management'),
@@ -354,6 +355,10 @@ class RequestRoutingMixin:
             '/api/spec-main-image-variants-batch-validate': ('gallery', 'sales_product_management'),
             '/api/spec-main-image-variants-batch-delete': ('gallery', 'sales_product_management'),
             '/api/gallery-sku-family-picker': ('gallery', 'sales_product_management'),
+            '/api/amazon-ad-adjustment': (
+                'amazon_ad_adjustment_management',
+                'amazon_ad_adjustment_records_management',
+            ),
         }
         if path in dual_access:
             keys = dual_access[path]
