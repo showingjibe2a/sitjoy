@@ -202,3 +202,16 @@
     border-color: #2563eb;
     box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
 }
+
+/* 选择已有图片 / 面料 NAS 导入：略宽于默认宽弹窗 */
+.pm-modal-content--image-picker,
+#fabric-nas-import-modal .pm-modal-content--wide {
+    max-width: min(1200px, calc(100vw - 40px));
+}
+
+@supports selector(:has(*)) {
+    .pm-modal-content--image-picker:has(> .pm-modal-scroll),
+    #fabric-nas-import-modal .pm-modal-content--wide:has(> .pm-modal-scroll) {
+        min-height: min(760px, calc(100vh - 120px));
+    }
+}

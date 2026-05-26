@@ -4166,6 +4166,8 @@ body {
 /* 叠在「主编辑」等同级 pm-modal 之上，避免同 z-index 下事件/命中异常 */
 #nas-main-image-import-modal.pm-modal.active,
 #specmi-nas-import-modal.pm-modal.active,
+#fabric-nas-import-modal.pm-modal.active,
+#sjPickExistingModal.pm-modal.active,
 .pm-modal.nas-main-image-import-modal.active {
     z-index: 15100;
 }

@@ -5,6 +5,9 @@
 (function (global) {
   const MODAL_ID = 'sjPickExistingModal';
   let injected = false;
+  /** 先占位，避免脚本晚于内联逻辑时误判「未加载」 */
+  const api = { open: null, close: null, loadList: null };
+  global.SjPickExistingImages = api;
   let state = {
     context: '',
     params: {},
@@ -256,5 +259,7 @@
     await loadList();
   }
 
-  global.SjPickExistingImages = { open, close, loadList };
-})();
+  api.open = open;
+  api.close = close;
+  api.loadList = loadList;
+})(typeof window !== 'undefined' ? window : this);

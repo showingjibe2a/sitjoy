@@ -276,21 +276,56 @@
                 <div class="nas-main-image-header">
                     <div class="nas-main-image-title">
                         <h3 style="margin:0;">从NAS选择并移动（面料库）</h3>
+                        <span class="help-dot" data-tip="服务器侧 NAS 浏览：移动文件到「『面料』」目录。文件夹请双击进入；多选模式下勾选后批量导入。"></span>
+                    </div>
+                    <div class="nas-main-image-header-actions">
+                        <div class="nas-header-control">
+                            <span class="nas-header-control-label">新增方式</span>
+                            <div class="status-segment status-segment--inline" id="fabricNasActionModeSegment" data-value="multi">
+                                <button type="button" class="status-pill" data-value="double" title="双击图片立即导入">双击</button>
+                                <button type="button" class="status-pill is-active" data-value="multi" title="多选后点击批量导入">多选</button>
+                            </div>
+                        </div>
+                        <div class="nas-header-control">
+                            <span class="nas-header-control-label">图标尺寸</span>
+                            <div class="status-segment status-segment--inline nas-thumb-segment" id="fabricNasThumbSizeSegment" data-value="lg">
+                                <button type="button" class="status-pill status-pill--shipped is-active" data-value="lg" title="大图标">大</button>
+                                <button type="button" class="status-pill status-pill--pending" data-value="sm" title="更小缩略图">小</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="pm-form">
                     <div class="form-group pm-form-full">
+                        <label>图片类型</label>
+                        <div class="pm-inline-panel">
+                            <div id="fabricNasImageTypeBar" class="status-segment status-segment--inline"></div>
+                        </div>
+                    </div>
+                    <div class="form-group pm-form-full">
                         <label>当前位置</label>
-                        <nav id="fabricNasBreadcrumbs" class="nas-main-image-breadcrumb"></nav>
+                        <div class="pm-inline-panel">
+                            <nav id="fabricNasBreadcrumbs" class="nas-main-image-breadcrumb" aria-label="NAS 路径"></nav>
+                        </div>
+                    </div>
+                    <div class="form-group pm-form-full">
+                        <div class="nas-main-image-grid-meta" id="fabricNasGridMeta">
+                            <label class="nas-grid-select-all" id="fabricNasSelectAllLabel">
+                                <input type="checkbox" id="fabricNasSelectAllBox">
+                                <span>全选</span>
+                            </label>
+                            <div class="nas-grid-count" id="fabricNasCountText">共 0 张图片</div>
+                        </div>
                     </div>
                     <div class="form-group pm-form-full">
                         <div id="fabricNasList" class="browser-grid nas-main-image-browser-grid"></div>
                     </div>
                 </div>
-                <div id="fabricNasStatus" class="status-message" style="display:none;margin-top:0.75rem;"></div>
+                <div id="fabricNasStatus" class="nas-main-image-status status-message" style="display:none; margin-top:0.75rem;" role="status"></div>
             </div>
-            <div class="pm-modal-actions">
+            <div class="pm-modal-actions nas-main-image-modal-actions">
                 <button type="button" class="btn-small" onclick="closeFabricNasImportModal()">关闭</button>
+                <button type="button" class="btn-accent" onclick="fabricNasImportSelectedClick()">批量导入所选</button>
             </div>
         </div>
     </div>
@@ -316,7 +351,6 @@
         let selectedFabricImageFilterType = '全部';
         let fabricImagePromptDuplicate = true;
         let fabricImageShowFabric = true;
-        let fabricNasPathB64 = '';
         const FABRIC_DUP_LS = 'sj.fabricImage.promptDup.v1';
         const FABRIC_FAB_LS = 'sj.fabricImage.showFabric.v1';
 
@@ -348,12 +382,12 @@
             renderSelectedImagesGrid();
         }
 
-        function openFabricPickExistingImages() {
-            if (!window.SjPickExistingImages || !window.SjPickExistingImages.open) {
-                showModalStatus('选择已有图片组件未加载', true);
+        async function openFabricPickExistingImages() {
+            if (!window.SjPickExistingImages || typeof window.SjPickExistingImages.open !== 'function') {
+                showModalStatus('选择已有图片组件未加载，请刷新页面后重试', true);
                 return;
             }
-            window.SjPickExistingImages.open({
+            await window.SjPickExistingImages.open({
                 context: 'fabric',
                 fabricId: editId,
                 title: '选择已有图片（面料库 · 未绑定）',
@@ -377,92 +411,48 @@
             });
         }
 
-        function showFabricNasStatus(msg, isError) {
-            const el = document.getElementById('fabricNasStatus');
-            if (!el) return;
-            el.style.display = msg ? 'block' : 'none';
-            el.textContent = msg || '';
-            el.style.color = isError ? '#9b2226' : 'var(--morandi-ink)';
-        }
-        function closeFabricNasImportModal() {
-            document.getElementById('fabric-nas-import-modal')?.classList.remove('active');
-            showFabricNasStatus('', false);
-        }
-        async function fabricNasBrowse(pathB64) {
-            fabricNasPathB64 = pathB64 || '';
-            const url = fabricNasPathB64 ? `/api/browse?path=${encodeURIComponent(fabricNasPathB64)}` : '/api/browse';
-            const resp = await fetch(url, { credentials: 'include' });
-            const data = await resp.json();
-            if (data.status !== 'success') {
-                showFabricNasStatus(data.message || '浏览失败', true);
-                return;
-            }
-            const crumbs = data.breadcrumbs || [];
-            const nav = document.getElementById('fabricNasBreadcrumbs');
-            if (nav) {
-                nav.innerHTML = crumbs.map((c, i) => {
-                    const sep = i ? '<span class="nas-main-image-crumb-sep">›</span>' : '';
-                    return `${sep}<a href="#" class="nas-main-image-crumb" data-p="${encodeURIComponent(c.path || '')}">${c.name || c.label || '根'}</a>`;
-                }).join('');
-                nav.querySelectorAll('a').forEach(a => {
-                    a.addEventListener('click', e => {
-                        e.preventDefault();
-                        fabricNasBrowse(decodeURIComponent(a.getAttribute('data-p') || ''));
-                    });
-                });
-            }
-            const list = document.getElementById('fabricNasList');
-            if (!list) return;
-            const folders = (data.folders || []).map(f => {
-                const pb = f.path || '';
-                return `<div class="browser-card browser-card--folder" data-p="${encodeURIComponent(pb)}" title="双击进入"><div class="browser-card-icon">📁</div><div class="browser-card-name">${f.name || '文件夹'}</div></div>`;
-            }).join('');
-            const images = (data.images || []).map(img => {
-                const pb = img.path || '';
-                return `<div class="browser-card browser-card--image" data-p="${encodeURIComponent(pb)}" title="双击导入"><img src="/api/image-preview?id=${encodeURIComponent(pb)}&mode=thumb&w=200&q=65" loading="lazy"><div class="browser-card-name">${img.name || ''}</div></div>`;
-            }).join('');
-            list.innerHTML = folders + images || '<div class="sj-media-image-empty" style="grid-column:1/-1;">空目录</div>';
-            list.querySelectorAll('.browser-card--folder').forEach(card => {
-                card.addEventListener('dblclick', () => fabricNasBrowse(decodeURIComponent(card.getAttribute('data-p') || '')));
-            });
-            list.querySelectorAll('.browser-card--image').forEach(card => {
-                card.addEventListener('dblclick', () => fabricNasImportOne(decodeURIComponent(card.getAttribute('data-p') || '')));
-            });
-        }
-        async function fabricNasImportOne(pathB64) {
-            const code = (document.getElementById('modalFabricCode')?.value || '').trim();
-            if (!code) {
-                showFabricNasStatus('请先填写面料编号', true);
-                return;
-            }
-            showFabricNasStatus('正在移动…', false);
-            const resp = await fetch('/api/fabric-import-by-path', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({ fabric_code: code, source_path_b64: pathB64 })
-            });
-            const data = await resp.json();
-            if (data.status !== 'success') {
-                showFabricNasStatus(data.message || '导入失败', true);
-                return;
-            }
-            showFabricNasStatus(data.message || '已导入', false);
-            await loadFabricImages();
-            (data.image_names || []).forEach(name => {
+        function fabricNasOnAfterImport(imageNames, imageType) {
+            const typeName = imageType || getDefaultFabricImageTypeForAdd();
+            (imageNames || []).forEach(name => {
+                if ((selectedImageObjects || []).some(x => (x.image_name || '') === name)) return;
                 selectedImageObjects.push({
                     image_name: name,
-                    remark: getDefaultFabricImageTypeForAdd(),
+                    remark: typeName,
                     description: '',
                     sort_order: selectedImageObjects.length
                 });
             });
             renderSelectedImagesGrid();
-            await fabricNasBrowse(fabricNasPathB64);
+            loadFabricImages();
+        }
+        function initFabricNasImportUi() {
+            if (!window.FabricNasImportUi) return;
+            window.FabricNasImportUi.configure({
+                getFabricCode: () => (document.getElementById('modalFabricCode')?.value || '').trim(),
+                getImageTypeOptions: () => fabricImageTypeOptions || [],
+                getImportImageType: () => {
+                    const bar = document.getElementById('fabricNasImageTypeBar');
+                    const active = bar && bar.querySelector('button.status-pill.is-active');
+                    const v = active ? String(active.getAttribute('data-value') || '').trim() : '';
+                    return v || getDefaultFabricImageTypeForAdd();
+                },
+                onAfterImport: fabricNasOnAfterImport
+            });
+            window.FabricNasImportUi.bindModalBackdrop();
         }
         function openFabricNasImportModal() {
-            document.getElementById('fabric-nas-import-modal')?.classList.add('active');
-            fabricNasBrowse('');
+            if (!window.FabricNasImportUi) {
+                showModalStatus('NAS 浏览组件未加载，请刷新页面后重试', true);
+                return;
+            }
+            initFabricNasImportUi();
+            window.FabricNasImportUi.open();
+        }
+        function closeFabricNasImportModal() {
+            window.FabricNasImportUi?.close();
+        }
+        function fabricNasImportSelectedClick() {
+            window.FabricNasImportUi?.importSelected();
         }
 
         function escapeHtml(value) {
@@ -1662,13 +1652,18 @@
             document.getElementById('modalImageUpload').value = '';
             renderSelectedImagesGrid();
         }
+
+        window.addEventListener('load', function () {
+            initFabricNasImportUi();
+        });
     </script>
-</body>
     <script src="/static/js/header.js"></script>
     <script src="/static/js/nas_main_image_browser_ui.js"></script>
+    <script src="/static/js/fabric_nas_import.js"></script>
     <script src="/static/js/sj_pick_existing_images.js"></script>
     <script src="/static/js/pm_image_edit_modal.js"></script>
     <script src="/static/js/sj_media_image_card.js"></script>
     <script src="/static/js/sitjoy_row_image_refresh.js"></script>
+</body>
 </html>
 
