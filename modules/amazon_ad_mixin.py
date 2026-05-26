@@ -204,6 +204,12 @@ class AmazonAdMixin:
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
+                            "SELECT id FROM amazon_ad_operation_types WHERE id=%s LIMIT 1",
+                            (item_id,),
+                        )
+                        if not cur.fetchone():
+                            return self.send_json({'status': 'error', 'message': '操作类型不存在'}, start_response)
+                        cur.execute(
                             """
                             UPDATE amazon_ad_operation_types
                             SET name=%s, apply_portfolio=%s, apply_campaign=%s, apply_group=%s
@@ -211,10 +217,8 @@ class AmazonAdMixin:
                             """,
                             (name, apply_portfolio, apply_campaign, apply_group, item_id),
                         )
-                        if cur.rowcount == 0:
-                            return self.send_json({'status': 'error', 'message': '操作类型不存在'}, start_response)
+                        # 仅改操作原因时字段未变，MySQL 可能 rowcount=0，不能据此判不存在
                         self._sync_operation_type_reasons(cur, item_id, data.get('reasons'))
-                    conn.commit()
                 return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':
@@ -1003,7 +1007,7 @@ class AmazonAdMixin:
                                 before_value, after_value, reason_id,
                                 start_time, end_time,
                                 impressions, clicks, cost, orders, sales,
-                                acos, cpc, ctr, cvr,
+                                acos, cpc, ctr, cvr, top_of_search_is,
                                 attribution_checked, attribution_orders, attribution_sales,
                                 remark, is_quick_submit
                             ) VALUES (
@@ -1011,7 +1015,7 @@ class AmazonAdMixin:
                                 %s, %s, %s,
                                 %s, %s,
                                 %s, %s, %s, %s, %s,
-                                %s, %s, %s, %s,
+                                %s, %s, %s, %s, %s,
                                 %s, %s, %s,
                                 %s, %s
                             )
@@ -1032,6 +1036,7 @@ class AmazonAdMixin:
                                 (data.get('cpc') or '').strip() or None,
                                 (data.get('ctr') or '').strip() or None,
                                 (data.get('cvr') or '').strip() or None,
+                                (data.get('top_of_search_is') or '').strip() or None,
                                 1 if str(data.get('attribution_checked') or '0') == '1' else 0,
                                 (data.get('attribution_orders') or '').strip() or None,
                                 (data.get('attribution_sales') or '').strip() or None,

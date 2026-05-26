@@ -66,6 +66,7 @@
                                 <th>CPC</th>
                                 <th>CTR</th>
                                 <th>CVR</th>
+                                <th>首页首位IS</th>
                                 <th>归因检查</th>
                                 <th>归因订单</th>
                                 <th>归因销售额</th>
@@ -75,7 +76,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            <tr><td colspan="24" style="text-align:center;">加载中...</td></tr>
+                            <tr><td colspan="25" style="text-align:center;">加载中...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -158,7 +159,7 @@
             if (!tbody) return;
             const items = recordsFiltered || [];
             if (!items.length) {
-                tbody.innerHTML = '<tr><td colspan="24" style="text-align:center;">暂无调整记录</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="25" style="text-align:center;">暂无调整记录</td></tr>';
                 return;
             }
             tbody.innerHTML = items.map(item => {
@@ -184,6 +185,7 @@
                         <td>${item.cpc || ''}</td>
                         <td>${item.ctr || ''}</td>
                         <td>${item.cvr || ''}</td>
+                        <td>${item.top_of_search_is || ''}</td>
                         <td>${String(item.attribution_checked || '0') === '1' ? '是' : '否'}</td>
                         <td>${item.attribution_orders || ''}</td>
                         <td>${item.attribution_sales || ''}</td>
@@ -222,14 +224,14 @@
             const url = filterAdItemId ? `${base}?ad_item_id=${encodeURIComponent(filterAdItemId)}` : base;
             const tbody = document.querySelector('#recordTable tbody');
             if (tbody) {
-                tbody.innerHTML = '<tr><td colspan="24" style="text-align:center;">加载中...</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="25" style="text-align:center;">加载中...</td></tr>';
             }
             fetch(url)
                 .then(r => r.json())
                 .then(data => {
                     if (data.status !== 'success') {
                         if (tbody) {
-                            tbody.innerHTML = `<tr><td colspan="24" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                            tbody.innerHTML = `<tr><td colspan="25" style="text-align:center; color:#a33;">${data.message || '加载失败'}</td></tr>`;
                         }
                         aaToast(data.message || '加载失败', true);
                         return;
@@ -239,7 +241,7 @@
                 })
                 .catch(err => {
                     if (tbody) {
-                        tbody.innerHTML = `<tr><td colspan="24" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="25" style="text-align:center; color:#a33;">加载失败: ${err}</td></tr>`;
                     }
                     aaToast('加载失败: ' + err, true);
                 });

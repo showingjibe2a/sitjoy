@@ -9,7 +9,7 @@
     <style>
         .aa-grid {
             display: grid;
-            grid-template-columns: minmax(420px, 1fr) minmax(260px, 300px);
+            grid-template-columns: minmax(360px, 1.05fr) minmax(250px, 280px) minmax(320px, 1fr);
             gap: 1rem;
             align-items: stretch;
         }
@@ -228,6 +228,98 @@
         .aa-extra-modal .pm-form {
             gap: 0.55rem;
         }
+        .aa-extra-modal .aa-form-row-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.55rem 0.75rem;
+        }
+        .aa-extra-modal .aa-computed-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.55rem 0.75rem;
+        }
+        .aa-extra-modal .aa-computed-hint {
+            margin: 0 0 0.5rem;
+            font-size: 0.82rem;
+            color: var(--morandi-slate);
+        }
+        .aa-extra-modal .yes-no-field {
+            display: inline-flex;
+            align-items: center;
+        }
+        .aa-extra-modal .yes-no-input {
+            display: none;
+        }
+        .aa-extra-modal input.aa-computed-input {
+            background: rgba(236, 231, 223, 0.35);
+        }
+        .aa-period-col {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            min-height: 0;
+            padding: 0.75rem 0.85rem;
+            max-height: calc(100vh - 140px);
+        }
+        .aa-period-col h3 {
+            margin: 0 0 0.5rem 0;
+            font-size: 1rem;
+            flex: 0 0 auto;
+        }
+        .aa-period-list-wrap {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            border: 1px solid var(--morandi-sand);
+            border-radius: 10px;
+            background: #fff;
+            padding: 0.45rem;
+        }
+        .aa-period-empty {
+            padding: 0.75rem;
+            text-align: center;
+            color: var(--morandi-slate);
+            font-size: 0.86rem;
+        }
+        .aa-period-card {
+            border: 1px solid rgba(207, 199, 189, 0.55);
+            border-radius: 8px;
+            padding: 0.5rem 0.55rem;
+            margin-bottom: 0.5rem;
+            background: rgba(255, 255, 255, 0.92);
+            font-size: 0.78rem;
+            line-height: 1.35;
+        }
+        .aa-period-card:last-child { margin-bottom: 0; }
+        .aa-period-card-head {
+            font-weight: 700;
+            color: var(--morandi-ink);
+            margin-bottom: 0.35rem;
+            padding-bottom: 0.3rem;
+            border-bottom: 1px dashed rgba(207, 199, 189, 0.5);
+            font-size: 0.8rem;
+        }
+        .aa-period-dl {
+            display: grid;
+            grid-template-columns: 5.2rem 1fr;
+            gap: 0.2rem 0.45rem;
+            margin: 0;
+        }
+        .aa-period-dl dt {
+            margin: 0;
+            color: var(--morandi-slate);
+            font-weight: 600;
+        }
+        .aa-period-dl dd {
+            margin: 0;
+            color: var(--morandi-ink);
+            word-break: break-word;
+        }
+        .aa-metric-daily {
+            color: var(--morandi-slate);
+            font-size: 0.74rem;
+        }
         .btn-quick-small {
             padding: 0.3rem 0.55rem;
             font-size: 0.78rem;
@@ -363,7 +455,14 @@
                     <div class="aa-actions">
                         <button type="button" class="btn-primary" onclick="submitRecord()" id="submitBtn" disabled>提交并记录</button>
                         <button type="button" class="btn-secondary" onclick="quickSubmit()" id="quickSubmitBtn" disabled>快速提交</button>
-                        <a href="/amazon-ad-adjustment-records-management" id="aaRecordsLink" class="btn-secondary" style="text-align:center; text-decoration:none; display:none;">查看调整记录</a>
+                        <a href="/amazon-ad-adjustment-records-management" id="aaRecordsLink" class="btn-secondary" style="text-align:center; text-decoration:none; display:none;">查看全部记录</a>
+                    </div>
+                </div>
+
+                <div class="card pm-card aa-period-col">
+                    <h3>修改前后列表</h3>
+                    <div class="aa-period-list-wrap" id="aaPeriodList">
+                        <div class="aa-period-empty">请先在左侧选择广告</div>
                     </div>
                 </div>
             </div>
@@ -371,7 +470,7 @@
             <div class="pm-modal aa-extra-modal" id="aaFullSubmitModal">
                 <div class="pm-modal-content" style="max-width: 640px;">
                     <h3 style="margin-top:0;">补充调整记录信息</h3>
-                    <p class="helper-text" style="margin:0.35rem 0 0.65rem;">请填写效果区间、归因与备注后确认提交。</p>
+                    <p class="helper-text" style="margin:0.35rem 0 0.65rem;">请填写效果区间、计算字段、归因与备注后确认提交。</p>
                     <div class="pm-form">
                         <div class="form-group">
                             <label for="adjustDate">调整日期</label>
@@ -390,51 +489,64 @@
                                 </div>
                                 <div class="form-group">
                                     <label for="impressions">曝光</label>
-                                    <input type="text" id="impressions" placeholder="选填">
+                                    <input type="text" id="impressions" class="aa-metric-source" placeholder="选填">
                                 </div>
                                 <div class="form-group">
                                     <label for="clicks">点击</label>
-                                    <input type="text" id="clicks" placeholder="选填">
+                                    <input type="text" id="clicks" class="aa-metric-source" placeholder="选填">
                                 </div>
                                 <div class="form-group">
                                     <label for="cost">花费</label>
-                                    <input type="text" id="cost" placeholder="选填">
+                                    <input type="text" id="cost" class="aa-metric-source" placeholder="选填">
                                 </div>
                                 <div class="form-group">
                                     <label for="orders">订单</label>
-                                    <input type="text" id="orders" placeholder="选填">
+                                    <input type="text" id="orders" class="aa-metric-source" placeholder="选填">
                                 </div>
                                 <div class="form-group">
                                     <label for="sales">销售额</label>
-                                    <input type="text" id="sales" placeholder="选填">
+                                    <input type="text" id="sales" class="aa-metric-source" placeholder="选填">
                                 </div>
                                 <div class="form-group">
-                                    <label for="acos">ACOS</label>
-                                    <input type="text" id="acos" placeholder="如 12.50%">
-                                </div>
-                                <div class="form-group">
-                                    <label for="cpc">CPC</label>
-                                    <input type="text" id="cpc" placeholder="选填">
-                                </div>
-                                <div class="form-group">
-                                    <label for="ctr">CTR</label>
-                                    <input type="text" id="ctr" placeholder="如 2.30%">
-                                </div>
-                                <div class="form-group">
-                                    <label for="cvr">CVR</label>
-                                    <input type="text" id="cvr" placeholder="如 3.10%">
+                                    <label for="topOfSearchIs">首页首位IS</label>
+                                    <input type="text" id="topOfSearchIs" placeholder="如 35.20%">
                                 </div>
                             </div>
                         </div>
                         <div class="pm-section">
-                            <h4>归因与备注</h4>
+                            <h4>计算字段</h4>
+                            <p class="aa-computed-hint">根据曝光、点击、花费、订单、销售额自动计算（可手动修改）</p>
+                            <div class="aa-computed-grid pm-section-body">
+                                <div class="form-group">
+                                    <label for="acos">ACOS</label>
+                                    <input type="text" id="acos" class="aa-computed-input" placeholder="花费÷销售额">
+                                </div>
+                                <div class="form-group">
+                                    <label for="cpc">CPC</label>
+                                    <input type="text" id="cpc" class="aa-computed-input" placeholder="花费÷点击">
+                                </div>
+                                <div class="form-group">
+                                    <label for="ctr">CTR</label>
+                                    <input type="text" id="ctr" class="aa-computed-input" placeholder="点击÷曝光">
+                                </div>
+                                <div class="form-group">
+                                    <label for="cvr">CVR</label>
+                                    <input type="text" id="cvr" class="aa-computed-input" placeholder="订单÷点击">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="pm-section">
+                            <h4>归因</h4>
                             <div class="pm-section-body">
                                 <div class="form-group">
-                                    <label for="attributionChecked">归因是否检查</label>
-                                    <select id="attributionChecked">
-                                        <option value="0">否</option>
-                                        <option value="1">是</option>
-                                    </select>
+                                    <label>归因是否检查</label>
+                                    <div class="yes-no-field">
+                                        <input type="hidden" id="attributionChecked" class="yes-no-input" value="0">
+                                        <div class="status-segment status-segment--inline" id="attributionCheckedSegment" data-value="0">
+                                            <button type="button" class="status-pill status-pill--enabled" data-target="attributionChecked" data-value="1">是</button>
+                                            <button type="button" class="status-pill status-pill--paused is-active" data-target="attributionChecked" data-value="0">否</button>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="form-group">
                                     <label for="attributionOrders">归因订单数</label>
@@ -444,9 +556,14 @@
                                     <label for="attributionSales">归因销售额</label>
                                     <input type="text" id="attributionSales" placeholder="选填">
                                 </div>
+                            </div>
+                        </div>
+                        <div class="pm-section">
+                            <h4>备注</h4>
+                            <div class="pm-section-body">
                                 <div class="form-group pm-form-full">
                                     <label for="remark">备注</label>
-                                    <input type="text" id="remark" placeholder="补充说明（选填）">
+                                    <textarea id="remark" placeholder="补充说明（选填）" style="min-height:88px; width:100%; box-sizing:border-box; padding:0.55rem 0.65rem; border-radius:8px; border:1px solid var(--morandi-sand); font-size:0.9rem; resize:vertical;"></textarea>
                                 </div>
                             </div>
                         </div>
@@ -582,6 +699,102 @@
             return d.toLocaleString('zh-CN');
         }
 
+        function periodDayCount(startTime, endTime) {
+            const s = new Date(startTime);
+            const e = new Date(endTime);
+            if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return null;
+            if (e < s) return null;
+            return Math.max(1, (e.getTime() - s.getTime()) / 86400000);
+        }
+
+        function formatMetricPlain(value) {
+            const text = String(value ?? '').trim();
+            return text ? escapeHtml(text) : '<span class="aa-ad-cell-empty">-</span>';
+        }
+
+        function formatMetricWithDaily(value, startTime, endTime) {
+            const text = String(value ?? '').trim();
+            if (!text) return '<span class="aa-ad-cell-empty">-</span>';
+            const days = periodDayCount(startTime, endTime);
+            const num = parseFloat(text.replace(/,/g, ''));
+            if (days == null || !Number.isFinite(num)) return escapeHtml(text);
+            const daily = num / days;
+            const dailyStr = Math.abs(daily - Math.round(daily)) < 0.005
+                ? String(Math.round(daily))
+                : daily.toFixed(2);
+            return `${escapeHtml(text)}<span class="aa-metric-daily">（日均 ${escapeHtml(dailyStr)}）</span>`;
+        }
+
+        function renderPeriodRow(label, html) {
+            return `<dt>${escapeHtml(label)}</dt><dd>${html}</dd>`;
+        }
+
+        function renderAdjustmentPeriodCard(item, index) {
+            const start = item.start_time;
+            const end = item.end_time;
+            const head = `区间 #${index + 1} · ${formatDateTime(start) || '-'} ~ ${formatDateTime(end) || '-'}`;
+            const rows = [
+                renderPeriodRow('修改前', formatMetricPlain(item.before_value)),
+                renderPeriodRow('修改后', formatMetricPlain(item.after_value)),
+                renderPeriodRow('原因', formatMetricPlain(item.reason_name)),
+                renderPeriodRow('修改日期', formatMetricPlain(formatDateTime(item.adjust_date))),
+                renderPeriodRow('开始时间', formatMetricPlain(formatDateTime(start))),
+                renderPeriodRow('结束时间', formatMetricPlain(formatDateTime(end))),
+                renderPeriodRow('曝光', formatMetricWithDaily(item.impressions, start, end)),
+                renderPeriodRow('点击', formatMetricWithDaily(item.clicks, start, end)),
+                renderPeriodRow('花费', formatMetricWithDaily(item.cost, start, end)),
+                renderPeriodRow('订单', formatMetricWithDaily(item.orders, start, end)),
+                renderPeriodRow('销售额', formatMetricWithDaily(item.sales, start, end)),
+                renderPeriodRow('ACOS', formatMetricPlain(item.acos)),
+                renderPeriodRow('CPC', formatMetricPlain(item.cpc)),
+                renderPeriodRow('CTR', formatMetricPlain(item.ctr)),
+                renderPeriodRow('CVR', formatMetricPlain(item.cvr)),
+                renderPeriodRow('首页首位IS', formatMetricPlain(item.top_of_search_is)),
+                renderPeriodRow('是否归因', formatMetricPlain(String(item.attribution_checked || '0') === '1' ? '是' : '否')),
+                renderPeriodRow('归因订单', formatMetricPlain(item.attribution_orders)),
+                renderPeriodRow('归因销售额', formatMetricPlain(item.attribution_sales)),
+                renderPeriodRow('备注', formatMetricPlain(item.remark)),
+            ].join('');
+            return `<article class="aa-period-card"><div class="aa-period-card-head">${escapeHtml(head)}</div><dl class="aa-period-dl">${rows}</dl></article>`;
+        }
+
+        function renderAdjustmentPeriodList(items) {
+            const wrap = document.getElementById('aaPeriodList');
+            if (!wrap) return;
+            if (!selectedAdId) {
+                wrap.innerHTML = '<div class="aa-period-empty">请先在左侧选择广告</div>';
+                return;
+            }
+            const list = Array.isArray(items) ? items : [];
+            if (!list.length) {
+                wrap.innerHTML = '<div class="aa-period-empty">该广告暂无调整记录</div>';
+                return;
+            }
+            wrap.innerHTML = list.map((item, idx) => renderAdjustmentPeriodCard(item, idx)).join('');
+        }
+
+        function loadAdjustmentPeriodList() {
+            const wrap = document.getElementById('aaPeriodList');
+            if (!wrap) return;
+            if (!selectedAdId) {
+                renderAdjustmentPeriodList([]);
+                return;
+            }
+            wrap.innerHTML = '<div class="aa-period-empty">加载中…</div>';
+            fetch(`/api/amazon-ad-adjustment?ad_item_id=${encodeURIComponent(selectedAdId)}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status !== 'success') {
+                        wrap.innerHTML = `<div class="aa-period-empty" style="color:#a33;">${escapeHtml(data.message || '加载失败')}</div>`;
+                        return;
+                    }
+                    renderAdjustmentPeriodList(data.items || []);
+                })
+                .catch(err => {
+                    wrap.innerHTML = `<div class="aa-period-empty" style="color:#a33;">加载失败: ${escapeHtml(String(err))}</div>`;
+                });
+        }
+
         function aaToast(message, isError) {
             const text = String(message || '').trim();
             if (!text) return;
@@ -619,10 +832,102 @@
             return errors;
         }
 
+        const AA_METRIC_SOURCE_IDS = ['impressions', 'clicks', 'cost', 'orders', 'sales'];
+
+        function parseMetricNumber(raw) {
+            const text = String(raw ?? '').trim().replace(/,/g, '').replace(/%/g, '');
+            if (!text) return null;
+            const n = parseFloat(text);
+            return Number.isFinite(n) ? n : null;
+        }
+
+        function formatPercentFromRatio(ratio) {
+            if (ratio == null || !Number.isFinite(ratio)) return '';
+            return (ratio * 100).toFixed(2) + '%';
+        }
+
+        function formatDecimalMetric(n, digits) {
+            if (n == null || !Number.isFinite(n)) return '';
+            const d = typeof digits === 'number' ? digits : 2;
+            const fixed = Number(n.toFixed(d));
+            return String(fixed);
+        }
+
+        function recalcAdjustmentDerivedMetrics() {
+            const impressions = parseMetricNumber(document.getElementById('impressions')?.value);
+            const clicks = parseMetricNumber(document.getElementById('clicks')?.value);
+            const cost = parseMetricNumber(document.getElementById('cost')?.value);
+            const orders = parseMetricNumber(document.getElementById('orders')?.value);
+            const sales = parseMetricNumber(document.getElementById('sales')?.value);
+
+            if (cost != null && sales != null && sales > 0) {
+                setFieldValue('acos', formatPercentFromRatio(cost / sales));
+            }
+            if (cost != null && clicks != null && clicks > 0) {
+                setFieldValue('cpc', formatDecimalMetric(cost / clicks));
+            }
+            if (clicks != null && impressions != null && impressions > 0) {
+                setFieldValue('ctr', formatPercentFromRatio(clicks / impressions));
+            }
+            if (orders != null && clicks != null && clicks > 0) {
+                setFieldValue('cvr', formatPercentFromRatio(orders / clicks));
+            }
+        }
+
+        function syncAttributionCheckedButtons() {
+            const input = document.getElementById('attributionChecked');
+            if (!input) return;
+            const value = String(input.value || '0');
+            document.querySelectorAll('[data-target="attributionChecked"]').forEach(btn => {
+                btn.classList.toggle('is-active', String(btn.getAttribute('data-value') || '') === value);
+            });
+            const seg = document.getElementById('attributionCheckedSegment');
+            if (seg) seg.dataset.value = value;
+        }
+
+        function setAttributionChecked(on) {
+            const input = document.getElementById('attributionChecked');
+            if (!input) return;
+            input.value = on ? '1' : '0';
+            syncAttributionCheckedButtons();
+        }
+
+        function getAttributionCheckedValue() {
+            const input = document.getElementById('attributionChecked');
+            return input ? String(input.value || '0') : '0';
+        }
+
+        function initAttributionCheckedSegment() {
+            const modal = document.getElementById('aaFullSubmitModal');
+            if (!modal || modal.dataset.attrSegBound === '1') return;
+            modal.dataset.attrSegBound = '1';
+            document.querySelectorAll('[data-target="attributionChecked"]').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    setAttributionChecked(String(this.getAttribute('data-value') || '0') === '1');
+                });
+            });
+        }
+
+        function initAdjustmentMetricAutoCalc() {
+            const modal = document.getElementById('aaFullSubmitModal');
+            if (!modal || modal.dataset.metricCalcBound === '1') return;
+            modal.dataset.metricCalcBound = '1';
+            AA_METRIC_SOURCE_IDS.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.addEventListener('input', recalcAdjustmentDerivedMetrics);
+                el.addEventListener('change', recalcAdjustmentDerivedMetrics);
+            });
+        }
+
         function openFullSubmitModal() {
             const modal = document.getElementById('aaFullSubmitModal');
             if (!modal) return;
             modal.classList.add('active');
+            initAdjustmentMetricAutoCalc();
+            initAttributionCheckedSegment();
+            recalcAdjustmentDerivedMetrics();
+            syncAttributionCheckedButtons();
             if (window.initUniversalSingleSelects) {
                 window.initUniversalSingleSelects(modal);
             }
@@ -908,6 +1213,7 @@
             selectedAd = adItems.find(item => String(item.id) === selectedAdId) || null;
             highlightSelectedAdRow();
             updateRecordsLink();
+            loadAdjustmentPeriodList();
             fetch(`/api/amazon-ad-adjustment?action=defaults&ad_item_id=${encodeURIComponent(selectedAdId)}`)
                 .then(r => r.json())
                 .then(data => {
@@ -935,11 +1241,11 @@
                     setFieldValue('cpc', '');
                     setFieldValue('ctr', '');
                     setFieldValue('cvr', '');
+                    setFieldValue('topOfSearchIs', '');
                     setFieldValue('attributionOrders', '');
                     setFieldValue('attributionSales', '');
                     setFieldValue('remark', '');
-                    document.getElementById('attributionChecked').value = '0';
-                    if (window.refreshUniversalSingleSelect) window.refreshUniversalSingleSelect(document.getElementById('attributionChecked'));
+                    setAttributionChecked(false);
                     updateSubmitButtonState();
                 })
                 .catch(err => aaToast('加载默认信息失败: ' + err, true));
@@ -966,7 +1272,8 @@
                 cpc: document.getElementById('cpc').value.trim(),
                 ctr: document.getElementById('ctr').value.trim(),
                 cvr: document.getElementById('cvr').value.trim(),
-                attribution_checked: document.getElementById('attributionChecked').value,
+                top_of_search_is: document.getElementById('topOfSearchIs').value.trim(),
+                attribution_checked: getAttributionCheckedValue(),
                 attribution_orders: document.getElementById('attributionOrders').value.trim(),
                 attribution_sales: document.getElementById('attributionSales').value.trim(),
                 remark: document.getElementById('remark').value.trim()
@@ -1001,6 +1308,7 @@
                 aaToast(isQuickSubmit ? '快速提交成功' : '提交并记录成功', false);
                 if (typeof onSuccess === 'function') onSuccess();
                 updateRecordsLink();
+                loadAdjustmentPeriodList();
                 if (selectedAdId) {
                     fetch(`/api/amazon-ad-adjustment?action=defaults&ad_item_id=${encodeURIComponent(selectedAdId)}`)
                         .then(r => r.json())
@@ -1083,6 +1391,8 @@
             if (window.initUniversalSingleSelects) window.initUniversalSingleSelects(document);
             bindAdListRowEvents();
             initAdSearchPrefs();
+            initAdjustmentMetricAutoCalc();
+            initAttributionCheckedSegment();
             loadAdList();
             updateRecordsLink();
             const fullModal = document.getElementById('aaFullSubmitModal');
