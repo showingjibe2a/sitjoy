@@ -61,70 +61,6 @@
         .pm-form-full {
             grid-column: 1 / -1;
         }
-        
-        /* 新的面料图片管理器样式 */
-        .fabric-images-manager {
-            border: 1px solid var(--morandi-sand);
-            border-radius: 10px;
-            padding: 0.75rem;
-            background: #fff;
-        }
-        .fabric-images-toolbar {
-            display: flex;
-            gap: 0.5rem;
-            margin-bottom: 0.75rem;
-        }
-        .fabric-existing-panel {
-            margin-bottom: 0.75rem;
-            padding: 0.6rem;
-            background: var(--morandi-mist);
-            border-radius: 8px;
-        }
-        .fabric-image-search {
-            width: 100%;
-            padding: 0.55rem 0.7rem;
-            border-radius: 6px;
-            border: 1px solid var(--morandi-sand);
-            margin-bottom: 0.6rem;
-        }
-        .fabric-existing-list {
-            max-height: 220px;
-            overflow-y: auto;
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-            gap: 0.5rem;
-        }
-        .fabric-existing-item {
-            position: relative;
-            cursor: pointer;
-            border-radius: 8px;
-            overflow: hidden;
-            border: 2px solid transparent;
-            transition: border-color 0.2s;
-        }
-        .fabric-existing-item:hover {
-            border-color: var(--morandi-ink);
-        }
-        .fabric-existing-item.selected {
-            border-color: #2563eb;
-            background: #dbeafe;
-        }
-        .fabric-existing-item img {
-            width: 100%;
-            aspect-ratio: 1 / 1;
-            object-fit: contain;
-            background: #fff;
-            padding: 8px;
-            display: block;
-        }
-        .fabric-existing-item-name {
-            padding: 0.25rem;
-            font-size: 0.7rem;
-            text-align: center;
-            word-break: break-all;
-            background: rgba(255,255,255,0.9);
-        }
-        /* Shared image grid/card styles live in /static/css/style.css (sj-media-*) */
         .pm-modal-content {
             max-height: 88vh;
             display: flex;
@@ -135,11 +71,6 @@
             min-height: 0;
             padding-right: 0.25rem;
             margin-right: -0.25rem;
-        }
-        .sj-media-image-card.placeholder {
-            border-style: dashed !important;
-            border-color: var(--morandi-ink) !important;
-            background: rgba(255, 255, 255, 0.75);
         }
         .fabric-color-cell {
             text-align: center !important;
@@ -264,21 +195,32 @@
                             </div>
                         </div>
                     </div>
-                    <div class="form-group pm-form-full">
-                        <label>面料图片管理</label>
-                        <div class="fabric-images-manager">
-                            <div class="fabric-images-toolbar">
-                                <button type="button" class="btn-secondary" id="btnSelectExisting" onclick="toggleExistingImagePanel()">选择已有图片</button>
-                                <button type="button" class="btn-secondary" onclick="document.getElementById('modalImageUpload').click()">从外部导入图片</button>
-                                <input type="file" id="modalImageUpload" accept="image/*,image/tiff,.tif,.tiff" multiple style="display:none;">
-                            </div>
-                            <div class="fabric-existing-panel" id="existingImagePanel" style="display:none;">
-                                <input type="text" id="modalImageFilter" class="fabric-image-search" placeholder="搜索图片">
-                                <!-- legacy select and tag container removed; using new grid instead -->
-                                <div class="fabric-existing-list" id="modalImageList"></div>
-                            </div>
-                            <div class="sj-media-image-grid" id="selectedImagesGrid">
-                                <div class="sj-media-image-empty">未选择图片（可为空），可点击上方按钮选择或导入图片</div>
+                    <div class="pm-section pm-form-full">
+                        <h4>面料图片</h4>
+                        <div class="pm-section-body pm-form">
+                            <input type="file" id="modalImageUpload" accept="image/*,image/tiff,.tif,.tiff" multiple style="display:none;">
+                            <div class="form-group pm-form-full">
+                                <div class="mim-toolbar-row">
+                                    <label class="mim-toolbar-label">图片管理</label>
+                                    <div class="mim-toolbar-actions">
+                                        <button type="button" class="btn-accent" id="fabricImageUploadBtn" onclick="triggerFabricImageUpload()">新增图片</button>
+                                        <button type="button" class="btn-secondary" id="btnSelectExisting" onclick="toggleExistingImagePanel()">选择已有图片</button>
+                                    </div>
+                                </div>
+                                <div class="main-images-manager main-images-manager--mt-sm">
+                                    <div class="main-images-toolbar">
+                                        <div class="image-type-bar" id="fabricImageTypeBar"></div>
+                                    </div>
+                                    <div id="fabricImageFolderTip" class="main-images-folder-tip">图片保存在「『面料』」目录；先在类型栏选择具体类型再新增（不要选「全部」）。双击卡片可编辑类型与备注，拖动可调整顺序。</div>
+                                    <div class="fabric-unbound-picker" id="existingImagePanel" style="display:none;">
+                                        <p class="fabric-unbound-picker-title">未绑定面料的图片（点击加入当前面料）</p>
+                                        <input type="text" id="modalImageFilter" class="fabric-unbound-search" placeholder="搜索图片文件名">
+                                        <div id="modalImageList" class="sj-media-image-grid sj-media-image-grid--tight fabric-unbound-grid"></div>
+                                    </div>
+                                    <div id="selectedImagesGrid" class="sj-media-image-grid sj-media-image-grid--tight">
+                                        <div class="sj-media-image-empty">未选择图片（可为空），可点击「新增图片」上传或「选择已有图片」从库中绑定</div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -295,8 +237,9 @@
     <div class="pm-modal" id="fabric-image-edit-modal">
         <div class="pm-modal-content" style="max-width: 620px;">
             <h3 style="margin-top:0;">编辑图片类型/备注</h3>
+            <p class="helper-text" style="margin:0.35rem 0 0.65rem;">仅用于尚未保存到服务器的新上传图片；已入库图片请使用共享编辑弹窗。</p>
             <div class="form-group pm-form-full" style="margin-top:0.55rem;">
-                <label>图片类型（双击图片可快速编辑）</label>
+                <label>图片类型</label>
                 <div class="image-type-bar" id="fabricImageEditTypeBar"></div>
             </div>
             <div class="form-group pm-form-full" style="margin-top:0.55rem;">
@@ -340,6 +283,8 @@
         let draggedInsertIndex = null;
         let currentEditingImageIndex = null;
         let fabricImageTypeOptions = [];
+        let selectedFabricImageType = '';
+        let selectedFabricImageFilterType = '全部';
 
         function escapeHtml(value) {
             return String(value == null ? '' : value)
@@ -379,12 +324,81 @@
             return fetch('/api/sales-image-type?usage=fabric').then(r => r.json()).then(data => {
                 if (data.status !== 'success') {
                     fabricImageTypeOptions = [];
+                    renderFabricImageTypeBar();
                     return;
                 }
                 fabricImageTypeOptions = Array.isArray(data.items) ? data.items : [];
+                renderFabricImageTypeBar();
             }).catch(() => {
                 fabricImageTypeOptions = [];
+                renderFabricImageTypeBar();
             });
+        }
+
+        function renderFabricImageTypeBar() {
+            const bar = document.getElementById('fabricImageTypeBar');
+            if (!bar) return;
+            const list = (fabricImageTypeOptions || []).filter(x => String(x.name || '').trim());
+            if (!list.length) {
+                bar.innerHTML = '<span class="pm-select-empty" style="padding:0 .4rem;">暂无类型</span>';
+                return;
+            }
+            if (!selectedFabricImageFilterType) selectedFabricImageFilterType = '全部';
+            if (!selectedFabricImageType || !list.some(x => String(x.name || '').trim() === selectedFabricImageType)) {
+                selectedFabricImageType = String(list[0].name || '').trim();
+            }
+            const radios = [{ name: '全部' }].concat(list).map(item => {
+                const name = String(item.name || '').trim();
+                const checked = (name === '全部'
+                    ? selectedFabricImageFilterType === '全部'
+                    : name === selectedFabricImageFilterType) ? 'checked' : '';
+                return `
+                    <label class="image-type-radio">
+                        <input type="radio" name="fabricImageType" value="${escapeHtml(name)}" ${checked}>
+                        <span>${escapeHtml(name)}</span>
+                    </label>
+                `;
+            }).join('');
+            bar.innerHTML = radios;
+            bar.querySelectorAll('input[name="fabricImageType"]').forEach(el => {
+                el.addEventListener('change', function() {
+                    if (!this.checked) return;
+                    const v = normalizeFabricImageTypeName(this.value);
+                    if (v === '全部') {
+                        selectedFabricImageFilterType = '全部';
+                    } else {
+                        selectedFabricImageFilterType = v;
+                        selectedFabricImageType = v;
+                    }
+                    renderSelectedImagesGrid();
+                });
+            });
+        }
+
+        function getDefaultFabricImageTypeForAdd() {
+            const t = normalizeFabricImageTypeName(selectedFabricImageType || '');
+            if (t && t !== '全部') return normalizeImageRemark(t);
+            const list = (fabricImageTypeOptions || []).filter(x => String(x.name || '').trim());
+            if (list.length) return normalizeImageRemark(list[0].name);
+            return normalizeImageRemark('原图');
+        }
+
+        function triggerFabricImageUpload() {
+            const type = normalizeFabricImageTypeName(selectedFabricImageType || '');
+            if (!type || type === '全部') {
+                showModalStatus('请先在图片类型栏选择具体类型后再新增（不要选择「全部」）', true);
+                return;
+            }
+            const input = document.getElementById('modalImageUpload');
+            if (input) input.click();
+        }
+
+        function filterFabricImagesForDisplay(items) {
+            if (selectedFabricImageFilterType === '全部' || !selectedFabricImageFilterType) {
+                return items || [];
+            }
+            const want = normalizeImageRemark(selectedFabricImageFilterType);
+            return (items || []).filter(img => normalizeImageRemark(img.remark) === want);
         }
 
         function getRemarkCategoryClass(remark) {
@@ -479,6 +493,8 @@
             // 新：初始化图片对象数组
             selectedImageObjects = [];
             document.getElementById('existingImagePanel').style.display = 'none';
+            selectedFabricImageFilterType = '全部';
+            renderFabricImageTypeBar();
             renderSelectedImagesGrid();
             
             document.getElementById('modalSaveBtn').innerText = '保存';
@@ -521,6 +537,8 @@
                 }));
             }
             document.getElementById('existingImagePanel').style.display = 'none';
+            selectedFabricImageFilterType = '全部';
+            renderFabricImageTypeBar();
             renderSelectedImagesGrid();
             
             document.getElementById('modalSaveBtn').innerText = '保存';
@@ -1038,43 +1056,40 @@
             list.innerHTML = '';
             const filtered = fabricImages.filter(item => {
                 const display = item.name || '';
-                // try decode rawB64 to get the original filename when possible
                 const decoded = tryDecodeNameFromB64(item.rawB64) || display;
                 const name = String(decoded || display).toLowerCase();
-
-                // exclude already-selected images so they only appear below
                 const displayText = (decoded || display) || '';
                 if (selectedDisplaySet.has(displayText)) return false;
-
-                // unbound filtering is handled by backend API
                 return (!keyword || name.includes(keyword));
             });
             
             if (!filtered.length) {
-                list.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--morandi-slate);">暂无未绑定图片</div>';
+                list.innerHTML = '<div class="sj-media-image-empty">暂无未绑定图片</div>';
                 return;
             }
             
             filtered.forEach(item => {
-                const div = document.createElement('div');
-                div.className = 'fabric-existing-item';
+                const card = document.createElement('div');
                 const displayText = tryDecodeNameFromB64(item.rawB64) || item.name || '';
-
-                div.innerHTML = `
-                    <img src="/api/image-preview?id=${encodeURIComponent(item.b64)}&mode=thumb&w=240&q=68" alt="${displayText}" loading="lazy">
-                    <div class="fabric-existing-item-name">${displayText}</div>
+                const isSelected = selectedDisplaySet.has(displayText);
+                card.className = `sj-media-image-card fabric-pick-card${isSelected ? ' is-selected' : ''}`;
+                card.innerHTML = `
+                    <div class="sj-media-image-preview-wrap">
+                        <img src="/api/image-preview?id=${encodeURIComponent(item.b64)}&mode=thumb&w=240&q=68" alt="${escapeHtml(displayText)}" class="sj-media-image-preview" loading="lazy">
+                    </div>
+                    <div class="sj-media-image-info">
+                        <div class="sj-media-image-original" title="${escapeHtml(displayText)}">${escapeHtml(displayText)}</div>
+                    </div>
                 `;
 
-                div.onclick = () => {
+                card.onclick = () => {
                     if (selectedDisplaySet.has(displayText)) {
-                        // 取消选择 by display name
                         selectedImageObjects = selectedImageObjects.filter(v => (tryDecodeNameFromB64(v.image_name) || v.image_name) !== displayText);
                     } else {
-                        // 添加选择（使用解码后的显示名保存）
                         selectedImageObjects.push({
                             image_name: displayText,
                             image_name_raw_b64: item.rawB64 || '',
-                            remark: '原图',
+                            remark: getDefaultFabricImageTypeForAdd(),
                             description: '',
                             sort_order: selectedImageObjects.length
                         });
@@ -1083,29 +1098,31 @@
                     renderExistingImagesList();
                 };
                 
-                list.appendChild(div);
+                list.appendChild(card);
             });
         }
         
         function renderSelectedImagesGrid() {
             const grid = document.getElementById('selectedImagesGrid');
+            const visibleItems = filterFabricImagesForDisplay(selectedImageObjects);
 
             if (!selectedImageObjects.length) {
-                grid.innerHTML = '<div class="sj-media-image-empty">未选择图片（可为空），可点击上方按钮选择或导入图片</div>';
+                grid.innerHTML = '<div class="sj-media-image-empty">未选择图片（可为空），可点击「新增图片」上传或「选择已有图片」从库中绑定</div>';
+                return;
+            }
+            if (!visibleItems.length) {
+                grid.innerHTML = '<div class="sj-media-image-empty">当前类型筛选下暂无图片，请切换类型或新增图片</div>';
                 return;
             }
 
-            // container will hold cards and a single placeholder element
             grid.innerHTML = '';
 
             const placeholder = document.createElement('div');
             placeholder.className = 'sj-media-image-card placeholder';
-            placeholder.style.minHeight = '80px';
-            placeholder.style.borderStyle = 'dashed';
-            placeholder.style.opacity = '0.6';
             placeholder.style.display = 'none';
 
             selectedImageObjects.forEach((img, index) => {
+                if (!visibleItems.includes(img)) return;
                 const card = document.createElement('div');
                 const normalizedRemark = normalizeImageRemark(img.remark);
                 img.remark = normalizedRemark;
@@ -1113,8 +1130,7 @@
                 const categoryClass = getRemarkCategoryClass(normalizedRemark);
                 const typeLabel = normalizeFabricImageTypeName(normalizedRemark);
                 const descText = String(img.description || '').trim();
-                card.className = `sj-media-image-card sj-media-image-card--fabric ${categoryClass}`;
-                card.style.cursor = 'move';
+                card.className = `sj-media-image-card sj-media-image-card--fabric sj-media-image-card--drag ${categoryClass}`;
                 card.setAttribute('draggable', 'true');
                 card.dataset.index = index;
 
@@ -1394,7 +1410,23 @@
             .catch(err => showModalStatus('保存失败: ' + err, true));
         }
         
-        function openFabricImageEditModal(index) {
+        async function syncFabricImageFromGalleryMeta(index) {
+            const img = selectedImageObjects[index];
+            if (!img || img._isNewUpload) return;
+            const found = getImageItemByName(img.image_name);
+            const pathB64 = (found && found.b64) ? found.b64 : utf8ToB64(`『面料』/${img.image_name || ''}`);
+            try {
+                const resp = await fetch('/api/gallery-image-meta?id=' + encodeURIComponent(pathB64), { credentials: 'include' });
+                const data = await resp.json();
+                if (data.status !== 'success' || !data.item) return;
+                const meta = data.item;
+                img.remark = normalizeImageRemark(meta.image_type_name || meta.remark || img.remark);
+                img.description = String(meta.description != null ? meta.description : '').trim();
+                renderSelectedImagesGrid();
+            } catch (e) {}
+        }
+
+        function openFabricImageEditModalLocal(index) {
             currentEditingImageIndex = index;
             const img = selectedImageObjects[index];
             if (!img) return;
@@ -1410,7 +1442,7 @@
                         const name = String(item.name || '').trim();
                         const checked = name === currentType ? 'checked' : '';
                         return `
-                            <label class="image-type-radio" style="transform:scale(0.96); transform-origin:left;">
+                            <label class="image-type-radio">
                                 <input type="radio" name="fabricImageEditType" value="${escapeHtml(name)}" ${checked}>
                                 <span>${escapeHtml(name)}</span>
                             </label>
@@ -1420,6 +1452,38 @@
             }
             document.getElementById('fabric-image-edit-modal').classList.add('active');
             document.getElementById('fabricImageRemarkInput').focus();
+        }
+
+        function openFabricImageEditModal(index) {
+            const img = selectedImageObjects[index];
+            if (!img) return;
+            if (img._isNewUpload) {
+                openFabricImageEditModalLocal(index);
+                return;
+            }
+            if (!window.PmImageEditModal || !window.PmImageEditModal.open) {
+                openFabricImageEditModalLocal(index);
+                return;
+            }
+            currentEditingImageIndex = index;
+            const found = getImageItemByName(img.image_name);
+            const pathB64 = (found && found.b64) ? found.b64 : utf8ToB64(`『面料』/${img.image_name || ''}`);
+            window.PmImageEditModal.init({
+                mode: 'gallery',
+                hooks: {
+                    prefillVariantLinks: true,
+                    onAfterSuccess: async () => {
+                        await loadFabricImages();
+                        await syncFabricImageFromGalleryMeta(index);
+                        if (editId) loadFabricList();
+                    }
+                }
+            });
+            window.PmImageEditModal.open({
+                pathB64,
+                name: img.image_name || '',
+                defaultVariantIds: []
+            });
         }
 
         function closeFabricImageEditModal() {
@@ -1479,19 +1543,18 @@
         function handleImageUpload() {
             const files = document.getElementById('modalImageUpload').files;
             if (!files || !files.length) return;
-            
-            // 新上传的图片默认为未分类，添加到列表
+            const defaultType = getDefaultFabricImageTypeForAdd();
             Array.from(files).forEach(file => {
                 selectedImageObjects.push({
                     image_name: file.name,
-                    remark: '原图',
+                    remark: defaultType,
                     description: '',
                     sort_order: selectedImageObjects.length,
                     _isNewUpload: true,
                     _fileObject: file
                 });
             });
-            
+            document.getElementById('modalImageUpload').value = '';
             renderSelectedImagesGrid();
         }
     </script>
