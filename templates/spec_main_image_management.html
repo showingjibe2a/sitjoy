@@ -461,12 +461,59 @@
       const binary = atob(b64);
       if (typeof TextDecoder !== 'undefined') {
         const bytes = Uint8Array.from(binary, ch => ch.charCodeAt(0));
-        return new TextDecoder('utf-8').decode(bytes);
+        return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
       }
       return decodeURIComponent(escape(binary));
     } catch (e) {
       try { return decodeURIComponent(escape(atob(b64))); } catch (_) { return ''; }
     }
+  }
+
+  /** browse API 的 name 为文件系统字节 base64；仅在为合法 UTF-8 文本时解码展示 */
+  function specmiTryDecodeBrowseLabelB64(raw) {
+    const s = String(raw || '').trim();
+    if (s.length < 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(s)) return '';
+    try {
+      const binary = atob(s);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+      if (typeof TextDecoder === 'undefined') return '';
+      const dec = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(dec)) return '';
+      return dec;
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function specmiNasBrowseCrumbName(crumb, idx) {
+    const raw = String((crumb && crumb.name) || '').trim();
+    if (!raw) return `目录${(Number(idx) || 0) + 1}`;
+    const dec = specmiTryDecodeBrowseLabelB64(raw);
+    if (dec && dec !== raw) return dec;
+    const utf8 = decodeB64Utf8(raw);
+    return utf8 || raw;
+  }
+
+  function specmiPersistNasBrowseLocation() {
+    try {
+      localStorage.setItem(SPECMI_LS_NAS, specmiNasPathB64 || '');
+      localStorage.setItem(SPECMI_LS_STACK, JSON.stringify(Array.isArray(specmiNasNavStack) ? specmiNasNavStack : []));
+    } catch (e) {}
+  }
+
+  function specmiSyncNasNavStackFromBrowse(data) {
+    const crumbsFromApi = Array.isArray(data && data.breadcrumbs) ? data.breadcrumbs : [];
+    if (crumbsFromApi.length) {
+      specmiNasNavStack = crumbsFromApi.map((b, idx) => ({
+        name: specmiNasBrowseCrumbName(b, idx),
+        pathB64: String(b.path || ''),
+      }));
+      const last = specmiNasNavStack[specmiNasNavStack.length - 1];
+      if (last && last.pathB64) specmiNasPathB64 = last.pathB64;
+      return;
+    }
+    if (!specmiNasPathB64) specmiNasNavStack = [];
   }
   function utf8ToB64(text) {
     try {
@@ -2179,6 +2226,13 @@
     return data;
   }
 
+  async function specmiNasEnterFolder(pathB64) {
+    specmiNasPathB64 = String(pathB64 || '');
+    const ok = await specmiRenderNasList();
+    if (ok) specmiPersistNasBrowseLocation();
+    return ok;
+  }
+
   async function specmiNasJump(idx) {
     if (idx < 0) {
       specmiNasNavStack = [];
@@ -2188,9 +2242,8 @@
       const last = specmiNasNavStack.length ? specmiNasNavStack[specmiNasNavStack.length - 1] : null;
       specmiNasPathB64 = last ? last.pathB64 : '';
     }
-    await specmiRenderNasList();
-    localStorage.setItem(SPECMI_LS_NAS, specmiNasPathB64 || '');
-    localStorage.setItem(SPECMI_LS_STACK, JSON.stringify(specmiNasNavStack || []));
+    const ok = await specmiRenderNasList();
+    if (ok) specmiPersistNasBrowseLocation();
   }
 
   async function specmiRenderNasList(opts) {
@@ -2199,10 +2252,11 @@
     const preserveScroll = !!(opts && opts.preserveScroll);
     const snap = preserveScroll ? specmiGetNasModalScrollSnapshot() : null;
     list.innerHTML = '<div class="pm-select-empty nas-main-image-grid-loading">加载中...</div>';
-    specmiNasCrumbs();
     specmiShowNasStatus('', false);
     try {
       const data = await specmiNasBrowse(specmiNasPathB64);
+      specmiSyncNasNavStackFromBrowse(data);
+      specmiNasCrumbs();
       const folders = Array.isArray(data.folders) ? data.folders : [];
       const images = Array.isArray(data.images) ? data.images : [];
       list.innerHTML = '';
@@ -2221,32 +2275,16 @@
         card.innerHTML = `<div class="item-thumbnail folder"><div class="folder-icon">📁</div></div><div class="item-info"><div class="item-name"></div></div>`;
         card.querySelector('.item-name').textContent = displayName || '';
         if (window.NasMainImageBrowserUi) {
-          window.NasMainImageBrowserUi.wireNasFolderBrowseCard(card, async () => {
-            specmiNasPathB64 = pathB64;
-            specmiNasNavStack.push({ name: displayName || '文件夹', pathB64 });
-            await specmiRenderNasList();
-            localStorage.setItem(SPECMI_LS_NAS, specmiNasPathB64 || '');
-            localStorage.setItem(SPECMI_LS_STACK, JSON.stringify(specmiNasNavStack || []));
-          });
+          window.NasMainImageBrowserUi.wireNasFolderBrowseCard(card, () => specmiNasEnterFolder(pathB64));
         } else {
           card.setAttribute('role', 'button');
           card.tabIndex = 0;
           card.setAttribute('title', '双击进入文件夹');
-          card.addEventListener('dblclick', async () => {
-            specmiNasPathB64 = pathB64;
-            specmiNasNavStack.push({ name: displayName || '文件夹', pathB64 });
-            await specmiRenderNasList();
-            localStorage.setItem(SPECMI_LS_NAS, specmiNasPathB64 || '');
-            localStorage.setItem(SPECMI_LS_STACK, JSON.stringify(specmiNasNavStack || []));
-          });
-          card.addEventListener('keydown', async (e) => {
+          card.addEventListener('dblclick', () => { specmiNasEnterFolder(pathB64); });
+          card.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
-              specmiNasPathB64 = pathB64;
-              specmiNasNavStack.push({ name: displayName || '文件夹', pathB64 });
-              await specmiRenderNasList();
-              localStorage.setItem(SPECMI_LS_NAS, specmiNasPathB64 || '');
-              localStorage.setItem(SPECMI_LS_STACK, JSON.stringify(specmiNasNavStack || []));
+              specmiNasEnterFolder(pathB64);
             }
           });
         }
@@ -2340,6 +2378,7 @@
         list.innerHTML = '<div class="pm-select-empty nas-main-image-grid-empty">此目录为空</div>';
       }
       specmiUpdateNasMeta(images.length);
+      specmiPersistNasBrowseLocation();
       return true;
     } catch (e) {
       list.innerHTML = `<div class="pm-select-empty nas-main-image-grid-empty">加载失败：${specmiEscapeCell(e.message || e)}</div>`;
@@ -2580,19 +2619,6 @@
     }
     specmiNasPathB64 = localStorage.getItem(SPECMI_LS_NAS) || '';
     specmiNasNavStack = [];
-    try {
-      const raw = localStorage.getItem(SPECMI_LS_STACK) || '';
-      const parsed = raw ? JSON.parse(raw) : null;
-      if (Array.isArray(parsed)) {
-        specmiNasNavStack = parsed
-          .filter((x) => x && typeof x.pathB64 === 'string')
-          .map((x) => ({ name: String(x.name || ''), pathB64: String(x.pathB64 || '') }));
-        const last = specmiNasNavStack.length ? specmiNasNavStack[specmiNasNavStack.length - 1] : null;
-        if (last && last.pathB64) specmiNasPathB64 = last.pathB64;
-      }
-    } catch (e) {
-      specmiNasNavStack = [];
-    }
     specmiNasSelected = new Set();
     document.getElementById('specmi-nas-import-modal')?.classList.add('active');
     if (typeof window.syncModalScrollLock === 'function') {
@@ -2604,19 +2630,20 @@
     specmiRenderNasTypeBar();
     (async () => {
       const savedPath = specmiNasPathB64 || '';
-      const savedStack = Array.isArray(specmiNasNavStack) ? specmiNasNavStack.slice() : [];
       const ok = await specmiRenderNasList();
-      if (!ok && (savedPath || savedStack.length)) {
+      if (!ok && savedPath) {
         specmiShowNasStatus('上次记住的路径暂时无法访问，已显示根目录；关闭弹窗后仍会保留该路径。', true);
         specmiNasPathB64 = '';
         specmiNasNavStack = [];
         await specmiRenderNasList();
         specmiNasPathB64 = savedPath;
-        specmiNasNavStack = savedStack;
+        specmiNasNavStack = [];
+        await specmiRenderNasList();
       }
     })();
   }
   function specmiCloseNasModal() {
+    specmiPersistNasBrowseLocation();
     document.getElementById('specmi-nas-import-modal')?.classList.remove('active');
     if (typeof window.syncModalScrollLock === 'function') {
       try { window.syncModalScrollLock(); } catch (_) {}
