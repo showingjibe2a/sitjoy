@@ -62,15 +62,170 @@ class AmazonAdMixin:
             print(f'Amazon ad subtype API error: {str(e)}')
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def _parse_apply_flag(self, value, default=1):
+        if value is None or value == '':
+            return 1 if default else 0
+        if isinstance(value, bool):
+            return 1 if value else 0
+        text = str(value).strip().lower()
+        if text in ('1', 'true', 'yes', 'y', '是'):
+            return 1
+        if text in ('0', 'false', 'no', 'n', '否'):
+            return 0
+        parsed = self._parse_int(value)
+        return 1 if parsed else 0
+
+    def _serialize_operation_type_row(self, row, reasons=None):
+        item = dict(row) if row else {}
+        item['reasons'] = list(reasons or [])
+        for key in ('apply_portfolio', 'apply_campaign', 'apply_group'):
+            if key in item and item[key] is not None:
+                item[key] = int(item[key])
+        return item
+
+    def _fetch_all_operation_types_with_reasons(self, cur):
+        cur.execute("SELECT * FROM amazon_ad_operation_types ORDER BY id DESC LIMIT 500")
+        rows = cur.fetchall() or []
+        if not rows:
+            return []
+        type_ids = [int(r['id']) for r in rows if r.get('id') is not None]
+        reasons_by_type = {tid: [] for tid in type_ids}
+        if type_ids:
+            placeholders = ','.join(['%s'] * len(type_ids))
+            cur.execute(
+                "SELECT id, operation_type_id, reason_name FROM amazon_ad_operation_reasons "
+                f"WHERE operation_type_id IN ({placeholders}) ORDER BY id ASC",
+                tuple(type_ids),
+            )
+            for rr in cur.fetchall() or []:
+                tid = int(rr['operation_type_id'])
+                reasons_by_type.setdefault(tid, []).append({
+                    'id': rr['id'],
+                    'reason_name': rr.get('reason_name') or '',
+                })
+        return [
+            self._serialize_operation_type_row(r, reasons_by_type.get(int(r['id']), []))
+            for r in rows
+        ]
+
+    def _sync_operation_type_reasons(self, cur, operation_type_id, reasons_payload):
+        cur.execute(
+            "DELETE FROM amazon_ad_operation_reasons WHERE operation_type_id=%s",
+            (operation_type_id,),
+        )
+        seen = set()
+        for raw in reasons_payload or []:
+            if isinstance(raw, str):
+                name = raw.strip()
+            elif isinstance(raw, dict):
+                name = (raw.get('reason_name') or '').strip()
+            else:
+                name = ''
+            if not name:
+                continue
+            key = name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            cur.execute(
+                "INSERT INTO amazon_ad_operation_reasons (operation_type_id, reason_name) VALUES (%s, %s)",
+                (operation_type_id, name),
+            )
+
     def handle_amazon_ad_operation_type_api(self, environ, method, start_response):
-        """Amazon 广告操作类型 API"""
+        """Amazon 广告操作类型 API（含操作原因 CRUD）"""
         try:
             if method == 'GET':
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("SELECT * FROM amazon_ad_operation_types ORDER BY id DESC LIMIT 500")
-                        rows = cur.fetchall() or []
-                return self.send_json({'status': 'success', 'items': rows}, start_response)
+                        items = self._fetch_all_operation_types_with_reasons(cur)
+                return self.send_json({'status': 'success', 'items': items}, start_response)
+
+            data = self._read_json_body(environ)
+
+            if method == 'POST':
+                name = (data.get('name') or '').strip()
+                if not name:
+                    return self.send_json({'status': 'error', 'message': '请填写操作名称'}, start_response)
+                apply_portfolio = self._parse_apply_flag(data.get('apply_portfolio'), 1)
+                apply_campaign = self._parse_apply_flag(data.get('apply_campaign'), 1)
+                apply_group = self._parse_apply_flag(data.get('apply_group'), 1)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            INSERT INTO amazon_ad_operation_types (
+                                name, apply_portfolio, apply_campaign, apply_group
+                            ) VALUES (%s, %s, %s, %s)
+                            """,
+                            (name, apply_portfolio, apply_campaign, apply_group),
+                        )
+                        new_id = cur.lastrowid
+                        self._sync_operation_type_reasons(cur, new_id, data.get('reasons'))
+                    conn.commit()
+                return self.send_json({'status': 'success', 'id': new_id}, start_response)
+
+            if method == 'PUT':
+                batch_items = data.get('items')
+                if isinstance(batch_items, list):
+                    with self._get_db_connection() as conn:
+                        with conn.cursor() as cur:
+                            for it in batch_items:
+                                if not isinstance(it, dict):
+                                    continue
+                                item_id = self._parse_int(it.get('id'))
+                                if not item_id:
+                                    continue
+                                cur.execute(
+                                    """
+                                    UPDATE amazon_ad_operation_types
+                                    SET apply_portfolio=%s, apply_campaign=%s, apply_group=%s
+                                    WHERE id=%s
+                                    """,
+                                    (
+                                        self._parse_apply_flag(it.get('apply_portfolio'), 1),
+                                        self._parse_apply_flag(it.get('apply_campaign'), 1),
+                                        self._parse_apply_flag(it.get('apply_group'), 1),
+                                        item_id,
+                                    ),
+                                )
+                        conn.commit()
+                    return self.send_json({'status': 'success'}, start_response)
+
+                item_id = self._parse_int(data.get('id'))
+                name = (data.get('name') or '').strip()
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                if not name:
+                    return self.send_json({'status': 'error', 'message': '请填写操作名称'}, start_response)
+                apply_portfolio = self._parse_apply_flag(data.get('apply_portfolio'), 1)
+                apply_campaign = self._parse_apply_flag(data.get('apply_campaign'), 1)
+                apply_group = self._parse_apply_flag(data.get('apply_group'), 1)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            UPDATE amazon_ad_operation_types
+                            SET name=%s, apply_portfolio=%s, apply_campaign=%s, apply_group=%s
+                            WHERE id=%s
+                            """,
+                            (name, apply_portfolio, apply_campaign, apply_group, item_id),
+                        )
+                        if cur.rowcount == 0:
+                            return self.send_json({'status': 'error', 'message': '操作类型不存在'}, start_response)
+                        self._sync_operation_type_reasons(cur, item_id, data.get('reasons'))
+                    conn.commit()
+                return self.send_json({'status': 'success'}, start_response)
+
+            if method == 'DELETE':
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM amazon_ad_operation_types WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success'}, start_response)
+
             return self.send_error(405, 'Method not allowed', start_response)
         except Exception as e:
             print(f'Amazon ad operation type API error: {str(e)}')

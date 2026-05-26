@@ -9,123 +9,224 @@
     <style>
         .aa-grid {
             display: grid;
-            grid-template-columns: 350px 1fr;
+            grid-template-columns: minmax(420px, 1fr) minmax(260px, 300px);
             gap: 1rem;
-            align-items: start;
+            align-items: stretch;
         }
         .aa-left-col {
             display: flex;
             flex-direction: column;
             gap: 0.75rem;
             min-width: 0;
+            min-height: 100%;
+        }
+        .aa-right-col {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            max-width: 300px;
+            min-height: 100%;
+            padding: 0.75rem 0.85rem;
+        }
+        .aa-form-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            flex: 1 1 auto;
+            min-height: 0;
+        }
+        .aa-form-block-title {
+            margin: 0.35rem 0 0.15rem;
+            font-size: 0.88rem;
+            font-weight: 700;
+            color: var(--morandi-ink);
+        }
+        .aa-form-block-title:first-child {
+            margin-top: 0;
+        }
+        .aa-field-row {
+            display: flex;
+            flex-direction: column;
+            gap: 0.22rem;
+        }
+        .aa-field-row label {
+            font-size: 0.8rem;
+            color: var(--morandi-slate);
+            font-weight: 600;
+        }
+        .aa-field-row .aa-readonly {
+            font-size: 0.86rem;
+            color: var(--morandi-ink);
+            padding: 0.42rem 0.5rem;
+            border-radius: 6px;
+            border: 1px solid rgba(207, 199, 189, 0.55);
+            background: rgba(255, 255, 255, 0.7);
+            word-break: break-word;
+            min-height: 1.35rem;
+        }
+        .aa-field-row select,
+        .aa-field-row input[type="text"],
+        .aa-field-row input[type="datetime-local"] {
+            width: 100%;
+            box-sizing: border-box;
+            font-size: 0.86rem;
+            padding: 0.42rem 0.5rem;
+            border-radius: 6px;
+            border: 1px solid var(--morandi-sand);
         }
         .aa-search-card {
             padding: 0.75rem;
+            flex: 0 0 auto;
         }
         .aa-ad-info-card {
             padding: 0.75rem;
-            flex: 1;
+            flex: 1 1 auto;
             min-height: 0;
             display: flex;
             flex-direction: column;
         }
         .aa-ad-info-card h3 {
             margin: 0 0 0.55rem 0;
+            flex: 0 0 auto;
         }
-        .aa-list {
+        .aa-list-wrap {
             border: 1px solid var(--morandi-sand);
             border-radius: 10px;
             background: #fff;
-            max-height: 520px;
-            overflow-y: auto;
-            flex: 1;
-            min-height: 200px;
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow: auto;
+            -webkit-overflow-scrolling: touch;
         }
-        .aa-ad-table-head {
-            display: grid;
-            grid-template-columns: 4px 1fr 4px 1fr 4px 1fr;
-            gap: 0 0.25rem;
-            padding: 0.45rem 0.45rem 0.4rem;
-            font-size: 0.72rem;
-            font-weight: 700;
-            color: var(--morandi-slate);
-            border-bottom: 1px solid rgba(207, 199, 189, 0.55);
-            background: rgba(236, 231, 223, 0.35);
+        .aa-ad-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            font-size: 0.82rem;
+        }
+        .aa-ad-table thead th {
             position: sticky;
             top: 0;
             z-index: 2;
-        }
-        .aa-ad-table-head .aa-head-label {
-            padding: 0.15rem 0.3rem;
-        }
-        .aa-ad-row {
-            width: 100%;
-            display: grid;
-            grid-template-columns: 4px 1fr 4px 1fr 4px 1fr;
-            gap: 0 0.25rem;
-            align-items: stretch;
-            border: none;
-            background: transparent;
+            background: rgba(236, 231, 223, 0.92);
+            border-bottom: 1px solid rgba(207, 199, 189, 0.65);
+            padding: 0.42rem 0.5rem;
             text-align: left;
-            padding: 0.45rem 0.4rem;
-            cursor: pointer;
-            color: var(--morandi-ink);
-        }
-        .aa-level-bar {
-            width: 4px;
-            border-radius: 2px;
-            align-self: stretch;
-            min-height: 2rem;
-        }
-        .aa-level-bar--portfolio { background: #5b8fc7; }
-        .aa-level-bar--campaign { background: #c98a4b; }
-        .aa-level-bar--group { background: #6a9b6e; }
-        .aa-ad-cell {
-            font-size: 0.82rem;
-            line-height: 1.35;
-            padding: 0.2rem 0.35rem;
-            min-width: 0;
-            word-break: break-word;
-        }
-        .aa-ad-cell--portfolio { color: #3d5f82; }
-        .aa-ad-cell--campaign { color: #7a5528; font-weight: 600; }
-        .aa-ad-cell--group { color: #3d6a52; }
-        .aa-ad-cell-empty { color: var(--morandi-slate); opacity: 0.45; }
-        .aa-ad-row-meta {
-            padding-left: 0.5rem;
-            font-size: 0.76rem;
+            font-size: 0.72rem;
+            font-weight: 700;
             color: var(--morandi-slate);
-            padding: 0 0.35rem 0.15rem;
-            margin-top: -0.15rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
-        .aa-ad-row-wrap {
-            border-bottom: 1px solid rgba(207, 199, 189, 0.4);
+        .aa-ad-table thead th.aa-th--portfolio { color: #3d5f82; }
+        .aa-ad-table thead th.aa-th--campaign { color: #7a5528; }
+        .aa-ad-table thead th.aa-th--group { color: #3d6a52; }
+        .aa-ad-table thead th.aa-th--status { color: #5a5f66; }
+        .aa-ad-table thead th.aa-th--ad-type { color: #4a5568; }
+        .aa-ad-table thead th {
+            position: relative;
         }
-        .aa-ad-row-wrap:last-child { border-bottom: none; }
-        .aa-ad-row-wrap.is-active { background: rgba(207, 199, 189, 0.42); }
-        .aa-ad-row-wrap:hover { background: rgba(207, 199, 189, 0.22); }
-
-        .aa-info {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 0.55rem 0.75rem;
-            margin-bottom: 0.9rem;
+        .aa-col-resizer {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 8px;
+            height: 100%;
+            cursor: col-resize;
+            user-select: none;
         }
-        .aa-info-row {
-            padding: 0.5rem 0.55rem;
-            border-radius: 8px;
-            border: 1px solid rgba(207, 199, 189, 0.65);
-            background: rgba(255, 255, 255, 0.85);
-            font-size: 0.88rem;
+        .aa-col-resizer::after {
+            content: '';
+            position: absolute;
+            top: 18%;
+            bottom: 18%;
+            right: 2px;
+            width: 2px;
+            border-radius: 1px;
+            background: rgba(123, 128, 136, 0.45);
+            opacity: 0;
+            transition: opacity 0.15s ease;
+        }
+        .aa-ad-table thead th:hover .aa-col-resizer::after,
+        .aa-col-resizer.is-active::after {
+            opacity: 1;
+        }
+        .aa-ad-table tbody tr {
+            cursor: pointer;
+            transition: background-color 0.12s ease;
+        }
+        .aa-ad-table tbody tr:hover {
+            background: rgba(207, 199, 189, 0.22);
+        }
+        .aa-ad-table tbody tr.is-active {
+            background: rgba(207, 199, 189, 0.45);
+        }
+        .aa-ad-table tbody tr.is-active:hover {
+            background: rgba(207, 199, 189, 0.52);
+        }
+        .aa-ad-table tbody tr:focus-visible {
+            outline: 2px solid rgba(91, 143, 199, 0.55);
+            outline-offset: -2px;
+        }
+        .aa-ad-table td {
+            padding: 0.42rem 0.5rem;
+            border-bottom: 1px solid rgba(207, 199, 189, 0.38);
+            vertical-align: top;
+            line-height: 1.35;
+            word-break: break-word;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .aa-ad-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+        .aa-ad-table td.aa-td--portfolio {
+            color: #3d5f82;
+            border-left: 3px solid #5b8fc7;
+        }
+        .aa-ad-table td.aa-td--campaign {
+            color: #7a5528;
+            font-weight: 600;
+            border-left: 3px solid #c98a4b;
+        }
+        .aa-ad-table td.aa-td--group {
+            color: #3d6a52;
+            border-left: 3px solid #6a9b6e;
+        }
+        .aa-ad-table td.aa-td--status {
+            border-left: 3px solid #9aa3ad;
+        }
+        .aa-ad-table td.aa-td--ad-type {
+            border-left: 3px solid #7c8a9a;
             color: var(--morandi-ink);
         }
-        .aa-info-row strong { color: var(--morandi-slate); font-weight: 600; margin-right: 0.35rem; }
+        .aa-ad-table .aa-item-status {
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .aa-ad-cell-empty { color: var(--morandi-slate); opacity: 0.45; font-weight: 400; }
+        .aa-list-empty {
+            padding: 0.7rem;
+            text-align: center;
+            color: var(--morandi-slate);
+        }
+
         .aa-actions {
-            margin-top: 0.95rem;
+            margin-top: 0.65rem;
+            padding-top: 0.55rem;
+            border-top: 1px solid rgba(207, 199, 189, 0.45);
             display: flex;
-            justify-content: flex-end;
-            align-items: center;
-            gap: 0.5rem;
+            flex-direction: column;
+            gap: 0.45rem;
+            flex: 0 0 auto;
+        }
+        .aa-actions .btn-primary,
+        .aa-actions .btn-secondary {
+            width: 100%;
+        }
+        .aa-extra-modal .pm-form {
+            gap: 0.55rem;
         }
         .btn-quick-small {
             padding: 0.3rem 0.55rem;
@@ -206,97 +307,105 @@
 
                     <div class="card pm-card aa-ad-info-card">
                         <h3>广告信息</h3>
-                        <div class="aa-list" id="adList">
-                            <div style="padding:0.7rem; text-align:center; color:var(--morandi-slate);">加载中...</div>
+                        <div class="aa-list-wrap" id="adList">
+                            <div class="aa-list-empty">加载中...</div>
                         </div>
                     </div>
                 </div>
 
-                <div class="card pm-card" style="padding: 0.95rem;">
-                    <h3 style="margin:0 0 0.7rem 0;">调整内容</h3>
-                    <div class="aa-info" id="adInfoBox">
-                        <div class="aa-info-row"><strong>广告类型</strong><span id="infoAdType">-</span></div>
-                        <div class="aa-info-row"><strong>广告组合</strong><span id="infoPortfolio">-</span></div>
-                        <div class="aa-info-row"><strong>广告活动</strong><span id="infoCampaign">-</span></div>
-                        <div class="aa-info-row"><strong>广告组</strong><span id="infoGroup">-</span></div>
-                    </div>
-
-                    <div class="pm-form">
-                        <div class="pm-section">
-                            <h4>基础调整信息</h4>
-                            <div class="pm-section-body">
-                                <div class="form-group">
-                                    <label for="operationType">允许操作类型<span class="required-asterisk">*</span></label>
-                                    <select id="operationType" data-search-placeholder="搜索操作类型">
-                                        <option value="">请选择操作类型</option>
-                                    </select>
-                                </div>
-                                <div class="form-group">
-                                    <label for="operationReason">修改原因<span class="required-asterisk">*</span></label>
-                                    <select id="operationReason" data-search-placeholder="搜索修改原因">
-                                        <option value="">请先选择操作类型</option>
-                                    </select>
-                                </div>
-                                <div class="form-group">
-                                    <label for="adjustDate">调整日期</label>
-                                    <input type="datetime-local" id="adjustDate">
-                                </div>
-
-                                <div class="form-group pm-form-full">
-                                    <label for="targetObject">操作对象<span class="required-asterisk">*</span></label>
-                                    <input type="text" id="targetObject" placeholder="例如：关键词 / 竞价 / 投放位置">
-                                </div>
-
-                                <div class="form-group">
-                                    <label for="beforeValue">修改前<span class="required-asterisk">*</span></label>
-                                    <input type="text" id="beforeValue" placeholder="例如：0.75 或 置顶展示">
-                                </div>
-                                <div class="form-group">
-                                    <label for="afterValue">修改后<span class="required-asterisk">*</span></label>
-                                    <input type="text" id="afterValue" placeholder="例如：0.95 或 下调竞价">
-                                </div>
-                                <div class="form-group">
-                                    <label for="attributionChecked">归因是否检查</label>
-                                    <select id="attributionChecked">
-                                        <option value="0">否</option>
-                                        <option value="1">是</option>
-                                    </select>
-                                </div>
-                            </div>
+                <div class="card pm-card aa-right-col">
+                    <h3 style="margin:0 0 0.55rem 0; flex:0 0 auto; font-size:1rem;">调整内容</h3>
+                    <div class="aa-form-stack" id="adInfoBox">
+                        <div class="aa-field-row">
+                            <label>广告类型</label>
+                            <div class="aa-readonly" id="infoAdType">-</div>
+                        </div>
+                        <div class="aa-field-row">
+                            <label>广告组合</label>
+                            <div class="aa-readonly" id="infoPortfolio">-</div>
+                        </div>
+                        <div class="aa-field-row">
+                            <label>广告活动</label>
+                            <div class="aa-readonly" id="infoCampaign">-</div>
+                        </div>
+                        <div class="aa-field-row">
+                            <label>广告组</label>
+                            <div class="aa-readonly" id="infoGroup">-</div>
                         </div>
 
+                        <h4 class="aa-form-block-title">基础调整信息</h4>
+                        <div class="aa-field-row">
+                            <label for="operationType">操作类型<span class="required-asterisk">*</span></label>
+                            <select id="operationType" data-search-placeholder="搜索操作类型">
+                                <option value="">请选择操作类型</option>
+                            </select>
+                        </div>
+                        <div class="aa-field-row">
+                            <label for="targetObject">操作对象<span class="required-asterisk">*</span></label>
+                            <input type="text" id="targetObject" placeholder="关键词 / 竞价 / 投放位置">
+                        </div>
+                        <div class="aa-field-row">
+                            <label for="beforeValue">修改前<span class="required-asterisk">*</span></label>
+                            <input type="text" id="beforeValue" placeholder="例如：0.75">
+                        </div>
+                        <div class="aa-field-row">
+                            <label for="afterValue">修改后<span class="required-asterisk">*</span></label>
+                            <input type="text" id="afterValue" placeholder="例如：0.95">
+                        </div>
+                        <div class="aa-field-row">
+                            <label for="operationReason">修改原因<span class="required-asterisk">*</span></label>
+                            <select id="operationReason" data-search-placeholder="搜索修改原因">
+                                <option value="">请先选择操作类型</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="aa-actions">
+                        <button type="button" class="btn-primary" onclick="submitRecord()" id="submitBtn" disabled>提交并记录</button>
+                        <button type="button" class="btn-secondary" onclick="quickSubmit()" id="quickSubmitBtn" disabled>快速提交</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pm-modal aa-extra-modal" id="aaFullSubmitModal">
+                <div class="pm-modal-content" style="max-width: 640px;">
+                    <h3 style="margin-top:0;">补充调整记录信息</h3>
+                    <p class="helper-text" style="margin:0.35rem 0 0.65rem;">请填写效果区间、归因与备注后确认提交。</p>
+                    <div class="pm-form">
+                        <div class="form-group">
+                            <label for="adjustDate">调整日期</label>
+                            <input type="datetime-local" id="adjustDate">
+                        </div>
                         <div class="pm-section">
                             <h4>效果区间数据</h4>
                             <div class="pm-section-body">
                                 <div class="form-group">
-                                    <label for="startTime">开始时间</label>
+                                    <label for="startTime">开始时间<span class="required-asterisk">*</span></label>
                                     <input type="datetime-local" id="startTime">
                                 </div>
                                 <div class="form-group">
-                                    <label for="endTime">结束时间</label>
+                                    <label for="endTime">结束时间<span class="required-asterisk">*</span></label>
                                     <input type="datetime-local" id="endTime">
                                 </div>
                                 <div class="form-group">
                                     <label for="impressions">曝光</label>
-                                    <input type="text" id="impressions" placeholder="简短数字">
+                                    <input type="text" id="impressions" placeholder="选填">
                                 </div>
-
                                 <div class="form-group">
                                     <label for="clicks">点击</label>
-                                    <input type="text" id="clicks" placeholder="简短数字">
+                                    <input type="text" id="clicks" placeholder="选填">
                                 </div>
                                 <div class="form-group">
                                     <label for="cost">花费</label>
-                                    <input type="text" id="cost" placeholder="简短数字">
+                                    <input type="text" id="cost" placeholder="选填">
                                 </div>
                                 <div class="form-group">
                                     <label for="orders">订单</label>
-                                    <input type="text" id="orders" placeholder="简短数字">
+                                    <input type="text" id="orders" placeholder="选填">
                                 </div>
-
                                 <div class="form-group">
                                     <label for="sales">销售额</label>
-                                    <input type="text" id="sales" placeholder="简短数字">
+                                    <input type="text" id="sales" placeholder="选填">
                                 </div>
                                 <div class="form-group">
                                     <label for="acos">ACOS</label>
@@ -304,9 +413,8 @@
                                 </div>
                                 <div class="form-group">
                                     <label for="cpc">CPC</label>
-                                    <input type="text" id="cpc" placeholder="简短数字">
+                                    <input type="text" id="cpc" placeholder="选填">
                                 </div>
-
                                 <div class="form-group">
                                     <label for="ctr">CTR</label>
                                     <input type="text" id="ctr" placeholder="如 2.30%">
@@ -317,17 +425,23 @@
                                 </div>
                             </div>
                         </div>
-
                         <div class="pm-section">
                             <h4>归因与备注</h4>
                             <div class="pm-section-body">
                                 <div class="form-group">
+                                    <label for="attributionChecked">归因是否检查</label>
+                                    <select id="attributionChecked">
+                                        <option value="0">否</option>
+                                        <option value="1">是</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
                                     <label for="attributionOrders">归因订单数</label>
-                                    <input type="text" id="attributionOrders" placeholder="简短数字">
+                                    <input type="text" id="attributionOrders" placeholder="选填">
                                 </div>
                                 <div class="form-group">
                                     <label for="attributionSales">归因销售额</label>
-                                    <input type="text" id="attributionSales" placeholder="简短数字">
+                                    <input type="text" id="attributionSales" placeholder="选填">
                                 </div>
                                 <div class="form-group pm-form-full">
                                     <label for="remark">备注</label>
@@ -336,12 +450,10 @@
                             </div>
                         </div>
                     </div>
-
-                    <div class="aa-actions">
-                        <button class="btn-secondary" onclick="quickSubmit()" id="quickSubmitBtn">快速提交</button>
-                        <button class="btn-primary" onclick="submitRecord()" id="submitBtn" disabled>提交并记录</button>
+                    <div class="pm-modal-actions">
+                        <button type="button" class="btn-secondary" onclick="closeFullSubmitModal()">取消</button>
+                        <button type="button" class="btn-primary" onclick="confirmFullSubmit()">确认提交</button>
                     </div>
-                    <div id="formStatus" class="response" style="display:none; margin-top:0.6rem;"></div>
                 </div>
             </div>
 
@@ -512,18 +624,54 @@
             return d.toLocaleString('zh-CN');
         }
 
-        function showFormStatus(message, isError) {
-            const el = document.getElementById('formStatus');
-            el.style.display = 'block';
-            el.style.background = isError ? '#ffecec' : '#f0fff0';
-            el.style.color = isError ? '#a33' : '#2f6f2f';
-            el.innerText = message;
+        function aaToast(message, isError) {
+            const text = String(message || '').trim();
+            if (!text) return;
+            if (window.showAppToast) {
+                window.showAppToast(text, !!isError, isError ? 6500 : 4000);
+            } else {
+                alert(text);
+            }
         }
 
-        function clearFormStatus() {
-            const el = document.getElementById('formStatus');
-            el.style.display = 'none';
-            el.innerText = '';
+        function validatePhase1() {
+            const errors = [];
+            if (!selectedAdId) errors.push('请先在左侧选择广告');
+            if (!document.getElementById('operationType').value) errors.push('请选择操作类型');
+            if (!document.getElementById('targetObject').value.trim()) errors.push('请填写操作对象');
+            if (!document.getElementById('beforeValue').value.trim()) errors.push('请填写修改前');
+            if (!document.getElementById('afterValue').value.trim()) errors.push('请填写修改后');
+            if (!document.getElementById('operationReason').value) errors.push('请选择修改原因');
+            return errors;
+        }
+
+        function validatePhase2() {
+            const errors = [];
+            const start = document.getElementById('startTime').value;
+            const end = document.getElementById('endTime').value;
+            if (!start) errors.push('请填写效果区间开始时间');
+            if (!end) errors.push('请填写效果区间结束时间');
+            if (start && end) {
+                const s = new Date(start).getTime();
+                const e = new Date(end).getTime();
+                if (!Number.isNaN(s) && !Number.isNaN(e) && e < s) {
+                    errors.push('结束时间不能早于开始时间');
+                }
+            }
+            return errors;
+        }
+
+        function openFullSubmitModal() {
+            const modal = document.getElementById('aaFullSubmitModal');
+            if (!modal) return;
+            modal.classList.add('active');
+            if (window.initUniversalSingleSelects) {
+                window.initUniversalSingleSelects(modal);
+            }
+        }
+
+        function closeFullSubmitModal() {
+            document.getElementById('aaFullSubmitModal')?.classList.remove('active');
         }
 
         function openAdCreateFromAdjustment() {
@@ -544,19 +692,19 @@
         function uploadAdTemplateFromAdjustment(file) {
             const formData = new FormData();
             formData.append('file', file);
-            showFormStatus('模板上传处理中...', false);
+            aaToast('模板上传处理中…', false);
             fetch('/api/amazon-ad-import', { method: 'POST', body: formData })
                 .then(r => r.json())
                 .then(data => {
                     if (data.status !== 'success') {
-                        showFormStatus(data.message || '导入失败', true);
+                        aaToast(data.message || '导入失败', true);
                         return;
                     }
                     const countError = Array.isArray(data.errors) ? data.errors.length : 0;
-                    showFormStatus(`导入完成：新增 ${data.created || 0}，更新 ${data.updated || 0}，未变更 ${data.unchanged || 0}${countError ? `，失败 ${countError}` : ''}`, !!countError);
+                    aaToast(`导入完成：新增 ${data.created || 0}，更新 ${data.updated || 0}，未变更 ${data.unchanged || 0}${countError ? `，失败 ${countError}` : ''}`, !!countError);
                     loadAdList();
                 })
-                .catch(err => showFormStatus('导入失败: ' + err, true));
+                .catch(err => aaToast('导入失败: ' + err, true));
         }
 
         function escapeHtml(text) {
@@ -573,47 +721,163 @@
             return escapeHtml(text);
         }
 
+        function adListStatusCell(item) {
+            const status = String(item.status || '启动').trim() || '启动';
+            const cls = status === '暂停' ? 'is-paused' : (status === '存档' ? 'is-archived' : '');
+            return `<span class="aa-item-status ${cls}">${escapeHtml(status)}</span>`;
+        }
+
+        const AA_AD_COL_LS = 'sj.amazonAdAdjustment.adTableCols.v2';
+        const AA_AD_COL_KEYS = ['portfolio', 'campaign', 'group', 'status', 'ad_type'];
+        const AA_AD_COL_DEFAULTS = { portfolio: 88, campaign: 88, group: 88, status: 62, ad_type: 76 };
+
+        function loadAdTableColWidths() {
+            try {
+                const raw = localStorage.getItem(AA_AD_COL_LS);
+                const parsed = raw ? JSON.parse(raw) : null;
+                if (!parsed || typeof parsed !== 'object') return { ...AA_AD_COL_DEFAULTS };
+                const out = { ...AA_AD_COL_DEFAULTS };
+                AA_AD_COL_KEYS.forEach(key => {
+                    if (parsed[key] != null) {
+                        out[key] = Number(parsed[key]) || AA_AD_COL_DEFAULTS[key];
+                    }
+                });
+                return out;
+            } catch (e) {
+                return { ...AA_AD_COL_DEFAULTS };
+            }
+        }
+
+        function saveAdTableColWidths(widths) {
+            try { localStorage.setItem(AA_AD_COL_LS, JSON.stringify(widths)); } catch (e) {}
+        }
+
+        function applyAdTableColWidths() {
+            const table = document.getElementById('adListTable');
+            if (!table) return;
+            const w = loadAdTableColWidths();
+            AA_AD_COL_KEYS.forEach(key => {
+                const col = table.querySelector(`colgroup col[data-col="${key}"]`);
+                if (col) col.style.width = `${Math.max(48, w[key])}px`;
+            });
+        }
+
+        function initAdTableColResize() {
+            const table = document.getElementById('adListTable');
+            if (!table) return;
+            table.querySelectorAll('thead th[data-col-key]').forEach(th => {
+                const key = th.getAttribute('data-col-key');
+                const handle = th.querySelector('.aa-col-resizer');
+                if (!key || !handle || handle.dataset.bound === '1') return;
+                handle.dataset.bound = '1';
+                handle.addEventListener('mousedown', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const startX = e.clientX;
+                    const col = table.querySelector(`colgroup col[data-col="${key}"]`);
+                    const startW = col ? (col.getBoundingClientRect().width || loadAdTableColWidths()[key]) : loadAdTableColWidths()[key];
+                    handle.classList.add('is-active');
+                    document.body.style.cursor = 'col-resize';
+                    document.body.style.userSelect = 'none';
+                    function onMove(ev) {
+                        const next = Math.max(56, Math.round(startW + (ev.clientX - startX)));
+                        if (col) col.style.width = `${next}px`;
+                    }
+                    function onUp(ev) {
+                        document.removeEventListener('mousemove', onMove);
+                        document.removeEventListener('mouseup', onUp);
+                        handle.classList.remove('is-active');
+                        document.body.style.cursor = '';
+                        document.body.style.userSelect = '';
+                        const widths = loadAdTableColWidths();
+                        const colEl = table.querySelector(`colgroup col[data-col="${key}"]`);
+                        widths[key] = colEl ? Math.max(56, Math.round(colEl.getBoundingClientRect().width)) : widths[key];
+                        saveAdTableColWidths(widths);
+                    }
+                    document.addEventListener('mousemove', onMove);
+                    document.addEventListener('mouseup', onUp);
+                });
+            });
+        }
+
+        function bindAdListRowEvents() {
+            const wrap = document.getElementById('adList');
+            if (!wrap || wrap.dataset.rowBound === '1') return;
+            wrap.dataset.rowBound = '1';
+            wrap.addEventListener('click', function (e) {
+                if (e.target.closest('.aa-col-resizer')) return;
+                const tr = e.target.closest('tbody tr[data-ad-id]');
+                if (!tr) return;
+                selectAd(tr.getAttribute('data-ad-id'));
+            });
+            wrap.addEventListener('keydown', function (e) {
+                const tr = e.target.closest('tbody tr[data-ad-id]');
+                if (!tr) return;
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    selectAd(tr.getAttribute('data-ad-id'));
+                }
+            });
+        }
+
+        function highlightSelectedAdRow() {
+            const table = document.getElementById('adListTable');
+            if (!table) return;
+            table.querySelectorAll('tbody tr[data-ad-id]').forEach(tr => {
+                const on = String(tr.getAttribute('data-ad-id')) === String(selectedAdId);
+                tr.classList.toggle('is-active', on);
+                tr.setAttribute('aria-selected', on ? 'true' : 'false');
+            });
+        }
+
         function renderAdList() {
             const wrap = document.getElementById('adList');
             if (!adItems.length) {
-                wrap.innerHTML = '<div style="padding:0.7rem; text-align:center; color:var(--morandi-slate);">暂无广告信息</div>';
+                wrap.innerHTML = '<div class="aa-list-empty">暂无广告信息</div>';
                 return;
             }
-            const head = `
-                <div class="aa-ad-table-head">
-                    <span class="aa-level-bar aa-level-bar--portfolio" aria-hidden="true"></span>
-                    <span class="aa-head-label" style="color:#3d5f82;">组合</span>
-                    <span class="aa-level-bar aa-level-bar--campaign" aria-hidden="true"></span>
-                    <span class="aa-head-label" style="color:#7a5528;">活动</span>
-                    <span class="aa-level-bar aa-level-bar--group" aria-hidden="true"></span>
-                    <span class="aa-head-label" style="color:#3d6a52;">组</span>
-                </div>
-            `;
+            const widths = loadAdTableColWidths();
             const rows = adItems.map(item => {
-                const active = String(item.id) === String(selectedAdId) ? 'is-active' : '';
+                const active = String(item.id) === String(selectedAdId);
                 const level = item.ad_level === 'group' ? 'group' : 'campaign';
                 const portfolioText = item.portfolio_name || '';
                 const campaignText = level === 'campaign' ? (item.ad_name || '') : (item.campaign_name || '');
                 const groupText = level === 'group' ? (item.ad_name || '') : '';
-                const status = String(item.status || '启动').trim() || '启动';
-                const statusCls = status === '暂停' ? 'is-paused' : (status === '存档' ? 'is-archived' : '');
-                const statusTag = status !== '启动' ? `<span class="aa-item-status ${statusCls}">[${status}]</span>` : '';
                 const levelLabel = level === 'group' ? '广告组' : '广告活动';
+                const rowTitle = `${levelLabel} · ${item.ad_type_text || '-'}`;
                 return `
-                    <div class="aa-ad-row-wrap ${active}">
-                        <button type="button" class="aa-ad-row ${active}" onclick="selectAd(${item.id})">
-                            <span class="aa-level-bar aa-level-bar--portfolio" title="广告组合"></span>
-                            <span class="aa-ad-cell aa-ad-cell--portfolio">${adListCellText(portfolioText)}</span>
-                            <span class="aa-level-bar aa-level-bar--campaign" title="广告活动"></span>
-                            <span class="aa-ad-cell aa-ad-cell--campaign">${adListCellText(campaignText)}</span>
-                            <span class="aa-level-bar aa-level-bar--group" title="广告组"></span>
-                            <span class="aa-ad-cell aa-ad-cell--group">${adListCellText(groupText)}</span>
-                        </button>
-                        <div class="aa-ad-row-meta">${escapeHtml(item.ad_type_text || '-')} · ${levelLabel}${statusTag}</div>
-                    </div>
+                    <tr data-ad-id="${item.id}" class="${active ? 'is-active' : ''}" tabindex="0" role="row" aria-selected="${active ? 'true' : 'false'}" title="${escapeHtml(rowTitle)}">
+                        <td class="aa-td--portfolio">${adListCellText(portfolioText)}</td>
+                        <td class="aa-td--campaign">${adListCellText(campaignText)}</td>
+                        <td class="aa-td--group">${adListCellText(groupText)}</td>
+                        <td class="aa-td--status">${adListStatusCell(item)}</td>
+                        <td class="aa-td--ad-type">${adListCellText(item.ad_type_text)}</td>
+                    </tr>
                 `;
             }).join('');
-            wrap.innerHTML = head + rows;
+            wrap.innerHTML = `
+                <table class="aa-ad-table" id="adListTable">
+                    <colgroup>
+                        <col data-col="portfolio" style="width:${widths.portfolio}px">
+                        <col data-col="campaign" style="width:${widths.campaign}px">
+                        <col data-col="group" style="width:${widths.group}px">
+                        <col data-col="status" style="width:${widths.status}px">
+                        <col data-col="ad_type" style="width:${widths.ad_type}px">
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            <th class="aa-th--portfolio" data-col-key="portfolio">组合<span class="aa-col-resizer" aria-hidden="true"></span></th>
+                            <th class="aa-th--campaign" data-col-key="campaign">活动<span class="aa-col-resizer" aria-hidden="true"></span></th>
+                            <th class="aa-th--group" data-col-key="group">组<span class="aa-col-resizer" aria-hidden="true"></span></th>
+                            <th class="aa-th--status" data-col-key="status">状态<span class="aa-col-resizer" aria-hidden="true"></span></th>
+                            <th class="aa-th--ad-type" data-col-key="ad_type">广告类型<span class="aa-col-resizer" aria-hidden="true"></span></th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            `;
+            initAdTableColResize();
+            applyAdTableColWidths();
         }
 
         function loadAdList() {
@@ -684,13 +948,12 @@
         function selectAd(adId) {
             selectedAdId = String(adId || '');
             selectedAd = adItems.find(item => String(item.id) === selectedAdId) || null;
-            renderAdList();
-            clearFormStatus();
+            highlightSelectedAdRow();
             fetch(`/api/amazon-ad-adjustment?action=defaults&ad_item_id=${encodeURIComponent(selectedAdId)}`)
                 .then(r => r.json())
                 .then(data => {
                     if (data.status !== 'success') {
-                        showFormStatus(data.message || '加载默认信息失败', true);
+                        aaToast(data.message || '加载默认信息失败', true);
                         return;
                     }
                     const adInfo = data.ad_info || {};
@@ -721,7 +984,7 @@
                     updateSubmitButtonState();
                     loadRecords();
                 })
-                .catch(err => showFormStatus('加载默认信息失败: ' + err, true));
+                .catch(err => aaToast('加载默认信息失败: ' + err, true));
         }
 
         function buildPayload(isQuickSubmit) {
@@ -752,27 +1015,20 @@
             };
         }
 
-        function canSubmitFull() {
-            if (!selectedAdId) return false;
-            const required = [
-                document.getElementById('operationType').value,
-                document.getElementById('operationReason').value,
-                document.getElementById('targetObject').value.trim(),
-                document.getElementById('beforeValue').value.trim(),
-                document.getElementById('afterValue').value.trim(),
-                document.getElementById('startTime').value,
-                document.getElementById('endTime').value
-            ];
-            return required.every(Boolean);
+        function canSubmitPhase1() {
+            return validatePhase1().length === 0;
         }
 
         function updateSubmitButtonState() {
-            document.getElementById('submitBtn').disabled = !canSubmitFull();
-            document.getElementById('quickSubmitBtn').disabled = !(selectedAdId && document.getElementById('operationType').value && document.getElementById('targetObject').value.trim());
+            const ok = canSubmitPhase1();
+            document.getElementById('submitBtn').disabled = !ok;
+            document.getElementById('quickSubmitBtn').disabled = !ok;
         }
 
-        function postRecord(isQuickSubmit) {
+        function postRecord(isQuickSubmit, onSuccess) {
             const payload = buildPayload(isQuickSubmit);
+            const btn = isQuickSubmit ? document.getElementById('quickSubmitBtn') : document.getElementById('submitBtn');
+            if (btn) btn.disabled = true;
             fetch('/api/amazon-ad-adjustment', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -781,10 +1037,11 @@
             .then(r => r.json())
             .then(data => {
                 if (data.status !== 'success') {
-                    showFormStatus(data.message || '提交失败', true);
+                    aaToast(data.message || '提交失败', true);
                     return;
                 }
-                showFormStatus(isQuickSubmit ? '快速提交成功' : '提交并记录成功', false);
+                aaToast(isQuickSubmit ? '快速提交成功' : '提交并记录成功', false);
+                if (typeof onSuccess === 'function') onSuccess();
                 loadRecords();
                 if (selectedAdId) {
                     fetch(`/api/amazon-ad-adjustment?action=defaults&ad_item_id=${encodeURIComponent(selectedAdId)}`)
@@ -793,25 +1050,43 @@
                             if (d.status === 'success' && d.defaults) {
                                 setFieldValue('startTime', toDatetimeLocal(d.defaults.start_time));
                                 setFieldValue('endTime', toDatetimeLocal(d.defaults.end_time));
+                                setFieldValue('adjustDate', toDatetimeLocal(d.defaults.adjust_date));
                             }
                         });
                 }
             })
-            .catch(err => showFormStatus('提交失败: ' + err, true));
+            .catch(err => aaToast('提交失败: ' + err, true))
+            .finally(() => updateSubmitButtonState());
         }
 
         function submitRecord() {
-            if (!canSubmitFull()) {
-                showFormStatus('请先完整填写提交并记录所需字段', true);
+            const errs = validatePhase1();
+            if (errs.length) {
+                aaToast(errs[0], true);
                 return;
             }
-            postRecord(false);
+            openFullSubmitModal();
+        }
+
+        function confirmFullSubmit() {
+            const phase1 = validatePhase1();
+            if (phase1.length) {
+                aaToast(phase1[0], true);
+                closeFullSubmitModal();
+                return;
+            }
+            const phase2 = validatePhase2();
+            if (phase2.length) {
+                aaToast(phase2[0], true);
+                return;
+            }
+            postRecord(false, closeFullSubmitModal);
         }
 
         function quickSubmit() {
-            const canQuick = selectedAdId && document.getElementById('operationType').value && document.getElementById('targetObject').value.trim();
-            if (!canQuick) {
-                showFormStatus('快速提交至少需要：广告、操作类型、操作对象', true);
+            const errs = validatePhase1();
+            if (errs.length) {
+                aaToast(errs[0], true);
                 return;
             }
             postRecord(true);
@@ -899,9 +1174,11 @@
             if (!file) return;
             uploadAdTemplateFromAdjustment(file);
         });
-        ['targetObject', 'beforeValue', 'afterValue', 'operationReason', 'startTime', 'endTime'].forEach(id => {
-            document.getElementById(id).addEventListener('input', updateSubmitButtonState);
-            document.getElementById(id).addEventListener('change', updateSubmitButtonState);
+        ['targetObject', 'beforeValue', 'afterValue', 'operationReason'].forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('input', updateSubmitButtonState);
+            el.addEventListener('change', updateSubmitButtonState);
         });
 
         document.getElementById('adSearchInput').addEventListener('keydown', function(e) {
@@ -910,9 +1187,14 @@
 
         window.addEventListener('DOMContentLoaded', () => {
             if (window.initUniversalSingleSelects) window.initUniversalSingleSelects(document);
+            bindAdListRowEvents();
             initAdSearchPrefs();
             loadAdList();
             loadRecords();
+            const fullModal = document.getElementById('aaFullSubmitModal');
+            if (fullModal && typeof window.bindPmModalBackdropClose === 'function') {
+                window.bindPmModalBackdropClose(fullModal, closeFullSubmitModal);
+            }
         });
     </script>
 
