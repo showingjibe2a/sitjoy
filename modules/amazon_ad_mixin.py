@@ -3,6 +3,7 @@
 
 import cgi
 import io
+from datetime import datetime, timedelta
 from decimal import Decimal
 from urllib.parse import parse_qs
 
@@ -625,17 +626,279 @@ class AmazonAdMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def _parse_datetime_local_value(self, value):
+        text = (value or '').strip()
+        if not text:
+            return None
+        if 'T' in text and len(text) == 16:
+            text = text + ':00'
+        return text.replace('T', ' ')
+
+    def _serialize_adjustment_ad_list_item(self, row):
+        level = row.get('ad_level')
+        ad_class = row.get('ad_class') or ''
+        subtype_code = row.get('subtype_code') or ''
+        if ad_class and subtype_code:
+            ad_type_text = f'{ad_class}-{subtype_code}'
+        else:
+            ad_type_text = row.get('subtype_description') or ''
+        name = row.get('name') or ''
+        portfolio_name = row.get('portfolio_name') or ''
+        campaign_name = row.get('campaign_name') or ''
+        return {
+            'id': row.get('id'),
+            'ad_name': name,
+            'ad_level': level,
+            'status': row.get('status') or '启动',
+            'ad_type_text': ad_type_text,
+            'portfolio_name': portfolio_name,
+            'campaign_name': campaign_name if level == 'group' else (name if level == 'campaign' else ''),
+            'group_name': name if level == 'group' else '',
+        }
+
+    def _fetch_adjustment_ad_info(self, cur, ad_item_id):
+        cur.execute(self._AMAZON_AD_ITEM_SELECT + ' WHERE i.id=%s LIMIT 1', (ad_item_id,))
+        row = cur.fetchone()
+        if not row:
+            return None, None
+        item = self._serialize_amazon_ad_item(row)
+        level = item.get('ad_level')
+        ad_class = item.get('ad_class') or ''
+        subtype_code = item.get('subtype_code') or ''
+        if ad_class and subtype_code:
+            ad_type_text = f'{ad_class}-{subtype_code}'
+        else:
+            ad_type_text = item.get('subtype_description') or ''
+        ad_info = {
+            'ad_type_text': ad_type_text,
+            'portfolio_name': item.get('portfolio_name') or '',
+            'campaign_name': item.get('campaign_name') if level == 'group' else (item.get('name') if level == 'campaign' else ''),
+            'group_name': item.get('name') if level == 'group' else '',
+        }
+        return item, ad_info
+
+    def _fetch_allowed_operations_for_ad(self, cur, ad_row):
+        if not ad_row:
+            return []
+        level = ad_row.get('ad_level')
+        subtype_id = ad_row.get('subtype_id')
+        if level == 'group' and ad_row.get('campaign_id'):
+            cur.execute(
+                "SELECT subtype_id FROM amazon_ad_items WHERE id=%s AND ad_level='campaign' LIMIT 1",
+                (ad_row.get('campaign_id'),)
+            )
+            camp = cur.fetchone() or {}
+            subtype_id = camp.get('subtype_id') or subtype_id
+
+        if subtype_id:
+            cur.execute(
+                """
+                SELECT ot.id, ot.name, ot.apply_campaign, ot.apply_group
+                FROM amazon_ad_operation_types ot
+                INNER JOIN amazon_ad_subtype_operation_types link ON link.operation_type_id = ot.id
+                WHERE link.subtype_id = %s
+                ORDER BY ot.id ASC
+                """,
+                (subtype_id,)
+            )
+        elif level == 'campaign':
+            cur.execute(
+                "SELECT id, name, apply_campaign, apply_group FROM amazon_ad_operation_types "
+                "WHERE apply_campaign=1 ORDER BY id ASC"
+            )
+        else:
+            cur.execute(
+                "SELECT id, name, apply_campaign, apply_group FROM amazon_ad_operation_types "
+                "WHERE apply_group=1 ORDER BY id ASC"
+            )
+        ops = cur.fetchall() or []
+        result = []
+        for op in ops:
+            if level == 'campaign' and not int(op.get('apply_campaign') or 0):
+                continue
+            if level == 'group' and not int(op.get('apply_group') or 0):
+                continue
+            cur.execute(
+                "SELECT id, reason_name FROM amazon_ad_operation_reasons "
+                "WHERE operation_type_id=%s ORDER BY id ASC",
+                (op['id'],)
+            )
+            reasons = [
+                {'id': r['id'], 'reason_name': r.get('reason_name') or ''}
+                for r in (cur.fetchall() or [])
+            ]
+            result.append({
+                'id': op['id'],
+                'name': op.get('name') or '',
+                'reasons': reasons,
+            })
+        return result
+
+    def _adjustment_defaults_for_ad(self, cur, ad_item_id):
+        now = datetime.now().replace(second=0, microsecond=0)
+        cur.execute(
+            """
+            SELECT adjust_date, end_time FROM amazon_ad_adjustments
+            WHERE ad_item_id=%s ORDER BY id DESC LIMIT 1
+            """,
+            (ad_item_id,)
+        )
+        last = cur.fetchone() or {}
+        end_time = last.get('end_time')
+        if end_time and not isinstance(end_time, datetime):
+            try:
+                end_time = datetime.fromisoformat(str(end_time).replace(' ', 'T', 1))
+            except Exception:
+                end_time = None
+        if isinstance(end_time, datetime):
+            start_time = end_time
+            end_default = end_time + timedelta(days=7)
+        else:
+            start_time = now - timedelta(days=7)
+            end_default = now
+        return {
+            'adjust_date': now.strftime('%Y-%m-%d %H:%M:%S'),
+            'start_time': start_time.strftime('%Y-%m-%d %H:%M:%S'),
+            'end_time': end_default.strftime('%Y-%m-%d %H:%M:%S'),
+        }
+
     def handle_amazon_ad_adjustment_api(self, environ, method, start_response):
-        """Amazon 广告调整 API"""
+        """Amazon 广告调整 API（广告搜索 / 默认值 / 调整记录 CRUD）"""
         try:
-            if method == 'GET':
+            query_params = parse_qs(environ.get('QUERY_STRING', ''))
+            action = (query_params.get('action', [''])[0] or '').strip().lower()
+
+            if method == 'GET' and action == 'ad-search':
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("SELECT * FROM amazon_ad_adjustments ORDER BY id DESC LIMIT 500")
+                        cur.execute(
+                            self._AMAZON_AD_ITEM_SELECT
+                            + " WHERE i.ad_level IN ('campaign', 'group') ORDER BY i.id DESC LIMIT 500"
+                        )
+                        rows = cur.fetchall() or []
+                items = [self._serialize_adjustment_ad_list_item(r) for r in rows]
+                return self.send_json({'status': 'success', 'items': items}, start_response)
+
+            if method == 'GET' and action == 'defaults':
+                ad_item_id = self._parse_int((query_params.get('ad_item_id', [''])[0] or '').strip())
+                if not ad_item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing ad_item_id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        ad_row, ad_info = self._fetch_adjustment_ad_info(cur, ad_item_id)
+                        if not ad_row:
+                            return self.send_json({'status': 'error', 'message': '广告不存在'}, start_response)
+                        allowed_operations = self._fetch_allowed_operations_for_ad(cur, ad_row)
+                        defaults = self._adjustment_defaults_for_ad(cur, ad_item_id)
+                return self.send_json({
+                    'status': 'success',
+                    'ad_info': ad_info,
+                    'allowed_operations': allowed_operations,
+                    'defaults': defaults,
+                }, start_response)
+
+            if method == 'GET':
+                ad_item_id = self._parse_int((query_params.get('ad_item_id', [''])[0] or '').strip())
+                sql = """
+                    SELECT
+                        a.*,
+                        i.name AS ad_name,
+                        i.ad_level,
+                        ot.name AS operation_name,
+                        r.reason_name
+                    FROM amazon_ad_adjustments a
+                    INNER JOIN amazon_ad_items i ON i.id = a.ad_item_id
+                    LEFT JOIN amazon_ad_operation_types ot ON ot.id = a.operation_type_id
+                    LEFT JOIN amazon_ad_operation_reasons r ON r.id = a.reason_id
+                    WHERE 1=1
+                """
+                params = []
+                if ad_item_id:
+                    sql += ' AND a.ad_item_id=%s'
+                    params.append(ad_item_id)
+                sql += ' ORDER BY a.id DESC LIMIT 500'
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(sql, tuple(params))
                         rows = cur.fetchall() or []
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
+
+            data = self._read_json_body(environ)
+
+            if method == 'POST':
+                ad_item_id = self._parse_int(data.get('ad_item_id'))
+                operation_type_id = self._parse_int(data.get('operation_type_id'))
+                reason_id = self._parse_int(data.get('reason_id'))
+                target_object = (data.get('target_object') or '').strip()
+                is_quick = int(data.get('is_quick_submit') or 0)
+                if not ad_item_id or not operation_type_id or not target_object:
+                    return self.send_json({'status': 'error', 'message': '缺少必填字段'}, start_response)
+                if not is_quick:
+                    for field in ('before_value', 'after_value', 'start_time', 'end_time'):
+                        if not (data.get(field) or '').strip():
+                            return self.send_json({'status': 'error', 'message': '完整提交请填写修改前/后及效果区间时间'}, start_response)
+
+                adjust_date = self._parse_datetime_local_value(data.get('adjust_date')) or datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            INSERT INTO amazon_ad_adjustments (
+                                adjust_date, ad_item_id, operation_type_id, target_object,
+                                before_value, after_value, reason_id,
+                                start_time, end_time,
+                                impressions, clicks, cost, orders, sales,
+                                acos, cpc, ctr, cvr,
+                                attribution_checked, attribution_orders, attribution_sales,
+                                remark, is_quick_submit
+                            ) VALUES (
+                                %s, %s, %s, %s,
+                                %s, %s, %s,
+                                %s, %s,
+                                %s, %s, %s, %s, %s,
+                                %s, %s, %s, %s,
+                                %s, %s, %s,
+                                %s, %s
+                            )
+                            """,
+                            (
+                                adjust_date, ad_item_id, operation_type_id, target_object,
+                                (data.get('before_value') or '').strip() or None,
+                                (data.get('after_value') or '').strip() or None,
+                                reason_id,
+                                self._parse_datetime_local_value(data.get('start_time')),
+                                self._parse_datetime_local_value(data.get('end_time')),
+                                (data.get('impressions') or '').strip() or None,
+                                (data.get('clicks') or '').strip() or None,
+                                (data.get('cost') or '').strip() or None,
+                                (data.get('orders') or '').strip() or None,
+                                (data.get('sales') or '').strip() or None,
+                                (data.get('acos') or '').strip() or None,
+                                (data.get('cpc') or '').strip() or None,
+                                (data.get('ctr') or '').strip() or None,
+                                (data.get('cvr') or '').strip() or None,
+                                1 if str(data.get('attribution_checked') or '0') == '1' else 0,
+                                (data.get('attribution_orders') or '').strip() or None,
+                                (data.get('attribution_sales') or '').strip() or None,
+                                (data.get('remark') or '').strip() or None,
+                                is_quick,
+                            )
+                        )
+                        new_id = cur.lastrowid
+                return self.send_json({'status': 'success', 'id': new_id}, start_response)
+
+            if method == 'DELETE':
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM amazon_ad_adjustments WHERE id=%s", (item_id,))
+                return self.send_json({'status': 'success'}, start_response)
+
             return self.send_error(405, 'Method not allowed', start_response)
         except Exception as e:
+            print(f'Amazon ad adjustment API error: {str(e)}')
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     def handle_amazon_ad_keyword_api(self, environ, method, start_response):

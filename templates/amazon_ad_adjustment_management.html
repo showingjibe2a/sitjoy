@@ -62,6 +62,44 @@
             font-size: 0.78rem;
             line-height: 1;
         }
+        .aa-ad-toolbar {
+            display: grid;
+            gap: 0.65rem;
+            margin-bottom: 0.9rem;
+        }
+        .aa-search-row {
+            margin: 0;
+            max-width: none;
+            width: 100%;
+        }
+        .aa-search-options {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.85rem 1.1rem;
+            font-size: 0.9rem;
+            color: var(--morandi-ink);
+        }
+        .aa-search-options label {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            cursor: pointer;
+            user-select: none;
+        }
+        .aa-search-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .aa-item-status {
+            font-size: 0.78rem;
+            margin-left: 0.35rem;
+            color: var(--morandi-slate);
+        }
+        .aa-item-status.is-paused { color: #8c6a2f; }
+        .aa-item-status.is-archived { color: #6b7280; }
     </style>
 </head>
 <body>
@@ -74,21 +112,22 @@
         </section>
 
         <section class="pm-layout">
-            <div class="card pm-card" style="margin-bottom: 0.9rem;">
-                <div class="pm-toolbar">
-                    <div class="pm-toolbar-actions" style="width: 100%;">
-                        <div class="form-group pm-search" style="margin: 0; width: 100%; max-width: 680px;">
-                            <span class="pm-search-title">搜索</span>
-                            <input type="text" id="adSearchInput" placeholder="搜索广告类型/组合/活动/组">
-                            <button class="btn-primary" onclick="loadAdList()">搜索</button>
-                            <button class="btn-secondary" onclick="resetAdSearch()">清空</button>
-                            <span class="pm-divider" aria-hidden="true"></span>
-                            <button class="btn-accent" onclick="openAdCreateFromAdjustment()">新增广告信息</button>
-                            <button class="btn-secondary" onclick="downloadAdTemplateFromAdjustment()">下载模板</button>
-                            <button class="btn-secondary" onclick="triggerAdUploadFromAdjustment()">批量上传</button>
-                            <input type="file" id="adUploadInput" accept=".xlsx" style="display:none;">
-                        </div>
-                    </div>
+            <div class="aa-ad-toolbar">
+                <div class="form-group pm-search aa-search-row">
+                    <span class="pm-search-title">搜索</span>
+                    <input type="text" id="adSearchInput" placeholder="搜索广告类型/组合/活动/组">
+                    <button type="button" class="btn-primary" onclick="loadAdList()">搜索</button>
+                </div>
+                <div class="aa-search-options">
+                    <label><input type="checkbox" id="adSearchShowPaused"> 显示暂停</label>
+                    <label><input type="checkbox" id="adSearchShowArchived"> 显示存档</label>
+                    <label><input type="checkbox" id="adSearchExactMatch"> 精准匹配</label>
+                </div>
+                <div class="aa-search-actions">
+                    <button type="button" class="btn-accent" onclick="openAdCreateFromAdjustment()">新增广告信息</button>
+                    <button type="button" class="btn-secondary" onclick="downloadAdTemplateFromAdjustment()">下载模板</button>
+                    <button type="button" class="btn-secondary" onclick="triggerAdUploadFromAdjustment()">批量上传</button>
+                    <input type="file" id="adUploadInput" accept=".xlsx" style="display:none;">
                 </div>
             </div>
 
@@ -285,9 +324,105 @@
 
     <script>
         let adItems = [];
+        let adItemsRaw = [];
         let selectedAd = null;
         let selectedAdId = null;
         let allowedOperations = [];
+
+        const AA_SEARCH_LS_PAUSED = 'sj.amazonAdAdjustment.showPaused';
+        const AA_SEARCH_LS_ARCHIVED = 'sj.amazonAdAdjustment.showArchived';
+        const AA_SEARCH_LS_EXACT = 'sj.amazonAdAdjustment.exactMatch';
+
+        function readAdSearchBool(key, defaultValue) {
+            try {
+                const raw = localStorage.getItem(key);
+                if (raw === null || raw === '') return defaultValue;
+                return raw === '1' || raw === 'true';
+            } catch (e) {
+                return defaultValue;
+            }
+        }
+
+        function writeAdSearchBool(key, value) {
+            try {
+                localStorage.setItem(key, value ? '1' : '0');
+            } catch (e) {}
+        }
+
+        function initAdSearchPrefs() {
+            const pausedEl = document.getElementById('adSearchShowPaused');
+            const archivedEl = document.getElementById('adSearchShowArchived');
+            const exactEl = document.getElementById('adSearchExactMatch');
+            if (pausedEl) pausedEl.checked = readAdSearchBool(AA_SEARCH_LS_PAUSED, false);
+            if (archivedEl) archivedEl.checked = readAdSearchBool(AA_SEARCH_LS_ARCHIVED, false);
+            if (exactEl) exactEl.checked = readAdSearchBool(AA_SEARCH_LS_EXACT, false);
+            [pausedEl, archivedEl, exactEl].forEach(el => {
+                if (!el) return;
+                el.addEventListener('change', () => {
+                    writeAdSearchBool(AA_SEARCH_LS_PAUSED, !!pausedEl.checked);
+                    writeAdSearchBool(AA_SEARCH_LS_ARCHIVED, !!archivedEl.checked);
+                    writeAdSearchBool(AA_SEARCH_LS_EXACT, !!exactEl.checked);
+                    applyAdListFiltersAndRender();
+                });
+            });
+        }
+
+        function getAdSearchPrefs() {
+            return {
+                showPaused: !!document.getElementById('adSearchShowPaused')?.checked,
+                showArchived: !!document.getElementById('adSearchShowArchived')?.checked,
+                exactMatch: !!document.getElementById('adSearchExactMatch')?.checked
+            };
+        }
+
+        function statusAllowed(status, prefs) {
+            const s = String(status || '启动').trim() || '启动';
+            if (s === '启动') return true;
+            if (s === '暂停') return prefs.showPaused;
+            if (s === '存档') return prefs.showArchived;
+            return prefs.showPaused || prefs.showArchived;
+        }
+
+        function adItemSearchText(item) {
+            return [
+                item.ad_name,
+                item.ad_type_text,
+                item.portfolio_name,
+                item.campaign_name,
+                item.group_name
+            ].filter(Boolean).join(' ').toLowerCase();
+        }
+
+        function adItemMatchesKeyword(item, keyword, exactMatch) {
+            if (!keyword) return true;
+            const name = String(item.ad_name || '').trim();
+            if (exactMatch) {
+                return name.toLowerCase() === keyword.toLowerCase();
+            }
+            return adItemSearchText(item).includes(keyword.toLowerCase());
+        }
+
+        function applyAdListFilters(items) {
+            const keyword = (document.getElementById('adSearchInput')?.value || '').trim();
+            const prefs = getAdSearchPrefs();
+            return (items || []).filter(item => {
+                if (!statusAllowed(item.status, prefs)) return false;
+                return adItemMatchesKeyword(item, keyword, prefs.exactMatch);
+            });
+        }
+
+        function applyAdListFiltersAndRender() {
+            adItems = applyAdListFilters(adItemsRaw);
+            const prev = selectedAdId;
+            if (prev && !adItems.some(x => String(x.id) === String(prev))) {
+                selectedAdId = null;
+                selectedAd = null;
+            }
+            renderAdList();
+            if (!selectedAdId && adItems.length) {
+                selectAd(adItems[0].id);
+            }
+        }
 
         function toDatetimeLocal(value) {
             if (!value) return '';
@@ -316,11 +451,6 @@
             const el = document.getElementById('formStatus');
             el.style.display = 'none';
             el.innerText = '';
-        }
-
-        function resetAdSearch() {
-            document.getElementById('adSearchInput').value = '';
-            loadAdList();
         }
 
         function openAdCreateFromAdjustment() {
@@ -365,9 +495,12 @@
             wrap.innerHTML = adItems.map(item => {
                 const active = String(item.id) === String(selectedAdId) ? 'is-active' : '';
                 const levelText = item.ad_level === 'group' ? '广告组' : '广告活动';
+                const status = String(item.status || '启动').trim() || '启动';
+                const statusCls = status === '暂停' ? 'is-paused' : (status === '存档' ? 'is-archived' : '');
+                const statusTag = status !== '启动' ? `<span class="aa-item-status ${statusCls}">[${status}]</span>` : '';
                 return `
-                    <button class="aa-item ${active}" onclick="selectAd(${item.id})">
-                        <div class="aa-item-title">${item.ad_name || '-'}（${levelText}）</div>
+                    <button type="button" class="aa-item ${active}" onclick="selectAd(${item.id})">
+                        <div class="aa-item-title">${item.ad_name || '-'}（${levelText}）${statusTag}</div>
                         <div class="aa-item-meta">类型：${item.ad_type_text || '-'} | 组合：${item.portfolio_name || '-'}</div>
                     </button>
                 `;
@@ -375,25 +508,20 @@
         }
 
         function loadAdList() {
-            const keyword = document.getElementById('adSearchInput').value.trim();
-            const url = keyword
-                ? `/api/amazon-ad-adjustment?action=ad-search&q=${encodeURIComponent(keyword)}`
-                : '/api/amazon-ad-adjustment?action=ad-search';
-            fetch(url)
+            fetch('/api/amazon-ad-adjustment?action=ad-search')
                 .then(r => r.json())
                 .then(data => {
                     if (data.status !== 'success') {
+                        adItemsRaw = [];
                         adItems = [];
                         renderAdList();
                         return;
                     }
-                    adItems = data.items || [];
-                    renderAdList();
-                    if (!selectedAdId && adItems.length) {
-                        selectAd(adItems[0].id);
-                    }
+                    adItemsRaw = data.items || [];
+                    applyAdListFiltersAndRender();
                 })
                 .catch(() => {
+                    adItemsRaw = [];
                     adItems = [];
                     renderAdList();
                 });
@@ -667,8 +795,13 @@
             document.getElementById(id).addEventListener('change', updateSubmitButtonState);
         });
 
+        document.getElementById('adSearchInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') loadAdList();
+        });
+
         window.addEventListener('DOMContentLoaded', () => {
             if (window.initUniversalSingleSelects) window.initUniversalSingleSelects(document);
+            initAdSearchPrefs();
             loadAdList();
             loadRecords();
         });
