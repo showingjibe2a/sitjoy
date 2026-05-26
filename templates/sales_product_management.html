@@ -567,6 +567,7 @@
                                         <button id="mainImageShowFabricOn" type="button" class="status-pill status-pill--yes" onclick="setMainImageShowFabric(true)">面料图：开</button>
                                     </div>
                                     <button type="button" class="btn-accent" onclick="triggerMainImageUpload()">新增主图</button>
+                                    <button type="button" class="btn-secondary" onclick="openSalesPickExistingImages()">选择已有图片</button>
                                     <button type="button" class="btn-secondary" onclick="openNasMainImageImportModal()">从NAS选择并移动</button>
                                 </div>
                             </div>
@@ -3903,6 +3904,52 @@
             return out;
         }
 
+        async function openSalesPickExistingImages() {
+            if (!editId) {
+                showModalStatus('请先保存销售产品后再选择已有图片', true);
+                return;
+            }
+            if (!window.SjPickExistingImages || !window.SjPickExistingImages.open) {
+                showModalStatus('选择已有图片组件未加载', true);
+                return;
+            }
+            const imageType = getNasImportImageTypeName();
+            window.SjPickExistingImages.open({
+                context: 'sales_variant',
+                variantId: editId,
+                title: '选择已有图片（主图目录 · 未绑定当前规格）',
+                onConfirm: async (picked) => {
+                    for (const it of (picked || [])) {
+                        const pb = String(it.path_b64 || it.b64 || '');
+                        if (!pb) continue;
+                        try {
+                            const resp = await fetch('/api/sales-product-main-images-import-by-path', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                credentials: 'include',
+                                body: JSON.stringify({
+                                    sales_product_id: editId,
+                                    source_path_b64: pb,
+                                    image_type_name: imageType,
+                                    require_move: false,
+                                    prompt_duplicate: !!mainImagePromptDuplicate,
+                                    allow_duplicate: true
+                                })
+                            });
+                            const data = await resp.json();
+                            if (data && data.status !== 'success') {
+                                showModalStatus(data.message || '绑定失败', true);
+                            }
+                        } catch (e) {
+                            showModalStatus('绑定失败: ' + e, true);
+                        }
+                    }
+                    refreshMainImageList();
+                    if (editId) sjRefreshSalesProductListRowThumb(editId);
+                }
+            });
+        }
+
         function openNasMainImageImportModal() {
             if (!editId) {
                 showModalStatus('请先保存销售产品后再导入主图（需要 sales_product_id）', true);
@@ -5395,6 +5442,7 @@
     </script>
     <script src="/static/js/header.js"></script>
     <script src="/static/js/nas_main_image_browser_ui.js"></script>
+    <script src="/static/js/sj_pick_existing_images.js"></script>
     <script src="/static/js/sitjoy_grouped_aggregate.js"></script>
     <script src="/static/js/sitjoy_row_image_refresh.js"></script>
     <script src="/static/js/pm_image_edit_modal.js"></script>

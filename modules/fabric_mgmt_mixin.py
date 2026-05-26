@@ -292,6 +292,83 @@ class FabricManagementMixin:
             print("Fabric upload error: " + str(e))
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def handle_fabric_import_by_path_api(self, environ, method, start_response):
+        """从 NAS/资源路径移动图片到『面料』目录（面料管理 NAS 导入）。"""
+        try:
+            if method != 'POST':
+                return self.send_error(405, 'Method not allowed', start_response)
+            data = self._read_json_body(environ)
+            fabric_code = (data.get('fabric_code') or '').strip()
+            source_path_b64 = str(data.get('source_path_b64') or data.get('source_path') or '').strip()
+            source_paths_b64 = data.get('source_paths_b64') or []
+            if not fabric_code:
+                return self.send_json({'status': 'error', 'message': 'Missing fabric_code'}, start_response)
+
+            source_files_b = []
+            if isinstance(source_paths_b64, (list, tuple)) and source_paths_b64:
+                for b64 in list(source_paths_b64)[:200]:
+                    try:
+                        raw = base64.b64decode(str(b64 or '').strip())
+                        p_b = self._normalize_nas_abs_path_bytes(raw)
+                        if p_b and os.path.isfile(p_b) and self._is_image_name(os.path.basename(p_b)):
+                            source_files_b.append(p_b)
+                    except Exception:
+                        continue
+            elif source_path_b64:
+                try:
+                    raw = base64.b64decode(source_path_b64)
+                    p_b = self._normalize_nas_abs_path_bytes(raw)
+                    if p_b and os.path.isfile(p_b):
+                        source_files_b.append(p_b)
+                except Exception:
+                    return self.send_json({'status': 'error', 'message': 'Invalid source_path_b64'}, start_response)
+
+            if not source_files_b:
+                return self.send_json({'status': 'error', 'message': '源文件不存在'}, start_response)
+
+            folder = self._ensure_fabric_folder()
+            existing = set()
+            try:
+                with os.scandir(folder) as it:
+                    for entry in it:
+                        if entry.is_file(follow_symlinks=False):
+                            try:
+                                existing.add(os.fsdecode(entry.name))
+                            except Exception:
+                                pass
+            except Exception:
+                existing = set()
+
+            moved = []
+            for src_b in source_files_b:
+                try:
+                    base = os.fsdecode(os.path.basename(src_b))
+                except Exception:
+                    base = 'image.jpg'
+                ext = os.path.splitext(base)[1] or '.jpg'
+                idx = self._next_fabric_image_index(existing, fabric_code)
+                target_name = f"{fabric_code}_{idx:02d}{ext}"
+                dst_b = os.path.join(folder, os.fsencode(target_name))
+                try:
+                    import shutil
+                    shutil.move(src_b, dst_b)
+                except Exception:
+                    try:
+                        import shutil
+                        shutil.copy2(src_b, dst_b)
+                        try:
+                            os.unlink(src_b)
+                        except Exception:
+                            pass
+                    except Exception as move_err:
+                        return self.send_json({'status': 'error', 'message': f'移动失败: {move_err}'}, start_response)
+                existing.add(target_name)
+                moved.append(target_name)
+
+            return self.send_json({'status': 'success', 'image_names': moved, 'moved': len(moved)}, start_response)
+        except Exception as e:
+            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+
     def handle_fabric_image_delete_api(self, environ, method, start_response):
         """删除面料图片"""
         try:

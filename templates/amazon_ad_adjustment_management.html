@@ -13,27 +13,97 @@
             gap: 1rem;
             align-items: start;
         }
+        .aa-left-col {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            min-width: 0;
+        }
+        .aa-search-card {
+            padding: 0.75rem;
+        }
+        .aa-ad-info-card {
+            padding: 0.75rem;
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+        .aa-ad-info-card h3 {
+            margin: 0 0 0.55rem 0;
+        }
         .aa-list {
             border: 1px solid var(--morandi-sand);
             border-radius: 10px;
             background: #fff;
-            max-height: 560px;
+            max-height: 520px;
             overflow-y: auto;
+            flex: 1;
+            min-height: 200px;
         }
-        .aa-item {
+        .aa-ad-table-head {
+            display: grid;
+            grid-template-columns: 4px 1fr 4px 1fr 4px 1fr;
+            gap: 0 0.25rem;
+            padding: 0.45rem 0.45rem 0.4rem;
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--morandi-slate);
+            border-bottom: 1px solid rgba(207, 199, 189, 0.55);
+            background: rgba(236, 231, 223, 0.35);
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+        .aa-ad-table-head .aa-head-label {
+            padding: 0.15rem 0.3rem;
+        }
+        .aa-ad-row {
             width: 100%;
+            display: grid;
+            grid-template-columns: 4px 1fr 4px 1fr 4px 1fr;
+            gap: 0 0.25rem;
+            align-items: stretch;
             border: none;
-            border-bottom: 1px solid rgba(207, 199, 189, 0.45);
             background: transparent;
             text-align: left;
-            padding: 0.62rem 0.7rem;
+            padding: 0.45rem 0.4rem;
             cursor: pointer;
             color: var(--morandi-ink);
         }
-        .aa-item:hover { background: rgba(207, 199, 189, 0.28); }
-        .aa-item.is-active { background: rgba(207, 199, 189, 0.45); }
-        .aa-item-title { font-weight: 600; font-size: 0.92rem; margin-bottom: 0.16rem; }
-        .aa-item-meta { font-size: 0.84rem; color: var(--morandi-slate); }
+        .aa-level-bar {
+            width: 4px;
+            border-radius: 2px;
+            align-self: stretch;
+            min-height: 2rem;
+        }
+        .aa-level-bar--portfolio { background: #5b8fc7; }
+        .aa-level-bar--campaign { background: #c98a4b; }
+        .aa-level-bar--group { background: #6a9b6e; }
+        .aa-ad-cell {
+            font-size: 0.82rem;
+            line-height: 1.35;
+            padding: 0.2rem 0.35rem;
+            min-width: 0;
+            word-break: break-word;
+        }
+        .aa-ad-cell--portfolio { color: #3d5f82; }
+        .aa-ad-cell--campaign { color: #7a5528; font-weight: 600; }
+        .aa-ad-cell--group { color: #3d6a52; }
+        .aa-ad-cell-empty { color: var(--morandi-slate); opacity: 0.45; }
+        .aa-ad-row-meta {
+            padding-left: 0.5rem;
+            font-size: 0.76rem;
+            color: var(--morandi-slate);
+            padding: 0 0.35rem 0.15rem;
+            margin-top: -0.15rem;
+        }
+        .aa-ad-row-wrap {
+            border-bottom: 1px solid rgba(207, 199, 189, 0.4);
+        }
+        .aa-ad-row-wrap:last-child { border-bottom: none; }
+        .aa-ad-row-wrap.is-active { background: rgba(207, 199, 189, 0.42); }
+        .aa-ad-row-wrap:hover { background: rgba(207, 199, 189, 0.22); }
 
         .aa-info {
             display: grid;
@@ -62,10 +132,9 @@
             font-size: 0.78rem;
             line-height: 1;
         }
-        .aa-ad-toolbar {
+        .aa-search-card-inner {
             display: grid;
             gap: 0.65rem;
-            margin-bottom: 0.9rem;
         }
         .aa-search-row {
             margin: 0;
@@ -112,30 +181,34 @@
         </section>
 
         <section class="pm-layout">
-            <div class="aa-ad-toolbar">
-                <div class="form-group pm-search aa-search-row">
-                    <span class="pm-search-title">搜索</span>
-                    <input type="text" id="adSearchInput" placeholder="搜索广告类型/组合/活动/组">
-                    <button type="button" class="btn-primary" onclick="loadAdList()">搜索</button>
-                </div>
-                <div class="aa-search-options">
-                    <label><input type="checkbox" id="adSearchShowPaused"> 显示暂停</label>
-                    <label><input type="checkbox" id="adSearchShowArchived"> 显示存档</label>
-                    <label><input type="checkbox" id="adSearchExactMatch"> 精准匹配</label>
-                </div>
-                <div class="aa-search-actions">
-                    <button type="button" class="btn-accent" onclick="openAdCreateFromAdjustment()">新增广告信息</button>
-                    <button type="button" class="btn-secondary" onclick="downloadAdTemplateFromAdjustment()">下载模板</button>
-                    <button type="button" class="btn-secondary" onclick="triggerAdUploadFromAdjustment()">批量上传</button>
-                    <input type="file" id="adUploadInput" accept=".xlsx" style="display:none;">
-                </div>
-            </div>
-
             <div class="aa-grid">
-                <div class="card pm-card" style="padding: 0.75rem;">
-                    <h3 style="margin:0 0 0.6rem 0;">广告信息</h3>
-                    <div class="aa-list" id="adList">
-                        <div style="padding:0.7rem; text-align:center; color:var(--morandi-slate);">加载中...</div>
+                <div class="aa-left-col">
+                    <div class="card pm-card aa-search-card">
+                        <div class="aa-search-card-inner">
+                            <div class="form-group pm-search aa-search-row">
+                                <span class="pm-search-title">搜索</span>
+                                <input type="text" id="adSearchInput" placeholder="搜索广告类型/组合/活动/组">
+                                <button type="button" class="btn-primary" onclick="loadAdList()">搜索</button>
+                            </div>
+                            <div class="aa-search-options">
+                                <label><input type="checkbox" id="adSearchShowPaused"> 显示暂停</label>
+                                <label><input type="checkbox" id="adSearchShowArchived"> 显示存档</label>
+                                <label><input type="checkbox" id="adSearchExactMatch"> 精准匹配</label>
+                            </div>
+                            <div class="aa-search-actions">
+                                <button type="button" class="btn-accent" onclick="openAdCreateFromAdjustment()">新增广告信息</button>
+                                <button type="button" class="btn-secondary" onclick="downloadAdTemplateFromAdjustment()">下载模板</button>
+                                <button type="button" class="btn-secondary" onclick="triggerAdUploadFromAdjustment()">批量上传</button>
+                                <input type="file" id="adUploadInput" accept=".xlsx" style="display:none;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card pm-card aa-ad-info-card">
+                        <h3>广告信息</h3>
+                        <div class="aa-list" id="adList">
+                            <div style="padding:0.7rem; text-align:center; color:var(--morandi-slate);">加载中...</div>
+                        </div>
                     </div>
                 </div>
 
@@ -486,25 +559,61 @@
                 .catch(err => showFormStatus('导入失败: ' + err, true));
         }
 
+        function escapeHtml(text) {
+            return String(text == null ? '' : text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function adListCellText(value) {
+            const text = String(value || '').trim();
+            if (!text) return '<span class="aa-ad-cell-empty">-</span>';
+            return escapeHtml(text);
+        }
+
         function renderAdList() {
             const wrap = document.getElementById('adList');
             if (!adItems.length) {
                 wrap.innerHTML = '<div style="padding:0.7rem; text-align:center; color:var(--morandi-slate);">暂无广告信息</div>';
                 return;
             }
-            wrap.innerHTML = adItems.map(item => {
+            const head = `
+                <div class="aa-ad-table-head">
+                    <span class="aa-level-bar aa-level-bar--portfolio" aria-hidden="true"></span>
+                    <span class="aa-head-label" style="color:#3d5f82;">组合</span>
+                    <span class="aa-level-bar aa-level-bar--campaign" aria-hidden="true"></span>
+                    <span class="aa-head-label" style="color:#7a5528;">活动</span>
+                    <span class="aa-level-bar aa-level-bar--group" aria-hidden="true"></span>
+                    <span class="aa-head-label" style="color:#3d6a52;">组</span>
+                </div>
+            `;
+            const rows = adItems.map(item => {
                 const active = String(item.id) === String(selectedAdId) ? 'is-active' : '';
-                const levelText = item.ad_level === 'group' ? '广告组' : '广告活动';
+                const level = item.ad_level === 'group' ? 'group' : 'campaign';
+                const portfolioText = item.portfolio_name || '';
+                const campaignText = level === 'campaign' ? (item.ad_name || '') : (item.campaign_name || '');
+                const groupText = level === 'group' ? (item.ad_name || '') : '';
                 const status = String(item.status || '启动').trim() || '启动';
                 const statusCls = status === '暂停' ? 'is-paused' : (status === '存档' ? 'is-archived' : '');
                 const statusTag = status !== '启动' ? `<span class="aa-item-status ${statusCls}">[${status}]</span>` : '';
+                const levelLabel = level === 'group' ? '广告组' : '广告活动';
                 return `
-                    <button type="button" class="aa-item ${active}" onclick="selectAd(${item.id})">
-                        <div class="aa-item-title">${item.ad_name || '-'}（${levelText}）${statusTag}</div>
-                        <div class="aa-item-meta">类型：${item.ad_type_text || '-'} | 组合：${item.portfolio_name || '-'}</div>
-                    </button>
+                    <div class="aa-ad-row-wrap ${active}">
+                        <button type="button" class="aa-ad-row ${active}" onclick="selectAd(${item.id})">
+                            <span class="aa-level-bar aa-level-bar--portfolio" title="广告组合"></span>
+                            <span class="aa-ad-cell aa-ad-cell--portfolio">${adListCellText(portfolioText)}</span>
+                            <span class="aa-level-bar aa-level-bar--campaign" title="广告活动"></span>
+                            <span class="aa-ad-cell aa-ad-cell--campaign">${adListCellText(campaignText)}</span>
+                            <span class="aa-level-bar aa-level-bar--group" title="广告组"></span>
+                            <span class="aa-ad-cell aa-ad-cell--group">${adListCellText(groupText)}</span>
+                        </button>
+                        <div class="aa-ad-row-meta">${escapeHtml(item.ad_type_text || '-')} · ${levelLabel}${statusTag}</div>
+                    </div>
                 `;
             }).join('');
+            wrap.innerHTML = head + rows;
         }
 
         function loadAdList() {

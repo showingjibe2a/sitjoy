@@ -23,6 +23,7 @@ from modules.file_management_mixin import (
     _RESOURCES_PARENT_BYTES,
 )
 from modules.file_utils_mixin import FileUtilsMixin
+from modules.image_picker_mixin import ImagePickerMixin
 from modules.image_processing_mixin import ImageProcessingMixin
 from modules.logistics_in_transit_mixin import LogisticsInTransitMixin
 from modules.logistics_warehouse_mixin import LogisticsWarehouseMixin
@@ -56,6 +57,7 @@ class WSGIApp(
     ExcelToolsMixin,          # 工具集：Excel处理
     FileUtilsMixin,           # 工具集：文件处理
     ImageProcessingMixin,     # 工具集：图片处理
+    ImagePickerMixin,         # 全局：选择已有图片
     FileManagementMixin,      # 工具集：资源文件管理
     LogisticsWarehouseMixin,  # 仓库物流
     LogisticsInTransitMixin,  # 在途物流

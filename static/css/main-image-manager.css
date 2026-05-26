@@ -197,7 +197,8 @@
     cursor: pointer;
 }
 
-.sj-media-image-card.fabric-pick-card.is-selected {
+.sj-media-image-card.fabric-pick-card.is-selected,
+.browser-card.nas-pick-card.is-selected {
     border-color: #2563eb;
     box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
 }

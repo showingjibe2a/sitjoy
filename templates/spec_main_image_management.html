@@ -270,6 +270,7 @@
                     <button type="button" class="status-pill status-pill--yes is-active" id="specmiFabOn">面料图：开</button>
                   </div>
                   <button type="button" class="btn-accent" onclick="specmiTriggerUpload()">新增主图</button>
+                  <button type="button" class="btn-secondary" onclick="specmiOpenPickExistingImages()">选择已有图片</button>
                   <button type="button" class="btn-secondary" onclick="specmiOpenNasModal()">从NAS选择并移动</button>
                 </div>
               </div>
@@ -410,6 +411,7 @@
 
 <script src="/static/js/header.js"></script>
 <script src="/static/js/nas_main_image_browser_ui.js"></script>
+<script src="/static/js/sj_pick_existing_images.js"></script>
 <script src="/static/js/sitjoy_row_image_refresh.js"></script>
 <script src="/static/js/pm_image_edit_modal.js"></script>
 <script src="/static/js/sj_media_image_card.js"></script>
@@ -2612,6 +2614,50 @@
     }
   }
 
+  function specmiOpenPickExistingImages() {
+    if (!specmiEditingVid) {
+      showToast('请先打开规格', true);
+      return;
+    }
+    if (!window.SjPickExistingImages || !window.SjPickExistingImages.open) {
+      showToast('选择已有图片组件未加载', true);
+      return;
+    }
+    const typeName = specmiNormalizeTypeName(specmiSelectedMainImageFilterType);
+    window.SjPickExistingImages.open({
+      context: 'spec',
+      variantId: specmiEditingVid,
+      title: '选择已有图片（主图/通用 · 未绑定当前规格）',
+      onConfirm: async (picked) => {
+        for (const it of (picked || [])) {
+          const pb = String(it.path_b64 || it.b64 || '');
+          if (!pb) continue;
+          try {
+            const resp = await fetch('/api/sales-product-main-images-import-by-path', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                variant_id: specmiEditingVid,
+                source_path_b64: pb,
+                image_type_name: typeName,
+                require_move: false,
+                prompt_duplicate: !!specmiPromptDuplicate,
+                allow_duplicate: true
+              })
+            });
+            const data = await resp.json();
+            if (data && data.status !== 'success') {
+              showToast(data.message || '绑定失败', true);
+            }
+          } catch (e) {
+            showToast('绑定失败: ' + (e && e.message ? e.message : e), true);
+          }
+        }
+        await specmiAfterMainImageMutation({ refreshNas: false });
+      }
+    });
+  }
+
   function specmiOpenNasModal() {
     if (!specmiEditingVid) {
       showToast('请先打开规格', true);
@@ -2664,6 +2710,7 @@
   window.specmiDeleteVariant = specmiDeleteVariant;
   window.specmiDeleteVariantFromModal = specmiDeleteVariantFromModal;
   window.specmiTriggerUpload = specmiTriggerUpload;
+  window.specmiOpenPickExistingImages = specmiOpenPickExistingImages;
   window.specmiOpenNasModal = specmiOpenNasModal;
   window.specmiCloseNasModal = specmiCloseNasModal;
   window.specmiNasImportSelected = specmiNasImportSelected;
