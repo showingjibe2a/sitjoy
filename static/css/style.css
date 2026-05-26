@@ -4164,7 +4164,9 @@ body {
 }
 
 /* 叠在「主编辑」等同级 pm-modal 之上，避免同 z-index 下事件/命中异常 */
-#nas-main-image-import-modal.pm-modal.active {
+#nas-main-image-import-modal.pm-modal.active,
+#specmi-nas-import-modal.pm-modal.active,
+.pm-modal.nas-main-image-import-modal.active {
     z-index: 15100;
 }
 
@@ -4180,11 +4182,15 @@ body {
     overflow: visible;
 }
 
-#nas-main-image-import-modal .pm-form label {
+#nas-main-image-import-modal .pm-form label,
+#specmi-nas-import-modal .pm-form label,
+.pm-modal.nas-main-image-import-modal .pm-form label {
     margin-bottom: 4px;
 }
 
-#nas-main-image-import-modal .pm-form {
+#nas-main-image-import-modal .pm-form,
+#specmi-nas-import-modal .pm-form,
+.pm-modal.nas-main-image-import-modal .pm-form {
     gap: 0.6rem;
 }
 
@@ -4299,6 +4305,13 @@ a.nas-main-image-crumb:hover {
 
 .item-thumbnail { width: 100%; aspect-ratio: 1 / 1; height: auto; display:flex; align-items:center; justify-content:center; background: var(--morandi-mist); }
 .item-thumbnail img { width:100%; height:100%; object-fit:contain; display:block; background: var(--morandi-mist); }
+.item-thumbnail.is-preview-failed {
+    font-size: 0.78rem;
+    color: rgba(163, 51, 51, 0.88);
+    text-align: center;
+    padding: 0.35rem;
+    line-height: 1.25;
+}
 .item-thumbnail.folder .folder-icon { font-size: 2.6rem; line-height: 1; }
 .item-info { padding: 0.75rem 1rem; }
 .item-name { font-weight: 600; color: var(--morandi-ink); font-size: 0.95rem; }

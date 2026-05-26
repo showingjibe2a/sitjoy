@@ -336,7 +336,7 @@
 </div>
 
 <!-- NAS 导入（与销售页结构一致，独立 id） -->
-<div class="pm-modal" id="specmi-nas-import-modal">
+<div class="pm-modal nas-main-image-import-modal" id="specmi-nas-import-modal">
   <div class="pm-modal-content pm-modal-content--wide">
     <div class="pm-modal-scroll">
       <div class="nas-main-image-header">
@@ -2149,6 +2149,36 @@
     });
   }
 
+  function specmiShowNasStatus(message, isError) {
+    const st = $('#specmiNasStatus');
+    if (!st) return;
+    const text = String(message || '').trim();
+    if (!text) {
+      st.classList.add('pm-u-hidden');
+      st.textContent = '';
+      st.classList.remove('error', 'success');
+      return;
+    }
+    st.classList.remove('pm-u-hidden');
+    st.className = 'nas-main-image-status status-message' + (isError ? ' error' : ' success');
+    st.textContent = text;
+  }
+
+  async function specmiNasBrowse(pathB64) {
+    const url = pathB64 ? `/api/browse?path=${encodeURIComponent(pathB64)}` : '/api/browse';
+    const resp = await fetch(url, { credentials: 'same-origin' });
+    let data = null;
+    try {
+      data = await resp.json();
+    } catch (e) {
+      throw new Error(resp.ok ? '浏览响应解析失败' : (`浏览失败（HTTP ${resp.status}）`));
+    }
+    if (!data || data.status !== 'success') {
+      throw new Error((data && data.message) ? data.message : '浏览失败');
+    }
+    return data;
+  }
+
   async function specmiNasJump(idx) {
     if (idx < 0) {
       specmiNasNavStack = [];
@@ -2170,11 +2200,9 @@
     const snap = preserveScroll ? specmiGetNasModalScrollSnapshot() : null;
     list.innerHTML = '<div class="pm-select-empty nas-main-image-grid-loading">加载中...</div>';
     specmiNasCrumbs();
+    specmiShowNasStatus('', false);
     try {
-      const url = specmiNasPathB64 ? `/api/browse?path=${encodeURIComponent(specmiNasPathB64)}` : '/api/browse';
-      const resp = await fetch(url);
-      const data = await resp.json();
-      if (!data || data.status !== 'success') throw new Error(data.message || '浏览失败');
+      const data = await specmiNasBrowse(specmiNasPathB64);
       const folders = Array.isArray(data.folders) ? data.folders : [];
       const images = Array.isArray(data.images) ? data.images : [];
       list.innerHTML = '';
@@ -2263,8 +2291,20 @@
         const thumb = document.createElement('div');
         thumb.className = 'item-thumbnail';
         const im = document.createElement('img');
-        im.src = specmiPreviewThumbUrl(fullPathB64, 240, 72);
+        const thumbUrl = `/api/image-preview?id=${encodeURIComponent(fullPathB64)}&mode=thumb&w=240&q=72`;
+        im.src = thumbUrl;
+        im.alt = displayName;
         im.loading = 'lazy';
+        im.addEventListener('error', function () {
+          this.style.display = 'none';
+          thumb.classList.add('is-preview-failed');
+          if (!thumb.querySelector('.nas-thumb-fail-label')) {
+            const lab = document.createElement('span');
+            lab.className = 'nas-thumb-fail-label';
+            lab.textContent = '预览失败';
+            thumb.appendChild(lab);
+          }
+        });
         thumb.appendChild(im);
         const info = document.createElement('div');
         info.className = 'item-info';
@@ -2302,7 +2342,8 @@
       specmiUpdateNasMeta(images.length);
       return true;
     } catch (e) {
-      list.innerHTML = '<div class="pm-select-empty nas-main-image-grid-empty">加载失败</div>';
+      list.innerHTML = `<div class="pm-select-empty nas-main-image-grid-empty">加载失败：${specmiEscapeCell(e.message || e)}</div>`;
+      specmiShowNasStatus('浏览失败: ' + (e.message || e), true);
       specmiUpdateNasMeta(0);
       return false;
     } finally {
@@ -2538,9 +2579,20 @@
       return;
     }
     specmiNasPathB64 = localStorage.getItem(SPECMI_LS_NAS) || '';
+    specmiNasNavStack = [];
     try {
-      specmiNasNavStack = JSON.parse(localStorage.getItem(SPECMI_LS_STACK) || '[]') || [];
-    } catch (e) { specmiNasNavStack = []; }
+      const raw = localStorage.getItem(SPECMI_LS_STACK) || '';
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (Array.isArray(parsed)) {
+        specmiNasNavStack = parsed
+          .filter((x) => x && typeof x.pathB64 === 'string')
+          .map((x) => ({ name: String(x.name || ''), pathB64: String(x.pathB64 || '') }));
+        const last = specmiNasNavStack.length ? specmiNasNavStack[specmiNasNavStack.length - 1] : null;
+        if (last && last.pathB64) specmiNasPathB64 = last.pathB64;
+      }
+    } catch (e) {
+      specmiNasNavStack = [];
+    }
     specmiNasSelected = new Set();
     document.getElementById('specmi-nas-import-modal')?.classList.add('active');
     if (typeof window.syncModalScrollLock === 'function') {
@@ -2550,7 +2602,19 @@
     specmiInitNasThumbSeg();
     specmiInitNasSelectAllBox();
     specmiRenderNasTypeBar();
-    specmiRenderNasList();
+    (async () => {
+      const savedPath = specmiNasPathB64 || '';
+      const savedStack = Array.isArray(specmiNasNavStack) ? specmiNasNavStack.slice() : [];
+      const ok = await specmiRenderNasList();
+      if (!ok && (savedPath || savedStack.length)) {
+        specmiShowNasStatus('上次记住的路径暂时无法访问，已显示根目录；关闭弹窗后仍会保留该路径。', true);
+        specmiNasPathB64 = '';
+        specmiNasNavStack = [];
+        await specmiRenderNasList();
+        specmiNasPathB64 = savedPath;
+        specmiNasNavStack = savedStack;
+      }
+    })();
   }
   function specmiCloseNasModal() {
     document.getElementById('specmi-nas-import-modal')?.classList.remove('active');

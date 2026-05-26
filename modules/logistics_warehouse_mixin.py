@@ -3135,7 +3135,7 @@ class LogisticsWarehouseMixin:
                             t.destination_warehouse_id AS warehouse_id,
                             COALESCE(drt.region_name, dr.region_name, w.region) AS region,
                             t.logistics_box_no,
-                            COALESCE(t.expected_warehouse_date, t.eta_latest, t.expected_listed_date_latest) AS expected_arrival_date,
+                            COALESCE(t.expected_listed_date_latest, t.expected_warehouse_date, t.eta_latest) AS expected_arrival_date,
                             SUM(li.shipped_qty) AS qty
                         FROM logistics_in_transit_items li
                         JOIN logistics_in_transit t ON t.id = li.transit_id
@@ -3144,7 +3144,7 @@ class LogisticsWarehouseMixin:
                         LEFT JOIN logistics_destination_regions dr ON dr.id = w.destination_region_id
                         WHERE t.listed_date IS NULL
                                                     AND COALESCE(w.is_enabled,1)=1
-                        GROUP BY li.order_product_id, t.destination_warehouse_id, COALESCE(drt.region_name, dr.region_name, w.region), t.logistics_box_no, COALESCE(t.expected_warehouse_date, t.eta_latest, t.expected_listed_date_latest)
+                        GROUP BY li.order_product_id, t.destination_warehouse_id, COALESCE(drt.region_name, dr.region_name, w.region), t.logistics_box_no, COALESCE(t.expected_listed_date_latest, t.expected_warehouse_date, t.eta_latest)
                         """
                     )
                     transit_rows = cur.fetchall() or []

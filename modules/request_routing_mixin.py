@@ -331,6 +331,7 @@ class RequestRoutingMixin:
                 'sales_forecast_management',
                 'aplus_management',
             ),
+            '/api/browse': ('gallery', 'sales_product_management', 'order_product_management'),
             '/api/sales-product-main-images': ('gallery', 'sales_product_management'),
             '/api/sales-product-main-images-upload': ('gallery', 'sales_product_management'),
             '/api/sales-product-main-images-replace': ('gallery', 'sales_product_management'),
