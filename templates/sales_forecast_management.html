@@ -1264,13 +1264,94 @@
             overflow: hidden;
             resize: both;
         }
-        #sfInvFloatingPanel.sf-perf-float-panel {
-            width: min(560px, calc(100vw - 36px));
-            height: min(380px, calc(100vh - 100px));
+        #sfInvFloatingPanel.sf-perf-float-panel,
+        #sfHistSourceFloatingPanel.sf-perf-float-panel {
+            width: min(640px, calc(100vw - 36px));
+            height: min(420px, calc(100vh - 100px));
+        }
+        td.sf-cell-history.sf-cell-hist-source-clickable {
+            cursor: pointer;
+        }
+        td.sf-cell-history.sf-cell-hist-source-clickable:hover .sf-cell-num-text {
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+        #sfInvFloatingPanel .sf-perf-float-panel-body,
+        #sfHistSourceFloatingPanel .sf-perf-float-panel-body {
+            display: flex;
+            flex-direction: column;
+        }
+        #sfInvFloatingPanel .sf-perf-float-table-scroll,
+        #sfHistSourceFloatingPanel .sf-perf-float-table-scroll {
+            flex: 1 1 auto;
+            min-height: 0;
+        }
+        .sf-inv-dim-toolbar {
+            flex: 0 0 auto;
+            padding: 0.4rem 0.5rem 0.35rem;
+            border-bottom: 1px solid rgba(42, 36, 32, 0.1);
+            background: rgba(253, 250, 246, 0.92);
+        }
+        .sf-inv-dim-toolbar .status-segment {
+            flex-wrap: wrap;
+            gap: 0.28rem;
+        }
+        .sf-inv-dim-toolbar .status-pill {
+            font-size: 0.76rem;
+        }
+        .sf-inv-detail-sections {
+            padding: 0.45rem 0.5rem 0.55rem;
+        }
+        .sf-inv-dim-panel-title {
+            margin: 0 0 0.35rem;
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: #2a2420;
+        }
+        .sf-inv-dim-panel-note {
+            margin: 0 0 0.4rem;
+            font-size: 0.72rem;
+            color: rgba(42, 36, 32, 0.58);
+            line-height: 1.35;
+        }
+        .sf-inv-detail-section-table-wrap {
+            overflow-x: auto;
+            border: 1px solid rgba(42, 36, 32, 0.1);
+            border-radius: 8px;
+            background: #fff;
+        }
+        table.sf-inv-section-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.78rem;
+        }
+        table.sf-inv-section-table th,
+        table.sf-inv-section-table td {
+            padding: 0.32rem 0.45rem;
+            border-top: 1px solid rgba(42, 36, 32, 0.08);
+            text-align: left;
+            vertical-align: top;
+        }
+        table.sf-inv-section-table th {
+            font-weight: 600;
+            color: rgba(42, 36, 32, 0.72);
+            background: rgba(253, 250, 246, 0.9);
+            white-space: nowrap;
+        }
+        table.sf-inv-section-table tbody tr:nth-child(even) td {
+            background: rgba(244, 239, 230, 0.35);
+        }
+        .sf-inv-detail-footnote {
+            margin: 0;
+            padding: 0.35rem 0.5rem 0.5rem;
+            font-size: 0.72rem;
+            color: rgba(42, 36, 32, 0.62);
+            line-height: 1.4;
         }
         /* 本页 .sf-perf-float-panel 含 display:flex，会压过 [hidden] 的默认隐藏，导致 hidden=true / 点 × 仍可见 */
         #sfPerfFloatingPanel.sf-perf-float-panel[hidden],
-        #sfInvFloatingPanel.sf-perf-float-panel[hidden] {
+        #sfInvFloatingPanel.sf-perf-float-panel[hidden],
+        #sfHistSourceFloatingPanel.sf-perf-float-panel[hidden] {
             display: none !important;
             visibility: hidden !important;
             pointer-events: none !important;
@@ -1571,37 +1652,39 @@
             </div>
         </div>
         <div class="sf-perf-float-panel-body">
-            <div class="sf-perf-float-table-scroll">
-                <table id="sfInvDetailTable" class="pm-table sf-perf-pm-matrix"
-                    data-table-manage-mode="light"
-                    data-pm-light-sticky-layout="1"
-                    data-pm-default-pinned-first="1"
-                    data-pm-light-allow-col-resize="1"
-                    data-manage-key="sfInvDetailTable">
-                    <thead id="sfInvDetailThead"><tr>
-                        <th scope="col" data-manage-col-key="source_type">来源类型</th>
-                        <th scope="col" data-manage-col-key="segment">层级/细分</th>
-                        <th scope="col" data-manage-col-key="sku_region">SKU/区域</th>
-                        <th scope="col" data-manage-col-key="qty">数量</th>
-                        <th scope="col" data-manage-col-key="assembled_qty">折合数量</th>
-                        <th scope="col" data-manage-col-key="role">角色</th>
-                        <th scope="col" data-manage-col-key="ratio">配比</th>
-                        <th scope="col" data-manage-col-key="expected_date">预期日期</th>
-                        <th scope="col" data-manage-col-key="updated_at">数据更新</th>
-                    </tr></thead>
-                    <tbody id="sfInvDetailTbody"><tr>
-                        <td data-manage-col-key="source_type">—</td>
-                        <td data-manage-col-key="segment">—</td>
-                        <td data-manage-col-key="sku_region">—</td>
-                        <td data-manage-col-key="qty">—</td>
-                        <td data-manage-col-key="assembled_qty">—</td>
-                        <td data-manage-col-key="role">—</td>
-                        <td data-manage-col-key="ratio">—</td>
-                        <td data-manage-col-key="expected_date">—</td>
-                        <td data-manage-col-key="updated_at">—</td>
-                    </tr></tbody>
-                </table>
+            <div class="sf-inv-dim-toolbar">
+                <input type="hidden" id="sfInvDimVal" value="">
+                <div class="status-segment status-segment--inline" id="sfInvDimSegment" data-value="" role="tablist" aria-label="库存计算维度"></div>
             </div>
+            <div class="sf-perf-float-table-scroll">
+                <div id="sfInvDetailSections" class="sf-inv-detail-sections" role="region" aria-label="库存计算明细"></div>
+            </div>
+            <p class="sf-inv-detail-footnote" id="sfInvDetailFootnote"></p>
+        </div>
+    </div>
+
+    <div id="sfHistSourceFloatingPanel" class="sf-perf-float-panel" hidden aria-label="历史月销量来源">
+        <div class="sf-perf-float-panel-header" id="sfHistSourcePanelHeader">
+            <div class="sf-perf-float-panel-header-left">
+                <span class="sf-perf-float-drag-hint" aria-hidden="true">⠿</span>
+                <span class="sf-perf-float-title" id="sfHistSourcePanelTitle">历史月销量来源</span>
+            </div>
+            <div class="sf-perf-float-panel-header-right">
+                <button type="button" class="modal-close" id="sfHistSourcePanelClose" aria-label="关闭">×</button>
+            </div>
+        </div>
+        <div class="sf-perf-float-panel-body">
+            <div class="sf-inv-dim-toolbar">
+                <input type="hidden" id="sfHistSourceDimVal" value="platform">
+                <div class="status-segment status-segment--inline" id="sfHistSourceDimSegment" data-value="platform" role="tablist" aria-label="来源维度">
+                    <button type="button" class="status-pill is-active" data-value="platform" role="tab" aria-selected="true">销售平台SKU</button>
+                    <button type="button" class="status-pill" data-value="spec_fabric" role="tab" aria-selected="false">规格+面料</button>
+                </div>
+            </div>
+            <div class="sf-perf-float-table-scroll">
+                <div id="sfHistSourceDetailSections" class="sf-inv-detail-sections" role="region" aria-label="历史销量来源明细"></div>
+            </div>
+            <p class="sf-inv-detail-footnote" id="sfHistSourceFootnote">计入销量 = 对应 SKU 的当月历史销量 × 与本下单 SKU 的 BOM 链接数量；各行合计应等于单元格显示值（受店铺筛选影响）。</p>
         </div>
     </div>
 
@@ -1688,6 +1771,7 @@
         const SF_PREF_PERF_UI_KEY = 'sales_forecast_perf_ui_v1';
         const SF_PREF_PERF_PANEL_KEY = 'sales_forecast_perf_panel_v1';
         const SF_PREF_INV_PANEL_KEY = 'sales_forecast_inv_panel_v1';
+        const SF_PREF_HIST_SOURCE_PANEL_KEY = 'sales_forecast_hist_source_panel_v1';
         /** 产品表现矩阵「指标行」勾选 + 顺序（与托管表列 visible-columns 分离，避免被 header 覆盖） */
         const SF_PREF_PERF_METRIC_FIELDS_V1 = 'sales_forecast_sf_perf_metric_fields_v1';
         const SF_METRIC_COL_KEY = 'sf_metric_col';
@@ -1743,8 +1827,19 @@
             sfPerfFieldsPanelOpen: false,
             sfInvPanelAnchorTd: null,
             sfInvPanelHoverKey: '',
+            sfInvPanelClickPinned: false,
             sfInvPanelManuallyHidden: false,
             sfInvPanelHiddenKey: '',
+            sfInvPanelModel: null,
+            sfInvPanelDimId: '',
+            sfInvPanelInteracting: false,
+            sfGridSelectionSigCache: '',
+            sfHistSourcePanelAnchorTd: null,
+            sfHistSourcePanelHoverKey: '',
+            sfHistSourcePanelClickPinned: false,
+            sfHistSourcePanelModel: null,
+            sfHistSourceDimId: 'platform',
+            sfHistSourcePanelInteracting: false,
             shops: [],                      // [{ id, shop_name }] 店铺筛选下拉数据
             sfShopFilterPanelOpen: false,
             sfStatusFilterPanelOpen: false,
@@ -3670,6 +3765,7 @@
 
         function renderForecastTable() {
             hideSfInvFloatingPanel();
+            hideSfHistSourceFloatingPanel();
             const thead = document.getElementById('forecastThead');
             const tbody = document.getElementById('forecastTbody');
             const table = document.getElementById('forecastTable');
@@ -3835,6 +3931,11 @@
                                 const td = document.createElement('td');
                                 td.className = 'sf-cell-history';
                                 td.dataset.month = monthKey;
+                                if (state.forecastMode === 'order') {
+                                    td.classList.add('sf-cell-hist-source-clickable');
+                                    td.dataset.sfHistMonth = monthKey;
+                                    td.title = '点击查看历史月销量来源';
+                                }
                                 const cell = (row.history && row.history[monthKey]) || null;
                                 const text = cell ? formatNumber(cell.sales_qty) : '0';
                                 setSfNumericTdText(td, text);
@@ -4363,7 +4464,7 @@
             document.dispatchEvent(new CustomEvent('sitjoy:grid-selection-change', { detail }));
         }
 
-        function applySfGridSelectionStyles() {
+        function applySfGridSelectionStyles(opts) {
             const tbody = document.getElementById('forecastTbody');
             const thead = document.getElementById('forecastThead');
             const n = state.sfGridSelected.size || 0;
@@ -4379,7 +4480,7 @@
             if (!n || !tbody) {
                 clearSfPerfHoverPayload();
                 updateSfPerfPanel();
-                hideSfInvFloatingPanel();
+                syncSfInvPanelAfterGridChange(opts);
                 notifySfGridSelectionChange();
                 return;
             }
@@ -4419,9 +4520,29 @@
             }
             clearSfPerfHoverPayload();
             updateSfPerfPanel();
-            /* 框选/点击选区变更仅驱动产品表现；库存弹窗不在框选时展示 */
-            hideSfInvFloatingPanel();
+            syncSfInvPanelAfterGridChange(opts);
             notifySfGridSelectionChange();
+        }
+
+        function sfGridSelectionSignature() {
+            return Array.from(state.sfGridSelected || []).sort().join('|');
+        }
+
+        /** 表格选区变更时同步库存弹窗；弹窗内操作（切换维度等）不关闭 */
+        function syncSfInvPanelAfterGridChange(opts) {
+            const o = opts || {};
+            if (o.skipInvPanelAutoHide || state.sfInvPanelInteracting || state.sfHistSourcePanelInteracting) return;
+            if (state.sfHistSourcePanelClickPinned) return;
+            const sig = sfGridSelectionSignature();
+            const selChanged = sig !== state.sfGridSelectionSigCache;
+            state.sfGridSelectionSigCache = sig;
+            if (!selChanged && !o.forceInvPanelSync) return;
+            if (shouldKeepSfInvPanelOnSelection()) {
+                updateSfInvFloatingPanel(state.sfInvPanelAnchorTd);
+                return;
+            }
+            state.sfInvPanelClickPinned = false;
+            hideSfInvFloatingPanel();
         }
 
         /** 在表格内开始框选/点选另一格时，让仍聚焦的预测输入框失焦，避免焦点与选区不一致 */
@@ -4608,9 +4729,13 @@
                 updateSfGridMarquee(rectStart, cur);
             }, true);
 
-            document.addEventListener('mouseup', () => {
+            document.addEventListener('mouseup', (e) => {
                 hideSfGridMarquee();
-                if (!dragging || !dragStart) return;
+                const skipInv = !!(e.target && e.target.closest && e.target.closest('#sfInvFloatingPanel'));
+                if (!dragging || !dragStart) {
+                    state.sfInvPanelInteracting = false;
+                    return;
+                }
                 const hadMove = gridDragMoved;
                 const ds = dragStart;
                 const ctrl = lastPointerMods.ctrl;
@@ -4631,15 +4756,17 @@
                         }
                         suppressNextGridClick = true;
                     }
-                    applySfGridSelectionStyles();
+                    applySfGridSelectionStyles({ skipInvPanelAutoHide: skipInv });
                 } else {
                     if (hadMove) suppressNextGridClick = true;
-                    applySfGridSelectionStyles();
+                    applySfGridSelectionStyles({ skipInvPanelAutoHide: skipInv });
                 }
                 gridDragMoved = false;
+                state.sfInvPanelInteracting = false;
             }, true);
 
             tbody.addEventListener('click', (e) => {
+                if (e.target && e.target.closest && e.target.closest('#sfInvFloatingPanel')) return;
                 const td = pickGridTdFromEvent(e);
                 if (!td) return;
                 if (e.target && e.target.closest && e.target.closest('.sf-tooltip-wrap')) return;
@@ -5485,27 +5612,105 @@
             return o + t + st + wp;
         }
 
-        function buildSfInvPanelDetailRows(row, kind, idx) {
-            const out = [];
-            const push = (rec) => {
-                out.push({
-                    source_type: rec.source_type || '—',
-                    segment: rec.segment || '—',
-                    sku_region: rec.sku_region || '—',
-                    qty: rec.qty != null && rec.qty !== '' ? String(rec.qty) : '—',
-                    assembled_qty: rec.assembled_qty != null && rec.assembled_qty !== '' ? String(rec.assembled_qty) : '—',
-                    role: rec.role || '—',
-                    ratio: rec.ratio != null && rec.ratio !== '' ? String(rec.ratio) : '—',
-                    expected_date: rec.expected_date || '—',
-                    updated_at: rec.updated_at || '—',
-                });
+        const SF_INV_GLOBAL_FOOTNOTE = '合计 = 本体库存 + 全部替代发货方案中的替代 SKU 库存（已合并全部方案；同一替代 SKU 跨多方案配比累加后折算，不重复计下市原 SKU）。';
+
+        function sfInvDimDef(id, label, columns, rows, opts) {
+            const o = opts || {};
+            return {
+                id,
+                label,
+                title: o.title || label,
+                columns: columns || [],
+                rows: (rows || []).filter(Boolean),
+                note: o.note || '',
+                footnote: o.footnote || '',
             };
+        }
+
+        function sfInvSkuMapFromComposition(comp) {
+            const map = {};
+            (comp.source_lines || []).forEach((ln) => {
+                const oid = ln.order_product_id != null ? String(ln.order_product_id) : '';
+                if (oid) map[oid] = String(ln.sku || '').trim() || ('#' + oid);
+            });
+            const breakdown = comp.tier_breakdown || {};
+            Object.keys(breakdown).forEach((tk) => {
+                (breakdown[tk] || []).forEach((e) => {
+                    const oid = e.order_product_id != null ? String(e.order_product_id) : '';
+                    const sku = String(e.sku || '').trim();
+                    if (oid && sku && !map[oid]) map[oid] = sku;
+                });
+            });
+            return map;
+        }
+
+        function sfInvRawStockForOp(comp, opId, tierFilter) {
+            let total = 0;
+            const oid = String(opId || '');
+            if (!oid) return 0;
+            tierFilter.forEach((tk) => {
+                (comp.tier_breakdown?.[tk] || []).forEach((e) => {
+                    if (String(e.order_product_id || '') === oid) {
+                        total += Number(e.raw_qty || 0);
+                    }
+                });
+            });
+            return total;
+        }
+
+        function buildSfInvSubstitutePlanRows(comp, tierFilter) {
+            const skuMap = sfInvSkuMapFromComposition(comp);
+            const plans = comp.substitute_plans || [];
+            const rows = [];
+            if (!plans.length) {
+                return [{
+                    plan_name: '无',
+                    sub_sku: '—',
+                    ratio: '—',
+                    total_qty: '—',
+                }];
+            }
+            plans.forEach((pl) => {
+                const pname = String(pl.plan_name || '').trim() || '替代方案';
+                const items = pl.items || [];
+                if (!items.length) {
+                    rows.push({
+                        plan_name: pname,
+                        sub_sku: '—',
+                        ratio: '—',
+                        total_qty: '—',
+                    });
+                    return;
+                }
+                items.forEach((it) => {
+                    const sid = it[0] != null ? it[0] : it.substitute_order_product_id;
+                    const q = it[1] != null ? it[1] : it.quantity;
+                    const sidStr = String(sid || '');
+                    const raw = sfInvRawStockForOp(comp, sid, tierFilter);
+                    rows.push({
+                        plan_name: pname,
+                        sub_sku: skuMap[sidStr] || ('#' + sidStr),
+                        ratio: '×' + formatNumber(Number(q) || 1),
+                        total_qty: formatNumber(raw),
+                    });
+                });
+            });
+            return rows;
+        }
+
+        function buildSfInvPanelModel(row, kind, idx) {
+            const dimensions = [];
             const inv = row.inventory || {};
             const detail = row.inventory_surplus_detail || {};
             const comp = row.inventory_composition || {};
             const tierFilter = new Set(sfInvTierKeysForCol(kind, idx));
             const colLabel = sfInvColTitle(kind, idx);
             const skuLabel = (comp.row_sku || (row.labels && (row.labels.sku || row.labels.platform_sku)) || '').trim();
+            const calcCols = [
+                { key: 'item', label: '项目' },
+                { key: 'value', label: '数值' },
+                { key: 'note', label: '说明' },
+            ];
 
             if (kind === 'T') {
                 const avg = rowHistorySalesAvgTail(row, 3);
@@ -5513,215 +5718,546 @@
                 const mcKeys = ['months_cover_overseas', 'months_cover_overseas_transit', 'months_cover_total'];
                 const mc = inv[mcKeys[Number(idx) || 0]]
                     ?? (avg && num > 0 ? (num / avg).toFixed(2) : null);
-                push({
-                    source_type: '动销月',
-                    segment: colLabel,
-                    sku_region: skuLabel || '—',
-                    qty: mc != null ? String(mc) : '—',
-                    assembled_qty: '—',
-                    role: '—',
-                    ratio: '—',
-                    expected_date: '—',
-                    updated_at: '—',
-                });
-                push({
-                    source_type: '动销月',
-                    segment: '计算',
-                    sku_region: '分子（库存量）',
-                    qty: formatNumber(num),
-                    assembled_qty: '—',
-                    role: '—',
-                    ratio: '—',
-                    expected_date: '—',
-                    updated_at: '—',
-                });
-                push({
-                    source_type: '动销月',
-                    segment: '计算',
-                    sku_region: '分母（历史尾部三月均销量）',
-                    qty: avg != null ? formatNumber(Math.round(avg * 100) / 100) : '—',
-                    assembled_qty: '—',
-                    role: '—',
-                    ratio: '—',
-                    expected_date: '—',
-                    updated_at: (state.mtdContext && state.mtdContext.perf_max_record_date) || '—',
-                });
-            } else {
-                push({
-                    source_type: '列合计',
-                    segment: colLabel,
-                    sku_region: skuLabel || '—',
-                    qty: formatNumber(sfInvNumeratorForCol(inv, kind, idx)),
-                    assembled_qty: '—',
-                    role: '—',
-                    ratio: '—',
-                    expected_date: '—',
-                    updated_at: '—',
-                });
+                dimensions.push(sfInvDimDef('turnover', '动销月', calcCols, [
+                    { item: '动销月', value: mc != null ? String(mc) : '—', note: skuLabel || '—' },
+                    { item: '分子（库存量）', value: formatNumber(num), note: '当前列对应库存合计' },
+                    { item: '分母（历史尾部三月均销量）', value: avg != null ? formatNumber(Math.round(avg * 100) / 100) : '—', note: (state.mtdContext && state.mtdContext.perf_max_record_date) ? ('日表最新 ' + state.mtdContext.perf_max_record_date) : '—' },
+                ], { title: '动销月 · ' + colLabel, note: '动销月 = 分子 ÷ 分母' }));
             }
-
             if (tierFilter.has('overseas_qty')) {
                 const upd = detail.overseas_updated_at || '—';
-                Object.keys(detail.overseas_by_region || {}).sort((a, b) => String(a).localeCompare(String(b), 'zh')).forEach((rname) => {
+                const rows = Object.keys(detail.overseas_by_region || {}).sort((a, b) => String(a).localeCompare(String(b), 'zh')).map((rname) => {
                     const q = Number((detail.overseas_by_region || {})[rname] || 0);
-                    if (q <= 0) return;
-                    push({
-                        source_type: '海外仓批次',
-                        segment: '按目的区域',
-                        sku_region: rname,
-                        qty: formatNumber(q),
-                        assembled_qty: '—',
-                        role: '—',
-                        ratio: '—',
-                        expected_date: '—',
-                        updated_at: upd,
-                    });
-                });
+                    if (q <= 0) return null;
+                    return { sku_region: rname, qty: formatNumber(q), updated_at: upd };
+                }).filter(Boolean);
+                dimensions.push(sfInvDimDef('overseas', '海外仓', [
+                    { key: 'sku_region', label: '目的区域' },
+                    { key: 'qty', label: '数量' },
+                    { key: 'updated_at', label: '数据更新' },
+                ], rows, { title: '海外仓 · 按目的区域', note: rows.length ? '' : '当前列范围内无海外仓批次' }));
             }
 
             if (tierFilter.has('transit_qty')) {
                 const upd = detail.transit_updated_at || '—';
-                (detail.transit_batches || []).forEach((b) => {
+                const rows = (detail.transit_batches || []).map((b) => {
                     const q = Number(b.qty || 0);
-                    if (q <= 0) return;
-                    push({
-                        source_type: '在途批次',
-                        segment: '未登记上架',
+                    if (q <= 0) return null;
+                    return {
                         sku_region: String(b.region_name || '—'),
                         qty: formatNumber(q),
-                        assembled_qty: '—',
-                        role: '—',
-                        ratio: '—',
                         expected_date: String(b.expected_listed_date || '—'),
                         updated_at: upd,
-                    });
-                });
+                    };
+                }).filter(Boolean);
+                dimensions.push(sfInvDimDef('transit', '在途', [
+                    { key: 'sku_region', label: '目的区域' },
+                    { key: 'qty', label: '数量' },
+                    { key: 'expected_date', label: '预期上架' },
+                    { key: 'updated_at', label: '数据更新' },
+                ], rows, { title: '在途 · 未登记上架批次' }));
             }
 
             if (tierFilter.has('factory_stock_qty')) {
                 const q = Number(detail.factory_stock_qty || 0);
-                if (q > 0) {
-                    push({
-                        source_type: '工厂在库',
-                        segment: SF_INV_TIER_LABEL.factory_stock_qty,
-                        sku_region: skuLabel || '—',
-                        qty: formatNumber(q),
-                        assembled_qty: '—',
-                        role: '—',
-                        ratio: '—',
-                        expected_date: '—',
-                        updated_at: detail.factory_stock_updated_at || '—',
-                    });
-                }
+                dimensions.push(sfInvDimDef('factory_stock', '在库', [
+                    { key: 'sku_region', label: 'SKU' },
+                    { key: 'qty', label: '数量' },
+                    { key: 'updated_at', label: '数据更新' },
+                ], q > 0 ? [{
+                    sku_region: skuLabel || '—',
+                    qty: formatNumber(q),
+                    updated_at: detail.factory_stock_updated_at || '—',
+                }] : [], { title: '工厂在库', note: q > 0 ? '' : '当前列范围内无在库数量' }));
             }
 
             if (tierFilter.has('wip_qty')) {
                 const upd = detail.wip_updated_at || '—';
-                (detail.wip_batches || []).forEach((b) => {
+                const rows = (detail.wip_batches || []).map((b) => {
                     const q = Number(b.qty || 0);
-                    if (q <= 0) return;
-                    push({
-                        source_type: '工厂在制',
-                        segment: '未完工',
+                    if (q <= 0) return null;
+                    return {
                         sku_region: skuLabel || '—',
                         qty: formatNumber(q),
-                        assembled_qty: '—',
-                        role: '—',
-                        ratio: '—',
                         expected_date: String(b.expected_completion_date || '—'),
                         updated_at: upd,
-                    });
-                });
+                    };
+                }).filter(Boolean);
+                dimensions.push(sfInvDimDef('wip', '在制', [
+                    { key: 'sku_region', label: 'SKU' },
+                    { key: 'qty', label: '数量' },
+                    { key: 'expected_date', label: '预期完工' },
+                    { key: 'updated_at', label: '数据更新' },
+                ], rows, { title: '工厂在制 · 未完工批次' }));
             }
 
-            const breakdown = comp.tier_breakdown || {};
+            const compositionRows = [];
             tierFilter.forEach((tk) => {
-                (breakdown[tk] || []).forEach((e) => {
+                (comp.tier_breakdown?.[tk] || []).forEach((e) => {
                     const raw = Number(e.raw_qty || 0);
                     const asm = Number(e.assembled_qty || 0);
                     if (raw <= 0 && asm <= 0) return;
                     const off = Number(e.is_on_market || 0) === 0 ? '（已下市）' : '';
-                    push({
-                        source_type: 'SKU来源',
-                        segment: SF_INV_TIER_LABEL[tk] || tk,
+                    compositionRows.push({
+                        tier: SF_INV_TIER_LABEL[tk] || tk,
                         sku_region: String(e.sku || '') + off,
                         qty: formatNumber(raw),
                         assembled_qty: formatNumber(asm),
                         role: invCompositionRoleLabel(e.role),
                         ratio: Number(e.qty_per_unit || 1) > 1 ? ('×' + formatNumber(Number(e.qty_per_unit || 1))) : '×1',
-                        expected_date: '—',
-                        updated_at: ({
-                            overseas_qty: detail.overseas_updated_at,
-                            transit_qty: detail.transit_updated_at,
-                            factory_stock_qty: detail.factory_stock_updated_at,
-                            wip_qty: detail.wip_updated_at,
-                        })[tk] || '—',
                     });
                 });
             });
-
-            const plans = comp.substitute_plans || [];
-            if (plans.length && (kind === 'T' ? Number(idx) >= 1 : true)) {
-                plans.forEach((pl) => {
-                    const pname = String(pl.plan_name || '').trim() || '替代方案';
-                    (pl.items || []).forEach((it) => {
-                        const sid = it[0] != null ? it[0] : it.substitute_order_product_id;
-                        const q = it[1] != null ? it[1] : it.quantity;
-                        push({
-                            source_type: '替代发货方案',
-                            segment: pname,
-                            sku_region: '#' + String(sid),
-                            qty: '—',
-                            assembled_qty: '—',
-                            role: '替代发货',
-                            ratio: '×' + formatNumber(Number(q) || 1),
-                            expected_date: '—',
-                            updated_at: '—',
-                        });
-                    });
-                });
+            if (compositionRows.length) {
+                dimensions.push(sfInvDimDef('composition', 'SKU来源', [
+                    { key: 'tier', label: '库存层级' },
+                    { key: 'sku_region', label: 'SKU' },
+                    { key: 'qty', label: '原始' },
+                    { key: 'assembled_qty', label: '计入' },
+                    { key: 'role', label: '角色' },
+                    { key: 'ratio', label: '配比' },
+                ], compositionRows, {
+                    title: 'SKU 来源',
+                    note: '原始数量经方案配比折算后计入列合计',
+                    footnote: SF_INV_GLOBAL_FOOTNOTE,
+                }));
             }
 
-            if (out.length <= (kind === 'T' ? 3 : 1)) {
-                push({
-                    source_type: '提示',
-                    segment: '—',
-                    sku_region: '—',
-                    qty: '—',
-                    assembled_qty: '—',
-                    role: '—',
-                    ratio: '—',
-                    expected_date: '—',
-                    updated_at: '无更细批次/来源记录',
-                });
+            const showSubstitute = state.forecastMode === 'order' && (kind === 'T' ? Number(idx) >= 1 : true);
+            if (showSubstitute) {
+                const subCols = [
+                    { key: 'plan_name', label: '方案' },
+                    { key: 'sub_sku', label: '替代SKU' },
+                    { key: 'ratio', label: '配比' },
+                    { key: 'total_qty', label: '总数' },
+                ];
+                dimensions.push(sfInvDimDef('substitute_plans', '替代方案', subCols,
+                    buildSfInvSubstitutePlanRows(comp, tierFilter), {
+                        title: '替代发货方案',
+                        note: '方案以本下单 SKU 为 owner；无方案时显示「无」。总数为替代 SKU 在当前列相关库存层级的原始库存合计。',
+                        footnote: SF_INV_GLOBAL_FOOTNOTE,
+                    }));
             }
-            return out;
+
+            if (!dimensions.length) {
+                dimensions.push(sfInvDimDef('empty', '提示', calcCols, [
+                    { item: '—', value: '—', note: '无更细批次/来源记录' },
+                ]));
+            }
+            return { dimensions, globalFootnote: SF_INV_GLOBAL_FOOTNOTE };
         }
 
-        const SF_INV_DETAIL_COL_KEYS = [
-            'source_type', 'segment', 'sku_region', 'qty', 'assembled_qty', 'role', 'ratio', 'expected_date', 'updated_at',
-        ];
+        function renderSfInvDimTable(dim) {
+            if (!dim || !dim.rows.length) {
+                return '<p class="sf-inv-dim-panel-note">暂无明细</p>';
+            }
+            const th = dim.columns.map((c) => '<th scope="col">' + escapeHtml(c.label) + '</th>').join('');
+            const trs = dim.rows.map((r) => {
+                const tds = dim.columns.map((c) => {
+                    const v = r[c.key];
+                    return '<td>' + escapeHtml(String(v != null && v !== '' ? v : '—')) + '</td>';
+                }).join('');
+                return '<tr>' + tds + '</tr>';
+            }).join('');
+            const note = dim.note
+                ? ('<p class="sf-inv-dim-panel-note">' + escapeHtml(dim.note) + '</p>')
+                : '';
+            return note
+                + '<div class="sf-inv-detail-section-table-wrap"><table class="sf-inv-section-table"><thead><tr>'
+                + th + '</tr></thead><tbody>' + trs + '</tbody></table></div>';
+        }
 
-        function renderSfInvDetailTable(detailRows) {
-            const tbody = document.getElementById('sfInvDetailTbody');
-            const table = document.getElementById('sfInvDetailTable');
-            if (!tbody || !table) return;
-            const rows = detailRows || [];
-            if (!rows.length) {
-                tbody.innerHTML = '<tr>' + SF_INV_DETAIL_COL_KEYS.map((k) => '<td data-manage-col-key="' + k + '">—</td>').join('') + '</tr>';
-            } else {
-                tbody.innerHTML = rows.map((r) => {
-                    return '<tr>' + SF_INV_DETAIL_COL_KEYS.map((k) => {
-                        return '<td data-manage-col-key="' + k + '">' + escapeHtml(String(r[k] != null ? r[k] : '—')) + '</td>';
-                    }).join('') + '</tr>';
+        function renderSfInvDimContent(dimId) {
+            const root = document.getElementById('sfInvDetailSections');
+            const foot = document.getElementById('sfInvDetailFootnote');
+            const model = state.sfInvPanelModel;
+            if (!root) return;
+            const dim = (model?.dimensions || []).find((d) => d.id === dimId);
+            if (!dim) {
+                root.innerHTML = '<p style="margin:0.35rem 0;font-size:0.82rem;color:rgba(42,36,32,0.65);">暂无明细</p>';
+                if (foot) foot.textContent = model?.globalFootnote || SF_INV_GLOBAL_FOOTNOTE;
+                return;
+            }
+            root.innerHTML = '<p class="sf-inv-dim-panel-title">' + escapeHtml(dim.title || dim.label) + '</p>'
+                + renderSfInvDimTable(dim);
+            if (foot) foot.textContent = dim.footnote || model?.globalFootnote || SF_INV_GLOBAL_FOOTNOTE;
+        }
+
+        function renderSfInvPanel(model) {
+            state.sfInvPanelModel = model || null;
+            const dims = model?.dimensions || [];
+            const seg = document.getElementById('sfInvDimSegment');
+            const hidden = document.getElementById('sfInvDimVal');
+            let active = String(state.sfInvPanelDimId || '');
+            if (!active || !dims.some((d) => d.id === active)) {
+                active = dims[0]?.id || '';
+                state.sfInvPanelDimId = active;
+            }
+            if (hidden) hidden.value = active;
+            if (seg) {
+                seg.dataset.value = active;
+                seg.innerHTML = dims.map((d) => {
+                    const cls = d.id === active ? 'status-pill is-active' : 'status-pill';
+                    return '<button type="button" class="' + cls + '" data-value="' + escapeHtml(d.id) + '" role="tab" aria-selected="'
+                        + (d.id === active ? 'true' : 'false') + '">' + escapeHtml(d.label) + '</button>';
                 }).join('');
             }
-            try {
-                table.dataset.sjManageLayoutSig = 'inv|' + rows.length;
-            } catch (_) {}
-            if (window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.invalidateLayout === 'function') {
-                window.SitjoyManagedPmTable.invalidateLayout(table);
+            renderSfInvDimContent(active);
+        }
+
+        const SF_HIST_SOURCE_DIM_COLS = {
+            platform: [
+                { key: 'platform_sku', label: '销售平台SKU' },
+                { key: 'shop_name', label: '店铺' },
+                { key: 'spec_name', label: '规格' },
+                { key: 'fabric_code', label: '面料' },
+                { key: 'link_qty', label: 'BOM链接数' },
+                { key: 'platform_sales_qty', label: '平台月销' },
+                { key: 'contributed_sales_qty', label: '计入销量' },
+            ],
+            spec_fabric: [
+                { key: 'spec_name', label: '规格' },
+                { key: 'fabric_code', label: '面料' },
+                { key: 'sku_family', label: '货号' },
+                { key: 'link_qty', label: 'BOM链接数' },
+                { key: 'variant_sales_qty', label: '规格月销' },
+                { key: 'contributed_sales_qty', label: '计入销量' },
+            ],
+        };
+
+        function sfHistSourcePanelPayloadKey(row, td) {
+            if (!row || !td) return '';
+            return String(row.row_key || '') + '|' + String(td.dataset.sfHistMonth || td.dataset.month || '');
+        }
+
+        function buildSfHistSourceModel(row, monthKey) {
+            const src = (row.history_source && row.history_source[monthKey]) || null;
+            const histCell = (row.history && row.history[monthKey]) || {};
+            const cellQty = Number(histCell.sales_qty || 0);
+            const total = src ? Number(src.total_sales_qty || 0) : cellQty;
+            const fmtRows = (rows, cols) => (rows || []).map((r) => {
+                const out = {};
+                cols.forEach((c) => {
+                    const v = r[c.key];
+                    if (c.key === 'link_qty' || c.key.includes('sales_qty') || c.key === 'contributed_sales_qty') {
+                        out[c.key] = formatNumber(Number(v || 0));
+                    } else {
+                        out[c.key] = v != null && v !== '' ? String(v) : '—';
+                    }
+                });
+                return out;
+            });
+            const platRows = src && (src.by_platform || []).length
+                ? fmtRows(src.by_platform, SF_HIST_SOURCE_DIM_COLS.platform)
+                : [{ platform_sku: '—', shop_name: '—', spec_name: '—', fabric_code: '—', link_qty: '—', platform_sales_qty: '—', contributed_sales_qty: '—' }];
+            const specRows = src && (src.by_spec_fabric || []).length
+                ? fmtRows(src.by_spec_fabric, SF_HIST_SOURCE_DIM_COLS.spec_fabric)
+                : [{ spec_name: '—', fabric_code: '—', sku_family: '—', link_qty: '—', variant_sales_qty: '—', contributed_sales_qty: '—' }];
+            return {
+                month: monthKey,
+                cell_sales_qty: cellQty,
+                total_sales_qty: total,
+                dimensions: [
+                    { id: 'platform', label: '销售平台SKU', columns: SF_HIST_SOURCE_DIM_COLS.platform, rows: platRows },
+                    { id: 'spec_fabric', label: '规格+面料', columns: SF_HIST_SOURCE_DIM_COLS.spec_fabric, rows: specRows },
+                ],
+            };
+        }
+
+        function renderSfHistSourceDimTable(dim) {
+            if (!dim || !dim.rows.length) {
+                return '<p class="sf-inv-dim-panel-note">暂无来源明细（请确认已关联规格/平台 SKU 且该月有历史销量）</p>';
             }
+            const th = dim.columns.map((c) => '<th scope="col">' + escapeHtml(c.label) + '</th>').join('');
+            const trs = dim.rows.map((r) => {
+                const tds = dim.columns.map((c) => '<td>' + escapeHtml(String(r[c.key] != null ? r[c.key] : '—')) + '</td>').join('');
+                return '<tr>' + tds + '</tr>';
+            }).join('');
+            return '<div class="sf-inv-detail-section-table-wrap"><table class="sf-inv-section-table"><thead><tr>'
+                + th + '</tr></thead><tbody>' + trs + '</tbody></table></div>';
+        }
+
+        function renderSfHistSourceDimContent(dimId) {
+            const root = document.getElementById('sfHistSourceDetailSections');
+            const model = state.sfHistSourcePanelModel;
+            if (!root || !model) return;
+            const dim = (model.dimensions || []).find((d) => d.id === dimId);
+            const monthLbl = String(model.month || '').slice(0, 7);
+            root.innerHTML = '<p class="sf-inv-dim-panel-title">' + escapeHtml(monthLbl) + ' · 单元格销量 '
+                + escapeHtml(formatNumber(model.cell_sales_qty)) + ' · 来源合计 '
+                + escapeHtml(formatNumber(model.total_sales_qty)) + '</p>'
+                + (dim ? renderSfHistSourceDimTable(dim) : '<p class="sf-inv-dim-panel-note">—</p>');
+        }
+
+        function renderSfHistSourcePanel(model) {
+            state.sfHistSourcePanelModel = model || null;
+            const dims = model?.dimensions || [];
+            const seg = document.getElementById('sfHistSourceDimSegment');
+            const hidden = document.getElementById('sfHistSourceDimVal');
+            let active = String(state.sfHistSourceDimId || 'platform');
+            if (!dims.some((d) => d.id === active)) {
+                active = dims[0]?.id || 'platform';
+            }
+            state.sfHistSourceDimId = active;
+            if (hidden) hidden.value = active;
+            if (seg) {
+                seg.dataset.value = active;
+                seg.innerHTML = dims.map((d) => {
+                    const cls = d.id === active ? 'status-pill is-active' : 'status-pill';
+                    return '<button type="button" class="' + cls + '" data-value="' + escapeHtml(d.id) + '" role="tab" aria-selected="'
+                        + (d.id === active ? 'true' : 'false') + '">' + escapeHtml(d.label) + '</button>';
+                }).join('');
+            }
+            renderSfHistSourceDimContent(active);
+        }
+
+        function hideSfHistSourceFloatingPanel() {
+            const panel = document.getElementById('sfHistSourceFloatingPanel');
+            if (panel) panel.hidden = true;
+            state.sfHistSourcePanelAnchorTd = null;
+            state.sfHistSourcePanelHoverKey = '';
+            state.sfHistSourcePanelClickPinned = false;
+        }
+
+        function updateSfHistSourceFloatingPanel(anchorTd) {
+            const panel = document.getElementById('sfHistSourceFloatingPanel');
+            const title = document.getElementById('sfHistSourcePanelTitle');
+            if (!panel || !anchorTd || state.forecastMode !== 'order') return;
+            const tr = anchorTd.closest('tr[data-row-key]');
+            if (!tr) return;
+            const row = resolveRowByKey(tr.dataset.rowKey);
+            if (!row) return;
+            const monthKey = String(anchorTd.dataset.sfHistMonth || anchorTd.dataset.month || '').slice(0, 10);
+            if (!monthKey) return;
+            const hoverKey = sfHistSourcePanelPayloadKey(row, anchorTd);
+            if (hoverKey !== state.sfHistSourcePanelHoverKey) {
+                state.sfHistSourceDimId = 'platform';
+            }
+            state.sfHistSourcePanelHoverKey = hoverKey;
+            state.sfHistSourcePanelAnchorTd = anchorTd;
+            const sku = (row.labels && row.labels.sku) || '';
+            if (title) {
+                title.textContent = '历史月销量来源 · ' + monthKey.slice(0, 7) + (sku ? (' · ' + sku) : '');
+            }
+            bindSfHistSourceDimSegmentOnce();
+            renderSfHistSourcePanel(buildSfHistSourceModel(row, monthKey));
+            panel.hidden = false;
+            applySfHistSourcePanelSizeFromPrefs();
+            requestAnimationFrame(() => positionSfHistSourceFloatingPanel(anchorTd));
+        }
+
+        function readSfHistSourcePanelPrefs() {
+            try {
+                const raw = localStorage.getItem(SF_PREF_HIST_SOURCE_PANEL_KEY);
+                if (!raw) return null;
+                const o = JSON.parse(raw);
+                return o && typeof o === 'object' ? o : null;
+            } catch (_) {
+                return null;
+            }
+        }
+
+        function writeSfHistSourcePanelPrefs() {
+            try {
+                const panel = document.getElementById('sfHistSourceFloatingPanel');
+                let rec = readSfHistSourcePanelPrefs() || {};
+                if (panel && !panel.hidden) {
+                    const r = panel.getBoundingClientRect();
+                    if (r.width > 48 && r.height > 48) {
+                        rec.left = Math.round(r.left);
+                        rec.top = Math.round(r.top);
+                        rec.width = Math.round(r.width);
+                        rec.height = Math.round(r.height);
+                    }
+                }
+                localStorage.setItem(SF_PREF_HIST_SOURCE_PANEL_KEY, JSON.stringify(rec));
+            } catch (_) {}
+        }
+
+        function applySfHistSourcePanelSizeFromPrefs() {
+            const panel = document.getElementById('sfHistSourceFloatingPanel');
+            const pref = readSfHistSourcePanelPrefs();
+            if (!panel || !pref) return;
+            if (Number.isFinite(Number(pref.width)) && Number(pref.width) >= 280) {
+                panel.style.width = Math.round(Number(pref.width)) + 'px';
+            }
+            if (Number.isFinite(Number(pref.height)) && Number(pref.height) >= 140) {
+                panel.style.height = Math.round(Number(pref.height)) + 'px';
+            }
+            if (Number.isFinite(Number(pref.left)) && Number.isFinite(Number(pref.top))) {
+                panel.style.left = Math.round(Number(pref.left)) + 'px';
+                panel.style.top = Math.round(Number(pref.top)) + 'px';
+            }
+        }
+
+        let _sfHistSourcePanelGeomWriteTimer = null;
+        function scheduleWriteSfHistSourcePanelPrefs() {
+            clearTimeout(_sfHistSourcePanelGeomWriteTimer);
+            _sfHistSourcePanelGeomWriteTimer = setTimeout(() => writeSfHistSourcePanelPrefs(), 280);
+        }
+
+        function positionSfHistSourceFloatingPanel(anchorTd) {
+            const panel = document.getElementById('sfHistSourceFloatingPanel');
+            if (!panel || panel.hidden || !anchorTd) return;
+            const a = anchorTd.getBoundingClientRect();
+            const pad = 10;
+            const gap = 6;
+            const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+            const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+            const pr = panel.getBoundingClientRect();
+            const pw = pr.width || panel.offsetWidth || 420;
+            const ph = pr.height || panel.offsetHeight || 280;
+            let left = a.left + (a.width - pw) / 2;
+            left = Math.max(pad, Math.min(left, vw - pad - pw));
+            const belowTop = a.bottom + gap;
+            const aboveTop = a.top - ph - gap;
+            let top = (belowTop + ph <= vh - pad) ? belowTop : (aboveTop >= pad ? aboveTop : belowTop);
+            if (top + ph > vh - pad) top = Math.max(pad, vh - pad - ph);
+            panel.style.left = Math.round(left) + 'px';
+            panel.style.top = Math.round(top) + 'px';
+        }
+
+        function bindSfHistSourceDimSegmentOnce() {
+            const seg = document.getElementById('sfHistSourceDimSegment');
+            if (!seg || seg.dataset.sfHistSourceDimBound === '1') return;
+            seg.dataset.sfHistSourceDimBound = '1';
+            const stopEv = (e) => { if (e && typeof e.stopPropagation === 'function') e.stopPropagation(); };
+            seg.addEventListener('mousedown', stopEv, true);
+            seg.addEventListener('click', (e) => {
+                const btn = e.target && e.target.closest ? e.target.closest('.status-pill[data-value]') : null;
+                if (!btn || !seg.contains(btn)) return;
+                stopEv(e);
+                const next = String(btn.getAttribute('data-value') || '');
+                if (!next || next === state.sfHistSourceDimId) return;
+                state.sfHistSourceDimId = next;
+                const hidden = document.getElementById('sfHistSourceDimVal');
+                if (hidden) hidden.value = next;
+                seg.querySelectorAll('.status-pill[data-value]').forEach((b) => {
+                    b.classList.toggle('is-active', String(b.getAttribute('data-value') || '') === next);
+                    b.setAttribute('aria-selected', String(b.getAttribute('data-value') || '') === next ? 'true' : 'false');
+                });
+                seg.dataset.value = next;
+                renderSfHistSourceDimContent(next);
+            });
+        }
+
+        function bindSfHistSourcePanelOnce() {
+            if (document.body.dataset.sfHistSourcePanelBound === '1') return;
+            document.body.dataset.sfHistSourcePanelBound = '1';
+            const panel = document.getElementById('sfHistSourceFloatingPanel');
+            const header = document.getElementById('sfHistSourcePanelHeader');
+            const closeBtn = document.getElementById('sfHistSourcePanelClose');
+            applySfHistSourcePanelSizeFromPrefs();
+            bindSfHistSourceDimSegmentOnce();
+            if (panel) {
+                panel.addEventListener('mousedown', (e) => {
+                    state.sfHistSourcePanelInteracting = true;
+                    if (typeof e.stopPropagation === 'function') e.stopPropagation();
+                }, true);
+                panel.addEventListener('click', (e) => {
+                    if (typeof e.stopPropagation === 'function') e.stopPropagation();
+                }, true);
+            }
+            document.addEventListener('mouseup', () => {
+                state.sfHistSourcePanelInteracting = false;
+            }, true);
+            const closePanel = (e) => {
+                if (!panel) return;
+                if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+                try { writeSfHistSourcePanelPrefs(); } catch (_) {}
+                panel.hidden = true;
+                state.sfHistSourcePanelClickPinned = false;
+                state.sfHistSourcePanelAnchorTd = null;
+            };
+            if (closeBtn) {
+                closeBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); closePanel(e); }, true);
+                closeBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); closePanel(e); }, true);
+            }
+            document.addEventListener('keydown', (e) => {
+                if (e.key !== 'Escape') return;
+                const p = document.getElementById('sfHistSourceFloatingPanel');
+                if (!p || p.hidden) return;
+                closePanel(e);
+            }, true);
+            let drag = null;
+            if (header && panel) {
+                header.addEventListener('mousedown', (e) => {
+                    if (e.button !== 0) return;
+                    if (e.target.closest('#sfHistSourcePanelClose')) return;
+                    const r = panel.getBoundingClientRect();
+                    drag = { sx: e.clientX, sy: e.clientY, sl: r.left, st: r.top };
+                    e.preventDefault();
+                });
+            }
+            document.addEventListener('mousemove', (e) => {
+                if (!drag || !panel) return;
+                panel.style.left = Math.round(drag.sl + e.clientX - drag.sx) + 'px';
+                panel.style.top = Math.round(drag.st + e.clientY - drag.sy) + 'px';
+            });
+            document.addEventListener('mouseup', () => {
+                if (drag) {
+                    drag = null;
+                    scheduleWriteSfHistSourcePanelPrefs();
+                }
+            });
+            if (typeof ResizeObserver === 'function' && panel) {
+                const ro = new ResizeObserver(() => scheduleWriteSfHistSourcePanelPrefs());
+                ro.observe(panel);
+            }
+        }
+
+        function bindSfHistSourceCellClickOnce() {
+            if (document.body.dataset.sfHistSourceClickBound === '1') return;
+            document.body.dataset.sfHistSourceClickBound = '1';
+            const wrap = document.getElementById('forecastTableWrap');
+            if (!wrap) return;
+            const openHistSource = (e, td) => {
+                if (!td || !wrap.contains(td)) return;
+                if (state.forecastMode !== 'order') return;
+                if (typeof e.stopPropagation === 'function') e.stopPropagation();
+                state.sfHistSourcePanelClickPinned = true;
+                updateSfHistSourceFloatingPanel(td);
+            };
+            wrap.addEventListener('click', (e) => {
+                const td = e.target && e.target.closest ? e.target.closest('td.sf-cell-hist-source-clickable[data-sf-hist-month]') : null;
+                if (!td) return;
+                openHistSource(e, td);
+            }, true);
+            document.addEventListener('mousedown', (e) => {
+                if (!state.sfHistSourcePanelClickPinned) return;
+                const panel = document.getElementById('sfHistSourceFloatingPanel');
+                if (!panel || panel.hidden) return;
+                if (e.target && e.target.closest && e.target.closest('#sfHistSourceFloatingPanel')) return;
+                if (e.target && e.target.closest && e.target.closest('td.sf-cell-hist-source-clickable')) return;
+                state.sfHistSourcePanelClickPinned = false;
+                hideSfHistSourceFloatingPanel();
+            }, true);
+        }
+
+        function bindSfInvDimSegmentOnce() {
+            const seg = document.getElementById('sfInvDimSegment');
+            if (!seg || seg.dataset.sfInvDimBound === '1') return;
+            seg.dataset.sfInvDimBound = '1';
+            const stopPanelEvent = (e) => {
+                if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+            };
+            seg.addEventListener('mousedown', stopPanelEvent, true);
+            seg.addEventListener('click', (e) => {
+                const btn = e.target && e.target.closest ? e.target.closest('.status-pill[data-value]') : null;
+                if (!btn || !seg.contains(btn)) return;
+                stopPanelEvent(e);
+                const next = String(btn.getAttribute('data-value') || '');
+                if (!next || next === state.sfInvPanelDimId) return;
+                state.sfInvPanelDimId = next;
+                const hidden = document.getElementById('sfInvDimVal');
+                if (hidden) hidden.value = next;
+                seg.querySelectorAll('.status-pill[data-value]').forEach((b) => {
+                    b.classList.toggle('is-active', String(b.getAttribute('data-value') || '') === next);
+                    b.setAttribute('aria-selected', String(b.getAttribute('data-value') || '') === next ? 'true' : 'false');
+                });
+                seg.dataset.value = next;
+                renderSfInvDimContent(next);
+            });
         }
 
         function sfInvPanelPayloadKey(row, td) {
@@ -5823,11 +6359,21 @@
             clampSfInvFloatingPanelToViewport();
         }
 
+        function shouldKeepSfInvPanelOnSelection() {
+            if (!state.sfInvPanelClickPinned || !state.sfInvPanelAnchorTd) return false;
+            if (!state.sfInvPanelAnchorTd.isConnected) return false;
+            const rk = String(state.sfInvPanelAnchorTd.dataset.rowKey || '');
+            const ci = Number(state.sfInvPanelAnchorTd.dataset.sfCi);
+            if (!rk || !Number.isFinite(ci)) return false;
+            return state.sfGridSelected.has(makeSfGridCellKey(rk, ci));
+        }
+
         function hideSfInvFloatingPanel() {
             const panel = document.getElementById('sfInvFloatingPanel');
             if (panel) panel.hidden = true;
             state.sfInvPanelAnchorTd = null;
             state.sfInvPanelHoverKey = '';
+            state.sfInvPanelClickPinned = false;
         }
 
         function updateSfInvFloatingPanel(anchorTd) {
@@ -5852,6 +6398,7 @@
             }
             if (hoverKey !== state.sfInvPanelHoverKey) {
                 state.sfInvPanelManuallyHidden = false;
+                state.sfInvPanelDimId = '';
             }
             state.sfInvPanelHoverKey = hoverKey;
             state.sfInvPanelAnchorTd = anchorTd;
@@ -5860,7 +6407,8 @@
             if (title) {
                 title.textContent = '库存来源 · ' + colTitle + (sku ? (' · ' + sku) : '');
             }
-            renderSfInvDetailTable(buildSfInvPanelDetailRows(row, kind, idx));
+            bindSfInvDimSegmentOnce();
+            renderSfInvPanel(buildSfInvPanelModel(row, kind, idx));
             panel.hidden = false;
             applySfInvPanelSizeFromPrefs();
             requestAnimationFrame(() => positionSfInvFloatingPanel(anchorTd));
@@ -5868,6 +6416,7 @@
 
         let _sfInvPanelHideTimer = null;
         function scheduleHideSfInvPanel() {
+            if (state.sfInvPanelClickPinned || state.sfInvPanelInteracting) return;
             clearTimeout(_sfInvPanelHideTimer);
             _sfInvPanelHideTimer = setTimeout(() => {
                 const panel = document.getElementById('sfInvFloatingPanel');
@@ -5883,9 +6432,19 @@
             const header = document.getElementById('sfInvPanelHeader');
             const closeBtn = document.getElementById('sfInvPanelClose');
             applySfInvPanelSizeFromPrefs();
-            if (panel && window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.enhance === 'function') {
-                window.SitjoyManagedPmTable.enhance(panel);
+            bindSfInvDimSegmentOnce();
+            if (panel) {
+                panel.addEventListener('mousedown', (e) => {
+                    state.sfInvPanelInteracting = true;
+                    if (typeof e.stopPropagation === 'function') e.stopPropagation();
+                }, true);
+                panel.addEventListener('click', (e) => {
+                    if (typeof e.stopPropagation === 'function') e.stopPropagation();
+                }, true);
             }
+            document.addEventListener('mouseup', () => {
+                state.sfInvPanelInteracting = false;
+            }, true);
             const closePanel = (e) => {
                 if (!panel) return;
                 if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
@@ -5894,6 +6453,7 @@
                 state.sfInvPanelManuallyHidden = true;
                 state.sfInvPanelHiddenKey = state.sfInvPanelHoverKey || '';
                 state.sfInvPanelAnchorTd = null;
+                state.sfInvPanelClickPinned = false;
             };
             if (closeBtn) {
                 closeBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); closePanel(e); }, true);
@@ -5972,13 +6532,30 @@
                 if (rel && (td.contains(rel) || rel.closest && rel.closest('#sfInvFloatingPanel'))) return;
                 scheduleHideSfInvPanel();
             });
-            wrap.addEventListener('click', (e) => {
-                const td = e.target && e.target.closest ? e.target.closest('td.sf-cell-inv-hoverable[data-sf-inv-col-kind]') : null;
+            const openSfInvPanelByClick = (e, td) => {
                 if (!td || !wrap.contains(td)) return;
                 if (!canShowSfInvPanelByClick()) return;
+                if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
                 clearTimeout(_sfInvPanelHideTimer);
+                state.sfInvPanelClickPinned = true;
+                state.sfInvPanelManuallyHidden = false;
                 updateSfInvFloatingPanel(td);
-            });
+            };
+            wrap.addEventListener('click', (e) => {
+                const td = e.target && e.target.closest ? e.target.closest('td.sf-cell-inv-hoverable[data-sf-inv-col-kind]') : null;
+                if (!td) return;
+                openSfInvPanelByClick(e, td);
+            }, true);
+            document.addEventListener('mousedown', (e) => {
+                if (!state.sfInvPanelClickPinned) return;
+                const panel = document.getElementById('sfInvFloatingPanel');
+                if (!panel || panel.hidden) return;
+                if (e.target && e.target.closest && e.target.closest('#sfInvFloatingPanel')) return;
+                if (e.target && e.target.closest && e.target.closest('td.sf-cell-inv-hoverable[data-sf-inv-col-kind]')) return;
+                state.sfInvPanelClickPinned = false;
+                state.sfInvPanelInteracting = false;
+                hideSfInvFloatingPanel();
+            }, true);
             const scrollParent = wrap.querySelector('.sf-table-wrap') || wrap;
             const onScroll = () => {
                 const panel = document.getElementById('sfInvFloatingPanel');
@@ -6855,6 +7432,8 @@
             bindSfPerfPanelOnce();
             bindSfInvPanelOnce();
             bindSfInvCellHoverOnce();
+            bindSfHistSourcePanelOnce();
+            bindSfHistSourceCellClickOnce();
             updateSfPerfToolbarGroupMode();
             bindSfShopFilterDropdownOnce();
             bindSfStatusFilterDropdownOnce();

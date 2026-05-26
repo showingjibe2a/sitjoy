@@ -3284,6 +3284,114 @@ class SalesManagementMixin:
             }
         return history
 
+    def _forecast_load_variant_display_map(self, conn, variant_ids):
+        """variant_id -> { spec_name, fabric_code, sku_family }"""
+        ids = sorted({int(x) for x in (variant_ids or []) if self._parse_int(x)})
+        out = {}
+        if not ids:
+            return out
+        has_fabric_text = self._table_has_column(conn, 'sales_product_variants', 'fabric')
+        fabric_join = 'LEFT JOIN fabric_materials fm ON fm.id = v.fabric_id' if self._table_has_column(conn, 'sales_product_variants', 'fabric_id') else ''
+        if self._table_has_column(conn, 'sales_product_variants', 'fabric_id'):
+            fabric_expr = 'COALESCE(fm.fabric_code, v.fabric)' if has_fabric_text else 'fm.fabric_code'
+        elif has_fabric_text:
+            fabric_expr = 'v.fabric'
+        else:
+            fabric_expr = "''"
+        ph = ','.join(['%s'] * len(ids))
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT v.id AS variant_id,
+                       v.spec_name,
+                       {fabric_expr} AS fabric_code,
+                       pf.sku_family
+                FROM sales_product_variants v
+                LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                {fabric_join}
+                WHERE v.id IN ({ph})
+                """,
+                tuple(ids),
+            )
+            for rr in cur.fetchall() or []:
+                vid = self._parse_int(rr.get('variant_id'))
+                if not vid:
+                    continue
+                out[vid] = {
+                    'spec_name': (rr.get('spec_name') or '').strip(),
+                    'fabric_code': (rr.get('fabric_code') or '').strip(),
+                    'sku_family': (rr.get('sku_family') or '').strip(),
+                }
+        return out
+
+    def _forecast_build_order_history_sources_for_links(
+        self, links, month, history_by_variant, history_by_sp, platforms_by_variant, variant_display,
+    ):
+        """下单 SKU 单月历史销量来源：按销售平台 SKU / 规格+面料 拆解（计入 = 月销 × BOM 链接数量）。"""
+        by_platform = []
+        spec_agg = {}
+
+        for vl in links or []:
+            vid = self._parse_int(vl.get('variant_id'))
+            if not vid:
+                continue
+            q_link = max(1, self._parse_int(vl.get('quantity')) or 1)
+            vd = variant_display.get(vid) or {}
+            spec = (vl.get('spec_name') or vd.get('spec_name') or '').strip() or '—'
+            fabric = (vd.get('fabric_code') or '').strip() or '—'
+            sf = (vl.get('sku_family') or vd.get('sku_family') or '').strip() or '—'
+
+            h_var = history_by_variant.get((vid, month)) or {}
+            var_sales = float(h_var.get('sales_qty') or 0)
+            contrib_spec = var_sales * float(q_link)
+
+            sk = (spec, fabric)
+            bucket = spec_agg.setdefault(sk, {
+                'spec_name': spec,
+                'fabric_code': fabric,
+                'sku_family': sf,
+                'link_qty': 0,
+                'variant_sales_qty': var_sales,
+                'contributed_sales_qty': 0.0,
+            })
+            bucket['link_qty'] += int(q_link)
+            bucket['variant_sales_qty'] = var_sales
+            bucket['contributed_sales_qty'] += contrib_spec
+
+            for ps in platforms_by_variant.get(vid) or []:
+                spid = self._parse_int(ps.get('sales_product_id'))
+                if not spid:
+                    continue
+                h_sp = history_by_sp.get((spid, month)) or {}
+                sp_sales = float(h_sp.get('sales_qty') or 0)
+                contrib = sp_sales * float(q_link)
+                if contrib <= 0 and sp_sales <= 0:
+                    continue
+                by_platform.append({
+                    'platform_sku': (ps.get('platform_sku') or '').strip() or '—',
+                    'shop_name': (ps.get('shop_name') or '').strip() or '—',
+                    'spec_name': spec,
+                    'fabric_code': fabric,
+                    'link_qty': int(q_link),
+                    'platform_sales_qty': sp_sales,
+                    'contributed_sales_qty': contrib,
+                })
+
+        by_spec = sorted(
+            spec_agg.values(),
+            key=lambda x: (-float(x.get('contributed_sales_qty') or 0), str(x.get('spec_name') or '')),
+        )
+        by_platform.sort(
+            key=lambda x: (-float(x.get('contributed_sales_qty') or 0), str(x.get('platform_sku') or '')),
+        )
+        total = sum(float(x.get('contributed_sales_qty') or 0) for x in by_spec)
+        return {
+            'month': month,
+            'total_sales_qty': total,
+            'by_platform': by_platform,
+            'by_spec_fabric': by_spec,
+        }
+
     def _forecast_attach_inventory_to_rows(self, conn, rows, forecast_mode, history_months, hist_start=None, hist_end=None, shop_ids=None):
         """按各下单 SKU：本体库存 + 全部替代发货方案替代 SKU 库存（海外/在途/在库/在制），再与变体 BOM 成套汇总。
         规格/平台维度下：库存为变体整套瓶颈；动销月三列 = 所链接各下单 SKU（按替代方案展开后单独成套）的动销月再取最小值；
@@ -4069,6 +4177,11 @@ class SalesManagementMixin:
             self._forecast_load_history_by_variant(conn, variant_hist_ids, hist_start, hist_end, shop_ids=shop_ids)
             if variant_hist_ids else {}
         )
+        history_by_sp = (
+            self._forecast_load_history_by_sales_product(conn, all_sp_ids, hist_start, hist_end, shop_ids=shop_ids)
+            if all_sp_ids else {}
+        )
+        variant_display = self._forecast_load_variant_display_map(conn, variant_hist_ids)
         variant_hist_weight_sum = self._forecast_variant_hist_weight_sum_for_variants(conn, variant_hist_ids)
         hist_month_keys = self._forecast_iter_months(hist_start, hist_end)
 
@@ -4216,6 +4329,16 @@ class SalesManagementMixin:
             row['history'] = self._forecast_build_order_like_history_for_links(
                 links, history_by_variant, variant_hist_weight_sum, hist_month_keys
             )
+            row['history_source'] = {}
+            for hm in hist_month_keys:
+                row['history_source'][hm] = self._forecast_build_order_history_sources_for_links(
+                    links,
+                    hm,
+                    history_by_variant,
+                    history_by_sp,
+                    platforms_by_variant,
+                    variant_display,
+                )
             out.append(row)
         return out
 

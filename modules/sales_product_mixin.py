@@ -10299,151 +10299,77 @@ class SalesProductMixin:
                 )
                 params = []
                 sql = []
-                if granularity == 'day':
-                    # 子表展示只需要“平台SKU级别”的汇总，不需要把每日记录全拉回后端再 Python 分组。
-                    group_cols = [
-                        "sp.id AS sp_id",
-                        "sp.platform_sku",
-                        f"{fabric_expr} AS fabric",
-                        "v.spec_name",
-                        "v.sku_family_id",
-                        "pf.sku_family",
-                        "MIN(DATE(spp.record_date)) AS min_date",
-                        "MAX(DATE(spp.record_date)) AS max_date",
-                        "COUNT(1) AS `rows`",
-                        "SUM(COALESCE(spp.sales_qty,0)) AS sales_qty",
-                        "SUM(COALESCE(spp.net_sales_amount,0)) AS net_sales_amount",
-                        gross_sales_sql_day,
-                        discount_rate_sql_day,
-                        "SUM(COALESCE(spp.order_qty,0)) AS order_qty",
-                        "SUM(COALESCE(spp.session_total,0)) AS session_total",
-                        "SUM(COALESCE(spp.ad_impressions,0)) AS ad_impressions",
-                        "SUM(COALESCE(spp.ad_clicks,0)) AS ad_clicks",
-                        "SUM(COALESCE(spp.ad_orders,0)) AS ad_orders",
-                        "SUM(COALESCE(spp.ad_spend,0)) AS ad_spend",
-                        "SUM(COALESCE(spp.ad_sales_amount,0)) AS ad_sales_amount",
-                        "SUM(COALESCE(spp.refund_amount,0)) AS refund_amount",
-                        refund_rate_sql_day,
-                        "AVG(spp.sub_category_rank) AS sub_category_rank",
-                        "(MAX(COALESCE(est_unit_cost.unit_bom_cost_usd, 0)) * SUM(COALESCE(spp.sales_qty,0))) AS estimated_product_cost_usd",
-                        "(MAX(COALESCE(est_unit_cost.unit_last_mile_freight_usd, 0)) * SUM(COALESCE(spp.sales_qty,0))) AS estimated_last_mile_freight_usd",
-                        commission_sql_day,
-                    ]
+                # 货号分组「全量汇总」始终按筛选起止日在明细表汇总（与 groups_by_bucket、图表截断桶一致）。
+                # granularity 仅影响 chart_items 的时间桶展示，不改变下方筛选范围内汇总口径。
+                group_cols = [
+                    "sp.id AS sp_id",
+                    "sp.platform_sku",
+                    f"{fabric_expr} AS fabric",
+                    "v.spec_name",
+                    "v.sku_family_id",
+                    "pf.sku_family",
+                    "MIN(DATE(spp.record_date)) AS min_date",
+                    "MAX(DATE(spp.record_date)) AS max_date",
+                    "COUNT(1) AS `rows`",
+                    "SUM(COALESCE(spp.sales_qty,0)) AS sales_qty",
+                    "SUM(COALESCE(spp.net_sales_amount,0)) AS net_sales_amount",
+                    gross_sales_sql_day,
+                    discount_rate_sql_day,
+                    "SUM(COALESCE(spp.order_qty,0)) AS order_qty",
+                    "SUM(COALESCE(spp.session_total,0)) AS session_total",
+                    "SUM(COALESCE(spp.ad_impressions,0)) AS ad_impressions",
+                    "SUM(COALESCE(spp.ad_clicks,0)) AS ad_clicks",
+                    "SUM(COALESCE(spp.ad_orders,0)) AS ad_orders",
+                    "SUM(COALESCE(spp.ad_spend,0)) AS ad_spend",
+                    "SUM(COALESCE(spp.ad_sales_amount,0)) AS ad_sales_amount",
+                    "SUM(COALESCE(spp.refund_amount,0)) AS refund_amount",
+                    refund_rate_sql_day,
+                    "AVG(spp.sub_category_rank) AS sub_category_rank",
+                    "(MAX(COALESCE(est_unit_cost.unit_bom_cost_usd, 0)) * SUM(COALESCE(spp.sales_qty,0))) AS estimated_product_cost_usd",
+                    "(MAX(COALESCE(est_unit_cost.unit_last_mile_freight_usd, 0)) * SUM(COALESCE(spp.sales_qty,0))) AS estimated_last_mile_freight_usd",
+                    commission_sql_day,
+                ]
 
-                    sql = [
-                        f"""
-                        SELECT {', '.join(group_cols)}
-                        FROM sales_product_performances spp
-                        JOIN sales_products sp ON sp.id = spp.sales_product_id
-                        LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
-                        LEFT JOIN product_families pf ON pf.id = v.sku_family_id
-                        LEFT JOIN shops sh ON sh.id = sp.shop_id
-                        LEFT JOIN platform_types pt ON pt.id = sh.platform_type_id
-                        {fabric_join}
-                        {cost_join_variant}
-                        WHERE 1=1
-                        """
-                    ]
-                    if start_date:
-                        sql.append(' AND spp.record_date >= %s')
-                        params.append(start_date)
-                    if end_date:
-                        sql.append(' AND spp.record_date <= %s')
-                        params.append(end_date)
-                    if sku_family_ids:
-                        sql.append(f" AND v.sku_family_id IN ({','.join(['%s'] * len(sku_family_ids))})")
-                        params.extend(sku_family_ids)
-                    if platform_skus:
-                        sql.append(f" AND sp.platform_sku IN ({','.join(['%s'] * len(platform_skus))})")
-                        params.extend(platform_skus)
-                    if fabrics and has_fabric_text:
-                        sql.append(f" AND v.fabric IN ({','.join(['%s'] * len(fabrics))})")
-                        params.extend(fabrics)
-                    if spec_names:
-                        sql.append(f" AND v.spec_name IN ({','.join(['%s'] * len(spec_names))})")
-                        params.extend(spec_names)
-                    if shop_ids:
-                        sql.append(f" AND sp.shop_id IN ({','.join(['%s'] * len(shop_ids))})")
-                        params.extend(shop_ids)
-                    if platform_type_ids:
-                        sql.append(f" AND sh.platform_type_id IN ({','.join(['%s'] * len(platform_type_ids))})")
-                        params.extend(platform_type_ids)
-                    sql.append(' GROUP BY sp.id, sp.platform_sku, fabric, v.spec_name, v.sku_family_id, pf.sku_family')
-                    sql.append(' ORDER BY pf.sku_family ASC, sp.platform_sku ASC')
-                else:
-                    src_table = 'sales_perf_agg_week' if granularity == 'week' else 'sales_perf_agg_month'
-                    period_start_col = 'week_start' if granularity == 'week' else 'month_start'
-                    period_end_col = 'week_end' if granularity == 'week' else 'month_end'
-
-                    group_cols = [
-                        "0 AS sp_id",
-                        "sp.platform_sku",
-                        f"{fabric_expr} AS fabric",
-                        "v.spec_name",
-                        "v.sku_family_id",
-                        "COALESCE(pf.sku_family, '未分组货号') AS sku_family",
-                        f"MIN(DATE(a.{period_start_col})) AS min_date",
-                        f"MAX(DATE(a.{period_end_col})) AS max_date",
-                        "SUM(COALESCE(a.source_rows,0)) AS `rows`",
-                        "SUM(COALESCE(a.sales_qty,0)) AS sales_qty",
-                        "SUM(COALESCE(a.net_sales_amount,0)) AS net_sales_amount",
-                        gross_sales_sql_week,
-                        discount_rate_sql_week,
-                        "SUM(COALESCE(a.order_qty,0)) AS order_qty",
-                        "SUM(COALESCE(a.session_total,0)) AS session_total",
-                        "SUM(COALESCE(a.ad_impressions,0)) AS ad_impressions",
-                        "SUM(COALESCE(a.ad_clicks,0)) AS ad_clicks",
-                        "SUM(COALESCE(a.ad_orders,0)) AS ad_orders",
-                        "SUM(COALESCE(a.ad_spend,0)) AS ad_spend",
-                        "SUM(COALESCE(a.ad_sales_amount,0)) AS ad_sales_amount",
-                        "SUM(COALESCE(a.refund_amount,0)) AS refund_amount",
-                        refund_rate_sql_week,
-                        "AVG(a.sub_category_rank_avg) AS sub_category_rank",
-                        "(MAX(COALESCE(est_unit_cost.unit_bom_cost_usd, 0)) * SUM(COALESCE(a.sales_qty,0))) AS estimated_product_cost_usd",
-                        "(MAX(COALESCE(est_unit_cost.unit_last_mile_freight_usd, 0)) * SUM(COALESCE(a.sales_qty,0))) AS estimated_last_mile_freight_usd",
-                        commission_sql_week,
-                    ]
-
-                    sql = [
-                        f"""
-                        SELECT {', '.join(group_cols)}
-                        FROM {src_table} a
-                        JOIN sales_products sp ON sp.id = a.sales_product_id
-                        LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
-                        LEFT JOIN product_families pf ON pf.id = v.sku_family_id
-                        LEFT JOIN shops sh ON sh.id = sp.shop_id
-                        {fabric_join}
-                        {cost_join_variant}
-                        WHERE 1=1
-                        """
-                    ]
-                    if start_date:
-                        sql.append(f' AND a.{period_start_col} >= %s')
-                        params.append(start_date)
-                    if end_date:
-                        sql.append(f' AND a.{period_start_col} <= %s')
-                        params.append(end_date)
-                    if sku_family_ids:
-                        sql.append(f" AND v.sku_family_id IN ({','.join(['%s'] * len(sku_family_ids))})")
-                        params.extend(sku_family_ids)
-                    if platform_skus:
-                        sql.append(f" AND sp.platform_sku IN ({','.join(['%s'] * len(platform_skus))})")
-                        params.extend(platform_skus)
-                    if fabrics:
-                        if has_fabric_text:
-                            sql.append(f" AND v.fabric IN ({','.join(['%s'] * len(fabrics))})")
-                            params.extend(fabrics)
-                    if spec_names:
-                        sql.append(f" AND v.spec_name IN ({','.join(['%s'] * len(spec_names))})")
-                        params.extend(spec_names)
-                    if shop_ids:
-                        sql.append(f" AND sp.shop_id IN ({','.join(['%s'] * len(shop_ids))})")
-                        params.extend(shop_ids)
-                    if platform_type_ids:
-                        sql.append(f" AND sh.platform_type_id IN ({','.join(['%s'] * len(platform_type_ids))})")
-                        params.extend(platform_type_ids)
-                    sql.append(' GROUP BY sp.platform_sku, fabric, v.spec_name, v.sku_family_id, sku_family')
-                    sql.append(' ORDER BY sku_family ASC, sp.platform_sku ASC')
+                sql = [
+                    f"""
+                    SELECT {', '.join(group_cols)}
+                    FROM sales_product_performances spp
+                    JOIN sales_products sp ON sp.id = spp.sales_product_id
+                    LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
+                    LEFT JOIN product_families pf ON pf.id = v.sku_family_id
+                    LEFT JOIN shops sh ON sh.id = sp.shop_id
+                    LEFT JOIN platform_types pt ON pt.id = sh.platform_type_id
+                    {fabric_join}
+                    {cost_join_variant}
+                    WHERE 1=1
+                    """
+                ]
+                if start_date:
+                    sql.append(' AND spp.record_date >= %s')
+                    params.append(start_date)
+                if end_date:
+                    sql.append(' AND spp.record_date <= %s')
+                    params.append(end_date)
+                if sku_family_ids:
+                    sql.append(f" AND v.sku_family_id IN ({','.join(['%s'] * len(sku_family_ids))})")
+                    params.extend(sku_family_ids)
+                if platform_skus:
+                    sql.append(f" AND sp.platform_sku IN ({','.join(['%s'] * len(platform_skus))})")
+                    params.extend(platform_skus)
+                if fabrics and has_fabric_text:
+                    sql.append(f" AND v.fabric IN ({','.join(['%s'] * len(fabrics))})")
+                    params.extend(fabrics)
+                if spec_names:
+                    sql.append(f" AND v.spec_name IN ({','.join(['%s'] * len(spec_names))})")
+                    params.extend(spec_names)
+                if shop_ids:
+                    sql.append(f" AND sp.shop_id IN ({','.join(['%s'] * len(shop_ids))})")
+                    params.extend(shop_ids)
+                if platform_type_ids:
+                    sql.append(f" AND sh.platform_type_id IN ({','.join(['%s'] * len(platform_type_ids))})")
+                    params.extend(platform_type_ids)
+                sql.append(' GROUP BY sp.id, sp.platform_sku, fabric, v.spec_name, v.sku_family_id, pf.sku_family')
+                sql.append(' ORDER BY pf.sku_family ASC, sp.platform_sku ASC')
 
                 with conn.cursor() as cur:
                     cur.execute(''.join(sql), tuple(params))

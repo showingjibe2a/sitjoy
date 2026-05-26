@@ -134,4 +134,4 @@
     if (global.__sitjoyPendingGridSelection) {
         applySelectionDetail(global.__sitjoyPendingGridSelection);
     }
-})();
+})(typeof window !== 'undefined' ? window : this);
