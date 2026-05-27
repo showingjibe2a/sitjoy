@@ -3327,11 +3327,14 @@
             state.loadingGroupKey = gk;
             setGroupRowLoadingHint(gk, true);
             try {
-                const params = buildSalesForecastQueryParams({ sf_group: gk, inventory: false, thumbs: false });
+                const params = buildSalesForecastQueryParams({ sf_group: gk, inventory: false });
                 const resp = await fetch('/api/sales-forecast?' + params.toString());
                 const data = await resp.json();
                 if (!data || data.status !== 'success') throw new Error((data && data.message) || '加载失败');
                 mergeForecastGroupPayload(data);
+                if (!getCollapsedSet().has(gk)) {
+                    refreshThumbCellsForGroup(gk);
+                }
                 void loadForecastGroupInventoryPatch(gk);
             } catch (err) {
                 showToast(err && err.message ? err.message : '分组加载失败', true);
@@ -3370,7 +3373,18 @@
             incoming.forEach(r => {
                 const rk = String(r.row_key || '');
                 if (!rk) return;
-                byKey.set(rk, r);
+                const existing = byKey.get(rk);
+                if (!existing) {
+                    byKey.set(rk, r);
+                    return;
+                }
+                if (r.labels && typeof r.labels === 'object') {
+                    existing.labels = Object.assign({}, existing.labels || {}, r.labels);
+                }
+                if (r.history) existing.history = r.history;
+                if (r.forecasts) existing.forecasts = r.forecasts;
+                if (r.history_source) existing.history_source = r.history_source;
+                if (r.mtd_completion != null) existing.mtd_completion = r.mtd_completion;
             });
             state.rows = Array.from(byKey.values());
             state.loadedGroupKeys.add(gk);
@@ -3630,6 +3644,8 @@
         }
 
         function renderSpecCell(td, col, row) {
+            if (!td) return;
+            td.replaceChildren();
             if (col.key === 'thumb') {
                 const b64 = String(col.get(row) || '').trim();
                 if (b64) {
@@ -3666,12 +3682,47 @@
                     dot,
                     'sf-inv-composition-tooltip-bubble',
                     false,
-                    true
+                    false
                 ));
                 td.appendChild(wrap);
                 return;
             }
-            td.innerHTML = '<div>' + text + '</div>';
+            const plain = document.createElement('div');
+            plain.textContent = String(col.get(row) || '—') || '—';
+            td.appendChild(plain);
+        }
+
+        function rerenderOrderSkuCellForRow(tr, row) {
+            if (!tr || !row || state.forecastMode !== 'order') return;
+            const cols = getColumnsForMode('order');
+            const skuCol = cols.find(c => c.key === 'sku');
+            const skuIdx = cols.findIndex(c => c.key === 'sku');
+            if (!skuCol || skuIdx < 0) return;
+            const skuTd = tr.querySelector(`td[data-sf-ci="${skuIdx}"]`);
+            if (!skuTd) return;
+            skuTd.className = (skuCol.cellClass || 'sf-cell-spec');
+            renderSpecCell(skuTd, skuCol, row);
+            markSfGridCell(skuTd, row.row_key, skuIdx);
+        }
+
+        function refreshThumbCellsForGroup(groupKey) {
+            const gk = String(groupKey || '').trim();
+            const tbody = document.getElementById('forecastTbody');
+            if (!gk || !tbody) return;
+            const cols = getColumnsForMode(state.forecastMode);
+            const thumbCol = cols.find(c => c.key === 'thumb');
+            const thumbIdx = cols.findIndex(c => c.key === 'thumb');
+            if (!thumbCol || thumbIdx < 0) return;
+            tbody.querySelectorAll(`tr[data-group-key="${sfCssEscape(gk)}"][data-row-key]`).forEach(tr => {
+                const rk = String(tr.dataset.rowKey || '');
+                const row = (state.rows || []).find(r => String(r.row_key) === rk);
+                if (!row) return;
+                const thumbTd = tr.querySelector(`td[data-sf-ci="${thumbIdx}"]`);
+                if (!thumbTd) return;
+                thumbTd.className = thumbCol.cellClass || 'sf-cell-thumb';
+                renderSpecCell(thumbTd, thumbCol, row);
+                markSfGridCell(thumbTd, row.row_key, thumbIdx);
+            });
         }
 
         function getEffectiveForecastQty(row, monthKey) {
@@ -3851,8 +3902,6 @@
             if (!gk || !meta || !tbody || meta.turnStart == null) return;
             const turnStart = Number(meta.turnStart);
             if (!Number.isFinite(turnStart) || turnStart < 0) return;
-            const cols = getColumnsForMode(state.forecastMode);
-            const skuCol = cols.find(c => c.key === 'sku');
             tbody.querySelectorAll(`tr[data-group-key="${sfCssEscape(gk)}"][data-row-key]`).forEach(tr => {
                 const rk = String(tr.dataset.rowKey || '');
                 const row = (state.rows || []).find(r => String(r.row_key) === rk);
@@ -3862,12 +3911,8 @@
                     if (Number.isFinite(ci) && ci >= turnStart) td.remove();
                 });
                 appendForecastInventoryRowCells(tr, row, rk, turnStart);
-                if (skuCol && state.forecastMode === 'order') {
-                    const skuIdx = cols.findIndex(c => c.key === 'sku');
-                    if (skuIdx >= 0) {
-                        const skuTd = tr.querySelector(`td[data-sf-ci="${skuIdx}"]`);
-                        if (skuTd) renderSpecCell(skuTd, skuCol, row);
-                    }
+                if (state.forecastMode === 'order') {
+                    rerenderOrderSkuCellForRow(tr, row);
                 }
             });
             applySfGridSelectionStyles();
