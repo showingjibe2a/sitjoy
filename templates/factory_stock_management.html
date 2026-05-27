@@ -68,16 +68,16 @@
       <table class="pm-table" id="mainTable">
         <thead>
           <tr>
-            <th style="width:54px; text-align:center;"><input type="checkbox" id="stockSelectAll"></th>
-            <th style="width:150px;">在市状态</th>
-            <th class="cell-center sj-th-thumb">图片</th>
-            <th>SKU</th>
-            <th style="width:120px;">颜色</th>
-            <th>工厂</th>
-            <th style="width:120px;">数量</th>
-            <th>备注</th>
-            <th style="width:180px;">更新时间</th>
-            <th style="width:160px;">操作</th>
+            <th style="width:54px; text-align:center;" data-manage-col-key="__stock_chk__" data-disable-sort="1"><input type="checkbox" id="stockSelectAll"></th>
+            <th style="width:150px;" data-manage-col-key="is_on_market" data-sort-key="is_on_market">在市状态</th>
+            <th class="cell-center sj-th-thumb" data-manage-col-key="__stock_img__">图片</th>
+            <th data-manage-col-key="sku" data-sort-key="sku">SKU</th>
+            <th style="width:120px;" data-manage-col-key="representative_color" data-sort-key="representative_color">颜色</th>
+            <th data-manage-col-key="factory_name" data-sort-key="factory_name">工厂</th>
+            <th style="width:120px;" data-manage-col-key="quantity" data-sort-key="quantity">数量</th>
+            <th data-manage-col-key="notes" data-sort-key="notes">备注</th>
+            <th style="width:180px;" data-manage-col-key="updated_at" data-sort-key="updated_at">更新时间</th>
+            <th style="width:160px;" data-manage-col-key="__stock_op__" data-disable-sort="1">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -418,6 +418,11 @@ function renderFactoryStockTable(items){
   if(!tbody) return;
   if(!rows.length){
     tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">暂无数据</td></tr>';
+    const emptyTable = document.getElementById('mainTable');
+    if(emptyTable && window.SitjoyManagedPmTable){
+      if(typeof window.SitjoyManagedPmTable.invalidateLayout === 'function') window.SitjoyManagedPmTable.invalidateLayout(emptyTable);
+      if(typeof window.SitjoyManagedPmTable.reapplyColumnFilters === 'function') window.SitjoyManagedPmTable.reapplyColumnFilters(emptyTable);
+    }
     return;
   }
   tbody.innerHTML = rows.map(item => {
@@ -443,7 +448,7 @@ function renderFactoryStockTable(items){
         </td>
         <td class="cell-center sj-cell-thumb">${thumbHtml}</td>
         <td>${item.sku || ''}</td>
-        <td data-sort-value="${String(colorText || '-').replace(/"/g, '&quot;')}" data-export-value="${String(colorText || '-').replace(/"/g, '&quot;')}">${colorHtml}</td>
+        <td data-sort-value="${String(colorText || '-').replace(/"/g, '&quot;')}" data-export-value="${String(colorText || '-').replace(/"/g, '&quot;')}" data-display-value="${String(colorText || '-').replace(/"/g, '&quot;')}">${colorHtml}</td>
         <td>${item.factory_name || ''}</td>
         <td class="preview-edit-cell"><input type="number" min="0" step="1" class="inline-input preview-edit-input stock-edit-field" data-id="${item.id}" data-field="quantity" value="${Number(draft.quantity || 0)}"></td>
         <td class="preview-edit-cell"><input type="text" class="inline-input preview-edit-input stock-edit-field" data-id="${item.id}" data-field="notes" value="${String(draft.notes || '').replace(/"/g, '&quot;')}"></td>
@@ -460,6 +465,13 @@ function renderFactoryStockTable(items){
   bindRowSelectionEvents();
   bindFactoryStockEditEvents();
   syncStockSelectAll();
+  const table = document.getElementById('mainTable');
+  if(table && window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.invalidateLayout === 'function'){
+    window.SitjoyManagedPmTable.invalidateLayout(table);
+  }
+  if(table && window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.reapplyColumnFilters === 'function'){
+    window.SitjoyManagedPmTable.reapplyColumnFilters(table);
+  }
 }
 
 function triggerImport(){

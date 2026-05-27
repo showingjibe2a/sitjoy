@@ -3201,7 +3201,8 @@
     }
 
     function reapplyManagedColumnFiltersFromHandle(state){
-        if(!state) return;
+        if(!state || !state.table) return;
+        if(String(state.table.dataset.pmLightNoColumnFilter || '') === '1') return;
         const handle = state.columnFilterHandle
             || (state.table ? (columnFilterRegistry.get(state.table) || null) : null);
         if(!handle || typeof handle.getFilters !== 'function') return;
@@ -3813,8 +3814,9 @@
             setFilters: (snapshot) => {
                 state.filters = new Map();
                 Object.entries(snapshot || {}).forEach(([key, value]) => {
-                    const index = Number(key);
-                    state.filters.set(index, {
+                    const colKey = String(key || '').trim();
+                    if(!colKey) return;
+                    state.filters.set(colKey, {
                         query: String(value && value.query ? value.query : ''),
                         exact: !!(value && value.exact),
                         selected: Array.isArray(value && value.selected) ? value.selected.slice() : []

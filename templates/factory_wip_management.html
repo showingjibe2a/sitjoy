@@ -45,7 +45,7 @@
     </div>
 
     <div class="sj-wip-table-host" id="factoryWipTableHost">
-      <table class="pm-table" id="mainTable" data-batch-delete-handler="handleFactoryWipBatchDelete">
+      <table class="pm-table" id="mainTable" data-batch-delete-handler="handleFactoryWipBatchDelete" data-pm-light-no-column-filter="1">
         <thead>
           <tr>
             <th style="width:54px; text-align:center;" data-manage-col-key="__wip_chk__" data-disable-sort="1"><input type="checkbox" id="wipSelectAll"></th>
@@ -270,17 +270,23 @@ const WIP_FILTER_COLUMNS = {
 
 const $ = (s) => document.querySelector(s);
 
-function getWipFilterText(item, colIndex){
+/** 与 /api/factory-wip?action=filter_options 的 value 字段一致，供列筛选勾选匹配 */
+function getWipFilterValue(item, colIndex){
   if(!item) return '';
-  if(colIndex === 6) return Number(item.is_on_market || 0) ? '在市' : '下市';
-  if(colIndex === 4) return String(item.representative_color || '').trim() || '-';
-  if(colIndex === 10) return Number(item.is_completed || 0) ? '是' : '否';
+  if(colIndex === 6) return Number(item.is_on_market || 0) ? '1' : '0';
+  if(colIndex === 10) return Number(item.is_completed || 0) ? '1' : '0';
+  if(colIndex === 4) return String(item.representative_color || '').trim();
+  if(colIndex === 8) return formatDate(item.expected_completion_date);
+  if(colIndex === 9) return formatDate(item.initial_expected_completion_date);
+  if(colIndex === 11) return formatDate(item.actual_completion_date);
   if(colIndex === 13) return formatDateTime(item.created_at || '');
   if(colIndex === 14) return formatDateTime(item.update_time || item.updated_at || '');
   const config = WIP_FILTER_COLUMNS[colIndex] || {};
   const key = config.key;
   if(!key) return '';
-  return String(item[key] == null ? '' : item[key]).trim();
+  const raw = item[key];
+  if(raw == null || raw === '') return '';
+  return String(raw).trim();
 }
 
 function getWipFilterState(colIndex){
@@ -303,7 +309,7 @@ function applyWipColumnFilters(rows){
   return list.filter(item => {
     for(const colIndex of activeCols){
       const state = getWipFilterState(colIndex);
-      const value = getWipFilterText(item, colIndex);
+      const value = getWipFilterValue(item, colIndex);
       const valueLower = value.toLowerCase();
       const query = String(state.query || '').trim();
       const selected = Array.isArray(state.selected) ? state.selected.map(v => String(v)) : [];
@@ -325,8 +331,14 @@ function clearWipFilterOptionCache(){
 }
 
 function refreshWipFilterButtons(){
-  document.querySelectorAll('.wip-col-filter-btn[data-col-index]').forEach(btn => {
-    const col = Number(btn.dataset.colIndex || 0);
+  const table = document.getElementById('mainTable');
+  const handle = (window.SitjoyColumnFilter && table) ? window.SitjoyColumnFilter.get(table) : null;
+  if(handle && typeof handle.syncButtons === 'function') {
+    handle.syncButtons();
+    return;
+  }
+  document.querySelectorAll('.pm-column-filter-btn[data-column-key]').forEach(btn => {
+    const col = Number(btn.dataset.columnKey || btn.dataset.columnIndex || 0);
     btn.classList.toggle('has-filter', hasWipFilterActive(col));
   });
 }

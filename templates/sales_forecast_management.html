@@ -3359,7 +3359,10 @@
                 }
                 if (r.inventory) existing.inventory = r.inventory;
                 if (r.inventory_composition) existing.inventory_composition = r.inventory_composition;
-                if (r.surplus_detail != null) existing.surplus_detail = r.surplus_detail;
+                if (r.inventory_surplus_detail != null) {
+                    existing.inventory_surplus_detail = r.inventory_surplus_detail;
+                    delete existing._sfSurplusCache;
+                }
                 if (Array.isArray(r.remarks)) existing.remarks = r.remarks;
             });
             state.rows = Array.from(byKey.values());
@@ -3915,6 +3918,12 @@
                     rerenderOrderSkuCellForRow(tr, row);
                 }
             });
+            if (state.forecastMode === 'order' && state.sfSurplusRegion && state.forecastExpanded) {
+                tbody.querySelectorAll(`tr[data-group-key="${sfCssEscape(gk)}"][data-row-key]`).forEach(tr => {
+                    const rk = String(tr.dataset.rowKey || '');
+                    if (rk) refreshSfSurplusForRow(rk, '');
+                });
+            }
             applySfGridSelectionStyles();
             syncSfFloatingPanelsAfterTableRender();
         }
