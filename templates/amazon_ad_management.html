@@ -806,6 +806,39 @@
             adEditId = null;
         }
 
+        /** 同层级名称唯一：组合全局；活动在同一组合下；组在同一活动下 */
+        function validateAdNameUnique(level, name, portfolioId, campaignId) {
+            const nm = String(name || '').trim();
+            if (!nm) return null;
+            const excludeId = adEditId ? Number(adEditId) : null;
+            const list = adItemsCache || [];
+            const sameName = (item) => String(item.name || '').trim() === nm;
+            const notSelf = (item) => !excludeId || Number(item.id) !== excludeId;
+            if (level === 'portfolio') {
+                const hit = list.find(item => item.ad_level === 'portfolio' && sameName(item) && notSelf(item));
+                if (hit) return '广告组合名称已存在，请勿重复';
+            } else if (level === 'campaign') {
+                const pid = String(portfolioId || '');
+                const hit = list.find(item =>
+                    item.ad_level === 'campaign'
+                    && String(item.portfolio_id || '') === pid
+                    && sameName(item)
+                    && notSelf(item)
+                );
+                if (hit) return '该广告组合下已存在同名广告活动';
+            } else {
+                const cid = String(campaignId || '');
+                const hit = list.find(item =>
+                    item.ad_level === 'group'
+                    && String(item.campaign_id || '') === cid
+                    && sameName(item)
+                    && notSelf(item)
+                );
+                if (hit) return '该广告活动下已存在同名广告组';
+            }
+            return null;
+        }
+
         function saveAdFromModal() {
             const level = document.getElementById('modalAdLevel').value;
             const payload = { ad_level: level };
@@ -856,6 +889,17 @@
                 if (!payload.portfolio_id && selectedCampaign.portfolio_id) {
                     payload.portfolio_id = String(selectedCampaign.portfolio_id);
                 }
+            }
+
+            const dupMsg = validateAdNameUnique(
+                level,
+                payload.name,
+                payload.portfolio_id,
+                payload.campaign_id
+            );
+            if (dupMsg) {
+                showAdStatus(dupMsg, true);
+                return;
             }
 
             let method = 'POST';

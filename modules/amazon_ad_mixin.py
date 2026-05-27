@@ -317,6 +317,62 @@ class AmazonAdMixin:
             return '请选择归属广告活动'
         return None
 
+    def _find_amazon_ad_item_by_scoped_name(self, cur, ad_level, name, portfolio_id=None, campaign_id=None, exclude_id=None):
+        """按同层级作用域查找：组合全局唯一；活动在同一组合下唯一；组在同一活动下唯一。"""
+        name = (name or '').strip()
+        if not name:
+            return None
+        sql = "SELECT id FROM amazon_ad_items WHERE ad_level=%s AND name=%s"
+        params = [ad_level, name]
+        if ad_level == 'campaign':
+            pid = self._parse_int(portfolio_id)
+            if not pid:
+                return None
+            sql += ' AND portfolio_id=%s'
+            params.append(pid)
+        elif ad_level == 'group':
+            cid = self._parse_int(campaign_id)
+            if not cid:
+                return None
+            sql += ' AND campaign_id=%s'
+            params.append(cid)
+        if exclude_id:
+            sql += ' AND id<>%s'
+            params.append(int(exclude_id))
+        sql += ' LIMIT 1'
+        cur.execute(sql, tuple(params))
+        return cur.fetchone()
+
+    def _validate_amazon_ad_name_unique(self, cur, ad_level, name, portfolio_id=None, campaign_id=None, exclude_id=None):
+        row = self._find_amazon_ad_item_by_scoped_name(
+            cur, ad_level, name, portfolio_id=portfolio_id, campaign_id=campaign_id, exclude_id=exclude_id
+        )
+        if not row:
+            return None
+        if ad_level == 'portfolio':
+            return '广告组合名称已存在，请勿重复'
+        if ad_level == 'campaign':
+            return '该广告组合下已存在同名广告活动'
+        return '该广告活动下已存在同名广告组'
+
+    def _amazon_ad_batch_scope_key(self, ad_level, name, portfolio_id=None, campaign_id=None):
+        name = (name or '').strip()
+        if ad_level == 'portfolio':
+            return ('portfolio', name)
+        if ad_level == 'campaign':
+            return ('campaign', int(self._parse_int(portfolio_id) or 0), name)
+        return ('group', int(self._parse_int(campaign_id) or 0), name)
+
+    def _validate_amazon_ad_name_unique_in_batch(self, ad_level, name, portfolio_id=None, campaign_id=None, batch_seen=None):
+        key = self._amazon_ad_batch_scope_key(ad_level, name, portfolio_id, campaign_id)
+        if key in (batch_seen or set()):
+            if ad_level == 'portfolio':
+                return '本批导入中广告组合名称重复'
+            if ad_level == 'campaign':
+                return '本批导入中该广告组合下广告活动名称重复'
+            return '本批导入中该广告活动下广告组名称重复'
+        return None
+
     def _build_amazon_ad_write_fields(self, data, ad_level):
         name = (data.get('name') or '').strip()
         status = (data.get('status') or '').strip() or '启动'
@@ -442,6 +498,14 @@ class AmazonAdMixin:
                             campaign = cur.fetchone() or {}
                             fields['portfolio_id'] = campaign.get('portfolio_id')
 
+                        dup_err = self._validate_amazon_ad_name_unique(
+                            cur, ad_level, fields['name'],
+                            portfolio_id=fields.get('portfolio_id'),
+                            campaign_id=fields.get('campaign_id'),
+                        )
+                        if dup_err:
+                            return self.send_json({'status': 'error', 'message': dup_err}, start_response)
+
                         cur.execute(
                             """
                             INSERT INTO amazon_ad_items (
@@ -492,6 +556,15 @@ class AmazonAdMixin:
                             )
                             campaign = cur.fetchone() or {}
                             fields['portfolio_id'] = campaign.get('portfolio_id')
+
+                        dup_err = self._validate_amazon_ad_name_unique(
+                            cur, ad_level, fields['name'],
+                            portfolio_id=fields.get('portfolio_id'),
+                            campaign_id=fields.get('campaign_id'),
+                            exclude_id=item_id,
+                        )
+                        if dup_err:
+                            return self.send_json({'status': 'error', 'message': dup_err}, start_response)
 
                         cur.execute(
                             """
@@ -838,13 +911,16 @@ class AmazonAdMixin:
             with self._get_db_connection() as conn:
                 with conn.cursor() as cur:
                     portfolio_by_name = {}
-                    campaign_by_name = {}
+                    campaign_by_key = {}
+                    batch_seen_names = set()
                     cur.execute("SELECT id, name FROM amazon_ad_items WHERE ad_level='portfolio'")
                     for row in cur.fetchall() or []:
                         portfolio_by_name[str(row.get('name') or '').strip()] = row['id']
                     cur.execute("SELECT id, name, portfolio_id FROM amazon_ad_items WHERE ad_level='campaign'")
                     for row in cur.fetchall() or []:
-                        campaign_by_name[str(row.get('name') or '').strip()] = row
+                        pname = str(row.get('name') or '').strip()
+                        pid = int(self._parse_int(row.get('portfolio_id')) or 0)
+                        campaign_by_key[(pid, pname)] = row
 
                     subtype_by_key = {}
                     cur.execute("SELECT id, ad_class, subtype_code, description FROM amazon_ad_subtypes")
@@ -901,7 +977,29 @@ class AmazonAdMixin:
                                 continue
                         else:
                             campaign_name = cell_value(row, '归属广告活动名称') or ''
-                            campaign = campaign_by_name.get(campaign_name)
+                            portfolio_name = cell_value(row, '归属广告组合名称') or ''
+                            portfolio_id_for_group = portfolio_by_name.get(portfolio_name) if portfolio_name else None
+                            campaign = None
+                            if portfolio_id_for_group is not None:
+                                campaign = campaign_by_key.get(
+                                    (int(portfolio_id_for_group), campaign_name.strip())
+                                )
+                            if not campaign and campaign_name:
+                                matches = [
+                                    c for (pid, cname), c in campaign_by_key.items()
+                                    if cname == campaign_name.strip()
+                                ]
+                                if len(matches) == 1:
+                                    campaign = matches[0]
+                                elif len(matches) > 1:
+                                    errors.append({
+                                        'row': row_idx,
+                                        'message': (
+                                            f'广告活动「{campaign_name}」在多个广告组合中存在，'
+                                            '请填写归属广告组合名称'
+                                        ),
+                                    })
+                                    continue
                             if not campaign:
                                 errors.append({'row': row_idx, 'message': f'未找到广告活动: {campaign_name}'})
                                 continue
@@ -913,11 +1011,11 @@ class AmazonAdMixin:
                             errors.append({'row': row_idx, 'message': err})
                             continue
 
-                        cur.execute(
-                            "SELECT id FROM amazon_ad_items WHERE ad_level=%s AND name=%s LIMIT 1",
-                            (ad_level, fields['name'])
+                        existing = self._find_amazon_ad_item_by_scoped_name(
+                            cur, ad_level, fields['name'],
+                            portfolio_id=fields.get('portfolio_id'),
+                            campaign_id=fields.get('campaign_id'),
                         )
-                        existing = cur.fetchone()
                         if existing:
                             cur.execute(
                                 """
@@ -936,6 +1034,23 @@ class AmazonAdMixin:
                             )
                             updated += 1
                         else:
+                            batch_dup_err = self._validate_amazon_ad_name_unique_in_batch(
+                                ad_level, fields['name'],
+                                portfolio_id=fields.get('portfolio_id'),
+                                campaign_id=fields.get('campaign_id'),
+                                batch_seen=batch_seen_names,
+                            )
+                            if batch_dup_err:
+                                errors.append({'row': row_idx, 'message': batch_dup_err})
+                                continue
+                            dup_err = self._validate_amazon_ad_name_unique(
+                                cur, ad_level, fields['name'],
+                                portfolio_id=fields.get('portfolio_id'),
+                                campaign_id=fields.get('campaign_id'),
+                            )
+                            if dup_err:
+                                errors.append({'row': row_idx, 'message': dup_err})
+                                continue
                             cur.execute(
                                 """
                                 INSERT INTO amazon_ad_items (
@@ -951,10 +1066,16 @@ class AmazonAdMixin:
                             )
                             new_id = cur.lastrowid
                             created += 1
+                            batch_seen_names.add(self._amazon_ad_batch_scope_key(
+                                ad_level, fields['name'],
+                                portfolio_id=fields.get('portfolio_id'),
+                                campaign_id=fields.get('campaign_id'),
+                            ))
                             if ad_level == 'portfolio':
                                 portfolio_by_name[fields['name']] = new_id
                             elif ad_level == 'campaign':
-                                campaign_by_name[fields['name']] = {
+                                pid = int(self._parse_int(fields['portfolio_id']) or 0)
+                                campaign_by_key[(pid, fields['name'])] = {
                                     'id': new_id,
                                     'portfolio_id': fields['portfolio_id'],
                                 }
