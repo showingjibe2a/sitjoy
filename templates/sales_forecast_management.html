@@ -1805,6 +1805,7 @@
             forecastGroups: [],            // [{ key, title, item_count }] 与后端 lazy 对齐
             loadedGroupKeys: new Set(),    // 已拉取明细的分组 key
             loadingGroupKey: '',         // 正在请求的分组（展示「加载中」）
+            loadingGroupInventoryKeys: new Set(), // 正在 patch 库存的分组
             dirty: new Map(),               // key: row_key|month -> { row_key, forecast_month, latest_qty }
             sortKey: '',
             sortDir: 'asc',
@@ -3043,6 +3044,8 @@
             if (ex.lazy) params.set('lazy', '1');
             if (ex.sf_group) params.set('sf_group', String(ex.sf_group));
             if (ex.inventory === false) params.set('inventory', '0');
+            if (ex.thumbs === false) params.set('thumbs', '0');
+            if (ex.patch) params.set('patch', String(ex.patch));
             return params;
         }
 
@@ -3268,30 +3271,95 @@
             }
         }
 
+        function sfCssEscape(value) {
+            const s = String(value || '');
+            if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(s);
+            return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        }
+
+        function setGroupRowLoadingHint(groupKey, loading, extraText) {
+            const tbody = document.getElementById('forecastTbody');
+            if (!tbody) return;
+            const gk = String(groupKey || '').trim();
+            if (!gk) return;
+            const row = tbody.querySelector(`tr.sf-group-row[data-group-key="${sfCssEscape(gk)}"]`);
+            if (!row) return;
+            let hint = row.querySelector('.sf-group-load-hint');
+            if (loading) {
+                if (!hint) {
+                    hint = document.createElement('span');
+                    hint.className = 'sf-muted sf-group-load-hint';
+                    const td = row.querySelector('td');
+                    if (td) td.appendChild(hint);
+                }
+                hint.textContent = extraText ? ` ${extraText}` : ' 加载中…';
+            } else if (hint) {
+                hint.remove();
+            }
+        }
+
+        async function loadForecastGroupInventoryPatch(groupKey) {
+            const gk = String(groupKey || '').trim();
+            if (!gk || !state.loadedGroupKeys.has(gk)) return;
+            if (state.loadingGroupInventoryKeys.has(gk)) return;
+            state.loadingGroupInventoryKeys.add(gk);
+            setGroupRowLoadingHint(gk, true, '库存加载中…');
+            try {
+                const params = buildSalesForecastQueryParams({ sf_group: gk, patch: 'inventory' });
+                const resp = await fetch('/api/sales-forecast?' + params.toString());
+                const data = await resp.json();
+                if (!data || data.status !== 'success') throw new Error((data && data.message) || '库存加载失败');
+                mergeForecastGroupInventoryPatch(data);
+                if (!getCollapsedSet().has(gk)) refreshForecastTailCellsForGroup(gk);
+            } catch (err) {
+                showToast(err && err.message ? err.message : '库存加载失败', true);
+            } finally {
+                state.loadingGroupInventoryKeys.delete(gk);
+                if (!state.loadingGroupKey || state.loadingGroupKey !== gk) {
+                    setGroupRowLoadingHint(gk, false);
+                }
+            }
+        }
+
         async function loadForecastGroupRows(groupKey) {
             const gk = String(groupKey || '').trim();
             if (!gk || state.loadedGroupKeys.has(gk)) return;
             state.loadingGroupKey = gk;
-            renderForecastTableBodyOnly();
+            setGroupRowLoadingHint(gk, true);
             try {
-                const params = buildSalesForecastQueryParams({ sf_group: gk, inventory: false });
+                const params = buildSalesForecastQueryParams({ sf_group: gk, inventory: false, thumbs: false });
                 const resp = await fetch('/api/sales-forecast?' + params.toString());
                 const data = await resp.json();
                 if (!data || data.status !== 'success') throw new Error((data && data.message) || '加载失败');
                 mergeForecastGroupPayload(data);
-                renderForecastTableBodyOnly();
-                const paramsInv = buildSalesForecastQueryParams({ sf_group: gk });
-                const respInv = await fetch('/api/sales-forecast?' + paramsInv.toString());
-                const dataInv = await respInv.json();
-                if (dataInv && dataInv.status === 'success') {
-                    mergeForecastGroupPayload(dataInv);
-                }
+                void loadForecastGroupInventoryPatch(gk);
             } catch (err) {
                 showToast(err && err.message ? err.message : '分组加载失败', true);
             } finally {
                 state.loadingGroupKey = '';
-                renderForecastTableBodyOnly();
+                setGroupRowLoadingHint(gk, false);
             }
+        }
+
+        function mergeForecastGroupInventoryPatch(data) {
+            const incoming = Array.isArray(data.rows) ? data.rows : [];
+            const gk = String((data && data.sf_group) || '').trim();
+            if (!gk) return;
+            const byKey = new Map((state.rows || []).map(r => [String(r.row_key || ''), r]));
+            incoming.forEach(r => {
+                const rk = String(r.row_key || '');
+                if (!rk) return;
+                const existing = byKey.get(rk);
+                if (!existing) {
+                    byKey.set(rk, r);
+                    return;
+                }
+                if (r.inventory) existing.inventory = r.inventory;
+                if (r.inventory_composition) existing.inventory_composition = r.inventory_composition;
+                if (r.surplus_detail != null) existing.surplus_detail = r.surplus_detail;
+                if (Array.isArray(r.remarks)) existing.remarks = r.remarks;
+            });
+            state.rows = Array.from(byKey.values());
         }
 
         function mergeForecastGroupPayload(data) {
@@ -3334,11 +3402,13 @@
                 state.rows = [];
                 state.loadedGroupKeys = new Set();
                 state.loadingGroupKey = '';
+                state.loadingGroupInventoryKeys = new Set();
             } else {
                 state.lazyForecast = false;
                 state.forecastGroups = [];
                 state.loadedGroupKeys = new Set();
                 state.loadingGroupKey = '';
+                state.loadingGroupInventoryKeys = new Set();
                 state.rows = Array.isArray(data.rows) ? data.rows : [];
             }
             if (state.forecastMode === 'platform') state.collapsedPlatformGroups.clear();
@@ -3774,6 +3844,36 @@
             return ci;
         }
 
+        function refreshForecastTailCellsForGroup(groupKey) {
+            const gk = String(groupKey || '').trim();
+            const meta = state._sfColMeta;
+            const tbody = document.getElementById('forecastTbody');
+            if (!gk || !meta || !tbody || meta.turnStart == null) return;
+            const turnStart = Number(meta.turnStart);
+            if (!Number.isFinite(turnStart) || turnStart < 0) return;
+            const cols = getColumnsForMode(state.forecastMode);
+            const skuCol = cols.find(c => c.key === 'sku');
+            tbody.querySelectorAll(`tr[data-group-key="${sfCssEscape(gk)}"][data-row-key]`).forEach(tr => {
+                const rk = String(tr.dataset.rowKey || '');
+                const row = (state.rows || []).find(r => String(r.row_key) === rk);
+                if (!row) return;
+                Array.from(tr.querySelectorAll('td')).forEach(td => {
+                    const ci = Number(td.dataset.sfCi);
+                    if (Number.isFinite(ci) && ci >= turnStart) td.remove();
+                });
+                appendForecastInventoryRowCells(tr, row, rk, turnStart);
+                if (skuCol && state.forecastMode === 'order') {
+                    const skuIdx = cols.findIndex(c => c.key === 'sku');
+                    if (skuIdx >= 0) {
+                        const skuTd = tr.querySelector(`td[data-sf-ci="${skuIdx}"]`);
+                        if (skuTd) renderSpecCell(skuTd, skuCol, row);
+                    }
+                }
+            });
+            applySfGridSelectionStyles();
+            syncSfFloatingPanelsAfterTableRender();
+        }
+
         function forecastTableLeafColCount(cols, histCols, mtdCols, fcCols) {
             return cols.length + histCols + mtdCols + fcCols + SF_TAIL_COL_COUNT;
         }
@@ -3947,10 +4047,7 @@
                 const gtr = document.createElement('tr');
                 gtr.className = 'sf-group-row';
                 gtr.dataset.groupKey = group.key;
-                const loadHint = (state.lazyForecast && state.loadingGroupKey === group.key)
-                    ? ' <span class="sf-muted">加载中…</span>'
-                    : '';
-                gtr.innerHTML = `<td colspan="${totalCols}"><span class="sf-group-toggle">${isCollapsed ? '▶' : '▼'}</span>${escapeHtml(group.title)}${loadHint}</td>`;
+                gtr.innerHTML = `<td colspan="${totalCols}"><span class="sf-group-toggle">${isCollapsed ? '▶' : '▼'}</span>${escapeHtml(group.title)}</td>`;
                 tbody.appendChild(gtr);
 
                 const sortedItems = sortGroupItems(group.items, cols);
@@ -4095,12 +4192,17 @@
                     const collapsedSet = getCollapsedSet();
                     const wasCollapsed = collapsedSet.has(key);
                     const run = async () => {
-                        if (wasCollapsed && state.lazyForecast && !state.loadedGroupKeys.has(key)) {
-                            await loadForecastGroupRows(key);
+                        if (wasCollapsed) {
+                            collapsedSet.delete(key);
+                            renderForecastTableBodyOnly();
+                            if (state.lazyForecast && !state.loadedGroupKeys.has(key)) {
+                                await loadForecastGroupRows(key);
+                            }
+                            renderForecastTableBodyOnly();
+                        } else {
+                            collapsedSet.add(key);
+                            renderForecastTableBodyOnly();
                         }
-                        if (collapsedSet.has(key)) collapsedSet.delete(key);
-                        else collapsedSet.add(key);
-                        renderForecastTable();
                     };
                     run();
                 });

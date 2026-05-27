@@ -2442,6 +2442,18 @@ class SalesManagementMixin:
                 out.append(int(sid))
         return sorted(set(out)) if out else None
 
+    def _forecast_query_flag_off(self, query_params, key):
+        if not query_params:
+            return False
+        raw = (query_params.get(key, [''])[0] or '').strip().lower()
+        return raw in ('0', 'false', 'no', 'off')
+
+    def _forecast_is_inventory_patch(self, query_params):
+        if not query_params:
+            return False
+        raw = (query_params.get('patch', [''])[0] or '').strip().lower()
+        return raw == 'inventory'
+
     def _forecast_list_shops_for_forecast(self, conn):
         """销量预测页店铺筛选下拉数据。"""
         try:
@@ -3874,6 +3886,75 @@ class SalesManagementMixin:
                 pairs = [(int(oid), 1)]
             row['inventory_surplus_detail'] = self._forecast_merge_surplus_detail_for_pairs(pairs, detail_by_op)
 
+    def _forecast_build_spec_inventory_stub_rows(self, conn, query_params, sf_group=None):
+        """仅含 row_key / variant_id，供 patch=inventory 附加库存，避免重复拉历史与预测。"""
+        dim_rows = self._forecast_load_variant_dim(conn, query_params, sf_group=sf_group)
+        out = []
+        for r in dim_rows:
+            vid = self._parse_int(r.get('variant_id'))
+            if not vid:
+                continue
+            out.append({
+                'row_key': str(vid),
+                'forecast_mode': 'spec',
+                'labels': {
+                    'variant_id': vid,
+                    'sku_family': r.get('sku_family') or '',
+                },
+                'history': {},
+                'forecasts': {},
+            })
+        return out
+
+    def _forecast_build_platform_inventory_stub_rows(self, conn, query_params, sf_group=None):
+        dim_rows = self._forecast_load_platform_sku_dim(conn, query_params, sf_group=sf_group)
+        out = []
+        for r in dim_rows:
+            spid = self._parse_int(r.get('sales_product_id'))
+            if not spid:
+                continue
+            out.append({
+                'row_key': str(spid),
+                'forecast_mode': 'platform',
+                'labels': {
+                    'sales_product_id': spid,
+                    'variant_id': self._parse_int(r.get('variant_id')),
+                },
+                'history': {},
+                'forecasts': {},
+            })
+        return out
+
+    def _forecast_build_order_inventory_stub_rows(self, conn, query_params, sf_group=None):
+        dim_rows = self._forecast_load_order_dim(conn, query_params, sf_group=sf_group)
+        out = []
+        for r in dim_rows:
+            op_id = self._parse_int(r.get('order_product_id'))
+            if not op_id:
+                continue
+            links = r.get('variant_links') or []
+            out.append({
+                'row_key': str(op_id),
+                'forecast_mode': 'order',
+                'labels': {
+                    'order_product_id': op_id,
+                    'sku': r.get('sku') or '',
+                    'is_on_market': self._parse_int(r.get('is_on_market')) or 0,
+                    'variant_links': [
+                        {
+                            'variant_id': vl.get('variant_id'),
+                            'sku_family': vl.get('sku_family'),
+                            'spec_name': vl.get('spec_name'),
+                            'quantity': vl.get('quantity'),
+                        }
+                        for vl in links
+                    ],
+                },
+                'history': {},
+                'forecasts': {},
+            })
+        return out
+
     def handle_sales_forecast_api(self, environ, method, start_response):
         try:
             if method != 'GET':
@@ -3901,6 +3982,8 @@ class SalesManagementMixin:
             lazy_groups_only = lazy_raw in ('1', 'true', 'yes', 'on')
             inv_raw = (query_params.get('inventory', [''])[0] or '').strip().lower()
             skip_inventory = inv_raw in ('0', 'false', 'no', 'off')
+            skip_thumbs = self._forecast_query_flag_off(query_params, 'thumbs')
+            inventory_patch = self._forecast_is_inventory_patch(query_params)
             sf_group = (query_params.get('sf_group', [''])[0] or '').strip()
             sf_shop_ids = self._forecast_parse_sf_shop_ids(query_params)
             shops_list = []
@@ -3921,19 +4004,42 @@ class SalesManagementMixin:
                     else:
                         groups_meta = self._forecast_list_spec_groups(conn, query_params)
                     rows = []
+                elif inventory_patch and sf_group:
+                    sf_filter = sf_group
+                    if forecast_mode == 'platform':
+                        rows = self._forecast_build_platform_inventory_stub_rows(
+                            conn, query_params, sf_group=sf_filter
+                        )
+                    elif forecast_mode == 'order':
+                        rows = self._forecast_build_order_inventory_stub_rows(
+                            conn, query_params, sf_group=sf_filter
+                        )
+                    else:
+                        rows = self._forecast_build_spec_inventory_stub_rows(
+                            conn, query_params, sf_group=sf_filter
+                        )
+                    self._forecast_attach_inventory_to_rows(
+                        conn, rows, forecast_mode, history_months,
+                        hist_start=hist_start, hist_end=hist_end, shop_ids=sf_shop_ids,
+                    )
+                    if forecast_mode == 'order':
+                        self._forecast_attach_surplus_detail_to_order_rows(conn, rows)
                 else:
                     sf_filter = sf_group if sf_group else None
                     if forecast_mode == 'platform':
                         rows = self._forecast_build_platform_rows(
-                            conn, query_params, months, hist_start, hist_end, sf_group=sf_filter, shop_ids=sf_shop_ids
+                            conn, query_params, months, hist_start, hist_end,
+                            sf_group=sf_filter, shop_ids=sf_shop_ids, skip_thumbs=skip_thumbs,
                         )
                     elif forecast_mode == 'order':
                         rows = self._forecast_build_order_rows(
-                            conn, query_params, months, hist_start, hist_end, sf_group=sf_filter, shop_ids=sf_shop_ids
+                            conn, query_params, months, hist_start, hist_end,
+                            sf_group=sf_filter, shop_ids=sf_shop_ids, skip_thumbs=skip_thumbs,
                         )
                     else:
                         rows = self._forecast_build_spec_rows(
-                            conn, query_params, months, hist_start, hist_end, sf_group=sf_filter, shop_ids=sf_shop_ids
+                            conn, query_params, months, hist_start, hist_end,
+                            sf_group=sf_filter, shop_ids=sf_shop_ids, skip_thumbs=skip_thumbs,
                         )
                     if not skip_inventory:
                         self._forecast_attach_inventory_to_rows(
@@ -3977,17 +4083,19 @@ class SalesManagementMixin:
             elif sf_group:
                 payload['lazy'] = True
                 payload['sf_group'] = sf_group
+            if inventory_patch and sf_group:
+                payload['patch'] = 'inventory'
             return self.send_json(payload, start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
     # ----- 三种模式的行装配 -----
 
-    def _forecast_build_platform_rows(self, conn, query_params, months, hist_start, hist_end, sf_group=None, shop_ids=None):
+    def _forecast_build_platform_rows(self, conn, query_params, months, hist_start, hist_end, sf_group=None, shop_ids=None, skip_thumbs=False):
         dim_rows = self._forecast_load_platform_sku_dim(conn, query_params, sf_group=sf_group)
         sales_product_ids = [self._parse_int(r.get('sales_product_id')) for r in dim_rows if self._parse_int(r.get('sales_product_id'))]
         variant_ids = [self._parse_int(r.get('variant_id')) for r in dim_rows if self._parse_int(r.get('variant_id'))]
-        thumb_by_variant = self._forecast_load_variant_thumb_b64(conn, variant_ids)
+        thumb_by_variant = {} if skip_thumbs else self._forecast_load_variant_thumb_b64(conn, variant_ids)
         cells = self._forecast_load_platform_cells(conn, sales_product_ids, months)
         history = self._forecast_load_history_by_sales_product(
             conn, sales_product_ids, hist_start, hist_end, shop_ids=shop_ids
@@ -4035,10 +4143,10 @@ class SalesManagementMixin:
             out.append(row)
         return out
 
-    def _forecast_build_spec_rows(self, conn, query_params, months, hist_start, hist_end, sf_group=None, shop_ids=None):
+    def _forecast_build_spec_rows(self, conn, query_params, months, hist_start, hist_end, sf_group=None, shop_ids=None, skip_thumbs=False):
         dim_rows = self._forecast_load_variant_dim(conn, query_params, sf_group=sf_group)
         variant_ids = [self._parse_int(r.get('variant_id')) for r in dim_rows if self._parse_int(r.get('variant_id'))]
-        thumb_by_variant = self._forecast_load_variant_thumb_b64(conn, variant_ids)
+        thumb_by_variant = {} if skip_thumbs else self._forecast_load_variant_thumb_b64(conn, variant_ids)
         spec_cells = self._forecast_load_spec_cells(conn, variant_ids, months)
         history = self._forecast_load_history_by_variant(conn, variant_ids, hist_start, hist_end, shop_ids=shop_ids)
 
@@ -4124,11 +4232,11 @@ class SalesManagementMixin:
             out.append(row)
         return out
 
-    def _forecast_build_order_rows(self, conn, query_params, months, hist_start, hist_end, sf_group=None, shop_ids=None):
+    def _forecast_build_order_rows(self, conn, query_params, months, hist_start, hist_end, sf_group=None, shop_ids=None, skip_thumbs=False):
         dim_rows = self._forecast_load_order_dim(conn, query_params, sf_group=sf_group)
         order_ids = [self._parse_int(r.get('order_product_id')) for r in dim_rows if self._parse_int(r.get('order_product_id'))]
         order_cells = self._forecast_load_order_cells(conn, order_ids, months)
-        thumb_by_order = self._forecast_load_order_product_thumb_b64(conn, order_ids)
+        thumb_by_order = {} if skip_thumbs else self._forecast_load_order_product_thumb_b64(conn, order_ids)
 
         # spec 预测的覆盖（包含继承自 platform 的逻辑），用于推导默认值。
         # 沿 sales_variant_order_links 扩订单/变体闭包：下市本体仍挂在某规格上时，继承预测需经替代方案折算到在市 SKU。
