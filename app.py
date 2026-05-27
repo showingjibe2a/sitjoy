@@ -72,7 +72,7 @@ class WSGIApp(
     AplusMixin,               # A+ 页面
     SalesManagementMixin,     # 销售管理
     GoPlayMixin,              # 小组件：围棋对弈
-    MahjongPlayMixin,         # 小组件：搓麻将
+    MahjongPlayMixin,         # 小组件：麻将
 ):
     # 用于缓存数据库 Schema 是否准备就绪，避免重复检查
     _schema_ready_cache = {}

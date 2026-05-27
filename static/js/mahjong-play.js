@@ -1,5 +1,5 @@
 /**
- * 搓麻将：主控页 + 牌桌独立窗口（postMessage 同步）；SSE / 长轮询。
+ * 麻将：主控页 + 牌桌独立窗口（postMessage 同步）；SSE / 长轮询。
  */
 (function (global) {
   'use strict';
@@ -245,7 +245,7 @@
       return '对局进行中，解散将立即结束本房间并踢出所有玩家。确定解散？';
     }
     if (host) return '确定解散房间？所有玩家将被移出。';
-    if (inGame) return '对局进行中无法离开，请打完本局或由房主解散房间。';
+    if (inGame) return '确定离开房间？对局将继续（本局按缺席处理）。';
     return '确定离开房间？';
   }
 
@@ -253,9 +253,11 @@
     const label = (s && s.you_are_host) ? '解散房间' : '离开房间';
     const mainBtn = $('mjLeaveBtn');
     const popBtn = $('mjPopupLeaveBtn');
+    const inRoom = !!(s && s.code && s.my_seat != null);
     if (mainBtn) mainBtn.textContent = label;
     if (popBtn) popBtn.textContent = label;
-    setVisible(popBtn, !!(s && s.my_seat != null));
+    setVisible(mainBtn, inRoom);
+    setVisible(popBtn, inRoom);
   }
 
   function clearRoomUi(hint) {
@@ -558,15 +560,7 @@
       clearRoomUi();
       return;
     }
-    if (state && state.status !== 'lobby' && !state.you_are_host) {
-      alert(leaveConfirmMessage(state));
-      return;
-    }
     const msg = leaveConfirmMessage(state);
-    if (msg.indexOf('无法离开') >= 0) {
-      alert(msg);
-      return;
-    }
     if (!win.confirm(msg)) return;
     const data = await api('leave', { room_code: roomCode });
     if (data.room_deleted || data.room_dissolved || data.left_room) {

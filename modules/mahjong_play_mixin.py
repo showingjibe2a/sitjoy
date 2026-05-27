@@ -1,4 +1,4 @@
-"""在线搓麻将（小组件）：三人起局、仅平胡；积分与员工昵称；房间文件 + 长轮询。"""
+"""在线麻将（小组件）：三人起局、仅平胡；积分与员工昵称；房间文件 + 长轮询。"""
 
 import json
 import os
@@ -647,7 +647,7 @@ class MahjongPlayMixin:
         if not user_id:
             return self.send_json({'status': 'error', 'message': '未登录'}, start_response)
         if not self._user_has_page_access(user_id, 'widgets_mahjong'):
-            return self.send_json({'status': 'error', 'message': '无权限访问搓麻将'}, start_response)
+            return self.send_json({'status': 'error', 'message': '无权限访问麻将'}, start_response)
 
         query = parse_qs(environ.get('QUERY_STRING', ''))
         data = (self._read_json_body(environ) or {}) if method != 'GET' else {}
@@ -751,6 +751,42 @@ class MahjongPlayMixin:
             if isinstance(s, dict) and self._parse_int(s.get('user_id')) == uid:
                 seats[i] = None
 
+    def _mj_vacate_seat_in_room(self, room, seat):
+        """移出指定座位玩家；对局中会清空其手牌并必要时轮转当前出牌位。"""
+        seats = list(room.get('seats') or [None] * MJ_SEATS)
+        while len(seats) < MJ_SEATS:
+            seats.append(None)
+        seats[seat] = None
+        room['seats'] = seats[:MJ_SEATS]
+        if room.get('status') in ('playing', 'hand_end'):
+            hands = list(room.get('hands') or [[], [], [], []])
+            melds = list(room.get('melds') or [[], [], [], []])
+            discards = list(room.get('discards') or [[], [], [], []])
+            while len(hands) < MJ_SEATS:
+                hands.append([])
+            while len(melds) < MJ_SEATS:
+                melds.append([])
+            while len(discards) < MJ_SEATS:
+                discards.append([])
+            hands[seat] = []
+            melds[seat] = []
+            discards[seat] = []
+            room['hands'] = hands
+            room['melds'] = melds
+            room['discards'] = discards
+            if room.get('status') == 'playing':
+                was_current = room.get('current_seat') == seat
+                if room.get('pending_self_win') and was_current:
+                    room['pending_self_win'] = False
+                if was_current:
+                    room['current_seat'] = self._mj_next_seat(room, seat)
+                claim = room.get('claim_round')
+                if isinstance(claim, dict):
+                    resp = dict(claim.get('responses') or {})
+                    resp.pop(seat, None)
+                    claim['responses'] = resp
+                    room['claim_round'] = claim
+
     def _mj_action_leave(self, user_id, data, start_response):
         code = str(data.get('room_code') or '').strip().upper()
         with self._mj_room_store(code) as (room, err):
@@ -769,11 +805,7 @@ class MahjongPlayMixin:
                     'left_room': True,
                     'message': '房间已解散',
                 }, start_response)
-            if room.get('status') != 'lobby':
-                return self.send_json({'status': 'error', 'message': '对局进行中无法离开，请打完本局'}, start_response)
-            seats = room.get('seats') or [None] * MJ_SEATS
-            seats[seat] = None
-            room['seats'] = seats
+            self._mj_vacate_seat_in_room(room, seat)
             if not self._mj_active_seats(room):
                 self._mj_dissolve_room(code)
                 return self.send_json({
@@ -781,6 +813,14 @@ class MahjongPlayMixin:
                     'room_deleted': True,
                     'left_room': True,
                     'message': '已离开房间（房间已关闭）',
+                }, start_response)
+            if len(self._mj_active_seats(room)) < MJ_MIN_PLAYERS:
+                self._mj_dissolve_room(code)
+                return self.send_json({
+                    'status': 'success',
+                    'room_deleted': True,
+                    'left_room': True,
+                    'message': '已离开房间（人数不足，房间已关闭）',
                 }, start_response)
             self._mj_bump_version(room)
             self._mj_save_room(room)
