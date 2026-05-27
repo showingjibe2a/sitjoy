@@ -84,6 +84,50 @@
     return resolveAppUrl(path);
   }
 
+  function copyTextToClipboard(text) {
+    const value = String(text || '');
+    if (!value) return Promise.resolve(false);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(value).then(() => true).catch(() => false);
+    }
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    ta.setAttribute('readonly', 'readonly');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    ta.style.pointerEvents = 'none';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try {
+      ok = !!document.execCommand('copy');
+    } catch (_) {
+      ok = false;
+    }
+    if (ta.parentNode) ta.parentNode.removeChild(ta);
+    return Promise.resolve(ok);
+  }
+
+  function buildGoRoomShareText(code) {
+    const c = String(code || roomCode || '').trim().toUpperCase();
+    if (!c) return '';
+    const url = pageUrl('/widgets/go-play?room=' + encodeURIComponent(c));
+    return `网址（直接加入）：${url}\n房间号：${c}`;
+  }
+
+  async function copyGoRoomShare() {
+    const text = buildGoRoomShareText();
+    if (!text) return;
+    const ok = await copyTextToClipboard(text);
+    toast(ok ? '已复制加入链接与房间号' : '复制失败', !ok);
+    const btn = $('goRoomCopyBtn');
+    if (btn && ok) {
+      const prev = btn.textContent;
+      btn.textContent = '已复制';
+      win.setTimeout(() => { btn.textContent = prev; }, 1200);
+    }
+  }
+
   function fetchJson(url, options) {
     const opts = Object.assign({ credentials: 'include' }, options || {});
     return fetch(url, opts).then(async (r) => {
@@ -1076,6 +1120,7 @@
 
       const inRoom = !!roomCode;
       $('goRoomPanel')?.classList.toggle('pm-u-hidden', !inRoom);
+      $('goRoomCopyBtn')?.classList.toggle('pm-u-hidden', !inRoom);
       $('goLocalPanel')?.classList.toggle('pm-u-hidden', inRoom || !localBoardMode);
       $('goLobbyHint')?.classList.add('pm-u-hidden');
       const hintEl = $('goRoomHint');
@@ -1573,6 +1618,7 @@
     persistRoomCode('');
     stopWatch();
     $('goRoomPanel')?.classList.add('pm-u-hidden');
+    $('goRoomCopyBtn')?.classList.add('pm-u-hidden');
     $('goLocalPanel')?.classList.remove('pm-u-hidden');
     $('goLobbyHint')?.classList.add('pm-u-hidden');
     if ($('goPopoutBtn')) $('goPopoutBtn').disabled = false;
@@ -1664,6 +1710,12 @@
         e.preventDefault();
         joinRoom(String($('goJoinInput')?.value || ''));
       }
+    });
+
+    $('goRoomCopyBtn')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      copyGoRoomShare();
     });
 
     $('goPassBtn')?.addEventListener('click', () => {

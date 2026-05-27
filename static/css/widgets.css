@@ -373,6 +373,20 @@
     color: #2a2420;
 }
 
+.go-play-room-code-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex: 0 0 auto;
+}
+
+.go-play-room-copy-btn {
+    padding: 0.1rem 0.4rem;
+    font-size: 0.68rem;
+    line-height: 1.25;
+    min-height: 0;
+}
+
 .go-play-side-hint {
     margin: 0;
     font-size: 0.78rem;

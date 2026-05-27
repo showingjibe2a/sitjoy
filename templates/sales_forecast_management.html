@@ -1642,11 +1642,11 @@
         </div>
     </div>
 
-    <div id="sfInvFloatingPanel" class="sf-perf-float-panel" hidden aria-label="库存来源明细">
+    <div id="sfInvFloatingPanel" class="sf-perf-float-panel" hidden aria-label="库存明细">
         <div class="sf-perf-float-panel-header" id="sfInvPanelHeader">
             <div class="sf-perf-float-panel-header-left">
                 <span class="sf-perf-float-drag-hint" aria-hidden="true">⠿</span>
-                <span class="sf-perf-float-title" id="sfInvPanelTitle">库存来源</span>
+                <span class="sf-perf-float-title" id="sfInvPanelTitle">库存明细</span>
             </div>
             <div class="sf-perf-float-panel-header-right">
                 <button type="button" class="modal-close" id="sfInvPanelClose" aria-label="关闭">×</button>
@@ -3568,83 +3568,28 @@
 
         const SF_INV_TIER_KEYS = ['overseas_qty', 'transit_qty', 'factory_stock_qty', 'wip_qty'];
 
-        function invCompositionRoleLabel(role) {
-            switch (String(role || '')) {
-                case 'self': return '本体';
-                case 'substitute': return '替代发货';
-                case 'delisted_substitute': return '替代发货';
-                case 'delisted_owner': return '替代发货';
-                default: return '来源';
-            }
-        }
-
-        function buildInventoryCompositionTooltipHtml(row, tierKey, tierLabel) {
+        function buildSubstituteSkuTooltipHtml(row) {
             const comp = row.inventory_composition || {};
-            const rowSku = escapeHtml(comp.row_sku || (row.labels && row.labels.sku) || '');
-            const breakdown = comp.tier_breakdown || {};
-            const tierKeys = tierKey ? [tierKey] : SF_INV_TIER_KEYS;
-            const tierLabels = {
-                overseas_qty: '海外仓',
-                transit_qty: '在途',
-                factory_stock_qty: '在库',
-                wip_qty: '在制',
+            const seen = new Set();
+            const items = [];
+            const addSku = (sku) => {
+                const s = String(sku || '').trim();
+                if (!s || seen.has(s)) return;
+                seen.add(s);
+                items.push(`<li>${escapeHtml(s)}</li>`);
             };
-            let title = tierKey
-                ? (`库存来源 · ${escapeHtml(tierLabel || tierLabels[tierKey] || '')}`)
-                : '库存来源（全链路）';
-            if (rowSku) title += ` · ${rowSku}`;
-            let body = '';
-            tierKeys.forEach((tk) => {
-                const entries = breakdown[tk] || [];
-                if (!entries.length) return;
-                const tierTotal = entries.reduce((a, e) => a + Number(e.assembled_qty || 0), 0);
-                if (tierKey) {
-                    body += `<dl style="margin:0.2rem 0 0;">`
-                        + `<dt>合计（折算后）</dt><dd><strong>${formatNumber(tierTotal)}</strong></dd>`
-                        + `</dl>`;
-                } else {
-                    body += `<div class="sf-tip-title" style="margin-top:0.45rem;font-size:10px;color:#d6cfbf;">${escapeHtml(tierLabels[tk] || tk)}</div>`;
-                    body += `<dl style="margin:0.15rem 0 0;">`
-                        + `<dt>合计</dt><dd><strong>${formatNumber(tierTotal)}</strong></dd>`
-                        + `</dl>`;
-                }
-                const li = entries.map((e) => {
-                    const sku = escapeHtml(e.sku || '');
-                    const mult = Number(e.qty_per_unit || 1);
-                    const role = invCompositionRoleLabel(e.role);
-                    const raw = formatNumber(Number(e.raw_qty || 0));
-                    const asm = formatNumber(Number(e.assembled_qty || 0));
-                    const off = Number(e.is_on_market || 0) === 0 ? ' <span style="opacity:0.85;">（已下市）</span>' : '';
-                    let line = `<strong>${sku}</strong>${off} · ${role}`;
-                    if (mult > 1) line += ` · 方案配比×${formatNumber(mult)}`;
-                    line += `<br><span style="opacity:0.9;">原始 ${raw} → 计入 ${asm}</span>`;
-                    return `<li>${line}</li>`;
-                }).join('');
-                if (li) body += `<ul class="sf-tip-list">${li}</ul>`;
-            });
-            if (!body) {
-                body = '<p style="margin:0.25rem 0 0;opacity:0.9;">无可用来源明细</p>';
-            }
-            const plans = comp.substitute_plans || [];
-            if (plans.length && !tierKey) {
-                body += '<div class="sf-tip-title" style="margin-top:0.5rem;font-size:10px;color:#d6cfbf;">替代发货方案</div>';
-                plans.forEach((pl) => {
-                    const pname = escapeHtml(pl.plan_name || '');
-                    const items = pl.items || [];
-                    if (!items.length) return;
-                    const lis = items.map((it) => {
-                        const sid = it[0] != null ? it[0] : it.substitute_order_product_id;
-                        const q = it[1] != null ? it[1] : it.quantity;
-                        const sku = escapeHtml(String(sid));
-                        return `<li>${sku} × ${formatNumber(Number(q) || 1)}</li>`;
-                    }).join('');
-                    body += `<div style="margin:0.2rem 0 0.15rem;font-size:10px;font-weight:600;">${pname}</div>`
-                        + `<ul class="sf-tip-list">${lis}</ul>`;
+            (comp.substitute_plans || []).forEach((pl) => {
+                (pl.items || []).forEach((it) => {
+                    addSku(it.sku);
                 });
+            });
+            if (!items.length) {
+                (comp.source_lines || []).forEach((ln) => addSku(ln.sku));
             }
-            const foot = '合计 = 本体库存 + 全部替代发货方案中的替代 SKU 库存（已合并全部方案；同一替代 SKU 跨多方案配比累加后折算，不重复计下市原 SKU）。';
-            return `<div class="sf-tip-title">${title}</div>${body}`
-                + `<p style="margin:0.45rem 0 0;font-size:10px;opacity:0.82;line-height:1.35;">${escapeHtml(foot)}</p>`;
+            if (!items.length) {
+                return '<p style="margin:0;opacity:0.9;">无替代发货 SKU</p>';
+            }
+            return '<ul class="sf-tip-list">' + items.join('') + '</ul>';
         }
 
         function renderSpecCell(td, col, row) {
@@ -3680,9 +3625,9 @@
                 dot.textContent = '⋯';
                 dot.setAttribute('data-sf-copy-exclude', '1');
                 dot.setAttribute('aria-hidden', 'true');
-                dot.setAttribute('aria-label', '查看库存来源');
+                dot.setAttribute('aria-label', '查看替代发货 SKU');
                 wrap.appendChild(makeTooltipWrap(
-                    buildInventoryCompositionTooltipHtml(row, null, null),
+                    buildSubstituteSkuTooltipHtml(row),
                     dot,
                     'sf-inv-composition-tooltip-bubble',
                     false,
@@ -5836,7 +5781,7 @@
             return o + t + st + wp;
         }
 
-        const SF_INV_GLOBAL_FOOTNOTE = '合计 = 本体库存 + 全部替代发货方案中的替代 SKU 库存（已合并全部方案；同一替代 SKU 跨多方案配比累加后折算，不重复计下市原 SKU）。';
+        const SF_INV_GLOBAL_FOOTNOTE = '合计 = 全部替代发货方案中的替代 SKU 库存（已合并全部方案；同一替代 SKU 跨多方案配比累加后折算）。';
 
         function sfInvDimDef(id, label, columns, rows, opts) {
             const o = opts || {};
@@ -5910,10 +5855,11 @@
                     const sid = it[0] != null ? it[0] : it.substitute_order_product_id;
                     const q = it[1] != null ? it[1] : it.quantity;
                     const sidStr = String(sid || '');
+                    const skuFromApi = String(it.sku || '').trim();
                     const raw = sfInvRawStockForOp(comp, sid, tierFilter);
                     rows.push({
                         plan_name: pname,
-                        sub_sku: skuMap[sidStr] || ('#' + sidStr),
+                        sub_sku: skuFromApi || skuMap[sidStr] || ('#' + sidStr),
                         ratio: '×' + formatNumber(Number(q) || 1),
                         total_qty: formatNumber(raw),
                     });
@@ -6013,38 +5959,6 @@
                     { key: 'expected_date', label: '预期完工' },
                     { key: 'updated_at', label: '数据更新' },
                 ], rows, { title: '工厂在制 · 未完工批次' }));
-            }
-
-            const compositionRows = [];
-            tierFilter.forEach((tk) => {
-                (comp.tier_breakdown?.[tk] || []).forEach((e) => {
-                    const raw = Number(e.raw_qty || 0);
-                    const asm = Number(e.assembled_qty || 0);
-                    if (raw <= 0 && asm <= 0) return;
-                    const off = Number(e.is_on_market || 0) === 0 ? '（已下市）' : '';
-                    compositionRows.push({
-                        tier: SF_INV_TIER_LABEL[tk] || tk,
-                        sku_region: String(e.sku || '') + off,
-                        qty: formatNumber(raw),
-                        assembled_qty: formatNumber(asm),
-                        role: invCompositionRoleLabel(e.role),
-                        ratio: Number(e.qty_per_unit || 1) > 1 ? ('×' + formatNumber(Number(e.qty_per_unit || 1))) : '×1',
-                    });
-                });
-            });
-            if (compositionRows.length) {
-                dimensions.push(sfInvDimDef('composition', 'SKU来源', [
-                    { key: 'tier', label: '库存层级' },
-                    { key: 'sku_region', label: 'SKU' },
-                    { key: 'qty', label: '原始' },
-                    { key: 'assembled_qty', label: '计入' },
-                    { key: 'role', label: '角色' },
-                    { key: 'ratio', label: '配比' },
-                ], compositionRows, {
-                    title: 'SKU 来源',
-                    note: '原始数量经方案配比折算后计入列合计',
-                    footnote: SF_INV_GLOBAL_FOOTNOTE,
-                }));
             }
 
             const showSubstitute = state.forecastMode === 'order' && (kind === 'T' ? Number(idx) >= 1 : true);
@@ -6705,7 +6619,7 @@
             const colTitle = sfInvColTitle(kind, idx);
             const sku = (row.labels && (row.labels.sku || row.labels.platform_sku)) || '';
             if (title) {
-                title.textContent = '库存来源 · ' + colTitle + (sku ? (' · ' + sku) : '');
+                title.textContent = '库存明细 · ' + colTitle + (sku ? (' · ' + sku) : '');
             }
             bindSfInvDimSegmentOnce();
             renderSfInvPanel(buildSfInvPanelModel(row, kind, idx));
@@ -7078,7 +6992,7 @@
             const histOk = isSalesForecastHistoryPerfMode();
             grp.style.opacity = '';
             grp.style.pointerEvents = '';
-            grp.title = histOk ? '' : '下单 SKU 维度：悬浮/点击可看库存来源；框选产品表现不可用';
+            grp.title = histOk ? '' : '下单 SKU 维度：悬浮/点击可看库存明细；框选产品表现不可用';
             if (interact) {
                 interact.style.opacity = '';
                 interact.style.pointerEvents = '';
