@@ -4383,6 +4383,8 @@
                 if (t.closest('#forecastTableWrap')
                     || t.closest('#sfBatchPopup')
                     || t.closest('#sfPerfFloatingPanel')
+                    || t.closest('#sfInvFloatingPanel')
+                    || t.closest('#sfHistSourceFloatingPanel')
                     || t.closest('#sfPerfFieldsDropdown')
                     || t.closest('.sf-month-picker-popover')
                     || t.closest('#sfGlobalMonthPickerPopover')) {
@@ -6068,8 +6070,9 @@
 
         /** 浮窗内部可点击控件：勿在捕获阶段 stopPropagation，否则会拦掉关闭钮与维度单选 */
         function sfFloatPanelIsInteractiveTarget(target) {
-            if (!target || !target.closest) return false;
-            return !!target.closest(
+            const el = target && target.nodeType === 3 ? target.parentElement : target;
+            if (!el || !el.closest) return false;
+            return !!el.closest(
                 '.modal-close, .status-pill, .status-segment, .pm-table-columns, .pm-table-columns-trigger, '
                 + '#sfInvDimSegment, #sfHistSourceDimSegment, #sfPerfFieldsDropdown, #sfPerfPanelAttachSeg, '
                 + 'input, button, label, a, select, textarea'
@@ -6208,6 +6211,7 @@
             if (!seg || seg.dataset.sfHistSourceDimBound === '1') return;
             seg.dataset.sfHistSourceDimBound = '1';
             const stopEv = (e) => { if (e && typeof e.stopPropagation === 'function') e.stopPropagation(); };
+            seg.addEventListener('mousedown', stopEv);
             seg.addEventListener('click', (e) => {
                 const btn = e.target && e.target.closest ? e.target.closest('.status-pill[data-value]') : null;
                 if (!btn || !seg.contains(btn)) return;
@@ -6331,6 +6335,9 @@
             const stopPanelEvent = (e) => {
                 if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
             };
+            seg.addEventListener('mousedown', (e) => {
+                if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+            });
             seg.addEventListener('click', (e) => {
                 const btn = e.target && e.target.closest ? e.target.closest('.status-pill[data-value]') : null;
                 if (!btn || !seg.contains(btn)) return;
@@ -6345,7 +6352,9 @@
                     b.setAttribute('aria-selected', String(b.getAttribute('data-value') || '') === next ? 'true' : 'false');
                 });
                 seg.dataset.value = next;
+                state.sfInvPanelInteracting = true;
                 renderSfInvDimContent(next);
+                requestAnimationFrame(() => { state.sfInvPanelInteracting = false; });
             });
         }
 
@@ -6451,10 +6460,8 @@
         function shouldKeepSfInvPanelOnSelection() {
             if (!state.sfInvPanelClickPinned || !state.sfInvPanelAnchorTd) return false;
             if (!state.sfInvPanelAnchorTd.isConnected) return false;
-            const rk = String(state.sfInvPanelAnchorTd.dataset.rowKey || '');
-            const ci = Number(state.sfInvPanelAnchorTd.dataset.sfCi);
-            if (!rk || !Number.isFinite(ci)) return false;
-            return state.sfGridSelected.has(makeSfGridCellKey(rk, ci));
+            /* 点击库存格打开的弹窗：保持显示直至用户点 × 或表格外，勿因弹窗内切换维度清空选区而关闭 */
+            return true;
         }
 
         function hideSfInvFloatingPanel(opts) {

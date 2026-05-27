@@ -2982,6 +2982,10 @@
                         tryRestartImportIfStuck(lastStuckReason);
                     }
 
+                    const aggStatus = String(data.agg_refresh_status || '').toLowerCase();
+                    if (state === 'success' && aggStatus === 'running') {
+                        return true;
+                    }
                     if (state === 'success') {
                         hideUploadProgress();
                         return false;
@@ -3058,7 +3062,8 @@
                     continue;
                 }
                 const stateText = String(data.state || '').toLowerCase();
-                if (stateText === 'success') return data;
+                const aggStatus = String(data.agg_refresh_status || '').toLowerCase();
+                if (stateText === 'success' && aggStatus !== 'running') return data;
                 if (stateText === 'error') {
                     const err = new Error(data.message || '导入失败');
                     err.importData = data;
@@ -3066,7 +3071,10 @@
                 }
                 // 周/月聚合可能远长于写明细；处于聚合阶段时放宽等待上限，避免误判超时
                 const phase = String(data.phase || '');
-                if (phase === 'agg_refresh' || phase === 'agg_refresh_done' || phase === 'agg_refresh_warn') {
+                if (
+                    phase === 'agg_refresh' || phase === 'agg_refresh_done' || phase === 'agg_refresh_warn'
+                    || aggStatus === 'running'
+                ) {
                     deadline = Math.max(deadline, Date.now() + 1000 * 60 * 90);
                 }
                 await new Promise(r => setTimeout(r, 900));
@@ -3542,17 +3550,17 @@
                         const skippedSample = Number(finalData.skipped_template_sample || 0);
                         const skippedZero = Number(finalData.skipped_all_zero || 0);
                         const aggWarn = String(finalData.agg_refresh_warning || '').trim();
-                        const bgAgg = !!(finalData.agg_refresh_background || finalData.agg_refresh_status === 'running');
+                        const aggStatus = String(finalData.agg_refresh_status || '').toLowerCase();
                         const errList = finalData.errors || [];
                         const stopReasonText = getImportStopReasonText(finalData);
                         hideUploadProgress();
                         const summaryLine = `匹配 ${Number(finalData.created || 0)} 条，写入 ${upserted} 条，未匹配SKU ${skippedSku} 条，空标识 ${skippedId} 条，日期无效 ${skippedDate} 条，示例行跳过 ${skippedSample} 条，全0行跳过 ${skippedZero} 条，失败 ${errList.length} 条`;
                         const okLine = aggWarn
                             ? `导入完成：${summaryLine}（周/月聚合未完全刷新）`
-                            : (bgAgg
-                                ? `导入完成：${summaryLine}（周/月聚合后台刷新中）`
-                                : `导入完成：${summaryLine}`);
-                        window.showAppToast && window.showAppToast(okLine, false, aggWarn ? 6200 : (bgAgg ? 5200 : 4200));
+                            : (aggStatus === 'error'
+                                ? `导入完成：${summaryLine}（周/月聚合刷新异常，请看详情）`
+                                : `导入完成：${summaryLine}（周/月聚合已刷新）`);
+                        window.showAppToast && window.showAppToast(okLine, false, aggWarn ? 6200 : 4200);
                         showImportResultPanel('导入完成', `${summaryLine}${aggWarn ? `；${aggWarn}` : ''}${stopReasonText ? `；${stopReasonText}` : ''}`, finalData, false);
                         loadSalesProductPerformanceList(1);
                         if (state.dashboardQueried) loadDashboard();

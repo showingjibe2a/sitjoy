@@ -8028,12 +8028,37 @@ class SalesProductMixin:
         except Exception:
             return False
 
-    def _refresh_sales_perf_agg_range(self, conn, start_date, end_date, sales_product_ids=None, progress_hook=None):
+    def _sales_perf_month_end(self, month_start):
+        if month_start.month == 12:
+            nxt = month_start.replace(year=month_start.year + 1, month=1, day=1)
+        else:
+            nxt = month_start.replace(month=month_start.month + 1, day=1)
+        return nxt - timedelta(days=1)
+
+    def _sales_perf_expand_agg_bounds(self, start_date, end_date):
+        """将刷新区间扩到完整自然月/周，避免「4.1–5.25 导入」只按首尾日漏刷中间月份聚合。"""
+        try:
+            sd = datetime.strptime(str(start_date or '').strip(), '%Y-%m-%d').date()
+            ed = datetime.strptime(str(end_date or '').strip(), '%Y-%m-%d').date()
+        except Exception:
+            return start_date, end_date
+        if ed < sd:
+            sd, ed = ed, sd
+        month_lo = sd.replace(day=1)
+        month_hi = self._sales_perf_month_end(ed)
+        week_lo = sd - timedelta(days=sd.weekday())
+        week_hi = ed + timedelta(days=(6 - ed.weekday()))
+        bound_lo = min(month_lo, week_lo)
+        bound_hi = max(month_hi, week_hi)
+        return bound_lo.strftime('%Y-%m-%d'), bound_hi.strftime('%Y-%m-%d')
+
+    def _refresh_sales_perf_agg_range(self, conn, start_date, end_date, sales_product_ids=None, progress_hook=None, segments=None):
         """
         方案A：按给定日期范围，刷新周/月聚合快照表。
         - start_date/end_date: 'YYYY-MM-DD'
         - sales_product_ids: 可选，仅刷新涉及到的销售产品（导入场景强烈建议传入，避免全表扫描导致超时）
         - progress_hook: 可选 callable(dict)，在耗时循环中节流回调；dict 含 step/total/segment/period_key
+        - segments: 可选 ('month',) / ('week',) / ('month', 'week')，默认先月后周（导入优先保证月聚合及时）
         """
         if not conn:
             return
@@ -8041,6 +8066,7 @@ class SalesProductMixin:
         e = str(end_date or '').strip()
         if not s or not e:
             return
+        s, e = self._sales_perf_expand_agg_bounds(s, e)
         try:
             sd = datetime.strptime(s, '%Y-%m-%d').date()
             ed = datetime.strptime(e, '%Y-%m-%d').date()
@@ -8051,6 +8077,10 @@ class SalesProductMixin:
 
         if (not self._table_exists_simple(conn, 'sales_perf_agg_week')) or (not self._table_exists_simple(conn, 'sales_perf_agg_month')):
             raise RuntimeError('聚合快照表不存在：请先在数据库执行 scripts/sql/20260427_01_sales_perf_agg_tables.sql')
+
+        seg_order = tuple(segments) if segments else ('month', 'week')
+        do_month = 'month' in seg_order
+        do_week = 'week' in seg_order
 
         # 分段刷新：避免单条大 SQL 导致 MySQL 超时断连（2013 timed out）
         def _iter_weeks(d0, d1):
@@ -8070,13 +8100,6 @@ class SalesProductMixin:
                     cur = cur.replace(year=cur.year + 1, month=1, day=1)
                 else:
                     cur = cur.replace(month=cur.month + 1, day=1)
-
-        def _month_end(ms):
-            if ms.month == 12:
-                nxt = ms.replace(year=ms.year + 1, month=1, day=1)
-            else:
-                nxt = ms.replace(month=ms.month + 1, day=1)
-            return nxt - timedelta(days=1)
 
         ids = None
         if sales_product_ids is not None:
@@ -8102,9 +8125,9 @@ class SalesProductMixin:
         else:
             id_chunks = [None]
 
-        weeks_list = list(_iter_weeks(sd, ed))
-        months_list = list(_iter_months(sd, ed))
-        total_steps = len(weeks_list) * len(id_chunks) + len(months_list) * len(id_chunks)
+        weeks_list = list(_iter_weeks(sd, ed)) if do_week else []
+        months_list = list(_iter_months(sd, ed)) if do_month else []
+        total_steps = len(weeks_list) * max(1, len(id_chunks)) + len(months_list) * max(1, len(id_chunks))
         total_steps = max(1, total_steps)
         step_i = 0
         last_emit_ts = 0.0
@@ -8130,6 +8153,57 @@ class SalesProductMixin:
                 pass
 
         with conn.cursor() as cur:
+            # MONTH first (import/dashboard rely on monthly agg; must finish before long week pass)
+            for ms in months_list:
+                me = self._sales_perf_month_end(ms)
+                year_month = int(ms.year) * 100 + int(ms.month)
+                for id_chunk in id_chunks:
+                    if id_chunk:
+                        placeholders = ','.join(['%s'] * len(id_chunk))
+                        cur.execute(
+                            f"DELETE FROM sales_perf_agg_month WHERE month_start=%s AND sales_product_id IN ({placeholders})",
+                            tuple([ms.strftime('%Y-%m-%d')] + id_chunk),
+                        )
+                        id_filter_sql = f" AND spp.sales_product_id IN ({placeholders})"
+                        id_params = list(id_chunk)
+                    else:
+                        cur.execute("DELETE FROM sales_perf_agg_month WHERE month_start=%s", (ms.strftime('%Y-%m-%d'),))
+                        id_filter_sql = ''
+                        id_params = []
+                    cur.execute(
+                        f"""
+                        INSERT INTO sales_perf_agg_month
+                            (sales_product_id, month_start, month_end, `year_month`, source_rows,
+                             sales_qty, net_sales_amount, order_qty, session_total,
+                             ad_impressions, ad_clicks, ad_orders, ad_spend, ad_sales_amount,
+                             refund_amount, sub_category_rank_avg)
+                        SELECT
+                            spp.sales_product_id,
+                            %s AS month_start,
+                            %s AS month_end,
+                            %s AS `year_month`,
+                            COUNT(1) AS source_rows,
+                            SUM(COALESCE(spp.sales_qty,0)) AS sales_qty,
+                            SUM(COALESCE(spp.net_sales_amount,0)) AS net_sales_amount,
+                            SUM(COALESCE(spp.order_qty,0)) AS order_qty,
+                            SUM(COALESCE(spp.session_total,0)) AS session_total,
+                            SUM(COALESCE(spp.ad_impressions,0)) AS ad_impressions,
+                            SUM(COALESCE(spp.ad_clicks,0)) AS ad_clicks,
+                            SUM(COALESCE(spp.ad_orders,0)) AS ad_orders,
+                            SUM(COALESCE(spp.ad_spend,0)) AS ad_spend,
+                            SUM(COALESCE(spp.ad_sales_amount,0)) AS ad_sales_amount,
+                            SUM(COALESCE(spp.refund_amount,0)) AS refund_amount,
+                            AVG(spp.sub_category_rank) AS sub_category_rank_avg
+                        FROM sales_product_performances spp
+                        WHERE spp.record_date >= %s AND spp.record_date <= %s
+                        {id_filter_sql}
+                        GROUP BY spp.sales_product_id
+                        """,
+                        tuple([ms.strftime('%Y-%m-%d'), me.strftime('%Y-%m-%d'), year_month, ms.strftime('%Y-%m-%d'), me.strftime('%Y-%m-%d')] + id_params),
+                    )
+                conn.commit()
+                _after_agg_commit('month', str(year_month))
+
             # WEEK: one week per query
             for ws in weeks_list:
                 we = ws + timedelta(days=6)
@@ -8178,61 +8252,10 @@ class SalesProductMixin:
                         """,
                         tuple([ws.strftime('%Y-%m-%d'), we.strftime('%Y-%m-%d'), year_week, ws.strftime('%Y-%m-%d'), we.strftime('%Y-%m-%d')] + id_params),
                     )
-                    conn.commit()
-                    _after_agg_commit('week', str(year_week))
+                conn.commit()
+                _after_agg_commit('week', str(year_week))
 
-            # MONTH: one month per query
-            for ms in _iter_months(sd, ed):
-                me = _month_end(ms)
-                year_month = int(ms.year) * 100 + int(ms.month)
-                for id_chunk in id_chunks:
-                    if id_chunk:
-                        placeholders = ','.join(['%s'] * len(id_chunk))
-                        cur.execute(
-                            f"DELETE FROM sales_perf_agg_month WHERE month_start=%s AND sales_product_id IN ({placeholders})",
-                            tuple([ms.strftime('%Y-%m-%d')] + id_chunk),
-                        )
-                        id_filter_sql = f" AND spp.sales_product_id IN ({placeholders})"
-                        id_params = list(id_chunk)
-                    else:
-                        cur.execute("DELETE FROM sales_perf_agg_month WHERE month_start=%s", (ms.strftime('%Y-%m-%d'),))
-                        id_filter_sql = ''
-                        id_params = []
-                    cur.execute(
-                        f"""
-                        INSERT INTO sales_perf_agg_month
-                            (sales_product_id, month_start, month_end, `year_month`, source_rows,
-                             sales_qty, net_sales_amount, order_qty, session_total,
-                             ad_impressions, ad_clicks, ad_orders, ad_spend, ad_sales_amount,
-                             refund_amount, sub_category_rank_avg)
-                        SELECT
-                            spp.sales_product_id,
-                            %s AS month_start,
-                            %s AS month_end,
-                            %s AS `year_month`,
-                            COUNT(1) AS source_rows,
-                            SUM(COALESCE(spp.sales_qty,0)) AS sales_qty,
-                            SUM(COALESCE(spp.net_sales_amount,0)) AS net_sales_amount,
-                            SUM(COALESCE(spp.order_qty,0)) AS order_qty,
-                            SUM(COALESCE(spp.session_total,0)) AS session_total,
-                            SUM(COALESCE(spp.ad_impressions,0)) AS ad_impressions,
-                            SUM(COALESCE(spp.ad_clicks,0)) AS ad_clicks,
-                            SUM(COALESCE(spp.ad_orders,0)) AS ad_orders,
-                            SUM(COALESCE(spp.ad_spend,0)) AS ad_spend,
-                            SUM(COALESCE(spp.ad_sales_amount,0)) AS ad_sales_amount,
-                            SUM(COALESCE(spp.refund_amount,0)) AS refund_amount,
-                            AVG(spp.sub_category_rank) AS sub_category_rank_avg
-                        FROM sales_product_performances spp
-                        WHERE spp.record_date >= %s AND spp.record_date <= %s
-                        {id_filter_sql}
-                        GROUP BY spp.sales_product_id
-                        """,
-                        tuple([ms.strftime('%Y-%m-%d'), me.strftime('%Y-%m-%d'), year_month, ms.strftime('%Y-%m-%d'), me.strftime('%Y-%m-%d')] + id_params),
-                    )
-                    conn.commit()
-                    _after_agg_commit('month', str(year_month))
-
-        # per-chunk commits done above
+        # per-period commits done above
 
     def handle_sales_product_performance_api(self, environ, method, start_response):
         try:
@@ -8268,6 +8291,8 @@ class SalesProductMixin:
             if method == 'GET':
                 keyword = (query_params.get('q', [''])[0] or '').strip()
                 item_id = self._parse_int((query_params.get('id', [''])[0] or '').strip())
+                date_from = _normalize_date_text((query_params.get('date_from', [''])[0] or '').strip())
+                date_to = _normalize_date_text((query_params.get('date_to', [''])[0] or '').strip())
                 page_size = min(1000, max(10, self._parse_int((query_params.get('page_size', ['50'])[0] or '50')) or 50))
                 page = max(1, self._parse_int((query_params.get('page', ['1'])[0] or '1')) or 1)
                 limit = min(5000, max(1, self._parse_int((query_params.get('limit', [str(page_size)])[0] or str(page_size))) or page_size))
@@ -8292,6 +8317,20 @@ class SalesProductMixin:
                     like_kw = f'%{keyword}%'
                     filters.append('(sp.platform_sku LIKE %s OR pf.sku_family LIKE %s)')
                     params.extend([like_kw, like_kw])
+                elif not item_id:
+                    if not date_from and not date_to:
+                        try:
+                            date_to = datetime.now().strftime('%Y-%m-%d')
+                            date_from = (datetime.now().date() - timedelta(days=179)).strftime('%Y-%m-%d')
+                        except Exception:
+                            date_from = ''
+                            date_to = ''
+                    if date_from:
+                        filters.append('spp.record_date >= %s')
+                        params.append(date_from)
+                    if date_to:
+                        filters.append('spp.record_date <= %s')
+                        params.append(date_to)
                 if filters:
                     where_sql = ' WHERE ' + ' AND '.join(filters)
                 else:
@@ -8369,7 +8408,9 @@ class SalesProductMixin:
                                 )
                             )
                         try:
-                            self._refresh_sales_perf_agg_range(conn, record_date, record_date)
+                            self._refresh_sales_perf_agg_range(
+                                conn, record_date, record_date, sales_product_ids=[sales_product_id],
+                            )
                         except Exception:
                             pass
                         return self.send_json({'status': 'success', 'id': performance_id}, start_response)
@@ -8402,10 +8443,12 @@ class SalesProductMixin:
                             )
                         )
                     try:
-                        self._refresh_sales_perf_agg_range(conn, record_date, record_date)
+                        self._refresh_sales_perf_agg_range(
+                            conn, record_date, record_date, sales_product_ids=[sales_product_id],
+                        )
                     except Exception:
                         pass
-                        return self.send_json({'status': 'success'}, start_response)
+                    return self.send_json({'status': 'success'}, start_response)
 
             if method == 'DELETE':
                 data = self._read_json_body(environ)
@@ -8414,17 +8457,26 @@ class SalesProductMixin:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
                 with self._get_db_connection() as conn:
                     record_date = ''
+                    sales_product_id = None
                     with conn.cursor() as cur:
                         try:
-                            cur.execute("SELECT record_date FROM sales_product_performances WHERE id=%s LIMIT 1", (item_id,))
+                            cur.execute(
+                                "SELECT sales_product_id, record_date FROM sales_product_performances WHERE id=%s LIMIT 1",
+                                (item_id,),
+                            )
                             row = cur.fetchone() or {}
                             record_date = _normalize_date_text(row.get('record_date'))
+                            sales_product_id = self._parse_int(row.get('sales_product_id'))
                         except Exception:
                             record_date = ''
+                            sales_product_id = None
                         cur.execute("DELETE FROM sales_product_performances WHERE id=%s", (item_id,))
                     if record_date:
+                        agg_ids = [sales_product_id] if sales_product_id else None
                         try:
-                            self._refresh_sales_perf_agg_range(conn, record_date, record_date)
+                            self._refresh_sales_perf_agg_range(
+                                conn, record_date, record_date, sales_product_ids=agg_ids,
+                            )
                         except Exception:
                             pass
                 return self.send_json({'status': 'success'}, start_response)
@@ -9516,9 +9568,7 @@ class SalesProductMixin:
 
             # 周/月聚合耗时可远超网关/反代超时，长时间 phase=agg_refresh 易导致轮询 504。
             # 主流程在明细提交后立即 state=success；聚合放到后台线程，进度文件用 merge 增量更新。
-            # 聚合刷新不应依赖“本次导入涉及的SKU集合”是否非空：
-            # - 用户可能只上传了少量SKU/少量天数，但仍希望周/月看板对该日期范围完整可见
-            # - 若只按 touched_agg_ids 刷新，聚合表未初始化的SKU会长期缺失，表现为“周/月缺很多”
+            # 策略：先按本次导入 SKU 刷新月+周（快、保证 5 月等月聚合及时）；再仅对日期范围做「全 SKU 月聚合」补齐看板缺口（跳过全表周聚合，避免超时卡在月前）。
             needs_agg_bg = bool((not check_only) and min_record_date and max_record_date)
             agg_bg_fn = None  # 后台聚合线程入口（非 None 时在写入最终进度后启动）
             if needs_agg_bg:
@@ -9569,13 +9619,25 @@ class SalesProductMixin:
                                 pass
 
                         with self._get_db_connection_long() as agg_conn:
+                            agg_ids = sorted(touched_agg_ids) if touched_agg_ids else None
+                            if agg_ids:
+                                _on_agg_progress({'step': 0, 'total': 1, 'segment': 'month', 'period_key': '…'})
+                                self._refresh_sales_perf_agg_range(
+                                    agg_conn,
+                                    _agg_d0,
+                                    _agg_d1,
+                                    sales_product_ids=agg_ids,
+                                    progress_hook=_on_agg_progress,
+                                    segments=('month', 'week'),
+                                )
+                            # 全 SKU 仅刷新月聚合（周聚合全表扫描极易在月聚合前超时）
                             self._refresh_sales_perf_agg_range(
                                 agg_conn,
                                 _agg_d0,
                                 _agg_d1,
-                                # 对该日期范围做全量聚合补齐，避免周/月聚合表缺失导致看板“缺很多”
                                 sales_product_ids=None,
                                 progress_hook=_on_agg_progress,
+                                segments=('month',),
                             )
                         c0 = int(_agg_stat_fields.get('created') or 0)
                         u0 = int(_agg_stat_fields.get('upserted') or 0)
