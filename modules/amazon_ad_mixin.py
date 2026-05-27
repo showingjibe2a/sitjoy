@@ -381,8 +381,9 @@ class AmazonAdMixin:
             st.ad_class,
             st.subtype_code
         FROM amazon_ad_items i
-        LEFT JOIN amazon_ad_items p ON i.portfolio_id = p.id AND p.ad_level = 'portfolio'
         LEFT JOIN amazon_ad_items c ON i.campaign_id = c.id AND c.ad_level = 'campaign'
+        LEFT JOIN amazon_ad_items p ON p.id = COALESCE(NULLIF(i.portfolio_id, 0), c.portfolio_id)
+            AND p.ad_level = 'portfolio'
         LEFT JOIN amazon_ad_subtypes st ON i.subtype_id = st.id
         LEFT JOIN product_families pf ON i.sku_family_id = pf.id
     """
@@ -1262,6 +1263,16 @@ class AmazonAdMixin:
             text = text + ':00'
         return text.replace('T', ' ')
 
+    def _adjustment_portfolio_name_from_row(self, row):
+        if not row:
+            return ''
+        text = (row.get('portfolio_name') or '').strip()
+        if text:
+            return text
+        if row.get('ad_level') == 'portfolio':
+            return (row.get('name') or '').strip()
+        return ''
+
     def _serialize_adjustment_ad_list_item(self, row):
         level = row.get('ad_level')
         ad_class = row.get('ad_class') or ''
@@ -1271,7 +1282,7 @@ class AmazonAdMixin:
         else:
             ad_type_text = row.get('subtype_description') or ''
         name = row.get('name') or ''
-        portfolio_name = row.get('portfolio_name') or ''
+        portfolio_name = self._adjustment_portfolio_name_from_row(row)
         campaign_name = row.get('campaign_name') or ''
         return {
             'id': row.get('id'),
@@ -1299,7 +1310,7 @@ class AmazonAdMixin:
             ad_type_text = item.get('subtype_description') or ''
         ad_info = {
             'ad_type_text': ad_type_text,
-            'portfolio_name': item.get('portfolio_name') or '',
+            'portfolio_name': self._adjustment_portfolio_name_from_row(item),
             'campaign_name': item.get('campaign_name') if level == 'group' else (item.get('name') if level == 'campaign' else ''),
             'group_name': item.get('name') if level == 'group' else '',
         }

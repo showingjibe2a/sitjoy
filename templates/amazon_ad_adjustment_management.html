@@ -89,6 +89,28 @@
             margin: 0 0 0.55rem 0;
             flex: 0 0 auto;
         }
+        .aa-ad-info-selection {
+            flex: 0 0 auto;
+            margin: 0 0 0.5rem 0;
+            padding: 0.45rem 0.55rem;
+            border-radius: 8px;
+            background: rgba(61, 95, 130, 0.08);
+            border: 1px solid rgba(61, 95, 130, 0.18);
+            font-size: 0.8rem;
+            line-height: 1.45;
+            color: var(--morandi-ink);
+        }
+        .aa-ad-info-selection[hidden] { display: none !important; }
+        .aa-ad-info-selection .aa-ad-info-k {
+            color: #3d5f82;
+            font-weight: 700;
+            margin-right: 0.25rem;
+        }
+        .aa-ad-info-selection .aa-ad-info-sep {
+            margin: 0 0.35rem;
+            color: var(--morandi-slate);
+            opacity: 0.65;
+        }
         .aa-list-wrap {
             border: 1px solid var(--morandi-sand);
             border-radius: 10px;
@@ -399,6 +421,13 @@
 
                     <div class="card pm-card aa-ad-info-card">
                         <h3>广告信息</h3>
+                        <div class="aa-ad-info-selection" id="adInfoSelection" hidden>
+                            <span class="aa-ad-info-k">广告组合</span><span id="adInfoSelPortfolio">-</span>
+                            <span class="aa-ad-info-sep">·</span>
+                            <span class="aa-ad-info-k">活动</span><span id="adInfoSelCampaign">-</span>
+                            <span class="aa-ad-info-sep">·</span>
+                            <span class="aa-ad-info-k">组</span><span id="adInfoSelGroup">-</span>
+                        </div>
                         <div class="aa-list-wrap" id="adList">
                             <div class="aa-list-empty">加载中...</div>
                         </div>
@@ -677,6 +706,7 @@
             if (prev && !adItems.some(x => String(x.id) === String(prev))) {
                 selectedAdId = null;
                 selectedAd = null;
+                updateInfoPanel(null);
             }
             renderAdList();
             if (!selectedAdId && adItems.length) {
@@ -1195,11 +1225,45 @@
             updateSubmitButtonState();
         }
 
+        function listItemToAdInfo(item) {
+            if (!item) {
+                return { ad_type_text: '-', portfolio_name: '-', campaign_name: '-', group_name: '-' };
+            }
+            const level = item.ad_level === 'group' ? 'group' : 'campaign';
+            return {
+                ad_type_text: item.ad_type_text || '-',
+                portfolio_name: item.portfolio_name || '-',
+                campaign_name: level === 'campaign' ? (item.ad_name || '-') : (item.campaign_name || '-'),
+                group_name: level === 'group' ? (item.ad_name || '-') : '-',
+            };
+        }
+
         function updateInfoPanel(adInfo) {
-            document.getElementById('infoAdType').innerText = adInfo.ad_type_text || '-';
-            document.getElementById('infoPortfolio').innerText = adInfo.portfolio_name || '-';
-            document.getElementById('infoCampaign').innerText = adInfo.campaign_name || '-';
-            document.getElementById('infoGroup').innerText = adInfo.group_name || '-';
+            const info = adInfo || {};
+            document.getElementById('infoAdType').innerText = info.ad_type_text || '-';
+            document.getElementById('infoPortfolio').innerText = info.portfolio_name || '-';
+            document.getElementById('infoCampaign').innerText = info.campaign_name || '-';
+            document.getElementById('infoGroup').innerText = info.group_name || '-';
+            const selBox = document.getElementById('adInfoSelection');
+            const hasSel = !!(selectedAd && selectedAdId);
+            if (selBox) {
+                selBox.hidden = !hasSel;
+                if (hasSel) {
+                    const fromList = listItemToAdInfo(selectedAd);
+                    const pick = (key) => {
+                        const v = info[key];
+                        if (v != null && String(v).trim() && String(v).trim() !== '-') return String(v).trim();
+                        return fromList[key] || '-';
+                    };
+                    const set = (id, val) => {
+                        const el = document.getElementById(id);
+                        if (el) el.textContent = val || '-';
+                    };
+                    set('adInfoSelPortfolio', pick('portfolio_name'));
+                    set('adInfoSelCampaign', pick('campaign_name'));
+                    set('adInfoSelGroup', pick('group_name'));
+                }
+            }
         }
 
         function setFieldValue(id, value) {
@@ -1212,6 +1276,7 @@
             selectedAdId = String(adId || '');
             selectedAd = adItems.find(item => String(item.id) === selectedAdId) || null;
             highlightSelectedAdRow();
+            updateInfoPanel(selectedAd ? listItemToAdInfo(selectedAd) : null);
             updateRecordsLink();
             loadAdjustmentPeriodList();
             fetch(`/api/amazon-ad-adjustment?action=defaults&ad_item_id=${encodeURIComponent(selectedAdId)}`)

@@ -1836,6 +1836,7 @@
             sfInvPanelDimId: '',
             sfInvPanelInteracting: false,
             sfGridSelectionSigCache: '',
+            sfSuppressPanelOpenAfterDeselect: '', // 同格再次点击取消选区后，阻止紧随其后的 click 重开弹窗
             sfHistSourcePanelAnchorTd: null,
             sfHistSourcePanelHoverKey: '',
             sfHistSourcePanelClickPinned: false,
@@ -4730,15 +4731,33 @@
             return Array.from(state.sfGridSelected || []).sort().join('|');
         }
 
+        /** 点击模式下选区清空时，关闭由单元格点击钉住的浮层 */
+        function closeSfClickPinnedPanelsForEmptySelection() {
+            if (!(state.perfUi || {}).click) return;
+            if (state.sfGridSelected && state.sfGridSelected.size) return;
+            if (state.sfInvPanelClickPinned || state.sfInvPanelAnchorTd) {
+                state.sfInvPanelClickPinned = false;
+                hideSfInvFloatingPanel({ forceResetDismiss: true });
+            }
+            if (state.sfHistSourcePanelClickPinned || state.sfHistSourcePanelAnchorTd) {
+                state.sfHistSourcePanelClickPinned = false;
+                hideSfHistSourceFloatingPanel({ forceResetDismiss: true });
+            }
+        }
+
         /** 表格选区变更时同步库存弹窗；弹窗内操作（切换维度等）不关闭 */
         function syncSfInvPanelAfterGridChange(opts) {
             const o = opts || {};
             if (o.skipInvPanelAutoHide || state.sfInvPanelInteracting || state.sfHistSourcePanelInteracting) return;
-            if (state.sfHistSourcePanelClickPinned) return;
             const sig = sfGridSelectionSignature();
             const selChanged = sig !== state.sfGridSelectionSigCache;
             state.sfGridSelectionSigCache = sig;
+            if (!sig && (state.perfUi || {}).click) {
+                closeSfClickPinnedPanelsForEmptySelection();
+                return;
+            }
             if (!selChanged && !o.forceInvPanelSync) return;
+            if (state.sfHistSourcePanelClickPinned) return;
             if (shouldKeepSfInvPanelOnSelection()) {
                 updateSfInvFloatingPanel(state.sfInvPanelAnchorTd);
                 return;
@@ -4953,7 +4972,19 @@
                         if (state.sfGridSelected.size === 1 && state.sfGridSelected.has(k)) {
                             state.sfGridSelected.clear();
                             state.selectionAnchor = null;
+                            if ((state.perfUi || {}).click) {
+                                state.sfSuppressPanelOpenAfterDeselect = k;
+                            }
+                            const tbodyEl = document.getElementById('forecastTbody');
+                            const cellTd = tbodyEl ? getSfGridTd(tbodyEl, ds.rowKey, ds.colIdx) : null;
+                            if (cellTd) {
+                                const inp = cellTd.querySelector('input.sf-num-input');
+                                if (inp && document.activeElement === inp) {
+                                    try { inp.blur(); } catch (_) {}
+                                }
+                            }
                         } else {
+                            state.sfSuppressPanelOpenAfterDeselect = '';
                             selectRect(ds, ds, true);
                         }
                         suppressNextGridClick = true;
@@ -6453,7 +6484,22 @@
             const openHistSource = (e, td) => {
                 if (!td || !wrap.contains(td)) return;
                 if (state.forecastMode !== 'order') return;
+                if (!canShowSfInvPanelByClick()) return;
                 if (typeof e.stopPropagation === 'function') e.stopPropagation();
+                const tr = td.closest('tr[data-row-key]');
+                const ci = Number(td.dataset.sfCi);
+                const suppressKey = (tr && Number.isFinite(ci))
+                    ? makeSfGridCellKey(String(tr.dataset.rowKey || ''), ci)
+                    : '';
+                if (suppressKey && state.sfSuppressPanelOpenAfterDeselect === suppressKey) {
+                    state.sfSuppressPanelOpenAfterDeselect = '';
+                    return;
+                }
+                if (state.sfHistSourcePanelClickPinned && state.sfHistSourcePanelAnchorTd === td) {
+                    state.sfHistSourcePanelClickPinned = false;
+                    hideSfHistSourceFloatingPanel({ forceResetDismiss: true });
+                    return;
+                }
                 state.sfHistSourcePanelClickPinned = true;
                 state.sfHistSourcePanelManuallyHidden = false;
                 state.sfHistSourcePanelHiddenKey = '';
@@ -6605,6 +6651,7 @@
         }
 
         function shouldKeepSfInvPanelOnSelection() {
+            if (!state.sfGridSelected || !state.sfGridSelected.size) return false;
             if (!state.sfInvPanelClickPinned || !state.sfInvPanelAnchorTd) return false;
             if (!state.sfInvPanelAnchorTd.isConnected) return false;
             /* 点击库存格打开的弹窗：保持显示直至用户点 × 或表格外，勿因弹窗内切换维度清空选区而关闭 */
@@ -6790,6 +6837,21 @@
                 if (!td || !wrap.contains(td)) return;
                 if (!canShowSfInvPanelByClick()) return;
                 if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+                const ci = Number(td.dataset.sfCi);
+                const tr = td.closest('tr[data-row-key]');
+                const suppressKey = (tr && Number.isFinite(ci))
+                    ? makeSfGridCellKey(String(tr.dataset.rowKey || ''), ci)
+                    : '';
+                if (suppressKey && state.sfSuppressPanelOpenAfterDeselect === suppressKey) {
+                    state.sfSuppressPanelOpenAfterDeselect = '';
+                    return;
+                }
+                if (state.sfInvPanelClickPinned && state.sfInvPanelAnchorTd === td) {
+                    clearTimeout(_sfInvPanelHideTimer);
+                    state.sfInvPanelClickPinned = false;
+                    hideSfInvFloatingPanel({ forceResetDismiss: true });
+                    return;
+                }
                 clearTimeout(_sfInvPanelHideTimer);
                 state.sfInvPanelClickPinned = true;
                 state.sfInvPanelManuallyHidden = false;
