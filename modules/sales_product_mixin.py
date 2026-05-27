@@ -31,6 +31,49 @@ try:
 except Exception:
     Decimal = None  # pragma: no cover
 
+# 产品表现导入进度：SSE 推送 + 长轮询回退（参考麻将/围棋 stream）
+SPP_IMPORT_WAIT_TIMEOUT_SEC = 22
+SPP_IMPORT_WAIT_POLL_SEC = 0.35
+SPP_IMPORT_STREAM_SESSION_SEC = 120
+SPP_IMPORT_STREAM_PING_SEC = 15
+_spp_import_waiters = {}
+_spp_import_waiters_lock = threading.Lock()
+
+
+def _spp_signal_import_waiters(task_id):
+    tid = str(task_id or '').strip()
+    if not tid:
+        return
+    with _spp_import_waiters_lock:
+        events = list(_spp_import_waiters.get(tid) or [])
+    for ev in events:
+        try:
+            ev.set()
+        except Exception:
+            pass
+
+
+def _spp_register_import_waiter(task_id):
+    tid = str(task_id or '').strip()
+    ev = threading.Event()
+    with _spp_import_waiters_lock:
+        _spp_import_waiters.setdefault(tid, []).append(ev)
+    return ev
+
+
+def _spp_unregister_import_waiter(task_id, ev):
+    tid = str(task_id or '').strip()
+    with _spp_import_waiters_lock:
+        lst = _spp_import_waiters.get(tid)
+        if not lst:
+            return
+        try:
+            lst.remove(ev)
+        except ValueError:
+            pass
+        if not lst:
+            _spp_import_waiters.pop(tid, None)
+
 
 class SalesProductMixin:
     def _resources_root(self):
@@ -8035,22 +8078,34 @@ class SalesProductMixin:
             nxt = month_start.replace(month=month_start.month + 1, day=1)
         return nxt - timedelta(days=1)
 
-    def _sales_perf_expand_agg_bounds(self, start_date, end_date):
-        """将刷新区间扩到完整自然月/周，避免「4.1–5.25 导入」只按首尾日漏刷中间月份聚合。"""
+    def _sales_perf_parse_record_date_bounds(self, start_date, end_date):
+        """解析导入/刷新的起止日期；失败返回 (None, None)。"""
         try:
             sd = datetime.strptime(str(start_date or '').strip(), '%Y-%m-%d').date()
             ed = datetime.strptime(str(end_date or '').strip(), '%Y-%m-%d').date()
         except Exception:
-            return start_date, end_date
+            return None, None
         if ed < sd:
             sd, ed = ed, sd
-        month_lo = sd.replace(day=1)
-        month_hi = self._sales_perf_month_end(ed)
+        return sd, ed
+
+    def _sales_perf_agg_month_bounds(self, sd, ed):
+        """月聚合：仅覆盖 [sd,ed] 所涉及的自然月（首尾月整月重算）。"""
+        return sd.replace(day=1), self._sales_perf_month_end(ed)
+
+    def _sales_perf_agg_week_bounds(self, sd, ed):
+        """周聚合：覆盖 [sd,ed] 所涉及的自然周（周一至周日）。"""
         week_lo = sd - timedelta(days=sd.weekday())
         week_hi = ed + timedelta(days=(6 - ed.weekday()))
-        bound_lo = min(month_lo, week_lo)
-        bound_hi = max(month_hi, week_hi)
-        return bound_lo.strftime('%Y-%m-%d'), bound_hi.strftime('%Y-%m-%d')
+        return week_lo, week_hi
+
+    def _sales_perf_expand_agg_bounds(self, start_date, end_date):
+        """将刷新区间扩到完整自然月（供仅需日期字符串边界的调用方）。"""
+        sd, ed = self._sales_perf_parse_record_date_bounds(start_date, end_date)
+        if not sd:
+            return start_date, end_date
+        month_lo, month_hi = self._sales_perf_agg_month_bounds(sd, ed)
+        return month_lo.strftime('%Y-%m-%d'), month_hi.strftime('%Y-%m-%d')
 
     def _refresh_sales_perf_agg_range(self, conn, start_date, end_date, sales_product_ids=None, progress_hook=None, segments=None):
         """
@@ -8066,14 +8121,12 @@ class SalesProductMixin:
         e = str(end_date or '').strip()
         if not s or not e:
             return
-        s, e = self._sales_perf_expand_agg_bounds(s, e)
-        try:
-            sd = datetime.strptime(s, '%Y-%m-%d').date()
-            ed = datetime.strptime(e, '%Y-%m-%d').date()
-        except Exception:
+        sd, ed = self._sales_perf_parse_record_date_bounds(s, e)
+        if not sd:
             return
-        if ed < sd:
-            sd, ed = ed, sd
+        # 月、周分别扩界：切勿把「周」起点并进月列表（如 4/1 所在周从 3/30 起算会误刷 3 月月聚合）
+        month_lo, month_last = self._sales_perf_agg_month_bounds(sd, ed)
+        week_lo, week_hi = self._sales_perf_agg_week_bounds(sd, ed)
 
         if (not self._table_exists_simple(conn, 'sales_perf_agg_week')) or (not self._table_exists_simple(conn, 'sales_perf_agg_month')):
             raise RuntimeError('聚合快照表不存在：请先在数据库执行 scripts/sql/20260427_01_sales_perf_agg_tables.sql')
@@ -8083,19 +8136,18 @@ class SalesProductMixin:
         do_week = 'week' in seg_order
 
         # 分段刷新：避免单条大 SQL 导致 MySQL 超时断连（2013 timed out）
-        def _iter_weeks(d0, d1):
-            cur = d0 - timedelta(days=d0.weekday())
-            end = d1 - timedelta(days=d1.weekday())
+        def _iter_weeks(week_start, week_end):
+            cur = week_start - timedelta(days=week_start.weekday())
+            end = week_end - timedelta(days=week_end.weekday())
             while cur <= end:
                 yield cur
                 cur = cur + timedelta(days=7)
 
-        def _iter_months(d0, d1):
-            cur = d0.replace(day=1)
-            end = d1.replace(day=1)
+        def _iter_months(month_start, month_last_day):
+            cur = month_start.replace(day=1)
+            end = month_last_day.replace(day=1)
             while cur <= end:
                 yield cur
-                # next month
                 if cur.month == 12:
                     cur = cur.replace(year=cur.year + 1, month=1, day=1)
                 else:
@@ -8125,8 +8177,8 @@ class SalesProductMixin:
         else:
             id_chunks = [None]
 
-        weeks_list = list(_iter_weeks(sd, ed)) if do_week else []
-        months_list = list(_iter_months(sd, ed)) if do_month else []
+        weeks_list = list(_iter_weeks(week_lo, week_hi)) if do_week else []
+        months_list = list(_iter_months(month_lo, month_last)) if do_month else []
         total_steps = len(weeks_list) * max(1, len(id_chunks)) + len(months_list) * max(1, len(id_chunks))
         total_steps = max(1, total_steps)
         step_i = 0
@@ -8820,9 +8872,20 @@ class SalesProductMixin:
                             payload = merged
                         if isinstance(payload, dict):
                             payload.setdefault('ts', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                            try:
+                                prev_seq = 0
+                                if os.path.exists(path):
+                                    with open(path, 'r', encoding='utf-8') as pf:
+                                        prev_doc = json.load(pf)
+                                    if isinstance(prev_doc, dict):
+                                        prev_seq = int(prev_doc.get('seq') or 0)
+                                payload['seq'] = prev_seq + 1
+                            except Exception:
+                                payload.setdefault('seq', 1)
                         with open(tmp_path, 'w', encoding='utf-8') as f:
                             json.dump(payload, f, ensure_ascii=False)
                         os.replace(tmp_path, path)
+                    _spp_signal_import_waiters(tid)
                 except Exception:
                     pass
 
@@ -8922,18 +8985,19 @@ class SalesProductMixin:
 
             import_shop_id = _resolve_import_shop_id()
 
-            if method == 'GET' and mode == 'progress':
+            def _progress_payload_for_client():
                 data = _read_progress(safe_task_id)
                 if not data:
-                    return self.send_json({
+                    return {
                         'status': 'success',
                         'task_id': safe_task_id,
                         'state': 'pending',
                         'processed_rows': 0,
                         'total_rows': 0,
                         'created': 0,
+                        'seq': 0,
                         'message': '等待任务开始'
-                    }, start_response)
+                    }
                 data.setdefault('status', 'success')
                 data.setdefault('task_id', safe_task_id)
                 if isinstance(data, dict):
@@ -8944,6 +9008,93 @@ class SalesProductMixin:
                     ]
                     alive_candidates = [x for x in alive_candidates if x]
                     data['progress_alive_ts'] = max(alive_candidates) if alive_candidates else str(data.get('ts') or '')
+                    try:
+                        data.setdefault('seq', int(data.get('seq') or 0))
+                    except Exception:
+                        data['seq'] = 0
+                return data
+
+            def _spp_import_terminal_done(data):
+                state = str((data or {}).get('state') or '').lower()
+                agg_st = str((data or {}).get('agg_refresh_status') or '').lower()
+                if state == 'error':
+                    return True
+                if state == 'success' and agg_st != 'running':
+                    return True
+                return False
+
+            if method == 'GET' and mode == 'stream':
+                if not safe_task_id:
+                    return self.send_json({'status': 'error', 'message': 'task_id无效'}, start_response)
+                try:
+                    since_seq = int((query_params.get('since_seq', ['0'])[0] or '0'))
+                except Exception:
+                    since_seq = 0
+
+                def _stream_generate():
+                    yield b': connected\n\n'
+                    waiter = _spp_register_import_waiter(safe_task_id)
+                    since_local = since_seq
+                    started = time.time()
+                    last_ping = started
+                    try:
+                        while time.time() - started < SPP_IMPORT_STREAM_SESSION_SEC:
+                            data = _progress_payload_for_client()
+                            seq = int(data.get('seq') or 0)
+                            terminal = _spp_import_terminal_done(data)
+                            if seq > since_local or terminal:
+                                evt = 'done' if terminal else 'progress'
+                                if terminal and str(data.get('state') or '').lower() == 'error':
+                                    evt = 'error'
+                                yield self._sse_event(evt, data)
+                                since_local = max(since_local, seq)
+                                if terminal:
+                                    return
+                            now = time.time()
+                            if now - last_ping >= SPP_IMPORT_STREAM_PING_SEC:
+                                yield self._sse_event('ping', {'t': int(now)})
+                                last_ping = now
+                            waiter.clear()
+                            remaining = max(0.05, SPP_IMPORT_STREAM_SESSION_SEC - (now - started))
+                            waiter.wait(timeout=min(SPP_IMPORT_WAIT_POLL_SEC, remaining))
+                    finally:
+                        _spp_unregister_import_waiter(safe_task_id, waiter)
+
+                return self.send_sse_stream(start_response, _stream_generate())
+
+            if method == 'GET' and mode in ('progress', 'wait'):
+                use_long_wait = (mode == 'wait') or str(
+                    (query_params.get('wait', ['0'])[0] or '0')
+                ).lower() in ('1', 'true', 'yes', 'on')
+                try:
+                    since_seq = int((query_params.get('since_seq', ['0'])[0] or '0'))
+                except Exception:
+                    since_seq = 0
+
+                if not use_long_wait:
+                    return self.send_json(_progress_payload_for_client(), start_response)
+
+                waiter = _spp_register_import_waiter(safe_task_id)
+                try:
+                    deadline = time.time() + SPP_IMPORT_WAIT_TIMEOUT_SEC
+                    while time.time() < deadline:
+                        data = _progress_payload_for_client()
+                        seq = int(data.get('seq') or 0)
+                        state = str(data.get('state') or '').lower()
+                        agg_st = str(data.get('agg_refresh_status') or '').lower()
+                        terminal = state in ('success', 'error')
+                        done = terminal and not (state == 'success' and agg_st == 'running')
+                        if seq > since_seq or done:
+                            data['unchanged'] = False
+                            return self.send_json(data, start_response)
+                        waiter.clear()
+                        remaining = max(0.05, deadline - time.time())
+                        waiter.wait(timeout=min(SPP_IMPORT_WAIT_POLL_SEC, remaining))
+                finally:
+                    _spp_unregister_import_waiter(safe_task_id, waiter)
+
+                data = _progress_payload_for_client()
+                data['unchanged'] = True
                 return self.send_json(data, start_response)
 
             # 触发“重启导入任务”（仅用于写库阶段卡死/无响应时的自愈；聚合阶段禁止重启）
@@ -9085,14 +9236,27 @@ class SalesProductMixin:
                 worker_run_id = hashlib.md5(f"{safe_task_id}_{datetime.now().isoformat()}_{os.getpid()}".encode('utf-8')).hexdigest()[:10]
 
             file_bytes = b''
+            temp_path = None
+            file_byte_len = 0
             if temp_token:
                 temp_path = _temp_upload_path(temp_token)
                 if not os.path.exists(temp_path):
                     return self.send_json({'status': 'error', 'message': '临时文件不存在，任务可能已过期'}, start_response)
-                with open(temp_path, 'rb') as f:
-                    file_bytes = f.read() or b''
-                if not file_bytes:
+                try:
+                    file_byte_len = int(os.path.getsize(temp_path) or 0)
+                except Exception:
+                    file_byte_len = 0
+                if file_byte_len <= 0:
                     return self.send_json({'status': 'error', 'message': '临时文件为空'}, start_response)
+                _write_progress(safe_task_id, {
+                    'status': 'success',
+                    'task_id': safe_task_id,
+                    'state': 'running',
+                    'phase': 'loading_workbook',
+                    'shop_id': import_shop_id,
+                    'message': f'文件已在服务器就绪（{file_byte_len // 1024}KB），正在流式打开 Excel…',
+                }, merge=True)
+                _set_hb(stage='loading_workbook', phase='loading_workbook', processed_rows=0, checkpoint_row=0)
             else:
                 content_type = environ.get('CONTENT_TYPE', '')
                 if 'multipart/form-data' not in content_type:
@@ -9111,6 +9275,7 @@ class SalesProductMixin:
                 file_bytes = file_item.file.read() or b''
                 if not file_bytes:
                     return self.send_json({'status': 'error', 'message': 'Empty file'}, start_response)
+                file_byte_len = len(file_bytes)
 
             if not import_shop_id:
                 return self.send_json({'status': 'error', 'message': '请选择店铺后再上传'}, start_response)
@@ -9138,6 +9303,16 @@ class SalesProductMixin:
 
                     def _bg_worker():
                         try:
+                            _write_progress(safe_task_id, {
+                                'status': 'success',
+                                'task_id': safe_task_id,
+                                'state': 'running',
+                                'phase': 'worker_start',
+                                'processed_rows': 0,
+                                'total_rows': 0,
+                                'shop_id': import_shop_id,
+                                'message': '后台任务已启动，正在读取文件…',
+                            }, merge=True)
                             q = f"task_id={safe_task_id}&check_only=0&async=0&from_temp={temp_token}&shop_id={import_shop_id}"
                             bg_env = {
                                 'QUERY_STRING': q,
@@ -9169,26 +9344,65 @@ class SalesProductMixin:
                         'status': 'success',
                         'async': True,
                         'task_id': safe_task_id,
-                        'message': '导入任务已启动，请通过进度接口轮询结果'
+                        'message': '导入任务已启动，请通过进度长轮询接口获取结果'
                     }, start_response)
 
-            # 正式导入：中等体积用标准模式提速；预检只读前100行，强制 read_only 流式解析，避免整表载入
-            file_byte_len = len(file_bytes or b'')
-            use_fast_xlsx_reader = (not check_only) and file_byte_len <= (14 * 1024 * 1024)
+            # Excel 在「运行本系统的服务器」上解析（群晖即 NAS 本机 CPU/磁盘），不在用户 PC 浏览器里算。
+            # NAS 上整表 load_workbook(read_only=False) 极慢且几乎不占磁盘 IO；大文件一律流式只读，并从临时文件直接打开避免再读入内存。
+            if not file_byte_len:
+                file_byte_len = len(file_bytes or b'')
+            if not check_only:
+                hb_state['run_id'] = worker_run_id
+                _set_hb(stage='pre_load', phase='loading_workbook', processed_rows=0, checkpoint_row=0)
+                threading.Thread(target=_heartbeat_worker, args=(safe_task_id,), daemon=True).start()
+            use_read_only = check_only or bool(temp_path) or file_byte_len >= (512 * 1024)
+            xlsx_source = None
+            if temp_path and use_read_only:
+                xlsx_source = temp_path
+            else:
+                if not file_bytes and temp_path:
+                    with open(temp_path, 'rb') as rf:
+                        file_bytes = rf.read() or b''
+                    file_byte_len = len(file_bytes)
+                xlsx_source = io.BytesIO(file_bytes)
+
+            _write_progress(safe_task_id, {
+                'status': 'success',
+                'task_id': safe_task_id,
+                'state': 'running',
+                'phase': 'loading_workbook',
+                'message': (
+                    f'正在{"流式" if use_read_only else "标准"}解析 Excel（约 {file_byte_len // 1024}KB）…'
+                ),
+            }, merge=True)
+            _set_hb(stage='openpyxl_load', phase='loading_workbook', processed_rows=0, checkpoint_row=0)
+
             wb = load_workbook(
-                io.BytesIO(file_bytes),
-                read_only=(check_only or (not use_fast_xlsx_reader)),
+                xlsx_source,
+                read_only=use_read_only,
                 data_only=True,
             )
             ws = wb.active
             if check_only:
                 total_rows_hint = 100
+            elif use_read_only:
+                # read_only 下访问 max_row 会扫完整张表，极慢；用体积粗估行数供进度条展示
+                total_rows_hint = min(500000, max(800, file_byte_len // 140))
             else:
                 total_rows_hint = max(0, int((ws.max_row or 1)) - 1)
 
             # 读取第一行作为headers（read_only模式下避免ws[1]）
             header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
             headers = [str(x or '').strip() for x in (header_row or [])]
+            if not check_only:
+                _write_progress(safe_task_id, {
+                    'status': 'success',
+                    'task_id': safe_task_id,
+                    'state': 'running',
+                    'phase': 'headers_parsed',
+                    'total_rows': total_rows_hint,
+                    'message': f'表头已识别，预计约 {total_rows_hint} 行，正在加载 SKU 映射…',
+                }, merge=True)
 
             def normalize_header(text):
                 t = str(text or '').strip().lower()
@@ -9335,9 +9549,7 @@ class SalesProductMixin:
                     'advance_ts': _now_ts_text(),
                     'message': '开始处理...'
                 })
-                hb_state['run_id'] = worker_run_id
                 _set_hb(stage='init', phase='start', processed_rows=0, checkpoint_row=0)
-                threading.Thread(target=_heartbeat_worker, args=(safe_task_id,), daemon=True).start()
 
             min_record_date = None
             max_record_date = None

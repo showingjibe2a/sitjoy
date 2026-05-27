@@ -16,6 +16,8 @@ GO_WHITE = 2
 GO_ROOM_TTL_SEC = 24 * 3600
 GO_WAIT_TIMEOUT_SEC = 8
 GO_WAIT_POLL_SEC = 0.3
+GO_STREAM_SESSION_SEC = 90
+GO_STREAM_PING_SEC = 12
 GO_CLEANUP_ACTIONS = frozenset({
     'create', 'join', 'leave', 'state', 'move', 'pass',
     'undo', 'resign', 'respond', 'cancel_request', 'rematch',
@@ -529,6 +531,8 @@ class GoPlayMixin:
             return self._go_action_state(user_id, query, start_response)
         if action == 'wait':
             return self._go_action_wait(user_id, query, start_response)
+        if action == 'stream':
+            return self._go_action_stream(user_id, query, start_response)
         if action == 'move':
             return self._go_action_move(user_id, data, start_response)
         if action == 'pass':
@@ -685,6 +689,58 @@ class GoPlayMixin:
         out['status'] = 'success'
         out['unchanged'] = True
         return self.send_json(out, start_response)
+
+    def _go_action_stream(self, user_id, query, start_response):
+        """SSE：房间 version 变化时推送 state（客户端断线自动重连）。"""
+        code = str((query.get('room_code') or [''])[0] or '').strip().upper()
+        try:
+            since = int((query.get('since_version') or ['0'])[0] or 0)
+        except Exception:
+            since = 0
+        if not code:
+            return self.send_json({'status': 'error', 'message': '缺少房间号'}, start_response)
+
+        room, err = self._go_get_room_locked(code)
+        if err:
+            return self.send_json({'status': 'error', 'message': err}, start_response)
+        if not self._go_user_in_room(room, user_id):
+            return self.send_json({'status': 'error', 'message': '您不在该房间中'}, start_response)
+
+        uid = int(user_id)
+
+        def generate():
+            yield b': connected\n\n'
+            waiter = _go_register_waiter(code)
+            since_local = since
+            started = time.time()
+            last_ping = started
+            try:
+                while time.time() - started < GO_STREAM_SESSION_SEC:
+                    room_now, err_now = self._go_get_room_locked(code)
+                    if err_now:
+                        yield self._sse_event('room_error', {'status': 'error', 'message': err_now})
+                        return
+                    if not self._go_user_in_room(room_now, uid):
+                        yield self._sse_event('room_error', {'status': 'error', 'message': '您不在该房间中'})
+                        return
+                    ver = int(room_now.get('version') or 0)
+                    if ver > since_local:
+                        payload = self._go_room_for_user(room_now, uid)
+                        payload['status'] = 'success'
+                        payload['version'] = ver
+                        yield self._sse_event('state', payload)
+                        since_local = ver
+                    now = time.time()
+                    if now - last_ping >= GO_STREAM_PING_SEC:
+                        yield self._sse_event('ping', {'t': int(now)})
+                        last_ping = now
+                    waiter.clear()
+                    remaining = max(0.05, GO_STREAM_SESSION_SEC - (now - started))
+                    waiter.wait(timeout=min(GO_WAIT_POLL_SEC, remaining))
+            finally:
+                _go_unregister_waiter(code, waiter)
+
+        return self.send_sse_stream(start_response, generate())
 
     def _go_action_move(self, user_id, data, start_response):
         code = str(data.get('room_code') or '').strip().upper()

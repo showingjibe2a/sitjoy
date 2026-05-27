@@ -1189,6 +1189,7 @@
         <div class="upload-progress-bar"><span id="uploadProgressFill"></span></div>
     </div>
 
+    <script src="/static/js/sitjoy_task_progress_sse.js"></script>
     <script>
         let uploadProcessingTimer = null;
         let uploadProgressPollingTimer = null;
@@ -2948,6 +2949,9 @@
             const total = Number(payload.total_rows || 0);
             const done = Number(payload.processed_rows || 0);
             const msg = String(payload.message || '').trim();
+            const state = String(payload.state || '').toLowerCase();
+            const hbStage = String(payload.hb_stage || '').trim();
+            const hbPhase = String(payload.hb_phase || '').trim();
             const aggStatus = String(payload.agg_refresh_status || '').toLowerCase();
             const aggStep = Number(payload.agg_refresh_step || 0);
             const aggTotal = Number(payload.agg_refresh_total || 0);
@@ -2956,199 +2960,112 @@
                 return msg || `周/月聚合刷新中 ${aggStep}/${aggTotal}（约 ${pct}%）`;
             }
             if (msg) return msg;
+            if (state === 'pending' && (hbStage || hbPhase)) {
+                const hint = hbStage || hbPhase;
+                return `准备中（${hint}）…`;
+            }
             if (total > 0) return `正在处理数据… ${done}/${total}`;
             return `正在处理数据… 已处理 ${done} 行`;
         }
 
-        function startImportProgressPolling(taskId) {
-            if (!taskId) return;
-            if (uploadProgressPollingTimer) {
-                clearInterval(uploadProgressPollingTimer);
-                uploadProgressPollingTimer = null;
+        function applyImportProgressUi(data) {
+            const payload = data && typeof data === 'object' ? data : {};
+            const total = Number(payload.total_rows || 0);
+            const done = Number(payload.processed_rows || 0);
+            let percent = total > 0 ? Math.floor((done / total) * 100) : 0;
+            const aggStatus = String(payload.agg_refresh_status || '').toLowerCase();
+            const aggTotal = Number(payload.agg_refresh_total || 0);
+            const aggStep = Number(payload.agg_refresh_step || 0);
+            if (isSalesPerfAggRefreshPhase(payload) && aggTotal > 0) {
+                percent = Math.min(99, Math.max(percent, Math.floor((aggStep / aggTotal) * 100)));
+            } else if (String(payload.state || '').toLowerCase() === 'pending') {
+                percent = Math.max(percent, 5);
             }
-            let failCount = 0;
-            let pollDelayMs = 700;
-            let lastFreshKey = '';
-            let sameFreshCount = 0;
-            let restartRequested = false;
-            let consecutiveNoResponse = 0;
-            let lastStuckReason = '';
-            let aggSlowWarned = false;
-
-            async function tryRestartImportIfStuck(reason) {
-                if (restartRequested) return;
-                restartRequested = true;
-                const restartReason = String(reason || lastStuckReason || 'stale_progress').trim() || 'stale_progress';
-                try {
-                    const resp = await fetchJsonSafe(`/api/sales-product-performance-import?mode=restart&force=1&reason=${encodeURIComponent(restartReason)}&task_id=${encodeURIComponent(taskId)}`, {
-                        method: 'GET',
-                        credentials: 'include',
-                        headers: {
-                            'Accept': 'application/json',
-                            'X-Requested-With': 'XMLHttpRequest'
-                        }
-                    }, 9000);
-                    const ok = String(resp.status || '').toLowerCase() === 'success';
-                    const skipped = !!(resp && resp.skip_restart);
-                    if (!ok) {
-                        window.showAppToast && window.showAppToast(resp.message || '触发重启失败', true, 4200);
-                    } else if (skipped) {
-                        if (!aggSlowWarned) {
-                            window.showAppToast && window.showAppToast(resp.message || '当前阶段不支持重启', false, 3600);
-                            aggSlowWarned = true;
-                        }
-                    } else {
-                        window.showAppToast && window.showAppToast(resp.message || '已触发后台恢复写入', false, 3200);
-                    }
-                } catch (e) {
-                    const msg = (e && e.message) ? String(e.message) : String(e);
-                    window.showAppToast && window.showAppToast(`触发重启失败：${msg}`, true, 4200);
-                } finally {
-                    window.setTimeout(() => { restartRequested = false; }, 30000);
-                }
-            }
-
-            async function pollOnce() {
-                try {
-                    const data = await fetchJsonSafe(`/api/sales-product-performance-import?mode=progress&task_id=${encodeURIComponent(taskId)}`, {
-                        method: 'GET',
-                        credentials: 'include',
-                        headers: {
-                            'Accept': 'application/json',
-                            'X-Requested-With': 'XMLHttpRequest'
-                        }
-                    }, 5500);
-                    const total = Number(data.total_rows || 0);
-                    const done = Number(data.processed_rows || 0);
-                    let percent = total > 0 ? Math.floor((done / total) * 100) : 0;
-                    const state = String(data.state || 'running');
-                    const aliveTs = String(data.progress_alive_ts || data.advance_ts || data.hb_ts || data.ts || '').trim();
-                    const inAgg = isSalesPerfAggRefreshPhase(data);
-                    const aggStatus = String(data.agg_refresh_status || '').toLowerCase();
-                    const aggTotal = Number(data.agg_refresh_total || 0);
-                    const aggStep = Number(data.agg_refresh_step || 0);
-                    if (inAgg && aggTotal > 0) {
-                        percent = Math.min(99, Math.max(percent, Math.floor((aggStep / aggTotal) * 100)));
-                    }
-
-                    failCount = 0;
-                    pollDelayMs = inAgg ? 1200 : 700;
-
-                    const freshKey = importProgressFreshnessKey(data);
-                    if (freshKey && freshKey === lastFreshKey) sameFreshCount += 1;
-                    else sameFreshCount = 0;
-                    lastFreshKey = freshKey || lastFreshKey;
-
-                    const label = formatImportProgressLabel(data);
-                    showUploadProgress(aliveTs ? `${label}（${aliveTs}）` : label, Math.max(1, Math.min(99, percent)));
-
-                    if (inAgg) {
-                        if (sameFreshCount === 40 && !aggSlowWarned) {
-                            aggSlowWarned = true;
-                            window.showAppToast && window.showAppToast('周/月聚合较慢，请耐心等待（明细已入库，无需重启导入）', false, 4200);
-                        }
-                    } else if (sameFreshCount === 20) {
-                        window.showAppToast && window.showAppToast('进度暂未刷新，正在自动重试…', true, 2200);
-                    } else if (sameFreshCount >= 75 && canRestartSalesPerfImportTask(data)) {
-                        lastStuckReason = 'stale_progress';
-                        window.showAppToast && window.showAppToast('写库进度长时间无更新，尝试从断点恢复…', true, 3200);
-                        tryRestartImportIfStuck(lastStuckReason);
-                    }
-
-                    if (state === 'success' && aggStatus === 'running') {
-                        return true;
-                    }
-                    if (state === 'success') {
-                        hideUploadProgress();
-                        return false;
-                    }
-                    if (state === 'error') {
-                        return false;
-                    }
-                    return true;
-                } catch (e) {
-                    // 504/HTML 等“非正常响应”不终止：持续重试并做退避
-                    failCount += 1;
-                    consecutiveNoResponse += 1;
-                    pollDelayMs = Math.min(6000, Math.floor(pollDelayMs * 1.6));
-                    if (failCount === 3) {
-                        window.showAppToast && window.showAppToast('网络/网关异常，正在自动重试获取进度…', true, 2600);
-                    }
-                    if (consecutiveNoResponse >= 3) {
-                        window.showAppToast && window.showAppToast('进度接口暂时无响应，正在重试…', true, 2600);
-                        consecutiveNoResponse = 0;
-                    }
-                    showUploadProgress(`进度获取失败，${Math.floor(pollDelayMs / 1000)}秒后重试…`, 8);
-                    return true;
-                }
-            }
-
-            async function loop() {
-                while (true) {
-                    const shouldContinue = await pollOnce();
-                    if (!shouldContinue) break;
-                    await new Promise(r => setTimeout(r, pollDelayMs));
-                }
-            }
-
-            uploadProgressPollingTimer = setInterval(() => {}, 9999999);
-            loop().finally(() => {
-                if (uploadProgressPollingTimer) {
-                    clearInterval(uploadProgressPollingTimer);
-                    uploadProgressPollingTimer = null;
-                }
-            });
+            const aliveTs = String(payload.progress_alive_ts || payload.advance_ts || payload.hb_ts || '').trim();
+            const label = formatImportProgressLabel(payload);
+            showUploadProgress(aliveTs ? `${label}（${aliveTs}）` : label, Math.max(1, Math.min(99, percent)));
         }
 
-        async function waitImportTaskDone(taskId) {
-            let deadline = Date.now() + 1000 * 60 * 30;
-            while (Date.now() < deadline) {
-                let data = null;
-                try {
-                    data = await fetchJsonSafe(`/api/sales-product-performance-import?mode=progress&task_id=${encodeURIComponent(taskId)}`, {
+        async function tryRestartSalesPerfImport(taskId, reason) {
+            const restartReason = String(reason || 'stale_progress').trim() || 'stale_progress';
+            try {
+                const resp = await fetchJsonSafe(
+                    `/api/sales-product-performance-import?mode=restart&force=1&reason=${encodeURIComponent(restartReason)}&task_id=${encodeURIComponent(taskId)}`,
+                    {
                         method: 'GET',
                         credentials: 'include',
-                        headers: {
-                            'Accept': 'application/json',
-                            'X-Requested-With': 'XMLHttpRequest'
-                        }
-                    }, 6500);
-                } catch (e) {
-                    // 504/HTML 等情况：继续等待并重试，不把整个导入判失败
-                    await new Promise(r => setTimeout(r, 1300));
-                    continue;
+                        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+                    },
+                    12000
+                );
+                const ok = String(resp.status || '').toLowerCase() === 'success';
+                if (ok && !resp.skip_restart) {
+                    window.showAppToast && window.showAppToast(resp.message || '已触发后台恢复写入', false, 3200);
                 }
-                const aliveTs = String(data.progress_alive_ts || data.advance_ts || data.hb_ts || data.ts || '').trim();
-                const label = formatImportProgressLabel(data);
-                const total = Number(data.total_rows || 0);
-                const done = Number(data.processed_rows || 0);
-                let percent = total > 0 ? Math.floor((done / total) * 100) : 8;
-                const aggTotal = Number(data.agg_refresh_total || 0);
-                const aggStep = Number(data.agg_refresh_step || 0);
-                if (isSalesPerfAggRefreshPhase(data) && aggTotal > 0) {
-                    percent = Math.min(99, Math.max(percent, Math.floor((aggStep / aggTotal) * 100)));
-                }
-                showUploadProgress(aliveTs ? `${label}（${aliveTs}）` : label, Math.max(1, Math.min(99, percent)));
-
-                const stateText = String(data.state || '').toLowerCase();
-                const aggStatus = String(data.agg_refresh_status || '').toLowerCase();
-                if (stateText === 'success' && aggStatus !== 'running') return data;
-                if (stateText === 'error') {
-                    const err = new Error(data.message || '导入失败');
-                    err.importData = data;
-                    throw err;
-                }
-                // 周/月聚合可能远长于写明细；处于聚合阶段时放宽等待上限，避免误判超时
-                const phase = String(data.phase || '');
-                if (
-                    phase === 'agg_refresh' || phase === 'agg_refresh_done' || phase === 'agg_refresh_warn'
-                    || aggStatus === 'running'
-                ) {
-                    deadline = Math.max(deadline, Date.now() + 1000 * 60 * 90);
-                }
-                await new Promise(r => setTimeout(r, 900));
+            } catch (e) {
+                const msg = (e && e.message) ? String(e.message) : String(e);
+                window.showAppToast && window.showAppToast(`触发重启失败：${msg}`, true, 4200);
             }
-            throw new Error('导入超时，请稍后重试');
+        }
+
+        /** SSE 推送导入进度（不支持时自动回退长轮询） */
+        function watchSalesPerfImportTask(taskId) {
+            return new Promise((resolve, reject) => {
+                let restartRequested = false;
+                let aggSlowWarned = false;
+                let lastProgressPayload = null;
+                let staleTimer = null;
+
+                function armStaleCheck() {
+                    if (staleTimer) window.clearTimeout(staleTimer);
+                    staleTimer = window.setTimeout(() => {
+                        if (restartRequested) return;
+                        if (!lastProgressPayload || !canRestartSalesPerfImportTask(lastProgressPayload)) return;
+                        restartRequested = true;
+                        window.showAppToast && window.showAppToast('写库进度长时间无更新，尝试从断点恢复…', true, 3200);
+                        tryRestartSalesPerfImport(taskId, 'stale_progress');
+                        window.setTimeout(() => { restartRequested = false; }, 30000);
+                    }, 110000);
+                }
+
+                const api = window.SitjoyTaskProgress;
+                if (!api || typeof api.watch !== 'function') {
+                    reject(new Error('进度组件未加载，请刷新页面'));
+                    return;
+                }
+
+                api.watch({
+                    url: '/api/sales-product-performance-import',
+                    taskId,
+                    timeoutMs: 1000 * 60 * 90,
+                    waitTimeoutMs: 28000,
+                    fetchJson: fetchJsonSafe,
+                    onProgress(data) {
+                        lastProgressPayload = data;
+                        applyImportProgressUi(data);
+                        armStaleCheck();
+                        if (isSalesPerfAggRefreshPhase(data) && !aggSlowWarned) {
+                            aggSlowWarned = true;
+                            window.showAppToast && window.showAppToast('周/月聚合较慢，请耐心等待（明细已入库）', false, 4200);
+                        }
+                    },
+                    onDone(data) {
+                        if (staleTimer) window.clearTimeout(staleTimer);
+                        resolve(data);
+                    },
+                    onError(err, data) {
+                        if (staleTimer) window.clearTimeout(staleTimer);
+                        if (data && String(data.state || '').toLowerCase() === 'error') {
+                            const e = new Error(data.message || '导入失败');
+                            e.importData = data;
+                            reject(e);
+                            return;
+                        }
+                        reject(err || new Error('导入失败'));
+                    },
+                });
+                armStaleCheck();
+            });
         }
 
         function startProcessingProgress() {
@@ -3809,7 +3726,6 @@
             formData.append('shop_id', importShopId);
             const taskId = reuseTaskId || buildImportTaskId();
             showUploadProgress('正在上传模板...', 35);
-            startImportProgressPolling(taskId);
             fetchJsonSafe(`/api/sales-product-performance-import?task_id=${encodeURIComponent(taskId)}&async=1&shop_id=${encodeURIComponent(importShopId)}`, {
                 method: 'POST',
                 body: formData,
@@ -3826,8 +3742,8 @@
                     return;
                 }
                 if (data.async) {
-                    showUploadProgress('上传完成，后台正在处理数据...', 8);
-                    waitImportTaskDone(taskId).then(finalData => {
+                    showUploadProgress('上传完成，等待后台处理…', 8);
+                    watchSalesPerfImportTask(taskId).then(finalData => {
                         const upserted = Number(finalData.upserted || 0);
                         const skippedSku = Number(finalData.skipped_unmatched_sku || 0);
                         const skippedId = Number(finalData.skipped_empty_identifier || 0);

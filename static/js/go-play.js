@@ -33,6 +33,7 @@
   let practiceLocal = null;
   let localBoardMode = false;
   let watchActive = false;
+  let eventSource = null;
   let watchAbort = false;
   let lastVersion = -1;
   let lastMoveKey = '';
@@ -1302,12 +1303,63 @@
     playMoveAt(x, y);
   }
 
+  function goStreamUrl() {
+    const qs = new URLSearchParams({
+      action: 'stream',
+      room_code: roomCode,
+      since_version: String(lastVersion >= 0 ? lastVersion : 0),
+    });
+    return apiUrl('/api/go-play?' + qs.toString());
+  }
+
+  function connectGoSse() {
+    if (!roomCode || watchAbort || typeof EventSource === 'undefined') {
+      watchLoop();
+      return;
+    }
+    let es;
+    try {
+      es = new EventSource(goStreamUrl());
+    } catch (_) {
+      watchLoop();
+      return;
+    }
+    eventSource = es;
+    es.addEventListener('state', (ev) => {
+      if (watchAbort || !ev.data) return;
+      try {
+        const d = JSON.parse(ev.data);
+        if (d && d.status === 'success') applyState(d);
+      } catch (_) {}
+    });
+    es.addEventListener('room_error', (ev) => {
+      if (watchAbort || !ev.data) return;
+      try {
+        const d = JSON.parse(ev.data);
+        const msg = (d && d.message) || '房间已结束';
+        resetLocalRoomUi();
+        toast(msg, false);
+      } catch (_) {
+        resetLocalRoomUi();
+        toast('房间已结束', false);
+      }
+    });
+    es.onerror = () => {
+      if (watchAbort) return;
+      try { es.close(); } catch (_) {}
+      if (eventSource === es) eventSource = null;
+      win.setTimeout(() => {
+        if (!watchAbort && watchActive && roomCode) connectGoSse();
+      }, 500);
+    };
+  }
+
   function startWatch() {
     if (isPopup) return;
     stopWatch();
     watchAbort = false;
     watchActive = true;
-    watchLoop();
+    connectGoSse();
   }
 
   function stopWatch() {
@@ -1316,6 +1368,10 @@
     if (watchAbortCtrl) {
       try { watchAbortCtrl.abort(); } catch (_) {}
       watchAbortCtrl = null;
+    }
+    if (eventSource) {
+      try { eventSource.close(); } catch (_) {}
+      eventSource = null;
     }
   }
 
