@@ -1314,6 +1314,10 @@ class AmazonAdMixin:
             'campaign_name': item.get('campaign_name') if level == 'group' else (item.get('name') if level == 'campaign' else ''),
             'group_name': item.get('name') if level == 'group' else '',
         }
+        if level == 'portfolio':
+            ad_info['portfolio_name'] = item.get('name') or ad_info['portfolio_name']
+            ad_info['campaign_name'] = ''
+            ad_info['group_name'] = ''
         return item, ad_info
 
     def _fetch_allowed_operations_for_ad(self, cur, ad_row):
@@ -1332,7 +1336,7 @@ class AmazonAdMixin:
         if subtype_id:
             cur.execute(
                 """
-                SELECT ot.id, ot.name, ot.apply_campaign, ot.apply_group
+                SELECT ot.id, ot.name, ot.apply_portfolio, ot.apply_campaign, ot.apply_group
                 FROM amazon_ad_operation_types ot
                 INNER JOIN amazon_ad_subtype_operation_types link ON link.operation_type_id = ot.id
                 WHERE link.subtype_id = %s
@@ -1340,19 +1344,26 @@ class AmazonAdMixin:
                 """,
                 (subtype_id,)
             )
+        elif level == 'portfolio':
+            cur.execute(
+                "SELECT id, name, apply_portfolio, apply_campaign, apply_group FROM amazon_ad_operation_types "
+                "WHERE apply_portfolio=1 ORDER BY id ASC"
+            )
         elif level == 'campaign':
             cur.execute(
-                "SELECT id, name, apply_campaign, apply_group FROM amazon_ad_operation_types "
+                "SELECT id, name, apply_portfolio, apply_campaign, apply_group FROM amazon_ad_operation_types "
                 "WHERE apply_campaign=1 ORDER BY id ASC"
             )
         else:
             cur.execute(
-                "SELECT id, name, apply_campaign, apply_group FROM amazon_ad_operation_types "
+                "SELECT id, name, apply_portfolio, apply_campaign, apply_group FROM amazon_ad_operation_types "
                 "WHERE apply_group=1 ORDER BY id ASC"
             )
         ops = cur.fetchall() or []
         result = []
         for op in ops:
+            if level == 'portfolio' and not int(op.get('apply_portfolio') or 0):
+                continue
             if level == 'campaign' and not int(op.get('apply_campaign') or 0):
                 continue
             if level == 'group' and not int(op.get('apply_group') or 0):
@@ -1412,7 +1423,8 @@ class AmazonAdMixin:
                     with conn.cursor() as cur:
                         cur.execute(
                             self._AMAZON_AD_ITEM_SELECT
-                            + " WHERE i.ad_level IN ('campaign', 'group') ORDER BY i.id DESC LIMIT 500"
+                            + " WHERE i.ad_level IN ('portfolio', 'campaign', 'group') "
+                            + " ORDER BY FIELD(i.ad_level, 'portfolio', 'campaign', 'group'), i.id DESC LIMIT 500"
                         )
                         rows = cur.fetchall() or []
                 items = [self._serialize_adjustment_ad_list_item(r) for r in rows]

@@ -9,7 +9,7 @@
     <style>
         .aa-grid {
             display: grid;
-            grid-template-columns: minmax(360px, 1.05fr) minmax(250px, 280px) minmax(320px, 1fr);
+            grid-template-columns: auto minmax(250px, 280px) minmax(320px, 1fr);
             gap: 1rem;
             align-items: stretch;
         }
@@ -17,8 +17,17 @@
             display: flex;
             flex-direction: column;
             gap: 0.75rem;
+            flex: 0 0 auto;
+            width: auto;
+            max-width: 100%;
             min-width: 0;
             min-height: 100%;
+            align-self: start;
+        }
+        .aa-search-card,
+        .aa-ad-info-card {
+            width: 100%;
+            box-sizing: border-box;
         }
         .aa-right-col {
             display: flex;
@@ -89,39 +98,19 @@
             margin: 0 0 0.55rem 0;
             flex: 0 0 auto;
         }
-        .aa-ad-info-selection {
-            flex: 0 0 auto;
-            margin: 0 0 0.5rem 0;
-            padding: 0.45rem 0.55rem;
-            border-radius: 8px;
-            background: rgba(61, 95, 130, 0.08);
-            border: 1px solid rgba(61, 95, 130, 0.18);
-            font-size: 0.8rem;
-            line-height: 1.45;
-            color: var(--morandi-ink);
-        }
-        .aa-ad-info-selection[hidden] { display: none !important; }
-        .aa-ad-info-selection .aa-ad-info-k {
-            color: #3d5f82;
-            font-weight: 700;
-            margin-right: 0.25rem;
-        }
-        .aa-ad-info-selection .aa-ad-info-sep {
-            margin: 0 0.35rem;
-            color: var(--morandi-slate);
-            opacity: 0.65;
-        }
         .aa-list-wrap {
             border: 1px solid var(--morandi-sand);
             border-radius: 10px;
             background: #fff;
             flex: 1 1 auto;
             min-height: 0;
+            width: fit-content;
+            max-width: 100%;
             overflow: auto;
             -webkit-overflow-scrolling: touch;
         }
         .aa-ad-table {
-            width: 100%;
+            width: max-content;
             border-collapse: collapse;
             table-layout: fixed;
             font-size: 0.82rem;
@@ -350,11 +339,20 @@
         .aa-search-card-inner {
             display: grid;
             gap: 0.65rem;
+            min-width: 0;
         }
         .aa-search-row {
             margin: 0;
             max-width: none;
             width: 100%;
+            flex-wrap: wrap;
+        }
+        .aa-search-row .pm-search-title {
+            flex: 0 0 auto;
+        }
+        .aa-search-row input[type="text"] {
+            flex: 1 1 8rem;
+            min-width: 0;
         }
         .aa-search-options {
             display: flex;
@@ -421,13 +419,6 @@
 
                     <div class="card pm-card aa-ad-info-card">
                         <h3>广告信息</h3>
-                        <div class="aa-ad-info-selection" id="adInfoSelection" hidden>
-                            <span class="aa-ad-info-k">广告组合</span><span id="adInfoSelPortfolio">-</span>
-                            <span class="aa-ad-info-sep">·</span>
-                            <span class="aa-ad-info-k">活动</span><span id="adInfoSelCampaign">-</span>
-                            <span class="aa-ad-info-sep">·</span>
-                            <span class="aa-ad-info-k">组</span><span id="adInfoSelGroup">-</span>
-                        </div>
                         <div class="aa-list-wrap" id="adList">
                             <div class="aa-list-empty">加载中...</div>
                         </div>
@@ -1031,9 +1022,8 @@
                 if (!parsed || typeof parsed !== 'object') return { ...AA_AD_COL_DEFAULTS };
                 const out = { ...AA_AD_COL_DEFAULTS };
                 AA_AD_COL_KEYS.forEach(key => {
-                    if (parsed[key] != null) {
-                        out[key] = Number(parsed[key]) || AA_AD_COL_DEFAULTS[key];
-                    }
+                    const n = Number(parsed[key]);
+                    out[key] = (Number.isFinite(n) && n >= 48) ? n : AA_AD_COL_DEFAULTS[key];
                 });
                 return out;
             } catch (e) {
@@ -1045,6 +1035,45 @@
             try { localStorage.setItem(AA_AD_COL_LS, JSON.stringify(widths)); } catch (e) {}
         }
 
+        function adListTableContentWidth() {
+            const table = document.getElementById('adListTable');
+            if (table) {
+                return Math.max(
+                    Math.ceil(table.scrollWidth || 0),
+                    Math.ceil(table.getBoundingClientRect().width || 0)
+                );
+            }
+            const w = loadAdTableColWidths();
+            return AA_AD_COL_KEYS.reduce((sum, key) => sum + Math.max(48, Number(w[key]) || 0), 0);
+        }
+
+        function syncAaLeftColumnWidth() {
+            const leftCol = document.querySelector('.aa-left-col');
+            if (!leftCol) return;
+            const refCard = document.querySelector('.aa-ad-info-card') || document.querySelector('.aa-search-card');
+            const cs = refCard ? getComputedStyle(refCard) : null;
+            const padX = cs
+                ? (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0)
+                : 24;
+            const listWrap = document.getElementById('adList');
+            const listBorderX = listWrap
+                ? (parseFloat(getComputedStyle(listWrap).borderLeftWidth) || 0)
+                    + (parseFloat(getComputedStyle(listWrap).borderRightWidth) || 0)
+                : 2;
+            const contentW = adListTableContentWidth();
+            const innerW = contentW + listBorderX;
+            leftCol.style.width = `${Math.ceil(innerW + padX)}px`;
+        }
+
+        let _aaLeftColWidthTimer = null;
+        function scheduleSyncAaLeftColumnWidth() {
+            if (_aaLeftColWidthTimer) clearTimeout(_aaLeftColWidthTimer);
+            _aaLeftColWidthTimer = setTimeout(() => {
+                _aaLeftColWidthTimer = null;
+                syncAaLeftColumnWidth();
+            }, 0);
+        }
+
         function applyAdTableColWidths() {
             const table = document.getElementById('adListTable');
             if (!table) return;
@@ -1053,6 +1082,7 @@
                 const col = table.querySelector(`colgroup col[data-col="${key}"]`);
                 if (col) col.style.width = `${Math.max(48, w[key])}px`;
             });
+            scheduleSyncAaLeftColumnWidth();
         }
 
         function initAdTableColResize() {
@@ -1086,6 +1116,7 @@
                         const colEl = table.querySelector(`colgroup col[data-col="${key}"]`);
                         widths[key] = colEl ? Math.max(56, Math.round(colEl.getBoundingClientRect().width)) : widths[key];
                         saveAdTableColWidths(widths);
+                        scheduleSyncAaLeftColumnWidth();
                     }
                     document.addEventListener('mousemove', onMove);
                     document.addEventListener('mouseup', onUp);
@@ -1127,16 +1158,27 @@
             const wrap = document.getElementById('adList');
             if (!adItems.length) {
                 wrap.innerHTML = '<div class="aa-list-empty">暂无广告信息</div>';
+                scheduleSyncAaLeftColumnWidth();
                 return;
             }
             const widths = loadAdTableColWidths();
             const rows = adItems.map(item => {
                 const active = String(item.id) === String(selectedAdId);
-                const level = item.ad_level === 'group' ? 'group' : 'campaign';
-                const portfolioText = item.portfolio_name || '';
-                const campaignText = level === 'campaign' ? (item.ad_name || '') : (item.campaign_name || '');
-                const groupText = level === 'group' ? (item.ad_name || '') : '';
-                const levelLabel = level === 'group' ? '广告组' : '广告活动';
+                const level = String(item.ad_level || 'campaign');
+                let portfolioText = '';
+                let campaignText = '';
+                let groupText = '';
+                if (level === 'portfolio') {
+                    portfolioText = item.ad_name || item.portfolio_name || '';
+                } else if (level === 'group') {
+                    portfolioText = item.portfolio_name || '';
+                    campaignText = item.campaign_name || '';
+                    groupText = item.ad_name || '';
+                } else {
+                    portfolioText = item.portfolio_name || '';
+                    campaignText = item.ad_name || '';
+                }
+                const levelLabel = level === 'portfolio' ? '广告组合' : (level === 'group' ? '广告组' : '广告活动');
                 const rowTitle = `${levelLabel} · ${item.ad_type_text || '-'}`;
                 return `
                     <tr data-ad-id="${item.id}" class="${active ? 'is-active' : ''}" tabindex="0" role="row" aria-selected="${active ? 'true' : 'false'}" title="${escapeHtml(rowTitle)}">
@@ -1159,7 +1201,7 @@
                     </colgroup>
                     <thead>
                         <tr>
-                            <th class="aa-th--portfolio" data-col-key="portfolio">组合<span class="aa-col-resizer" aria-hidden="true"></span></th>
+                            <th class="aa-th--portfolio" data-col-key="portfolio">广告组合<span class="aa-col-resizer" aria-hidden="true"></span></th>
                             <th class="aa-th--campaign" data-col-key="campaign">活动<span class="aa-col-resizer" aria-hidden="true"></span></th>
                             <th class="aa-th--group" data-col-key="group">组<span class="aa-col-resizer" aria-hidden="true"></span></th>
                             <th class="aa-th--status" data-col-key="status">状态<span class="aa-col-resizer" aria-hidden="true"></span></th>
@@ -1171,6 +1213,7 @@
             `;
             initAdTableColResize();
             applyAdTableColWidths();
+            scheduleSyncAaLeftColumnWidth();
         }
 
         function loadAdList() {
@@ -1229,12 +1272,28 @@
             if (!item) {
                 return { ad_type_text: '-', portfolio_name: '-', campaign_name: '-', group_name: '-' };
             }
-            const level = item.ad_level === 'group' ? 'group' : 'campaign';
+            const level = String(item.ad_level || 'campaign');
+            if (level === 'portfolio') {
+                return {
+                    ad_type_text: item.ad_type_text || '-',
+                    portfolio_name: item.ad_name || item.portfolio_name || '-',
+                    campaign_name: '-',
+                    group_name: '-',
+                };
+            }
+            if (level === 'group') {
+                return {
+                    ad_type_text: item.ad_type_text || '-',
+                    portfolio_name: item.portfolio_name || '-',
+                    campaign_name: item.campaign_name || '-',
+                    group_name: item.ad_name || '-',
+                };
+            }
             return {
                 ad_type_text: item.ad_type_text || '-',
                 portfolio_name: item.portfolio_name || '-',
-                campaign_name: level === 'campaign' ? (item.ad_name || '-') : (item.campaign_name || '-'),
-                group_name: level === 'group' ? (item.ad_name || '-') : '-',
+                campaign_name: item.ad_name || '-',
+                group_name: '-',
             };
         }
 
@@ -1244,26 +1303,6 @@
             document.getElementById('infoPortfolio').innerText = info.portfolio_name || '-';
             document.getElementById('infoCampaign').innerText = info.campaign_name || '-';
             document.getElementById('infoGroup').innerText = info.group_name || '-';
-            const selBox = document.getElementById('adInfoSelection');
-            const hasSel = !!(selectedAd && selectedAdId);
-            if (selBox) {
-                selBox.hidden = !hasSel;
-                if (hasSel) {
-                    const fromList = listItemToAdInfo(selectedAd);
-                    const pick = (key) => {
-                        const v = info[key];
-                        if (v != null && String(v).trim() && String(v).trim() !== '-') return String(v).trim();
-                        return fromList[key] || '-';
-                    };
-                    const set = (id, val) => {
-                        const el = document.getElementById(id);
-                        if (el) el.textContent = val || '-';
-                    };
-                    set('adInfoSelPortfolio', pick('portfolio_name'));
-                    set('adInfoSelCampaign', pick('campaign_name'));
-                    set('adInfoSelGroup', pick('group_name'));
-                }
-            }
         }
 
         function setFieldValue(id, value) {
@@ -1452,6 +1491,7 @@
             if (e.key === 'Enter') loadAdList();
         });
 
+        window.addEventListener('resize', () => scheduleSyncAaLeftColumnWidth());
         window.addEventListener('DOMContentLoaded', () => {
             if (window.initUniversalSingleSelects) window.initUniversalSingleSelects(document);
             bindAdListRowEvents();
