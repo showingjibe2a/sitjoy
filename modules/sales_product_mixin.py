@@ -8180,7 +8180,7 @@ class SalesProductMixin:
                             (sales_product_id, month_start, month_end, `year_month`, source_rows,
                              sales_qty, net_sales_amount, order_qty, session_total,
                              ad_impressions, ad_clicks, ad_orders, ad_spend, ad_sales_amount,
-                             refund_amount, sub_category_rank_avg)
+                             refund_amount)
                         SELECT
                             spp.sales_product_id,
                             %s AS month_start,
@@ -8196,8 +8196,7 @@ class SalesProductMixin:
                             SUM(COALESCE(spp.ad_orders,0)) AS ad_orders,
                             SUM(COALESCE(spp.ad_spend,0)) AS ad_spend,
                             SUM(COALESCE(spp.ad_sales_amount,0)) AS ad_sales_amount,
-                            SUM(COALESCE(spp.refund_amount,0)) AS refund_amount,
-                            AVG(spp.sub_category_rank) AS sub_category_rank_avg
+                            SUM(COALESCE(spp.refund_amount,0)) AS refund_amount
                         FROM sales_product_performances spp
                         WHERE spp.record_date >= %s AND spp.record_date <= %s
                         {id_filter_sql}
@@ -8232,7 +8231,7 @@ class SalesProductMixin:
                             (sales_product_id, week_start, week_end, `year_week`, source_rows,
                              sales_qty, net_sales_amount, order_qty, session_total,
                              ad_impressions, ad_clicks, ad_orders, ad_spend, ad_sales_amount,
-                             refund_amount, sub_category_rank_avg)
+                             refund_amount)
                         SELECT
                             spp.sales_product_id,
                             %s AS week_start,
@@ -8248,8 +8247,7 @@ class SalesProductMixin:
                             SUM(COALESCE(spp.ad_orders,0)) AS ad_orders,
                             SUM(COALESCE(spp.ad_spend,0)) AS ad_spend,
                             SUM(COALESCE(spp.ad_sales_amount,0)) AS ad_sales_amount,
-                            SUM(COALESCE(spp.refund_amount,0)) AS refund_amount,
-                            AVG(spp.sub_category_rank) AS sub_category_rank_avg
+                            SUM(COALESCE(spp.refund_amount,0)) AS refund_amount
                         FROM sales_product_performances spp
                         WHERE spp.record_date >= %s AND spp.record_date <= %s
                         {id_filter_sql}
@@ -8261,6 +8259,135 @@ class SalesProductMixin:
                 _emit_agg_progress('week', str(year_week), pending=False)
 
         # per-period commits done above
+
+    def _refresh_sales_perf_agg_for_deleted_records(self, conn, affected_rows):
+        """按被删记录所在的精确月/周桶刷新聚合，避免 min~max 日期区间全量扫描。"""
+        if not conn or not affected_rows:
+            return
+        if (not self._table_exists_simple(conn, 'sales_perf_agg_week')) or (not self._table_exists_simple(conn, 'sales_perf_agg_month')):
+            return
+
+        by_month = {}
+        by_week = {}
+        for row in (affected_rows or []):
+            rd = str(row.get('record_date') or '').strip()
+            if hasattr(rd, 'strftime'):
+                rd = rd.strftime('%Y-%m-%d')
+            else:
+                rd = str(rd)[:10]
+            spid = self._parse_int(row.get('sales_product_id'))
+            if not rd or not spid:
+                continue
+            try:
+                d = datetime.strptime(rd, '%Y-%m-%d').date()
+            except Exception:
+                continue
+            ms = d.replace(day=1)
+            ws = d - timedelta(days=d.weekday())
+            by_month.setdefault(ms, set()).add(spid)
+            by_week.setdefault(ws, set()).add(spid)
+        if not by_month and not by_week:
+            return
+
+        id_chunk_size = 300
+
+        def _id_chunks(id_set):
+            ids = sorted(id_set or [])
+            if not ids:
+                return []
+            out = []
+            for i in range(0, len(ids), id_chunk_size):
+                out.append(ids[i:i + id_chunk_size])
+            return out
+
+        with conn.cursor() as cur:
+            for ms in sorted(by_month.keys()):
+                me = self._sales_perf_month_end(ms)
+                year_month = int(ms.year) * 100 + int(ms.month)
+                for id_chunk in _id_chunks(by_month.get(ms)):
+                    placeholders = ','.join(['%s'] * len(id_chunk))
+                    cur.execute(
+                        f"DELETE FROM sales_perf_agg_month WHERE month_start=%s AND sales_product_id IN ({placeholders})",
+                        tuple([ms.strftime('%Y-%m-%d')] + id_chunk),
+                    )
+                    cur.execute(
+                        f"""
+                        INSERT INTO sales_perf_agg_month
+                            (sales_product_id, month_start, month_end, `year_month`, source_rows,
+                             sales_qty, net_sales_amount, order_qty, session_total,
+                             ad_impressions, ad_clicks, ad_orders, ad_spend, ad_sales_amount,
+                             refund_amount)
+                        SELECT
+                            spp.sales_product_id,
+                            %s AS month_start,
+                            %s AS month_end,
+                            %s AS `year_month`,
+                            COUNT(1) AS source_rows,
+                            SUM(COALESCE(spp.sales_qty,0)) AS sales_qty,
+                            SUM(COALESCE(spp.net_sales_amount,0)) AS net_sales_amount,
+                            SUM(COALESCE(spp.order_qty,0)) AS order_qty,
+                            SUM(COALESCE(spp.session_total,0)) AS session_total,
+                            SUM(COALESCE(spp.ad_impressions,0)) AS ad_impressions,
+                            SUM(COALESCE(spp.ad_clicks,0)) AS ad_clicks,
+                            SUM(COALESCE(spp.ad_orders,0)) AS ad_orders,
+                            SUM(COALESCE(spp.ad_spend,0)) AS ad_spend,
+                            SUM(COALESCE(spp.ad_sales_amount,0)) AS ad_sales_amount,
+                            SUM(COALESCE(spp.refund_amount,0)) AS refund_amount
+                        FROM sales_product_performances spp
+                        WHERE spp.record_date >= %s AND spp.record_date <= %s
+                          AND spp.sales_product_id IN ({placeholders})
+                        GROUP BY spp.sales_product_id
+                        """,
+                        tuple([
+                            ms.strftime('%Y-%m-%d'), me.strftime('%Y-%m-%d'), year_month,
+                            ms.strftime('%Y-%m-%d'), me.strftime('%Y-%m-%d'),
+                        ] + id_chunk),
+                    )
+                conn.commit()
+
+            for ws in sorted(by_week.keys()):
+                we = ws + timedelta(days=6)
+                year_week = int(ws.isocalendar().year) * 100 + int(ws.isocalendar().week)
+                for id_chunk in _id_chunks(by_week.get(ws)):
+                    placeholders = ','.join(['%s'] * len(id_chunk))
+                    cur.execute(
+                        f"DELETE FROM sales_perf_agg_week WHERE week_start=%s AND sales_product_id IN ({placeholders})",
+                        tuple([ws.strftime('%Y-%m-%d')] + id_chunk),
+                    )
+                    cur.execute(
+                        f"""
+                        INSERT INTO sales_perf_agg_week
+                            (sales_product_id, week_start, week_end, `year_week`, source_rows,
+                             sales_qty, net_sales_amount, order_qty, session_total,
+                             ad_impressions, ad_clicks, ad_orders, ad_spend, ad_sales_amount,
+                             refund_amount)
+                        SELECT
+                            spp.sales_product_id,
+                            %s AS week_start,
+                            %s AS week_end,
+                            %s AS `year_week`,
+                            COUNT(1) AS source_rows,
+                            SUM(COALESCE(spp.sales_qty,0)) AS sales_qty,
+                            SUM(COALESCE(spp.net_sales_amount,0)) AS net_sales_amount,
+                            SUM(COALESCE(spp.order_qty,0)) AS order_qty,
+                            SUM(COALESCE(spp.session_total,0)) AS session_total,
+                            SUM(COALESCE(spp.ad_impressions,0)) AS ad_impressions,
+                            SUM(COALESCE(spp.ad_clicks,0)) AS ad_clicks,
+                            SUM(COALESCE(spp.ad_orders,0)) AS ad_orders,
+                            SUM(COALESCE(spp.ad_spend,0)) AS ad_spend,
+                            SUM(COALESCE(spp.ad_sales_amount,0)) AS ad_sales_amount,
+                            SUM(COALESCE(spp.refund_amount,0)) AS refund_amount
+                        FROM sales_product_performances spp
+                        WHERE spp.record_date >= %s AND spp.record_date <= %s
+                          AND spp.sales_product_id IN ({placeholders})
+                        GROUP BY spp.sales_product_id
+                        """,
+                        tuple([
+                            ws.strftime('%Y-%m-%d'), we.strftime('%Y-%m-%d'), year_week,
+                            ws.strftime('%Y-%m-%d'), we.strftime('%Y-%m-%d'),
+                        ] + id_chunk),
+                    )
+                conn.commit()
 
     def handle_sales_product_performance_api(self, environ, method, start_response):
         try:
@@ -8406,7 +8533,6 @@ class SalesProductMixin:
                         'ad_spend': self._parse_float(data.get('ad_spend')) or 0,
                         'ad_sales_amount': self._parse_float(data.get('ad_sales_amount')) or 0,
                         'refund_amount': self._parse_float(data.get('refund_amount')) or 0,
-                        'sub_category_rank': self._parse_int(data.get('sub_category_rank')),
                     }
 
                     if performance_id and method == 'PUT':
@@ -8416,15 +8542,14 @@ class SalesProductMixin:
                                 UPDATE sales_product_performances
                                 SET sales_product_id=%s, record_date=%s, sales_qty=%s, net_sales_amount=%s,
                                     order_qty=%s, session_total=%s, ad_impressions=%s, ad_clicks=%s,
-                                    ad_orders=%s, ad_spend=%s, ad_sales_amount=%s, refund_amount=%s,
-                                    sub_category_rank=%s
+                                    ad_orders=%s, ad_spend=%s, ad_sales_amount=%s, refund_amount=%s
                                 WHERE id=%s
                                 """,
                                 (
                                     sales_product_id, record_date, values['sales_qty'], values['net_sales_amount'],
                                     values['order_qty'], values['session_total'], values['ad_impressions'], values['ad_clicks'],
                                     values['ad_orders'], values['ad_spend'], values['ad_sales_amount'], values['refund_amount'],
-                                    values['sub_category_rank'], performance_id
+                                    performance_id
                                 )
                             )
                         try:
@@ -8440,8 +8565,8 @@ class SalesProductMixin:
                             """
                             INSERT INTO sales_product_performances
                             (sales_product_id, record_date, sales_qty, net_sales_amount, order_qty, session_total,
-                             ad_impressions, ad_clicks, ad_orders, ad_spend, ad_sales_amount, refund_amount, sub_category_rank)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                             ad_impressions, ad_clicks, ad_orders, ad_spend, ad_sales_amount, refund_amount)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             ON DUPLICATE KEY UPDATE
                                 sales_qty=VALUES(sales_qty),
                                 net_sales_amount=VALUES(net_sales_amount),
@@ -8452,14 +8577,12 @@ class SalesProductMixin:
                                 ad_orders=VALUES(ad_orders),
                                 ad_spend=VALUES(ad_spend),
                                 ad_sales_amount=VALUES(ad_sales_amount),
-                                refund_amount=VALUES(refund_amount),
-                                sub_category_rank=VALUES(sub_category_rank)
+                                refund_amount=VALUES(refund_amount)
                             """,
                             (
                                 sales_product_id, record_date, values['sales_qty'], values['net_sales_amount'],
                                 values['order_qty'], values['session_total'], values['ad_impressions'], values['ad_clicks'],
-                                values['ad_orders'], values['ad_spend'], values['ad_sales_amount'], values['refund_amount'],
-                                values['sub_category_rank']
+                                values['ad_orders'], values['ad_spend'], values['ad_sales_amount'], values['refund_amount']
                             )
                         )
                     try:
@@ -8485,46 +8608,48 @@ class SalesProductMixin:
                 delete_ids = list(dict.fromkeys(delete_ids))
                 if not delete_ids:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+
+                affected_rows = []
+                deleted_count = 0
+                delete_chunk_size = 800
                 with self._get_db_connection() as conn:
-                    affected_rows = []
                     with conn.cursor() as cur:
-                        placeholders = ','.join(['%s'] * len(delete_ids))
-                        try:
+                        for i in range(0, len(delete_ids), delete_chunk_size):
+                            chunk_ids = delete_ids[i:i + delete_chunk_size]
+                            if not chunk_ids:
+                                continue
+                            placeholders = ','.join(['%s'] * len(chunk_ids))
                             cur.execute(
                                 f"SELECT id, sales_product_id, record_date FROM sales_product_performances WHERE id IN ({placeholders})",
-                                tuple(delete_ids),
+                                tuple(chunk_ids),
                             )
-                            affected_rows = cur.fetchall() or []
-                        except Exception:
-                            affected_rows = []
-                        cur.execute(
-                            f"DELETE FROM sales_product_performances WHERE id IN ({placeholders})",
-                            tuple(delete_ids),
-                        )
-                    if affected_rows:
-                        record_dates = []
-                        sales_product_ids = []
-                        for row in affected_rows:
-                            rd = _normalize_date_text(row.get('record_date'))
-                            if rd:
-                                record_dates.append(rd)
-                            spid = self._parse_int(row.get('sales_product_id'))
-                            if spid:
-                                sales_product_ids.append(spid)
-                        if record_dates:
-                            agg_ids = list(dict.fromkeys(sales_product_ids)) or None
+                            chunk_rows = cur.fetchall() or []
+                            if chunk_rows:
+                                affected_rows.extend(chunk_rows)
+                            cur.execute(
+                                f"DELETE FROM sales_product_performances WHERE id IN ({placeholders})",
+                                tuple(chunk_ids),
+                            )
                             try:
-                                self._refresh_sales_perf_agg_range(
-                                    conn,
-                                    min(record_dates),
-                                    max(record_dates),
-                                    sales_product_ids=agg_ids,
-                                )
+                                deleted_count += int(cur.rowcount or 0)
                             except Exception:
-                                pass
+                                deleted_count += len(chunk_rows)
+                    conn.commit()
+
+                agg_rows_snapshot = [dict(r) for r in (affected_rows or []) if isinstance(r, dict)]
+                if agg_rows_snapshot:
+                    def _bg_refresh_deleted_agg(rows_copy):
+                        try:
+                            with self._get_db_connection_long(90, 90, 10) as agg_conn:
+                                self._refresh_sales_perf_agg_for_deleted_records(agg_conn, rows_copy)
+                        except Exception:
+                            pass
+
+                    threading.Thread(target=_bg_refresh_deleted_agg, args=(agg_rows_snapshot,), daemon=True).start()
+
                 return self.send_json({
                     'status': 'success',
-                    'deleted': len(affected_rows),
+                    'deleted': deleted_count or len(affected_rows),
                     'requested': len(delete_ids),
                 }, start_response)
 
@@ -8556,7 +8681,7 @@ class SalesProductMixin:
             headers = [
                 'MSKU/ASIN/子ASIN*', '日期*', '销量*', '净销售额(USD)*', '订单量*', 'Sessions-Total*',
                 '(广告)展示*', '(广告)点击*', '(广告)订单量*', '(广告)花费(USD)*', '(广告)销售额(USD)*',
-                '退款金额(USD)*', '小类排名*'
+                '退款金额(USD)*'
             ]
             ws.append(headers)
             ws.append([
@@ -8571,8 +8696,7 @@ class SalesProductMixin:
                 6,
                 120.50,
                 899.90,
-                0.00,
-                'Living Room Chairs:5633'
+                0.00
             ])
 
             for cell in ws[1]:
@@ -8583,7 +8707,7 @@ class SalesProductMixin:
                 cell.fill = PatternFill(start_color='E8E8E8', end_color='E8E8E8', fill_type='solid')
                 cell.font = Font(italic=True, color='888888')
 
-            widths = [24, 14, 10, 14, 10, 12, 12, 12, 12, 14, 14, 12, 12]
+            widths = [24, 14, 10, 14, 10, 12, 12, 12, 12, 14, 14, 12]
             for idx, width in enumerate(widths, start=1):
                 ws.column_dimensions[get_column_letter(idx)].width = width
 
@@ -9048,8 +9172,14 @@ class SalesProductMixin:
                         'message': '导入任务已启动，请通过进度接口轮询结果'
                     }, start_response)
 
-            # 全程只读模式，降低大文件导入时CPU和内存开销
-            wb = load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+            # 万行级文件：read_only 逐行解 XML 往往比标准模式慢数倍；中等体积用标准模式提速
+            file_byte_len = len(file_bytes or b'')
+            use_fast_xlsx_reader = file_byte_len <= (14 * 1024 * 1024)
+            wb = load_workbook(
+                io.BytesIO(file_bytes),
+                read_only=(not use_fast_xlsx_reader),
+                data_only=True,
+            )
             ws = wb.active
             total_rows_hint = max(0, int((ws.max_row or 1)) - 1)
 
@@ -9079,7 +9209,6 @@ class SalesProductMixin:
                 'ad_spend': ['(广告)花费(usd)', '(广告)花费', '广告花费(usd)', '广告花费', 'adspend', 'spend'],
                 'ad_sales_amount': ['(广告)销售额(usd)', '(广告)销售额', '广告销售额(usd)', '广告销售额', 'adsales', 'adsalesamount'],
                 'refund_amount': ['退款金额(usd)', '退款金额', 'refundamount'],
-                'sub_category_rank': ['小类排名', 'categoryrank', 'subcategoryrank']
             }
 
             normalized_headers = [normalize_header(h) for h in headers]
@@ -9119,6 +9248,10 @@ class SalesProductMixin:
                         continue
                 return text[:10]
 
+            _num_re = re.compile(r'-?\d+(?:\.\d+)?')
+            _id_split_re = re.compile(r'[,，;；]+')
+            _template_markers = ('示例', '请删除')
+
             def parse_number_flexible(value, as_int=False):
                 if value is None:
                     return 0 if as_int else 0.0
@@ -9132,29 +9265,20 @@ class SalesProductMixin:
                 text = str(value).strip()
                 if not text:
                     return 0 if as_int else 0.0
+                if not as_int and text.replace('.', '', 1).replace('-', '', 1).isdigit():
+                    try:
+                        return float(text)
+                    except Exception:
+                        pass
                 text = text.replace('，', ',').replace('$', '').replace('￥', '')
                 text = text.replace(',', '')
-                m = re.search(r'-?\d+(?:\.\d+)?', text)
+                m = _num_re.search(text)
                 if not m:
                     return 0 if as_int else 0.0
                 num = float(m.group(0))
                 if as_int:
                     return int(round(num))
                 return num
-
-            def parse_rank(value):
-                if value is None:
-                    return None
-                text = str(value).strip()
-                if not text:
-                    return None
-                m = re.search(r'(\d+)\s*$', text)
-                if m:
-                    return int(m.group(1))
-                m2 = re.search(r'(\d+)', text)
-                if m2:
-                    return int(m2.group(1))
-                return None
 
             def row_signature(payload):
                 return '|'.join([
@@ -9168,7 +9292,6 @@ class SalesProductMixin:
                     str(payload.get('ad_spend') or 0),
                     str(payload.get('ad_sales_amount') or 0),
                     str(payload.get('refund_amount') or 0),
-                    str(payload.get('sub_category_rank') or ''),
                 ])
 
             created = 0
@@ -9255,7 +9378,7 @@ class SalesProductMixin:
                         pid = sku_map.get(low) or asin_map.get(low)
                         if pid:
                             return pid
-                        for seg in re.split(r'[,，;；]+', text):
+                        for seg in _id_split_re.split(text):
                             t = seg.strip().lower()
                             if not t:
                                 continue
@@ -9267,14 +9390,17 @@ class SalesProductMixin:
                     # 初始化批处理变量
                     batch_rows = []
                     batch_row_marks = []
-                    # 批量写入：增大批次减少 roundtrip，提升导入速度
-                    batch_size = 3000
-                    flush_chunk_size = 600  # 分片写入：兼顾吞吐与心跳刷新频率
+                    # 批量写入：大批次 + 少次 commit；进度文件节流（NAS 上频繁写 JSON 极慢）
+                    batch_size = 5000
+                    flush_chunk_size = 5000
+                    progress_row_step = 800
+                    progress_sec_step = 3.0
+                    run_id_check_step = 400
                     upsert_sql = (
                         "INSERT INTO sales_product_performances "
                         "(sales_product_id,record_date,sales_qty,net_sales_amount,order_qty,session_total,"
-                        "ad_impressions,ad_clicks,ad_orders,ad_spend,ad_sales_amount,refund_amount,sub_category_rank) "
-                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                        "ad_impressions,ad_clicks,ad_orders,ad_spend,ad_sales_amount,refund_amount) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
                         "ON DUPLICATE KEY UPDATE "
                         "sales_qty=VALUES(sales_qty),"
                         "net_sales_amount=VALUES(net_sales_amount),"
@@ -9285,8 +9411,7 @@ class SalesProductMixin:
                         "ad_orders=VALUES(ad_orders),"
                         "ad_spend=VALUES(ad_spend),"
                         "ad_sales_amount=VALUES(ad_sales_amount),"
-                        "refund_amount=VALUES(refund_amount),"
-                        "sub_category_rank=VALUES(sub_category_rank)"
+                        "refund_amount=VALUES(refund_amount)"
                     )
 
                     def _is_retryable_write_error(exc):
@@ -9308,101 +9433,85 @@ class SalesProductMixin:
                         )
                         return any(token in err_text for token in retry_tokens)
 
-                    def _commit_checkpoint(committed_row):
-                        nonlocal checkpoint_row
-                        try:
-                            committed_row = int(committed_row or 0)
-                        except Exception:
-                            committed_row = 0
-                        if committed_row <= 0:
-                            return
-                        if committed_row > checkpoint_row:
-                            checkpoint_row = committed_row
-                        _write_progress(safe_task_id, {
-                            'status': 'success',
-                            'task_id': safe_task_id,
-                            'state': 'running',
-                            'run_id': worker_run_id,
-                            'checkpoint_row': checkpoint_row,
-                        }, merge=True)
-                        _mark_progress_advance(safe_task_id, processed_rows=row_count, checkpoint_row=checkpoint_row)
-                        _set_hb(stage='checkpoint_commit', phase='writing', processed_rows=row_count, checkpoint_row=checkpoint_row)
-                    
                     def flush_batch_data():
-                        nonlocal cur
+                        nonlocal cur, checkpoint_row
                         if not batch_rows:
                             return 0
                         try:
-                            # 在进入写库分片前就切换 hb_stage，避免“message=writing 但 hb_stage 仍停留在 iter_rows”
                             _set_hb(stage='db_executemany', phase='writing', processed_rows=row_count, checkpoint_row=checkpoint_row)
                             total = len(batch_rows)
                             written = 0
-                            # 分片写入：避免 executemany 单次执行过久，进度 ts 长时间不更新
+                            chunk_checkpoint = int(batch_row_marks[-1] or 0) if batch_row_marks else checkpoint_row
+                            for tup in batch_rows:
+                                try:
+                                    touched_agg_ids.add(int(tup[0]))
+                                except Exception:
+                                    pass
                             for i in range(0, total, flush_chunk_size):
                                 chunk = batch_rows[i:i + flush_chunk_size]
-                                chunk_marks = batch_row_marks[i:i + flush_chunk_size]
-                                chunk_checkpoint = int(chunk_marks[-1] or 0) if chunk_marks else checkpoint_row
-                                # 先切换心跳阶段，再写入进度消息，避免出现 message=writing 但 hb_stage 仍是 iter_rows
-                                _set_hb(stage='db_executemany', phase='writing', processed_rows=row_count, checkpoint_row=checkpoint_row)
-                                _mark_progress_advance(safe_task_id, processed_rows=row_count, checkpoint_row=checkpoint_row, extra={'phase': 'writing'})
-                                _write_progress(safe_task_id, {
-                                    'status': 'success',
-                                    'task_id': safe_task_id,
-                                    'state': 'running',
-                                    'phase': 'writing',
-                                    'processed_rows': row_count,
-                                    'total_rows': total_rows_hint,
-                                    'created': created,
-                                    'upserted': upserted,
-                                    'checkpoint_row': checkpoint_row,
-                                    'message': f'正在写入数据库（批量分片 {min(i + len(chunk), total)}/{total}）...'
-                                }, merge=True)
-                                try:
+                                cur.executemany(upsert_sql, chunk)
+                                written += len(chunk)
+                            conn.commit()
+                            if chunk_checkpoint > checkpoint_row:
+                                checkpoint_row = chunk_checkpoint
+                            _write_progress(safe_task_id, {
+                                'status': 'success',
+                                'task_id': safe_task_id,
+                                'state': 'running',
+                                'phase': 'writing',
+                                'processed_rows': row_count,
+                                'total_rows': total_rows_hint,
+                                'created': created,
+                                'upserted': upserted + written,
+                                'checkpoint_row': checkpoint_row,
+                                'message': f'已写入数据库 {written} 行（累计处理 {row_count}/{total_rows_hint or "?"} 行）'
+                            }, merge=True)
+                            _mark_progress_advance(safe_task_id, processed_rows=row_count, checkpoint_row=checkpoint_row)
+                            _set_hb(stage='db_commit', phase='writing', processed_rows=row_count, checkpoint_row=checkpoint_row)
+                            return written
+                        except Exception as chunk_err:
+                            if not _is_retryable_write_error(chunk_err):
+                                raise
+                            try:
+                                conn.rollback()
+                            except Exception:
+                                pass
+                            try:
+                                conn.ping(reconnect=True)
+                                cur = conn.cursor()
+                            except Exception:
+                                raise RuntimeError(f"批量写入失败: {str(chunk_err)[:180]}")
+                            _write_progress(safe_task_id, {
+                                'status': 'success',
+                                'task_id': safe_task_id,
+                                'state': 'running',
+                                'phase': 'writing_retry',
+                                'processed_rows': row_count,
+                                'total_rows': total_rows_hint,
+                                'created': created,
+                                'upserted': upserted,
+                                'checkpoint_row': checkpoint_row,
+                                'retry_reason': 'retryable_db_error',
+                                'message': f'写入失败，正在重连后整批重试（断点 {chunk_checkpoint}/{total_rows_hint}）...'
+                            }, merge=True)
+                            _set_hb(stage='db_executemany_retry', phase='writing_retry', processed_rows=row_count, checkpoint_row=checkpoint_row)
+                            try:
+                                written = 0
+                                for i in range(0, total, flush_chunk_size):
+                                    chunk = batch_rows[i:i + flush_chunk_size]
                                     cur.executemany(upsert_sql, chunk)
                                     written += len(chunk)
-                                    # 小步提交：降低单事务持锁时长，也让长任务更“有心跳”
-                                    _set_hb(stage='db_commit', phase='writing', processed_rows=row_count, checkpoint_row=checkpoint_row)
-                                    conn.commit()
-                                    _commit_checkpoint(chunk_checkpoint)
-                                except Exception as chunk_err:
-                                    if not _is_retryable_write_error(chunk_err):
-                                        raise
-                                    try:
-                                        conn.rollback()
-                                    except Exception:
-                                        pass
-                                    try:
-                                        conn.ping(reconnect=True)
-                                        cur = conn.cursor()
-                                    except Exception:
-                                        raise RuntimeError(f"批量写入失败: {str(chunk_err)[:180]}")
-                                    _write_progress(safe_task_id, {
-                                        'status': 'success',
-                                        'task_id': safe_task_id,
-                                        'state': 'running',
-                                        'phase': 'writing_retry',
-                                        'processed_rows': row_count,
-                                        'total_rows': total_rows_hint,
-                                        'created': created,
-                                        'upserted': upserted,
-                                        'checkpoint_row': checkpoint_row,
-                                        'retry_reason': 'retryable_db_error',
-                                        'message': f'当前分片写入失败，正在重连后重试（断点 {chunk_checkpoint}/{total_rows_hint}）...'
-                                    }, merge=True)
-                                    _set_hb(stage='db_executemany_retry', phase='writing_retry', processed_rows=row_count, checkpoint_row=checkpoint_row)
-                                    try:
-                                        cur.executemany(upsert_sql, chunk)
-                                        written += len(chunk)
-                                        _set_hb(stage='db_commit', phase='writing_retry', processed_rows=row_count, checkpoint_row=checkpoint_row)
-                                        conn.commit()
-                                        _commit_checkpoint(chunk_checkpoint)
-                                    except Exception as retry_err:
-                                        try:
-                                            conn.rollback()
-                                        except Exception:
-                                            pass
-                                        raise RuntimeError(f"批量写入失败: {str(retry_err)[:180]}")
-                            return written
+                                conn.commit()
+                                if chunk_checkpoint > checkpoint_row:
+                                    checkpoint_row = chunk_checkpoint
+                                _mark_progress_advance(safe_task_id, processed_rows=row_count, checkpoint_row=checkpoint_row)
+                                return written
+                            except Exception as retry_err:
+                                try:
+                                    conn.rollback()
+                                except Exception:
+                                    pass
+                                raise RuntimeError(f"批量写入失败: {str(retry_err)[:180]}")
                         except Exception as e:
                             try:
                                 conn.rollback()
@@ -9465,7 +9574,7 @@ class SalesProductMixin:
 
                         row_count += 1
                         # worker 被 restart 后应尽快退出（避免并发写入）
-                        if row_count % 50 == 0:
+                        if run_id_check_step > 0 and (row_count % run_id_check_step == 0):
                             live = _read_progress(safe_task_id) or {}
                             if str(live.get('run_id') or '') and str(live.get('run_id') or '') != str(worker_run_id):
                                 return self.send_json({'status': 'success', 'task_id': safe_task_id, 'message': '任务已被重启，当前worker退出'}, start_response)
@@ -9486,7 +9595,7 @@ class SalesProductMixin:
                                 continue
 
                             low_identifier = identifier.lower()
-                            if any(x in low_identifier for x in ('示例', '请删除')):
+                            if any(x in low_identifier for x in _template_markers):
                                 skipped_template_sample += 1
                                 continue
                             sales_product_id = _resolve_sales_product_id_for_row(identifier)
@@ -9514,11 +9623,9 @@ class SalesProductMixin:
                             ad_spend = parse_number_flexible(get_cell(row, 'ad_spend'), False)
                             ad_sales_amount = parse_number_flexible(get_cell(row, 'ad_sales_amount'), False)
                             refund_amount = parse_number_flexible(get_cell(row, 'refund_amount'), False)
-                            sub_category_rank = parse_rank(get_cell(row, 'sub_category_rank'))
 
                             if (
-                                (sub_category_rank is None)
-                                and float(sales_qty or 0) == 0.0
+                                float(sales_qty or 0) == 0.0
                                 and float(net_sales_amount or 0) == 0.0
                                 and float(order_qty or 0) == 0.0
                                 and float(session_total or 0) == 0.0
@@ -9558,33 +9665,19 @@ class SalesProductMixin:
                                     ad_spend,
                                     ad_sales_amount,
                                     refund_amount,
-                                    sub_category_rank,
                                 ))
                                 batch_row_marks.append(row_count)
-                                if len(batch_rows) == 1:
-                                    # 记录当前内存批次的起始行号，用于重启从更靠后的安全断点恢复
-                                    _write_progress(safe_task_id, {
-                                        'pending_batch_start_row': row_count,
-                                        'pending_batch_size': len(batch_rows),
-                                    }, merge=True)
-                                elif (len(batch_rows) % 200) == 0:
-                                    _write_progress(safe_task_id, {
-                                        'pending_batch_start_row': int(batch_row_marks[0] or row_count),
-                                        'pending_batch_size': len(batch_rows),
-                                    }, merge=True)
                                 created += 1
-                                try:
-                                    touched_agg_ids.add(int(sales_product_id))
-                                except Exception:
-                                    pass
 
                                 # 达到batch_size则执行
                                 if len(batch_rows) >= batch_size:
                                     try:
                                         _set_hb(stage='flush_batch', phase='writing', processed_rows=row_count, checkpoint_row=checkpoint_row)
+                                        _write_progress(safe_task_id, {
+                                            'pending_batch_start_row': int(batch_row_marks[0] or row_count),
+                                            'pending_batch_size': len(batch_rows),
+                                        }, merge=True)
                                         upserted += flush_batch_data()
-                                        # flush_batch_data 内已分片 commit，这里仅兜底
-                                        conn.commit()
                                     except Exception as werr:
                                         fatal_write_error = str(werr)[:200]
                                         raise
@@ -9609,7 +9702,8 @@ class SalesProductMixin:
                         if fatal_write_error:
                             break
 
-                        if row_count % 10 == 0:
+                        now_hb = time.time()
+                        if (row_count % progress_row_step == 0) or ((now_hb - last_progress_heartbeat) >= progress_sec_step):
                             _write_progress(safe_task_id, {
                                 'status': 'success',
                                 'task_id': safe_task_id,
@@ -9618,30 +9712,18 @@ class SalesProductMixin:
                                 'processed_rows': row_count,
                                 'total_rows': total_rows_hint,
                                 'created': created,
+                                'upserted': upserted,
                                 'checkpoint_row': checkpoint_row,
                                 'message': f'正在处理第 {row_count} 行'
-                            })
+                            }, merge=True)
                             _mark_progress_advance(safe_task_id, processed_rows=row_count, checkpoint_row=checkpoint_row)
                             _set_hb(stage='iter_rows', phase='iter_rows', processed_rows=row_count, checkpoint_row=checkpoint_row)
-                            last_progress_heartbeat = time.time()
-                        else:
-                            # 即使行号没到 10 的倍数，也定期刷新 ts，避免前端误判卡死
-                            now_hb = time.time()
-                            if (now_hb - last_progress_heartbeat) >= 2.5:
-                                _write_progress(safe_task_id, {
-                                    'status': 'success',
-                                    'task_id': safe_task_id,
-                                    'state': 'running',
-                                    'phase': 'iter_rows',
-                                    'processed_rows': row_count,
-                                    'total_rows': total_rows_hint,
-                                    'created': created,
-                                    'checkpoint_row': checkpoint_row,
-                                    'message': f'正在处理第 {row_count} 行'
-                                }, merge=True)
-                                _mark_progress_advance(safe_task_id, processed_rows=row_count, checkpoint_row=checkpoint_row)
-                                _set_hb(stage='iter_rows', phase='iter_rows', processed_rows=row_count, checkpoint_row=checkpoint_row)
-                                last_progress_heartbeat = now_hb
+                            last_progress_heartbeat = now_hb
+
+                    try:
+                        wb.close()
+                    except Exception:
+                        pass
 
                     # 导入完成后，flush最后的batch数据
                     if not check_only:
@@ -9649,8 +9731,6 @@ class SalesProductMixin:
                             try:
                                 _set_hb(stage='flush_batch_final', phase='writing', processed_rows=row_count, checkpoint_row=checkpoint_row)
                                 upserted += flush_batch_data()
-                                # flush_batch_data 内已分片 commit，这里仅兜底再 commit 一次
-                                conn.commit()
                             except Exception as werr2:
                                 fatal_write_error = str(werr2)[:200]
 
@@ -9990,7 +10070,6 @@ class SalesProductMixin:
                 {'key': 'ad_spend', 'label': '广告花费', 'color': '#b96f3d', 'agg': 'sum'},
                 {'key': 'ad_sales_amount', 'label': '广告销售额', 'color': '#6a8f4e', 'agg': 'sum'},
                 {'key': 'refund_amount', 'label': '退款金额', 'color': '#9b4a4a', 'agg': 'sum'},
-                {'key': 'sub_category_rank', 'label': '小类排名', 'color': '#6d7485', 'agg': 'avg'},
             ]
 
             with self._get_db_connection() as conn:
@@ -10270,10 +10349,7 @@ class SalesProductMixin:
                         def _query_raw_bucket(bucket_start, rng_start, rng_end):
                             cols = ["%s AS record_date"]
                             for key in metric_keys:
-                                if key == 'sub_category_rank':
-                                    cols.append("AVG(spp.sub_category_rank) AS sub_category_rank")
-                                else:
-                                    cols.append(f"SUM(COALESCE(spp.{key},0)) AS {key}")
+                                cols.append(f"SUM(COALESCE(spp.{key},0)) AS {key}")
                             sql_parts = [
                                 f"""
                                 SELECT {', '.join(cols)}
@@ -10330,10 +10406,7 @@ class SalesProductMixin:
                         if full_from and full_to and full_from <= full_to:
                             cols = [f"DATE(a.{period_col}) AS record_date"]
                             for key in metric_keys:
-                                if key == 'sub_category_rank':
-                                    cols.append("AVG(a.sub_category_rank_avg) AS sub_category_rank")
-                                else:
-                                    cols.append(f"SUM(COALESCE(a.{key},0)) AS {key}")
+                                cols.append(f"SUM(COALESCE(a.{key},0)) AS {key}")
                             agg_sql = [
                                 f"""
                                 SELECT {', '.join(cols)}
@@ -10390,10 +10463,7 @@ class SalesProductMixin:
                         # fallback: keep legacy behavior if dates are missing/unparseable
                         cols = [f"DATE(a.{period_col}) AS record_date"]
                         for key in metric_keys:
-                            if key == 'sub_category_rank':
-                                cols.append("AVG(a.sub_category_rank_avg) AS sub_category_rank")
-                            else:
-                                cols.append(f"SUM(COALESCE(a.{key},0)) AS {key}")
+                            cols.append(f"SUM(COALESCE(a.{key},0)) AS {key}")
 
                         agg_sql = [
                             f"""
@@ -10527,7 +10597,6 @@ class SalesProductMixin:
                     "SUM(COALESCE(spp.ad_sales_amount,0)) AS ad_sales_amount",
                     "SUM(COALESCE(spp.refund_amount,0)) AS refund_amount",
                     refund_rate_sql_day,
-                    "AVG(spp.sub_category_rank) AS sub_category_rank",
                     "(MAX(COALESCE(est_unit_cost.unit_bom_cost_usd, 0)) * SUM(COALESCE(spp.sales_qty,0))) AS estimated_product_cost_usd",
                     "(MAX(COALESCE(est_unit_cost.unit_last_mile_freight_usd, 0)) * SUM(COALESCE(spp.sales_qty,0))) AS estimated_last_mile_freight_usd",
                     commission_sql_day,
@@ -10633,7 +10702,6 @@ class SalesProductMixin:
                         'ad_sales_amount': row.get('ad_sales_amount') or 0,
                         'refund_amount': row.get('refund_amount') or 0,
                         'refund_rate': round(float(row.get('refund_rate') or 0), 6),
-                        'sub_category_rank': row.get('sub_category_rank'),
                         'estimated_product_cost_usd': bom_u,
                         'estimated_last_mile_freight_usd': lm_u,
                         'est_referral_commission_usd': comm_u,
@@ -10693,7 +10761,6 @@ class SalesProductMixin:
                                 "SUM(COALESCE(spp.ad_sales_amount,0)) AS ad_sales_amount",
                                 "SUM(COALESCE(spp.refund_amount,0)) AS refund_amount",
                                 refund_rate_sql_day,
-                                "AVG(spp.sub_category_rank) AS sub_category_rank",
                                 "(MAX(COALESCE(est_unit_cost.unit_bom_cost_usd, 0)) * SUM(COALESCE(spp.sales_qty,0))) AS estimated_product_cost_usd",
                                 "(MAX(COALESCE(est_unit_cost.unit_last_mile_freight_usd, 0)) * SUM(COALESCE(spp.sales_qty,0))) AS estimated_last_mile_freight_usd",
                                 commission_sql_day,
@@ -10778,7 +10845,6 @@ class SalesProductMixin:
                                     'ad_sales_amount': r.get('ad_sales_amount') or 0,
                                     'refund_amount': r.get('refund_amount') or 0,
                                     'refund_rate': round(float(r.get('refund_rate') or 0), 6),
-                                    'sub_category_rank': r.get('sub_category_rank'),
                                     'estimated_product_cost_usd': bom_r,
                                     'estimated_last_mile_freight_usd': lm_r,
                                     'est_referral_commission_usd': comm_r,

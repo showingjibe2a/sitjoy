@@ -2386,15 +2386,6 @@ class SalesManagementMixin:
         refund_rate = round(ref / net, 6) if net > 1e-12 else 0.0
         commission_rate = round(comm / net, 6) if net > 1e-12 else 0.0
         net_margin_rate = round(profit / gross, 6) if gross > 1e-12 else 0.0
-        scr = raw.get('sub_category_rank_avg')
-        if scr is None:
-            scr = raw.get('sub_category_rank')
-        sub_rank = None
-        if scr is not None:
-            try:
-                sub_rank = round(float(scr), 4)
-            except Exception:
-                sub_rank = None
         return {
             'rows': int(self._parse_int(raw.get('source_rows')) or 0),
             'sales_qty': float(raw.get('sales_qty') or 0),
@@ -2410,7 +2401,6 @@ class SalesManagementMixin:
             'ad_sales_amount': round(float(raw.get('ad_sales_amount') or 0), 2),
             'refund_amount': round(ref, 2),
             'refund_rate': refund_rate,
-            'sub_category_rank': sub_rank,
             'estimated_product_cost_usd': bom,
             'estimated_last_mile_freight_usd': lm,
             'estimated_total_cost_usd': total_cost,
@@ -2436,7 +2426,6 @@ class SalesManagementMixin:
             'refund_amount': 0,
             'estimated_product_cost_usd': 0,
             'estimated_last_mile_freight_usd': 0,
-            'sub_category_rank_avg': None,
         })
 
     def _forecast_parse_sf_shop_ids(self, query_params):
@@ -2499,7 +2488,6 @@ class SalesManagementMixin:
                        m.ad_spend,
                        m.ad_sales_amount,
                        m.refund_amount,
-                       m.sub_category_rank_avg,
                        (COALESCE(sp.sale_price_usd, 0) * COALESCE(m.sales_qty, 0)) AS gross_sales_amount,
                        (COALESCE(est_unit_cost.unit_bom_cost_usd, 0) * COALESCE(m.sales_qty, 0)) AS estimated_product_cost_usd,
                        (COALESCE(est_unit_cost.unit_last_mile_freight_usd, 0) * COALESCE(m.sales_qty, 0)) AS estimated_last_mile_freight_usd
@@ -2553,7 +2541,6 @@ class SalesManagementMixin:
                        SUM(COALESCE(m.ad_spend, 0)) AS ad_spend,
                        SUM(COALESCE(m.ad_sales_amount, 0)) AS ad_sales_amount,
                        SUM(COALESCE(m.refund_amount, 0)) AS refund_amount,
-                       AVG(m.sub_category_rank_avg) AS sub_category_rank_avg,
                        SUM(COALESCE(sp.sale_price_usd, 0) * COALESCE(m.sales_qty, 0)) AS gross_sales_amount,
                        (MAX(COALESCE(est_unit_cost.unit_bom_cost_usd, 0)) * SUM(COALESCE(m.sales_qty, 0))) AS estimated_product_cost_usd,
                        (MAX(COALESCE(est_unit_cost.unit_last_mile_freight_usd, 0)) * SUM(COALESCE(m.sales_qty, 0))) AS estimated_last_mile_freight_usd

@@ -3874,6 +3874,11 @@
     window.SitjoyManagedPmTable = Object.assign({}, window.SitjoyManagedPmTable || {}, {
         resolveBodyTableFromHeaderTh,
         invalidateLayout: invalidateManagedTableLayout,
+        syncBatchBar(tableOrSelector){
+            const table = typeof tableOrSelector === 'string' ? document.querySelector(tableOrSelector) : tableOrSelector;
+            const state = table ? (managedTableState.get(table) || null) : null;
+            if(state) syncManagedBatchBar(state);
+        },
         /** 表体 DOM 重绘后按当前列筛选状态重新隐藏行（一般由 refreshManagedTable 自动调用） */
         reapplyColumnFilters(tableOrSelector){
             const t = typeof tableOrSelector === 'string' ? document.querySelector(tableOrSelector) : tableOrSelector;

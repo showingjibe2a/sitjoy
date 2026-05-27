@@ -65,7 +65,6 @@ def handle_sales_product_performance_dashboard_api_optimized(self, environ, meth
             {'key': 'ad_spend', 'label': '广告花费', 'color': '#b96f3d', 'agg': 'sum'},
             {'key': 'ad_sales_amount', 'label': '广告销售额', 'color': '#6a8f4e', 'agg': 'sum'},
             {'key': 'refund_amount', 'label': '退款金额', 'color': '#9b4a4a', 'agg': 'sum'},
-            {'key': 'sub_category_rank', 'label': '小类排名', 'color': '#6d7485', 'agg': 'avg'},
         ]
 
         with self._get_db_connection() as conn:
@@ -328,7 +327,6 @@ def handle_sales_product_performance_dashboard_api_optimized(self, environ, meth
                     'ad_spend': row.get('ad_spend') or 0,
                     'ad_sales_amount': row.get('ad_sales_amount') or 0,
                     'refund_amount': row.get('refund_amount') or 0,
-                    'sub_category_rank': row.get('sub_category_rank')
                 })
 
             groups = []

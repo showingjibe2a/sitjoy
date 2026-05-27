@@ -1098,7 +1098,6 @@
                                     <th data-manage-col-key="ad_spend">广告花费</th>
                                     <th data-manage-col-key="ad_sales_amount">广告销售额</th>
                                     <th data-manage-col-key="refund_amount">退款金额</th>
-                                    <th data-manage-col-key="sub_category_rank">小类排名</th>
                                     <th data-manage-col-key="acos">ACOS</th>
                                     <th data-manage-col-key="acoas">ACOAS</th>
                                     <th data-manage-col-key="rois">ROIS</th>
@@ -1109,7 +1108,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr><td colspan="22" style="text-align:center;">加载中...</td></tr>
+                                <tr><td colspan="21" style="text-align:center;">加载中...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -1144,7 +1143,6 @@
                         <div class="form-group"><label for="performanceAdSpend">广告花费(USD)</label><input type="number" step="0.01" id="performanceAdSpend" class="optional-field"></div>
                         <div class="form-group"><label for="performanceAdSales">广告销售额(USD)</label><input type="number" step="0.01" id="performanceAdSales" class="optional-field"></div>
                         <div class="form-group"><label for="performanceRefundAmount">退款金额(USD)</label><input type="number" step="0.01" id="performanceRefundAmount" class="optional-field"></div>
-                        <div class="form-group"><label for="performanceSubCategoryRank">小类排名</label><input type="number" step="1" id="performanceSubCategoryRank" class="optional-field"></div>
                     </div>
                 </div>
             </div>
@@ -1195,7 +1193,7 @@
         let uploadProcessingTimer = null;
         let uploadProgressPollingTimer = null;
         const PERF_PAGE_SIZE_KEY = 'sales_perf_list_page_size_v1';
-        const PERF_TABLE_COLSPAN = 22;
+        const PERF_TABLE_COLSPAN = 21;
         const PERF_METRIC_ORDER_KEY = 'sales_perf_dashboard_metric_order_v1';
         const PERF_CHART_GRANULARITY_KEY = 'sales_perf_chart_granularity_v1';
         /** 货号分组明细：外层（父行）/ 内层（子 SKU）排序默认字段与升降序 */
@@ -1239,8 +1237,7 @@
             rois: 'ROIS：净销售额÷广告花费。',
             ctr: 'CTR：广告点击÷广告展示。',
             cvr: 'CVR：广告订单量÷广告点击。',
-            cpc: 'CPC：广告花费÷广告点击。',
-            sub_category_rank: '小类排名：周期内表现记录条目的算术平均（非加权）；分组父行为加权平均。'
+            cpc: 'CPC：广告花费÷广告点击。'
         };
         const PERCENT_METRIC_KEYS = new Set(['acos', 'acoas', 'ctr', 'cvr', 'discount_rate', 'refund_rate', 'commission_rate', 'net_margin_rate']);
         /** 货号分组：父行/全量汇总可线性相加的指标键 */
@@ -1255,26 +1252,15 @@
         function emptyPerfGroupSum() {
             const sum = { rows: 0 };
             PERF_GROUP_ITEM_SUM_KEYS.forEach(k => { sum[k] = 0; });
-            sum.__rank_weight_sum = 0;
-            sum.__rank_weight_cnt = 0;
             return sum;
         }
 
         function accumulatePerfGroupItemIntoSum(sum, it) {
             sum.rows += Number(it.rows || 0);
             PERF_GROUP_ITEM_SUM_KEYS.forEach(k => { sum[k] += Number(it[k] || 0); });
-            const r = Number(it.sub_category_rank);
-            if (Number.isFinite(r) && r > 0) {
-                const w = Math.max(1, Number(it.rows || 1));
-                sum.__rank_weight_sum += r * w;
-                sum.__rank_weight_cnt += w;
-            }
         }
 
         function finalizePerfGroupAggregateSum(sum) {
-            if (sum.__rank_weight_cnt > 0) {
-                sum.sub_category_rank = Math.round((sum.__rank_weight_sum / sum.__rank_weight_cnt) * 100) / 100;
-            }
             const gn = Number(sum.net_sales_amount || 0);
             const gg = Number(sum.gross_sales_amount || 0);
             const grf = Number(sum.refund_amount || 0);
@@ -1460,17 +1446,12 @@
             const bucketMap = {};
             (chartItems || []).forEach(row => {
                 const key = getBucketKeyByGranularity(row.record_date, g);
-                const b = bucketMap[key] || (bucketMap[key] = { record_date: key, __sub_rank_sum: 0, __sub_rank_cnt: 0 });
+                const b = bucketMap[key] || (bucketMap[key] = { record_date: key });
                 Object.keys(row || {}).forEach(k => {
                     if (k === 'record_date') return;
                     const num = Number(row[k]);
                     if (!Number.isFinite(num)) return;
-                    if (k === 'sub_category_rank') {
-                        b.__sub_rank_sum += num;
-                        b.__sub_rank_cnt += 1;
-                    } else {
-                        b[k] = Number(b[k] || 0) + num;
-                    }
+                    b[k] = Number(b[k] || 0) + num;
                 });
             });
 
@@ -1478,12 +1459,9 @@
                 const b = bucketMap[key];
                 const out = { record_date: b.record_date };
                 Object.keys(b).forEach(k => {
-                    if (k === 'record_date' || k.startsWith('__')) return;
+                    if (k === 'record_date') return;
                     out[k] = Math.round(Number(b[k] || 0) * 100) / 100;
                 });
-                if (b.__sub_rank_cnt > 0) {
-                    out.sub_category_rank = Math.round((b.__sub_rank_sum / b.__sub_rank_cnt) * 100) / 100;
-                }
                 return out;
             });
 
@@ -3374,6 +3352,30 @@
             state.pendingPerfUploadFile = null;
         }
 
+        function syncPerfManagedBatchBar() {
+            const table = document.getElementById('salesProductPerformanceTable');
+            if (table && window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.syncBatchBar === 'function') {
+                window.SitjoyManagedPmTable.syncBatchBar(table);
+            }
+        }
+
+        function getPerfSelectAllCheckboxes() {
+            return Array.from(document.querySelectorAll('input#perfSelectAll'));
+        }
+
+        function getVisiblePerfRowCheckboxes() {
+            const table = document.getElementById('salesProductPerformanceTable');
+            const tbody = table ? table.tBodies[0] : null;
+            if (!tbody) return [];
+            return Array.from(tbody.querySelectorAll('.perf-row-checkbox')).filter(cb => {
+                const tr = cb.closest('tr');
+                if (!tr || !tbody.contains(tr)) return false;
+                if (String(tr.dataset.pmFilterHidden || '0') === '1') return false;
+                if (tr.style && tr.style.display === 'none') return false;
+                return true;
+            });
+        }
+
         function bindPerfRowSelectionEvents() {
             document.querySelectorAll('.perf-row-checkbox').forEach(el => {
                 if (el.dataset._perfRowCbBound === '1') return;
@@ -3384,28 +3386,47 @@
                     if (this.checked) state.selectedPerformanceIds.add(id);
                     else state.selectedPerformanceIds.delete(id);
                     syncPerfSelectAllCheckbox();
+                    syncPerfManagedBatchBar();
                 });
             });
         }
 
         function syncPerfSelectAllCheckbox() {
-            const master = document.getElementById('perfSelectAll');
-            if (!master) return;
-            const checkboxes = Array.from(document.querySelectorAll('.perf-row-checkbox')).filter(cb => {
-                const tr = cb.closest('tr');
-                if (!tr) return false;
-                if (String(tr.dataset.pmFilterHidden || '0') === '1') return false;
-                if (tr.style && tr.style.display === 'none') return false;
-                return true;
-            });
+            const masters = getPerfSelectAllCheckboxes();
+            const checkboxes = getVisiblePerfRowCheckboxes();
+            if (!masters.length) return;
             if (!checkboxes.length) {
-                master.checked = false;
-                master.indeterminate = false;
+                masters.forEach(master => {
+                    master.checked = false;
+                    master.indeterminate = false;
+                });
                 return;
             }
             const checkedCount = checkboxes.filter(cb => cb.checked).length;
-            master.checked = checkedCount > 0 && checkedCount === checkboxes.length;
-            master.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+            const allChecked = checkedCount > 0 && checkedCount === checkboxes.length;
+            const partial = checkedCount > 0 && checkedCount < checkboxes.length;
+            masters.forEach(master => {
+                master.checked = allChecked;
+                master.indeterminate = partial;
+            });
+        }
+
+        function togglePerfSelectAll(checked) {
+            const rows = getVisiblePerfRowCheckboxes();
+            const visibleIds = rows
+                .map(el => String(el.getAttribute('data-id') || '').trim())
+                .filter(Boolean);
+            if (checked) {
+                visibleIds.forEach(id => state.selectedPerformanceIds.add(id));
+            } else {
+                visibleIds.forEach(id => state.selectedPerformanceIds.delete(id));
+            }
+            rows.forEach(el => {
+                const id = String(el.getAttribute('data-id') || '').trim();
+                el.checked = checked ? state.selectedPerformanceIds.has(id) : false;
+            });
+            syncPerfSelectAllCheckbox();
+            syncPerfManagedBatchBar();
         }
 
         function renderSalesProductPerformanceTable(items) {
@@ -3433,7 +3454,6 @@
                     <td>${item.ad_spend ?? ''}</td>
                     <td>${item.ad_sales_amount ?? ''}</td>
                     <td>${item.refund_amount ?? ''}</td>
-                    <td>${item.sub_category_rank ?? ''}</td>
                     <td>${formatMetricValue(resolveMetricValue(item, 'acos'), 'acos')}</td>
                     <td>${formatMetricValue(resolveMetricValue(item, 'acoas'), 'acoas')}</td>
                     <td>${formatMetricValue(resolveMetricValue(item, 'rois'), 'rois')}</td>
@@ -3450,6 +3470,7 @@
             `).join('');
             bindPerfRowSelectionEvents();
             syncPerfSelectAllCheckbox();
+            syncPerfManagedBatchBar();
             if (window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.invalidateLayout === 'function') {
                 window.SitjoyManagedPmTable.invalidateLayout(document.getElementById('salesProductPerformanceTable'));
             }
@@ -3655,7 +3676,6 @@
             document.getElementById('performanceAdSpend').value = item.ad_spend ?? '';
             document.getElementById('performanceAdSales').value = item.ad_sales_amount ?? '';
             document.getElementById('performanceRefundAmount').value = item.refund_amount ?? '';
-            document.getElementById('performanceSubCategoryRank').value = item.sub_category_rank ?? '';
         }
 
         function openCreatePerformanceModal() {
@@ -3697,8 +3717,7 @@
                 ad_orders: document.getElementById('performanceAdOrders').value,
                 ad_spend: document.getElementById('performanceAdSpend').value,
                 ad_sales_amount: document.getElementById('performanceAdSales').value,
-                refund_amount: document.getElementById('performanceRefundAmount').value,
-                sub_category_rank: document.getElementById('performanceSubCategoryRank').value
+                refund_amount: document.getElementById('performanceRefundAmount').value
             };
             if (!payload.platform_sku || !payload.record_date) {
                 showPerformanceStatus('请填写销售平台SKU和日期', true);
@@ -3769,6 +3788,8 @@
                 payloadIds.forEach(id => state.selectedPerformanceIds.delete(String(id)));
                 const deleted = Number(data.deleted || payloadIds.length);
                 if (window.showAppToast) window.showAppToast(`批量删除成功：${deleted} 条`, false, 2200);
+                syncPerfSelectAllCheckbox();
+                syncPerfManagedBatchBar();
                 loadSalesProductPerformanceList(state.performancePage);
                 if (state.dashboardQueried) loadDashboard();
             }).catch(err => {
@@ -3952,24 +3973,12 @@
             });
             document.getElementById('btnPerfImportShopCancel').addEventListener('click', () => closePerfImportShopModal(true));
             document.getElementById('btnPerfImportShopConfirm').addEventListener('click', confirmPerfImportShopAndUpload);
-            const perfSelectAll = document.getElementById('perfSelectAll');
-            if (perfSelectAll) {
-                perfSelectAll.addEventListener('change', function() {
-                    const want = !!this.checked;
-                    document.querySelectorAll('.perf-row-checkbox').forEach(cb => {
-                        const tr = cb.closest('tr');
-                        if (!tr) return;
-                        if (String(tr.dataset.pmFilterHidden || '0') === '1') return;
-                        if (tr.style && tr.style.display === 'none') return;
-                        const id = String(cb.getAttribute('data-id') || '').trim();
-                        if (!id) return;
-                        cb.checked = want;
-                        if (want) state.selectedPerformanceIds.add(id);
-                        else state.selectedPerformanceIds.delete(id);
-                    });
-                    syncPerfSelectAllCheckbox();
-                });
-            }
+            document.addEventListener('change', function(e) {
+                const target = e.target;
+                if (target && target.id === 'perfSelectAll') {
+                    togglePerfSelectAll(!!target.checked);
+                }
+            });
             document.getElementById('btnPerfCreate').addEventListener('click', openCreatePerformanceModal);
             document.getElementById('btnPerfModalCancel').addEventListener('click', closePerformanceModal);
             document.getElementById('btnPerfModalSave').addEventListener('click', saveSalesProductPerformanceFromModal);

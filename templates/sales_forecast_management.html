@@ -5044,10 +5044,6 @@
             if (SF_PERF_PERCENT_KEYS.has(String(key || ''))) {
                 return `${(n * 100).toFixed(2).replace(/\.00$/, '')}%`;
             }
-            if (key === 'sub_category_rank') {
-                if (!n) return '—';
-                return String(Math.round(n * 100) / 100);
-            }
             return formatNumber(n);
         }
 
@@ -5073,7 +5069,6 @@
                 { key: 'ad_spend', label: '广告花费' },
                 { key: 'ad_sales_amount', label: '广告销售额' },
                 { key: 'refund_amount', label: '退款金额' },
-                { key: 'sub_category_rank', label: '小类排名' },
                 { key: 'acos', label: 'ACOS' },
                 { key: 'acoas', label: 'ACOAS' },
                 { key: 'rois', label: 'ROIS' },
@@ -5126,10 +5121,6 @@
             }
             if (!cell) return '—';
             if (key === 'rows') return formatNumber(cell.rows || 0);
-            if (key === 'sub_category_rank') {
-                if (cell.sub_category_rank == null || cell.sub_category_rank === '') return '—';
-                return sfFormatPerfMetricValue(Number(cell.sub_category_rank), key);
-            }
             const resolved = sfResolvePerfMetric(cell, key);
             return sfFormatPerfMetricValue(resolved, key);
         }
