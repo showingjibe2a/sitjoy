@@ -9172,16 +9172,19 @@ class SalesProductMixin:
                         'message': '导入任务已启动，请通过进度接口轮询结果'
                     }, start_response)
 
-            # 万行级文件：read_only 逐行解 XML 往往比标准模式慢数倍；中等体积用标准模式提速
+            # 正式导入：中等体积用标准模式提速；预检只读前100行，强制 read_only 流式解析，避免整表载入
             file_byte_len = len(file_bytes or b'')
-            use_fast_xlsx_reader = file_byte_len <= (14 * 1024 * 1024)
+            use_fast_xlsx_reader = (not check_only) and file_byte_len <= (14 * 1024 * 1024)
             wb = load_workbook(
                 io.BytesIO(file_bytes),
-                read_only=(not use_fast_xlsx_reader),
+                read_only=(check_only or (not use_fast_xlsx_reader)),
                 data_only=True,
             )
             ws = wb.active
-            total_rows_hint = max(0, int((ws.max_row or 1)) - 1)
+            if check_only:
+                total_rows_hint = 100
+            else:
+                total_rows_hint = max(0, int((ws.max_row or 1)) - 1)
 
             # 读取第一行作为headers（read_only模式下避免ws[1]）
             header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
@@ -9305,43 +9308,59 @@ class SalesProductMixin:
             skipped_all_zero = 0
             upserted = 0
 
-            _write_progress(safe_task_id, {
-                'status': 'success',
-                'task_id': safe_task_id,
-                'state': 'running',
-                'processed_rows': 0,
-                'total_rows': total_rows_hint,
-                'created': 0,
-                'shop_id': import_shop_id,
-                'phase': 'start',
-                'run_id': worker_run_id,
-                'checkpoint_row': 0,
-                'advance_ts': _now_ts_text(),
-                'message': '开始处理...'
-            })
-            hb_state['run_id'] = worker_run_id
-            _set_hb(stage='init', phase='start', processed_rows=0, checkpoint_row=0)
-            threading.Thread(target=_heartbeat_worker, args=(safe_task_id,), daemon=True).start()
+            if check_only:
+                _write_progress(safe_task_id, {
+                    'status': 'success',
+                    'task_id': safe_task_id,
+                    'state': 'running',
+                    'processed_rows': 0,
+                    'total_rows': total_rows_hint,
+                    'created': 0,
+                    'shop_id': import_shop_id,
+                    'phase': 'precheck',
+                    'message': '预检中（抽样前100行）...'
+                })
+            else:
+                _write_progress(safe_task_id, {
+                    'status': 'success',
+                    'task_id': safe_task_id,
+                    'state': 'running',
+                    'processed_rows': 0,
+                    'total_rows': total_rows_hint,
+                    'created': 0,
+                    'shop_id': import_shop_id,
+                    'phase': 'start',
+                    'run_id': worker_run_id,
+                    'checkpoint_row': 0,
+                    'advance_ts': _now_ts_text(),
+                    'message': '开始处理...'
+                })
+                hb_state['run_id'] = worker_run_id
+                _set_hb(stage='init', phase='start', processed_rows=0, checkpoint_row=0)
+                threading.Thread(target=_heartbeat_worker, args=(safe_task_id,), daemon=True).start()
 
             min_record_date = None
             max_record_date = None
             touched_agg_ids = set()
             agg_refresh_warning = None
 
-            # 导入用“中等超时”长连接：避免 12s 频繁 2013，同时允许真正卡死的连接尽快超时抛错，便于自愈重启
-            with self._get_db_connection_long(90, 90, 10) as conn:
+            db_conn_factory = self._get_db_connection if check_only else (
+                lambda: self._get_db_connection_long(90, 90, 10)
+            )
+            with db_conn_factory() as conn:
                 with conn.cursor() as cur:
-                    _write_progress(safe_task_id, {
-                        'status': 'success',
-                        'task_id': safe_task_id,
-                        'state': 'running',
-                        'phase': 'loading_sku_map',
-                        'processed_rows': 0,
-                        'total_rows': total_rows_hint,
-                        'created': 0,
-                        'message': '正在加载SKU映射（sales_products）...'
-                    })
-                    _set_hb(stage='loading_sku_map', phase='loading_sku_map', processed_rows=0, checkpoint_row=0)
+                    if not check_only:
+                        _write_progress(safe_task_id, {
+                            'status': 'success',
+                            'task_id': safe_task_id,
+                            'state': 'running',
+                            'phase': 'loading_sku_map',
+                            'processed_rows': 0,
+                            'total_rows': total_rows_hint,
+                            'created': 0,
+                            'message': '正在加载SKU映射（sales_products）...'
+                        })
+                        _set_hb(stage='loading_sku_map', phase='loading_sku_map', processed_rows=0, checkpoint_row=0)
                     # 一次性加载指定店铺下的 SKU/ASIN 映射，避免跨店铺误匹配
                     sku_map = {}
                     asin_map = {}
@@ -9357,17 +9376,18 @@ class SalesProductMixin:
                             sku_map[sku] = rid
                         if rid and child_code:
                             asin_map[child_code] = rid
-                    _write_progress(safe_task_id, {
-                        'status': 'success',
-                        'task_id': safe_task_id,
-                        'state': 'running',
-                        'phase': 'loading_sku_map_done',
-                        'processed_rows': 0,
-                        'total_rows': total_rows_hint,
-                        'created': 0,
-                        'message': f'SKU映射加载完成（店铺ID={import_shop_id}）：sku={len(sku_map)}，asin={len(asin_map)}'
-                    })
-                    _mark_progress_advance(safe_task_id, processed_rows=0, checkpoint_row=0, extra={'phase': 'loading_sku_map_done'})
+                    if not check_only:
+                        _write_progress(safe_task_id, {
+                            'status': 'success',
+                            'task_id': safe_task_id,
+                            'state': 'running',
+                            'phase': 'loading_sku_map_done',
+                            'processed_rows': 0,
+                            'total_rows': total_rows_hint,
+                            'created': 0,
+                            'message': f'SKU映射加载完成（店铺ID={import_shop_id}）：sku={len(sku_map)}，asin={len(asin_map)}'
+                        })
+                        _mark_progress_advance(safe_task_id, processed_rows=0, checkpoint_row=0, extra={'phase': 'loading_sku_map_done'})
 
                     def _resolve_sales_product_id_for_row(raw_identifier):
                         """先整串匹配 platform_sku / child_code；失败则按中英文逗号等切分后逐段匹配。"""
@@ -9554,22 +9574,25 @@ class SalesProductMixin:
                             'message': f'正在恢复：跳过前 {resume_row} 行已处理数据...'
                         }, merge=True)
 
-                    _write_progress(safe_task_id, {
-                        'status': 'success',
-                        'task_id': safe_task_id,
-                        'state': 'running',
-                        'phase': 'iter_rows',
-                        'processed_rows': 0,
-                        'total_rows': total_rows_hint,
-                        'created': 0,
-                        'message': '开始逐行读取并写入数据库...'
-                    })
-                    _set_hb(stage='iter_rows', phase='iter_rows', processed_rows=0, checkpoint_row=0)
+                    if not check_only:
+                        _write_progress(safe_task_id, {
+                            'status': 'success',
+                            'task_id': safe_task_id,
+                            'state': 'running',
+                            'phase': 'iter_rows',
+                            'processed_rows': 0,
+                            'total_rows': total_rows_hint,
+                            'created': 0,
+                            'message': '开始逐行读取并写入数据库...'
+                        })
+                        _set_hb(stage='iter_rows', phase='iter_rows', processed_rows=0, checkpoint_row=0)
 
                     # 使用iter_rows避免遍历max_row导致的超时问题
                     for row in ws.iter_rows(min_row=2, values_only=True):
-                        # 达到预检限制时提前退出
+                        # 达到预检限制时提前退出；并限制扫描行数，避免空行过多时读完整表
                         if check_only and processed_count >= process_limit:
+                            break
+                        if check_only and row_count >= 2500:
                             break
 
                         row_count += 1
@@ -9703,7 +9726,7 @@ class SalesProductMixin:
                             break
 
                         now_hb = time.time()
-                        if (row_count % progress_row_step == 0) or ((now_hb - last_progress_heartbeat) >= progress_sec_step):
+                        if (not check_only) and ((row_count % progress_row_step == 0) or ((now_hb - last_progress_heartbeat) >= progress_sec_step)):
                             _write_progress(safe_task_id, {
                                 'status': 'success',
                                 'task_id': safe_task_id,

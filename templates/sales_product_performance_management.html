@@ -3818,7 +3818,7 @@
                     'Accept': 'application/json',
                     'X-Requested-With': 'XMLHttpRequest'
                 }
-            }, 25000).then(data => {
+            }, Math.max(60000, precheckImportTimeoutMs(file))).then(data => {
                 if (data.status !== 'success') {
                     hideUploadProgress();
                     const failMsg = data.message || '导入失败';
@@ -3866,6 +3866,12 @@
             });
         }
 
+        function precheckImportTimeoutMs(file) {
+            const size = file && file.size ? Number(file.size) : 0;
+            // 预检为同步请求：含上传、解析、SKU 映射；大文件在 NAS 上需更长时间
+            return Math.min(600000, Math.max(120000, 120000 + Math.ceil(size / (512 * 1024)) * 20000));
+        }
+
         function precheckAndUploadSalesProductPerformanceTemplate(file, shopId) {
             if (!file) return;
             const importShopId = String(shopId || state.pendingPerfImportShopId || '').trim();
@@ -3877,8 +3883,7 @@
             formData.append('file', file);
             formData.append('shop_id', importShopId);
             const taskId = buildImportTaskId();
-            showUploadProgress('正在上传模板并预检...', 20);
-            startImportProgressPolling(taskId);
+            showUploadProgress('正在上传模板并预检（抽样前100行）...', 20);
             fetchJsonSafe(`/api/sales-product-performance-import?check_only=1&task_id=${encodeURIComponent(taskId)}&shop_id=${encodeURIComponent(importShopId)}`, {
                 method: 'POST',
                 body: formData,
@@ -3887,7 +3892,7 @@
                     'Accept': 'application/json',
                     'X-Requested-With': 'XMLHttpRequest'
                 }
-            }, 25000).then(data => {
+            }, precheckImportTimeoutMs(file)).then(data => {
                 hideUploadProgress();
                 if (data.status !== 'success') {
                     const failMessage = data.message || '预检失败';
