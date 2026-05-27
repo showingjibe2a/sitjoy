@@ -12,6 +12,7 @@ from modules.amazon_ad_mixin import AmazonAdMixin
 from modules.app_entry_mixin import AppEntryMixin
 from modules.audit_log_mixin import AuditLogMixin
 from modules.auth_employee_mixin import AuthEmployeeMixin
+from modules.profile_mixin import ProfileMixin
 from modules.core_app_mixin import CoreAppMixin
 from modules.encoding_utils_mixin import EncodingUtilsMixin
 from modules.excel_tools_mixin import ExcelToolsMixin
@@ -53,6 +54,7 @@ class WSGIApp(
     PagePermissionMixin,      # 页面权限控制
     CoreAppMixin,             # 核心基础逻辑
     AuthEmployeeMixin,        # 员工权限认证
+    ProfileMixin,             # 首页个人信息与头像
     UtilityMixin,             # 工具集：通用
     EncodingUtilsMixin,       # 工具集：编码处理
     ExcelToolsMixin,          # 工具集：Excel处理

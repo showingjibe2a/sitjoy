@@ -1,6 +1,8 @@
 ﻿# 请求路由分发 Mixin：集中管理 API/页面路由与权限检查。
 
 API_PERMISSION_MAP = {
+    '/api/profile': 'home',
+    '/api/profile/avatar': 'home',
     '/api/employee': 'home',
     '/api/todo': 'home',
     '/api/todo-type': 'home',
@@ -288,6 +290,14 @@ class RequestRoutingMixin:
         """统一 API 路由分发，减少主入口分支数量。"""
         if path.startswith('/api/auth'):
             return self.handle_auth_api(environ, method, start_response)
+        if path == '/api/profile' or path.startswith('/api/profile/'):
+            handler = getattr(self, 'handle_profile_api', None)
+            if handler is None:
+                return self.send_json({'status': 'error', 'message': 'Handler not found: handle_profile_api', 'path': path}, start_response)
+            try:
+                return handler(environ, method, start_response)
+            except Exception as e:
+                return self.send_json({'status': 'error', 'message': f'API内部错误: {str(e)}', 'path': path}, start_response)
         if path.startswith('/api/hello'):
             return self.handle_hello_api(environ, path, method, start_response)
         if path == '/status':

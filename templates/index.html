@@ -431,9 +431,7 @@
         }
 
         .home-topbar {
-            display: flex;
-            justify-content: flex-end;
-            margin-bottom: 12px;
+            margin-bottom: 1.25rem;
         }
 
         /* Home - Todo rail enhancements */
@@ -483,7 +481,29 @@
 
     <div class="container home-container">
         <div class="home-topbar">
-            <button class="logout-btn" onclick="handleLogout()">登出</button>
+            <section class="home-profile-card" id="homeProfileCard" aria-label="个人信息">
+                <div class="home-profile-main">
+                    <div class="home-profile-avatar-wrap">
+                        <img id="homeProfileAvatar" class="home-profile-avatar" alt="" hidden>
+                        <div id="homeProfileAvatarFallback" class="home-profile-avatar home-profile-avatar--fallback" aria-hidden="true">?</div>
+                    </div>
+                    <div class="home-profile-text">
+                        <div class="home-profile-greeting">
+                            <span class="home-profile-kicker">SITJOY · 工作台</span>
+                            <h2 id="homeProfileDisplayName">加载中…</h2>
+                        </div>
+                        <div class="home-profile-meta">
+                            <span class="home-profile-badge" id="homeProfileRole">员工</span>
+                            <span class="home-profile-meta-item" id="homeProfilePhone"></span>
+                            <span class="home-profile-meta-item home-profile-meta-item--muted" id="homeProfileJoined"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="home-profile-actions">
+                    <button type="button" class="btn-ghost home-profile-edit-btn" id="homeProfileEditBtn">编辑资料</button>
+                    <button type="button" class="logout-btn" onclick="handleLogout()">登出</button>
+                </div>
+            </section>
         </div>
         <section class="home-layout">
             <aside class="todo-rail">
@@ -888,6 +908,65 @@
             <div class="pm-modal-actions">
                 <button class="btn-secondary" type="button" onclick="closeEmployeeCreateModal()">取消</button>
                 <button class="btn-primary" type="submit" form="employeeCreateForm">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 个人信息编辑 -->
+    <div id="profileModal" class="pm-modal">
+        <div class="pm-modal-content pm-modal-content--wide">
+            <div class="pm-modal-scroll">
+                <div class="modal-header">
+                    <h2>个人信息</h2>
+                    <button type="button" class="modal-close" onclick="closeProfileModal()">×</button>
+                </div>
+                <div class="home-profile-modal-layout">
+                    <div class="home-profile-modal-avatar-col">
+                        <div class="home-profile-modal-avatar-wrap">
+                            <img id="profileModalAvatar" class="home-profile-avatar home-profile-avatar--lg" alt="" hidden>
+                            <div id="profileModalAvatarFallback" class="home-profile-avatar home-profile-avatar--lg home-profile-avatar--fallback">?</div>
+                        </div>
+                        <div class="home-profile-avatar-actions">
+                            <label class="btn-secondary home-profile-upload-label">
+                                更换头像
+                                <input type="file" id="profileAvatarInput" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
+                            </label>
+                            <button type="button" class="btn-ghost" id="profileAvatarRemoveBtn">移除头像</button>
+                        </div>
+                        <p class="home-profile-avatar-hint">JPG / PNG / WebP / GIF，最大 2MB</p>
+                    </div>
+                    <form id="profileForm" class="pm-form home-profile-modal-form">
+                        <div class="form-group">
+                            <label>登录账号</label>
+                            <input type="text" id="profileUsername" readonly class="is-readonly">
+                        </div>
+                        <div class="form-group">
+                            <label>姓名</label>
+                            <input type="text" id="profileName" placeholder="显示名称">
+                        </div>
+                        <div class="form-group">
+                            <label>手机</label>
+                            <input type="text" id="profilePhone" placeholder="联系电话">
+                        </div>
+                        <div class="form-group">
+                            <label>生日</label>
+                            <input type="date" id="profileBirthday">
+                        </div>
+                        <div class="form-group">
+                            <label>角色</label>
+                            <input type="text" id="profileRole" readonly class="is-readonly">
+                        </div>
+                        <div class="form-group pm-form-full">
+                            <label>注册时间</label>
+                            <input type="text" id="profileCreatedAt" readonly class="is-readonly">
+                        </div>
+                    </form>
+                </div>
+                <div id="profileModalHint" class="response" style="display:none; margin-top:0.75rem;"></div>
+            </div>
+            <div class="pm-modal-actions">
+                <button type="button" class="btn-secondary" onclick="closeProfileModal()">取消</button>
+                <button type="button" class="btn-primary" id="profileSaveBtn">保存</button>
             </div>
         </div>
     </div>
@@ -1438,11 +1517,202 @@
                     }
                     const pendingSection = document.getElementById('pendingUsersSection');
                     if (pendingSection && !isAdmin) pendingSection.style.display = 'none';
+                    renderHomeProfile();
                 } else {
                     window.location.href = '/login';
                 }
             } catch (err) {
                 window.location.href = '/login';
+            }
+        }
+
+        function profileDisplayInitial(name) {
+            const text = String(name || '').trim();
+            if (!text) return '?';
+            return text.slice(0, 1).toUpperCase();
+        }
+
+        function formatProfileBirthdayLabel(birthday) {
+            const text = String(birthday || '').trim();
+            if (!text) return '';
+            const part = text.slice(0, 10);
+            return part ? `生日 ${part}` : '';
+        }
+
+        function formatProfileJoinedLabel(createdAt) {
+            const text = String(createdAt || '').trim();
+            if (!text) return '';
+            const datePart = text.slice(0, 10);
+            return datePart ? `加入于 ${datePart}` : '';
+        }
+
+        function applyProfileAvatarToElements(avatarUrl, displayName) {
+            const imgIds = ['homeProfileAvatar', 'profileModalAvatar'];
+            const fallbackIds = ['homeProfileAvatarFallback', 'profileModalAvatarFallback'];
+            const initial = profileDisplayInitial(displayName);
+            imgIds.forEach(id => {
+                const img = document.getElementById(id);
+                if (!img) return;
+                if (avatarUrl) {
+                    img.src = `${avatarUrl}&_=${Date.now()}`;
+                    img.alt = displayName || '头像';
+                    img.hidden = false;
+                } else {
+                    img.removeAttribute('src');
+                    img.hidden = true;
+                }
+            });
+            fallbackIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.textContent = initial;
+                el.style.display = avatarUrl ? 'none' : 'flex';
+            });
+        }
+
+        function renderHomeProfile() {
+            if (!currentUser) return;
+            const displayName = currentUser.display_name || currentUser.name || currentUser.username || '用户';
+            const nameEl = document.getElementById('homeProfileDisplayName');
+            if (nameEl) nameEl.textContent = displayName;
+            const roleEl = document.getElementById('homeProfileRole');
+            if (roleEl) {
+                roleEl.textContent = currentUser.role_label || (currentUser.is_admin ? '管理员' : '员工');
+                roleEl.classList.toggle('is-admin', !!currentUser.is_admin);
+            }
+            const phoneEl = document.getElementById('homeProfilePhone');
+            if (phoneEl) {
+                const phone = String(currentUser.phone || '').trim();
+                phoneEl.textContent = phone || '未填写手机';
+                phoneEl.classList.toggle('is-empty', !phone);
+            }
+            const joinedEl = document.getElementById('homeProfileJoined');
+            if (joinedEl) {
+                const birthdayLabel = formatProfileBirthdayLabel(currentUser.birthday);
+                const joinedLabel = formatProfileJoinedLabel(currentUser.created_at);
+                const parts = [birthdayLabel, joinedLabel].filter(Boolean);
+                joinedEl.textContent = parts.join(' · ');
+            }
+            applyProfileAvatarToElements(currentUser.avatar_url || null, displayName);
+        }
+
+        function openProfileModal() {
+            if (!currentUser) return;
+            const modal = document.getElementById('profileModal');
+            if (!modal) return;
+            document.getElementById('profileUsername').value = currentUser.username || '';
+            document.getElementById('profileName').value = currentUser.name || '';
+            document.getElementById('profilePhone').value = currentUser.phone || '';
+            document.getElementById('profileBirthday').value = (currentUser.birthday || '').toString().slice(0, 10);
+            document.getElementById('profileRole').value = currentUser.role_label || (currentUser.is_admin ? '管理员' : '员工');
+            document.getElementById('profileCreatedAt').value = currentUser.created_at || '';
+            const hint = document.getElementById('profileModalHint');
+            if (hint) {
+                hint.style.display = 'none';
+                hint.textContent = '';
+            }
+            const displayName = currentUser.display_name || currentUser.name || currentUser.username || '用户';
+            applyProfileAvatarToElements(currentUser.avatar_url || null, displayName);
+            modal.classList.add('active');
+        }
+
+        function closeProfileModal() {
+            const modal = document.getElementById('profileModal');
+            if (modal) modal.classList.remove('active');
+            const input = document.getElementById('profileAvatarInput');
+            if (input) input.value = '';
+        }
+
+        function showProfileHint(message, isError) {
+            const hint = document.getElementById('profileModalHint');
+            if (!hint) return;
+            hint.textContent = message || '';
+            hint.style.display = message ? 'block' : 'none';
+            hint.classList.toggle('error', !!isError);
+            hint.classList.toggle('success', !isError && !!message);
+        }
+
+        function mergeCurrentUserProfile(profile) {
+            if (!profile || !currentUser) return;
+            Object.assign(currentUser, profile);
+            currentUser.display_name = profile.display_name || profile.name || currentUser.username;
+            currentUser.name = profile.name || currentUser.name;
+            renderHomeProfile();
+        }
+
+        async function saveProfile() {
+            const payload = {
+                name: (document.getElementById('profileName').value || '').trim(),
+                phone: (document.getElementById('profilePhone').value || '').trim(),
+                birthday: (document.getElementById('profileBirthday').value || '').trim()
+            };
+            const btn = document.getElementById('profileSaveBtn');
+            if (btn) btn.disabled = true;
+            try {
+                const resp = await fetch('/api/profile', {
+                    method: 'PUT',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await resp.json();
+                if (data.status === 'success' && data.profile) {
+                    mergeCurrentUserProfile(data.profile);
+                    window.__sitjoyAuthStatePromise = null;
+                    showProfileHint(data.message || '已保存', false);
+                    setTimeout(() => closeProfileModal(), 500);
+                } else {
+                    showProfileHint(data.message || '保存失败', true);
+                }
+            } catch (err) {
+                showProfileHint('保存失败，请稍后重试', true);
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        async function uploadProfileAvatar(file) {
+            if (!file) return;
+            const formData = new FormData();
+            formData.append('avatar', file);
+            showProfileHint('正在上传头像…', false);
+            try {
+                const resp = await fetch('/api/profile?action=upload_avatar', {
+                    method: 'POST',
+                    credentials: 'include',
+                    body: formData
+                });
+                const data = await resp.json();
+                if (data.status === 'success' && data.profile) {
+                    mergeCurrentUserProfile(data.profile);
+                    window.__sitjoyAuthStatePromise = null;
+                    showProfileHint(data.message || '头像已更新', false);
+                } else {
+                    showProfileHint(data.message || '上传失败', true);
+                }
+            } catch (err) {
+                showProfileHint('上传失败，请稍后重试', true);
+            }
+        }
+
+        async function removeProfileAvatar() {
+            if (!currentUser || !currentUser.avatar_url) return;
+            if (!window.confirm('确定移除当前头像？')) return;
+            try {
+                const resp = await fetch('/api/profile', {
+                    method: 'DELETE',
+                    credentials: 'include'
+                });
+                const data = await resp.json();
+                if (data.status === 'success' && data.profile) {
+                    mergeCurrentUserProfile(data.profile);
+                    window.__sitjoyAuthStatePromise = null;
+                    showProfileHint(data.message || '头像已移除', false);
+                } else {
+                    showProfileHint(data.message || '操作失败', true);
+                }
+            } catch (err) {
+                showProfileHint('操作失败，请稍后重试', true);
             }
         }
 
@@ -3776,6 +4046,21 @@
                 const scope = e.target.closest('[data-permission-editor]') || e.target.closest('tr');
                 if (scope) syncPermissionEditor(scope);
             });
+
+            const profileEditBtn = document.getElementById('homeProfileEditBtn');
+            if (profileEditBtn) profileEditBtn.addEventListener('click', openProfileModal);
+            const profileSaveBtn = document.getElementById('profileSaveBtn');
+            if (profileSaveBtn) profileSaveBtn.addEventListener('click', saveProfile);
+            const profileAvatarInput = document.getElementById('profileAvatarInput');
+            if (profileAvatarInput) {
+                profileAvatarInput.addEventListener('change', e => {
+                    const file = e.target.files && e.target.files[0];
+                    if (file) uploadProfileAvatar(file);
+                    e.target.value = '';
+                });
+            }
+            const profileAvatarRemoveBtn = document.getElementById('profileAvatarRemoveBtn');
+            if (profileAvatarRemoveBtn) profileAvatarRemoveBtn.addEventListener('click', removeProfileAvatar);
         }
 
         window.addEventListener('load', () => {

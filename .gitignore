@@ -4,3 +4,5 @@ __pycache__/
 *.pyo
 *.pyd
 var/go_play_rooms/
+data/user_avatars/*
+!data/user_avatars/.gitkeep

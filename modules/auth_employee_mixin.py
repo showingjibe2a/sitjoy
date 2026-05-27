@@ -216,7 +216,7 @@ class AuthEmployeeMixin:
                             """
                             SELECT id, username, name, phone, birthday, is_admin,
                                    COALESCE(can_grant_admin, 0) AS can_grant_admin,
-                                   page_permissions
+                                   page_permissions, avatar_path, created_at
                             FROM users WHERE id=%s
                             """,
                             (user_id,)
@@ -224,17 +224,31 @@ class AuthEmployeeMixin:
                         row = cur.fetchone()
                         if row:
                             page_permissions = self._normalize_page_permissions(row.get('page_permissions'))
+                            profile_extra = {}
+                            serialize = getattr(self, '_serialize_user_profile_row', None)
+                            if callable(serialize):
+                                serialized = serialize(row)
+                                if serialized:
+                                    profile_extra = {
+                                        'username': serialized.get('username') or '',
+                                        'display_name': serialized.get('display_name') or '',
+                                        'avatar_url': serialized.get('avatar_url'),
+                                        'created_at': serialized.get('created_at') or '',
+                                        'role_label': serialized.get('role_label') or '',
+                                        'birthday': serialized.get('birthday'),
+                                    }
                             return self.send_json({
                                 'status': 'success',
                                 'id': row['id'],
                                 'name': row.get('name') or row.get('username'),
                                 'phone': row['phone'],
-                                'birthday': row['birthday'],
+                                'birthday': profile_extra.get('birthday', row.get('birthday')),
                                 'is_admin': row['is_admin'],
                                 'can_grant_admin': row.get('can_grant_admin', 0),
                                 'page_permissions': page_permissions,
                                 'page_permission_labels': getattr(self, 'PAGE_PERMISSION_LABELS', {}),
-                                'page_permission_groups': getattr(self, 'PAGE_PERMISSION_GROUPS', [])
+                                'page_permission_groups': getattr(self, 'PAGE_PERMISSION_GROUPS', []),
+                                **profile_extra,
                             }, start_response)
                         return self.send_json({'status': 'error', 'message': '用户信息未找到'}, start_response)
 
