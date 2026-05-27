@@ -530,6 +530,123 @@ class AmazonAdMixin:
                 message = '无法删除：该广告记录仍被投放/商品/调整记录引用'
             return self.send_json({'status': 'error', 'message': message}, start_response)
 
+    def _amazon_ad_items_template_headers(self):
+        """导入模板列顺序：归属两列置于最右侧。"""
+        return [
+            '广告类型*', '名称*', '状态*',
+            '关联货号', '是否共享预算',
+            '策略', '细分类', '预算',
+            '归属广告组合名称', '归属广告活动名称',
+        ]
+
+    def _apply_amazon_ad_items_template_formatting(self, ws, last_row=1000):
+        """下拉预设 + 按广告类型对不适用字段加灰色底纹（条件格式）。"""
+        from openpyxl.styles import Font, PatternFill, Alignment
+        from openpyxl.formatting.rule import FormulaRule
+        from openpyxl.worksheet.datavalidation import DataValidation
+
+        header_fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
+        gray_fill = PatternFill(start_color='E8E8E8', end_color='E8E8E8', fill_type='solid')
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = Font(bold=True, color='2A2420')
+            cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+        data_end = max(2, int(last_row or 1000))
+        dv_level = DataValidation(type='list', formula1='"组合,活动,组"', allow_blank=False)
+        dv_level.error = '请从列表选择：组合 / 活动 / 组'
+        dv_level.errorTitle = '广告类型'
+        ws.add_data_validation(dv_level)
+        dv_level.add(f'A2:A{data_end}')
+
+        dv_status = DataValidation(type='list', formula1='"启动,暂停,存档"', allow_blank=False)
+        dv_status.error = '请从列表选择：启动 / 暂停 / 存档'
+        dv_status.errorTitle = '状态'
+        ws.add_data_validation(dv_status)
+        dv_status.add(f'C2:C{data_end}')
+
+        dv_shared = DataValidation(type='list', formula1='"是,否"', allow_blank=True)
+        dv_shared.error = '请从列表选择：是 / 否'
+        dv_shared.errorTitle = '是否共享预算'
+        ws.add_data_validation(dv_shared)
+        dv_shared.add(f'E2:E{data_end}')
+
+        # 条件格式：公式为真时显示灰色（表示当前行广告类型下该列无需填写）
+        # 组合：仅 关联货号、是否共享预算；活动：策略/细分类/预算/归属组合；组：仅归属活动
+        rules = [
+            ('D', 'OR($A2="",$A2<>"组合")'),           # 关联货号
+            ('E', 'OR($A2="",$A2<>"组合")'),           # 是否共享预算
+            ('F', 'OR($A2="",$A2<>"活动")'),           # 策略
+            ('G', 'OR($A2="",$A2<>"活动")'),           # 细分类
+            ('H', 'OR($A2="",$A2<>"活动")'),           # 预算
+            ('I', 'OR($A2="",$A2<>"活动")'),           # 归属广告组合
+            ('J', 'OR($A2="",$A2<>"组")'),              # 归属广告活动
+        ]
+        for col, formula in rules:
+            ws.conditional_formatting.add(
+                f'{col}2:{col}{data_end}',
+                FormulaRule(formula=[formula], fill=gray_fill),
+            )
+
+        ws.freeze_panes = 'A2'
+        widths = {
+            'A': 11, 'B': 28, 'C': 9, 'D': 14, 'E': 14,
+            'F': 8, 'G': 12, 'H': 10, 'I': 22, 'J': 26,
+        }
+        for col, width in widths.items():
+            ws.column_dimensions[col].width = width
+
+    def _build_amazon_ad_items_import_workbook(self):
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = '广告信息'
+        headers = self._amazon_ad_items_template_headers()
+        ws.append(headers)
+        ws.append([
+            '组合', '示例-Short-SKU01', '启动',
+            'SKU01', '是',
+            '', '', '',
+            '', '',
+        ])
+        ws.append([
+            '活动', 'BE-示例组合-SP-KW', '启动',
+            '', '',
+            'BE', 'SP-KW', '50',
+            '示例-Short-SKU01', '',
+        ])
+        ws.append([
+            '组', 'BE-示例组合-SP-KW', '启动',
+            '', '',
+            '', '', '',
+            '', 'BE-示例组合-SP-KW',
+        ])
+        self._apply_amazon_ad_items_template_formatting(ws)
+
+        guide = wb.create_sheet('填写说明')
+        guide.append(['字段', '组合', '活动', '组', '说明'])
+        guide_rows = [
+            ('广告类型*', '必填', '必填', '必填', '下拉：组合 / 活动 / 组'),
+            ('名称*', '必填', '必填', '必填', ''),
+            ('状态*', '必填', '必填', '必填', '下拉：启动 / 暂停 / 存档'),
+            ('关联货号', '选填', '—', '—', '仅组合可填；灰底表示本行不适用'),
+            ('是否共享预算', '必填', '—', '—', '仅组合可填；下拉：是 / 否'),
+            ('策略', '—', '必填', '—', '仅活动可填'),
+            ('细分类', '—', '必填', '—', '仅活动可填（须与系统细分类一致）'),
+            ('预算', '—', '必填', '—', '仅活动可填'),
+            ('归属广告组合名称', '—', '必填', '—', '仅活动可填（须已存在）'),
+            ('归属广告活动名称', '—', '—', '必填', '仅组可填（须已存在）'),
+        ]
+        for row in guide_rows:
+            guide.append(list(row))
+        guide.column_dimensions['A'].width = 18
+        guide.column_dimensions['B'].width = 8
+        guide.column_dimensions['C'].width = 8
+        guide.column_dimensions['D'].width = 8
+        guide.column_dimensions['E'].width = 42
+        return wb
+
     def handle_amazon_ad_template_api(self, environ, method, start_response):
         """Amazon 广告信息批量导入模板下载"""
         try:
@@ -540,42 +657,7 @@ class AmazonAdMixin:
                     {'status': 'error', 'message': f'openpyxl not available: {_openpyxl_import_error}'},
                     start_response
                 )
-
-            from openpyxl.styles import Font, PatternFill, Alignment
-
-            wb = Workbook()
-            ws = wb.active
-            ws.title = 'amazon_ad_items'
-            headers = [
-                '广告类型*', '名称*', '状态*',
-                '关联货号', '是否共享预算',
-                '归属广告组合名称', '策略', '细分类',
-                '预算', '归属广告活动名称'
-            ]
-            ws.append(headers)
-            ws.append([
-                '广告组合', '示例-Short-SKU01', '启动',
-                'SKU01', '是',
-                '', '', '',
-                '', ''
-            ])
-            ws.append([
-                '广告活动', 'BE-示例组合-SP-KW', '启动',
-                '', '',
-                '示例-Short-SKU01', 'BE', 'SP-KW',
-                '50', ''
-            ])
-            ws.append([
-                '广告组', 'BE-示例组合-SP-KW', '启动',
-                '', '',
-                '示例-Short-SKU01', '', '',
-                '', 'BE-示例组合-SP-KW'
-            ])
-            for cell in ws[1]:
-                cell.fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
-                cell.font = Font(bold=True, color='2A2420')
-                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-            ws.freeze_panes = 'A2'
+            wb = self._build_amazon_ad_items_import_workbook()
             return self._send_excel_workbook(wb, 'amazon_ad_items_template.xlsx', start_response)
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
@@ -620,9 +702,9 @@ class AmazonAdMixin:
                 return None if value is None else str(value).strip()
 
             level_map = {
-                '广告组合': 'portfolio', 'portfolio': 'portfolio',
-                '广告活动': 'campaign', 'campaign': 'campaign',
-                '广告组': 'group', 'group': 'group',
+                '广告组合': 'portfolio', 'portfolio': 'portfolio', '组合': 'portfolio',
+                '广告活动': 'campaign', 'campaign': 'campaign', '活动': 'campaign',
+                '广告组': 'group', 'group': 'group', '组': 'group',
             }
 
             created = updated = unchanged = 0

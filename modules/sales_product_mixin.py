@@ -8132,22 +8132,25 @@ class SalesProductMixin:
         step_i = 0
         last_emit_ts = 0.0
 
-        def _after_agg_commit(segment, period_key):
+        def _emit_agg_progress(segment, period_key, pending=False):
             nonlocal step_i, last_emit_ts
-            step_i += 1
             if not progress_hook:
                 return
             now = time.time()
-            is_last = step_i >= total_steps
-            if not is_last and (now - last_emit_ts) < 1.2:
+            if not pending:
+                step_i += 1
+            if pending and (now - last_emit_ts) < 0.8:
+                return
+            if (not pending) and step_i < total_steps and (now - last_emit_ts) < 0.5:
                 return
             last_emit_ts = now
             try:
                 progress_hook({
-                    'step': step_i,
+                    'step': step_i if not pending else min(step_i + 1, total_steps),
                     'total': total_steps,
                     'segment': segment,
                     'period_key': period_key,
+                    'pending': bool(pending),
                 })
             except Exception:
                 pass
@@ -8157,6 +8160,7 @@ class SalesProductMixin:
             for ms in months_list:
                 me = self._sales_perf_month_end(ms)
                 year_month = int(ms.year) * 100 + int(ms.month)
+                _emit_agg_progress('month', str(year_month), pending=True)
                 for id_chunk in id_chunks:
                     if id_chunk:
                         placeholders = ','.join(['%s'] * len(id_chunk))
@@ -8202,12 +8206,13 @@ class SalesProductMixin:
                         tuple([ms.strftime('%Y-%m-%d'), me.strftime('%Y-%m-%d'), year_month, ms.strftime('%Y-%m-%d'), me.strftime('%Y-%m-%d')] + id_params),
                     )
                 conn.commit()
-                _after_agg_commit('month', str(year_month))
+                _emit_agg_progress('month', str(year_month), pending=False)
 
             # WEEK: one week per query
             for ws in weeks_list:
                 we = ws + timedelta(days=6)
                 year_week = int(ws.isocalendar().year) * 100 + int(ws.isocalendar().week)
+                _emit_agg_progress('week', str(year_week), pending=True)
                 for id_chunk in id_chunks:
                     if id_chunk:
                         placeholders = ','.join(['%s'] * len(id_chunk))
@@ -8253,7 +8258,7 @@ class SalesProductMixin:
                         tuple([ws.strftime('%Y-%m-%d'), we.strftime('%Y-%m-%d'), year_week, ws.strftime('%Y-%m-%d'), we.strftime('%Y-%m-%d')] + id_params),
                     )
                 conn.commit()
-                _after_agg_commit('week', str(year_week))
+                _emit_agg_progress('week', str(year_week), pending=False)
 
         # per-period commits done above
 
@@ -8289,8 +8294,18 @@ class SalesProductMixin:
                 return text[:10]
 
             if method == 'GET':
+                def _parse_csv_int_list(name):
+                    values = []
+                    for raw in query_params.get(name, []):
+                        for token in re.split(r'[,，;；\s]+', str(raw or '').strip()):
+                            val = self._parse_int(token)
+                            if val and val not in values:
+                                values.append(val)
+                    return values
+
                 keyword = (query_params.get('q', [''])[0] or '').strip()
                 item_id = self._parse_int((query_params.get('id', [''])[0] or '').strip())
+                shop_ids = _parse_csv_int_list('shop_ids')
                 date_from = _normalize_date_text((query_params.get('date_from', [''])[0] or '').strip())
                 date_to = _normalize_date_text((query_params.get('date_to', [''])[0] or '').strip())
                 page_size = min(1000, max(10, self._parse_int((query_params.get('page_size', ['50'])[0] or '50')) or 50))
@@ -8302,11 +8317,13 @@ class SalesProductMixin:
                 base_sql = """
                     FROM sales_product_performances spp
                     JOIN sales_products sp ON sp.id = spp.sales_product_id
+                    LEFT JOIN shops sh ON sh.id = sp.shop_id
                     LEFT JOIN sales_product_variants v ON v.id = sp.variant_id
                     LEFT JOIN product_families pf ON pf.id = v.sku_family_id
                 """
                 data_sql = """
-                    SELECT spp.*, sp.platform_sku, v.sku_family_id AS sku_family_id, pf.sku_family
+                    SELECT spp.*, sp.platform_sku, sp.shop_id, sh.shop_name,
+                           v.sku_family_id AS sku_family_id, pf.sku_family
                 """
                 params = []
                 filters = []
@@ -8317,7 +8334,10 @@ class SalesProductMixin:
                     like_kw = f'%{keyword}%'
                     filters.append('(sp.platform_sku LIKE %s OR pf.sku_family LIKE %s)')
                     params.extend([like_kw, like_kw])
-                elif not item_id:
+                if shop_ids and not item_id:
+                    filters.append(f"sp.shop_id IN ({','.join(['%s'] * len(shop_ids))})")
+                    params.extend(shop_ids)
+                if not item_id and not keyword:
                     if not date_from and not date_to:
                         try:
                             date_to = datetime.now().strftime('%Y-%m-%d')
@@ -8452,34 +8472,61 @@ class SalesProductMixin:
 
             if method == 'DELETE':
                 data = self._read_json_body(environ)
-                item_id = self._parse_int(data.get('id'))
-                if not item_id:
+                delete_ids = []
+                raw_ids = data.get('ids') if isinstance(data, dict) else None
+                if isinstance(raw_ids, list):
+                    for raw_id in raw_ids:
+                        parsed_id = self._parse_int(raw_id)
+                        if parsed_id:
+                            delete_ids.append(parsed_id)
+                item_id = self._parse_int(data.get('id') if isinstance(data, dict) else None)
+                if item_id:
+                    delete_ids.append(item_id)
+                delete_ids = list(dict.fromkeys(delete_ids))
+                if not delete_ids:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
                 with self._get_db_connection() as conn:
-                    record_date = ''
-                    sales_product_id = None
+                    affected_rows = []
                     with conn.cursor() as cur:
+                        placeholders = ','.join(['%s'] * len(delete_ids))
                         try:
                             cur.execute(
-                                "SELECT sales_product_id, record_date FROM sales_product_performances WHERE id=%s LIMIT 1",
-                                (item_id,),
+                                f"SELECT id, sales_product_id, record_date FROM sales_product_performances WHERE id IN ({placeholders})",
+                                tuple(delete_ids),
                             )
-                            row = cur.fetchone() or {}
-                            record_date = _normalize_date_text(row.get('record_date'))
-                            sales_product_id = self._parse_int(row.get('sales_product_id'))
+                            affected_rows = cur.fetchall() or []
                         except Exception:
-                            record_date = ''
-                            sales_product_id = None
-                        cur.execute("DELETE FROM sales_product_performances WHERE id=%s", (item_id,))
-                    if record_date:
-                        agg_ids = [sales_product_id] if sales_product_id else None
-                        try:
-                            self._refresh_sales_perf_agg_range(
-                                conn, record_date, record_date, sales_product_ids=agg_ids,
-                            )
-                        except Exception:
-                            pass
-                return self.send_json({'status': 'success'}, start_response)
+                            affected_rows = []
+                        cur.execute(
+                            f"DELETE FROM sales_product_performances WHERE id IN ({placeholders})",
+                            tuple(delete_ids),
+                        )
+                    if affected_rows:
+                        record_dates = []
+                        sales_product_ids = []
+                        for row in affected_rows:
+                            rd = _normalize_date_text(row.get('record_date'))
+                            if rd:
+                                record_dates.append(rd)
+                            spid = self._parse_int(row.get('sales_product_id'))
+                            if spid:
+                                sales_product_ids.append(spid)
+                        if record_dates:
+                            agg_ids = list(dict.fromkeys(sales_product_ids)) or None
+                            try:
+                                self._refresh_sales_perf_agg_range(
+                                    conn,
+                                    min(record_dates),
+                                    max(record_dates),
+                                    sales_product_ids=agg_ids,
+                                )
+                            except Exception:
+                                pass
+                return self.send_json({
+                    'status': 'success',
+                    'deleted': len(affected_rows),
+                    'requested': len(delete_ids),
+                }, start_response)
 
             return self.send_error(405, 'Method not allowed', start_response)
         except Exception as e:
@@ -8738,6 +8785,19 @@ class SalesProductMixin:
 
             safe_task_id = _safe_task_id(task_id)
 
+            def _resolve_import_shop_id():
+                sid = self._parse_int((query_params.get('shop_id', [''])[0] or '').strip())
+                if sid:
+                    return sid
+                if safe_task_id:
+                    prog = _read_progress(safe_task_id) or {}
+                    sid = self._parse_int(prog.get('shop_id'))
+                    if sid:
+                        return sid
+                return None
+
+            import_shop_id = _resolve_import_shop_id()
+
             if method == 'GET' and mode == 'progress':
                 data = _read_progress(safe_task_id)
                 if not data:
@@ -8752,17 +8812,57 @@ class SalesProductMixin:
                     }, start_response)
                 data.setdefault('status', 'success')
                 data.setdefault('task_id', safe_task_id)
+                if isinstance(data, dict):
+                    alive_candidates = [
+                        str(data.get('ts') or '').strip(),
+                        str(data.get('hb_ts') or '').strip(),
+                        str(data.get('advance_ts') or '').strip(),
+                    ]
+                    alive_candidates = [x for x in alive_candidates if x]
+                    data['progress_alive_ts'] = max(alive_candidates) if alive_candidates else str(data.get('ts') or '')
                 return self.send_json(data, start_response)
 
-            # 触发“重启导入任务”（用于写库阶段卡死/无响应时的自愈）
-            # 前提：异步导入已把文件缓存到 temp（token = task_id），且进度长时间不更新。
+            # 触发“重启导入任务”（仅用于写库阶段卡死/无响应时的自愈；聚合阶段禁止重启）
             if method == 'GET' and mode == 'restart':
                 if not safe_task_id:
                     return self.send_json({'status': 'error', 'message': 'task_id无效'}, start_response)
                 data = _read_progress(safe_task_id) or {}
-                # 若已完成则不重启
-                if str(data.get('state') or '').lower() in ('success', 'error'):
-                    return self.send_json({'status': 'success', 'message': '任务已结束，无需重启', 'task_id': safe_task_id}, start_response)
+                phase = str(data.get('phase') or '').strip().lower()
+                agg_st = str(data.get('agg_refresh_status') or '').strip().lower()
+                state = str(data.get('state') or '').strip().lower()
+
+                if agg_st == 'running' or phase in ('agg_refresh', 'agg_refresh_pending', 'agg_refresh_done'):
+                    return self.send_json({
+                        'status': 'success',
+                        'task_id': safe_task_id,
+                        'skip_restart': True,
+                        'reason': 'agg_refresh',
+                        'message': '明细已入库，周/月聚合后台刷新中，请勿重启导入（聚合可能较慢）',
+                    }, start_response)
+                if state == 'success':
+                    return self.send_json({
+                        'status': 'success',
+                        'task_id': safe_task_id,
+                        'skip_restart': True,
+                        'reason': 'already_success',
+                        'message': '导入已完成，无需重启',
+                    }, start_response)
+                if state == 'error':
+                    return self.send_json({
+                        'status': 'success',
+                        'task_id': safe_task_id,
+                        'skip_restart': True,
+                        'reason': 'already_error',
+                        'message': '任务已失败结束，请重新上传文件',
+                    }, start_response)
+                if phase not in ('writing', 'writing_retry', 'restart', 'iter_rows', 'loading_sku_map', 'start', 'running', ''):
+                    return self.send_json({
+                        'status': 'success',
+                        'task_id': safe_task_id,
+                        'skip_restart': True,
+                        'reason': 'wrong_phase',
+                        'message': f'当前阶段（{phase or "未知"}）不支持重启导入',
+                    }, start_response)
 
                 # 允许前端 force=1 触发快速恢复（例如连续请求无响应）
                 if not force_restart:
@@ -8825,7 +8925,8 @@ class SalesProductMixin:
 
                 def _restart_worker():
                     try:
-                        q = f"task_id={safe_task_id}&check_only=0&async=0&from_temp={safe_task_id}&resume_from={cp}&run_id={new_run_id}"
+                        restart_shop_id = import_shop_id or self._parse_int(((_read_progress(safe_task_id) or {}).get('shop_id')))
+                        q = f"task_id={safe_task_id}&check_only=0&async=0&from_temp={safe_task_id}&resume_from={cp}&run_id={new_run_id}&shop_id={restart_shop_id or ''}"
                         bg_env = {
                             'QUERY_STRING': q,
                             'CONTENT_TYPE': '',
@@ -8878,12 +8979,17 @@ class SalesProductMixin:
                 env_copy = dict(environ)
                 env_copy['CONTENT_LENGTH'] = str(len(raw_body))
                 form = cgi.FieldStorage(fp=io.BytesIO(raw_body), environ=env_copy, keep_blank_values=True)
+                if not import_shop_id:
+                    import_shop_id = self._parse_int((form.getfirst('shop_id', '') or '').strip())
                 file_item = form['file'] if 'file' in form else None
                 if file_item is None or getattr(file_item, 'file', None) is None:
                     return self.send_json({'status': 'error', 'message': 'Missing file'}, start_response)
                 file_bytes = file_item.file.read() or b''
                 if not file_bytes:
                     return self.send_json({'status': 'error', 'message': 'Empty file'}, start_response)
+
+            if not import_shop_id:
+                return self.send_json({'status': 'error', 'message': '请选择店铺后再上传'}, start_response)
 
             # 正式导入默认异步，避免网关504；预检保持同步
             if (not check_only) and (not temp_token):
@@ -8902,12 +9008,13 @@ class SalesProductMixin:
                         'processed_rows': 0,
                         'total_rows': 0,
                         'created': 0,
+                        'shop_id': import_shop_id,
                         'message': '任务已创建，准备开始处理'
                     })
 
                     def _bg_worker():
                         try:
-                            q = f"task_id={safe_task_id}&check_only=0&async=0&from_temp={temp_token}"
+                            q = f"task_id={safe_task_id}&check_only=0&async=0&from_temp={temp_token}&shop_id={import_shop_id}"
                             bg_env = {
                                 'QUERY_STRING': q,
                                 'CONTENT_TYPE': '',
@@ -9082,6 +9189,7 @@ class SalesProductMixin:
                 'processed_rows': 0,
                 'total_rows': total_rows_hint,
                 'created': 0,
+                'shop_id': import_shop_id,
                 'phase': 'start',
                 'run_id': worker_run_id,
                 'checkpoint_row': 0,
@@ -9111,10 +9219,13 @@ class SalesProductMixin:
                         'message': '正在加载SKU映射（sales_products）...'
                     })
                     _set_hb(stage='loading_sku_map', phase='loading_sku_map', processed_rows=0, checkpoint_row=0)
-                    # 一次性加载SKU/ASIN映射，避免双遍Excel扫描导致总时长翻倍
+                    # 一次性加载指定店铺下的 SKU/ASIN 映射，避免跨店铺误匹配
                     sku_map = {}
                     asin_map = {}
-                    cur.execute("SELECT id, platform_sku, child_code FROM sales_products")
+                    cur.execute(
+                        "SELECT id, platform_sku, child_code FROM sales_products WHERE shop_id=%s",
+                        (import_shop_id,),
+                    )
                     for row in (cur.fetchall() or []):
                         rid = int(row.get('id') or 0)
                         sku = str(row.get('platform_sku') or '').strip().lower()
@@ -9131,7 +9242,7 @@ class SalesProductMixin:
                         'processed_rows': 0,
                         'total_rows': total_rows_hint,
                         'created': 0,
-                        'message': f'SKU映射加载完成：sku={len(sku_map)}，asin={len(asin_map)}'
+                        'message': f'SKU映射加载完成（店铺ID={import_shop_id}）：sku={len(sku_map)}，asin={len(asin_map)}'
                     })
                     _mark_progress_advance(safe_task_id, processed_rows=0, checkpoint_row=0, extra={'phase': 'loading_sku_map_done'})
 
@@ -9157,8 +9268,8 @@ class SalesProductMixin:
                     batch_rows = []
                     batch_row_marks = []
                     # 批量写入：增大批次减少 roundtrip，提升导入速度
-                    batch_size = 2000
-                    flush_chunk_size = 400  # 单次 executemany 过大易导致长时间无心跳/超时
+                    batch_size = 3000
+                    flush_chunk_size = 600  # 分片写入：兼顾吞吐与心跳刷新频率
                     upsert_sql = (
                         "INSERT INTO sales_product_performances "
                         "(sales_product_id,record_date,sales_qty,net_sales_amount,order_qty,session_total,"
@@ -9591,14 +9702,33 @@ class SalesProductMixin:
 
                 def _run_sales_perf_agg_background():
                     tid = safe_task_id
+                    agg_hb_stop = {'stop': False}
+                    agg_hb_state = {'stage': 'agg_init', 'message': ''}
 
                     def _agg_progress_overlay(extra):
                         pl = dict(_agg_stat_fields)
                         pl['status'] = 'success'
                         pl['task_id'] = tid
                         pl['state'] = 'success'
+                        pl['advance_ts'] = _now_ts_text()
+                        pl['ts'] = _now_ts_text()
                         pl.update(extra or {})
+                        if pl.get('message'):
+                            agg_hb_state['message'] = str(pl.get('message') or '')
                         _write_progress(tid, pl, merge=True)
+
+                    def _agg_heartbeat_worker():
+                        while not agg_hb_stop.get('stop'):
+                            try:
+                                _write_progress(tid, {
+                                    'hb_ts': _now_ts_text(),
+                                    'hb_phase': 'agg_refresh',
+                                    'hb_stage': str(agg_hb_state.get('stage') or 'agg_refresh'),
+                                    'advance_ts': _now_ts_text(),
+                                }, merge=True)
+                            except Exception:
+                                pass
+                            time.sleep(3.0)
 
                     try:
                         def _on_agg_progress(info):
@@ -9608,15 +9738,20 @@ class SalesProductMixin:
                                 seg = str(info.get('segment') or '')
                                 pk = str(info.get('period_key') or '')
                                 lab = '周' if seg == 'week' else '月'
+                                pending = bool(info.get('pending'))
+                                verb = '正在刷新' if pending else '已完成'
+                                agg_hb_state['stage'] = f'agg_{seg}_{pk}'
                                 _agg_progress_overlay({
                                     'phase': 'agg_refresh',
                                     'agg_refresh_status': 'running',
                                     'agg_refresh_step': st,
                                     'agg_refresh_total': tot,
-                                    'message': f'明细已入库。后台刷新周/月聚合：{lab} {pk}（{st}/{tot}）',
+                                    'message': f'明细已入库。{verb}周/月聚合：{lab} {pk}（{st}/{tot}）',
                                 })
                             except Exception:
                                 pass
+
+                        threading.Thread(target=_agg_heartbeat_worker, daemon=True).start()
 
                         with self._get_db_connection_long() as agg_conn:
                             agg_ids = sorted(touched_agg_ids) if touched_agg_ids else None
@@ -9660,6 +9795,8 @@ class SalesProductMixin:
                             'agg_refresh_warning': w,
                             'message': f'处理完成，匹配 {c0} 条，写入 {u0} 条；{w}',
                         })
+                    finally:
+                        agg_hb_stop['stop'] = True
 
                 agg_bg_fn = _run_sales_perf_agg_background
 
@@ -9722,8 +9859,12 @@ class SalesProductMixin:
             if agg_refresh_warning:
                 done_payload['agg_refresh_warning'] = agg_refresh_warning
             if needs_agg_bg:
+                done_payload['phase'] = 'agg_refresh'
                 done_payload['agg_refresh_status'] = 'running'
                 done_payload['agg_refresh_background'] = True
+                done_payload['agg_refresh_step'] = 0
+                done_payload['agg_refresh_total'] = None
+                done_payload['message'] = f'明细已写入 {upserted} 条，正在后台刷新周/月聚合…'
             _write_progress(safe_task_id, done_payload)
             if agg_bg_fn:
                 threading.Thread(target=agg_bg_fn, daemon=True).start()
