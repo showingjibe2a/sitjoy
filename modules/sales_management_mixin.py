@@ -3039,8 +3039,38 @@ class SalesManagementMixin:
                 out[k] += int(part.get(k) or 0)
         return out
 
+    def _forecast_build_inventory_stock_sources(self, oid, brief, plan_groups):
+        """面板展示用：本体 + 各替代方案中的替代 SKU（去重）。"""
+        oid = self._parse_int(oid)
+        if not oid:
+            return []
+        brief = brief or {}
+        out = [{
+            'order_product_id': int(oid),
+            'sku': ((brief.get(int(oid)) or {}).get('sku') or '').strip() or ('#' + str(oid)),
+            'role': 'self',
+            'plan_name': '本体',
+            'quantity': 1,
+        }]
+        seen = {int(oid)}
+        for grp in plan_groups or []:
+            pname = (grp.get('plan_name') or '').strip() or '替代方案'
+            for sid, mult in grp.get('items') or []:
+                sid = self._parse_int(sid)
+                if not sid or sid in seen:
+                    continue
+                seen.add(sid)
+                out.append({
+                    'order_product_id': int(sid),
+                    'sku': ((brief.get(sid) or {}).get('sku') or '').strip() or ('#' + str(sid)),
+                    'role': 'substitute',
+                    'plan_name': pname,
+                    'quantity': max(1, self._parse_int(mult) or 1),
+                })
+        return out
+
     def _forecast_build_inventory_source_lines(self, oid, is_on_market, plan_groups, brief):
-        """仅含替代发货方案中的替代 SKU（展示用：同 SKU 取各方案配比最大值），不含下单 SKU 本体。"""
+        """替代 SKU + 本体（展示用：替代同 SKU 取各方案配比最大值）。"""
         oid = self._parse_int(oid)
         if not oid:
             return []
@@ -3074,7 +3104,15 @@ class SalesManagementMixin:
         for sid in sorted(sub_by_sid.keys()):
             _push(sid, sub_by_sid[sid], 'substitute')
 
-        return lines
+        owner_b = brief.get(int(oid)) or {}
+        owner_line = {
+            'order_product_id': int(oid),
+            'sku': (owner_b.get('sku') or '').strip() or ('#' + str(oid)),
+            'qty_per_unit': 1,
+            'role': 'self',
+            'is_on_market': self._parse_int(is_on_market) or self._parse_int(owner_b.get('is_on_market')) or 0,
+        }
+        return [owner_line] + lines
 
     def _forecast_build_inventory_tier_breakdown_from_plans(self, inv_by_op, oid, plan_groups, brief):
         """按方案分别折算后，同替代 SKU 的「计入」数量跨方案相加。"""
@@ -3113,6 +3151,21 @@ class SalesManagementMixin:
                     bucket['assembled_qty'] += int(plan_asm.get(tier_key) or 0)
                     bucket['qty_per_unit'] = max(bucket['qty_per_unit'], mult)
         breakdown = {tk: [] for tk, _ in tier_meta}
+        if oid:
+            owner_b = brief.get(int(oid)) or {}
+            for tier_key, tier_label in tier_meta:
+                raw = int((inv_by_op.get(int(oid)) or {}).get(tier_key) or 0)
+                breakdown[tier_key].append({
+                    'order_product_id': int(oid),
+                    'sku': (owner_b.get('sku') or '').strip() or ('#' + str(oid)),
+                    'qty_per_unit': 1,
+                    'role': 'self',
+                    'is_on_market': self._parse_int(owner_b.get('is_on_market')) or 0,
+                    'tier_key': tier_key,
+                    'tier_label': tier_label,
+                    'raw_qty': raw,
+                    'assembled_qty': raw,
+                })
         for sid in sorted(acc.keys()):
             for tier_key, tier_label in tier_meta:
                 entry = acc.get(sid, {}).get(tier_key)
@@ -3185,7 +3238,7 @@ class SalesManagementMixin:
         self, source_lines, row_sku='', substitute_plans=None, brief=None,
     ):
         lines = list(source_lines or [])
-        sub_n = len(lines)
+        sub_n = sum(1 for x in lines if str(x.get('role') or '') != 'self')
         has_indicator = sub_n > 0
         kind = 'multi_substitute' if sub_n > 1 else ('substitute_only' if sub_n == 1 else 'no_substitute')
         return {
@@ -3215,6 +3268,8 @@ class SalesManagementMixin:
             inv_by_op, oid, plans, brief,
         )
         comp['pairs'] = pairs
+        comp['owner_order_product_id'] = int(oid) if oid else 0
+        comp['stock_sources'] = self._forecast_build_inventory_stock_sources(oid, brief, plans)
         return agg, comp
 
     def _forecast_row_history_sales_avg_tail(self, row, history_months, tail=3):
@@ -3970,19 +4025,30 @@ class SalesManagementMixin:
             ):
                 extra_subs.append(int(sid))
         load_ids = sorted(set(op_ids).union(extra_subs))
+        brief_by_op = self._forecast_load_order_product_brief_map(conn, load_ids)
         detail_by_op = self._forecast_load_inventory_surplus_detail_by_order_product(conn, load_ids)
         for row in rows:
             oid = self._parse_int((row.get('labels') or {}).get('order_product_id'))
             if not oid:
                 row['inventory_surplus_detail'] = self._forecast_empty_surplus_detail()
+                row['inventory_stock_sources'] = []
+                row['inventory_surplus_by_op'] = {}
                 continue
             plans = substitute_plans_by_owner.get(oid) or []
-            if not plans:
-                row['inventory_surplus_detail'] = self._forecast_empty_surplus_detail()
-            else:
+            sources = self._forecast_build_inventory_stock_sources(oid, brief_by_op, plans)
+            row['inventory_stock_sources'] = sources
+            row['inventory_surplus_by_op'] = {
+                str(int(s['order_product_id'])): (
+                    detail_by_op.get(int(s['order_product_id'])) or self._forecast_empty_surplus_detail()
+                )
+                for s in sources
+            }
+            if plans:
                 row['inventory_surplus_detail'] = self._forecast_merge_surplus_detail_for_plan_groups(
                     plans, detail_by_op,
                 )
+            else:
+                row['inventory_surplus_detail'] = self._forecast_empty_surplus_detail()
 
     def _forecast_build_spec_inventory_stub_rows(self, conn, query_params, sf_group=None):
         """仅含 row_key / variant_id，供 patch=inventory 附加库存，避免重复拉历史与预测。"""

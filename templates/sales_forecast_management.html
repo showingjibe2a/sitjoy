@@ -3364,6 +3364,8 @@
                     existing.inventory_surplus_detail = r.inventory_surplus_detail;
                     delete existing._sfSurplusCache;
                 }
+                if (r.inventory_stock_sources) existing.inventory_stock_sources = r.inventory_stock_sources;
+                if (r.inventory_surplus_by_op) existing.inventory_surplus_by_op = r.inventory_surplus_by_op;
                 if (Array.isArray(r.remarks)) existing.remarks = r.remarks;
             });
             state.rows = Array.from(byKey.values());
@@ -5796,9 +5798,48 @@
             };
         }
 
+        function sfInvStockSourcesFromRow(row, comp) {
+            if (Array.isArray(row.inventory_stock_sources) && row.inventory_stock_sources.length) {
+                return row.inventory_stock_sources;
+            }
+            const sources = [];
+            const oid = row.labels && row.labels.order_product_id;
+            if (oid != null && oid !== '') {
+                sources.push({
+                    order_product_id: oid,
+                    sku: (comp.row_sku || (row.labels && row.labels.sku) || '').trim(),
+                    role: 'self',
+                    plan_name: '本体',
+                    quantity: 1,
+                });
+            }
+            (comp.substitute_plans || []).forEach((pl) => {
+                const pname = String(pl.plan_name || '').trim() || '替代方案';
+                (pl.items || []).forEach((it) => {
+                    const sid = it.substitute_order_product_id != null ? it.substitute_order_product_id : it[0];
+                    if (sid == null || sid === '') return;
+                    if (sources.some((s) => String(s.order_product_id) === String(sid))) return;
+                    sources.push({
+                        order_product_id: sid,
+                        sku: String(it.sku || '').trim(),
+                        role: 'substitute',
+                        plan_name: pname,
+                        quantity: Number(it.quantity != null ? it.quantity : it[1]) || 1,
+                    });
+                });
+            });
+            return sources;
+        }
+
+        function sfInvSurplusDetailForOp(row, opId) {
+            const byOp = row.inventory_surplus_by_op || {};
+            const key = String(opId != null ? opId : '');
+            return byOp[key] || {};
+        }
+
         function sfInvSkuMapFromComposition(comp) {
             const map = {};
-            (comp.source_lines || []).forEach((ln) => {
+            (comp.stock_sources || comp.source_lines || []).forEach((ln) => {
                 const oid = ln.order_product_id != null ? String(ln.order_product_id) : '';
                 if (oid) map[oid] = String(ln.sku || '').trim() || ('#' + oid);
             });
@@ -5827,11 +5868,42 @@
             return total;
         }
 
-        function buildSfInvSubstitutePlanRows(comp, tierFilter) {
+        function sfInvStockQtyForOp(row, comp, tierFilter, opId) {
+            let raw = sfInvRawStockForOp(comp, opId, tierFilter);
+            if (raw > 0 || !row) return raw;
+            const d = sfInvSurplusDetailForOp(row, opId);
+            if (tierFilter.has('overseas_qty')) {
+                return getTotalOverseasQty(d);
+            }
+            if (tierFilter.has('transit_qty')) {
+                return (d.transit_batches || []).reduce((a, b) => a + Math.max(0, Number(b.qty) || 0), 0);
+            }
+            if (tierFilter.has('factory_stock_qty')) {
+                return Number(d.factory_stock_qty) || 0;
+            }
+            if (tierFilter.has('wip_qty')) {
+                return (d.wip_batches || []).reduce((a, b) => a + Math.max(0, Number(b.qty) || 0), 0);
+            }
+            return raw;
+        }
+
+        function buildSfInvSubstitutePlanRows(row, comp, tierFilter) {
             const skuMap = sfInvSkuMapFromComposition(comp);
-            const plans = comp.substitute_plans || [];
             const rows = [];
-            if (!plans.length) {
+            const ownerId = comp.owner_order_product_id != null
+                ? comp.owner_order_product_id
+                : (row.labels && row.labels.order_product_id);
+            if (ownerId != null && ownerId !== '') {
+                const sidStr = String(ownerId);
+                rows.push({
+                    plan_name: '本体',
+                    sub_sku: (comp.row_sku || (row.labels && row.labels.sku) || '').trim() || skuMap[sidStr] || ('#' + sidStr),
+                    ratio: '×1',
+                    total_qty: formatNumber(sfInvStockQtyForOp(row, comp, tierFilter, ownerId)),
+                });
+            }
+            const plans = comp.substitute_plans || [];
+            if (!plans.length && !rows.length) {
                 return [{
                     plan_name: '无',
                     sub_sku: '—',
@@ -5856,15 +5928,39 @@
                     const q = it[1] != null ? it[1] : it.quantity;
                     const sidStr = String(sid || '');
                     const skuFromApi = String(it.sku || '').trim();
-                    const raw = sfInvRawStockForOp(comp, sid, tierFilter);
                     rows.push({
                         plan_name: pname,
                         sub_sku: skuFromApi || skuMap[sidStr] || ('#' + sidStr),
                         ratio: '×' + formatNumber(Number(q) || 1),
-                        total_qty: formatNumber(raw),
+                        total_qty: formatNumber(sfInvStockQtyForOp(row, comp, tierFilter, sid)),
                     });
                 });
             });
+            return rows;
+        }
+
+        function buildSfInvOverseasBySkuRows(row, comp) {
+            const sources = sfInvStockSourcesFromRow(row, comp);
+            const rows = [];
+            sources.forEach((src) => {
+                const sid = src.order_product_id;
+                const sku = String(src.sku || '').trim() || ('#' + String(sid));
+                const d = sfInvSurplusDetailForOp(row, sid);
+                const upd = d.overseas_updated_at || '—';
+                const regions = Object.keys(d.overseas_by_region || {}).sort((a, b) => String(a).localeCompare(String(b), 'zh'));
+                regions.forEach((rname) => {
+                    const q = Number((d.overseas_by_region || {})[rname] || 0);
+                    if (q <= 0) return;
+                    rows.push({
+                        sku,
+                        region: rname,
+                        qty: formatNumber(q),
+                        updated_at: upd,
+                        _sort: `${rname}|${sku}`,
+                    });
+                });
+            });
+            rows.sort((a, b) => String(a._sort).localeCompare(String(b._sort), 'zh'));
             return rows;
         }
 
@@ -5895,17 +5991,21 @@
                 ], { title: '动销月 · ' + colLabel, note: '动销月 = 分子 ÷ 分母' }));
             }
             if (tierFilter.has('overseas_qty')) {
-                const upd = detail.overseas_updated_at || '—';
-                const rows = Object.keys(detail.overseas_by_region || {}).sort((a, b) => String(a).localeCompare(String(b), 'zh')).map((rname) => {
-                    const q = Number((detail.overseas_by_region || {})[rname] || 0);
-                    if (q <= 0) return null;
-                    return { sku_region: rname, qty: formatNumber(q), updated_at: upd };
-                }).filter(Boolean);
+                const rows = buildSfInvOverseasBySkuRows(row, comp).map((r) => ({
+                    sku: r.sku,
+                    region: r.region,
+                    qty: r.qty,
+                    updated_at: r.updated_at,
+                }));
                 dimensions.push(sfInvDimDef('overseas', '海外仓', [
-                    { key: 'sku_region', label: '目的区域' },
+                    { key: 'sku', label: 'SKU' },
+                    { key: 'region', label: '目的区域' },
                     { key: 'qty', label: '数量' },
                     { key: 'updated_at', label: '数据更新' },
-                ], rows, { title: '海外仓 · 按目的区域', note: rows.length ? '' : '当前列范围内无海外仓批次' }));
+                ], rows, {
+                    title: '海外仓 · 按目的区域',
+                    note: rows.length ? '含本体与各替代发货 SKU 的原始海外仓库存' : '当前列范围内无海外仓库存',
+                }));
             }
 
             if (tierFilter.has('transit_qty')) {
@@ -5965,14 +6065,14 @@
             if (showSubstitute) {
                 const subCols = [
                     { key: 'plan_name', label: '方案' },
-                    { key: 'sub_sku', label: '替代SKU' },
+                    { key: 'sub_sku', label: 'SKU' },
                     { key: 'ratio', label: '配比' },
                     { key: 'total_qty', label: '总数' },
                 ];
                 dimensions.push(sfInvDimDef('substitute_plans', '替代方案', subCols,
-                    buildSfInvSubstitutePlanRows(comp, tierFilter), {
+                    buildSfInvSubstitutePlanRows(row, comp, tierFilter), {
                         title: '替代发货方案',
-                        note: '方案以本下单 SKU 为 owner；无方案时显示「无」。总数为替代 SKU 在当前列相关库存层级的原始库存合计。',
+                        note: '含本体（下单 SKU）与各替代发货 SKU 在当前列相关层级的原始库存；列合计仍仅按替代方案折算。',
                         footnote: SF_INV_GLOBAL_FOOTNOTE,
                     }));
             }
