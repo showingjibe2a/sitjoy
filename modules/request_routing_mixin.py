@@ -112,6 +112,7 @@ API_PERMISSION_MAP = {
     '/api/aplus-version-layout': 'aplus_management',
     '/api/aplus-upload': 'aplus_management',
     '/api/go-play': 'widgets_go_play',
+    '/api/mahjong-play': 'widgets_mahjong',
 }
 
 PAGE_TEMPLATE_MAP = {
@@ -154,6 +155,8 @@ PAGE_TEMPLATE_MAP = {
     '/widgets': ('templates/widgets.html', 'widgets'),
     '/widgets/go-play': ('templates/widgets_go_play.html', 'widgets_go_play'),
     '/widgets/go-play/board': ('templates/widgets_go_play_board.html', 'widgets_go_play'),
+    '/widgets/mahjong': ('templates/widgets_mahjong.html', 'widgets_mahjong'),
+    '/widgets/mahjong/table': ('templates/widgets_mahjong_table.html', 'widgets_mahjong'),
 }
 
 API_ROUTE_MAP = {
@@ -273,6 +276,7 @@ API_ROUTE_MAP = {
     '/api/aplus-version-layout': ('method', 'handle_aplus_version_layout_api'),
     '/api/aplus-upload': ('start', 'handle_aplus_upload_api'),
     '/api/go-play': ('method', 'handle_go_play_api'),
+    '/api/mahjong-play': ('method', 'handle_mahjong_play_api'),
     '/api/audit-log': ('method', 'handle_audit_log_api'),
 }
 
@@ -293,6 +297,15 @@ class RequestRoutingMixin:
             handler = getattr(self, 'handle_go_play_api', None)
             if handler is None:
                 return self.send_json({'status': 'error', 'message': 'Handler not found: handle_go_play_api', 'path': path}, start_response)
+            try:
+                return handler(environ, method, start_response)
+            except Exception as e:
+                return self.send_json({'status': 'error', 'message': f'API内部错误: {str(e)}', 'path': path}, start_response)
+
+        if path == '/api/mahjong-play' or path.startswith('/api/mahjong-play/'):
+            handler = getattr(self, 'handle_mahjong_play_api', None)
+            if handler is None:
+                return self.send_json({'status': 'error', 'message': 'Handler not found: handle_mahjong_play_api', 'path': path}, start_response)
             try:
                 return handler(environ, method, start_response)
             except Exception as e:
@@ -379,6 +392,8 @@ class RequestRoutingMixin:
         permission_key = API_PERMISSION_MAP.get(path)
         if not permission_key and path.startswith('/api/go-play'):
             permission_key = 'widgets_go_play'
+        if not permission_key and path.startswith('/api/mahjong-play'):
+            permission_key = 'widgets_mahjong'
         if permission_key and not self._user_has_page_access(user_id, permission_key):
             return self.send_json({'status': 'error', 'message': '无权限访问该模块'}, start_response)
         return None

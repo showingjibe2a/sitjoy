@@ -3912,6 +3912,8 @@ class SalesManagementMixin:
             groups_meta = None
             lazy_raw = (query_params.get('lazy', [''])[0] or '').strip().lower()
             lazy_groups_only = lazy_raw in ('1', 'true', 'yes', 'on')
+            inv_raw = (query_params.get('inventory', [''])[0] or '').strip().lower()
+            skip_inventory = inv_raw in ('0', 'false', 'no', 'off')
             sf_group = (query_params.get('sf_group', [''])[0] or '').strip()
             sf_shop_ids = self._forecast_parse_sf_shop_ids(query_params)
             shops_list = []
@@ -3946,12 +3948,13 @@ class SalesManagementMixin:
                         rows = self._forecast_build_spec_rows(
                             conn, query_params, months, hist_start, hist_end, sf_group=sf_filter, shop_ids=sf_shop_ids
                         )
-                    self._forecast_attach_inventory_to_rows(
-                        conn, rows, forecast_mode, history_months,
-                        hist_start=hist_start, hist_end=hist_end, shop_ids=sf_shop_ids,
-                    )
+                    if not skip_inventory:
+                        self._forecast_attach_inventory_to_rows(
+                            conn, rows, forecast_mode, history_months,
+                            hist_start=hist_start, hist_end=hist_end, shop_ids=sf_shop_ids,
+                        )
+                        self._forecast_attach_surplus_detail_to_order_rows(conn, rows)
                     self._forecast_attach_remarks_to_rows(conn, rows, forecast_mode)
-                    self._forecast_attach_surplus_detail_to_order_rows(conn, rows)
                     for row in rows:
                         row['mtd_completion'] = self._forecast_row_mtd_completion(
                             row.get('history') or {}, row.get('forecasts') or {}, mtd_ctx

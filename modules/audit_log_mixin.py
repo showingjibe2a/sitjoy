@@ -13,6 +13,7 @@ _AUDIT_SKIP_OPERATION_PREFIXES = (
     '/api/auth',
     '/api/audit-log',
     '/api/go-play',
+    '/api/mahjong-play',
     '/api/hello',
 )
 _AUDIT_REDACT_KEYS = frozenset({
@@ -202,6 +203,8 @@ class AuditLogMixin:
             return key
         if str(path or '').startswith('/api/go-play'):
             return 'widgets_go_play'
+        if str(path or '').startswith('/api/mahjong-play'):
+            return 'widgets_mahjong'
         return None
 
     def _audit_try_log_operation(self, environ, path, method):

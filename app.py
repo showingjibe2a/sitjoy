@@ -35,6 +35,7 @@ from modules.aplus_mixin import AplusMixin
 from modules.sales_management_mixin import SalesManagementMixin
 from modules.sales_product_mixin import SalesProductMixin
 from modules.go_play_mixin import GoPlayMixin
+from modules.mahjong_play_mixin import MahjongPlayMixin
 from modules.support_domain_mixin import SupportDomainMixin
 from modules.utility_mixin import UtilityMixin
 
@@ -71,6 +72,7 @@ class WSGIApp(
     AplusMixin,               # A+ 页面
     SalesManagementMixin,     # 销售管理
     GoPlayMixin,              # 小组件：围棋对弈
+    MahjongPlayMixin,         # 小组件：搓麻将
 ):
     # 用于缓存数据库 Schema 是否准备就绪，避免重复检查
     _schema_ready_cache = {}
@@ -124,6 +126,7 @@ class WSGIApp(
             'aplus_management': 'A+管理',
             'widgets': '小组件',
             'widgets_go_play': '围棋对弈',
+            'widgets_mahjong': '搓麻将',
         }
 
         # 将上面定义的中文名应用到权限列表里
@@ -142,7 +145,7 @@ class WSGIApp(
             {'key': 'sales_product_management', 'title': '销售管理', 'page_keys': ['sales_product_management', 'sales_product_performance_management', 'sales_forecast_management', 'container_draft_management', 'sales_order_registration_management', 'parent_management']},
             {'key': 'amazon_ad_adjustment_management', 'title': 'Amazon广告管理', 'page_keys': ['amazon_ad_adjustment_management', 'amazon_ad_adjustment_records_management', 'amazon_ad_keyword_management', 'amazon_ad_management', 'amazon_ad_subtype_management', 'amazon_ad_delivery_management', 'amazon_ad_product_management']},
             {'key': 'about', 'title': '关于', 'page_keys': ['about']},
-            {'key': 'widgets', 'title': '小组件', 'page_keys': ['widgets', 'widgets_go_play']},
+            {'key': 'widgets', 'title': '小组件', 'page_keys': ['widgets', 'widgets_go_play', 'widgets_mahjong']},
         ]
 
     @staticmethod

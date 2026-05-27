@@ -1838,6 +1838,8 @@
             sfHistSourcePanelAnchorTd: null,
             sfHistSourcePanelHoverKey: '',
             sfHistSourcePanelClickPinned: false,
+            sfHistSourcePanelManuallyHidden: false,
+            sfHistSourcePanelHiddenKey: '',
             sfHistSourcePanelModel: null,
             sfHistSourceDimId: 'platform',
             sfHistSourcePanelInteracting: false,
@@ -3040,6 +3042,7 @@
             const ex = extra || {};
             if (ex.lazy) params.set('lazy', '1');
             if (ex.sf_group) params.set('sf_group', String(ex.sf_group));
+            if (ex.inventory === false) params.set('inventory', '0');
             return params;
         }
 
@@ -3271,11 +3274,18 @@
             state.loadingGroupKey = gk;
             renderForecastTableBodyOnly();
             try {
-                const params = buildSalesForecastQueryParams({ sf_group: gk });
+                const params = buildSalesForecastQueryParams({ sf_group: gk, inventory: false });
                 const resp = await fetch('/api/sales-forecast?' + params.toString());
                 const data = await resp.json();
                 if (!data || data.status !== 'success') throw new Error((data && data.message) || '加载失败');
                 mergeForecastGroupPayload(data);
+                renderForecastTableBodyOnly();
+                const paramsInv = buildSalesForecastQueryParams({ sf_group: gk });
+                const respInv = await fetch('/api/sales-forecast?' + paramsInv.toString());
+                const dataInv = await respInv.json();
+                if (dataInv && dataInv.status === 'success') {
+                    mergeForecastGroupPayload(dataInv);
+                }
             } catch (err) {
                 showToast(err && err.message ? err.message : '分组加载失败', true);
             } finally {
@@ -3764,9 +3774,32 @@
             return ci;
         }
 
-        function renderForecastTable() {
-            hideSfInvFloatingPanel();
-            hideSfHistSourceFloatingPanel();
+        function forecastTableLeafColCount(cols, histCols, mtdCols, fcCols) {
+            return cols.length + histCols + mtdCols + fcCols + SF_TAIL_COL_COUNT;
+        }
+
+        function syncSfFloatingPanelsAfterTableRender() {
+            const invPanel = document.getElementById('sfInvFloatingPanel');
+            if (state.sfInvPanelManuallyHidden) {
+                setSfFloatPanelHidden(invPanel, true);
+            } else if (state.sfInvPanelClickPinned && state.sfInvPanelAnchorTd && state.sfInvPanelAnchorTd.isConnected) {
+                updateSfInvFloatingPanel(state.sfInvPanelAnchorTd);
+            } else if (state.sfInvPanelAnchorTd && state.sfInvPanelAnchorTd.isConnected && invPanel && !invPanel.hidden) {
+                positionSfInvFloatingPanel(state.sfInvPanelAnchorTd);
+            }
+            const histPanel = document.getElementById('sfHistSourceFloatingPanel');
+            if (state.sfHistSourcePanelManuallyHidden) {
+                setSfFloatPanelHidden(histPanel, true);
+            } else if (state.sfHistSourcePanelClickPinned && state.sfHistSourcePanelAnchorTd && state.sfHistSourcePanelAnchorTd.isConnected) {
+                updateSfHistSourceFloatingPanel(state.sfHistSourcePanelAnchorTd);
+            } else if (state.sfHistSourcePanelAnchorTd && state.sfHistSourcePanelAnchorTd.isConnected && histPanel && !histPanel.hidden) {
+                positionSfHistSourceFloatingPanel(state.sfHistSourcePanelAnchorTd);
+            }
+            updateSfPerfPanel();
+        }
+
+        function renderForecastTable(opts) {
+            const o = opts || {};
             const thead = document.getElementById('forecastThead');
             const tbody = document.getElementById('forecastTbody');
             const table = document.getElementById('forecastTable');
@@ -3777,109 +3810,117 @@
             const histCols = state.historyMonths.length ? (state.historyExpanded ? visibleHistMonths.length : 1) : 0;
             const fcCols = state.months.length ? (state.forecastExpanded ? visibleFcMonths.length : 1) : 0;
             const mtdCols = histCols > 0 ? 1 : 0;
+            const invCols = SF_TAIL_COL_COUNT;
+            const expectedLeafCols = forecastTableLeafColCount(cols, histCols, mtdCols, fcCols);
+            let bodyOnly = !!o.bodyOnly && state._sfColMeta && Array.isArray(state._sfLeafColWidths);
+            if (bodyOnly && state._sfLeafColWidths.length !== expectedLeafCols) bodyOnly = false;
             const pref = loadColWidthPrefs(state.forecastMode);
-            const leafColWidths = [];
-            cols.forEach(col => {
-                const key = String(col.key || '').trim();
-                const w = Number((pref.spec || {})[key]);
-                leafColWidths.push((Number.isFinite(w) && w > 30) ? w : getDefaultColWidthByKey(key));
-            });
-            // Month columns: ensure each month within the same group has the same width
-            const historyWidth = Number(pref.history || 86);
-            const forecastWidth = Number(pref.forecast || 86);
-            for (let i = 0; i < histCols; i++) leafColWidths.push(historyWidth);
-            if (mtdCols) {
-                const mtdW0 = Number(pref.mtd);
-                leafColWidths.push((Number.isFinite(mtdW0) && mtdW0 > 40) ? mtdW0 : 108);
-            }
-            for (let i = 0; i < fcCols; i++) leafColWidths.push(forecastWidth);
             const turnCols = SF_TURNOVER_COLS;
             const stockCols = SF_STOCK_COLS;
             const remarkCols = SF_REMARK_COLS;
-            const tailCols = SF_TAIL_COL_COUNT;
-            const invCols = tailCols;
             const invPref = (pref.inventory && pref.inventory.length === invCols) ? pref.inventory : null;
-            for (let i = 0; i < invCols; i++) {
-                let defW = 160;
-                if (i < turnCols) defW = 86;
-                else if (i < turnCols + stockCols) defW = 92;
-                const w = invPref ? invPref[i] : defW;
-                leafColWidths.push((Number.isFinite(Number(w)) && Number(w) > 40) ? Math.round(Number(w)) : defW);
+            let leafColWidths;
+            let meta;
+            if (bodyOnly) {
+                leafColWidths = state._sfLeafColWidths;
+                meta = state._sfColMeta;
+            } else {
+                leafColWidths = [];
+                cols.forEach(col => {
+                    const key = String(col.key || '').trim();
+                    const w = Number((pref.spec || {})[key]);
+                    leafColWidths.push((Number.isFinite(w) && w > 30) ? w : getDefaultColWidthByKey(key));
+                });
+                const historyWidth = Number(pref.history || 86);
+                const forecastWidth = Number(pref.forecast || 86);
+                for (let i = 0; i < histCols; i++) leafColWidths.push(historyWidth);
+                if (mtdCols) {
+                    const mtdW0 = Number(pref.mtd);
+                    leafColWidths.push((Number.isFinite(mtdW0) && mtdW0 > 40) ? mtdW0 : 108);
+                }
+                for (let i = 0; i < fcCols; i++) leafColWidths.push(forecastWidth);
+                for (let i = 0; i < invCols; i++) {
+                    let defW = 160;
+                    if (i < turnCols) defW = 86;
+                    else if (i < turnCols + stockCols) defW = 92;
+                    const w = invPref ? invPref[i] : defW;
+                    leafColWidths.push((Number.isFinite(Number(w)) && Number(w) > 40) ? Math.round(Number(w)) : defW);
+                }
+                meta = {
+                    specCount: cols.length,
+                    histCols,
+                    mtdCols,
+                    fcCols,
+                    turnCols,
+                    stockCols,
+                    remarkCols,
+                    invCols,
+                    historyStart: cols.length,
+                    historyEnd: cols.length + Math.max(0, histCols - 1),
+                    mtdStart: cols.length + histCols,
+                    mtdEnd: cols.length + histCols + mtdCols - 1,
+                    forecastStart: cols.length + histCols + mtdCols,
+                    forecastEnd: cols.length + histCols + mtdCols + Math.max(0, fcCols - 1),
+                    turnStart: cols.length + histCols + mtdCols + fcCols,
+                    turnEnd: cols.length + histCols + mtdCols + fcCols + Math.max(0, turnCols - 1),
+                    stockStart: cols.length + histCols + mtdCols + fcCols + turnCols,
+                    stockEnd: cols.length + histCols + mtdCols + fcCols + turnCols + Math.max(0, stockCols - 1),
+                    invStart: cols.length + histCols + mtdCols + fcCols,
+                    invEnd: cols.length + histCols + mtdCols + fcCols + Math.max(0, invCols - 1),
+                };
+                state._sfColMeta = meta;
+                state._sfLeafColWidths = leafColWidths;
+                const totalWidth = leafColWidths.reduce((acc, n) => acc + Number(n || 0), 0);
+                const wpx = Math.max(960, totalWidth);
+                table.style.width = `${wpx}px`;
+                table.style.minWidth = `${wpx}px`;
+                table.style.removeProperty('--sf-thead-row1-height');
+                const oldColgroup = table.querySelector('colgroup#forecastColgroup');
+                if (oldColgroup && oldColgroup.parentNode) oldColgroup.parentNode.removeChild(oldColgroup);
+                const colgroup = document.createElement('colgroup');
+                colgroup.id = 'forecastColgroup';
+                leafColWidths.forEach(w => {
+                    const c = document.createElement('col');
+                    c.style.width = `${w}px`;
+                    colgroup.appendChild(c);
+                });
+                table.insertBefore(colgroup, thead);
+
+                const trTop = document.createElement('tr');
+                trTop.className = 'sf-thead-row-1';
+                const mtdHeadTip = '完成率 = 本月历史销量（左）÷ 本月预测整月量（右，含未保存编辑）。本月有销量且预测为 0 时显示 +∞% 且紫色满条。时间进度 = 产品表现日表 sales_product_performances 的全局最新 record_date 所在日号 ÷ 当月天数（仅精确到日）。色带：红明显落后进度、黄接近、绿超前、紫大幅超前。';
+                const perfSub = (state.mtdContext && (state.mtdContext.perf_max_record_date || String(state.mtdContext.perf_latest_updated_at || '').slice(0, 10)))
+                    ? String(state.mtdContext.perf_max_record_date || state.mtdContext.perf_latest_updated_at || '').replace('T', ' ').slice(0, 16)
+                    : '—';
+                const mtdProg = (state.mtdContext && state.mtdContext.in_history_range)
+                    ? `${Math.round((Number(state.mtdContext.time_progress) || 0) * 100)}%`
+                    : '—';
+                trTop.innerHTML =
+                    `<th class="sf-th-section" colspan="${cols.length}">规格信息</th>` +
+                    (histCols ? `<th class="sf-th-section" colspan="${histCols}"><span class="sf-th-section-toggle" data-section="history"><span class="sf-group-toggle">${state.historyExpanded ? '▼' : '▶'}</span><span>历史月销量 <span class="help-dot" data-tip="数据来自“产品表现”看板按月聚合"></span></span></span></th>` : '') +
+                    (mtdCols ? `<th class="sf-th-section sf-th-mtd" colspan="1"><span class="help-dot" data-tip="${escapeHtml(mtdHeadTip)}"></span>本月完成率</th>` : '') +
+                    (fcCols ? `<th class="sf-th-section" colspan="${fcCols}"><span class="sf-th-section-toggle" data-section="forecast"><span class="sf-group-toggle">${state.forecastExpanded ? '▼' : '▶'}</span><span>预测月份</span></span></th>` : '') +
+                    `<th class="sf-th-section" colspan="${turnCols}"><span>动销月</span></th>` +
+                    `<th class="sf-th-section" colspan="${stockCols}"><span>库存</span></th>` +
+                    `<th class="sf-th-section" colspan="${remarkCols}"><span>备注</span></th>`;
+
+                const trBottom = document.createElement('tr');
+                trBottom.className = 'sf-thead-row-2';
+                trBottom.innerHTML = cols.map(col => buildBottomHeaderHtml(col)).join('')
+                    + (state.historyExpanded ? visibleHistMonths.map(m => `<th class="sf-th-history" data-month="${m}">${monthHeaderTwoLineHtml(m)}</th>`).join('') : (histCols ? '<th class="sf-th-history">历史合计</th>' : ''))
+                    + (mtdCols ? `<th class="sf-th-mtd" title="${escapeHtml(mtdHeadTip)}"><div class="sf-month-two-line"><div class="sf-month-y">日表最新</div><div class="sf-month-m">${escapeHtml(perfSub)}</div></div><div class="sf-mtd-subhead">时间进度 ${escapeHtml(mtdProg)}</div></th>` : '')
+                    + (state.forecastExpanded ? visibleFcMonths.map(m => `<th class="sf-th-month">${monthHeaderTwoLineHtml(m)}</th>`).join('') : (fcCols ? '<th class="sf-th-month">预测合计</th>' : ''))
+                    + SF_TURNOVER_HEADERS.map(h => `<th class="sf-th-turn" title="${escapeHtml(h.tip || h.label)}">${escapeHtml(h.label)}</th>`).join('')
+                    + SF_STOCK_HEADERS.map(h => `<th class="sf-th-inv" title="${escapeHtml(h.tip || h.label)}">${escapeHtml(h.label)}</th>`).join('')
+                    + `<th class="sf-th-remark" title="异常情况说明（如下市无替代、多替代SKU等）">备注</th>`;
+                thead.innerHTML = '';
+                thead.appendChild(trTop);
+                thead.appendChild(trBottom);
+                bindHeaderEvents(thead, cols);
+                const totalLeafCols = cols.length + histCols + mtdCols + fcCols + invCols;
+                annotateForecastHeaderColumns(thead, totalLeafCols);
+                attachForecastColumnResizeHandles(thead, cols, meta, leafColWidths);
             }
-            const meta = {
-                specCount: cols.length,
-                histCols,
-                mtdCols,
-                fcCols,
-                turnCols,
-                stockCols,
-                remarkCols,
-                invCols,
-                historyStart: cols.length,
-                historyEnd: cols.length + Math.max(0, histCols - 1),
-                mtdStart: cols.length + histCols,
-                mtdEnd: cols.length + histCols + mtdCols - 1,
-                forecastStart: cols.length + histCols + mtdCols,
-                forecastEnd: cols.length + histCols + mtdCols + Math.max(0, fcCols - 1),
-                turnStart: cols.length + histCols + mtdCols + fcCols,
-                turnEnd: cols.length + histCols + mtdCols + fcCols + Math.max(0, turnCols - 1),
-                stockStart: cols.length + histCols + mtdCols + fcCols + turnCols,
-                stockEnd: cols.length + histCols + mtdCols + fcCols + turnCols + Math.max(0, stockCols - 1),
-                invStart: cols.length + histCols + mtdCols + fcCols,
-                invEnd: cols.length + histCols + mtdCols + fcCols + Math.max(0, invCols - 1),
-            };
-            state._sfColMeta = meta;
-            state._sfLeafColWidths = leafColWidths;
-            const totalWidth = leafColWidths.reduce((acc, n) => acc + Number(n || 0), 0);
-            const wpx = Math.max(960, totalWidth);
-            table.style.width = `${wpx}px`;
-            table.style.minWidth = `${wpx}px`;
-            table.style.removeProperty('--sf-thead-row1-height');
-            const oldColgroup = table.querySelector('colgroup#forecastColgroup');
-            if (oldColgroup && oldColgroup.parentNode) oldColgroup.parentNode.removeChild(oldColgroup);
-            const colgroup = document.createElement('colgroup');
-            colgroup.id = 'forecastColgroup';
-            leafColWidths.forEach(w => {
-                const c = document.createElement('col');
-                c.style.width = `${w}px`;
-                colgroup.appendChild(c);
-            });
-            table.insertBefore(colgroup, thead);
-
-            const trTop = document.createElement('tr');
-            trTop.className = 'sf-thead-row-1';
-            const mtdHeadTip = '完成率 = 本月历史销量（左）÷ 本月预测整月量（右，含未保存编辑）。本月有销量且预测为 0 时显示 +∞% 且紫色满条。时间进度 = 产品表现日表 sales_product_performances 的全局最新 record_date 所在日号 ÷ 当月天数（仅精确到日）。色带：红明显落后进度、黄接近、绿超前、紫大幅超前。';
-            const perfSub = (state.mtdContext && (state.mtdContext.perf_max_record_date || String(state.mtdContext.perf_latest_updated_at || '').slice(0, 10)))
-                ? String(state.mtdContext.perf_max_record_date || state.mtdContext.perf_latest_updated_at || '').replace('T', ' ').slice(0, 16)
-                : '—';
-            const mtdProg = (state.mtdContext && state.mtdContext.in_history_range)
-                ? `${Math.round((Number(state.mtdContext.time_progress) || 0) * 100)}%`
-                : '—';
-            trTop.innerHTML =
-                `<th class="sf-th-section" colspan="${cols.length}">规格信息</th>` +
-                (histCols ? `<th class="sf-th-section" colspan="${histCols}"><span class="sf-th-section-toggle" data-section="history"><span class="sf-group-toggle">${state.historyExpanded ? '▼' : '▶'}</span><span>历史月销量 <span class="help-dot" data-tip="数据来自“产品表现”看板按月聚合"></span></span></span></th>` : '') +
-                (mtdCols ? `<th class="sf-th-section sf-th-mtd" colspan="1"><span class="help-dot" data-tip="${escapeHtml(mtdHeadTip)}"></span>本月完成率</th>` : '') +
-                (fcCols ? `<th class="sf-th-section" colspan="${fcCols}"><span class="sf-th-section-toggle" data-section="forecast"><span class="sf-group-toggle">${state.forecastExpanded ? '▼' : '▶'}</span><span>预测月份</span></span></th>` : '') +
-                `<th class="sf-th-section" colspan="${turnCols}"><span>动销月</span></th>` +
-                `<th class="sf-th-section" colspan="${stockCols}"><span>库存</span></th>` +
-                `<th class="sf-th-section" colspan="${remarkCols}"><span>备注</span></th>`;
-
-            const trBottom = document.createElement('tr');
-            trBottom.className = 'sf-thead-row-2';
-            trBottom.innerHTML = cols.map(col => buildBottomHeaderHtml(col)).join('')
-                + (state.historyExpanded ? visibleHistMonths.map(m => `<th class="sf-th-history" data-month="${m}">${monthHeaderTwoLineHtml(m)}</th>`).join('') : (histCols ? '<th class="sf-th-history">历史合计</th>' : ''))
-                + (mtdCols ? `<th class="sf-th-mtd" title="${escapeHtml(mtdHeadTip)}"><div class="sf-month-two-line"><div class="sf-month-y">日表最新</div><div class="sf-month-m">${escapeHtml(perfSub)}</div></div><div class="sf-mtd-subhead">时间进度 ${escapeHtml(mtdProg)}</div></th>` : '')
-                + (state.forecastExpanded ? visibleFcMonths.map(m => `<th class="sf-th-month">${monthHeaderTwoLineHtml(m)}</th>`).join('') : (fcCols ? '<th class="sf-th-month">预测合计</th>' : ''))
-                + SF_TURNOVER_HEADERS.map(h => `<th class="sf-th-turn" title="${escapeHtml(h.tip || h.label)}">${escapeHtml(h.label)}</th>`).join('')
-                + SF_STOCK_HEADERS.map(h => `<th class="sf-th-inv" title="${escapeHtml(h.tip || h.label)}">${escapeHtml(h.label)}</th>`).join('')
-                + `<th class="sf-th-remark" title="异常情况说明（如下市无替代、多替代SKU等）">备注</th>`;
-            thead.innerHTML = '';
-            thead.appendChild(trTop);
-            thead.appendChild(trBottom);
-            bindHeaderEvents(thead, cols);
-            const totalLeafCols = cols.length + histCols + mtdCols + fcCols + invCols;
-            annotateForecastHeaderColumns(thead, totalLeafCols);
-            attachForecastColumnResizeHandles(thead, cols, meta, leafColWidths);
             const filteredRows = applyFilters(state.rows.slice(), cols);
             const groups = buildGroups(filteredRows);
             const collapsedSet = getCollapsedSet();
@@ -3897,6 +3938,7 @@
                 tbody.appendChild(tr);
                 bindForecastGridSelection(tbody);
                 applySfGridSelectionStyles();
+                syncSfFloatingPanelsAfterTableRender();
                 return;
             }
 
@@ -3912,9 +3954,9 @@
                 tbody.appendChild(gtr);
 
                 const sortedItems = sortGroupItems(group.items, cols);
+                if (isCollapsed) return;
                 sortedItems.forEach(row => {
                     const tr = document.createElement('tr');
-                    if (isCollapsed) tr.classList.add('sf-row-hidden');
                     tr.dataset.groupKey = group.key;
                     tr.dataset.rowKey = row.row_key;
                     let ci = 0;
@@ -3992,6 +4034,7 @@
             });
             bindForecastGridSelection(tbody);
             applySfGridSelectionStyles();
+            syncSfFloatingPanelsAfterTableRender();
         }
 
         function buildBottomHeaderHtml(col) {
@@ -4543,7 +4586,7 @@
                 return;
             }
             state.sfInvPanelClickPinned = false;
-            hideSfInvFloatingPanel();
+            hideSfInvFloatingPanel({ forceResetDismiss: true });
         }
 
         /** 在表格内开始框选/点选另一格时，让仍聚焦的预测输入框失焦，避免焦点与选区不一致 */
@@ -4803,7 +4846,7 @@
         }
 
         function renderForecastTableBodyOnly() {
-            renderForecastTable();
+            renderForecastTable({ bodyOnly: true });
         }
 
         function applyForecastColgroupWidths(table, leafColWidths) {
@@ -6012,12 +6055,46 @@
             renderSfHistSourceDimContent(active);
         }
 
-        function hideSfHistSourceFloatingPanel() {
+        function setSfFloatPanelHidden(panel, hidden) {
+            if (!panel) return;
+            if (hidden) {
+                panel.hidden = true;
+                panel.setAttribute('hidden', '');
+            } else {
+                panel.hidden = false;
+                panel.removeAttribute('hidden');
+            }
+        }
+
+        /** 浮窗内部可点击控件：勿在捕获阶段 stopPropagation，否则会拦掉关闭钮与维度单选 */
+        function sfFloatPanelIsInteractiveTarget(target) {
+            if (!target || !target.closest) return false;
+            return !!target.closest(
+                '.modal-close, .status-pill, .status-segment, .pm-table-columns, .pm-table-columns-trigger, '
+                + '#sfInvDimSegment, #sfHistSourceDimSegment, #sfPerfFieldsDropdown, #sfPerfPanelAttachSeg, '
+                + 'input, button, label, a, select, textarea'
+            );
+        }
+
+        function sfFloatPanelStopGridEvent(panel, e) {
+            if (!panel || !e || !panel.contains(e.target)) return;
+            if (sfFloatPanelIsInteractiveTarget(e.target)) return;
+            if (typeof e.stopPropagation === 'function') e.stopPropagation();
+        }
+
+        function hideSfHistSourceFloatingPanel(opts) {
+            const o = opts || {};
             const panel = document.getElementById('sfHistSourceFloatingPanel');
-            if (panel) panel.hidden = true;
-            state.sfHistSourcePanelAnchorTd = null;
-            state.sfHistSourcePanelHoverKey = '';
-            state.sfHistSourcePanelClickPinned = false;
+            setSfFloatPanelHidden(panel, true);
+            if (o.forceResetDismiss || !state.sfHistSourcePanelManuallyHidden) {
+                state.sfHistSourcePanelAnchorTd = null;
+                state.sfHistSourcePanelHoverKey = '';
+                state.sfHistSourcePanelClickPinned = false;
+                if (o.forceResetDismiss) {
+                    state.sfHistSourcePanelManuallyHidden = false;
+                    state.sfHistSourcePanelHiddenKey = '';
+                }
+            }
         }
 
         function updateSfHistSourceFloatingPanel(anchorTd) {
@@ -6031,6 +6108,14 @@
             const monthKey = String(anchorTd.dataset.sfHistMonth || anchorTd.dataset.month || '').slice(0, 10);
             if (!monthKey) return;
             const hoverKey = sfHistSourcePanelPayloadKey(row, anchorTd);
+            if (state.sfHistSourcePanelManuallyHidden) {
+                if (!hoverKey || hoverKey === state.sfHistSourcePanelHiddenKey) {
+                    setSfFloatPanelHidden(panel, true);
+                    return;
+                }
+                state.sfHistSourcePanelManuallyHidden = false;
+                state.sfHistSourcePanelHiddenKey = '';
+            }
             if (hoverKey !== state.sfHistSourcePanelHoverKey) {
                 state.sfHistSourceDimId = 'platform';
             }
@@ -6042,7 +6127,7 @@
             }
             bindSfHistSourceDimSegmentOnce();
             renderSfHistSourcePanel(buildSfHistSourceModel(row, monthKey));
-            panel.hidden = false;
+            setSfFloatPanelHidden(panel, false);
             applySfHistSourcePanelSizeFromPrefs();
             requestAnimationFrame(() => positionSfHistSourceFloatingPanel(anchorTd));
         }
@@ -6123,7 +6208,6 @@
             if (!seg || seg.dataset.sfHistSourceDimBound === '1') return;
             seg.dataset.sfHistSourceDimBound = '1';
             const stopEv = (e) => { if (e && typeof e.stopPropagation === 'function') e.stopPropagation(); };
-            seg.addEventListener('mousedown', stopEv, true);
             seg.addEventListener('click', (e) => {
                 const btn = e.target && e.target.closest ? e.target.closest('.status-pill[data-value]') : null;
                 if (!btn || !seg.contains(btn)) return;
@@ -6152,11 +6236,12 @@
             bindSfHistSourceDimSegmentOnce();
             if (panel) {
                 panel.addEventListener('mousedown', (e) => {
+                    if (sfFloatPanelIsInteractiveTarget(e.target)) return;
                     state.sfHistSourcePanelInteracting = true;
-                    if (typeof e.stopPropagation === 'function') e.stopPropagation();
+                    sfFloatPanelStopGridEvent(panel, e);
                 }, true);
                 panel.addEventListener('click', (e) => {
-                    if (typeof e.stopPropagation === 'function') e.stopPropagation();
+                    sfFloatPanelStopGridEvent(panel, e);
                 }, true);
             }
             document.addEventListener('mouseup', () => {
@@ -6166,7 +6251,9 @@
                 if (!panel) return;
                 if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
                 try { writeSfHistSourcePanelPrefs(); } catch (_) {}
-                panel.hidden = true;
+                setSfFloatPanelHidden(panel, true);
+                state.sfHistSourcePanelManuallyHidden = true;
+                state.sfHistSourcePanelHiddenKey = state.sfHistSourcePanelHoverKey || '__dismissed__';
                 state.sfHistSourcePanelClickPinned = false;
                 state.sfHistSourcePanelAnchorTd = null;
             };
@@ -6217,6 +6304,8 @@
                 if (state.forecastMode !== 'order') return;
                 if (typeof e.stopPropagation === 'function') e.stopPropagation();
                 state.sfHistSourcePanelClickPinned = true;
+                state.sfHistSourcePanelManuallyHidden = false;
+                state.sfHistSourcePanelHiddenKey = '';
                 updateSfHistSourceFloatingPanel(td);
             };
             wrap.addEventListener('click', (e) => {
@@ -6231,7 +6320,7 @@
                 if (e.target && e.target.closest && e.target.closest('#sfHistSourceFloatingPanel')) return;
                 if (e.target && e.target.closest && e.target.closest('td.sf-cell-hist-source-clickable')) return;
                 state.sfHistSourcePanelClickPinned = false;
-                hideSfHistSourceFloatingPanel();
+                hideSfHistSourceFloatingPanel({ forceResetDismiss: true });
             }, true);
         }
 
@@ -6242,7 +6331,6 @@
             const stopPanelEvent = (e) => {
                 if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
             };
-            seg.addEventListener('mousedown', stopPanelEvent, true);
             seg.addEventListener('click', (e) => {
                 const btn = e.target && e.target.closest ? e.target.closest('.status-pill[data-value]') : null;
                 if (!btn || !seg.contains(btn)) return;
@@ -6369,12 +6457,19 @@
             return state.sfGridSelected.has(makeSfGridCellKey(rk, ci));
         }
 
-        function hideSfInvFloatingPanel() {
+        function hideSfInvFloatingPanel(opts) {
+            const o = opts || {};
             const panel = document.getElementById('sfInvFloatingPanel');
-            if (panel) panel.hidden = true;
-            state.sfInvPanelAnchorTd = null;
-            state.sfInvPanelHoverKey = '';
-            state.sfInvPanelClickPinned = false;
+            setSfFloatPanelHidden(panel, true);
+            if (o.forceResetDismiss || !state.sfInvPanelManuallyHidden) {
+                state.sfInvPanelAnchorTd = null;
+                state.sfInvPanelHoverKey = '';
+                state.sfInvPanelClickPinned = false;
+                if (o.forceResetDismiss) {
+                    state.sfInvPanelManuallyHidden = false;
+                    state.sfInvPanelHiddenKey = '';
+                }
+            }
         }
 
         function updateSfInvFloatingPanel(anchorTd) {
@@ -6383,7 +6478,7 @@
             if (!panel || !anchorTd) return;
             const u = state.perfUi || {};
             if (u.none) {
-                panel.hidden = true;
+                setSfFloatPanelHidden(panel, true);
                 return;
             }
             const tr = anchorTd.closest('tr[data-row-key]');
@@ -6393,12 +6488,15 @@
             const kind = String(anchorTd.dataset.sfInvColKind || '');
             const idx = Number(anchorTd.dataset.sfInvColIdx || 0);
             const hoverKey = sfInvPanelPayloadKey(row, anchorTd);
-            if (state.sfInvPanelManuallyHidden && hoverKey && hoverKey === state.sfInvPanelHiddenKey) {
-                panel.hidden = true;
-                return;
+            if (state.sfInvPanelManuallyHidden) {
+                if (!hoverKey || hoverKey === state.sfInvPanelHiddenKey) {
+                    setSfFloatPanelHidden(panel, true);
+                    return;
+                }
+                state.sfInvPanelManuallyHidden = false;
+                state.sfInvPanelHiddenKey = '';
             }
             if (hoverKey !== state.sfInvPanelHoverKey) {
-                state.sfInvPanelManuallyHidden = false;
                 state.sfInvPanelDimId = '';
             }
             state.sfInvPanelHoverKey = hoverKey;
@@ -6410,7 +6508,7 @@
             }
             bindSfInvDimSegmentOnce();
             renderSfInvPanel(buildSfInvPanelModel(row, kind, idx));
-            panel.hidden = false;
+            setSfFloatPanelHidden(panel, false);
             applySfInvPanelSizeFromPrefs();
             requestAnimationFrame(() => positionSfInvFloatingPanel(anchorTd));
         }
@@ -6436,11 +6534,12 @@
             bindSfInvDimSegmentOnce();
             if (panel) {
                 panel.addEventListener('mousedown', (e) => {
+                    if (sfFloatPanelIsInteractiveTarget(e.target)) return;
                     state.sfInvPanelInteracting = true;
-                    if (typeof e.stopPropagation === 'function') e.stopPropagation();
+                    sfFloatPanelStopGridEvent(panel, e);
                 }, true);
                 panel.addEventListener('click', (e) => {
-                    if (typeof e.stopPropagation === 'function') e.stopPropagation();
+                    sfFloatPanelStopGridEvent(panel, e);
                 }, true);
             }
             document.addEventListener('mouseup', () => {
@@ -6450,9 +6549,9 @@
                 if (!panel) return;
                 if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
                 try { writeSfInvPanelPrefs(); } catch (_) {}
-                panel.hidden = true;
+                setSfFloatPanelHidden(panel, true);
                 state.sfInvPanelManuallyHidden = true;
-                state.sfInvPanelHiddenKey = state.sfInvPanelHoverKey || '';
+                state.sfInvPanelHiddenKey = state.sfInvPanelHoverKey || '__dismissed__';
                 state.sfInvPanelAnchorTd = null;
                 state.sfInvPanelClickPinned = false;
             };
@@ -6555,14 +6654,14 @@
                 if (e.target && e.target.closest && e.target.closest('td.sf-cell-inv-hoverable[data-sf-inv-col-kind]')) return;
                 state.sfInvPanelClickPinned = false;
                 state.sfInvPanelInteracting = false;
-                hideSfInvFloatingPanel();
+                hideSfInvFloatingPanel({ forceResetDismiss: true });
             }, true);
             const scrollParent = wrap.querySelector('.sf-table-wrap') || wrap;
             const onScroll = () => {
                 const panel = document.getElementById('sfInvFloatingPanel');
                 if (!panel || panel.hidden || !state.sfInvPanelAnchorTd) return;
                 if (!state.sfInvPanelAnchorTd.isConnected) {
-                    hideSfInvFloatingPanel();
+                    hideSfInvFloatingPanel({ forceResetDismiss: true });
                     return;
                 }
                 positionSfInvFloatingPanel(state.sfInvPanelAnchorTd);
@@ -6600,12 +6699,13 @@
                 try {
                     writeSfPerfPanelPrefs();
                 } catch (_) {}
-                panel.hidden = true;
+                setSfFloatPanelHidden(panel, true);
                 state.sfPerfPanelManuallyHidden = true;
                 const raw = getSfPerfPanelPayloadRaw();
                 state.sfPerfPanelHiddenSig = state.sfPerfPanelLastShownIdentity
                     || sfPerfPanelPayloadIdentity(raw)
-                    || '';
+                    || sfPerfPanelPayloadSig(raw)
+                    || '*';
             };
             if (closeBtn && panel) {
                 closeBtn.addEventListener('mousedown', (e) => {
@@ -6707,19 +6807,23 @@
             const payloadRaw = getSfPerfPanelPayloadRaw();
             const sig = sfPerfPanelPayloadSig(payloadRaw);
             const id = sfPerfPanelPayloadIdentity(payloadRaw);
-            if (state.sfPerfPanelManuallyHidden && id && id === state.sfPerfPanelHiddenSig) {
-                panel.hidden = true;
-                closeSfPerfFieldsPanel();
-                return;
+            if (state.sfPerfPanelManuallyHidden) {
+                const curSig = id || sfPerfPanelPayloadSig(payloadRaw);
+                if (!curSig || curSig === state.sfPerfPanelHiddenSig || state.sfPerfPanelHiddenSig === '*') {
+                    setSfFloatPanelHidden(panel, true);
+                    closeSfPerfFieldsPanel();
+                    return;
+                }
             }
             /* 无 payload 时只隐藏面板，勿重置手动关闭状态；否则用户点 × 后若随即触发无 payload 的更新会清掉 sfPerfPanelManuallyHidden，弹窗会立刻再次出现 */
             if (!payloadRaw) {
-                panel.hidden = true;
+                setSfFloatPanelHidden(panel, true);
                 closeSfPerfFieldsPanel();
                 return;
             }
             if (id !== state.sfPerfPanelLastShownIdentity) {
                 state.sfPerfPanelManuallyHidden = false;
+                state.sfPerfPanelHiddenSig = '';
             }
             state.sfPerfPanelLastShownSig = sig;
             state.sfPerfPanelLastShownIdentity = id;
@@ -6727,7 +6831,7 @@
             const distinctMonths = Array.from(new Set(payloadRaw.months || [])).sort((a, b) => String(a).localeCompare(String(b)));
             const displayMonths = expandMonthsAlongHistoryTimeline(distinctMonths);
             if (!displayMonths.length) {
-                panel.hidden = true;
+                setSfFloatPanelHidden(panel, true);
                 closeSfPerfFieldsPanel();
                 return;
             }
@@ -6742,7 +6846,7 @@
                 }
             }
             renderSfPerfMatrixIntoTable(row, displayMonths);
-            panel.hidden = false;
+            setSfFloatPanelHidden(panel, false);
             applySfPerfPanelSizeFromPrefs();
             requestAnimationFrame(() => {
                 positionSfPerfFloatingPanel(payloadRaw);
@@ -6795,7 +6899,7 @@
                     clearSfPerfHoverPayload();
                     writePerfUiPrefs();
                     syncPerfUiCheckboxesFromState();
-                    hideSfInvFloatingPanel();
+                    hideSfInvFloatingPanel({ forceResetDismiss: true });
                     renderForecastTable();
                     updateSfPerfPanel();
                 });

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>搓麻将 - SITJOY</title>
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/widgets.css">
+</head>
+<body data-mj-play-mode="main">
+    <div id="site-header"></div>
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1rem;">
+            <h2>搓麻将</h2>
+            <p>至少 <strong>2 人</strong> 在座且全部准备后可开局（最多 4 人）。当前规则：<strong>仅平胡</strong>；平胡 1 分，<strong>庄家双倍</strong>。昵称来自员工账号。</p>
+        </section>
+
+        <section class="pm-layout mj-layout-root">
+            <div class="card pm-card mj-toolbar-card">
+                <div class="pm-toolbar mj-toolbar">
+                    <button type="button" class="btn-accent" id="mjCreateBtn">创建房间</button>
+                    <div class="go-play-join-group">
+                        <span class="pm-search-title">加入房间</span>
+                        <div class="go-play-join-row">
+                            <input type="text" id="mjJoinInput" class="inline-input" maxlength="8" placeholder="6 位房间号" autocomplete="off">
+                            <button type="button" class="btn-secondary" id="mjJoinBtn">加入</button>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-secondary pm-u-hidden" id="mjReadyBtn">准备</button>
+                    <button type="button" class="btn-primary pm-u-hidden" id="mjStartBtn">开局</button>
+                    <button type="button" class="btn-primary pm-u-hidden" id="mjNextHandBtn">下一局</button>
+                    <button type="button" class="btn-secondary pm-u-hidden" id="mjLeaveBtn">离开房间</button>
+                    <button type="button" class="btn-secondary" id="mjPopoutBtn" title="在新窗口打开牌桌（需允许弹出窗口）">牌桌独立窗口</button>
+                </div>
+                <p class="mj-hint" id="mjRoomHint">创建或加入房间后开始。</p>
+                <div class="mj-lobby-panel pm-u-hidden" id="mjLobbyPanel">
+                    <p class="mj-lobby-label">座位准备（✓ 表示已准备）</p>
+                    <div class="mj-lobby-seats" id="mjLobbySeats" aria-label="座位准备状态"></div>
+                </div>
+                <p class="go-play-side-notice pm-u-hidden" id="mjWindowPlaceholder">牌桌已在独立窗口中打开，请保持本页开启以同步对局。</p>
+                <div class="mj-scores" id="mjScoresBar" hidden></div>
+            </div>
+
+            <div class="card pm-card mj-table-card pm-u-hidden" id="mjTableCard">
+                <div class="mj-table-wrap" id="mjTableWrap">
+                    <div class="mj-table" id="mjTable">
+                        <div class="mj-seat mj-seat--top" data-seat="1"><div class="mj-seat-name" id="mjSeatName1">—</div><div class="mj-seat-meta" id="mjSeatMeta1"></div><div class="mj-river" id="mjRiver1"></div><div class="mj-melds" id="mjMelds1"></div></div>
+                        <div class="mj-seat mj-seat--left" data-seat="2"><div class="mj-seat-name" id="mjSeatName2">—</div><div class="mj-seat-meta" id="mjSeatMeta2"></div><div class="mj-river" id="mjRiver2"></div><div class="mj-melds" id="mjMelds2"></div></div>
+                        <div class="mj-seat mj-seat--right" data-seat="3"><div class="mj-seat-name" id="mjSeatName3">—</div><div class="mj-seat-meta" id="mjSeatMeta3"></div><div class="mj-river" id="mjRiver3"></div><div class="mj-melds" id="mjMelds3"></div></div>
+                        <div class="mj-center" id="mjCenterInfo">—</div>
+                        <div class="mj-seat mj-seat--bottom" data-seat="0">
+                            <div class="mj-seat-name" id="mjSeatName0">—</div>
+                            <div class="mj-seat-meta" id="mjSeatMeta0"></div>
+                            <div class="mj-melds" id="mjMelds0"></div>
+                            <div class="mj-hand" id="mjMyHand" aria-label="我的手牌"></div>
+                            <div class="mj-river" id="mjRiver0"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mj-actions" id="mjActions" hidden>
+                    <span class="mj-actions-label">操作：</span>
+                    <div class="mj-actions-btns" id="mjActionBtns"></div>
+                </div>
+            </div>
+        </section>
+    </div>
+    <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
+    <script src="/static/js/header.js"></script>
+    <script src="/static/js/mahjong-play.js"></script>
+</body>
+</html>

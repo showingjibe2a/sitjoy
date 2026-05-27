@@ -200,6 +200,39 @@ class CoreAppMixin:
                 cnt = int(row.get('cnt') or 0)
         return cnt == len(names)
 
+    def send_sse_stream(self, start_response, byte_iterable, status='200 OK'):
+        """Server-Sent Events（text/event-stream）。byte_iterable 产出 UTF-8 字节块。"""
+        start_response(status, [
+            ('Content-Type', 'text/event-stream; charset=utf-8'),
+            ('Cache-Control', 'no-cache, no-transform'),
+            ('Connection', 'keep-alive'),
+            ('X-Accel-Buffering', 'no'),
+        ])
+
+        def _wrap():
+            for chunk in byte_iterable:
+                if chunk is None:
+                    continue
+                if isinstance(chunk, str):
+                    yield chunk.encode('utf-8', errors='surrogatepass')
+                elif isinstance(chunk, (bytes, bytearray)):
+                    yield bytes(chunk)
+                else:
+                    yield str(chunk).encode('utf-8', errors='surrogatepass')
+
+        return _wrap()
+
+    @staticmethod
+    def _sse_event(event_name, data_obj):
+        payload = json.dumps(data_obj, ensure_ascii=False, default=str)
+        lines = []
+        if event_name:
+            lines.append(f'event: {event_name}')
+        for line in payload.splitlines() or ['']:
+            lines.append(f'data: {line}')
+        lines.append('')
+        return ('\n'.join(lines) + '\n').encode('utf-8', errors='surrogatepass')
+
     def send_json(self, data, start_response, status='200 OK'):
         # Some filesystem-derived strings can contain Unicode surrogates (from surrogateescape),
         # especially when listing or moving files with non-UTF8 bytes in names on NAS.

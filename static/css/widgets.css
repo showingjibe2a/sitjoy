@@ -40,6 +40,124 @@
     line-height: 1.45;
 }
 
+/* 搓麻将 */
+.mj-layout-root { width: 100%; max-width: 100%; }
+.mj-hint { font-size: 0.86rem; color: var(--morandi-slate); margin: 0.5rem 0 0; }
+.mj-scores { margin-top: 0.5rem; font-size: 0.88rem; color: var(--morandi-ink); }
+.mj-lobby-panel { margin-top: 0.65rem; }
+.mj-lobby-label { font-size: 0.82rem; color: var(--morandi-slate); margin: 0 0 0.45rem; }
+.mj-lobby-seats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.65rem 1.2rem;
+    max-width: 280px;
+    margin: 0 auto;
+}
+.mj-lobby-seats--popup { max-width: none; margin: 0 0 0.5rem; }
+.mj-seat-dot {
+    display: flex; flex-direction: column; align-items: center; gap: 0.25rem;
+    min-height: 4.5rem;
+}
+.mj-seat-dot-inner {
+    width: 2.75rem; height: 2.75rem; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.1rem; font-weight: 700;
+    border: 2px dashed rgba(143, 134, 126, 0.55);
+    background: rgba(255, 252, 248, 0.6);
+    color: transparent;
+}
+.mj-seat-dot--filled .mj-seat-dot-inner {
+    border-style: solid;
+    border-color: rgba(143, 134, 126, 0.85);
+    color: var(--morandi-slate);
+    background: #fff;
+}
+.mj-seat-dot--ready .mj-seat-dot-inner {
+    border-color: #6f9d7d;
+    background: rgba(111, 157, 125, 0.15);
+    color: #3d6b4f;
+}
+.mj-seat-dot--me .mj-seat-dot-inner {
+    box-shadow: 0 0 0 2px rgba(111, 157, 125, 0.35);
+}
+.mj-seat-dot-name {
+    font-size: 0.72rem; color: var(--morandi-slate);
+    max-width: 5.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mj-table-wrap {
+    display: flex; justify-content: center; padding: 0.35rem 0;
+}
+.mj-table-wrap--popup { padding: 0; }
+.mj-table-card .mj-table-wrap { margin: 0 auto; }
+.mj-table {
+    position: relative;
+    width: 100%;
+    max-width: min(92vw, 440px);
+    aspect-ratio: 1 / 1;
+    box-sizing: border-box;
+    padding: 0.65rem;
+    background: linear-gradient(145deg, #3d6b4f 0%, #2f5540 100%);
+    border-radius: 12px;
+}
+.mj-play-popup-body {
+    margin: 0; min-height: 100vh; background: #2a3d32;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0.5rem;
+}
+.mj-play-popup-stage {
+    display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: center;
+    gap: 0.65rem; width: 100%; max-width: 560px;
+}
+.mj-play-popup-stage .mj-table { max-width: min(88vw, 400px); }
+.mj-popup-side {
+    display: flex; flex-direction: column; gap: 0.45rem;
+    min-width: 5.5rem; max-width: 7rem;
+}
+.mj-actions--popup { margin: 0; padding: 0; border: none; flex-direction: column; }
+.mj-actions--popup .mj-actions-btns { flex-direction: column; }
+.mj-center {
+    position: absolute;
+    left: 50%; top: 42%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    color: #f8f4ec;
+    font-size: 0.88rem;
+    max-width: 70%;
+    line-height: 1.45;
+    text-shadow: 0 1px 2px rgba(0,0,0,.35);
+}
+.mj-seat { position: absolute; color: #f8f4ec; font-size: 0.82rem; }
+.mj-seat--top { left: 50%; top: 0.5rem; transform: translateX(-50%); text-align: center; max-width: 88%; }
+.mj-seat--bottom { left: 50%; bottom: 0.5rem; transform: translateX(-50%); text-align: center; width: 96%; }
+.mj-seat--left { left: 0.5rem; top: 38%; max-width: 22%; }
+.mj-seat--right { right: 0.5rem; top: 38%; max-width: 22%; text-align: right; }
+.mj-seat-name { font-weight: 700; margin-bottom: 0.2rem; }
+.mj-seat-meta { opacity: 0.85; font-size: 0.75rem; margin-bottom: 0.25rem; }
+.mj-hand {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 0.35rem;
+    margin: 0.35rem 0;
+}
+.mj-river { display: flex; flex-wrap: wrap; gap: 0.2rem; justify-content: center; max-height: 4.5rem; overflow: auto; }
+.mj-melds { font-size: 0.72rem; opacity: 0.9; margin: 0.2rem 0; }
+.mj-tile {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 2.1rem; min-height: 2.6rem; padding: 0.15rem 0.35rem;
+    border-radius: 6px; border: 1px solid rgba(60,50,40,.25);
+    background: linear-gradient(180deg, #fffef8 0%, #f0e8d8 100%);
+    color: #2a2420; font-size: 0.8rem; font-weight: 600;
+    box-shadow: 0 2px 4px rgba(0,0,0,.12);
+}
+.mj-tile--mini { min-width: 1.5rem; min-height: 1.8rem; font-size: 0.68rem; }
+.mj-tile--clickable { cursor: pointer; }
+.mj-tile--clickable:hover { border-color: #8fa88b; transform: translateY(-2px); }
+.mj-actions {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem;
+    margin-top: 0.75rem; padding-top: 0.65rem;
+    border-top: 1px solid rgba(207,199,189,.55);
+}
+.mj-actions-btns { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.mj-toolbar { flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+
 /* 围棋对弈：与业务页一致的全宽 pm-layout */
 .go-play-layout-root {
     width: 100%;

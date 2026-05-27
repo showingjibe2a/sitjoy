@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>麻将牌桌 - SITJOY</title>
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/widgets.css">
+</head>
+<body class="mj-play-popup-body" data-mj-play-mode="popup">
+    <div class="mj-play-popup-stage" id="mjPopupStage">
+        <div class="mj-table-wrap mj-table-wrap--popup">
+            <div class="mj-table" id="mjTable">
+                <div class="mj-seat mj-seat--top" data-seat="1"><div class="mj-seat-name" id="mjSeatName1">—</div><div class="mj-seat-meta" id="mjSeatMeta1"></div><div class="mj-river" id="mjRiver1"></div><div class="mj-melds" id="mjMelds1"></div></div>
+                <div class="mj-seat mj-seat--left" data-seat="2"><div class="mj-seat-name" id="mjSeatName2">—</div><div class="mj-seat-meta" id="mjSeatMeta2"></div><div class="mj-river" id="mjRiver2"></div><div class="mj-melds" id="mjMelds2"></div></div>
+                <div class="mj-seat mj-seat--right" data-seat="3"><div class="mj-seat-name" id="mjSeatName3">—</div><div class="mj-seat-meta" id="mjSeatMeta3"></div><div class="mj-river" id="mjRiver3"></div><div class="mj-melds" id="mjMelds3"></div></div>
+                <div class="mj-center" id="mjCenterInfo">—</div>
+                <div class="mj-seat mj-seat--bottom" data-seat="0">
+                    <div class="mj-seat-name" id="mjSeatName0">—</div>
+                    <div class="mj-seat-meta" id="mjSeatMeta0"></div>
+                    <div class="mj-melds" id="mjMelds0"></div>
+                    <div class="mj-hand" id="mjMyHand"></div>
+                    <div class="mj-river" id="mjRiver0"></div>
+                </div>
+            </div>
+        </div>
+        <aside class="mj-popup-side" id="mjPopupSide" aria-label="牌桌操作">
+            <div class="mj-lobby-seats mj-lobby-seats--popup" id="mjLobbySeats" hidden></div>
+            <div class="mj-actions mj-actions--popup" id="mjActions" hidden>
+                <div class="mj-actions-btns" id="mjActionBtns"></div>
+            </div>
+            <button type="button" class="go-play-popup-btn pm-u-hidden" id="mjPopupReadyBtn">准备</button>
+            <button type="button" class="go-play-popup-btn btn-secondary pm-u-hidden" id="mjPopupLeaveBtn">离开房间</button>
+        </aside>
+    </div>
+    <script src="/static/js/mahjong-play.js"></script>
+</body>
+</html>
