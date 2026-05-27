@@ -539,7 +539,70 @@ class AmazonAdMixin:
             '归属广告组合名称', '归属广告活动名称',
         ]
 
-    def _apply_amazon_ad_items_template_formatting(self, ws, last_row=1000):
+    def _load_amazon_ad_items_template_options(self):
+        """模板下拉：货号、细分类（与导入解析键一致）。"""
+        sku_families = []
+        subtype_labels = []
+        with self._get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT sku_family FROM product_families
+                    WHERE sku_family IS NOT NULL AND TRIM(sku_family) <> ''
+                    ORDER BY sku_family ASC
+                    """
+                )
+                sku_families = [
+                    str(row.get('sku_family') or '').strip()
+                    for row in (cur.fetchall() or [])
+                    if str(row.get('sku_family') or '').strip()
+                ]
+                cur.execute(
+                    """
+                    SELECT ad_class, subtype_code, description
+                    FROM amazon_ad_subtypes
+                    ORDER BY ad_class ASC, subtype_code ASC, id ASC
+                    """
+                )
+                seen = set()
+                for row in cur.fetchall() or []:
+                    ad_class = str(row.get('ad_class') or '').strip()
+                    code = str(row.get('subtype_code') or '').strip()
+                    desc = str(row.get('description') or '').strip()
+                    composite = f'{ad_class}-{code}' if ad_class and code else ''
+                    for label in (desc, composite, code):
+                        if label and label not in seen:
+                            seen.add(label)
+                            subtype_labels.append(label)
+        return sku_families, subtype_labels
+
+    def _style_amazon_ad_items_template_example_rows(self, ws):
+        """第 2–4 行为示例行，使用不同底色区分（导入时跳过）。"""
+        from openpyxl.styles import Font, PatternFill, Alignment
+
+        example_font = Font(italic=True, color='7B8088')
+        example_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        fills = [
+            PatternFill(start_color='E8F0E8', end_color='E8F0E8', fill_type='solid'),
+            PatternFill(start_color='E8EEF6', end_color='E8EEF6', fill_type='solid'),
+            PatternFill(start_color='F6EEE8', end_color='F6EEE8', fill_type='solid'),
+        ]
+        for row_idx, fill in enumerate(fills, start=2):
+            for cell in ws[row_idx]:
+                cell.fill = fill
+                cell.font = example_font
+                cell.alignment = example_align
+
+    def _apply_amazon_ad_items_template_formatting(
+        self,
+        ws,
+        *,
+        options_ws=None,
+        sku_families=None,
+        subtype_labels=None,
+        first_data_row=5,
+        last_row=1000,
+    ):
         """下拉预设 + 按广告类型对不适用字段加灰色底纹（条件格式）。"""
         from openpyxl.styles import Font, PatternFill, Alignment
         from openpyxl.formatting.rule import FormulaRule
@@ -552,43 +615,76 @@ class AmazonAdMixin:
             cell.font = Font(bold=True, color='2A2420')
             cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
-        data_end = max(2, int(last_row or 1000))
+        first_data_row = max(5, int(first_data_row or 5))
+        data_end = max(first_data_row, int(last_row or 1000))
+        anchor = first_data_row
+
         dv_level = DataValidation(type='list', formula1='"组合,活动,组"', allow_blank=False)
         dv_level.error = '请从列表选择：组合 / 活动 / 组'
         dv_level.errorTitle = '广告类型'
         ws.add_data_validation(dv_level)
-        dv_level.add(f'A2:A{data_end}')
+        dv_level.add(f'A{first_data_row}:A{data_end}')
 
         dv_status = DataValidation(type='list', formula1='"启动,暂停,存档"', allow_blank=False)
         dv_status.error = '请从列表选择：启动 / 暂停 / 存档'
         dv_status.errorTitle = '状态'
         ws.add_data_validation(dv_status)
-        dv_status.add(f'C2:C{data_end}')
+        dv_status.add(f'C{first_data_row}:C{data_end}')
 
         dv_shared = DataValidation(type='list', formula1='"是,否"', allow_blank=True)
         dv_shared.error = '请从列表选择：是 / 否'
         dv_shared.errorTitle = '是否共享预算'
         ws.add_data_validation(dv_shared)
-        dv_shared.add(f'E2:E{data_end}')
+        dv_shared.add(f'E{first_data_row}:E{data_end}')
+
+        dv_strategy = DataValidation(type='list', formula1='"BE,BD,PC"', allow_blank=True)
+        dv_strategy.error = '请从列表选择：BE / BD / PC'
+        dv_strategy.errorTitle = '策略'
+        ws.add_data_validation(dv_strategy)
+        dv_strategy.add(f'F{first_data_row}:F{data_end}')
+
+        sku_families = list(sku_families or [])
+        subtype_labels = list(subtype_labels or [])
+        if options_ws is not None and sku_families:
+            opt_end = len(sku_families) + 1
+            dv_sku = DataValidation(
+                type='list',
+                formula1=f"='_options'!$A$2:$A${opt_end}",
+                allow_blank=True,
+            )
+            dv_sku.error = '请从列表选择货号'
+            dv_sku.errorTitle = '关联货号'
+            ws.add_data_validation(dv_sku)
+            dv_sku.add(f'D{first_data_row}:D{data_end}')
+        if options_ws is not None and subtype_labels:
+            opt_end = len(subtype_labels) + 1
+            dv_subtype = DataValidation(
+                type='list',
+                formula1=f"='_options'!$B$2:$B${opt_end}",
+                allow_blank=True,
+            )
+            dv_subtype.error = '请从列表选择细分类'
+            dv_subtype.errorTitle = '细分类'
+            ws.add_data_validation(dv_subtype)
+            dv_subtype.add(f'G{first_data_row}:G{data_end}')
 
         # 条件格式：公式为真时显示灰色（表示当前行广告类型下该列无需填写）
-        # 组合：仅 关联货号、是否共享预算；活动：策略/细分类/预算/归属组合；组：仅归属活动
         rules = [
-            ('D', 'OR($A2="",$A2<>"组合")'),           # 关联货号
-            ('E', 'OR($A2="",$A2<>"组合")'),           # 是否共享预算
-            ('F', 'OR($A2="",$A2<>"活动")'),           # 策略
-            ('G', 'OR($A2="",$A2<>"活动")'),           # 细分类
-            ('H', 'OR($A2="",$A2<>"活动")'),           # 预算
-            ('I', 'OR($A2="",$A2<>"活动")'),           # 归属广告组合
-            ('J', 'OR($A2="",$A2<>"组")'),              # 归属广告活动
+            ('D', f'OR($A{anchor}="",$A{anchor}<>"组合")'),
+            ('E', f'OR($A{anchor}="",$A{anchor}<>"组合")'),
+            ('F', f'OR($A{anchor}="",$A{anchor}<>"活动")'),
+            ('G', f'OR($A{anchor}="",$A{anchor}<>"活动")'),
+            ('H', f'OR($A{anchor}="",$A{anchor}<>"活动")'),
+            ('I', f'OR($A{anchor}="",$A{anchor}<>"活动")'),
+            ('J', f'OR($A{anchor}="",$A{anchor}<>"组")'),
         ]
         for col, formula in rules:
             ws.conditional_formatting.add(
-                f'{col}2:{col}{data_end}',
+                f'{col}{first_data_row}:{col}{data_end}',
                 FormulaRule(formula=[formula], fill=gray_fill),
             )
 
-        ws.freeze_panes = 'A2'
+        ws.freeze_panes = f'A{first_data_row}'
         widths = {
             'A': 11, 'B': 28, 'C': 9, 'D': 14, 'E': 14,
             'F': 8, 'G': 12, 'H': 10, 'I': 22, 'J': 26,
@@ -596,8 +692,16 @@ class AmazonAdMixin:
         for col, width in widths.items():
             ws.column_dimensions[col].width = width
 
+    def _is_amazon_ad_template_sample_row(self, row_idx, name):
+        if row_idx <= 4:
+            return True
+        text = str(name or '').strip()
+        return ('示例' in text) or ('请勿导入' in text)
+
     def _build_amazon_ad_items_import_workbook(self):
         from openpyxl import Workbook
+
+        sku_families, subtype_labels = self._load_amazon_ad_items_template_options()
 
         wb = Workbook()
         ws = wb.active
@@ -622,7 +726,26 @@ class AmazonAdMixin:
             '', '', '',
             '', 'BE-示例组合-SP-KW',
         ])
-        self._apply_amazon_ad_items_template_formatting(ws)
+        self._style_amazon_ad_items_template_example_rows(ws)
+
+        options_ws = wb.create_sheet('_options')
+        options_ws.sheet_state = 'hidden'
+        options_ws.append(['sku_family', 'subtype'])
+        opt_rows = max(len(sku_families), len(subtype_labels), 1)
+        for i in range(opt_rows):
+            options_ws.append([
+                sku_families[i] if i < len(sku_families) else '',
+                subtype_labels[i] if i < len(subtype_labels) else '',
+            ])
+
+        self._apply_amazon_ad_items_template_formatting(
+            ws,
+            options_ws=options_ws,
+            sku_families=sku_families,
+            subtype_labels=subtype_labels,
+            first_data_row=5,
+            last_row=1200,
+        )
 
         guide = wb.create_sheet('填写说明')
         guide.append(['字段', '组合', '活动', '组', '说明'])
@@ -630,13 +753,14 @@ class AmazonAdMixin:
             ('广告类型*', '必填', '必填', '必填', '下拉：组合 / 活动 / 组'),
             ('名称*', '必填', '必填', '必填', ''),
             ('状态*', '必填', '必填', '必填', '下拉：启动 / 暂停 / 存档'),
-            ('关联货号', '选填', '—', '—', '仅组合可填；灰底表示本行不适用'),
+            ('关联货号', '选填', '—', '—', '仅组合可填；下拉为系统货号；灰底表示本行不适用'),
             ('是否共享预算', '必填', '—', '—', '仅组合可填；下拉：是 / 否'),
-            ('策略', '—', '必填', '—', '仅活动可填'),
-            ('细分类', '—', '必填', '—', '仅活动可填（须与系统细分类一致）'),
+            ('策略', '—', '必填', '—', '仅活动可填；下拉：BE / BD / PC'),
+            ('细分类', '—', '必填', '—', '仅活动可填；下拉为系统细分类'),
             ('预算', '—', '必填', '—', '仅活动可填'),
             ('归属广告组合名称', '—', '必填', '—', '仅活动可填（须已存在）'),
             ('归属广告活动名称', '—', '—', '必填', '仅组可填（须已存在）'),
+            ('', '', '', '', '第2–4行为示例（彩色底纹），导入时自动跳过；请从第5行填写'),
         ]
         for row in guide_rows:
             guide.append(list(row))
@@ -708,6 +832,7 @@ class AmazonAdMixin:
             }
 
             created = updated = unchanged = 0
+            skipped_sample_rows = 0
             errors = []
 
             with self._get_db_connection() as conn:
@@ -727,6 +852,9 @@ class AmazonAdMixin:
                         key = f"{row.get('ad_class')}-{row.get('subtype_code')}"
                         subtype_by_key[key] = row['id']
                         subtype_by_key[str(row.get('description') or '').strip()] = row['id']
+                        code = str(row.get('subtype_code') or '').strip()
+                        if code:
+                            subtype_by_key[code] = row['id']
 
                     sku_by_family = {}
                     cur.execute("SELECT id, sku_family FROM product_families")
@@ -734,9 +862,12 @@ class AmazonAdMixin:
                         sku_by_family[str(row.get('sku_family') or '').strip()] = row['id']
 
                     for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=False), start=2):
+                        name = cell_value(row, '名称*') or ''
+                        if self._is_amazon_ad_template_sample_row(row_idx, name):
+                            skipped_sample_rows += 1
+                            continue
                         level_raw = cell_value(row, '广告类型*') or ''
                         ad_level = level_map.get(level_raw.lower()) or level_map.get(level_raw)
-                        name = cell_value(row, '名称*') or ''
                         status = cell_value(row, '状态*') or '启动'
                         if not level_raw and not name:
                             continue
@@ -834,6 +965,7 @@ class AmazonAdMixin:
                     'created': created,
                     'updated': updated,
                     'unchanged': unchanged,
+                    'skipped_sample_rows': skipped_sample_rows,
                     'errors': errors,
                 },
                 start_response
