@@ -19,6 +19,79 @@ except Exception as e:
 class AmazonAdMixin:
     """Amazon 广告管理 API 处理器 - 持有11个API handler方法"""
 
+    def _parse_subtype_operation_type_ids(self, data):
+        raw = data.get('operation_type_ids') if isinstance(data, dict) else None
+        if not isinstance(raw, list):
+            return []
+        out = []
+        for x in raw:
+            oid = self._parse_int(x)
+            if oid and oid > 0:
+                out.append(int(oid))
+        return sorted(set(out))
+
+    def _sync_amazon_ad_subtype_operation_types(self, cur, subtype_id, operation_type_ids):
+        sid = self._parse_int(subtype_id)
+        if not sid:
+            return
+        cur.execute('DELETE FROM amazon_ad_subtype_operation_types WHERE subtype_id=%s', (sid,))
+        for oid in operation_type_ids or []:
+            cur.execute(
+                'INSERT INTO amazon_ad_subtype_operation_types (subtype_id, operation_type_id) VALUES (%s, %s)',
+                (sid, int(oid)),
+            )
+
+    def _attach_subtype_operation_type_ids(self, cur, rows):
+        if not rows:
+            return []
+        ids = [self._parse_int(r.get('id')) for r in rows if self._parse_int(r.get('id'))]
+        if not ids:
+            return [dict(r) for r in rows]
+        placeholders = ','.join(['%s'] * len(ids))
+        cur.execute(
+            f'SELECT subtype_id, operation_type_id FROM amazon_ad_subtype_operation_types '
+            f'WHERE subtype_id IN ({placeholders})',
+            tuple(ids),
+        )
+        by_subtype = {}
+        for row in cur.fetchall() or []:
+            sid = self._parse_int(row.get('subtype_id'))
+            oid = self._parse_int(row.get('operation_type_id'))
+            if sid and oid:
+                by_subtype.setdefault(sid, []).append(oid)
+        out = []
+        for r in rows:
+            item = dict(r)
+            sid = self._parse_int(item.get('id'))
+            item['operation_type_ids'] = by_subtype.get(sid, [])
+            out.append(item)
+        return out
+
+    def _validate_amazon_ad_subtype_payload(self, cur, description, ad_class, subtype_code, exclude_id=None):
+        description = (description or '').strip()
+        ad_class = (ad_class or 'SP').strip().upper() or 'SP'
+        subtype_code = (subtype_code or '').strip()
+        if not description:
+            return None, '请填写描述'
+        if not subtype_code:
+            return None, '请填写细分简称'
+        sql = (
+            'SELECT id FROM amazon_ad_subtypes WHERE ad_class=%s AND subtype_code=%s'
+        )
+        params = [ad_class, subtype_code]
+        if exclude_id:
+            sql += ' AND id<>%s'
+            params.append(int(exclude_id))
+        sql += ' LIMIT 1'
+        cur.execute(sql, tuple(params))
+        if cur.fetchone():
+            return None, f'该广告大类（{ad_class}）下细分简称「{subtype_code}」已存在'
+        return {
+            'description': description,
+            'ad_class': ad_class,
+            'subtype_code': subtype_code,
+        }, None
+
     def handle_amazon_ad_subtype_api(self, environ, method, start_response):
         """Amazon 广告细分类管理 API（CRUD）"""
         try:
@@ -26,41 +99,102 @@ class AmazonAdMixin:
             query_params = parse_qs(query_string)
             
             if method == 'GET':
+                keyword = (query_params.get('q', [''])[0] or '').strip()
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("SELECT * FROM amazon_ad_subtypes ORDER BY id DESC LIMIT 500")
-                        rows = cur.fetchall() or []
+                        sql = 'SELECT * FROM amazon_ad_subtypes WHERE 1=1'
+                        params = []
+                        if keyword:
+                            like = f'%{keyword}%'
+                            sql += (
+                                ' AND (description LIKE %s OR ad_class LIKE %s OR subtype_code LIKE %s'
+                                " OR CONCAT(ad_class, '-', subtype_code) LIKE %s)"
+                            )
+                            params.extend([like, like, like, like])
+                        sql += ' ORDER BY id DESC LIMIT 500'
+                        cur.execute(sql, tuple(params))
+                        rows = self._attach_subtype_operation_type_ids(cur, cur.fetchall() or [])
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
                 
             if method == 'POST':
-                data = self._read_json_body(environ)
-                description = (data.get('description') or '').strip()
-                ad_class = (data.get('ad_class') or 'SP').upper()
-                if not description:
-                    return self.send_json({'status': 'error', 'message': 'Missing description'}, start_response)
+                data = self._read_json_body(environ) or {}
+                op_ids = self._parse_subtype_operation_type_ids(data)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
+                        fields, err = self._validate_amazon_ad_subtype_payload(
+                            cur,
+                            data.get('description'),
+                            data.get('ad_class'),
+                            data.get('subtype_code'),
+                        )
+                        if err:
+                            return self.send_json({'status': 'error', 'message': err}, start_response)
                         cur.execute(
-                            "INSERT INTO amazon_ad_subtypes (description, ad_class) VALUES (%s, %s)",
-                            (description, ad_class)
+                            """
+                            INSERT INTO amazon_ad_subtypes (description, ad_class, subtype_code)
+                            VALUES (%s, %s, %s)
+                            """,
+                            (fields['description'], fields['ad_class'], fields['subtype_code']),
                         )
                         new_id = cur.lastrowid
+                        self._sync_amazon_ad_subtype_operation_types(cur, new_id, op_ids)
                 return self.send_json({'status': 'success', 'id': new_id}, start_response)
+
+            if method == 'PUT':
+                data = self._read_json_body(environ) or {}
+                item_id = self._parse_int(data.get('id'))
+                if not item_id:
+                    return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
+                op_ids = self._parse_subtype_operation_type_ids(data)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute('SELECT id FROM amazon_ad_subtypes WHERE id=%s LIMIT 1', (item_id,))
+                        if not cur.fetchone():
+                            return self.send_json({'status': 'error', 'message': '记录不存在'}, start_response)
+                        fields, err = self._validate_amazon_ad_subtype_payload(
+                            cur,
+                            data.get('description'),
+                            data.get('ad_class'),
+                            data.get('subtype_code'),
+                            exclude_id=item_id,
+                        )
+                        if err:
+                            return self.send_json({'status': 'error', 'message': err}, start_response)
+                        cur.execute(
+                            """
+                            UPDATE amazon_ad_subtypes
+                            SET description=%s, ad_class=%s, subtype_code=%s
+                            WHERE id=%s
+                            """,
+                            (
+                                fields['description'],
+                                fields['ad_class'],
+                                fields['subtype_code'],
+                                item_id,
+                            ),
+                        )
+                        self._sync_amazon_ad_subtype_operation_types(cur, item_id, op_ids)
+                return self.send_json({'status': 'success', 'id': item_id}, start_response)
             
             if method == 'DELETE':
-                data = self._read_json_body(environ)
-                item_id = data.get('id')
+                data = self._read_json_body(environ) or {}
+                item_id = self._parse_int(data.get('id'))
                 if not item_id:
                     return self.send_json({'status': 'error', 'message': 'Missing id'}, start_response)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("DELETE FROM amazon_ad_subtypes WHERE id=%s", (item_id,))
+                        cur.execute('DELETE FROM amazon_ad_subtypes WHERE id=%s', (item_id,))
+                        if cur.rowcount <= 0:
+                            return self.send_json({'status': 'error', 'message': '记录不存在'}, start_response)
                 return self.send_json({'status': 'success'}, start_response)
                 
             return self.send_error(405, 'Method not allowed', start_response)
         except Exception as e:
             print(f'Amazon ad subtype API error: {str(e)}')
-            return self.send_json({'status': 'error', 'message': str(e)}, start_response)
+            message = str(e)
+            if 'uniq_ad_subtype' in message.lower() or 'duplicate' in message.lower():
+                message = '该广告大类下细分简称已存在'
+            return self.send_json({'status': 'error', 'message': message}, start_response)
 
     def _parse_apply_flag(self, value, default=1):
         if value is None or value == '':
