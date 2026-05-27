@@ -13,14 +13,25 @@
             gap: 1rem;
             align-items: stretch;
         }
+        /* 覆盖 style.css 中 .pm-layout > * { min-width:0 }，避免左侧栏被压窄导致表格横向滚动 */
+        .pm-layout.pm-layout--aa-adjust > .aa-grid {
+            min-width: 0;
+            width: 100%;
+            max-width: 100%;
+        }
+        .pm-layout.pm-layout--aa-adjust .aa-left-col {
+            min-width: min-content;
+            width: auto;
+            max-width: none;
+        }
         .aa-left-col {
             display: flex;
             flex-direction: column;
             gap: 0.75rem;
             flex: 0 0 auto;
             width: auto;
-            max-width: 100%;
-            min-width: 0;
+            max-width: none;
+            min-width: min-content;
             min-height: 100%;
             align-self: start;
         }
@@ -105,8 +116,10 @@
             flex: 1 1 auto;
             min-height: 0;
             width: fit-content;
-            max-width: 100%;
-            overflow: auto;
+            min-width: min-content;
+            max-width: none;
+            overflow-x: visible;
+            overflow-y: auto;
             -webkit-overflow-scrolling: touch;
         }
         .aa-ad-table {
@@ -393,7 +406,7 @@
             <p>按广告信息执行调整并记录效果区间数据，支持提交并记录与快速提交</p>
         </section>
 
-        <section class="pm-layout">
+        <section class="pm-layout pm-layout--aa-adjust">
             <div class="aa-grid">
                 <div class="aa-left-col">
                     <div class="card pm-card aa-search-card">
@@ -1035,16 +1048,40 @@
             try { localStorage.setItem(AA_AD_COL_LS, JSON.stringify(widths)); } catch (e) {}
         }
 
+        function adListTableColWidthsSum(table) {
+            const w = loadAdTableColWidths();
+            if (!table) {
+                return AA_AD_COL_KEYS.reduce((sum, key) => sum + Math.max(48, Number(w[key]) || 0), 0);
+            }
+            let sum = 0;
+            AA_AD_COL_KEYS.forEach((key) => {
+                const col = table.querySelector(`colgroup col[data-col="${key}"]`);
+                if (col && col.style.width) {
+                    const n = parseFloat(col.style.width);
+                    if (Number.isFinite(n) && n > 0) {
+                        sum += Math.ceil(n);
+                        return;
+                    }
+                }
+                sum += Math.max(48, Number(w[key]) || AA_AD_COL_DEFAULTS[key] || 48);
+            });
+            return sum;
+        }
+
         function adListTableContentWidth() {
             const table = document.getElementById('adListTable');
-            if (table) {
-                return Math.max(
-                    Math.ceil(table.scrollWidth || 0),
-                    Math.ceil(table.getBoundingClientRect().width || 0)
+            const fromCols = adListTableColWidthsSum(table);
+            if (!table) return fromCols;
+            let measured = 0;
+            const headerRow = table.tHead && table.tHead.rows[0];
+            if (headerRow) {
+                measured = Array.from(headerRow.cells).reduce(
+                    (sum, th) => sum + Math.ceil(th.getBoundingClientRect().width || 0),
+                    0
                 );
             }
-            const w = loadAdTableColWidths();
-            return AA_AD_COL_KEYS.reduce((sum, key) => sum + Math.max(48, Number(w[key]) || 0), 0);
+            const scrollW = Math.ceil(table.scrollWidth || 0);
+            return Math.max(fromCols, measured, scrollW, fromCols);
         }
 
         function syncAaLeftColumnWidth() {
@@ -1060,9 +1097,34 @@
                 ? (parseFloat(getComputedStyle(listWrap).borderLeftWidth) || 0)
                     + (parseFloat(getComputedStyle(listWrap).borderRightWidth) || 0)
                 : 2;
+            const table = document.getElementById('adListTable');
             const contentW = adListTableContentWidth();
-            const innerW = contentW + listBorderX;
-            leftCol.style.width = `${Math.ceil(innerW + padX)}px`;
+            let innerW = Math.ceil(contentW + listBorderX + 2);
+            const searchCard = document.querySelector('.aa-search-card');
+            if (searchCard) {
+                const searchInner = searchCard.querySelector('.aa-search-card-inner');
+                const searchNeed = Math.ceil((searchInner || searchCard).scrollWidth || 0);
+                if (searchNeed > innerW) innerW = searchNeed;
+            }
+            const outerW = Math.ceil(innerW + padX);
+            leftCol.style.width = `${outerW}px`;
+            leftCol.style.minWidth = `${outerW}px`;
+            leftCol.style.maxWidth = 'none';
+            if (listWrap) {
+                listWrap.style.width = `${innerW}px`;
+                listWrap.style.minWidth = `${innerW}px`;
+                listWrap.style.maxWidth = 'none';
+            }
+            const infoCard = document.querySelector('.aa-ad-info-card');
+            [infoCard, searchCard].forEach((card) => {
+                if (!card) return;
+                card.style.width = `${outerW}px`;
+                card.style.minWidth = `${outerW}px`;
+                card.style.maxWidth = 'none';
+            });
+            if (table) {
+                table.style.width = `${contentW}px`;
+            }
         }
 
         let _aaLeftColWidthTimer = null;
@@ -1071,6 +1133,7 @@
             _aaLeftColWidthTimer = setTimeout(() => {
                 _aaLeftColWidthTimer = null;
                 syncAaLeftColumnWidth();
+                requestAnimationFrame(syncAaLeftColumnWidth);
             }, 0);
         }
 
@@ -1105,6 +1168,7 @@
                     function onMove(ev) {
                         const next = Math.max(56, Math.round(startW + (ev.clientX - startX)));
                         if (col) col.style.width = `${next}px`;
+                        scheduleSyncAaLeftColumnWidth();
                     }
                     function onUp(ev) {
                         document.removeEventListener('mousemove', onMove);
