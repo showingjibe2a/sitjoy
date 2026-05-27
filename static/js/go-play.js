@@ -17,6 +17,8 @@
   let currentPlayer = BLACK;
   let gameStatus = '';
   const ROOM_STORAGE_KEY = 'sitjoy.go-play.room.v1';
+  const GO_PLAY_JOIN_LOCAL_ORIGIN = 'http://192.168.5.203:233';
+  const GO_PLAY_JOIN_CLOUD_ORIGIN = 'http://812165.xyz:233';
   let pendingInfo = null;
   let pendingForYou = false;
   let youRequestedPending = false;
@@ -43,6 +45,7 @@
   let popupOpen = false;
   let popupMonitorTimer = null;
   let watchAbortCtrl = null;
+  let boardOverlay = null;
 
   const $ = (id) => document.getElementById(id);
 
@@ -108,11 +111,20 @@
     return Promise.resolve(ok);
   }
 
+  function buildGoRoomJoinUrl(origin, code) {
+    const base = String(origin || '').replace(/\/$/, '');
+    const c = encodeURIComponent(String(code || '').trim().toUpperCase());
+    return `${base}/widgets/go-play?room=${c}`;
+  }
+
   function buildGoRoomShareText(code) {
     const c = String(code || roomCode || '').trim().toUpperCase();
     if (!c) return '';
-    const url = pageUrl('/widgets/go-play?room=' + encodeURIComponent(c));
-    return `网址（直接加入）：${url}\n房间号：${c}`;
+    return [
+      `网址（本地直接加入）：${buildGoRoomJoinUrl(GO_PLAY_JOIN_LOCAL_ORIGIN, c)}`,
+      `网址（云端直接加入）：${buildGoRoomJoinUrl(GO_PLAY_JOIN_CLOUD_ORIGIN, c)}`,
+      `房间号：${c}`,
+    ].join('\n');
   }
 
   async function copyGoRoomShare() {
@@ -518,7 +530,7 @@
     }
   }
 
-  function localClearBoard() {
+  function executeLocalClearBoard() {
     if (!isFreeLocalBoard()) return;
     const empty = Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY));
     practiceLocal = {
@@ -624,9 +636,11 @@
       const practiceBtns = ['goPracticeBtn', 'goPopupPracticeBtn'];
       const practiceRevertBtns = ['goPracticeRevertBtn', 'goPopupPracticeRevertBtn'];
       const practiceEndBtns = ['goPracticeEndBtn', 'goPopupPracticeEndBtn'];
+      const clearBtns = ['goLocalClearBtn', 'goPopupClearBtn'];
       const hasMoves = !!(practiceLocal && practiceLocal.moves.length);
       setToolbarBtns(passBtns, { disabled: false, hidden: false });
       setToolbarBtns(undoBtns, { disabled: !hasMoves, hidden: false });
+      setToolbarBtns(clearBtns, { disabled: false, hidden: false });
       setToolbarBtns(resignBtns, { hidden: true });
       setToolbarBtns(practiceBtns, { hidden: true });
       setToolbarBtns(practiceRevertBtns, { hidden: true });
@@ -648,6 +662,8 @@
     const passBtns = ['goPassBtn', 'goPopupPassBtn'];
     const undoBtns = ['goUndoBtn', 'goPopupUndoBtn'];
     const resignBtns = ['goResignBtn', 'goPopupResignBtn'];
+    const clearBtns = ['goLocalClearBtn', 'goPopupClearBtn'];
+    setToolbarBtns(clearBtns, { hidden: true });
     const banner = $('goPracticeBanner');
     const roomBusy = youInPractice || opponentInPractice;
     const canStart = gameStatus === 'playing' && yourColor && yourColor === currentPlayer && !pendingInfo && !roomBusy;
@@ -752,17 +768,135 @@
     return d.innerHTML;
   }
 
-  function overlayBtn(label, className, onClick) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = className;
-    b.textContent = label;
-    b.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      onClick();
+  function initBoardOverlay() {
+    if (boardOverlay) return boardOverlay;
+    if (!win.WidgetBoardOverlay) return null;
+    boardOverlay = win.WidgetBoardOverlay.create({
+      overlayId: 'goBoardOverlay',
+      titleId: 'goOverlayTitle',
+      messageId: 'goOverlayMsg',
+      actionsId: 'goOverlayActions',
     });
-    return b;
+    boardOverlay.setGameRenderer(renderGoGameBoardOverlay);
+    return boardOverlay;
+  }
+
+  function renderGoGameBoardOverlay(els, data, api) {
+    const esc = api.escHtml;
+    const btn = api.makeActionButton;
+    els.actionsEl.innerHTML = '';
+    els.titleEl.textContent = '';
+    els.msgEl.textContent = '';
+    let show = false;
+    const d = data || {};
+
+    if (pendingInfo && pendingInfo.type) {
+      const fromName = pendingInfo.from_name || colorName(pendingInfo.from_color);
+      if (pendingInfo.type === 'undo') {
+        const undoDesc = undoRequestDesc(pendingInfo);
+        if (pendingForYou) {
+          show = true;
+          els.titleEl.textContent = '悔棋请求';
+          els.msgEl.textContent = `${fromName} 请求悔棋：${undoDesc}，是否同意？`;
+          els.actionsEl.appendChild(btn('同意悔棋', 'btn-accent', () => respondPending(true)));
+          els.actionsEl.appendChild(btn('拒绝', 'btn-secondary', () => respondPending(false)));
+        } else if (youRequestedPending && !isPopup) {
+          show = true;
+          els.titleEl.textContent = '等待对方确认';
+          els.msgEl.textContent = `您已请求悔棋（${undoDesc}），等待对方同意…`;
+          els.actionsEl.appendChild(btn('取消请求', 'btn-secondary', cancelPendingRequest));
+        }
+      } else if (pendingInfo.type === 'resign') {
+        if (pendingForYou) {
+          show = true;
+          els.titleEl.textContent = '认输确认';
+          els.msgEl.textContent = `${fromName} 请求认输并结束对局，是否确认？`;
+          els.actionsEl.appendChild(btn('确认认输', 'btn-accent', () => respondPending(true)));
+          els.actionsEl.appendChild(btn('拒绝', 'btn-secondary', () => respondPending(false)));
+        } else if (youRequestedPending && !isPopup) {
+          show = true;
+          els.titleEl.textContent = '等待对方确认';
+          els.msgEl.textContent = '您已请求认输，等待对方确认…';
+          els.actionsEl.appendChild(btn('取消请求', 'btn-secondary', cancelPendingRequest));
+        }
+      }
+    } else if (gameStatus === 'ended' && yourColor) {
+      show = true;
+      const w = Number(d.winner != null ? d.winner : winner);
+      const reason = String(d.end_reason || endReason || '').trim();
+      els.titleEl.textContent = '对局结果';
+      let html = '';
+      if (w) {
+        html += `<div class="widget-board-dialog-highlight go-play-board-dialog-result">${esc(colorName(w) + '胜')}</div>`;
+      }
+      if (reason) {
+        html += `<span>${esc(reason)}</span>`;
+      }
+      if (!html) {
+        html = '<span>对局结束</span>';
+      }
+      if (rematchYou && !rematchOpponent) {
+        html += '<p style="margin:0.35rem 0 0;font-size:0.8rem;color:#6b6560;">等待对方同意重开…</p>';
+      }
+      els.msgEl.innerHTML = html;
+      if (!rematchYou) {
+        els.actionsEl.appendChild(btn('同意重开', 'btn-accent', voteRematch));
+      }
+    }
+    return show;
+  }
+
+  function updateBoardOverlay(data) {
+    initBoardOverlay();
+    if (boardOverlay) boardOverlay.refresh(data);
+  }
+
+  function requestLeaveRoom() {
+    const code = String(roomCode || '').trim().toUpperCase();
+    if (!code) {
+      resetLocalRoomUi();
+      return;
+    }
+    initBoardOverlay();
+    if (!boardOverlay) {
+      leaveRoom();
+      return;
+    }
+    boardOverlay.showConfirm({
+      title: '离开房间',
+      message: '确定要离开当前房间吗？离开后需重新加入才能继续对局。',
+      confirmLabel: '离开房间',
+      cancelLabel: '取消',
+      danger: true,
+      onConfirm: () => { leaveRoom(); },
+    });
+  }
+
+  function requestLocalClearBoard() {
+    if (!isFreeLocalBoard()) return;
+    initBoardOverlay();
+    if (!boardOverlay) {
+      executeLocalClearBoard();
+      return;
+    }
+    boardOverlay.showConfirm({
+      title: '清空棋盘',
+      message: '确定要清空棋盘吗？将移除当前所有棋子，无法撤销。',
+      confirmLabel: '清空',
+      cancelLabel: '取消',
+      danger: true,
+      onConfirm: () => {
+        if (isPopup && win.opener && !win.opener.closed) {
+          try {
+            win.opener.postMessage({ type: 'go-play-local-clear' }, win.location.origin);
+          } catch (_) {
+            executeLocalClearBoard();
+          }
+          return;
+        }
+        executeLocalClearBoard();
+      },
+    });
   }
 
   function refreshMainStateFromServer() {
@@ -836,81 +970,6 @@
       if (d && d.game_status === 'playing') toast('已重开对局', false);
       else if (d && d.rematch_you) toast('已同意重开，等待对方确认', false);
     }).catch((err) => toast(err.message || '网络错误', true));
-  }
-
-  function updateBoardOverlay(data) {
-    const overlay = $('goBoardOverlay');
-    const titleEl = $('goOverlayTitle');
-    const msgEl = $('goOverlayMsg');
-    const actionsEl = $('goOverlayActions');
-    if (!overlay || !titleEl || !msgEl || !actionsEl) return;
-
-    actionsEl.innerHTML = '';
-    titleEl.textContent = '';
-    msgEl.textContent = '';
-    let show = false;
-    const d = data || {};
-
-    if (pendingInfo && pendingInfo.type) {
-      const fromName = pendingInfo.from_name || colorName(pendingInfo.from_color);
-      if (pendingInfo.type === 'undo') {
-        const undoDesc = undoRequestDesc(pendingInfo);
-        if (pendingForYou) {
-          show = true;
-          titleEl.textContent = '悔棋请求';
-          msgEl.textContent = `${fromName} 请求悔棋：${undoDesc}，是否同意？`;
-          actionsEl.appendChild(overlayBtn('同意悔棋', 'btn-accent', () => respondPending(true)));
-          actionsEl.appendChild(overlayBtn('拒绝', 'btn-secondary', () => respondPending(false)));
-        } else if (youRequestedPending && !isPopup) {
-          show = true;
-          titleEl.textContent = '等待对方确认';
-          msgEl.textContent = `您已请求悔棋（${undoDesc}），等待对方同意…`;
-          actionsEl.appendChild(overlayBtn('取消请求', 'btn-secondary', cancelPendingRequest));
-        }
-      } else if (pendingInfo.type === 'resign') {
-        if (pendingForYou) {
-          show = true;
-          titleEl.textContent = '认输确认';
-          msgEl.textContent = `${fromName} 请求认输并结束对局，是否确认？`;
-          actionsEl.appendChild(overlayBtn('确认认输', 'btn-accent', () => respondPending(true)));
-          actionsEl.appendChild(overlayBtn('拒绝', 'btn-secondary', () => respondPending(false)));
-        } else if (youRequestedPending && !isPopup) {
-          show = true;
-          titleEl.textContent = '等待对方确认';
-          msgEl.textContent = '您已请求认输，等待对方确认…';
-          actionsEl.appendChild(overlayBtn('取消请求', 'btn-secondary', cancelPendingRequest));
-        }
-      }
-    } else if (gameStatus === 'ended' && yourColor) {
-      show = true;
-      const w = Number(d.winner != null ? d.winner : winner);
-      const reason = String(d.end_reason || endReason || '').trim();
-      titleEl.textContent = '对局结果';
-      let html = '';
-      if (w) {
-        html += `<div class="go-play-board-dialog-result">${escHtml(colorName(w) + '胜')}</div>`;
-      }
-      if (reason) {
-        html += `<span>${escHtml(reason)}</span>`;
-      }
-      if (!html) {
-        html = '<span>对局结束</span>';
-      }
-      if (rematchYou && !rematchOpponent) {
-        html += '<p style="margin:0.35rem 0 0;font-size:0.8rem;color:#6b6560;">等待对方同意重开…</p>';
-      }
-      msgEl.innerHTML = html;
-      if (!rematchYou) {
-        actionsEl.appendChild(overlayBtn('同意重开', 'btn-accent', voteRematch));
-      }
-    }
-
-    overlay.classList.toggle('pm-u-hidden', !show);
-    if (show) {
-      overlay.removeAttribute('hidden');
-    } else {
-      overlay.setAttribute('hidden', '');
-    }
   }
 
   function applyLastMoveFromData(data) {
@@ -1743,7 +1802,7 @@
     });
 
     $('goLeaveBtn')?.addEventListener('click', () => {
-      leaveRoom();
+      requestLeaveRoom();
     });
 
     $('goPopoutBtn')?.addEventListener('click', (e) => {
@@ -1784,7 +1843,7 @@
 
     $('goLocalPassBtn')?.addEventListener('click', () => localPassMove());
     $('goLocalUndoBtn')?.addEventListener('click', () => localUndoMove());
-    $('goLocalClearBtn')?.addEventListener('click', () => localClearBoard());
+    $('goLocalClearBtn')?.addEventListener('click', () => requestLocalClearBoard());
   }
 
   function bindPopupToolbar() {
@@ -1843,9 +1902,12 @@
         renderBoard($('goBoard'));
       }).catch((err) => toast(err.message || '网络错误', true));
     });
+
+    $('goPopupClearBtn')?.addEventListener('click', () => requestLocalClearBoard());
   }
 
   function bindPopupUi() {
+    initBoardOverlay();
     const boardEl = $('goBoard');
     board = Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY));
     renderBoard(boardEl);
@@ -1985,7 +2047,7 @@
         localUndoMove();
       }
       if (msg.type === 'go-play-local-clear') {
-        localClearBoard();
+        requestLocalClearBoard();
       }
       if (msg.type === 'go-play-practice-undo') {
         practiceUndoStep();
@@ -2027,6 +2089,7 @@
       bindPopupUi();
       return;
     }
+    initBoardOverlay();
     bindMainUi();
     bindMainMessageBridge();
     renderBoard($('goBoard'));

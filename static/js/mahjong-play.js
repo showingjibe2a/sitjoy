@@ -20,8 +20,21 @@
   let tablePopup = null;
   let popupOpen = false;
   let popupMonitorTimer = null;
+  let mjBoardOverlay = null;
 
   const $ = (id) => document.getElementById(id);
+
+  function initMjBoardOverlay() {
+    if (mjBoardOverlay) return mjBoardOverlay;
+    if (!win.WidgetBoardOverlay) return null;
+    mjBoardOverlay = win.WidgetBoardOverlay.create({
+      overlayId: 'mjBoardOverlay',
+      titleId: 'mjOverlayTitle',
+      messageId: 'mjOverlayMsg',
+      actionsId: 'mjOverlayActions',
+    });
+    return mjBoardOverlay;
+  }
 
   function getAppBasePath() {
     if (win.SITJOY_BASE_PATH) {
@@ -555,20 +568,41 @@
     if (!isPopup) startWatch();
   }
 
-  async function doLeave() {
+  function requestLeaveRoom() {
     if (!roomCode) {
       clearRoomUi();
-      return;
+      return Promise.resolve();
     }
+    initMjBoardOverlay();
     const msg = leaveConfirmMessage(state);
-    if (!win.confirm(msg)) return;
+    const isHost = !!(state && state.you_are_host);
+    if (!mjBoardOverlay) {
+      return doLeaveConfirmed();
+    }
+    return new Promise((resolve, reject) => {
+      mjBoardOverlay.showConfirm({
+        title: isHost ? '解散房间' : '离开房间',
+        message: msg,
+        confirmLabel: isHost ? '解散' : '离开',
+        cancelLabel: '取消',
+        danger: true,
+        onConfirm: () => {
+          doLeaveConfirmed().then(resolve).catch(reject);
+        },
+        onCancel: () => resolve(),
+      });
+    });
+  }
+
+  async function doLeaveConfirmed() {
     const data = await api('leave', { room_code: roomCode });
     if (data.room_deleted || data.room_dissolved || data.left_room) {
       const endedMsg = data.message || (data.room_dissolved ? '房间已解散' : '已离开房间');
       onRoomEnded(endedMsg, isPopup ? {} : undefined);
-      return;
+      return data;
     }
     applyState(data);
+    return data;
   }
 
   async function doReady() {
@@ -734,6 +768,7 @@
   }
 
   function initPopup() {
+    initMjBoardOverlay();
     document.title = '麻将牌桌';
     tryResume();
     const syncFromOpener = () => {
@@ -757,7 +792,7 @@
     }
     const popLeave = $('mjPopupLeaveBtn');
     if (popLeave) {
-      popLeave.addEventListener('click', () => doLeave().catch((err) => alert(err.message)));
+      popLeave.addEventListener('click', () => requestLeaveRoom().catch((err) => alert(err.message)));
     }
     win.addEventListener('beforeunload', () => {
       if (roomCode && state && state.my_seat != null && !state.you_are_host) beaconLeave();
@@ -765,10 +800,11 @@
   }
 
   function initMain() {
+    initMjBoardOverlay();
     bindMainMessageBridge();
     $('mjCreateBtn') && $('mjCreateBtn').addEventListener('click', () => doCreate().catch((e) => alert(e.message)));
     $('mjJoinBtn') && $('mjJoinBtn').addEventListener('click', () => doJoin().catch((e) => alert(e.message)));
-    $('mjLeaveBtn') && $('mjLeaveBtn').addEventListener('click', () => doLeave().catch((e) => alert(e.message)));
+    $('mjLeaveBtn') && $('mjLeaveBtn').addEventListener('click', () => requestLeaveRoom().catch((e) => alert(e.message)));
     $('mjReadyBtn') && $('mjReadyBtn').addEventListener('click', () => doReady().catch((e) => alert(e.message)));
     $('mjStartBtn') && $('mjStartBtn').addEventListener('click', () => doStart().catch((e) => alert(e.message)));
     $('mjNextHandBtn') && $('mjNextHandBtn').addEventListener('click', () => doNextHand().catch((e) => alert(e.message)));

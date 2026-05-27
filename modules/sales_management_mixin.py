@@ -2892,7 +2892,11 @@ class SalesManagementMixin:
 
     @staticmethod
     def _forecast_merge_substitute_items_all_plans(plan_groups):
-        """全部方案的替代 SKU 并集；同一替代 SKU 在多个方案中出现时配比累加（非只取一条方案）。"""
+        """全部方案的替代 SKU 并集；同一替代 SKU 在多个方案中出现时配比累加。
+
+        仅用于销量继承等非库存场景。库存请用 _forecast_inventory_assembled_from_substitute_plans，
+        按方案分别成套后相加，避免多方案重复累加配比导致库存偏小。
+        """
         merged = {}
         for grp in plan_groups or []:
             for sid, q in grp.get('items') or []:
@@ -2901,6 +2905,16 @@ class SalesManagementMixin:
                     continue
                 merged[sid] = int(merged.get(sid) or 0) + max(1, int(q))
         return sorted(((int(s), int(m)) for s, m in merged.items()), key=lambda x: x[0])
+
+    @staticmethod
+    def _forecast_substitute_ids_from_plan_groups(plan_groups):
+        ids = set()
+        for grp in plan_groups or []:
+            for sid, _q in grp.get('items') or []:
+                sid = int(sid) if sid else 0
+                if sid:
+                    ids.add(sid)
+        return sorted(ids)
 
     def _forecast_load_all_substitute_plan_items_by_owner(self, conn, owner_order_product_ids):
         """owner -> [(substitute_order_product_id, qty_per_owner_unit), ...]（全部方案合并）。"""
@@ -3006,20 +3020,27 @@ class SalesManagementMixin:
         return out
 
     def _forecast_inventory_tier_sum_assembled(self, inv_by_op, source_pairs):
-        """各替代 SKU 独立成套后相加（不含下单 SKU 本体库存）。"""
+        """单条 BOM 链接列表的各阶可售套数（min 瓶颈）。"""
+        return self._forecast_bom_tier_assembled_counts(inv_by_op, source_pairs)
+
+    def _forecast_inventory_assembled_from_substitute_plans(self, inv_by_op, plan_groups):
+        """各替代发货方案独立成套后相加（方案之间为并集，同 SKU 跨方案不累加配比）。"""
         out = self._forecast_inventory_zero()
-        if not source_pairs:
-            return out
-        for sid, mult in source_pairs:
-            sid = int(sid)
-            mult = max(1, int(mult or 1))
-            part = self._forecast_bom_tier_assembled_counts(inv_by_op, [(sid, mult)])
+        for grp in plan_groups or []:
+            links = [
+                (int(self._parse_int(sid)), max(1, self._parse_int(mult) or 1))
+                for sid, mult in (grp.get('items') or [])
+                if self._parse_int(sid)
+            ]
+            if not links:
+                continue
+            part = self._forecast_bom_tier_assembled_counts(inv_by_op, links)
             for k in out:
                 out[k] += int(part.get(k) or 0)
         return out
 
-    def _forecast_build_inventory_source_lines(self, oid, is_on_market, plan_items, brief):
-        """仅含替代发货方案中的替代 SKU（跨方案配比累加），不含下单 SKU 本体。"""
+    def _forecast_build_inventory_source_lines(self, oid, is_on_market, plan_groups, brief):
+        """仅含替代发货方案中的替代 SKU（展示用：同 SKU 取各方案配比最大值），不含下单 SKU 本体。"""
         oid = self._parse_int(oid)
         if not oid:
             return []
@@ -3043,16 +3064,61 @@ class SalesManagementMixin:
             })
 
         sub_by_sid = {}
-        for sid, mult in plan_items or []:
-            sid = self._parse_int(sid)
-            if not sid or sid == oid:
-                continue
-            mult = max(1, int(mult or 1))
-            sub_by_sid[sid] = int(sub_by_sid.get(sid) or 0) + mult
+        for grp in plan_groups or []:
+            for sid, mult in grp.get('items') or []:
+                sid = self._parse_int(sid)
+                if not sid or sid == oid:
+                    continue
+                mult = max(1, int(mult or 1))
+                sub_by_sid[sid] = max(int(sub_by_sid.get(sid) or 0), mult)
         for sid in sorted(sub_by_sid.keys()):
             _push(sid, sub_by_sid[sid], 'substitute')
 
         return lines
+
+    def _forecast_build_inventory_tier_breakdown_from_plans(self, inv_by_op, oid, plan_groups, brief):
+        """按方案分别折算后，同替代 SKU 的「计入」数量跨方案相加。"""
+        oid = self._parse_int(oid)
+        brief = brief or {}
+        tier_meta = (
+            ('overseas_qty', '海外仓'),
+            ('transit_qty', '在途'),
+            ('factory_stock_qty', '在库'),
+            ('wip_qty', '在制'),
+        )
+        acc = {}
+        for grp in plan_groups or []:
+            links = [
+                (int(self._parse_int(sid)), max(1, self._parse_int(mult) or 1))
+                for sid, mult in (grp.get('items') or [])
+                if self._parse_int(sid) and self._parse_int(sid) != oid
+            ]
+            if not links:
+                continue
+            plan_asm = self._forecast_bom_tier_assembled_counts(inv_by_op, links)
+            for sid, mult in links:
+                b = brief.get(sid) or {}
+                for tier_key, tier_label in tier_meta:
+                    bucket = acc.setdefault(sid, {}).setdefault(tier_key, {
+                        'order_product_id': sid,
+                        'sku': (b.get('sku') or '').strip() or ('#' + str(sid)),
+                        'qty_per_unit': mult,
+                        'role': 'substitute',
+                        'is_on_market': self._parse_int(b.get('is_on_market')) or 0,
+                        'tier_key': tier_key,
+                        'tier_label': tier_label,
+                        'raw_qty': int((inv_by_op.get(sid) or {}).get(tier_key) or 0),
+                        'assembled_qty': 0,
+                    })
+                    bucket['assembled_qty'] += int(plan_asm.get(tier_key) or 0)
+                    bucket['qty_per_unit'] = max(bucket['qty_per_unit'], mult)
+        breakdown = {tk: [] for tk, _ in tier_meta}
+        for sid in sorted(acc.keys()):
+            for tier_key, tier_label in tier_meta:
+                entry = acc.get(sid, {}).get(tier_key)
+                if entry:
+                    breakdown[tier_key].append(entry)
+        return breakdown
 
     def _forecast_inventory_source_lines_to_pairs(self, source_lines):
         return [
@@ -3133,18 +3199,21 @@ class SalesManagementMixin:
         }
 
     def _forecast_order_row_inventory_aggregate(
-        self, inv_by_op, oid, is_on_market, plan_items, brief, substitute_plans=None,
+        self, inv_by_op, oid, is_on_market, plan_groups, brief, substitute_plans=None,
     ):
+        plans = list(substitute_plans if substitute_plans is not None else plan_groups or [])
         source_lines = self._forecast_build_inventory_source_lines(
-            oid, is_on_market, plan_items, brief,
+            oid, is_on_market, plans, brief,
         )
         pairs = self._forecast_inventory_source_lines_to_pairs(source_lines)
-        agg = self._forecast_inventory_tier_sum_assembled(inv_by_op, pairs)
+        agg = self._forecast_inventory_assembled_from_substitute_plans(inv_by_op, plans)
         sku = (brief.get(int(oid)) or {}).get('sku') or ''
         comp = self._forecast_inventory_composition_meta(
             source_lines, sku, substitute_plans=substitute_plans, brief=brief,
         )
-        comp['tier_breakdown'] = self._forecast_build_inventory_tier_breakdown(inv_by_op, source_lines)
+        comp['tier_breakdown'] = self._forecast_build_inventory_tier_breakdown_from_plans(
+            inv_by_op, oid, plans, brief,
+        )
         comp['pairs'] = pairs
         return agg, comp
 
@@ -3430,15 +3499,12 @@ class SalesManagementMixin:
             op_ids = [self._parse_int((r.get('labels') or {}).get('order_product_id')) for r in rows]
             op_ids = [x for x in op_ids if x]
             substitute_plans_by_owner = self._forecast_load_all_substitute_plans_by_owner(conn, op_ids)
-            plan_items_by_owner = {
-                oid: self._forecast_merge_substitute_items_all_plans(substitute_plans_by_owner.get(oid) or [])
-                for oid in op_ids
-            }
             extra_subs = []
             for oid in op_ids:
-                for sid, _m in plan_items_by_owner.get(oid) or []:
-                    if sid:
-                        extra_subs.append(sid)
+                for sid in self._forecast_substitute_ids_from_plan_groups(
+                    substitute_plans_by_owner.get(oid) or []
+                ):
+                    extra_subs.append(sid)
             load_ids = sorted(set(op_ids).union(extra_subs))
             brief_by_op = self._forecast_load_order_product_brief_map(conn, load_ids)
             inv_by_op = self._forecast_load_inventory_by_order_product(conn, load_ids)
@@ -3461,9 +3527,10 @@ class SalesManagementMixin:
             }
             extra_subs = []
             for oid in set(all_owners):
-                for sid, _m in plan_items_by_owner.get(oid) or []:
-                    if sid:
-                        extra_subs.append(sid)
+                for sid in self._forecast_substitute_ids_from_plan_groups(
+                    substitute_plans_by_owner.get(oid) or []
+                ):
+                    extra_subs.append(sid)
             for vid, pairs in variant_bom_links.items():
                 variant_expanded[vid] = self._forecast_expand_owner_pairs_with_substitute_plans(pairs, plan_items_by_owner)
             all_ops = []
@@ -3514,7 +3581,7 @@ class SalesManagementMixin:
                         inv_by_op,
                         oid,
                         is_on,
-                        plan_items_by_owner.get(oid) or [],
+                        substitute_plans_by_owner.get(oid) or [],
                         brief_by_op,
                         substitute_plans_by_owner.get(oid) or [],
                     )
@@ -3531,14 +3598,8 @@ class SalesManagementMixin:
                             continue
                         bref = brief_by_op.get(oid) or {}
                         is_on_op = self._parse_int(bref.get('is_on_market')) or 0
-                        src_lines = self._forecast_build_inventory_source_lines(
-                            oid,
-                            is_on_op,
-                            plan_items_by_owner.get(oid) or [],
-                            brief_by_op,
-                        )
-                        pairs_line = self._forecast_inventory_source_lines_to_pairs(src_lines)
-                        ai = self._forecast_inventory_tier_sum_assembled(inv_by_op, pairs_line)
+                        owner_plans = substitute_plans_by_owner.get(oid) or []
+                        ai = self._forecast_inventory_assembled_from_substitute_plans(inv_by_op, owner_plans)
                         per_link.append({
                             k: int(int(ai.get(k) or 0) // qp)
                             for k in ('overseas_qty', 'transit_qty', 'factory_stock_qty', 'wip_qty')
@@ -3581,14 +3642,8 @@ class SalesManagementMixin:
                         continue
                     bref = brief_by_op.get(oid) or {}
                     is_on_op = self._parse_int(bref.get('is_on_market')) or 0
-                    src_lines = self._forecast_build_inventory_source_lines(
-                        oid,
-                        is_on_op,
-                        plan_items_by_owner.get(oid) or [],
-                        brief_by_op,
-                    )
-                    pairs_line = self._forecast_inventory_source_lines_to_pairs(src_lines)
-                    ai = self._forecast_inventory_tier_sum_assembled(inv_by_op, pairs_line)
+                    owner_plans = substitute_plans_by_owner.get(oid) or []
+                    ai = self._forecast_inventory_assembled_from_substitute_plans(inv_by_op, owner_plans)
                     for tier_k in ai:
                         ai[tier_k] = int(int(ai[tier_k] or 0) // max(1, qp))
                     oi = int(ai['overseas_qty'])
@@ -3823,6 +3878,37 @@ class SalesManagementMixin:
                     out[oid]['wip_updated_at'] = self._forecast_format_date_only(rr.get('dt'))
         return out
 
+    def _forecast_merge_surplus_detail_for_plan_groups(self, plan_groups, detail_by_op):
+        merged = self._forecast_empty_surplus_detail()
+        for grp in plan_groups or []:
+            links = [
+                (int(self._parse_int(sid)), max(1, self._parse_int(mult) or 1))
+                for sid, mult in (grp.get('items') or [])
+                if self._parse_int(sid)
+            ]
+            if not links:
+                continue
+            part = self._forecast_merge_surplus_detail_for_pairs(links, detail_by_op)
+            for rname, qty in (part.get('overseas_by_region') or {}).items():
+                rname = str(rname or '').strip() or '-'
+                merged['overseas_by_region'][rname] = int(merged['overseas_by_region'].get(rname) or 0) + int(qty or 0)
+            merged['transit_batches'].extend(part.get('transit_batches') or [])
+            merged['factory_stock_qty'] += int(part.get('factory_stock_qty') or 0)
+            merged['wip_batches'].extend(part.get('wip_batches') or [])
+            merged['overseas_updated_at'] = self._forecast_date_max_iso(
+                merged.get('overseas_updated_at'), part.get('overseas_updated_at')
+            )
+            merged['transit_updated_at'] = self._forecast_date_max_iso(
+                merged.get('transit_updated_at'), part.get('transit_updated_at')
+            )
+            merged['factory_stock_updated_at'] = self._forecast_date_max_iso(
+                merged.get('factory_stock_updated_at'), part.get('factory_stock_updated_at')
+            )
+            merged['wip_updated_at'] = self._forecast_date_max_iso(
+                merged.get('wip_updated_at'), part.get('wip_updated_at')
+            )
+        return merged
+
     def _forecast_merge_surplus_detail_for_pairs(self, pairs, detail_by_op):
         merged = self._forecast_empty_surplus_detail()
         if not pairs:
@@ -3877,15 +3963,12 @@ class SalesManagementMixin:
         if not op_ids:
             return
         substitute_plans_by_owner = self._forecast_load_all_substitute_plans_by_owner(conn, op_ids)
-        plan_items_by_owner = {
-            oid: self._forecast_merge_substitute_items_all_plans(substitute_plans_by_owner.get(oid) or [])
-            for oid in op_ids
-        }
         extra_subs = []
         for oid in op_ids:
-            for sid, _m in plan_items_by_owner.get(oid) or []:
-                if sid:
-                    extra_subs.append(int(sid))
+            for sid in self._forecast_substitute_ids_from_plan_groups(
+                substitute_plans_by_owner.get(oid) or []
+            ):
+                extra_subs.append(int(sid))
         load_ids = sorted(set(op_ids).union(extra_subs))
         detail_by_op = self._forecast_load_inventory_surplus_detail_by_order_product(conn, load_ids)
         for row in rows:
@@ -3893,14 +3976,13 @@ class SalesManagementMixin:
             if not oid:
                 row['inventory_surplus_detail'] = self._forecast_empty_surplus_detail()
                 continue
-            comp = row.get('inventory_composition') or {}
-            pairs = comp.get('pairs') or self._forecast_inventory_source_lines_to_pairs(
-                comp.get('source_lines') or []
-            )
-            if not pairs:
+            plans = substitute_plans_by_owner.get(oid) or []
+            if not plans:
                 row['inventory_surplus_detail'] = self._forecast_empty_surplus_detail()
             else:
-                row['inventory_surplus_detail'] = self._forecast_merge_surplus_detail_for_pairs(pairs, detail_by_op)
+                row['inventory_surplus_detail'] = self._forecast_merge_surplus_detail_for_plan_groups(
+                    plans, detail_by_op,
+                )
 
     def _forecast_build_spec_inventory_stub_rows(self, conn, query_params, sf_group=None):
         """仅含 row_key / variant_id，供 patch=inventory 附加库存，避免重复拉历史与预测。"""

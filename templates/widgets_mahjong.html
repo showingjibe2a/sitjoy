@@ -56,6 +56,13 @@
                             <div class="mj-hand" id="mjMyHand" aria-label="我的手牌"></div>
                             <div class="mj-river" id="mjRiver0"></div>
                         </div>
+                        <div class="widget-board-overlay pm-u-hidden" id="mjBoardOverlay" hidden aria-live="polite">
+                            <div class="widget-board-dialog" role="dialog" aria-modal="true" aria-labelledby="mjOverlayTitle">
+                                <p class="widget-board-dialog-title" id="mjOverlayTitle"></p>
+                                <p class="widget-board-dialog-msg" id="mjOverlayMsg"></p>
+                                <div class="widget-board-dialog-actions" id="mjOverlayActions"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="mj-actions" id="mjActions" hidden>
@@ -67,6 +74,7 @@
     </div>
     <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
     <script src="/static/js/header.js"></script>
+    <script src="/static/js/widget-board-overlay.js"></script>
     <script src="/static/js/mahjong-play.js"></script>
 </body>
 </html>

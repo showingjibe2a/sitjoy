@@ -611,10 +611,13 @@
     display: none !important;
 }
 
+/* 小组件牌桌/棋盘中央弹窗（围棋、麻将等共用） */
+.widget-board-overlay[hidden],
 .go-play-board-overlay[hidden] {
     display: none !important;
 }
 
+.widget-board-overlay,
 .go-play-board-overlay {
     position: absolute;
     inset: 0;
@@ -628,6 +631,7 @@
     pointer-events: auto;
 }
 
+.widget-board-dialog,
 .go-play-board-dialog {
     width: min(92%, 17rem);
     padding: 0.85rem 0.95rem;
@@ -637,6 +641,7 @@
     text-align: center;
 }
 
+.widget-board-dialog-title,
 .go-play-board-dialog-title {
     margin: 0 0 0.35rem;
     font-size: 0.95rem;
@@ -645,6 +650,7 @@
     line-height: 1.35;
 }
 
+.widget-board-dialog-msg,
 .go-play-board-dialog-msg {
     margin: 0 0 0.65rem;
     font-size: 0.8rem;
@@ -652,6 +658,7 @@
     line-height: 1.45;
 }
 
+.widget-board-dialog-actions,
 .go-play-board-dialog-actions {
     display: flex;
     flex-wrap: wrap;
@@ -659,13 +666,18 @@
     justify-content: center;
 }
 
+.widget-board-dialog-actions .btn-secondary,
+.widget-board-dialog-actions .btn-accent,
+.widget-board-dialog-actions .btn-danger,
 .go-play-board-dialog-actions .btn-secondary,
-.go-play-board-dialog-actions .btn-accent {
+.go-play-board-dialog-actions .btn-accent,
+.go-play-board-dialog-actions .btn-danger {
     min-height: 30px;
     padding: 0.28rem 0.65rem;
     font-size: 0.8rem;
 }
 
+.widget-board-dialog-highlight,
 .go-play-board-dialog-result {
     font-size: 1.05rem;
     font-weight: 700;

@@ -5781,7 +5781,7 @@
             return o + t + st + wp;
         }
 
-        const SF_INV_GLOBAL_FOOTNOTE = '合计 = 全部替代发货方案中的替代 SKU 库存（已合并全部方案；同一替代 SKU 跨多方案配比累加后折算）。';
+        const SF_INV_GLOBAL_FOOTNOTE = '合计 = 各替代发货方案分别成套折算后的库存相加（方案内多 SKU 取瓶颈；多方案之间不累加同一 SKU 的配比）。';
 
         function sfInvDimDef(id, label, columns, rows, opts) {
             const o = opts || {};

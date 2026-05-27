@@ -24,11 +24,11 @@
                 </g>
             </svg>
             <div class="go-play-board" id="goBoard" aria-label="19路围棋棋盘"></div>
-            <div class="go-play-board-overlay pm-u-hidden" id="goBoardOverlay" hidden aria-live="polite">
-                <div class="go-play-board-dialog" role="dialog" aria-modal="true" aria-labelledby="goOverlayTitle">
-                    <p class="go-play-board-dialog-title" id="goOverlayTitle"></p>
-                    <p class="go-play-board-dialog-msg" id="goOverlayMsg"></p>
-                    <div class="go-play-board-dialog-actions" id="goOverlayActions"></div>
+            <div class="widget-board-overlay go-play-board-overlay pm-u-hidden" id="goBoardOverlay" hidden aria-live="polite">
+                <div class="widget-board-dialog go-play-board-dialog" role="dialog" aria-modal="true" aria-labelledby="goOverlayTitle">
+                    <p class="widget-board-dialog-title go-play-board-dialog-title" id="goOverlayTitle"></p>
+                    <p class="widget-board-dialog-msg go-play-board-dialog-msg" id="goOverlayMsg"></p>
+                    <div class="widget-board-dialog-actions go-play-board-dialog-actions" id="goOverlayActions"></div>
                 </div>
             </div>
         </div>
@@ -40,8 +40,10 @@
             <button type="button" class="go-play-popup-btn" id="goPopupPracticeBtn" disabled>演习</button>
             <button type="button" class="go-play-popup-btn pm-u-hidden" id="goPopupPracticeRevertBtn">撤回一步</button>
             <button type="button" class="go-play-popup-btn pm-u-hidden" id="goPopupPracticeEndBtn">结束演习</button>
+            <button type="button" class="go-play-popup-btn pm-u-hidden" id="goPopupClearBtn">清空棋盘</button>
         </aside>
     </div>
+    <script src="/static/js/widget-board-overlay.js"></script>
     <script src="/static/js/go-play.js"></script>
 </body>
 </html>
