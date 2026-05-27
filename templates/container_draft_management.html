@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>凑柜草稿</title>
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .cd-toolbar { display: flex; flex-wrap: wrap; gap: 0.65rem 1rem; align-items: center; }
+        .cd-toolbar-group { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.5rem; }
+        .cd-toolbar label { font-size: 0.88rem; color: var(--morandi-slate); white-space: nowrap; }
+        .cd-compact-num { width: 4.2rem; padding: 0.28rem 0.4rem; font-size: 0.88rem; }
+        .cd-compact-text { width: 7rem; padding: 0.28rem 0.45rem; font-size: 0.88rem; }
+        .cd-summary { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; margin: 0.75rem 0 1rem; font-size: 0.9rem; color: var(--morandi-slate); }
+        .cd-summary strong { color: var(--morandi-ink); }
+        .cd-containers { display: grid; gap: 1rem; }
+        .cd-container-card {
+            border: 1px solid rgba(207, 199, 189, 0.75);
+            border-radius: 12px;
+            background: rgba(255, 252, 248, 0.92);
+            overflow: hidden;
+        }
+        .cd-container-head {
+            display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem;
+            padding: 0.65rem 0.85rem;
+            background: rgba(246, 241, 234, 0.95);
+            border-bottom: 1px solid rgba(207, 199, 189, 0.55);
+        }
+        .cd-container-title { font-weight: 600; color: var(--morandi-ink); margin: 0; font-size: 0.95rem; }
+        .cd-container-meta { font-size: 0.82rem; color: var(--morandi-slate); }
+        .cd-fill-bar {
+            height: 6px; border-radius: 99px; background: var(--morandi-mist); overflow: hidden; min-width: 120px;
+        }
+        .cd-fill-bar > span { display: block; height: 100%; background: var(--morandi-sand); }
+        .cd-lines-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+        .cd-lines-table th, .cd-lines-table td {
+            padding: 0.4rem 0.65rem; border-bottom: 1px solid rgba(207, 199, 189, 0.45); text-align: left;
+        }
+        .cd-lines-table th { background: rgba(255, 252, 248, 0.98); font-weight: 600; color: var(--morandi-slate); }
+        .cd-lines-table tr:last-child td { border-bottom: none; }
+        .cd-lines-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+        .cd-empty { padding: 2rem; text-align: center; color: var(--morandi-slate); font-size: 0.92rem; }
+        .cd-note { font-size: 0.82rem; color: var(--morandi-slate); margin: 0 0 0.75rem; line-height: 1.45; }
+        .cd-loading { position: fixed; inset: 0; background: rgba(255,252,248,.55); display: none; align-items: center; justify-content: center; z-index: 80; }
+        .cd-loading.is-open { display: flex; }
+        .cd-lead-grid { display: grid; grid-template-columns: 1fr 5rem 5rem; gap: 0.35rem 0.5rem; align-items: center; max-width: 420px; }
+        .cd-lead-grid .hdr { font-size: 0.78rem; font-weight: 600; color: var(--morandi-slate); }
+    </style>
+</head>
+<body>
+    <div id="site-header"></div>
+    <div class="container">
+        <section class="hero" style="margin-bottom: 1rem;">
+            <h2>凑柜草稿</h2>
+            <p>按下单 SKU 预测与全链路库存盈余估算补货量；<strong>同一柜可混多个 SKU</strong>，默认<strong>按工厂分柜</strong>（暂不跨工厂拼柜）。</p>
+        </section>
+
+        <div class="card pm-card" style="padding: 0.85rem 1rem; margin-bottom: 1rem;">
+            <div class="cd-toolbar">
+                <div class="cd-toolbar-group">
+                    <label>预测月份</label>
+                    <input type="month" id="cdForecastStart" class="cd-compact-text" readonly>
+                    <span>至</span>
+                    <input type="month" id="cdForecastEnd" class="cd-compact-text" readonly>
+                </div>
+                <div class="cd-toolbar-group">
+                    <label>目标覆盖月数</label>
+                    <input type="number" id="cdTargetCover" class="cd-compact-num" min="0" step="0.5" value="2">
+                </div>
+                <div class="cd-toolbar-group">
+                    <label>柜容积 m³</label>
+                    <input type="number" id="cdContainerVol" class="cd-compact-num" min="1" step="1" value="69">
+                </div>
+                <div class="cd-toolbar-group">
+                    <label>封柜填充率</label>
+                    <input type="number" id="cdMinFill" class="cd-compact-num" min="0.5" max="0.99" step="0.05" value="0.75" title="达到该比例即封柜开下一柜">
+                </div>
+                <div class="cd-toolbar-group">
+                    <label class="sf-perf-ui-toggle"><input type="checkbox" id="cdOnlyShortage" checked> 仅含缺口 SKU</label>
+                </div>
+                <div class="cd-toolbar-group">
+                    <label>筛选</label>
+                    <input type="text" id="cdFilterSku" class="cd-compact-text" placeholder="货号/SKU">
+                    <input type="text" id="cdFilterSpec" class="cd-compact-text" placeholder="规格">
+                    <input type="text" id="cdFilterFabric" class="cd-compact-text" placeholder="面料">
+                </div>
+            </div>
+            <div class="cd-toolbar" style="margin-top: 0.65rem;">
+                <div class="cd-toolbar-group">
+                    <label>工厂→上架时效区域</label>
+                    <input type="hidden" id="cdLeadRegionVal" value="">
+                    <div class="status-segment status-segment--inline" id="cdLeadRegionSegment" data-value=""></div>
+                </div>
+                <div class="cd-toolbar-group">
+                    <button type="button" class="btn-secondary" id="cdBtnLeadtime">各区域在库/在制天数</button>
+                </div>
+                <div class="cd-toolbar-group" style="margin-left: auto;">
+                    <a href="/sales-forecast-management" class="btn-secondary">销量预测</a>
+                    <button type="button" class="btn-primary" id="cdBtnGenerate">生成凑柜草稿</button>
+                </div>
+            </div>
+            <p class="cd-note" style="margin-top: 0.65rem;">
+                建议发货量 = max(预测期内最小全链路盈余缺口, 目标覆盖月数×月均预测 − 期末盈余)；数量向上取整至装柜量整数倍。
+                未关联工厂的 SKU 归入「未关联工厂」单独分柜。
+            </p>
+        </div>
+
+        <div class="cd-summary" id="cdSummary" hidden></div>
+        <div id="cdContainersRoot" class="cd-containers">
+            <div class="cd-empty" id="cdEmptyHint">配置参数后点击「生成凑柜草稿」。</div>
+        </div>
+    </div>
+
+    <div class="cd-loading" id="cdLoading" aria-hidden="true"><div class="sf-loading-overlay-inner">生成中…</div></div>
+
+    <div class="modal" id="cdLeadtimeModal" hidden>
+        <div class="modal-content" style="max-width: 480px;">
+            <div class="modal-header">
+                <h3>工厂库存时效（按目的区域）</h3>
+                <button type="button" class="modal-close" id="cdLeadtimeClose" aria-label="关闭">×</button>
+            </div>
+            <div class="modal-body">
+                <p class="cd-note">在库→海外仓上架天数、在制完工→上架天数；与销量预测页共用本地配置。</p>
+                <div class="cd-lead-grid" id="cdLeadtimeGrid"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" id="cdLeadtimeCancel">取消</button>
+                <button type="button" class="btn-primary" id="cdLeadtimeSave">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const CD_PREF_LEAD = 'sales_forecast_factory_lead_times_v1';
+        const CD_PREF_REGION = 'sales_forecast_surplus_region_v1';
+
+        const state = {
+            destinationRegions: [],
+            factoryLeadTimes: {},
+            leadRegion: '',
+            draft: null,
+        };
+
+        function pad2(n) { return String(n).padStart(2, '0'); }
+        function shiftMonth(ymd, delta) {
+            const p = String(ymd || '').slice(0, 7).split('-');
+            let y = parseInt(p[0], 10), m = parseInt(p[1], 10);
+            m += delta;
+            while (m < 1) { m += 12; y -= 1; }
+            while (m > 12) { m -= 12; y += 1; }
+            return `${y}-${pad2(m)}-01`;
+        }
+        function monthRangeKeys(startMonth, endMonth) {
+            const out = [];
+            let cur = `${String(startMonth).slice(0, 7)}-01`;
+            const end = `${String(endMonth).slice(0, 7)}-01`;
+            while (cur && cur <= end) {
+                out.push(cur);
+                cur = shiftMonth(cur, 1);
+            }
+            return out;
+        }
+        function readJsonPref(key, fallback) {
+            try {
+                const raw = localStorage.getItem(key);
+                if (!raw) return fallback;
+                return JSON.parse(raw);
+            } catch (_) { return fallback; }
+        }
+        function writeJsonPref(key, val) {
+            try { localStorage.setItem(key, JSON.stringify(val)); } catch (_) {}
+        }
+        function readLeadTimes() {
+            const raw = readJsonPref(CD_PREF_LEAD, {}) || {};
+            return (raw && raw.times) ? raw.times : (typeof raw === 'object' ? raw : {});
+        }
+        function saveLeadTimes(times) {
+            writeJsonPref(CD_PREF_LEAD, { v: 1, times: times || {}, updated_at: Date.now() });
+            state.factoryLeadTimes = times || {};
+        }
+        function escapeHtml(s) {
+            return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+        function formatNum(n) {
+            const v = Math.round(Number(n) || 0);
+            return v.toLocaleString('zh-CN');
+        }
+
+        function renderRegionSegment() {
+            const seg = document.getElementById('cdLeadRegionSegment');
+            const hidden = document.getElementById('cdLeadRegionVal');
+            if (!seg) return;
+            const regions = state.destinationRegions || [];
+            let active = state.leadRegion || '';
+            if (!active) {
+                try { active = String(localStorage.getItem(CD_PREF_REGION) || '').trim(); } catch (_) {}
+            }
+            if (!regions.some((r) => r.region_name === active)) {
+                active = regions[0] ? regions[0].region_name : '';
+            }
+            state.leadRegion = active;
+            if (hidden) hidden.value = active;
+            seg.dataset.value = active;
+            seg.innerHTML = regions.map((r) => {
+                const name = r.region_name || '';
+                const cls = name === active ? 'status-pill is-active' : 'status-pill';
+                return `<button type="button" class="${cls}" data-value="${escapeHtml(name)}">${escapeHtml(name)}</button>`;
+            }).join('');
+            if (!regions.length) {
+                seg.innerHTML = '<span class="cd-note" style="margin:0;">暂无目的区域</span>';
+            }
+        }
+
+        function bindRegionSegment() {
+            const seg = document.getElementById('cdLeadRegionSegment');
+            if (!seg || seg.dataset.bound === '1') return;
+            seg.dataset.bound = '1';
+            seg.addEventListener('click', (e) => {
+                const btn = e.target.closest('.status-pill[data-value]');
+                if (!btn) return;
+                const next = btn.getAttribute('data-value') || '';
+                state.leadRegion = next;
+                document.getElementById('cdLeadRegionVal').value = next;
+                try {
+                    if (next) localStorage.setItem(CD_PREF_REGION, next);
+                    else localStorage.removeItem(CD_PREF_REGION);
+                } catch (_) {}
+                seg.querySelectorAll('.status-pill').forEach((b) => {
+                    b.classList.toggle('is-active', b.getAttribute('data-value') === next);
+                });
+                seg.dataset.value = next;
+            });
+        }
+
+        function openLeadtimeModal() {
+            const grid = document.getElementById('cdLeadtimeGrid');
+            const times = state.factoryLeadTimes || {};
+            grid.innerHTML = '<div class="hdr">区域</div><div class="hdr">在库→上架(天)</div><div class="hdr">在制→上架(天)</div>';
+            (state.destinationRegions || []).forEach((r) => {
+                const name = r.region_name || '';
+                const t = times[name] || {};
+                grid.innerHTML += `<div>${escapeHtml(name)}</div>`
+                    + `<input type="number" min="0" step="1" data-region="${escapeHtml(name)}" data-kind="stock" value="${escapeHtml(t.stock_days ?? '')}" placeholder="天">`
+                    + `<input type="number" min="0" step="1" data-region="${escapeHtml(name)}" data-kind="wip" value="${escapeHtml(t.wip_days ?? '')}" placeholder="天">`;
+            });
+            document.getElementById('cdLeadtimeModal').hidden = false;
+        }
+
+        function collectLeadtimeFromModal() {
+            const times = { ...(state.factoryLeadTimes || {}) };
+            document.querySelectorAll('#cdLeadtimeGrid input[data-region]').forEach((inp) => {
+                const region = inp.getAttribute('data-region');
+                const kind = inp.getAttribute('data-kind');
+                if (!region) return;
+                if (!times[region]) times[region] = {};
+                const v = parseInt(inp.value, 10);
+                if (kind === 'stock') times[region].stock_days = Number.isFinite(v) ? v : 0;
+                if (kind === 'wip') times[region].wip_days = Number.isFinite(v) ? v : 0;
+            });
+            return times;
+        }
+
+        function buildPayload() {
+            const fs = document.getElementById('cdForecastStart').value;
+            const fe = document.getElementById('cdForecastEnd').value;
+            const months = monthRangeKeys(fs, fe);
+            const today = new Date();
+            const endKey = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-01`;
+            const histEnd = shiftMonth(endKey, -1);
+            const histStart = shiftMonth(histEnd, -11);
+            return {
+                months,
+                history_start: histStart.slice(0, 7),
+                history_end: histEnd.slice(0, 7),
+                lead_time_region: state.leadRegion || '',
+                lead_times: state.factoryLeadTimes || {},
+                target_cover_months: parseFloat(document.getElementById('cdTargetCover').value) || 2,
+                container_volume_m3: parseFloat(document.getElementById('cdContainerVol').value) || 69,
+                min_fill_ratio: parseFloat(document.getElementById('cdMinFill').value) || 0.75,
+                only_shortage: document.getElementById('cdOnlyShortage').checked,
+                sku: document.getElementById('cdFilterSku').value.trim(),
+                spec: document.getElementById('cdFilterSpec').value.trim(),
+                fabric: document.getElementById('cdFilterFabric').value.trim(),
+            };
+        }
+
+        function renderDraft(data) {
+            state.draft = data;
+            const summaryEl = document.getElementById('cdSummary');
+            const root = document.getElementById('cdContainersRoot');
+            const s = data.summary || {};
+            summaryEl.hidden = false;
+            summaryEl.innerHTML = ''
+                + `<span>参与 SKU：<strong>${formatNum(s.sku_count)}</strong></span>`
+                + `<span>柜数：<strong>${formatNum(s.container_count)}</strong></span>`
+                + `<span>合计件数：<strong>${formatNum(s.total_units)}</strong></span>`
+                + `<span>未关联工厂 SKU：<strong>${formatNum(s.unassigned_factory_skus)}</strong></span>`;
+
+            const containers = data.containers || [];
+            if (!containers.length) {
+                root.innerHTML = '<div class="cd-empty">当前条件下无需要凑柜的 SKU，或无法装入任何柜（请检查装柜量/外箱尺寸）。</div>';
+                return;
+            }
+
+            root.innerHTML = containers.map((c) => {
+                const fillPct = Math.min(100, Math.round((Number(c.fill_ratio) || 0) * 1000) / 10);
+                const lines = (c.lines || []).map((ln) => `
+                    <tr>
+                        <td>${escapeHtml(ln.sku)}</td>
+                        <td>${escapeHtml(ln.sku_family || '')}</td>
+                        <td class="num">${formatNum(ln.pack_qty)}</td>
+                        <td class="num">${ln.carton_qty ? formatNum(ln.carton_qty) : '—'}</td>
+                        <td class="num">${ln.first_shortage_month ? escapeHtml(String(ln.first_shortage_month).slice(0, 7)) : '—'}</td>
+                        <td class="num">${ln.min_full_surplus != null ? formatNum(ln.min_full_surplus) : '—'}</td>
+                    </tr>`).join('');
+                return `
+                <article class="cd-container-card">
+                    <header class="cd-container-head">
+                        <div>
+                            <h3 class="cd-container-title">柜 #${c.container_no} · ${escapeHtml(c.factory_name)}</h3>
+                            <div class="cd-container-meta">${formatNum(c.total_units)} 件 · ${escapeHtml(c.used_volume_m3)} / ${escapeHtml(c.capacity_m3)} m³</div>
+                        </div>
+                        <div class="cd-fill-bar" title="填充率 ${fillPct}%"><span style="width:${fillPct}%"></span></div>
+                    </header>
+                    <table class="cd-lines-table">
+                        <thead><tr>
+                            <th>下单 SKU</th><th>货号</th><th>本柜件数</th><th>装柜量</th><th>预计首缺月</th><th>最小盈余</th>
+                        </tr></thead>
+                        <tbody>${lines}</tbody>
+                    </table>
+                </article>`;
+            }).join('');
+        }
+
+        async function loadBootstrap() {
+            const resp = await fetch('/api/container-draft');
+            const data = await resp.json();
+            if (data.status === 'success') {
+                state.destinationRegions = data.destination_regions || [];
+            }
+            state.factoryLeadTimes = readLeadTimes();
+            try { state.leadRegion = String(localStorage.getItem(CD_PREF_REGION) || '').trim(); } catch (_) { state.leadRegion = ''; }
+            renderRegionSegment();
+            bindRegionSegment();
+        }
+
+        async function generateDraft() {
+            const loading = document.getElementById('cdLoading');
+            loading.classList.add('is-open');
+            try {
+                const resp = await fetch('/api/container-draft', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(buildPayload()),
+                });
+                const data = await resp.json();
+                if (data.status !== 'success') {
+                    throw new Error(data.message || '生成失败');
+                }
+                if ((data.destination_regions || []).length) {
+                    state.destinationRegions = data.destination_regions;
+                    renderRegionSegment();
+                }
+                renderDraft(data);
+            } catch (e) {
+                alert(e.message || String(e));
+            } finally {
+                loading.classList.remove('is-open');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const today = new Date();
+            const startKey = `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-01`;
+            const endKey = shiftMonth(startKey, 5);
+            document.getElementById('cdForecastStart').value = startKey.slice(0, 7);
+            document.getElementById('cdForecastEnd').value = endKey.slice(0, 7);
+
+            document.getElementById('cdBtnGenerate').addEventListener('click', generateDraft);
+            document.getElementById('cdBtnLeadtime').addEventListener('click', openLeadtimeModal);
+            document.getElementById('cdLeadtimeClose').addEventListener('click', () => { document.getElementById('cdLeadtimeModal').hidden = true; });
+            document.getElementById('cdLeadtimeCancel').addEventListener('click', () => { document.getElementById('cdLeadtimeModal').hidden = true; });
+            document.getElementById('cdLeadtimeSave').addEventListener('click', () => {
+                saveLeadTimes(collectLeadtimeFromModal());
+                document.getElementById('cdLeadtimeModal').hidden = true;
+            });
+
+            loadBootstrap();
+        });
+    </script>
+</body>
+<script src="/static/js/header.js"></script>
+</html>
