@@ -8829,7 +8829,8 @@ class SalesProductMixin:
                     os.makedirs(temp_dir, exist_ok=True)
                 except Exception:
                     pass
-                return os.path.join(temp_dir, f'spp_{token}.bin')
+                # 须用 .xlsx 后缀，否则 openpyxl 按扩展名识别格式时会报不支持 .bin
+                return os.path.join(temp_dir, f'spp_{token}.xlsx')
 
             def _write_progress(tid, payload, merge=False):
                 if not tid:

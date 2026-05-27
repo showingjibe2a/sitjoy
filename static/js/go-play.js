@@ -1240,6 +1240,44 @@
     return null;
   }
 
+  function captureGoUiSnapshot() {
+    return {
+      board: (board || []).map((row) => row.slice()),
+      currentPlayer,
+      lastVersion,
+      lastMoveX,
+      lastMoveY,
+      lastMoveKey,
+      koPoint: koPoint ? { x: koPoint.x, y: koPoint.y } : null,
+      gameStatus,
+    };
+  }
+
+  function restoreGoUiSnapshot(snap) {
+    if (!snap) return;
+    board = (snap.board || []).map((row) => row.slice());
+    currentPlayer = snap.currentPlayer;
+    lastVersion = snap.lastVersion;
+    lastMoveX = snap.lastMoveX;
+    lastMoveY = snap.lastMoveY;
+    lastMoveKey = snap.lastMoveKey;
+    koPoint = snap.koPoint ? { x: snap.koPoint.x, y: snap.koPoint.y } : null;
+    gameStatus = snap.gameStatus;
+    renderBoard($('goBoard'));
+    updateBoardOverlay();
+    postStateToPopup();
+  }
+
+  /** 己方操作的服务端响应：须 force 应用，避免 SSE 已更新 version 时误判失败 */
+  function applyOwnActionResponse(d, failMsg) {
+    if (!d || d.status !== 'success') {
+      toast((d && d.message) || failMsg || '操作失败', true);
+      return false;
+    }
+    applyState(d, { force: true });
+    return true;
+  }
+
   function playMoveAt(x, y) {
     if (isLocalBoardActive()) {
       practicePlayAt(x, y);
@@ -1251,9 +1289,30 @@
       toast(block, true);
       return;
     }
+    const snap = captureGoUiSnapshot();
+    const trial = (board || []).map((row) => row.slice());
+    const res = localTryPlay(trial, x, y, yourColor);
+    if (!res.ok) {
+      toast(res.msg, true);
+      return;
+    }
+    board = trial;
+    currentPlayer = yourColor === BLACK ? WHITE : BLACK;
+    lastMoveX = x;
+    lastMoveY = y;
+    lastMoveKey = `${x},${y}`;
+    renderBoard($('goBoard'));
+    updateBoardOverlay({ last_move: { x, y } });
+    postStateToPopup();
+
     api('move', { room_code: roomCode, x, y }).then((d) => {
-      if (!applyState(d)) toast((d && d.message) || '落子失败', true);
-    }).catch((err) => toast(err.message || '网络错误', true));
+      if (!applyOwnActionResponse(d, '落子失败')) {
+        restoreGoUiSnapshot(snap);
+      }
+    }).catch((err) => {
+      restoreGoUiSnapshot(snap);
+      toast(err.message || '网络错误', true);
+    });
   }
 
   function onBoardFrameClick(e) {
@@ -1610,26 +1669,24 @@
     $('goPassBtn')?.addEventListener('click', () => {
       if (!roomCode) return;
       api('pass', { room_code: roomCode }).then((d) => {
-        if (!applyState(d)) toast((d && d.message) || '操作失败', true);
+        applyOwnActionResponse(d, '操作失败');
       }).catch((err) => toast(err.message || '网络错误', true));
     });
 
     $('goUndoBtn')?.addEventListener('click', () => {
       if (!roomCode) return;
       api('undo', { room_code: roomCode }).then((d) => {
-        if (!applyState(d)) toast((d && d.message) || '悔棋请求失败', true);
-        else {
-          const plies = undoRequestPlies(d.pending || pendingInfo);
-          toast(plies === 2 ? '已请求悔棋（将撤回双方上一手）' : '已向对方请求悔棋', false);
-        }
+        if (!applyOwnActionResponse(d, '悔棋请求失败')) return;
+        const plies = undoRequestPlies(d.pending || pendingInfo);
+        toast(plies === 2 ? '已请求悔棋（将撤回双方上一手）' : '已向对方请求悔棋', false);
       }).catch((err) => toast(err.message || '网络错误', true));
     });
 
     $('goResignBtn')?.addEventListener('click', () => {
       if (!roomCode) return;
       api('resign', { room_code: roomCode }).then((d) => {
-        if (!applyState(d)) toast((d && d.message) || '认输请求失败', true);
-        else toast('已向对方请求认输', false);
+        if (!applyOwnActionResponse(d, '认输请求失败')) return;
+        toast('已向对方请求认输', false);
       }).catch((err) => toast(err.message || '网络错误', true));
     });
 

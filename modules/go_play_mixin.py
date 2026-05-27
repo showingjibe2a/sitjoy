@@ -111,7 +111,7 @@ class GoPlayMixin:
             return None
         return None
 
-    def _go_write_room_file_unlocked(self, room):
+    def _go_write_room_file_unlocked(self, room, durable=True):
         code = str(room.get('code') or '').strip().upper()
         if not code:
             return
@@ -123,10 +123,11 @@ class GoPlayMixin:
             try:
                 fh.write(payload)
                 fh.flush()
-                try:
-                    os.fsync(fh.fileno())
-                except Exception:
-                    pass
+                if durable:
+                    try:
+                        os.fsync(fh.fileno())
+                    except Exception:
+                        pass
             finally:
                 self._go_funlock(fh)
         try:
@@ -154,7 +155,7 @@ class GoPlayMixin:
                 pass
 
     @contextmanager
-    def _go_room_store(self, code, create=False):
+    def _go_room_store(self, code, create=False, durable=True):
         """读-改-写；持锁仅包裹磁盘读写，不包裹 yield 内业务逻辑（避免阻塞 create/wait）。"""
         code = str(code or '').strip().upper()
         with _go_file_lock:
@@ -163,13 +164,14 @@ class GoPlayMixin:
                 yield None, '房间不存在或已过期'
                 return
         mutated = False
+        persist_durable = durable
         try:
             yield room, None
         except _GoRoomMutated:
             mutated = True
         if mutated and room is not None:
             with _go_file_lock:
-                self._go_write_room_file_unlocked(room)
+                self._go_write_room_file_unlocked(room, durable=persist_durable)
 
     def _go_empty_board(self):
         return [[GO_EMPTY for _ in range(GO_BOARD_SIZE)] for _ in range(GO_BOARD_SIZE)]
@@ -744,7 +746,7 @@ class GoPlayMixin:
 
     def _go_action_move(self, user_id, data, start_response):
         code = str(data.get('room_code') or '').strip().upper()
-        with self._go_room_store(code) as (room, err):
+        with self._go_room_store(code, durable=False) as (room, err):
             if err:
                 return self.send_json({'status': 'error', 'message': err}, start_response)
             if room.get('status') != 'playing':
@@ -793,7 +795,7 @@ class GoPlayMixin:
 
     def _go_action_pass(self, user_id, data, start_response):
         code = str(data.get('room_code') or '').strip().upper()
-        with self._go_room_store(code) as (room, err):
+        with self._go_room_store(code, durable=False) as (room, err):
             if err:
                 return self.send_json({'status': 'error', 'message': err}, start_response)
             if room.get('status') != 'playing':
