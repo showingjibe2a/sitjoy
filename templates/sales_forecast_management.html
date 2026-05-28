@@ -267,6 +267,15 @@
         table.sf-table thead tr.sf-thead-row-2 th.sf-th-turn {
             text-align: center;
         }
+        /* 与 tbody 数字列一致：表头也服从 colgroup，避免表头已缩窄而表身仍被内容撑开 */
+        table.sf-table thead tr.sf-thead-row-2 th.sf-th-history,
+        table.sf-table thead tr.sf-thead-row-2 th.sf-th-inv,
+        table.sf-table thead tr.sf-thead-row-2 th.sf-th-turn {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 0;
+            min-width: 0;
+        }
         /*
          * 表头两行均非 sticky（由 thead 整体 sticky）；th 用 relative 作为列宽拖拽定位包含块。
          */
@@ -500,19 +509,31 @@
             font-variant-numeric: tabular-nums;
             color: #5b5346;
         }
-        /* Excel-like selection spotlight */
+        /* Excel-like selection spotlight（横/竖底纹一致；需 !important 压过斑马纹与动销月预警底色） */
         td.sf-grid-selectable.sf-cell-selected{
             box-shadow: inset 0 0 0 2px rgba(80, 120, 170, 0.85);
             background: rgba(80, 120, 170, 0.10) !important;
         }
-        tr.sf-spotlight-row td{
-            background: rgba(80, 120, 170, 0.04);
-        }
-        td.sf-spotlight-col{
+        tr.sf-spotlight-row td,
+        td.sf-spotlight-row {
             background: rgba(80, 120, 170, 0.04) !important;
         }
-        th.sf-spotlight-col{
+        td.sf-spotlight-col {
+            background: rgba(80, 120, 170, 0.04) !important;
+        }
+        td.sf-spotlight-row.sf-spotlight-col {
+            background: rgba(80, 120, 170, 0.07) !important;
+        }
+        th.sf-spotlight-col {
             box-shadow: inset 0 -2px 0 rgba(80, 120, 170, 0.75);
+        }
+        tr.sf-spotlight-row > td:first-child,
+        td.sf-spotlight-row:first-child {
+            box-shadow: inset 2px 0 0 rgba(80, 120, 170, 0.75);
+        }
+        td.sf-spotlight-row.sf-cell-selected,
+        tr.sf-spotlight-row td.sf-cell-selected {
+            background: rgba(80, 120, 170, 0.10) !important;
         }
         /* 预测列：限制列宽但不裁切顶栏角标（来源合计 / 变更%） */
         table.sf-table tbody td.sf-cell-forecast.preview-edit-cell {
@@ -817,6 +838,79 @@
         .sf-leadtime-table th:first-child {
             text-align: left;
             min-width: 6.5rem;
+        }
+        .sf-turn-alert-color-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.65rem 1.2rem;
+            margin-bottom: 0.75rem;
+            padding: 0.45rem 0.55rem;
+            border-radius: 8px;
+            background: rgba(245, 241, 235, 0.65);
+            border: 1px solid rgba(207, 199, 189, 0.45);
+        }
+        .sf-turn-alert-color-row label {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.8rem;
+            color: var(--morandi-ink);
+            margin: 0;
+        }
+        .sf-turn-alert-master {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            margin-bottom: 0.55rem;
+            font-size: 0.82rem;
+            color: var(--morandi-ink);
+        }
+        .sf-turn-alert-table .sf-turn-rule-check {
+            margin: 0;
+        }
+        .sf-turn-alert-table {
+            table-layout: fixed;
+            width: 100%;
+        }
+        /* 覆盖 .sf-leadtime-table 首列 min-width:6.5rem，否则表身无法随 col 缩窄 */
+        .sf-turn-alert-table.sf-leadtime-table th:first-child,
+        .sf-turn-alert-table.sf-leadtime-table td:first-child {
+            min-width: 0;
+        }
+        .sf-turn-alert-table col.sf-turn-alert-col-label { width: 34%; }
+        .sf-turn-alert-table col.sf-turn-alert-col-check { width: 14%; }
+        .sf-turn-alert-table col.sf-turn-alert-col-num { width: 19%; }
+        .sf-turn-alert-table th,
+        .sf-turn-alert-table td {
+            min-width: 0;
+            overflow: hidden;
+            box-sizing: border-box;
+        }
+        .sf-turn-alert-table thead tr:first-child th[rowspan="2"] {
+            vertical-align: middle;
+        }
+        .sf-turn-alert-table th::after {
+            content: none !important;
+        }
+        .sf-turn-alert-table tbody td:first-child {
+            font-weight: 500;
+            color: var(--morandi-ink);
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .sf-turn-alert-table input[type="number"] {
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+            min-height: 24px;
+            height: 24px;
+            padding: 0.08rem 0.28rem;
+            border: 1px solid rgba(207, 199, 189, 0.72);
+            border-radius: 6px;
+            font-size: 0.8rem;
+            text-align: center;
+            box-sizing: border-box;
         }
         .sf-leadtime-table input[type="number"] {
             width: 4.5rem;
@@ -1617,6 +1711,7 @@
                 </div>
                 <span class="sf-divider" aria-hidden="true"></span>
                 <div class="sf-toolbar-group">
+                    <button type="button" class="btn-secondary" id="btnSfTurnoverAlert" title="动销月单元格底纹预警规则">动销月预警</button>
                     <a href="/container-draft-management" class="btn-secondary" title="按预测与库存盈余生成按工厂分组的凑柜草稿">凑柜草稿</a>
                     <button class="btn-primary" id="btnLoadForecast" type="button">加载/刷新</button>
                 </div>
@@ -1736,6 +1831,72 @@
         </div>
     </div>
 
+    <div class="sf-leadtime-modal-overlay" id="sfTurnoverAlertModalOverlay" aria-hidden="true">
+        <div class="sf-leadtime-modal" role="dialog" aria-labelledby="sfTurnoverAlertModalTitle" aria-modal="true">
+            <div class="sf-leadtime-modal-head">
+                <h3 id="sfTurnoverAlertModalTitle">动销月预警</h3>
+                <button type="button" class="modal-close" id="sfTurnoverAlertModalClose" aria-label="关闭">×</button>
+            </div>
+            <div class="sf-leadtime-modal-body">
+                <label class="sf-turn-alert-master"><input type="checkbox" id="sfTurnoverAlertEnabled" checked> 启用动销月底纹预警</label>
+                <div class="sf-turn-alert-color-row">
+                    <label>小于阈值底纹
+                        <span class="sj-color-swatch-picker">
+                            <span class="sj-color-swatch-picker__disk"></span>
+                            <span class="sj-color-swatch-picker__wand" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="m7 21 3-3m3.5-12.5a2.12 2.12 0 0 1 3 0l2.5 2.5a2.12 2.12 0 0 1 0 3L9 17"/>
+                                </svg>
+                            </span>
+                            <input type="color" id="sfTurnoverAlertColorLt" class="sj-color-swatch-picker__input" value="#fce8e8" title="小于阈值时单元格背景色">
+                        </span>
+                    </label>
+                    <label>大于阈值底纹
+                        <span class="sj-color-swatch-picker">
+                            <span class="sj-color-swatch-picker__disk"></span>
+                            <span class="sj-color-swatch-picker__wand" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="m7 21 3-3m3.5-12.5a2.12 2.12 0 0 1 3 0l2.5 2.5a2.12 2.12 0 0 1 0 3L9 17"/>
+                                </svg>
+                            </span>
+                            <input type="color" id="sfTurnoverAlertColorGt" class="sj-color-swatch-picker__input" value="#efe6f5" title="大于阈值时单元格背景色">
+                        </span>
+                    </label>
+                </div>
+                <p style="margin:0 0 0.55rem;font-size:0.78rem;color:rgba(42,36,32,0.62);">对动销月三列分别设置阈值；数值有效且满足条件时显示对应底纹（无动销月数值时不着色）。</p>
+                <div class="sf-leadtime-table-wrap">
+                    <table class="sf-leadtime-table sf-turn-alert-table" aria-label="动销月预警规则">
+                        <colgroup>
+                            <col class="sf-turn-alert-col-label">
+                            <col class="sf-turn-alert-col-check">
+                            <col class="sf-turn-alert-col-num">
+                            <col class="sf-turn-alert-col-check">
+                            <col class="sf-turn-alert-col-num">
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th rowspan="2">列</th>
+                                <th colspan="2">小于</th>
+                                <th colspan="2">大于</th>
+                            </tr>
+                            <tr>
+                                <th>启用</th>
+                                <th>阈值</th>
+                                <th>启用</th>
+                                <th>阈值</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sfTurnoverAlertTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="sf-leadtime-modal-foot">
+                <button type="button" class="btn-secondary" id="sfTurnoverAlertModalCancel">取消</button>
+                <button type="button" class="btn-primary" id="sfTurnoverAlertModalSave">保存</button>
+            </div>
+        </div>
+    </div>
+
     <div class="sf-leadtime-modal-overlay" id="sfLeadtimeModalOverlay" aria-hidden="true">
         <div class="sf-leadtime-modal" role="dialog" aria-labelledby="sfLeadtimeModalTitle" aria-modal="true">
             <div class="sf-leadtime-modal-head">
@@ -1779,6 +1940,18 @@
         const SF_PREF_COL_WIDTHS_PREFIX = 'sales_forecast_col_widths_v1_';
         const SF_PREF_FACTORY_LEAD_TIMES_KEY = 'sales_forecast_factory_lead_times_v1';
         const SF_PREF_SURPLUS_REGION_KEY = 'sales_forecast_surplus_region_v1';
+        const SF_PREF_TURNOVER_ALERT_KEY = 'sales_forecast_turnover_alert_v1';
+        const SF_TURNOVER_ALERT_COL_IDS = ['overseas', 'overseas_transit', 'total'];
+        const SF_TURNOVER_INV_KEYS = ['months_cover_overseas', 'months_cover_overseas_transit', 'months_cover_total'];
+        const SF_TURNOVER_ALERT_DEFAULTS = {
+            enabled: true,
+            colors: { lt: '#fce8e8', gt: '#efe6f5' },
+            rules: {
+                overseas: { lt: { enabled: true, value: 1.2 }, gt: { enabled: true, value: 3 } },
+                overseas_transit: { lt: { enabled: true, value: 2.4 }, gt: { enabled: true, value: 4 } },
+                total: { lt: { enabled: true, value: 4 }, gt: { enabled: true, value: 7 } },
+            },
+        };
         const SF_TURNOVER_COLS = 3;
         const SF_STOCK_COLS = 4;
         const SF_REMARK_COLS = 1;
@@ -1852,6 +2025,7 @@
             destinationRegions: [],          // 下单SKU维度：目的区域列表
             sfSurplusRegion: '',           // 时效计算区域（仅工厂在库/在制上架天数）
             factoryLeadTimes: {},          // { [region_name]: { stock_days, wip_days } }
+            turnoverAlertPrefs: null,      // 动销月底纹预警（本地记忆）
         };
 
         function readBoolPref(key, fallback) {
@@ -2358,6 +2532,203 @@
 
         function writeFactoryLeadTimesPrefs(times) {
             writeJsonPref(SF_PREF_FACTORY_LEAD_TIMES_KEY, { v: 1, times: times || {}, updated_at: Date.now() });
+        }
+
+        function normalizeSfTurnoverAlertPrefs(raw) {
+            const base = JSON.parse(JSON.stringify(SF_TURNOVER_ALERT_DEFAULTS));
+            const src = (raw && typeof raw === 'object') ? raw : {};
+            base.enabled = src.enabled !== false;
+            const colors = (src.colors && typeof src.colors === 'object') ? src.colors : {};
+            if (typeof colors.lt === 'string' && colors.lt) base.colors.lt = colors.lt;
+            if (typeof colors.gt === 'string' && colors.gt) base.colors.gt = colors.gt;
+            const rules = (src.rules && typeof src.rules === 'object') ? src.rules : {};
+            SF_TURNOVER_ALERT_COL_IDS.forEach((id) => {
+                const def = base.rules[id] || SF_TURNOVER_ALERT_DEFAULTS.rules[id];
+                const r = rules[id];
+                if (!r || typeof r !== 'object') return;
+                ['lt', 'gt'].forEach((kind) => {
+                    const d = def[kind];
+                    const x = r[kind];
+                    if (!x || typeof x !== 'object') return;
+                    d.enabled = x.enabled !== false;
+                    const v = Number(x.value);
+                    if (Number.isFinite(v)) d.value = v;
+                });
+            });
+            return base;
+        }
+
+        function readSfTurnoverAlertPrefs() {
+            const raw = readJsonPref(SF_PREF_TURNOVER_ALERT_KEY, null);
+            const prefs = (raw && raw.prefs && typeof raw.prefs === 'object')
+                ? normalizeSfTurnoverAlertPrefs(raw.prefs)
+                : normalizeSfTurnoverAlertPrefs(raw);
+            return prefs;
+        }
+
+        function writeSfTurnoverAlertPrefs(prefs) {
+            writeJsonPref(SF_PREF_TURNOVER_ALERT_KEY, { v: 1, prefs: normalizeSfTurnoverAlertPrefs(prefs), updated_at: Date.now() });
+        }
+
+        function getSfTurnoverAlertPrefs() {
+            if (!state.turnoverAlertPrefs) state.turnoverAlertPrefs = readSfTurnoverAlertPrefs();
+            return state.turnoverAlertPrefs;
+        }
+
+        function parseSfMonthsCoverValue(inv, colIdx) {
+            const key = SF_TURNOVER_INV_KEYS[Number(colIdx)];
+            if (!key || !inv) return null;
+            const v = Number(inv[key]);
+            return Number.isFinite(v) ? v : null;
+        }
+
+        function resolveSfTurnoverAlertStyle(colIdx, inv, prefs) {
+            const p = prefs || getSfTurnoverAlertPrefs();
+            if (!p.enabled) return '';
+            const colId = SF_TURNOVER_ALERT_COL_IDS[Number(colIdx)];
+            if (!colId) return '';
+            const num = parseSfMonthsCoverValue(inv, colIdx);
+            if (num == null) return '';
+            const rule = (p.rules && p.rules[colId]) || {};
+            const lt = rule.lt || {};
+            const gt = rule.gt || {};
+            if (lt.enabled !== false && Number.isFinite(Number(lt.value)) && num < Number(lt.value)) {
+                return String(p.colors.lt || SF_TURNOVER_ALERT_DEFAULTS.colors.lt);
+            }
+            if (gt.enabled !== false && Number.isFinite(Number(gt.value)) && num > Number(gt.value)) {
+                return String(p.colors.gt || SF_TURNOVER_ALERT_DEFAULTS.colors.gt);
+            }
+            return '';
+        }
+
+        function clearSfTurnoverAlertStyle(td) {
+            if (!td) return;
+            td.classList.remove('sf-turn-alert-lt', 'sf-turn-alert-gt');
+            td.style.backgroundColor = '';
+        }
+
+        function applySfTurnoverAlertToTd(td, colIdx, inv, prefs) {
+            if (!td) return;
+            const bg = resolveSfTurnoverAlertStyle(colIdx, inv || {}, prefs);
+            clearSfTurnoverAlertStyle(td);
+            if (bg) td.style.backgroundColor = bg;
+        }
+
+        function applySfTurnoverAlertsToTable() {
+            const prefs = getSfTurnoverAlertPrefs();
+            const tbody = document.getElementById('forecastTbody');
+            if (!tbody) return;
+            tbody.querySelectorAll('td.sf-cell-turn[data-sf-inv-col-kind="T"]').forEach((td) => {
+                const colIdx = Number(td.dataset.sfInvColIdx);
+                const tr = td.closest('tr');
+                const rk = tr && tr.dataset.rowKey;
+                const row = rk ? (state.rows || []).find((r) => String(r.row_key) === rk) : null;
+                applySfTurnoverAlertToTd(td, colIdx, row ? (row.inventory || {}) : {}, prefs);
+            });
+        }
+
+        function renderSfTurnoverAlertModalForm() {
+            const prefs = getSfTurnoverAlertPrefs();
+            const enabledEl = document.getElementById('sfTurnoverAlertEnabled');
+            const ltColor = document.getElementById('sfTurnoverAlertColorLt');
+            const gtColor = document.getElementById('sfTurnoverAlertColorGt');
+            const tbody = document.getElementById('sfTurnoverAlertTableBody');
+            if (enabledEl) enabledEl.checked = !!prefs.enabled;
+            if (ltColor) ltColor.value = prefs.colors.lt || SF_TURNOVER_ALERT_DEFAULTS.colors.lt;
+            if (gtColor) gtColor.value = prefs.colors.gt || SF_TURNOVER_ALERT_DEFAULTS.colors.gt;
+            if (window.SitjoyColorSwatchPicker && typeof window.SitjoyColorSwatchPicker.init === 'function') {
+                window.SitjoyColorSwatchPicker.init(document.getElementById('sfTurnoverAlertModalOverlay') || document);
+            }
+            if (!tbody) return;
+            tbody.innerHTML = SF_TURNOVER_ALERT_COL_IDS.map((id, i) => {
+                const label = (SF_TURNOVER_HEADERS[i] && SF_TURNOVER_HEADERS[i].label) || id;
+                const rule = (prefs.rules && prefs.rules[id]) || SF_TURNOVER_ALERT_DEFAULTS.rules[id];
+                const lt = rule.lt || {};
+                const gt = rule.gt || {};
+                const ltOn = lt.enabled !== false ? ' checked' : '';
+                const gtOn = gt.enabled !== false ? ' checked' : '';
+                const ltVal = lt.value != null ? String(lt.value) : '';
+                const gtVal = gt.value != null ? String(gt.value) : '';
+                return `<tr data-col-id="${escapeHtml(id)}">`
+                    + `<td>${escapeHtml(label)}</td>`
+                    + `<td><input type="checkbox" class="sf-turn-rule-check" data-rule-kind="lt"${ltOn}></td>`
+                    + `<td><input type="number" step="0.01" min="0" data-rule-kind="lt" value="${escapeHtml(ltVal)}"></td>`
+                    + `<td><input type="checkbox" class="sf-turn-rule-check" data-rule-kind="gt"${gtOn}></td>`
+                    + `<td><input type="number" step="0.01" min="0" data-rule-kind="gt" value="${escapeHtml(gtVal)}"></td>`
+                    + '</tr>';
+            }).join('');
+        }
+
+        function openSfTurnoverAlertModal() {
+            const overlay = document.getElementById('sfTurnoverAlertModalOverlay');
+            if (!overlay) return;
+            renderSfTurnoverAlertModalForm();
+            if (window.SitjoyColorSwatchPicker && typeof window.SitjoyColorSwatchPicker.init === 'function') {
+                window.SitjoyColorSwatchPicker.init(overlay);
+            }
+            overlay.classList.add('is-open');
+            overlay.setAttribute('aria-hidden', 'false');
+        }
+
+        function closeSfTurnoverAlertModal() {
+            const overlay = document.getElementById('sfTurnoverAlertModalOverlay');
+            if (!overlay) return;
+            overlay.classList.remove('is-open');
+            overlay.setAttribute('aria-hidden', 'true');
+        }
+
+        function saveSfTurnoverAlertFromModal() {
+            const enabledEl = document.getElementById('sfTurnoverAlertEnabled');
+            const ltColor = document.getElementById('sfTurnoverAlertColorLt');
+            const gtColor = document.getElementById('sfTurnoverAlertColorGt');
+            const tbody = document.getElementById('sfTurnoverAlertTableBody');
+            const prefs = normalizeSfTurnoverAlertPrefs(null);
+            prefs.enabled = !!(enabledEl && enabledEl.checked);
+            prefs.colors.lt = (ltColor && ltColor.value) ? ltColor.value : SF_TURNOVER_ALERT_DEFAULTS.colors.lt;
+            prefs.colors.gt = (gtColor && gtColor.value) ? gtColor.value : SF_TURNOVER_ALERT_DEFAULTS.colors.gt;
+            if (tbody) {
+                tbody.querySelectorAll('tr[data-col-id]').forEach((tr) => {
+                    const id = String(tr.dataset.colId || '').trim();
+                    if (!SF_TURNOVER_ALERT_COL_IDS.includes(id)) return;
+                    const rule = prefs.rules[id];
+                    ['lt', 'gt'].forEach((kind) => {
+                        const check = tr.querySelector(`input.sf-turn-rule-check[data-rule-kind="${kind}"]`);
+                        const num = tr.querySelector(`input[type="number"][data-rule-kind="${kind}"]`);
+                        rule[kind].enabled = !!(check && check.checked);
+                        const v = Number(num && num.value);
+                        rule[kind].value = Number.isFinite(v) ? v : SF_TURNOVER_ALERT_DEFAULTS.rules[id][kind].value;
+                    });
+                });
+            }
+            state.turnoverAlertPrefs = prefs;
+            writeSfTurnoverAlertPrefs(prefs);
+            closeSfTurnoverAlertModal();
+            applySfTurnoverAlertsToTable();
+            showToast('动销月预警规则已保存', false);
+        }
+
+        function bindSfTurnoverAlertModalOnce() {
+            if (document.body.dataset.sfTurnoverAlertModalBound === '1') return;
+            document.body.dataset.sfTurnoverAlertModalBound = '1';
+            const btn = document.getElementById('btnSfTurnoverAlert');
+            const overlay = document.getElementById('sfTurnoverAlertModalOverlay');
+            if (btn) btn.addEventListener('click', openSfTurnoverAlertModal);
+            ['sfTurnoverAlertModalClose', 'sfTurnoverAlertModalCancel'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener('click', closeSfTurnoverAlertModal);
+            });
+            const saveBtn = document.getElementById('sfTurnoverAlertModalSave');
+            if (saveBtn) saveBtn.addEventListener('click', saveSfTurnoverAlertFromModal);
+            if (overlay) {
+                overlay.addEventListener('click', (e) => {
+                    if (e.target === overlay) closeSfTurnoverAlertModal();
+                });
+            }
+            document.addEventListener('keydown', (e) => {
+                if (e.key !== 'Escape') return;
+                const ov = document.getElementById('sfTurnoverAlertModalOverlay');
+                if (ov && ov.classList.contains('is-open')) closeSfTurnoverAlertModal();
+            });
         }
 
         function readSavedSurplusRegion() {
@@ -3810,12 +4181,14 @@
                 fmtMc(inv.months_cover_overseas_transit),
                 fmtMc(inv.months_cover_total),
             ];
+            const turnAlertPrefs = getSfTurnoverAlertPrefs();
             SF_TURNOVER_HEADERS.forEach((h, i) => {
                 const td = document.createElement('td');
                 td.className = 'sf-cell-history sf-cell-turn sf-cell-inv-hoverable';
                 td.dataset.sfInvColKind = 'T';
                 td.dataset.sfInvColIdx = String(i);
                 setSfNumericTdText(td, turnVals[i], { cellTip: h.tip || '' });
+                applySfTurnoverAlertToTd(td, i, inv, turnAlertPrefs);
                 markSfGridCell(td, rowKey, ci);
                 ci += 1;
                 tr.appendChild(td);
@@ -3984,9 +4357,11 @@
                 if (oldColgroup && oldColgroup.parentNode) oldColgroup.parentNode.removeChild(oldColgroup);
                 const colgroup = document.createElement('colgroup');
                 colgroup.id = 'forecastColgroup';
-                leafColWidths.forEach(w => {
+                leafColWidths.forEach((w, i) => {
+                    const cw = clampSfForecastColWidth(meta, i, w);
+                    leafColWidths[i] = cw;
                     const c = document.createElement('col');
-                    c.style.width = `${w}px`;
+                    c.style.width = `${cw}px`;
                     colgroup.appendChild(c);
                 });
                 table.insertBefore(colgroup, thead);
@@ -4623,7 +4998,7 @@
             const n = state.sfGridSelected.size || 0;
             if (tbody) {
                 tbody.querySelectorAll('td.sf-grid-selectable').forEach(td => {
-                    td.classList.remove('sf-cell-selected', 'sf-spotlight-col');
+                    td.classList.remove('sf-cell-selected', 'sf-spotlight-col', 'sf-spotlight-row');
                 });
                 tbody.querySelectorAll('tr.sf-spotlight-row').forEach(tr => tr.classList.remove('sf-spotlight-row'));
             }
@@ -4655,6 +5030,7 @@
                 const rk = String(td.dataset.rowKey || '');
                 const ci = Number(td.dataset.sfCi);
                 if (!rk || !Number.isFinite(ci)) return;
+                if (selectedRows.has(rk)) td.classList.add('sf-spotlight-row');
                 if (state.sfGridSelected.has(makeSfGridCellKey(rk, ci))) td.classList.add('sf-cell-selected');
                 if (selectedColIdxs.has(ci)) td.classList.add('sf-spotlight-col');
             });
@@ -4988,13 +5364,36 @@
             renderForecastTable({ bodyOnly: true });
         }
 
+        const SF_FORECAST_COL_MIN_SPEC = 46;
+        const SF_FORECAST_COL_MIN_COMPACT = 28;
+
+        function getSfForecastColMin(meta, colIdx) {
+            const idx = Number(colIdx);
+            if (!meta || !Number.isFinite(idx)) return SF_FORECAST_COL_MIN_SPEC;
+            const inRange = (start, end) => Number.isFinite(start) && Number.isFinite(end) && idx >= start && idx <= end;
+            if (inRange(meta.turnStart, meta.turnEnd)) return SF_FORECAST_COL_MIN_COMPACT;
+            if (inRange(meta.stockStart, meta.stockEnd)) return SF_FORECAST_COL_MIN_COMPACT;
+            if (inRange(meta.historyStart, meta.historyEnd)) return SF_FORECAST_COL_MIN_COMPACT;
+            if (inRange(meta.forecastStart, meta.forecastEnd)) return SF_FORECAST_COL_MIN_COMPACT;
+            return SF_FORECAST_COL_MIN_SPEC;
+        }
+
+        function clampSfForecastColWidth(meta, colIdx, width) {
+            const floor = getSfForecastColMin(meta, colIdx);
+            return Math.max(floor, Math.round(Number(width || 0)));
+        }
+
         function applyForecastColgroupWidths(table, leafColWidths) {
             const t = table || document.getElementById('forecastTable');
             if (!t) return;
+            const meta = state._sfColMeta || null;
             const cols = Array.from((t.querySelector('colgroup#forecastColgroup') || {}).children || []);
             for (let i = 0; i < cols.length && i < (leafColWidths || []).length; i++) {
-                const w = Math.max(46, Number(leafColWidths[i] || 0));
+                const w = clampSfForecastColWidth(meta, i, leafColWidths[i]);
+                leafColWidths[i] = w;
                 cols[i].style.width = `${w}px`;
+                cols[i].style.minWidth = '';
+                cols[i].style.maxWidth = '';
             }
             const totalWidth = (leafColWidths || []).reduce((acc, n) => acc + Number(n || 0), 0);
             const wpx = Math.max(960, totalWidth);
@@ -5059,8 +5458,11 @@
                     const startX = event.clientX;
                     const startWidths = leafColWidths.slice();
                     const spanCount = (colEnd - colStart + 1);
-                    const minTotal = 46 * spanCount;
-                    const startTotal = startWidths.slice(colStart, colEnd + 1).reduce((sum, w) => sum + Math.max(46, Number(w || 60)), 0);
+                    const minTotal = Array.from({ length: spanCount }, (_, off) => getSfForecastColMin(meta, colStart + off))
+                        .reduce((sum, n) => sum + n, 0);
+                    const startTotal = startWidths.slice(colStart, colEnd + 1).reduce((sum, w, off) => {
+                        return sum + clampSfForecastColWidth(meta, colStart + off, w || 60);
+                    }, 0);
                     let moved = false;
 
                     const inRange = (idx, start, end) => idx >= start && idx <= end;
@@ -5078,7 +5480,12 @@
                         && inRange(colEnd, meta.stockStart, meta.stockEnd);
 
                     const applyMonthGroupWidth = (kind, newPerWidth) => {
-                        const w = Math.max(46, Math.round(Number(newPerWidth || 0)));
+                        let startIdx = colStart;
+                        if (kind === 'history') startIdx = meta.historyStart;
+                        else if (kind === 'forecast') startIdx = meta.forecastStart;
+                        else if (kind === 'turnover') startIdx = meta.turnStart;
+                        else if (kind === 'stock') startIdx = meta.stockStart;
+                        const w = clampSfForecastColWidth(meta, startIdx, newPerWidth);
                         if (kind === 'history') {
                             for (let i = meta.historyStart; i <= meta.historyEnd; i++) leafColWidths[i] = w;
                         } else if (kind === 'forecast') {
@@ -5096,34 +5503,34 @@
 
                         if (isHistorySpan) {
                             const targetTotal = Math.max(minTotal, startTotal + delta);
-                            const per = Math.max(46, Math.round(targetTotal / Math.max(1, spanCount)));
+                            const per = Math.round(targetTotal / Math.max(1, spanCount));
                             applyMonthGroupWidth('history', per);
                         } else if (isForecastSpan) {
                             const targetTotal = Math.max(minTotal, startTotal + delta);
-                            const per = Math.max(46, Math.round(targetTotal / Math.max(1, spanCount)));
+                            const per = Math.round(targetTotal / Math.max(1, spanCount));
                             applyMonthGroupWidth('forecast', per);
                         } else if (isTurnoverSpan) {
                             const targetTotal = Math.max(minTotal, startTotal + delta);
-                            const per = Math.max(46, Math.round(targetTotal / Math.max(1, spanCount)));
+                            const per = Math.round(targetTotal / Math.max(1, spanCount));
                             applyMonthGroupWidth('turnover', per);
                         } else if (isStockSpan) {
                             const targetTotal = Math.max(minTotal, startTotal + delta);
-                            const per = Math.max(46, Math.round(targetTotal / Math.max(1, spanCount)));
+                            const per = Math.round(targetTotal / Math.max(1, spanCount));
                             applyMonthGroupWidth('stock', per);
                         } else if (spanCount <= 1) {
-                            leafColWidths[colEnd] = Math.max(46, Number(startWidths[colEnd] || 60) + delta);
+                            leafColWidths[colEnd] = clampSfForecastColWidth(meta, colEnd, Number(startWidths[colEnd] || 60) + delta);
                         } else {
                             const targetTotal = Math.max(minTotal, startTotal + delta);
                             const factor = targetTotal / Math.max(1, startTotal);
                             let allocated = 0;
                             for (let idx = colStart; idx <= colEnd; idx += 1) {
-                                const base = Math.max(46, Number(startWidths[idx] || 60));
-                                const scaled = Math.max(46, Math.round(base * factor));
+                                const base = clampSfForecastColWidth(meta, idx, startWidths[idx] || 60);
+                                const scaled = clampSfForecastColWidth(meta, idx, Math.round(base * factor));
                                 leafColWidths[idx] = scaled;
                                 allocated += scaled;
                             }
                             const remainder = Math.round(targetTotal - allocated);
-                            leafColWidths[colEnd] = Math.max(46, Number(leafColWidths[colEnd] || 60) + remainder);
+                            leafColWidths[colEnd] = clampSfForecastColWidth(meta, colEnd, Number(leafColWidths[colEnd] || 60) + remainder);
                         }
 
                         applyForecastColgroupWidths(table, leafColWidths);
@@ -7777,8 +8184,10 @@
             bindSfStatusFilterDropdownOnce();
             updateSfStatusFilterVisibility();
             state.factoryLeadTimes = readFactoryLeadTimesPrefs();
+            state.turnoverAlertPrefs = readSfTurnoverAlertPrefs();
             bindSfSurplusRegionSegmentOnce();
             bindSfLeadtimeModalOnce();
+            bindSfTurnoverAlertModalOnce();
             updateSfSurplusToolbarVisibility();
 
             bindModeSegment();

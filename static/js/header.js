@@ -6313,6 +6313,70 @@
         }, false);
     }
 
+    const SJ_COLOR_SWATCH_WAND_HTML = '<span class="sj-color-swatch-picker__wand" aria-hidden="true">'
+        + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'
+        + '<path d="m7 21 3-3m3.5-12.5a2.12 2.12 0 0 1 3 0l2.5 2.5a2.12 2.12 0 0 1 0 3L9 17"/>'
+        + '</svg></span>';
+
+    function syncColorSwatchPicker(input){
+        if(!input) return;
+        const wrap = input.closest('.sj-color-swatch-picker');
+        const disk = wrap ? wrap.querySelector('.sj-color-swatch-picker__disk') : null;
+        const color = String(input.value || '#cfc7bd').trim() || '#cfc7bd';
+        if(disk) disk.style.backgroundColor = color;
+        if(wrap) wrap.style.setProperty('--sj-swatch-color', color);
+        input.title = color;
+        if(wrap) wrap.title = color;
+    }
+
+    function wrapColorInputAsSwatchPicker(input){
+        if(!input || input.type !== 'color' || input.closest('.sj-color-swatch-picker')) return input;
+        const wrap = document.createElement('span');
+        wrap.className = 'sj-color-swatch-picker';
+        const disk = document.createElement('span');
+        disk.className = 'sj-color-swatch-picker__disk';
+        wrap.appendChild(disk);
+        wrap.insertAdjacentHTML('beforeend', SJ_COLOR_SWATCH_WAND_HTML);
+        input.classList.add('sj-color-swatch-picker__input');
+        const parent = input.parentNode;
+        if(parent){
+            parent.insertBefore(wrap, input);
+            wrap.appendChild(input);
+        }
+        syncColorSwatchPicker(input);
+        return input;
+    }
+
+    function initColorSwatchPickers(root){
+        const scope = root && root.querySelectorAll ? root : document;
+        scope.querySelectorAll('input[type="color"].sj-color-swatch-picker__input, .sj-color-swatch-picker input[type="color"]').forEach((inp) => {
+            if(inp.dataset.sjColorSwatchBound === '1') return;
+            inp.dataset.sjColorSwatchBound = '1';
+            if(!inp.classList.contains('sj-color-swatch-picker__input')) inp.classList.add('sj-color-swatch-picker__input');
+            const wrap = inp.closest('.sj-color-swatch-picker');
+            if(wrap && !wrap.querySelector('.sj-color-swatch-picker__disk')){
+                const disk = document.createElement('span');
+                disk.className = 'sj-color-swatch-picker__disk';
+                wrap.insertBefore(disk, inp);
+            }
+            if(wrap && !wrap.querySelector('.sj-color-swatch-picker__wand')){
+                wrap.insertAdjacentHTML('beforeend', SJ_COLOR_SWATCH_WAND_HTML);
+            }
+            inp.addEventListener('input', () => syncColorSwatchPicker(inp));
+            inp.addEventListener('change', () => syncColorSwatchPicker(inp));
+            syncColorSwatchPicker(inp);
+        });
+        scope.querySelectorAll('input[type="color"][data-sj-color-swatch="1"]').forEach((inp) => {
+            if(!inp.closest('.sj-color-swatch-picker')) wrapColorInputAsSwatchPicker(inp);
+        });
+    }
+
+    window.SitjoyColorSwatchPicker = {
+        sync: syncColorSwatchPicker,
+        init: initColorSwatchPickers,
+        wrap: wrapColorInputAsSwatchPicker
+    };
+
     function loadSitjoyCellSelectionStats(){
         if(window.SitjoyCellSelectionStats) return;
         if(document.querySelector('script[data-sj-cell-stats="1"]')) return;
@@ -6336,6 +6400,7 @@
         bindFloatingHelpDots(document);
         partitionPmCardToolbars(document);
         bridgeLegacyResponseToToast(document);
+        initColorSwatchPickers(document);
         startUniversalSelectValueSync();
 
         window.showAppToast = function(message, isError, duration){
@@ -6381,6 +6446,7 @@
                 bridgeLegacyResponseToToast(document);
                 syncModalScrollLock();
                 repositionManagedBatchBars();
+                initColorSwatchPickers(document);
             });
         });
         bodyObserver.observe(document.body, {

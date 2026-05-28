@@ -89,24 +89,6 @@
             align-items: center;
             gap: 0.5rem;
         }
-        #modalRepresentativeColor {
-            width: 56px;
-            height: 38px;
-            padding: 2px;
-            border: 2px solid var(--morandi-sand);
-            border-radius: 8px;
-            background: #fff;
-            -webkit-appearance: auto;
-            appearance: auto;
-            cursor: pointer;
-        }
-        .fabric-color-preview {
-            width: 18px;
-            height: 18px;
-            border-radius: 999px;
-            border: 1px solid rgba(42, 36, 32, 0.25);
-            display: inline-block;
-        }
     </style>
 </head>
 <body>
@@ -175,8 +157,15 @@
                     <div class="form-group">
                         <label for="modalRepresentativeColor">代表色（RGB）</label>
                         <div class="fabric-color-picker-row">
-                            <input type="color" id="modalRepresentativeColor" value="#CFC7BD">
-                            <span id="modalRepresentativeColorPreview" class="fabric-color-preview" title="#CFC7BD"></span>
+                            <span class="sj-color-swatch-picker">
+                                <span class="sj-color-swatch-picker__disk"></span>
+                                <span class="sj-color-swatch-picker__wand" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="m7 21 3-3m3.5-12.5a2.12 2.12 0 0 1 3 0l2.5 2.5a2.12 2.12 0 0 1 0 3L9 17"/>
+                                    </svg>
+                                </span>
+                                <input type="color" id="modalRepresentativeColor" class="sj-color-swatch-picker__input" value="#CFC7BD">
+                            </span>
                         </div>
                     </div>
                     <div class="form-group pm-form-full">
@@ -862,23 +851,17 @@
 
         function updateColorPreview() {
             const colorInput = document.getElementById('modalRepresentativeColor');
-            const preview = document.getElementById('modalRepresentativeColorPreview');
             if (!colorInput) return;
-            const colorValue = (colorInput.value || '#CFC7BD').trim();
-            colorInput.title = colorValue;
-            if (preview) {
-                preview.style.backgroundColor = colorValue;
-                preview.title = colorValue;
+            if (window.SitjoyColorSwatchPicker && typeof window.SitjoyColorSwatchPicker.sync === 'function') {
+                window.SitjoyColorSwatchPicker.sync(colorInput);
             }
         }
 
         window.addEventListener('load', function() {
-            const colorInput = document.getElementById('modalRepresentativeColor');
-            if (colorInput) {
-                colorInput.addEventListener('input', updateColorPreview);
-                colorInput.addEventListener('change', updateColorPreview);
-                updateColorPreview();
+            if (window.SitjoyColorSwatchPicker && typeof window.SitjoyColorSwatchPicker.init === 'function') {
+                window.SitjoyColorSwatchPicker.init(document);
             }
+            updateColorPreview();
         });
 
         function loadFabricImages() {
