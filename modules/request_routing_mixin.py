@@ -4,6 +4,7 @@ API_PERMISSION_MAP = {
     '/api/profile': 'home',
     '/api/profile/avatar': 'home',
     '/api/employee': 'home',
+    '/api/audit-log': 'system_audit_log_management',
     '/api/todo': 'home',
     '/api/todo-type': 'home',
     '/api/calendar': 'home',
@@ -108,7 +109,7 @@ API_PERMISSION_MAP = {
     '/api/sales-forecast': 'sales_forecast_management',
     '/api/sales-forecast-bulk-update': 'sales_forecast_management',
     '/api/container-draft': 'container_draft_management',
-    '/api/parent': 'parent_management',
+    '/api/parent': 'sales_product_management',
     '/api/aplus-version': 'aplus_management',
     '/api/aplus-version-assets': 'aplus_management',
     '/api/aplus-version-layout': 'aplus_management',
@@ -143,7 +144,8 @@ PAGE_TEMPLATE_MAP = {
     '/sales-order-registration-management': ('templates/sales_order_registration_management.html', 'sales_order_registration_management'),
     '/sales-forecast-management': ('templates/sales_forecast_management.html', 'sales_forecast_management'),
     '/container-draft-management': ('templates/container_draft_management.html', 'container_draft_management'),
-    '/parent-management': ('templates/parent_management.html', 'parent_management'),
+    '/system-employee-management': ('templates/system_employee_management.html', 'system_employee_management'),
+    '/system-audit-log-management': ('templates/system_audit_log_management.html', 'system_audit_log_management'),
     '/amazon-ad-management': ('templates/amazon_ad_management.html', 'amazon_ad_management'),
     '/amazon-ad-delivery-management': ('templates/amazon_ad_delivery_management.html', 'amazon_ad_delivery_management'),
     '/amazon-ad-product-management': ('templates/amazon_ad_product_management.html', 'amazon_ad_product_management'),
@@ -348,6 +350,11 @@ class RequestRoutingMixin:
             if not callable(is_super) or not is_super(user_id):
                 return self.send_json({'status': 'error', 'message': '仅超级管理员（ID=1）可查看审计日志'}, start_response)
             return None
+        method = (environ.get('REQUEST_METHOD') or 'GET').upper()
+        if path == '/api/employee' and method != 'GET':
+            if not self._user_has_page_access(user_id, 'system_employee_management'):
+                return self.send_json({'status': 'error', 'message': '无权限访问该模块'}, start_response)
+            return None
         # 规格主图管理（gallery）与销售产品管理共用主图 API，任一模块权限即可
         dual_access = {
             # 上架资源缩略图：多模块列表/弹窗内嵌 <img src="/api/image-preview">，浏览器请求不带「当前页」信息，
@@ -392,10 +399,13 @@ class RequestRoutingMixin:
                 return None
             return self.send_json({'status': 'error', 'message': '无权限访问该模块'}, start_response)
 
-        method = (environ.get('REQUEST_METHOD') or 'GET').upper()
-        # 首页待办「关联平台」下拉：有首页或店铺管理权限即可只读获取平台类型列表；写操作仍走下方 shop_brand_management
+        # 首页待办「关联平台」下拉：有首页或店铺/销售管理权限即可只读获取平台类型列表
         if path == '/api/platform-type' and method == 'GET':
-            if self._user_has_page_access(user_id, 'home') or self._user_has_page_access(user_id, 'shop_brand_management'):
+            if (
+                self._user_has_page_access(user_id, 'home')
+                or self._user_has_page_access(user_id, 'shop_brand_management')
+                or self._user_has_page_access(user_id, 'sales_product_management')
+            ):
                 return None
             return self.send_json({'status': 'error', 'message': '无权限访问该模块'}, start_response)
 

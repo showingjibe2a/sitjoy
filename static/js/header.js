@@ -6030,8 +6030,10 @@
                 document.querySelectorAll('.nav-menu a').forEach(a => a.classList.remove('active'));
                 if(path === '/' || path === '/index.html'){
                     const elHome = document.querySelector('.nav-home'); if(elHome) elHome.classList.add('active');
-                } else if(path.startsWith('/shop-brand-management') || path.startsWith('/amazon-account-health-management')){
-                    const elShop = document.querySelector('.nav-shop'); if(elShop) elShop.classList.add('active');
+                } else if(path.startsWith('/shop-brand-management') || path.startsWith('/amazon-account-health-management') || path.startsWith('/sales-product-management') || path.startsWith('/sales-product-performance-management') || path.startsWith('/sales-forecast-management') || path.startsWith('/container-draft-management') || path.startsWith('/sales-order-registration-management')){
+                    const elS = document.querySelector('.nav-sales'); if(elS) elS.classList.add('active');
+                } else if(path.startsWith('/system-employee-management') || path.startsWith('/system-audit-log-management')){
+                    const elSys = document.querySelector('.nav-system'); if(elSys) elSys.classList.add('active');
                 } else if(path.startsWith('/gallery') || path.startsWith('/spec-main-image-management') || path.startsWith('/image-type-management') || path.startsWith('/aplus-management')){
                     const elG = document.querySelector('.nav-gallery'); if(elG) elG.classList.add('active');
                 } else if(path.startsWith('/amazon-ad-management') || path.startsWith('/amazon-ad-subtype-management') || path.startsWith('/amazon-ad-delivery-management') || path.startsWith('/amazon-ad-product-management') || path.startsWith('/amazon-ad-adjustment-management') || path.startsWith('/amazon-ad-adjustment-records-management') || path.startsWith('/amazon-ad-keyword-management')){
@@ -6040,8 +6042,6 @@
                     const elL = document.querySelector('.nav-logistics'); if(elL) elL.classList.add('active');
                 } else if(path.startsWith('/product-management') || path.startsWith('/fabric-management') || path.startsWith('/feature-management') || path.startsWith('/material-management') || path.startsWith('/certification-management') || path.startsWith('/order-product-management')){
                     const elP = document.querySelector('.nav-product'); if(elP) elP.classList.add('active');
-                } else if(path.startsWith('/sales-product-management') || path.startsWith('/sales-product-performance-management') || path.startsWith('/sales-order-registration-management') || path.startsWith('/parent-management')){
-                    const elS = document.querySelector('.nav-sales'); if(elS) elS.classList.add('active');
                 } else if(path.startsWith('/about')){
                     const elA = document.querySelector('.nav-about'); if(elA) elA.classList.add('active');
                 } else if(path.startsWith('/widgets')){

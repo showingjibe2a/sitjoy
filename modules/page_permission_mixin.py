@@ -13,9 +13,18 @@ class PagePermissionMixin:
     def _default_page_permissions(self):
         return {key: 1 for key in self._permission_keys()}
 
+    def _denied_permission_keys(self):
+        denied = getattr(self, 'PAGE_PERMISSION_DEFAULT_DENIED', None)
+        if not denied:
+            return set()
+        return set(denied)
+
     def _normalize_page_permissions(self, raw_permissions, default_all=True):
         keys = self._permission_keys()
+        denied = self._denied_permission_keys()
         normalized = {key: (1 if default_all else 0) for key in keys}
+        for key in denied:
+            normalized[key] = 0
         if raw_permissions is None or raw_permissions == '':
             return normalized
 
@@ -30,6 +39,9 @@ class PagePermissionMixin:
             for key in keys:
                 if key in payload:
                     normalized[key] = 1 if payload.get(key) else 0
+            for key in denied:
+                if key not in payload:
+                    normalized[key] = 0
             return normalized
 
         if isinstance(payload, (list, tuple, set)):
@@ -61,6 +73,9 @@ class PagePermissionMixin:
         if not row:
             return None
         row['page_permissions'] = self._normalize_page_permissions(row.get('page_permissions'))
+        if bool(row.get('is_admin')):
+            for key in self._denied_permission_keys():
+                row['page_permissions'][key] = 1
         return row
 
     def _can_manage_admin_permission(self, actor_record):
@@ -78,7 +93,11 @@ class PagePermissionMixin:
         record = self._get_user_permission_record(user_id)
         if not record:
             return False
-        return bool(record.get('page_permissions', {}).get(permission_key, 1))
+        denied = self._denied_permission_keys()
+        if permission_key in denied and bool(record.get('is_admin')):
+            return True
+        default = 0 if permission_key in denied else 1
+        return bool(record.get('page_permissions', {}).get(permission_key, default))
 
     def _serve_protected_page(self, environ, start_response, template_path, permission_key=None):
         user_id = self._get_session_user(environ)
