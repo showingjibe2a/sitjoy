@@ -1029,7 +1029,7 @@ section.card.pm-card .pm-card-zone--search {
 /* 列表顶栏：搜索条与主按钮略收紧；搜索区内标签改为微型角标式，减少字级冗余 */
 .card.pm-card .form-group.pm-search,
 section.card.pm-card .form-group.pm-search {
-    margin: 0;
+    flex-direction: row;
     flex-wrap: wrap;
     align-items: center;
     gap: 0.26rem 0.34rem;
@@ -1421,10 +1421,33 @@ input.optional-date-input[type="text"]:focus {
     background: rgba(74, 78, 87, 0.25);
 }
 
+/* 工具栏搜索条：必须横向排列，覆盖 .form-group 的 column 布局 */
+.form-group.pm-search,
+.pm-search.form-group {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    margin: 0;
+    gap: 0.5rem;
+}
+
 .pm-search {
     display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
     gap: 0.5rem;
     align-items: center;
+}
+
+.form-group.pm-search > button,
+.pm-search > button {
+    flex: 0 0 auto;
+    width: auto;
+}
+
+.form-group.pm-search > .pm-search-title,
+.pm-search > .pm-search-title {
+    flex: 0 0 auto;
 }
 
 .pm-search-title {
@@ -4507,28 +4530,6 @@ a.nas-main-image-crumb:hover {
     flex-shrink: 0;
 }
 
-.home-profile-logout-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.22rem 0.55rem;
-    border-radius: var(--sj-radius-xs);
-    border: 1px solid rgba(182, 127, 127, 0.55);
-    background: rgba(182, 127, 127, 0.12);
-    color: #a04545;
-    font-size: 0.72rem;
-    font-weight: 600;
-    line-height: 1.2;
-    cursor: pointer;
-    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-}
-
-.home-profile-logout-btn:hover {
-    background: rgba(182, 127, 127, 0.22);
-    border-color: var(--morandi-rose);
-    color: #8f3535;
-}
-
 .home-profile-launcher {
     flex-shrink: 0;
     align-self: stretch;
@@ -4634,9 +4635,18 @@ a.nas-main-image-crumb:hover {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.35rem 0.38rem;
+    justify-content: space-between;
+    gap: 0.35rem 0.5rem;
     margin-top: 0.55rem;
     width: 100%;
+    min-width: 0;
+}
+
+.home-profile-meta-primary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem 0.38rem;
     min-width: 0;
 }
 
@@ -4675,13 +4685,18 @@ a.nas-main-image-crumb:hover {
 }
 
 .home-profile-tenure {
-    margin: 0 0 0 auto;
+    margin: 0;
     font-size: 0.8rem;
     font-weight: 500;
     color: var(--sj-color-muted);
     white-space: nowrap;
     letter-spacing: 0.01em;
     line-height: 1.25;
+    flex-shrink: 0;
+}
+
+.home-profile-tenure[hidden] {
+    display: none !important;
 }
 
 .home-profile-modal-layout {

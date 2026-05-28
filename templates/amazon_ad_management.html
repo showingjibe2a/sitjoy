@@ -7,64 +7,6 @@
     <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
-        .ad-red-segment {
-            display: inline-flex;
-            gap: 0.4rem;
-            padding: 0.28rem;
-            border-radius: 10px;
-            background: rgba(155, 74, 74, 0.18);
-            border: 1px solid rgba(155, 74, 74, 0.42);
-            width: fit-content;
-            max-width: 100%;
-            flex-wrap: wrap;
-        }
-        .ad-red-pill {
-            border: none;
-            border-radius: 999px;
-            padding: 0.32rem 0.74rem;
-            font-size: 0.82rem;
-            font-weight: 600;
-            color: #7a2e2e;
-            background: transparent;
-            cursor: pointer;
-            transition: background .15s ease, color .15s ease;
-        }
-        .ad-red-pill:hover { background: rgba(155, 74, 74, 0.18); }
-        .ad-red-pill.is-active { background: #9b4a4a; color: #fff; }
-        .status-pill.is-active { color: #fff; }
-        .status-pill--enabled.is-active { background: #7fa88b; }
-        .status-pill--paused.is-active { background: #b07b7b; }
-        .status-pill--archived.is-active { background: #8f82b5; }
-        .switch-wrap {
-            position: relative;
-            display: inline-flex;
-            width: 44px;
-            height: 24px;
-            vertical-align: middle;
-        }
-        .switch-wrap input { opacity: 0; width: 0; height: 0; }
-        .switch-slider {
-            position: absolute;
-            inset: 0;
-            background: #d9d2c8;
-            border-radius: 999px;
-            cursor: pointer;
-            transition: .2s;
-        }
-        .switch-slider:before {
-            content: '';
-            position: absolute;
-            width: 18px;
-            height: 18px;
-            left: 3px;
-            top: 3px;
-            background: #fff;
-            border-radius: 50%;
-            transition: .2s;
-            box-shadow: 0 1px 3px rgba(0,0,0,.2);
-        }
-        .switch-wrap input:checked + .switch-slider { background: #9b4a4a; }
-        .switch-wrap input:checked + .switch-slider:before { transform: translateX(20px); }
         .switch-field {
             display: inline-flex;
             align-items: center;
@@ -76,7 +18,7 @@
             background: rgba(236, 231, 223, 0.4);
         }
         .ad-subtype-segment { max-width: 100%; }
-        .ad-subtype-segment .ad-red-pill { white-space: nowrap; }
+        .ad-subtype-segment .status-pill { white-space: nowrap; }
         #modalAdLevelSegment[data-locked="1"] {
             opacity: 0.65;
             pointer-events: none;
@@ -170,10 +112,10 @@
                 <div class="form-group pm-form-full">
                     <label>广告类型<span class="required-asterisk">*</span></label>
                     <input type="hidden" id="modalAdLevel" value="portfolio">
-                    <div id="modalAdLevelSegment" class="ad-red-segment">
-                        <button type="button" class="ad-red-pill" data-target="modalAdLevel" data-value="portfolio" onclick="setSegmentValue('modalAdLevel','portfolio', true)">广告组合（Portfolio）</button>
-                        <button type="button" class="ad-red-pill" data-target="modalAdLevel" data-value="campaign" onclick="setSegmentValue('modalAdLevel','campaign', true)">广告活动（Campaign）</button>
-                        <button type="button" class="ad-red-pill" data-target="modalAdLevel" data-value="group" onclick="setSegmentValue('modalAdLevel','group', true)">广告组（Group）</button>
+                    <div id="modalAdLevelSegment" class="status-segment status-segment--inline">
+                        <button type="button" class="status-pill" data-target="modalAdLevel" data-value="portfolio" onclick="setSegmentValue('modalAdLevel','portfolio', true)">广告组合（Portfolio）</button>
+                        <button type="button" class="status-pill" data-target="modalAdLevel" data-value="campaign" onclick="setSegmentValue('modalAdLevel','campaign', true)">广告活动（Campaign）</button>
+                        <button type="button" class="status-pill" data-target="modalAdLevel" data-value="group" onclick="setSegmentValue('modalAdLevel','group', true)">广告组（Group）</button>
                     </div>
                 </div>
 
@@ -219,16 +161,16 @@
                 <div class="form-group level-campaign">
                     <label>策略<span class="required-asterisk">*</span></label>
                     <input type="hidden" id="modalStrategy" value="BE">
-                    <div class="ad-red-segment">
-                        <button type="button" class="ad-red-pill" data-target="modalStrategy" data-value="BE" onclick="setSegmentValue('modalStrategy','BE', true)">BE - 品牌扩张</button>
-                        <button type="button" class="ad-red-pill" data-target="modalStrategy" data-value="BD" onclick="setSegmentValue('modalStrategy','BD', true)">BD - 品牌防御</button>
-                        <button type="button" class="ad-red-pill" data-target="modalStrategy" data-value="PC" onclick="setSegmentValue('modalStrategy','PC', true)">PC - 竞品进攻</button>
+                    <div class="status-segment status-segment--inline">
+                        <button type="button" class="status-pill" data-target="modalStrategy" data-value="BE" onclick="setSegmentValue('modalStrategy','BE', true)">BE - 品牌扩张</button>
+                        <button type="button" class="status-pill" data-target="modalStrategy" data-value="BD" onclick="setSegmentValue('modalStrategy','BD', true)">BD - 品牌防御</button>
+                        <button type="button" class="status-pill" data-target="modalStrategy" data-value="PC" onclick="setSegmentValue('modalStrategy','PC', true)">PC - 竞品进攻</button>
                     </div>
                 </div>
                 <div class="form-group level-campaign">
                     <label>细分类<span class="required-asterisk">*</span></label>
                     <input type="hidden" id="modalSubtype" value="">
-                    <div id="modalSubtypeSegment" class="ad-red-segment ad-subtype-segment"></div>
+                    <div id="modalSubtypeSegment" class="status-segment status-segment--inline ad-subtype-segment"></div>
                 </div>
                 <div class="form-group level-campaign">
                     <label for="modalCampaignName">广告活动名称<span class="required-asterisk">*</span></label>
@@ -546,7 +488,7 @@
                 const value = String(item.id);
                 const active = String(input.value) === value ? 'is-active' : '';
                 const text = `${item.ad_class}-${item.subtype_code}`;
-                return `<button type="button" class="ad-red-pill ${active}" data-target="modalSubtype" data-value="${value}" onclick="setSegmentValue('modalSubtype','${value}', true)">${text}</button>`;
+                return `<button type="button" class="status-pill ${active}" data-target="modalSubtype" data-value="${value}" onclick="setSegmentValue('modalSubtype','${value}', true)">${text}</button>`;
             }).join('');
         }
 

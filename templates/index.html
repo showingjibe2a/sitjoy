@@ -410,13 +410,15 @@
                                 <h2 id="homeProfileDisplayName">加载中…</h2>
                                 <div class="home-profile-inline-actions">
                                     <button type="button" class="btn-secondary btn-small" id="homeProfileEditBtn">编辑资料</button>
-                                    <button type="button" class="home-profile-logout-btn" onclick="handleLogout()">登出</button>
+                                    <button type="button" class="btn-danger btn-small" onclick="handleLogout()">登出</button>
                                 </div>
                             </div>
                         </div>
                         <div class="home-profile-meta">
-                            <span class="home-profile-badge home-profile-badge--admin" id="homeProfileRole" hidden>管理员</span>
-                            <span class="home-profile-badge home-profile-badge--job" id="homeProfileJobTitle">职位</span>
+                            <div class="home-profile-meta-primary">
+                                <span class="home-profile-badge home-profile-badge--admin" id="homeProfileRole" hidden>管理员</span>
+                                <span class="home-profile-badge home-profile-badge--job" id="homeProfileJobTitle">职位</span>
+                            </div>
                             <span class="home-profile-tenure" id="homeProfileTenure" hidden></span>
                         </div>
                     </div>
