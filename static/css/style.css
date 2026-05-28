@@ -1110,6 +1110,7 @@ section.card.pm-card .pm-toolbar .btn-accent {
     font-size: 13px;
     color: #6b5e4d;
     font-weight: 600;
+    margin: 0;
 }
 .sku-sub-title {
     display: block;
@@ -1446,6 +1447,7 @@ input.optional-date-input[type="text"]:focus {
 .pm-form .form-group {
     margin: 0;
     flex-direction: column;
+    gap: 0.18rem;
 }
 
 .required-asterisk {
@@ -2999,8 +3001,14 @@ table.sf-table td.sf-cell-thumb {
 
 .form-group {
     display: flex;
-    gap: 0.5rem;
-    margin: 1rem 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.18rem;
+    margin: 0.45rem 0;
+}
+
+.form-group > label {
+    margin: 0;
 }
 
 .form-group input {
@@ -4492,45 +4500,49 @@ a.nas-main-image-crumb:hover {
 .home-profile-badge {
     display: inline-flex;
     align-items: center;
-    padding: 0.18rem 0.62rem;
-    border-radius: 999px;
+    padding: 0.2rem 0.58rem;
+    border-radius: 6px;
     font-size: 0.72rem;
     font-weight: 600;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.02em;
+    line-height: 1.25;
     color: #5f574c;
     background: rgba(255, 255, 255, 0.72);
     border: 1px solid rgba(207, 199, 189, 0.65);
 }
 
+.home-profile-badge--admin.is-admin,
 .home-profile-badge.is-admin {
     color: #7a4a3f;
     background: rgba(212, 165, 116, 0.18);
     border-color: rgba(212, 165, 116, 0.45);
 }
 
-.home-profile-meta-item {
-    font-size: 0.84rem;
-    color: #5f574c;
+.home-profile-badge--job {
+    color: #4a5f6b;
+    background: rgba(154, 163, 168, 0.14);
+    border-color: rgba(154, 163, 168, 0.42);
 }
 
-.home-profile-meta-item.is-empty {
-    color: #a39a8d;
-}
-
-.home-profile-meta-item--muted {
-    color: #8f8679;
-    font-size: 0.8rem;
+.home-profile-badge--job.is-empty {
+    color: #9a9288;
+    background: rgba(255, 255, 255, 0.55);
+    border-color: rgba(207, 199, 189, 0.5);
+    font-weight: 500;
 }
 
 .home-profile-actions {
     display: flex;
-    align-items: center;
-    gap: 0.65rem;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 0.4rem;
     flex-shrink: 0;
+    min-width: 5.25rem;
 }
 
-.home-profile-edit-btn {
-    white-space: nowrap;
+.home-profile-actions .home-profile-action-btn {
+    width: 100%;
 }
 
 .home-profile-modal-layout {
@@ -4538,6 +4550,37 @@ a.nas-main-image-crumb:hover {
     grid-template-columns: 200px 1fr;
     gap: 1.75rem;
     align-items: start;
+}
+
+.home-profile-modal-panels {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    min-width: 0;
+}
+
+.home-profile-panel {
+    margin: 0;
+}
+
+.home-profile-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem 1rem;
+    margin-top: 0.35rem;
+}
+
+.home-profile-readonly-grid {
+    margin-top: 0.35rem;
+}
+
+.home-profile-password-form {
+    margin-top: 0.35rem;
+    max-width: 22rem;
+}
+
+.home-profile-password-actions {
+    margin-top: 0.35rem;
 }
 
 .home-profile-modal-avatar-col {
@@ -4562,6 +4605,10 @@ a.nas-main-image-crumb:hover {
     margin: 0;
 }
 
+.home-profile-avatar-help {
+    margin-top: 0.15rem;
+}
+
 .home-profile-avatar-hint {
     margin: 0;
     font-size: 0.72rem;
@@ -4582,9 +4629,19 @@ a.nas-main-image-crumb:hover {
         align-items: stretch;
     }
     .home-profile-actions {
+        flex-direction: row;
+        flex-wrap: wrap;
         justify-content: flex-end;
+        min-width: 0;
+    }
+    .home-profile-actions .home-profile-action-btn {
+        width: auto;
     }
     .home-profile-modal-layout {
+        grid-template-columns: 1fr;
+    }
+    .home-profile-form-grid,
+    .home-profile-readonly-grid {
         grid-template-columns: 1fr;
     }
 }
@@ -4859,10 +4916,18 @@ a.nas-main-image-crumb:hover {
 }
 
 .permission-panel-title {
-    margin: 0 0 0.65rem;
+    margin: 0 0 0.45rem;
     color: var(--morandi-ink);
     font-size: 0.92rem;
     font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+}
+
+.permission-panel-title .help-dot {
+    flex-shrink: 0;
 }
 
 .permission-inline-grid {

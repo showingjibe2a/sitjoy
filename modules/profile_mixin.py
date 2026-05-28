@@ -61,6 +61,25 @@ class ProfileMixin:
         text = str(value).strip()
         return text[:10] if text else None
 
+    def _format_system_permission_label(self, row):
+        if not row or not int(row.get('is_admin') or 0):
+            return ''
+        if int(row.get('can_grant_admin') or 0):
+            return '管理员（可授权管理员）'
+        return '管理员'
+
+    def _format_supervisor_label(self, row):
+        if not row:
+            return ''
+        sid = int(row.get('direct_supervisor_id') or 0)
+        if sid <= 0:
+            return ''
+        name = (row.get('supervisor_name') or '').strip()
+        username = (row.get('supervisor_username') or '').strip()
+        if name and username:
+            return f'{name}（{username}）'
+        return name or username or ''
+
     def _serialize_user_profile_row(self, row):
         if not row:
             return None
@@ -81,8 +100,11 @@ class ProfileMixin:
             'birthday': self._format_profile_date(row.get('birthday')),
             'hire_date': self._format_profile_date(row.get('hire_date')),
             'job_title': (row.get('job_title') or '').strip(),
+            'direct_supervisor_id': int(row['direct_supervisor_id']) if row.get('direct_supervisor_id') else None,
+            'direct_supervisor_label': self._format_supervisor_label(row),
             'is_admin': int(row.get('is_admin') or 0),
             'can_grant_admin': int(row.get('can_grant_admin') or 0),
+            'system_permission_label': self._format_system_permission_label(row),
             'avatar_path': avatar_path,
             'avatar_url': f'/api/profile/avatar?user_id={uid}' if avatar_path else None,
             'created_at': created_at,
@@ -90,20 +112,101 @@ class ProfileMixin:
             'role_label': '管理员' if int(row.get('is_admin') or 0) else '员工',
         }
 
+    def _is_unknown_schema_error(self, exc):
+        msg = str(exc).lower()
+        return (
+            'unknown column' in msg
+            or 'does not exist' in msg
+            or "doesn't exist" in msg
+        )
+
     def _load_user_profile_row(self, conn, user_id):
+        """按已执行的 SQL 迁移逐级降级查询，避免缺列导致登录态接口失败。"""
+        uid = int(user_id)
+        queries = [
+            """
+            SELECT u.id, u.username, u.name, u.phone, u.birthday, u.hire_date, u.job_title,
+                   u.direct_supervisor_id, u.is_admin,
+                   COALESCE(u.can_grant_admin, 0) AS can_grant_admin,
+                   u.avatar_path, u.created_at,
+                   s.name AS supervisor_name, s.username AS supervisor_username
+            FROM users u
+            LEFT JOIN users s ON s.id = u.direct_supervisor_id
+            WHERE u.id=%s
+            LIMIT 1
+            """,
+            """
+            SELECT u.id, u.username, u.name, u.phone, u.birthday, u.hire_date, u.job_title,
+                   NULL AS direct_supervisor_id, u.is_admin,
+                   COALESCE(u.can_grant_admin, 0) AS can_grant_admin,
+                   u.avatar_path, u.created_at,
+                   NULL AS supervisor_name, NULL AS supervisor_username
+            FROM users u
+            WHERE u.id=%s
+            LIMIT 1
+            """,
+            """
+            SELECT u.id, u.username, u.name, u.phone, u.birthday,
+                   u.hire_date, u.job_title,
+                   NULL AS direct_supervisor_id, u.is_admin,
+                   COALESCE(u.can_grant_admin, 0) AS can_grant_admin,
+                   NULL AS avatar_path, u.created_at,
+                   NULL AS supervisor_name, NULL AS supervisor_username
+            FROM users u
+            WHERE u.id=%s
+            LIMIT 1
+            """,
+            """
+            SELECT u.id, u.username, u.name, u.phone, u.birthday,
+                   NULL AS hire_date, NULL AS job_title,
+                   NULL AS direct_supervisor_id, u.is_admin,
+                   COALESCE(u.can_grant_admin, 0) AS can_grant_admin,
+                   NULL AS avatar_path, u.created_at,
+                   NULL AS supervisor_name, NULL AS supervisor_username
+            FROM users u
+            WHERE u.id=%s
+            LIMIT 1
+            """,
+        ]
+        last_exc = None
+        with conn.cursor() as cur:
+            for sql in queries:
+                try:
+                    cur.execute(sql, (uid,))
+                    row = cur.fetchone()
+                    if row:
+                        return row
+                except Exception as e:
+                    if self._is_unknown_schema_error(e):
+                        last_exc = e
+                        continue
+                    raise
+        if last_exc:
+            print(f'Profile row load schema fallback exhausted: {last_exc}')
+        return None
+
+    def _load_supervisor_candidates(self, conn, user_id):
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, username, name, phone, birthday, hire_date, job_title, is_admin,
-                       COALESCE(can_grant_admin, 0) AS can_grant_admin,
-                       avatar_path, created_at
+                SELECT id, username, name
                 FROM users
-                WHERE id=%s
-                LIMIT 1
+                WHERE COALESCE(is_approved, 1) = 1 AND id <> %s
+                ORDER BY COALESCE(NULLIF(TRIM(name), ''), username) ASC, id ASC
                 """,
                 (int(user_id),),
             )
-            return cur.fetchone()
+            rows = cur.fetchall() or []
+        items = []
+        for row in rows:
+            uid = int(row.get('id') or 0)
+            if uid <= 0:
+                continue
+            name = (row.get('name') or '').strip()
+            username = (row.get('username') or '').strip()
+            label = f'{name}（{username}）' if name and username else (name or username or f'#{uid}')
+            items.append({'id': uid, 'label': label})
+        return items
 
     def _parse_profile_multipart_avatar(self, environ):
         content_type = str(environ.get('CONTENT_TYPE') or '')
@@ -166,26 +269,83 @@ class ProfileMixin:
             if method == 'GET':
                 with self._get_db_connection() as conn:
                     row = self._load_user_profile_row(conn, user_id)
+                    candidates = self._load_supervisor_candidates(conn, user_id)
                 profile = self._serialize_user_profile_row(row)
                 if not profile:
                     return self.send_json({'status': 'error', 'message': '用户不存在'}, start_response)
-                return self.send_json({'status': 'success', 'profile': profile}, start_response)
+                return self.send_json({
+                    'status': 'success',
+                    'profile': profile,
+                    'supervisor_candidates': candidates,
+                }, start_response)
 
-            if method == 'PUT' or (method == 'POST' and action == 'update'):
+            if method == 'POST' and action == 'change_password':
                 data = self._read_json_body(environ)
-                name = (data.get('name') or '').strip()
-                phone = (data.get('phone') or '').strip()
-                birthday_raw = (data.get('birthday') or '').strip()
-                birthday = self._parse_date_str(birthday_raw) if birthday_raw else None
+                password = (data.get('password') or '').strip()
+                password_confirm = (data.get('password_confirm') or '').strip()
+                if len(password) < 6:
+                    return self.send_json({'status': 'error', 'message': '新密码至少 6 位'}, start_response)
+                if password != password_confirm:
+                    return self.send_json({'status': 'error', 'message': '两次输入的密码不一致'}, start_response)
+                pwd_hash = self._hash_user_password(password)
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
+                            'UPDATE users SET password_hash=%s WHERE id=%s',
+                            (pwd_hash, int(user_id)),
+                        )
+                return self.send_json({'status': 'success', 'message': '密码已修改'}, start_response)
+
+            if method == 'PUT' or (method == 'POST' and action == 'update'):
+                data = self._read_json_body(environ)
+                username = (data.get('username') or '').strip()
+                phone = (data.get('phone') or '').strip()
+                birthday_raw = (data.get('birthday') or '').strip()
+                birthday = self._parse_date_str(birthday_raw) if birthday_raw else None
+                job_title = (data.get('job_title') or '').strip() or None
+                hire_date_raw = (data.get('hire_date') or '').strip()
+                hire_date = self._parse_date_str(hire_date_raw) if hire_date_raw else None
+                supervisor_raw = data.get('direct_supervisor_id')
+                supervisor_id = None
+                if supervisor_raw is not None and str(supervisor_raw).strip() != '':
+                    supervisor_id = self._parse_int(supervisor_raw)
+                    if not supervisor_id:
+                        return self.send_json({'status': 'error', 'message': '直属上级无效'}, start_response)
+                    if int(supervisor_id) == int(user_id):
+                        return self.send_json({'status': 'error', 'message': '不能将自己设为直属上级'}, start_response)
+                if not username:
+                    return self.send_json({'status': 'error', 'message': '登录账号不能为空'}, start_response)
+                with self._get_db_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            'SELECT id FROM users WHERE username=%s AND id<>%s LIMIT 1',
+                            (username, int(user_id)),
+                        )
+                        if cur.fetchone():
+                            return self.send_json({'status': 'error', 'message': '登录账号已存在，请更换'}, start_response)
+                        if supervisor_id:
+                            cur.execute(
+                                'SELECT id FROM users WHERE id=%s AND COALESCE(is_approved, 1)=1 LIMIT 1',
+                                (int(supervisor_id),),
+                            )
+                            if not cur.fetchone():
+                                return self.send_json({'status': 'error', 'message': '直属上级不存在或不可用'}, start_response)
+                        cur.execute(
                             """
                             UPDATE users
-                            SET name=%s, phone=%s, birthday=%s
+                            SET username=%s, phone=%s, birthday=%s,
+                                job_title=%s, hire_date=%s, direct_supervisor_id=%s
                             WHERE id=%s
                             """,
-                            (name or None, phone or None, birthday, int(user_id)),
+                            (
+                                username,
+                                phone or None,
+                                birthday,
+                                job_title,
+                                hire_date,
+                                supervisor_id,
+                                int(user_id),
+                            ),
                         )
                     row = self._load_user_profile_row(conn, user_id)
                 profile = self._serialize_user_profile_row(row)

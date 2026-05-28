@@ -412,24 +412,6 @@
             color: #8a7d6b;
         }
 
-        /* 登出按钮 */
-        .logout-btn {
-            padding: 8px 16px;
-            background: #f0f0f0;
-            color: #666;
-            border: none;
-            border-radius: 6px;
-            font-size: 12px;
-            cursor: pointer;
-            transition: all 0.2s;
-            z-index: 100;
-        }
-
-        .logout-btn:hover {
-            background: #e0e0e0;
-            color: #333;
-        }
-
         .home-topbar {
             margin-bottom: 1.25rem;
         }
@@ -489,19 +471,18 @@
                     </div>
                     <div class="home-profile-text">
                         <div class="home-profile-greeting">
-                            <span class="home-profile-kicker">SITJOY · 工作台</span>
+                            <span class="home-profile-kicker" id="homeProfileGreeting">加载中…</span>
                             <h2 id="homeProfileDisplayName">加载中…</h2>
                         </div>
                         <div class="home-profile-meta">
-                            <span class="home-profile-badge" id="homeProfileRole">员工</span>
-                            <span class="home-profile-meta-item" id="homeProfilePhone"></span>
-                            <span class="home-profile-meta-item home-profile-meta-item--muted" id="homeProfileJoined"></span>
+                            <span class="home-profile-badge home-profile-badge--admin" id="homeProfileRole" hidden>管理员</span>
+                            <span class="home-profile-badge home-profile-badge--job" id="homeProfileJobTitle">职位</span>
                         </div>
                     </div>
                 </div>
                 <div class="home-profile-actions">
-                    <button type="button" class="btn-ghost home-profile-edit-btn" id="homeProfileEditBtn">编辑资料</button>
-                    <button type="button" class="logout-btn" onclick="handleLogout()">登出</button>
+                    <button type="button" class="btn-secondary btn-small home-profile-action-btn" id="homeProfileEditBtn">编辑资料</button>
+                    <button type="button" class="btn-danger btn-small home-profile-action-btn" onclick="handleLogout()">登出</button>
                 </div>
             </section>
         </div>
@@ -633,7 +614,7 @@
                             <th style="width:120px;">管理员</th>
                             <th style="width:120px;">管理员授权</th>
                             <th style="min-width:460px;">页面访问权限</th>
-                            <th style="width:180px;">操作</th>
+                            <th style="width:240px;">操作</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -907,8 +888,7 @@
                 </div>
                 <div class="form-group pm-form-full">
                     <div class="permission-panel">
-                        <h4 class="permission-panel-title">权限设置</h4>
-                        <p class="permission-section-subtitle">可设置管理员身份、管理员授权权限，以及各子页面访问开关。</p>
+                        <h4 class="permission-panel-title">权限设置<span class="help-dot" data-tip="可设置管理员身份、管理员授权权限，以及各子页面访问开关。"></span></h4>
                         <div id="employeeCreatePermissionEditor"></div>
                     </div>
                 </div>
@@ -937,54 +917,91 @@
                             <div id="profileModalAvatarFallback" class="home-profile-avatar home-profile-avatar--lg home-profile-avatar--fallback">?</div>
                         </div>
                         <div class="home-profile-avatar-actions">
-                            <label class="btn-secondary home-profile-upload-label">
+                            <label class="btn-secondary btn-small home-profile-upload-label">
                                 更换头像
                                 <input type="file" id="profileAvatarInput" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
                             </label>
-                            <button type="button" class="btn-ghost" id="profileAvatarRemoveBtn">移除头像</button>
+                            <button type="button" class="btn-ghost btn-small" id="profileAvatarRemoveBtn">移除头像</button>
                         </div>
-                        <p class="home-profile-avatar-hint">JPG / PNG / WebP / GIF，最大 2MB</p>
+                        <span class="help-dot home-profile-avatar-help" data-tip="JPG / PNG / WebP / GIF，最大 2MB" aria-label="头像格式说明"></span>
                     </div>
-                    <form id="profileForm" class="pm-form home-profile-modal-form">
-                        <div class="form-group">
-                            <label>登录账号</label>
-                            <input type="text" id="profileUsername" readonly class="is-readonly">
-                        </div>
-                        <div class="form-group">
-                            <label>姓名</label>
-                            <input type="text" id="profileName" placeholder="显示名称">
-                        </div>
-                        <div class="form-group">
-                            <label>手机</label>
-                            <input type="text" id="profilePhone" placeholder="联系电话">
-                        </div>
-                        <div class="form-group">
-                            <label>生日</label>
-                            <input type="date" id="profileBirthday">
-                        </div>
-                        <div class="form-group">
-                            <label>角色</label>
-                            <input type="text" id="profileRole" readonly class="is-readonly">
-                        </div>
-                        <div class="form-group">
-                            <label>岗位</label>
-                            <input type="text" id="profileJobTitle" readonly class="is-readonly">
-                        </div>
-                        <div class="form-group">
-                            <label>入职时间</label>
-                            <input type="text" id="profileHireDate" readonly class="is-readonly">
-                        </div>
-                        <div class="form-group pm-form-full">
-                            <label>注册时间</label>
-                            <input type="text" id="profileCreatedAt" readonly class="is-readonly">
-                        </div>
-                    </form>
+                    <div class="home-profile-modal-panels">
+                        <section class="permission-panel home-profile-panel" aria-labelledby="profilePanelBasicTitle">
+                            <h4 class="permission-panel-title" id="profilePanelBasicTitle">① 基本信息<span class="help-dot" data-tip="姓名由管理员维护；可修改手机与生日。"></span></h4>
+                            <form id="profileForm" class="pm-form home-profile-form-grid">
+                                <div class="form-group">
+                                    <label>姓名</label>
+                                    <input type="text" id="profileName" readonly class="is-readonly" placeholder="—">
+                                </div>
+                                <div class="form-group">
+                                    <label>手机</label>
+                                    <input type="text" id="profilePhone" placeholder="联系电话">
+                                </div>
+                                <div class="form-group pm-form-full">
+                                    <label>生日</label>
+                                    <input type="date" id="profileBirthday">
+                                </div>
+                            </form>
+                        </section>
+                        <section class="permission-panel home-profile-panel" aria-labelledby="profilePanelJobTitle">
+                            <h4 class="permission-panel-title" id="profilePanelJobTitle">② 岗位信息<span class="help-dot" data-tip="岗位、直属上级与入职时间可自行维护。"></span></h4>
+                            <div class="pm-form home-profile-form-grid">
+                                <div class="form-group">
+                                    <label>岗位</label>
+                                    <input type="text" id="profileJobTitle" placeholder="例如：运营专员">
+                                </div>
+                                <div class="form-group">
+                                    <label>直属上级</label>
+                                    <select id="profileDirectSupervisor" data-universal-no-search="1">
+                                        <option value="">无</option>
+                                    </select>
+                                </div>
+                                <div class="form-group pm-form-full">
+                                    <label>入职时间</label>
+                                    <input type="date" id="profileHireDate">
+                                </div>
+                            </div>
+                        </section>
+                        <section class="permission-panel home-profile-panel" aria-labelledby="profilePanelSystemTitle">
+                            <h4 class="permission-panel-title" id="profilePanelSystemTitle">③ 系统信息<span class="help-dot" data-tip="登录账号须全站唯一；系统权限与注册时间仅供查看。"></span></h4>
+                            <div class="pm-form home-profile-form-grid home-profile-readonly-grid">
+                                <div class="form-group">
+                                    <label>登录账号</label>
+                                    <input type="text" id="profileUsername" placeholder="登录用户名" autocomplete="username">
+                                </div>
+                                <div class="form-group" id="profileSystemPermissionGroup" hidden>
+                                    <label>系统权限</label>
+                                    <input type="text" id="profileSystemPermission" readonly class="is-readonly">
+                                </div>
+                                <div class="form-group pm-form-full">
+                                    <label>注册时间</label>
+                                    <input type="text" id="profileCreatedAt" readonly class="is-readonly">
+                                </div>
+                            </div>
+                        </section>
+                        <section class="permission-panel home-profile-panel" aria-labelledby="profilePanelPasswordTitle">
+                            <h4 class="permission-panel-title" id="profilePanelPasswordTitle">④ 修改密码<span class="help-dot" data-tip="请连续输入两次相同的新密码（至少 6 位），仅修改密码时单独保存。"></span></h4>
+                            <div class="pm-form home-profile-password-form">
+                                <div class="form-group">
+                                    <label>新密码</label>
+                                    <input type="password" id="profileNewPassword" autocomplete="new-password" placeholder="至少 6 位">
+                                </div>
+                                <div class="form-group">
+                                    <label>确认新密码</label>
+                                    <input type="password" id="profileNewPasswordConfirm" autocomplete="new-password" placeholder="再次输入新密码">
+                                </div>
+                                <div class="home-profile-password-actions">
+                                    <button type="button" class="btn-secondary btn-small" id="profileChangePasswordBtn">修改密码</button>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
                 </div>
                 <div id="profileModalHint" class="response" style="display:none; margin-top:0.75rem;"></div>
             </div>
             <div class="pm-modal-actions">
                 <button type="button" class="btn-secondary" onclick="closeProfileModal()">取消</button>
-                <button type="button" class="btn-primary" id="profileSaveBtn">保存</button>
+                <button type="button" class="btn-primary" id="profileSaveBtn">保存资料</button>
             </div>
         </div>
     </div>
@@ -1025,15 +1042,13 @@
                 </div>
                 <div class="form-group pm-form-full">
                     <div class="permission-panel">
-                        <h4 class="permission-panel-title">权限设置</h4>
-                        <p class="permission-section-subtitle">预览表与编辑弹窗使用同一套权限字段。</p>
+                        <h4 class="permission-panel-title">权限设置<span class="help-dot" data-tip="预览表与编辑弹窗使用同一套权限字段。"></span></h4>
                         <div id="employeeEditPermissionEditor"></div>
                     </div>
                 </div>
                 <div class="form-group pm-form-full">
                     <div class="permission-panel">
-                        <h4 class="permission-panel-title">工厂数据范围</h4>
-                        <p class="permission-section-subtitle">默认可见全部工厂；切换为自定义后，仅可见选中的工厂及其关联 SKU。</p>
+                        <h4 class="permission-panel-title">工厂数据范围<span class="help-dot" data-tip="默认可见全部工厂；切换为自定义后，仅可见选中的工厂及其关联 SKU。"></span></h4>
                         <div class="pm-form" style="grid-template-columns: minmax(180px, 280px); margin-bottom: 0.5rem;">
                             <div class="form-group" style="margin:0;">
                                 <label>范围模式</label>
@@ -1526,7 +1541,7 @@
         async function checkAuth() {
             try {
                 const data = await fetchCurrentAuthState();
-                if (data.status === 'success') {
+                if (data && data.status === 'success') {
                     currentUser = data;
                     isAdmin = !!data.is_admin;
                     const indicator = document.getElementById('adminOnlyIndicator');
@@ -1545,10 +1560,15 @@
                     if (pendingSection && !isAdmin) pendingSection.style.display = 'none';
                     renderHomeProfile();
                 } else {
-                    window.location.href = '/login';
+                    const msg = String((data && data.message) || '');
+                    if (!data || msg.includes('未登录')) {
+                        window.location.href = '/login';
+                    } else {
+                        console.error('获取登录状态失败:', msg || data);
+                    }
                 }
             } catch (err) {
-                window.location.href = '/login';
+                console.error('获取登录状态失败:', err);
             }
         }
 
@@ -1556,20 +1576,6 @@
             const text = String(name || '').trim();
             if (!text) return '?';
             return text.slice(0, 1).toUpperCase();
-        }
-
-        function formatProfileBirthdayLabel(birthday) {
-            const text = String(birthday || '').trim();
-            if (!text) return '';
-            const part = text.slice(0, 10);
-            return part ? `生日 ${part}` : '';
-        }
-
-        function formatProfileJoinedLabel(createdAt) {
-            const text = String(createdAt || '').trim();
-            if (!text) return '';
-            const datePart = text.slice(0, 10);
-            return datePart ? `加入于 ${datePart}` : '';
         }
 
         function applyProfileAvatarToElements(avatarUrl, displayName) {
@@ -1596,56 +1602,132 @@
             });
         }
 
+        const HOME_PROFILE_WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+        function homeProfileTimeGreeting(hour) {
+            const h = Number(hour);
+            if (h < 5) return '夜深了';
+            if (h < 11) return '早上好';
+            if (h < 13) return '中午好';
+            if (h < 18) return '下午好';
+            if (h < 22) return '晚上好';
+            return '夜深了';
+        }
+
+        function formatHomeProfileGreeting(date) {
+            const now = date instanceof Date ? date : new Date();
+            const y = now.getFullYear();
+            const m = now.getMonth() + 1;
+            const d = now.getDate();
+            const wd = HOME_PROFILE_WEEKDAYS[now.getDay()] || '';
+            return `${homeProfileTimeGreeting(now.getHours())} · ${y}年${m}月${d}日 ${wd}`;
+        }
+
+        function renderHomeProfileGreeting() {
+            const el = document.getElementById('homeProfileGreeting');
+            if (el) el.textContent = formatHomeProfileGreeting();
+        }
+
         function renderHomeProfile() {
+            renderHomeProfileGreeting();
             if (!currentUser) return;
             const displayName = currentUser.display_name || currentUser.name || currentUser.username || '用户';
             const nameEl = document.getElementById('homeProfileDisplayName');
             if (nameEl) nameEl.textContent = displayName;
             const roleEl = document.getElementById('homeProfileRole');
             if (roleEl) {
-                roleEl.textContent = currentUser.role_label || (currentUser.is_admin ? '管理员' : '员工');
-                roleEl.classList.toggle('is-admin', !!currentUser.is_admin);
+                const isAdmin = !!currentUser.is_admin;
+                roleEl.hidden = !isAdmin;
+                roleEl.textContent = '管理员';
+                roleEl.classList.toggle('is-admin', isAdmin);
             }
-            const phoneEl = document.getElementById('homeProfilePhone');
-            if (phoneEl) {
-                const phone = String(currentUser.phone || '').trim();
-                phoneEl.textContent = phone || '未填写手机';
-                phoneEl.classList.toggle('is-empty', !phone);
-            }
-            const joinedEl = document.getElementById('homeProfileJoined');
-            if (joinedEl) {
-                const birthdayLabel = formatProfileBirthdayLabel(currentUser.birthday);
-                const hireLabel = currentUser.hire_date ? `入职 ${String(currentUser.hire_date).slice(0, 10)}` : '';
-                const jobLabel = (currentUser.job_title || '').trim();
-                const joinedLabel = formatProfileJoinedLabel(currentUser.created_at);
-                const parts = [jobLabel, hireLabel, birthdayLabel, joinedLabel].filter(Boolean);
-                joinedEl.textContent = parts.join(' · ');
+            const jobEl = document.getElementById('homeProfileJobTitle');
+            if (jobEl) {
+                const job = String(currentUser.job_title || '').trim();
+                jobEl.textContent = job || '未设置岗位';
+                jobEl.classList.toggle('is-empty', !job);
             }
             applyProfileAvatarToElements(currentUser.avatar_url || null, displayName);
         }
 
-        function openProfileModal() {
+        function formatProfileSystemPermission(profile) {
+            if (!profile) return '';
+            if (profile.system_permission_label) return profile.system_permission_label;
+            if (!profile.is_admin) return '';
+            if (profile.can_grant_admin) return '管理员（可授权管理员）';
+            return '管理员';
+        }
+
+        function fillProfileSupervisorSelect(candidates, selectedId) {
+            const sel = document.getElementById('profileDirectSupervisor');
+            if (!sel) return;
+            const selected = selectedId ? String(selectedId) : '';
+            sel.innerHTML = '<option value="">无</option>';
+            (candidates || []).forEach(item => {
+                const id = String(item.id || '');
+                if (!id) return;
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.textContent = item.label || id;
+                if (id === selected) opt.selected = true;
+                sel.appendChild(opt);
+            });
+        }
+
+        function fillProfileModalForm(profile, supervisorCandidates) {
+            if (!profile) return;
+            const nameEl = document.getElementById('profileName');
+            if (nameEl) nameEl.value = (profile.name || profile.display_name || '').trim() || '—';
+            const phoneEl = document.getElementById('profilePhone');
+            if (phoneEl) phoneEl.value = profile.phone || '';
+            const birthdayEl = document.getElementById('profileBirthday');
+            if (birthdayEl) birthdayEl.value = (profile.birthday || '').toString().slice(0, 10);
+            const jobEl = document.getElementById('profileJobTitle');
+            if (jobEl) jobEl.value = (profile.job_title || '').trim();
+            fillProfileSupervisorSelect(supervisorCandidates, profile.direct_supervisor_id);
+            const hireEl = document.getElementById('profileHireDate');
+            if (hireEl) hireEl.value = profile.hire_date ? String(profile.hire_date).slice(0, 10) : '';
+            const usernameEl = document.getElementById('profileUsername');
+            if (usernameEl) usernameEl.value = profile.username || '';
+            const permGroup = document.getElementById('profileSystemPermissionGroup');
+            const permEl = document.getElementById('profileSystemPermission');
+            const permLabel = formatProfileSystemPermission(profile);
+            if (permGroup) permGroup.hidden = !permLabel;
+            if (permEl) permEl.value = permLabel;
+            const createdEl = document.getElementById('profileCreatedAt');
+            if (createdEl) createdEl.value = profile.created_at || '';
+            const displayName = profile.display_name || profile.name || profile.username || '用户';
+            applyProfileAvatarToElements(profile.avatar_url || null, displayName);
+        }
+
+        async function openProfileModal() {
             if (!currentUser) return;
             const modal = document.getElementById('profileModal');
             if (!modal) return;
-            document.getElementById('profileUsername').value = currentUser.username || '';
-            document.getElementById('profileName').value = currentUser.name || '';
-            document.getElementById('profilePhone').value = currentUser.phone || '';
-            document.getElementById('profileBirthday').value = (currentUser.birthday || '').toString().slice(0, 10);
-            document.getElementById('profileRole').value = currentUser.role_label || (currentUser.is_admin ? '管理员' : '员工');
-            const profileJobEl = document.getElementById('profileJobTitle');
-            if (profileJobEl) profileJobEl.value = (currentUser.job_title || '').trim() || '—';
-            const profileHireEl = document.getElementById('profileHireDate');
-            if (profileHireEl) profileHireEl.value = currentUser.hire_date ? String(currentUser.hire_date).slice(0, 10) : '—';
-            document.getElementById('profileCreatedAt').value = currentUser.created_at || '';
             const hint = document.getElementById('profileModalHint');
             if (hint) {
                 hint.style.display = 'none';
                 hint.textContent = '';
             }
-            const displayName = currentUser.display_name || currentUser.name || currentUser.username || '用户';
-            applyProfileAvatarToElements(currentUser.avatar_url || null, displayName);
+            clearProfilePasswordFields();
+            fillProfileModalForm(currentUser, []);
             modal.classList.add('active');
+            try {
+                const resp = await fetch('/api/profile', { credentials: 'include' });
+                const data = await resp.json();
+                if (data.status === 'success' && data.profile) {
+                    fillProfileModalForm(data.profile, data.supervisor_candidates || []);
+                }
+            } catch (err) {
+                /* 使用 currentUser 已填写的表单 */
+            }
+        }
+
+        function clearProfilePasswordFields() {
+            const a = document.getElementById('profileNewPassword');
+            const b = document.getElementById('profileNewPasswordConfirm');
+            if (a) a.value = '';
+            if (b) b.value = '';
         }
 
         function closeProfileModal() {
@@ -1653,6 +1735,7 @@
             if (modal) modal.classList.remove('active');
             const input = document.getElementById('profileAvatarInput');
             if (input) input.value = '';
+            clearProfilePasswordFields();
         }
 
         function showProfileHint(message, isError) {
@@ -1673,11 +1756,20 @@
         }
 
         async function saveProfile() {
+            const supervisorSel = document.getElementById('profileDirectSupervisor');
+            const supervisorVal = supervisorSel ? supervisorSel.value : '';
             const payload = {
-                name: (document.getElementById('profileName').value || '').trim(),
+                username: (document.getElementById('profileUsername').value || '').trim(),
                 phone: (document.getElementById('profilePhone').value || '').trim(),
-                birthday: (document.getElementById('profileBirthday').value || '').trim()
+                birthday: (document.getElementById('profileBirthday').value || '').trim(),
+                job_title: (document.getElementById('profileJobTitle').value || '').trim(),
+                hire_date: (document.getElementById('profileHireDate').value || '').trim(),
+                direct_supervisor_id: supervisorVal === '' ? null : supervisorVal
             };
+            if (!payload.username) {
+                showProfileHint('登录账号不能为空', true);
+                return;
+            }
             const btn = document.getElementById('profileSaveBtn');
             if (btn) btn.disabled = true;
             try {
@@ -1724,6 +1816,68 @@
                 }
             } catch (err) {
                 showProfileHint('上传失败，请稍后重试', true);
+            }
+        }
+
+        async function changeProfilePassword() {
+            const password = (document.getElementById('profileNewPassword') || {}).value || '';
+            const passwordConfirm = (document.getElementById('profileNewPasswordConfirm') || {}).value || '';
+            if (password.length < 6) {
+                showProfileHint('新密码至少 6 位', true);
+                return;
+            }
+            if (password !== passwordConfirm) {
+                showProfileHint('两次输入的密码不一致', true);
+                return;
+            }
+            const btn = document.getElementById('profileChangePasswordBtn');
+            if (btn) btn.disabled = true;
+            try {
+                const resp = await fetch('/api/profile?action=change_password', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password, password_confirm: passwordConfirm })
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    clearProfilePasswordFields();
+                    showProfileHint(data.message || '密码已修改', false);
+                } else {
+                    showProfileHint(data.message || '修改失败', true);
+                }
+            } catch (err) {
+                showProfileHint('修改失败，请稍后重试', true);
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        async function resetEmployeePassword(empId) {
+            const id = parseInt(empId, 10) || 0;
+            if (!id || !isAdmin) return;
+            const emp = (window.employeeMap || {})[String(id)] || {};
+            const label = emp.username || emp.name || ('#' + id);
+            const msg = `确定将账号「${label}」的密码重置为 12345678？\n\n对方下次登录需使用新密码。`;
+            const ok = window.showAppConfirmAsync
+                ? await window.showAppConfirmAsync(msg)
+                : window.confirm(msg);
+            if (!ok) return;
+            try {
+                const resp = await fetch('/api/employee', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'reset_password', id })
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    if (window.showAppToast) window.showAppToast(data.message || '密码已重置', false, 2200);
+                } else {
+                    if (window.showAppToast) window.showAppToast(data.message || '重置失败', true, 0);
+                }
+            } catch (err) {
+                if (window.showAppToast) window.showAppToast('重置失败，请稍后重试', true, 0);
             }
         }
 
@@ -3295,10 +3449,11 @@
                                 </td>
                                 <td>
                                     <div class="pm-actions">
-                                        <button class="btn-secondary" data-action="edit" data-id="${emp.id}">编辑</button>
+                                        <button type="button" class="btn-secondary btn-small" data-action="edit" data-id="${emp.id}">编辑</button>
+                                        <button type="button" class="btn-secondary btn-small" data-action="reset-password" data-id="${emp.id}">重置密码</button>
                                         ${canDelete
-                                            ? `<button class="btn-danger" data-action="delete" data-id="${emp.id}">删除</button>`
-                                            : `<button class="btn-danger" disabled title="当前账号或管理员账号不可直接删除">删除</button>`}
+                                            ? `<button type="button" class="btn-danger btn-small" data-action="delete" data-id="${emp.id}">删除</button>`
+                                            : `<button type="button" class="btn-danger btn-small" disabled title="当前账号或管理员账号不可直接删除">删除</button>`}
                                     </div>
                                 </td>
                             </tr>
@@ -4078,6 +4233,10 @@
                     openEmployeeEditModal(item);
                     return;
                 }
+                if (action === 'reset-password') {
+                    resetEmployeePassword(id);
+                    return;
+                }
                 if (action === 'delete') {
                     const item = (window.employeeMap || {})[String(id)] || null;
                     const confirmPayload = await confirmEmployeeDeletion(item);
@@ -4174,9 +4333,12 @@
             }
             const profileAvatarRemoveBtn = document.getElementById('profileAvatarRemoveBtn');
             if (profileAvatarRemoveBtn) profileAvatarRemoveBtn.addEventListener('click', removeProfileAvatar);
+            const profileChangePasswordBtn = document.getElementById('profileChangePasswordBtn');
+            if (profileChangePasswordBtn) profileChangePasswordBtn.addEventListener('click', changeProfilePassword);
         }
 
         window.addEventListener('load', () => {
+            renderHomeProfileGreeting();
             checkAuth().then(() => {
                 buildCalendarControls();
                 bindEvents();
