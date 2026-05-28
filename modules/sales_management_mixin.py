@@ -3583,6 +3583,93 @@ class SalesManagementMixin:
             'by_spec_fabric': by_spec,
         }
 
+    def _forecast_ensure_row_history_for_inventory(self, conn, rows, forecast_mode, hist_start, hist_end, shop_ids=None):
+        """懒加载库存 patch 等场景下行上 history 为空，需补齐历史月销量供动销月分母计算。"""
+        if not rows or not hist_start or not hist_end:
+            return
+        hist_month_keys = list(self._forecast_iter_months(hist_start, hist_end))
+        if not hist_month_keys:
+            return
+        hist_empty = self._forecast_empty_history_perf_payload()
+        need_rows = [r for r in rows if not (r.get('history') or {})]
+        if not need_rows:
+            return
+
+        if forecast_mode == 'order':
+            links_by_op = {}
+            all_vids = set()
+            for r in need_rows:
+                oid = self._parse_int((r.get('labels') or {}).get('order_product_id'))
+                if not oid:
+                    continue
+                links = (r.get('labels') or {}).get('variant_links') or []
+                if not links:
+                    links = self._forecast_load_order_variant_links_by_order_product_ids(conn, [oid]).get(oid) or []
+                links_by_op[oid] = links
+                for vl in links or []:
+                    vid = self._parse_int(vl.get('variant_id'))
+                    if vid:
+                        all_vids.add(vid)
+            if not links_by_op:
+                return
+            vlist = sorted(all_vids)
+            history_by_variant = (
+                self._forecast_load_history_by_variant(conn, vlist, hist_start, hist_end, shop_ids=shop_ids)
+                if vlist else {}
+            )
+            wsum = self._forecast_variant_hist_weight_sum_for_variants(conn, vlist)
+            for r in need_rows:
+                oid = self._parse_int((r.get('labels') or {}).get('order_product_id'))
+                if not oid:
+                    continue
+                links = links_by_op.get(oid) or []
+                r['history'] = self._forecast_build_order_like_history_for_links(
+                    links, history_by_variant, wsum, hist_month_keys
+                )
+            return
+
+        if forecast_mode == 'platform':
+            sp_ids = sorted({
+                self._parse_int((r.get('labels') or {}).get('sales_product_id'))
+                for r in need_rows
+                if self._parse_int((r.get('labels') or {}).get('sales_product_id'))
+            })
+            if not sp_ids:
+                return
+            history = self._forecast_load_history_by_sales_product(
+                conn, sp_ids, hist_start, hist_end, shop_ids=shop_ids
+            )
+            for r in need_rows:
+                spid = self._parse_int((r.get('labels') or {}).get('sales_product_id'))
+                if not spid:
+                    continue
+                row_hist = {}
+                for hm in hist_month_keys:
+                    h = history.get((spid, hm))
+                    row_hist[hm] = h if h else hist_empty.copy()
+                r['history'] = row_hist
+            return
+
+        vids = sorted({
+            self._parse_int((r.get('labels') or {}).get('variant_id'))
+            for r in need_rows
+            if self._parse_int((r.get('labels') or {}).get('variant_id'))
+        })
+        if not vids:
+            return
+        history = self._forecast_load_history_by_variant(
+            conn, vids, hist_start, hist_end, shop_ids=shop_ids
+        )
+        for r in need_rows:
+            vid = self._parse_int((r.get('labels') or {}).get('variant_id'))
+            if not vid:
+                continue
+            row_hist = {}
+            for hm in hist_month_keys:
+                h = history.get((vid, hm))
+                row_hist[hm] = h if h else hist_empty.copy()
+            r['history'] = row_hist
+
     def _forecast_attach_inventory_to_rows(self, conn, rows, forecast_mode, history_months, hist_start=None, hist_end=None, shop_ids=None):
         """按各下单 SKU：本体库存 + 全部替代发货方案替代 SKU 库存（海外/在途/在库/在制），再与变体 BOM 成套汇总。
         规格/平台维度下：库存为变体整套瓶颈；动销月三列 = 所链接各下单 SKU（按替代方案展开后单独成套）的动销月再取最小值；
@@ -3594,6 +3681,9 @@ class SalesManagementMixin:
             hist_start = hm_list[0]
         if hist_end is None and hm_list:
             hist_end = hm_list[-1]
+        self._forecast_ensure_row_history_for_inventory(
+            conn, rows, forecast_mode, hist_start, hist_end, shop_ids=shop_ids,
+        )
         inv_by_op = {}
         variant_bom_links = {}
         variant_expanded = {}

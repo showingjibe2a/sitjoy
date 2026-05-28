@@ -233,7 +233,7 @@
   <section class="hero" style="margin-bottom:1.5rem;"><h2>在途物流库存管理</h2><p>管理在途物流节点、提单信息与SKU到货上架数量</p></section>
   <section class="pm-layout">
     <div class="card pm-card"><div class="pm-toolbar"><div class="pm-toolbar-actions"><div class="form-group pm-search" style="margin:0;"><span class="pm-search-title">搜索</span><input id="searchInput" type="text" placeholder="搜索箱号/提单号/工厂/货代"><span class="pm-search-title" style="margin-left:.4rem;">SKU</span><input id="skuFilterInput" type="text" placeholder="筛选SKU"><span class="pm-search-title" style="margin-left:.4rem;">颜色</span><input id="colorFilterInput" type="text" placeholder="筛选颜色(HEX/关键字)"><button class="btn-primary" onclick="loadList()">搜索</button><button class="btn-secondary" onclick="resetSearch()">清空</button></div><span class="pm-divider"></span><button class="btn-secondary" onclick="downloadTransitTemplate()">下载模板</button><button class="btn-secondary" onclick="triggerTransitUpload()">批量上传</button><button class="btn-secondary" onclick="openTransitDetailExportModal()">导出明细</button><input type="file" id="transitTemplateUploadInput" accept=".xlsx" style="display:none;"><span class="pm-divider"></span><button class="btn-accent" onclick="openCreateModal()">新增</button></div></div></div>
-    <div><table class="pm-table" id="mainTable"><colgroup><col style="width:54px"><col style="width:72px"><col style="width:96px"><col style="width:96px"><col style="width:160px"><col style="width:110px"><col style="width:48px"><col style="width:140px"><col style="width:66px"><col style="width:66px"><col style="width:110px"><col style="width:96px"><col style="width:160px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:110px"><col style="width:110px"><col style="width:110px"><col style="width:110px"><col style="width:150px"><col style="width:96px"><col style="width:110px"><col style="width:140px"><col style="width:96px"><col style="width:110px"><col style="width:14%"><col style="width:150px"><col style="width:150px"><col style="width:160px"></colgroup><thead><tr class="transit-head-main"><th rowspan="2" style="width:54px; text-align:center;"><input type="checkbox" id="transitSelectAll"></th><th rowspan="2" class="transit-col-box">箱号</th><th rowspan="2" class="transit-col-factory">工厂</th><th rowspan="2" class="transit-col-region">目的区域</th><th rowspan="2" class="transit-col-warehouse">目的仓库</th><th rowspan="2" class="transit-col-expected">预计上架时间</th><th class="transit-group-head transit-col-detail" colspan="4" data-disable-sort="1">SKU详情</th><th rowspan="2" class="transit-col-factory-ship">工厂发货日期</th><th rowspan="2" class="transit-col-status">已确认装箱量</th><th rowspan="2" class="transit-col-forwarder">货代</th><th rowspan="2" class="transit-col-bill">提单号</th><th rowspan="2" class="transit-col-shipping">船公司</th><th rowspan="2" class="transit-col-vessel">船名航次</th><th rowspan="2" class="transit-col-port-load">起运港</th><th rowspan="2" class="transit-col-port-dest">目的港</th><th rowspan="2" class="transit-col-doc">提供报关资料</th><th rowspan="2" class="transit-col-doc">提供清关资料</th><th rowspan="2" class="transit-col-date">ETD</th><th rowspan="2" class="transit-col-date">ETA</th><th rowspan="2" class="transit-col-arrival">到港日期</th><th rowspan="2" class="transit-col-warehouse-exp">预计送仓日期</th><th rowspan="2" class="transit-col-inbound">入库单号</th><th rowspan="2" class="transit-col-status">已登记上架</th><th rowspan="2" class="transit-col-date">实际上架日期</th><th rowspan="2" class="transit-col-qty-checked">已核对上架数量</th><th rowspan="2" class="transit-col-qty-consistent">数量一致</th><th rowspan="2" class="transit-col-financial">财务已核验</th><th rowspan="2" class="transit-col-remark">备注</th><th rowspan="2" class="transit-col-created">创建时间</th><th rowspan="2" class="transit-col-updated">更新时间</th><th rowspan="2" class="transit-col-edit">编辑</th></tr><tr class="transit-head-subrow"><th class="tiny-center transit-sub-sort-th" data-sort-field="representative_color" data-transit-sub-col="0">颜色<span class="transit-sort-ind" data-sort-indicator-for="representative_color">↕</span></th><th class="transit-sub-sort-th" data-sort-field="sku" data-transit-sub-col="1">SKU<span class="transit-sort-ind" data-sort-indicator-for="sku">↕</span></th><th class="tiny-center transit-sub-sort-th" data-sort-field="shipped_qty" data-transit-sub-col="2">发货数量<span class="transit-sort-ind" data-sort-indicator-for="shipped_qty">↕</span></th><th class="tiny-center transit-sub-sort-th" data-sort-field="listed_qty" data-transit-sub-col="3">上架数量<span class="transit-sort-ind" data-sort-indicator-for="listed_qty">↕</span></th></tr></thead><tbody><tr><td colspan="34" style="text-align:center;">加载中...</td></tr></tbody></table></div>
+    <div><table class="pm-table" id="mainTable" data-pm-col-resize-min="1" data-pm-col-resize-lock="0"><colgroup><col style="width:54px"><col style="width:72px"><col style="width:96px"><col style="width:96px"><col style="width:160px"><col style="width:110px"><col style="width:48px"><col style="width:140px"><col style="width:66px"><col style="width:66px"><col style="width:110px"><col style="width:96px"><col style="width:160px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:110px"><col style="width:110px"><col style="width:110px"><col style="width:110px"><col style="width:150px"><col style="width:96px"><col style="width:110px"><col style="width:140px"><col style="width:96px"><col style="width:110px"><col style="width:14%"><col style="width:150px"><col style="width:150px"><col style="width:160px"></colgroup><thead><tr class="transit-head-main"><th rowspan="2" style="width:54px; text-align:center;"><input type="checkbox" id="transitSelectAll"></th><th rowspan="2" class="transit-col-box">箱号</th><th rowspan="2" class="transit-col-factory">工厂</th><th rowspan="2" class="transit-col-region">目的区域</th><th rowspan="2" class="transit-col-warehouse">目的仓库</th><th rowspan="2" class="transit-col-expected">预计上架时间</th><th class="transit-group-head transit-col-detail" colspan="4" data-disable-sort="1" data-manage-col-key="SKU详情">SKU详情</th><th rowspan="2" class="transit-col-factory-ship">工厂发货日期</th><th rowspan="2" class="transit-col-status">已确认装箱量</th><th rowspan="2" class="transit-col-forwarder" data-manage-col-key="货代">货代</th><th rowspan="2" class="transit-col-bill">提单号</th><th rowspan="2" class="transit-col-shipping">船公司</th><th rowspan="2" class="transit-col-vessel">船名航次</th><th rowspan="2" class="transit-col-port-load">起运港</th><th rowspan="2" class="transit-col-port-dest">目的港</th><th rowspan="2" class="transit-col-doc">提供报关资料</th><th rowspan="2" class="transit-col-doc">提供清关资料</th><th rowspan="2" class="transit-col-date" data-manage-col-key="ETD">ETD</th><th rowspan="2" class="transit-col-date" data-manage-col-key="ETA">ETA</th><th rowspan="2" class="transit-col-arrival">到港日期</th><th rowspan="2" class="transit-col-warehouse-exp">预计送仓日期</th><th rowspan="2" class="transit-col-inbound">入库单号</th><th rowspan="2" class="transit-col-status">已登记上架</th><th rowspan="2" class="transit-col-date">实际上架日期</th><th rowspan="2" class="transit-col-qty-checked">已核对上架数量</th><th rowspan="2" class="transit-col-qty-consistent">数量一致</th><th rowspan="2" class="transit-col-financial">财务已核验</th><th rowspan="2" class="transit-col-remark">备注</th><th rowspan="2" class="transit-col-created">创建时间</th><th rowspan="2" class="transit-col-updated">更新时间</th><th rowspan="2" class="transit-col-edit">编辑</th></tr><tr class="transit-head-subrow"><th class="tiny-center transit-sub-sort-th" data-sort-field="representative_color" data-transit-sub-col="0">颜色<span class="transit-sort-ind" data-sort-indicator-for="representative_color">↕</span></th><th class="transit-sub-sort-th" data-sort-field="sku" data-transit-sub-col="1">SKU<span class="transit-sort-ind" data-sort-indicator-for="sku">↕</span></th><th class="tiny-center transit-sub-sort-th" data-sort-field="shipped_qty" data-transit-sub-col="2">发货数量<span class="transit-sort-ind" data-sort-indicator-for="shipped_qty">↕</span></th><th class="tiny-center transit-sub-sort-th" data-sort-field="listed_qty" data-transit-sub-col="3">上架数量<span class="transit-sort-ind" data-sort-indicator-for="listed_qty">↕</span></th></tr></thead><tbody><tr><td colspan="34" style="text-align:center;">加载中...</td></tr></tbody></table></div>
   </section>
 </div>
 
@@ -301,12 +301,11 @@ const transitExportFieldDefs = [
 let transitExportSelectedSnapshot = [];
 const transitDetailSortState = { field: '', dir: '' };
 const TRANSIT_SKU_DETAIL_COLS_KEY = 'sitjoy.transit.detail.skuDetailGridColsPx.v1';
-const TRANSIT_SKU_DETAIL_COL_START = 6;
+const TRANSIT_SKU_DETAIL_COL_KEY = 'SKU详情';
 const TRANSIT_SKU_DETAIL_DEFAULT = [48, 140, 66, 66];
 const TRANSIT_SUB_COL_RESIZE_EDGE_PX = 16;
 let transitSubColResize = null;
 let transitGroupResizing = false;
-let transitSkuApplying = false;
 
 function readTransitSkuDetailColWidths(){
   try {
@@ -314,7 +313,7 @@ function readTransitSkuDetailColWidths(){
     if(!raw) return null;
     const arr = JSON.parse(raw);
     if(!Array.isArray(arr) || arr.length !== 4) return null;
-    const nums = arr.map((x) => Math.max(24, Math.min(800, Math.round(Number(x) || 0))));
+    const nums = arr.map((x) => Math.max(1, Math.min(800, Math.round(Number(x) || 0))));
     if(nums.some((n) => !n)) return null;
     return nums;
   } catch (_e) {
@@ -330,7 +329,12 @@ function writeTransitSkuDetailColWidths(widths){
 function getTransitSkuDetailColEls(table){
   const t = table || document.querySelector('#mainTable');
   if(!t) return [];
-  return Array.from(t.querySelectorAll('colgroup col')).slice(TRANSIT_SKU_DETAIL_COL_START, TRANSIT_SKU_DETAIL_COL_START + 4);
+  const colgroup = t.querySelector('colgroup');
+  if(!colgroup) return [];
+  const cols = Array.from(colgroup.children || []).filter((node) => node && String(node.tagName || '').toUpperCase() === 'COL');
+  const keyed = cols.filter((col) => String(col.dataset.manageColKey || '').trim() === TRANSIT_SKU_DETAIL_COL_KEY);
+  if(keyed.length === 4) return keyed;
+  return cols.slice(6, 10);
 }
 function readTransitSkuDetailColWidthsFromDom(table){
   const cols = getTransitSkuDetailColEls(table);
@@ -338,7 +342,7 @@ function readTransitSkuDetailColWidthsFromDom(table){
     const col = cols[i];
     if(col){
       const m = String(col.style.width || '').match(/^([\d.]+)px/i);
-      if(m) return Math.max(24, Math.round(parseFloat(m[1])));
+      if(m) return Math.max(1, Math.round(parseFloat(m[1])));
     }
     return def;
   });
@@ -364,24 +368,10 @@ function getTransitSkuDetailTables(){
   const headTable = getTransitManagedHeadTable();
   return [mainTable, headTable].filter(Boolean);
 }
-function updateManagedTableSkuDetailGroupWidth(sum){
-  try {
-    const table = document.querySelector('#mainTable');
-    if(!table || !sum) return;
-    const pathKey = String(location.pathname || '/').replace(/[^a-zA-Z0-9/_-]+/g, '_');
-    const tableKey = table.id || table.dataset.manageKey || 'table';
-    const storeKey = `sitjoy:${pathKey}:${tableKey}:column-widths`;
-    const raw = localStorage.getItem(storeKey);
-    const obj = raw ? JSON.parse(raw) : {};
-    const skuKey = Object.keys(obj).find((k) => String(k).includes('SKU详情')) || 'SKU详情';
-    obj[skuKey] = sum;
-    localStorage.setItem(storeKey, JSON.stringify(obj));
-  } catch (_e) {}
-}
 function setMainTableTransitDetailCssVars(w0, w1, w2, w3){
   const table = document.querySelector('#mainTable');
   if(!table) return;
-  const nums = [w0, w1, w2, w3].map((x) => Math.max(24, Math.round(Number(x) || 0)));
+  const nums = [w0, w1, w2, w3].map((x) => Math.max(1, Math.round(Number(x) || 0)));
   const sum = nums.reduce((a, b) => a + b, 0) || 1;
   table.style.setProperty('--transit-d0', nums[0] + 'px');
   table.style.setProperty('--transit-d1', nums[1] + 'px');
@@ -391,53 +381,42 @@ function setMainTableTransitDetailCssVars(w0, w1, w2, w3){
     table.style.setProperty('--transit-p' + i, ((n / sum) * 100).toFixed(4) + '%');
   });
 }
-function syncTransitSkuDetailColElsToTables(widths, lock){
-  const table = document.querySelector('#mainTable');
-  if(!table) return null;
-  const w = (widths || []).map((x) => Math.max(24, Math.round(Number(x) || 0)));
+function syncTransitSkuDetailColElsToTables(widths){
+  const w = (widths || []).map((x) => Math.max(1, Math.round(Number(x) || 0)));
   if(w.length !== 4 || w.some((n) => !n)) return null;
   const sum = w.reduce((a, b) => a + b, 0);
-  transitSkuApplying = true;
-  try {
-    getTransitSkuDetailTables().forEach((tbl) => {
-      const cols = Array.from(tbl.querySelectorAll('colgroup col')).slice(TRANSIT_SKU_DETAIL_COL_START, TRANSIT_SKU_DETAIL_COL_START + 4);
-      w.forEach((px, i) => {
-        const col = cols[i];
-        if(!col) return;
-        col.style.width = px + 'px';
-        col.style.minWidth = lock ? (px + 'px') : '';
-        col.style.maxWidth = lock ? (px + 'px') : '';
-      });
-      getTransitSkuDetailSubThs(tbl).forEach((th) => {
-        const i = Number(th.dataset.transitSubCol || 0);
-        const px = w[i];
-        if(!px) return;
-        th.style.width = px + 'px';
-        th.style.minWidth = lock ? (px + 'px') : '';
-        th.style.maxWidth = lock ? (px + 'px') : '';
-      });
-      tbl.querySelectorAll('th.transit-col-detail[colspan="4"], td.transit-col-detail[colspan="4"]').forEach((cell) => {
-        cell.style.width = sum + 'px';
-        cell.style.minWidth = lock ? (sum + 'px') : '';
-        cell.style.maxWidth = lock ? (sum + 'px') : '';
-      });
+  getTransitSkuDetailTables().forEach((tbl) => {
+    const cols = getTransitSkuDetailColEls(tbl);
+    w.forEach((px, i) => {
+      const col = cols[i];
+      if(!col) return;
+      col.style.width = px + 'px';
+      col.style.minWidth = '';
+      col.style.maxWidth = '';
     });
-    setMainTableTransitDetailCssVars(w[0], w[1], w[2], w[3]);
-    if(lock) updateManagedTableSkuDetailGroupWidth(sum);
-  } finally {
-    transitSkuApplying = false;
-  }
+    getTransitSkuDetailSubThs(tbl).forEach((th) => {
+      const i = Number(th.dataset.transitSubCol || 0);
+      const px = w[i];
+      if(!px) return;
+      th.style.width = px + 'px';
+      th.style.minWidth = '';
+      th.style.maxWidth = '';
+    });
+    tbl.querySelectorAll('th.transit-col-detail[colspan="4"], td.transit-col-detail[colspan="4"]').forEach((cell) => {
+      cell.style.width = sum + 'px';
+      cell.style.minWidth = '';
+      cell.style.maxWidth = '';
+    });
+  });
+  setMainTableTransitDetailCssVars(w[0], w[1], w[2], w[3]);
   return w;
 }
 function applyTransitSkuDetailColWidths(widths, persist){
-  const w = syncTransitSkuDetailColElsToTables(widths, true);
+  const w = syncTransitSkuDetailColElsToTables(widths);
   if(!w) return;
   if(persist !== false) writeTransitSkuDetailColWidths(w);
 }
-function syncTransitDetailFromColgroup(){
-  applyTransitSkuDetailColWidths(readTransitSkuDetailColWidthsFromDom(), false);
-}
-function handleTransitDetailAfterGroupResize(){
+function syncTransitSkuDetailProportionsAfterGroupResize(){
   if(transitSubColResize) return;
   const table = document.querySelector('#mainTable');
   if(!table) return;
@@ -448,7 +427,7 @@ function handleTransitDetailAfterGroupResize(){
     const storedSum = stored.reduce((a, b) => a + b, 0);
     if(storedSum > 0 && Math.abs(storedSum - currentSum) > 2){
       const ratio = currentSum / storedSum;
-      applyTransitSkuDetailColWidths(stored.map((x) => Math.max(24, Math.round(x * ratio))));
+      applyTransitSkuDetailColWidths(stored.map((x) => Math.max(1, Math.round(x * ratio))), false);
       return;
     }
   }
@@ -491,38 +470,6 @@ function ensureTransitSubColResizers(){
     });
   });
 }
-function observeTransitSkuDetailColgroup(){
-  const table = document.querySelector('#mainTable');
-  if(!table || table.dataset.transitColgroupObs === '1') return;
-  table.dataset.transitColgroupObs = '1';
-  let raf = null;
-  const replay = () => {
-    if(raf) cancelAnimationFrame(raf);
-    raf = requestAnimationFrame(() => {
-      raf = null;
-      if(transitSubColResize || transitSkuApplying) return;
-      if(transitGroupResizing){
-        handleTransitDetailAfterGroupResize();
-        ensureTransitSubColResizers();
-        return;
-      }
-      ensureTransitSubColResizers();
-      const stored = readTransitSkuDetailColWidths();
-      if(stored) applyTransitSkuDetailColWidths(stored, false);
-      else syncTransitDetailFromColgroup();
-    });
-  };
-  const colgroup = table.querySelector('colgroup');
-  if(colgroup && typeof MutationObserver !== 'undefined'){
-    const ro = new MutationObserver(replay);
-    ro.observe(colgroup, { attributes: true, attributeFilter: ['style'], subtree: true });
-  }
-  const headTable = getTransitManagedHeadTable();
-  if(headTable && headTable.tHead && typeof MutationObserver !== 'undefined'){
-    const mo = new MutationObserver(replay);
-    mo.observe(headTable.tHead, { childList: true, subtree: true });
-  }
-}
 function bindTransitSkuDetailColLayout(){
   const table = document.querySelector('#mainTable');
   if(!table || table.dataset.transitSubcolLayoutBound === '1') return;
@@ -534,7 +481,12 @@ function bindTransitSkuDetailColLayout(){
     const th = handle.closest('th');
     if(th && (th.classList.contains('transit-col-detail') || String(th.textContent || '').includes('SKU详情'))) transitGroupResizing = true;
   }, true);
-  document.addEventListener('mouseup', () => { transitGroupResizing = false; }, true);
+  document.addEventListener('mouseup', () => {
+    if(transitSubColResize) return;
+    if(!transitGroupResizing) return;
+    transitGroupResizing = false;
+    requestAnimationFrame(syncTransitSkuDetailProportionsAfterGroupResize);
+  }, true);
 
   document.addEventListener('pointerdown', (e) => {
     let th = e.target && e.target.closest
@@ -563,7 +515,7 @@ function bindTransitSkuDetailColLayout(){
     if(!transitSubColResize) return;
     const delta = e.clientX - transitSubColResize.startX;
     const next = transitSubColResize.widths.slice();
-    next[transitSubColResize.colIdx] = Math.max(24, Math.round(transitSubColResize.startWidth + delta));
+    next[transitSubColResize.colIdx] = Math.max(1, Math.round(transitSubColResize.startWidth + delta));
     applyTransitSkuDetailColWidths(next, false);
   });
   document.addEventListener('pointerup', () => {
@@ -580,29 +532,16 @@ function bindTransitSkuDetailColLayout(){
     transitSubColResize = null;
   });
 
-  document.addEventListener('mousemove', (e) => {
-    if(!e.target || !e.target.closest || !e.target.closest('#mainTable .pm-col-resizer, .pm-managed-head-table .pm-col-resizer')) return;
-    requestAnimationFrame(handleTransitDetailAfterGroupResize);
-  }, true);
-  document.addEventListener('mouseup', (e) => {
-    if(!e.target || !e.target.closest || !e.target.closest('#mainTable .pm-col-resizer, .pm-managed-head-table .pm-col-resizer')) return;
-    requestAnimationFrame(() => requestAnimationFrame(handleTransitDetailAfterGroupResize));
-  }, true);
-
-  window.addEventListener('resize', () => requestAnimationFrame(handleTransitDetailAfterGroupResize));
-  observeTransitSkuDetailColgroup();
 }
 function refreshTransitSkuDetailLayout(){
   ensureTransitSubColResizers();
   const stored = readTransitSkuDetailColWidths();
   if(stored) applyTransitSkuDetailColWidths(stored, false);
-  else syncTransitDetailFromColgroup();
 }
 function initTransitSkuDetailColLayout(){
   bindTransitSkuDetailColLayout();
   refreshTransitSkuDetailLayout();
-  window.setTimeout(refreshTransitSkuDetailLayout, 0);
-  window.setTimeout(refreshTransitSkuDetailLayout, 350);
+  window.setTimeout(refreshTransitSkuDetailLayout, 400);
 }
 let transitActiveConfirmDone = null;
 const $=(s)=>document.querySelector(s);

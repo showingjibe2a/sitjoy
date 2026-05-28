@@ -2528,7 +2528,18 @@
         }
     }
 
+    function getPmTableColResizeMin(state){
+        const raw = Number(state && state.table && state.table.dataset && state.table.dataset.pmColResizeMin);
+        return Number.isFinite(raw) && raw >= 1 ? raw : 36;
+    }
+
+    function shouldPmTableLockColWidth(state){
+        return !(state && state.table && state.table.dataset && String(state.table.dataset.pmColResizeLock || '') === '0');
+    }
+
     function applyColumnWidthToDomForKey(state, columnKey, width){
+        const minColWidth = getPmTableColResizeMin(state);
+        const lockColWidth = shouldPmTableLockColWidth(state);
         const colgroup = state.table && state.table.querySelector ? state.table.querySelector('colgroup') : null;
         if(colgroup){
             const matchedCols = Array.from(colgroup.children || [])
@@ -2544,22 +2555,38 @@
                     ...matchedCols.map(col => Math.max(1, Number(col.dataset.manageColSpan || 1) || 1))
                 );
                 const span = Math.max(1, Math.min(spanHint, matchedCols.length));
-                const perColWidth = Math.max(24, Math.round(width / span));
+                const perColWidth = Math.max(minColWidth, Math.round(width / span));
                 matchedCols.forEach(node => {
                     node.style.width = `${perColWidth}px`;
-                    node.style.minWidth = `${perColWidth}px`;
-                    node.style.maxWidth = `${perColWidth}px`;
+                    if(lockColWidth){
+                        node.style.minWidth = `${perColWidth}px`;
+                        node.style.maxWidth = `${perColWidth}px`;
+                    } else {
+                        node.style.minWidth = '';
+                        node.style.maxWidth = '';
+                    }
                 });
             }
         }
+
+        const applyCellWidth = (cell) => {
+            if(!cell) return;
+            const w = Math.max(minColWidth, Math.round(width));
+            cell.style.width = `${w}px`;
+            if(lockColWidth){
+                cell.style.minWidth = `${w}px`;
+                cell.style.maxWidth = `${w}px`;
+            } else {
+                cell.style.minWidth = '';
+                cell.style.maxWidth = '';
+            }
+        };
 
         Array.from(state.table.rows || []).forEach(row => {
             if((row.cells || []).length !== state.headerCount) return;
             Array.from(row.cells).forEach(cell => {
                 if(String(cell.dataset.manageColKey || '').trim() !== columnKey) return;
-                cell.style.width = `${width}px`;
-                cell.style.minWidth = `${width}px`;
-                cell.style.maxWidth = `${width}px`;
+                applyCellWidth(cell);
             });
         });
 
@@ -2567,9 +2594,7 @@
             const headerRow = state.headerTable.tHead.rows[0];
             Array.from(headerRow.cells || []).forEach(cell => {
                 if(String(cell.dataset.manageColKey || '').trim() !== columnKey) return;
-                cell.style.width = `${width}px`;
-                cell.style.minWidth = `${width}px`;
-                cell.style.maxWidth = `${width}px`;
+                applyCellWidth(cell);
             });
         }
 
@@ -2578,9 +2603,7 @@
         // 分组汇总行仅 2 格（三角 + colspan），不满足 headerCount，需单独同步收起列宽，否则会与数据行/表头错位
         if(columnKey === '__sj_agg__' && state.table && state.table.tBodies && state.table.tBodies[0]){
             state.table.tBodies[0].querySelectorAll('td.sj-agg-toggle-cell').forEach((cell) => {
-                cell.style.width = `${width}px`;
-                cell.style.minWidth = `${width}px`;
-                cell.style.maxWidth = `${width}px`;
+                applyCellWidth(cell);
             });
         }
     }
@@ -2595,7 +2618,7 @@
     }
 
     function setColumnWidthByKey(state, key, widthPx){
-        const width = Math.max(36, Math.round(Number(widthPx) || 0));
+        const width = Math.max(getPmTableColResizeMin(state), Math.round(Number(widthPx) || 0));
         const columnKey = String(key || '').trim();
         if(!columnKey || columnKey === PM_MONTH_COL_GROUP_WIDTH_KEY) return;
         const keysToApply = resolveColumnWidthKeysToApply(state, columnKey);
