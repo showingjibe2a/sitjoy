@@ -19,6 +19,35 @@ class PagePermissionMixin:
             return set()
         return set(denied)
 
+    @staticmethod
+    def _user_is_admin(record):
+        """统一解析 users.is_admin（兼容 int / str / bool）。"""
+        if not record:
+            return False
+        try:
+            if int(record.get('id') or 0) == 1:
+                return True
+        except (TypeError, ValueError):
+            pass
+        value = record.get('is_admin')
+        if value is True:
+            return True
+        if value is False or value is None:
+            return False
+        try:
+            return int(value) == 1
+        except (TypeError, ValueError):
+            return str(value).strip().lower() in ('1', 'true', 'yes')
+
+    def _apply_admin_permission_grants(self, record, permissions):
+        """管理员默认拥有系统管理等受限模块权限（用于 API 返回与导航）。"""
+        if not permissions or not self._user_is_admin(record):
+            return permissions
+        merged = dict(permissions)
+        for key in self._denied_permission_keys():
+            merged[key] = 1
+        return merged
+
     def _normalize_page_permissions(self, raw_permissions, default_all=True):
         keys = self._permission_keys()
         denied = self._denied_permission_keys()
@@ -73,9 +102,7 @@ class PagePermissionMixin:
         if not row:
             return None
         row['page_permissions'] = self._normalize_page_permissions(row.get('page_permissions'))
-        if bool(row.get('is_admin')):
-            for key in self._denied_permission_keys():
-                row['page_permissions'][key] = 1
+        row['page_permissions'] = self._apply_admin_permission_grants(row, row['page_permissions'])
         return row
 
     def _can_manage_admin_permission(self, actor_record):
@@ -94,7 +121,7 @@ class PagePermissionMixin:
         if not record:
             return False
         denied = self._denied_permission_keys()
-        if permission_key in denied and bool(record.get('is_admin')):
+        if permission_key in denied and self._user_is_admin(record):
             return True
         default = 0 if permission_key in denied else 1
         return bool(record.get('page_permissions', {}).get(permission_key, default))

@@ -224,7 +224,13 @@ class AuthEmployeeMixin:
                 if not row:
                     return self.send_json({'status': 'error', 'message': '用户信息未找到'}, start_response)
 
-                page_permissions = self._normalize_page_permissions(row.get('page_permissions'))
+                perm_record = self._get_user_permission_record(user_id)
+                page_permissions = (
+                    perm_record.get('page_permissions')
+                    if perm_record
+                    else self._normalize_page_permissions(row.get('page_permissions'))
+                )
+                is_admin_flag = 1 if self._user_is_admin(row) else 0
                 profile_extra = {}
                 serialized = self._serialize_user_profile_row(row)
                 if serialized:
@@ -247,8 +253,8 @@ class AuthEmployeeMixin:
                     'name': row.get('name') or row.get('username'),
                     'phone': row.get('phone'),
                     'birthday': profile_extra.get('birthday', row.get('birthday')),
-                        'is_admin': int(row.get('is_admin') or 0),
-                        'can_grant_admin': int(row.get('can_grant_admin') or 0),
+                    'is_admin': is_admin_flag,
+                    'can_grant_admin': int(row.get('can_grant_admin') or 0),
                     'page_permissions': page_permissions,
                     'page_permission_labels': getattr(self, 'PAGE_PERMISSION_LABELS', {}),
                     'page_permission_groups': getattr(self, 'PAGE_PERMISSION_GROUPS', []),

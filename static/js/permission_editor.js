@@ -187,9 +187,20 @@ window.SitjoyPerm = window.SitjoyPerm || {};
         syncPermissionEditor(root);
     }
 
+    function isAuthAdminUser(user) {
+        if (!user) return false;
+        if (Number(user.id || 0) === 1) return true;
+        const value = user.is_admin;
+        if (value === true || value === 1) return true;
+        if (value === false || value === 0 || value == null) return false;
+        const num = Number(value);
+        if (!Number.isNaN(num)) return num === 1;
+        return String(value).trim() === '1';
+    }
+
     function hasPageAccess(user, key) {
         if (!user || !key) return false;
-        if (user.is_admin) return true;
+        if (isAuthAdminUser(user)) return true;
         const perms = user.page_permissions || {};
         return !!perms[key];
     }

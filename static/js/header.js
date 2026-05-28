@@ -5753,14 +5753,26 @@
     window.showAppUploadProgress = showAppUploadProgress;
     window.hideAppUploadProgress = hideAppUploadProgress;
 
+    function isAuthAdmin(authData){
+        if(!authData) return false;
+        if(Number(authData.id || 0) === 1) return true;
+        const value = authData.is_admin;
+        if(value === true || value === 1) return true;
+        if(value === false || value === 0 || value == null) return false;
+        const num = Number(value);
+        if(!Number.isNaN(num)) return num === 1;
+        return String(value).trim() === '1';
+    }
+
     function applyHeaderPermissions(authData){
         const permissions = authData && authData.page_permissions ? authData.page_permissions : null;
         if(!permissions) return;
+        const adminUser = isAuthAdmin(authData);
 
         document.querySelectorAll('[data-page-key]').forEach(link => {
             const key = String(link.dataset.pageKey || '');
             if(!key) return;
-            const allowed = !!permissions[key];
+            const allowed = adminUser || !!permissions[key];
             const item = link.closest('li');
             if(item && !item.classList.contains('dropdown')){
                 item.style.display = allowed ? '' : 'none';

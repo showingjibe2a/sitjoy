@@ -4,9 +4,20 @@
     let currentUser = null;
     let isAdmin = false;
 
+    function isAuthAdminUser(user) {
+        if (!user) return false;
+        if (Number(user.id || 0) === 1) return true;
+        const value = user.is_admin;
+        if (value === true || value === 1) return true;
+        if (value === false || value === 0 || value == null) return false;
+        const num = Number(value);
+        if (!Number.isNaN(num)) return num === 1;
+        return String(value).trim() === '1';
+    }
+
     function canAccessEmployeePage(user) {
         if (!user) return false;
-        if (user.is_admin) return true;
+        if (isAuthAdminUser(user)) return true;
         return P().hasPageAccess(user, 'system_employee_management');
     }
 
@@ -573,7 +584,7 @@
                     return;
                 }
                 currentUser = data;
-                isAdmin = !!data.is_admin;
+                isAdmin = isAuthAdminUser(data);
                 P().initPermContext(data);
                 if (!canAccessEmployeePage(data)) {
                     window.location.href = '/';
