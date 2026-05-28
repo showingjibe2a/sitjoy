@@ -218,60 +218,37 @@ class AuthEmployeeMixin:
                 if not user_id:
                     return self.send_json({'status': 'error', 'message': '未登录'}, start_response)
 
-                row = None
                 with self._get_db_connection() as conn:
-                    load_profile = getattr(self, '_load_user_profile_row', None)
-                    if callable(load_profile):
-                        try:
-                            row = load_profile(conn, user_id)
-                        except Exception as e:
-                            print(f'Auth current profile load failed: {e}')
-                            row = None
-                    if not row:
-                        with conn.cursor() as cur:
-                            cur.execute(
-                                """
-                                SELECT id, username, name, phone, birthday, is_admin,
-                                       COALESCE(can_grant_admin, 0) AS can_grant_admin,
-                                       page_permissions, created_at
-                                FROM users
-                                WHERE id=%s
-                                LIMIT 1
-                                """,
-                                (user_id,),
-                            )
-                            row = cur.fetchone()
+                    row = self._load_user_profile_row(conn, user_id)
 
                 if not row:
                     return self.send_json({'status': 'error', 'message': '用户信息未找到'}, start_response)
 
                 page_permissions = self._normalize_page_permissions(row.get('page_permissions'))
                 profile_extra = {}
-                serialize = getattr(self, '_serialize_user_profile_row', None)
-                if callable(serialize):
-                    serialized = serialize(row)
-                    if serialized:
-                        profile_extra = {
-                            'username': serialized.get('username') or '',
-                            'display_name': serialized.get('display_name') or '',
-                            'avatar_url': serialized.get('avatar_url'),
-                            'created_at': serialized.get('created_at') or '',
-                            'role_label': serialized.get('role_label') or '',
-                            'birthday': serialized.get('birthday'),
-                            'hire_date': serialized.get('hire_date'),
-                            'job_title': serialized.get('job_title') or '',
-                            'direct_supervisor_id': serialized.get('direct_supervisor_id'),
-                            'direct_supervisor_label': serialized.get('direct_supervisor_label') or '',
-                            'system_permission_label': serialized.get('system_permission_label') or '',
-                        }
+                serialized = self._serialize_user_profile_row(row)
+                if serialized:
+                    profile_extra = {
+                        'username': serialized.get('username') or '',
+                        'display_name': serialized.get('display_name') or '',
+                        'avatar_url': serialized.get('avatar_url'),
+                        'created_at': serialized.get('created_at') or '',
+                        'role_label': serialized.get('role_label') or '',
+                        'birthday': serialized.get('birthday'),
+                        'hire_date': serialized.get('hire_date'),
+                        'job_title': serialized.get('job_title') or '',
+                        'direct_supervisor_id': serialized.get('direct_supervisor_id'),
+                        'direct_supervisor_label': serialized.get('direct_supervisor_label') or '',
+                        'system_permission_label': serialized.get('system_permission_label') or '',
+                    }
                 return self.send_json({
                     'status': 'success',
                     'id': row['id'],
                     'name': row.get('name') or row.get('username'),
                     'phone': row.get('phone'),
                     'birthday': profile_extra.get('birthday', row.get('birthday')),
-                    'is_admin': row['is_admin'],
-                    'can_grant_admin': row.get('can_grant_admin', 0),
+                        'is_admin': int(row.get('is_admin') or 0),
+                        'can_grant_admin': int(row.get('can_grant_admin') or 0),
                     'page_permissions': page_permissions,
                     'page_permission_labels': getattr(self, 'PAGE_PERMISSION_LABELS', {}),
                     'page_permission_groups': getattr(self, 'PAGE_PERMISSION_GROUPS', []),

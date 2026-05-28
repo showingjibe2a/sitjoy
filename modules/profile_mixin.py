@@ -112,78 +112,23 @@ class ProfileMixin:
             'role_label': '管理员' if int(row.get('is_admin') or 0) else '员工',
         }
 
-    def _is_unknown_schema_error(self, exc):
-        msg = str(exc).lower()
-        return (
-            'unknown column' in msg
-            or 'does not exist' in msg
-            or "doesn't exist" in msg
-        )
-
     def _load_user_profile_row(self, conn, user_id):
-        """按已执行的 SQL 迁移逐级降级查询，避免缺列导致登录态接口失败。"""
-        uid = int(user_id)
-        queries = [
-            """
-            SELECT u.id, u.username, u.name, u.phone, u.birthday, u.hire_date, u.job_title,
-                   u.direct_supervisor_id, u.is_admin,
-                   COALESCE(u.can_grant_admin, 0) AS can_grant_admin,
-                   u.avatar_path, u.created_at,
-                   s.name AS supervisor_name, s.username AS supervisor_username
-            FROM users u
-            LEFT JOIN users s ON s.id = u.direct_supervisor_id
-            WHERE u.id=%s
-            LIMIT 1
-            """,
-            """
-            SELECT u.id, u.username, u.name, u.phone, u.birthday, u.hire_date, u.job_title,
-                   NULL AS direct_supervisor_id, u.is_admin,
-                   COALESCE(u.can_grant_admin, 0) AS can_grant_admin,
-                   u.avatar_path, u.created_at,
-                   NULL AS supervisor_name, NULL AS supervisor_username
-            FROM users u
-            WHERE u.id=%s
-            LIMIT 1
-            """,
-            """
-            SELECT u.id, u.username, u.name, u.phone, u.birthday,
-                   u.hire_date, u.job_title,
-                   NULL AS direct_supervisor_id, u.is_admin,
-                   COALESCE(u.can_grant_admin, 0) AS can_grant_admin,
-                   NULL AS avatar_path, u.created_at,
-                   NULL AS supervisor_name, NULL AS supervisor_username
-            FROM users u
-            WHERE u.id=%s
-            LIMIT 1
-            """,
-            """
-            SELECT u.id, u.username, u.name, u.phone, u.birthday,
-                   NULL AS hire_date, NULL AS job_title,
-                   NULL AS direct_supervisor_id, u.is_admin,
-                   COALESCE(u.can_grant_admin, 0) AS can_grant_admin,
-                   NULL AS avatar_path, u.created_at,
-                   NULL AS supervisor_name, NULL AS supervisor_username
-            FROM users u
-            WHERE u.id=%s
-            LIMIT 1
-            """,
-        ]
-        last_exc = None
         with conn.cursor() as cur:
-            for sql in queries:
-                try:
-                    cur.execute(sql, (uid,))
-                    row = cur.fetchone()
-                    if row:
-                        return row
-                except Exception as e:
-                    if self._is_unknown_schema_error(e):
-                        last_exc = e
-                        continue
-                    raise
-        if last_exc:
-            print(f'Profile row load schema fallback exhausted: {last_exc}')
-        return None
+            cur.execute(
+                """
+                SELECT u.id, u.username, u.name, u.phone, u.birthday, u.hire_date, u.job_title,
+                       u.direct_supervisor_id, u.is_admin,
+                       COALESCE(u.can_grant_admin, 0) AS can_grant_admin,
+                       u.page_permissions, u.avatar_path, u.created_at,
+                       s.name AS supervisor_name, s.username AS supervisor_username
+                FROM users u
+                LEFT JOIN users s ON s.id = u.direct_supervisor_id
+                WHERE u.id=%s
+                LIMIT 1
+                """,
+                (int(user_id),),
+            )
+            return cur.fetchone()
 
     def _load_supervisor_candidates(self, conn, user_id):
         with conn.cursor() as cur:

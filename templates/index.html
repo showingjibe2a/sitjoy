@@ -477,6 +477,7 @@
                         <div class="home-profile-meta">
                             <span class="home-profile-badge home-profile-badge--admin" id="homeProfileRole" hidden>管理员</span>
                             <span class="home-profile-badge home-profile-badge--job" id="homeProfileJobTitle">职位</span>
+                            <span class="home-profile-tenure" id="homeProfileTenure" hidden></span>
                         </div>
                     </div>
                 </div>
@@ -1541,9 +1542,9 @@
         async function checkAuth() {
             try {
                 const data = await fetchCurrentAuthState();
-                if (data && data.status === 'success') {
+                if (data.status === 'success') {
                     currentUser = data;
-                    isAdmin = !!data.is_admin;
+                    isAdmin = isProfileAdmin(data);
                     const indicator = document.getElementById('adminOnlyIndicator');
                     if (indicator) {
                         indicator.style.display = isAdmin ? 'flex' : 'none';
@@ -1560,15 +1561,10 @@
                     if (pendingSection && !isAdmin) pendingSection.style.display = 'none';
                     renderHomeProfile();
                 } else {
-                    const msg = String((data && data.message) || '');
-                    if (!data || msg.includes('未登录')) {
-                        window.location.href = '/login';
-                    } else {
-                        console.error('获取登录状态失败:', msg || data);
-                    }
+                    window.location.href = '/login';
                 }
             } catch (err) {
-                console.error('获取登录状态失败:', err);
+                window.location.href = '/login';
             }
         }
 
@@ -1628,24 +1624,58 @@
             if (el) el.textContent = formatHomeProfileGreeting();
         }
 
+        function isProfileAdmin(user) {
+            const value = user && user.is_admin;
+            if (value === true || value === 1) return true;
+            if (value === false || value === 0 || value == null) return false;
+            const num = Number(value);
+            if (!Number.isNaN(num)) return num === 1;
+            return String(value).trim() === '1';
+        }
+
+        function calcProfileTenureDays(hireDate) {
+            const text = String(hireDate || '').trim().slice(0, 10);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+            const parts = text.split('-').map(n => parseInt(n, 10));
+            const start = new Date(parts[0], parts[1] - 1, parts[2]);
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const diff = Math.round((today - start) / 86400000);
+            return diff >= 0 ? diff : null;
+        }
+
         function renderHomeProfile() {
             renderHomeProfileGreeting();
             if (!currentUser) return;
             const displayName = currentUser.display_name || currentUser.name || currentUser.username || '用户';
             const nameEl = document.getElementById('homeProfileDisplayName');
             if (nameEl) nameEl.textContent = displayName;
+            const isAdmin = isProfileAdmin(currentUser);
             const roleEl = document.getElementById('homeProfileRole');
             if (roleEl) {
-                const isAdmin = !!currentUser.is_admin;
-                roleEl.hidden = !isAdmin;
                 roleEl.textContent = '管理员';
                 roleEl.classList.toggle('is-admin', isAdmin);
+                roleEl.hidden = !isAdmin;
+                roleEl.style.display = isAdmin ? 'inline-flex' : 'none';
             }
             const jobEl = document.getElementById('homeProfileJobTitle');
             if (jobEl) {
                 const job = String(currentUser.job_title || '').trim();
                 jobEl.textContent = job || '未设置岗位';
                 jobEl.classList.toggle('is-empty', !job);
+            }
+            const tenureEl = document.getElementById('homeProfileTenure');
+            if (tenureEl) {
+                const days = calcProfileTenureDays(currentUser.hire_date);
+                if (days === null) {
+                    tenureEl.hidden = true;
+                    tenureEl.style.display = 'none';
+                    tenureEl.textContent = '';
+                } else {
+                    tenureEl.hidden = false;
+                    tenureEl.style.display = '';
+                    tenureEl.textContent = `已入职：${days}天`;
+                }
             }
             applyProfileAvatarToElements(currentUser.avatar_url || null, displayName);
         }
