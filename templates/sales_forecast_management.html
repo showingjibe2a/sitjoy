@@ -2471,9 +2471,12 @@
             const wipDays = Math.max(0, parseInt(lt.wip_days, 10) || 0);
             const today = sfTodayYmd();
             /* 海外仓/在途：全部目的区域；regionName 仅用于工厂在库/在制→上架月 */
-            const overseasInit = getTotalOverseasQty(detail);
+            const invScalars = (row && row.inventory) || {};
+            const overseasInit = Math.max(0, Number(invScalars.overseas_qty) || 0)
+                || getTotalOverseasQty(detail);
             const transitBatches = detail.transit_batches || [];
-            const factoryStock = Math.max(0, Number(detail.factory_stock_qty) || 0);
+            const factoryStock = Math.max(0, Number(invScalars.in_stock_qty) || 0)
+                || Math.max(0, Number(detail.factory_stock_qty) || 0);
             const wipBatches = detail.wip_batches || [];
 
             const transitArrivals = new Map();
@@ -5783,7 +5786,7 @@
             return o + t + st + wp;
         }
 
-        const SF_INV_GLOBAL_FOOTNOTE = '合计 = 各替代发货方案分别成套折算后的库存相加（方案内多 SKU 取瓶颈；多方案之间不累加同一 SKU 的配比）。';
+        const SF_INV_GLOBAL_FOOTNOTE = '列合计 = 本体（下单 SKU）各阶库存 + 各替代发货方案分别成套折算后相加（方案内多 SKU 取瓶颈）。';
 
         function sfInvDimDef(id, label, columns, rows, opts) {
             const o = opts || {};
@@ -6072,7 +6075,7 @@
                 dimensions.push(sfInvDimDef('substitute_plans', '替代方案', subCols,
                     buildSfInvSubstitutePlanRows(row, comp, tierFilter), {
                         title: '替代发货方案',
-                        note: '含本体（下单 SKU）与各替代发货 SKU 在当前列相关层级的原始库存；列合计仍仅按替代方案折算。',
+                        note: '含本体与各替代 SKU 的原始库存；列合计 = 本体 + 各替代方案分别成套折算后相加。',
                         footnote: SF_INV_GLOBAL_FOOTNOTE,
                     }));
             }

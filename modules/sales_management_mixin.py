@@ -2729,10 +2729,12 @@ class SalesManagementMixin:
         with conn.cursor() as cur:
             cur.execute(
                 f"""
-                SELECT order_product_id, COALESCE(SUM(available_qty), 0) AS q
-                FROM logistics_overseas_inventory
-                WHERE order_product_id IN ({ph})
-                GROUP BY order_product_id
+                SELECT oi.order_product_id, COALESCE(SUM(oi.available_qty), 0) AS q
+                FROM logistics_overseas_inventory oi
+                INNER JOIN logistics_overseas_warehouses w ON w.id = oi.warehouse_id
+                WHERE oi.order_product_id IN ({ph})
+                  AND COALESCE(w.is_enabled, 1) = 1
+                GROUP BY oi.order_product_id
                 """,
                 tpl,
             )
@@ -3023,6 +3025,50 @@ class SalesManagementMixin:
         """单条 BOM 链接列表的各阶可售套数（min 瓶颈）。"""
         return self._forecast_bom_tier_assembled_counts(inv_by_op, source_pairs)
 
+    def _forecast_add_inv_agg(self, base, extra):
+        """各阶库存件数相加（本体 1:1 + 替代方案成套结果）。"""
+        out = self._forecast_inventory_zero()
+        b = base or out
+        e = extra or out
+        for k in out:
+            out[k] = int(b.get(k) or 0) + int(e.get(k) or 0)
+        return out
+
+    def _forecast_owner_inv_agg(self, inv_by_op, oid):
+        oid = self._parse_int(oid)
+        if not oid:
+            return self._forecast_inventory_zero()
+        return dict(inv_by_op.get(int(oid)) or self._forecast_inventory_zero())
+
+    def _forecast_merge_surplus_detail_add(self, a, b):
+        """合并两份盈余明细（相加），用于本体库存 + 替代方案折算库存。"""
+        left = a or self._forecast_empty_surplus_detail()
+        right = b or self._forecast_empty_surplus_detail()
+        merged = self._forecast_empty_surplus_detail()
+        regions = set(left.get('overseas_by_region') or {}) | set(right.get('overseas_by_region') or {})
+        for rname in regions:
+            rname = str(rname or '').strip() or '-'
+            merged['overseas_by_region'][rname] = (
+                int((left.get('overseas_by_region') or {}).get(rname) or 0)
+                + int((right.get('overseas_by_region') or {}).get(rname) or 0)
+            )
+        merged['transit_batches'] = list(left.get('transit_batches') or []) + list(right.get('transit_batches') or [])
+        merged['factory_stock_qty'] = int(left.get('factory_stock_qty') or 0) + int(right.get('factory_stock_qty') or 0)
+        merged['wip_batches'] = list(left.get('wip_batches') or []) + list(right.get('wip_batches') or [])
+        merged['overseas_updated_at'] = self._forecast_date_max_iso(
+            left.get('overseas_updated_at'), right.get('overseas_updated_at')
+        )
+        merged['transit_updated_at'] = self._forecast_date_max_iso(
+            left.get('transit_updated_at'), right.get('transit_updated_at')
+        )
+        merged['factory_stock_updated_at'] = self._forecast_date_max_iso(
+            left.get('factory_stock_updated_at'), right.get('factory_stock_updated_at')
+        )
+        merged['wip_updated_at'] = self._forecast_date_max_iso(
+            left.get('wip_updated_at'), right.get('wip_updated_at')
+        )
+        return merged
+
     def _forecast_inventory_assembled_from_substitute_plans(self, inv_by_op, plan_groups):
         """各替代发货方案独立成套后相加（方案之间为并集，同 SKU 跨方案不累加配比）。"""
         out = self._forecast_inventory_zero()
@@ -3259,7 +3305,12 @@ class SalesManagementMixin:
             oid, is_on_market, plans, brief,
         )
         pairs = self._forecast_inventory_source_lines_to_pairs(source_lines)
-        agg = self._forecast_inventory_assembled_from_substitute_plans(inv_by_op, plans)
+        owner_agg = self._forecast_owner_inv_agg(inv_by_op, oid)
+        if plans:
+            sub_agg = self._forecast_inventory_assembled_from_substitute_plans(inv_by_op, plans)
+            agg = self._forecast_add_inv_agg(owner_agg, sub_agg)
+        else:
+            agg = owner_agg
         sku = (brief.get(int(oid)) or {}).get('sku') or ''
         comp = self._forecast_inventory_composition_meta(
             source_lines, sku, substitute_plans=substitute_plans, brief=brief,
@@ -3964,35 +4015,97 @@ class SalesManagementMixin:
             )
         return merged
 
+    def _forecast_surplus_detail_to_inv_scalars(self, detail):
+        """将盈余明细折算为与库存列一致的各阶件数（用于方案内 BOM 成套）。"""
+        d = detail or self._forecast_empty_surplus_detail()
+        return {
+            'overseas_qty': self._container_total_overseas_qty(d),
+            'transit_qty': sum(
+                max(0, int(float(b.get('qty') or 0)))
+                for b in (d.get('transit_batches') or [])
+            ),
+            'factory_stock_qty': max(0, int(float(d.get('factory_stock_qty') or 0))),
+            'wip_qty': sum(
+                max(0, int(float(w.get('qty') or 0)))
+                for w in (d.get('wip_batches') or [])
+            ),
+        }
+
     def _forecast_merge_surplus_detail_for_pairs(self, pairs, detail_by_op):
+        """单条替代方案内按 BOM 瓶颈成套，与库存列 _forecast_bom_tier_assembled_counts 一致。"""
         merged = self._forecast_empty_surplus_detail()
-        if not pairs:
+        links = [
+            (int(self._parse_int(sid)), max(1, self._parse_int(mult) or 1))
+            for sid, mult in (pairs or [])
+            if self._parse_int(sid)
+        ]
+        if not links:
             return merged
-        for sid, mult in pairs:
-            sid = int(sid)
-            mult = max(1, int(mult or 1))
+
+        inv_by_op = {}
+        for sid, _mult in links:
             d = detail_by_op.get(sid) or self._forecast_empty_surplus_detail()
-            for rname, qty in (d.get('overseas_by_region') or {}).items():
-                rname = str(rname or '').strip() or '-'
-                merged['overseas_by_region'][rname] = int(merged['overseas_by_region'].get(rname) or 0) + int(int(qty or 0) // mult)
+            inv_by_op[sid] = self._forecast_surplus_detail_to_inv_scalars(d)
+        asm = self._forecast_bom_tier_assembled_counts(inv_by_op, links)
+
+        overseas_asm = int(asm.get('overseas_qty') or 0)
+        if overseas_asm > 0:
+            merged['overseas_by_region']['合计'] = overseas_asm
+        merged['factory_stock_qty'] = int(asm.get('factory_stock_qty') or 0)
+
+        transit_keys = set()
+        for sid, _mult in links:
+            d = detail_by_op.get(sid) or self._forecast_empty_surplus_detail()
             for batch in d.get('transit_batches') or []:
-                q = int(int(batch.get('qty') or 0) // mult)
-                if q <= 0:
-                    continue
+                rname = str(batch.get('region_name') or '-').strip() or '-'
+                edate = batch.get('expected_listed_date')
+                transit_keys.add((rname, edate))
+
+        for rname, edate in sorted(transit_keys, key=lambda x: (str(x[0]), str(x[1] or ''))):
+            per_sid = []
+            for sid, mult in links:
+                d = detail_by_op.get(sid) or self._forecast_empty_surplus_detail()
+                raw = 0
+                for batch in d.get('transit_batches') or []:
+                    br = str(batch.get('region_name') or '-').strip() or '-'
+                    if br == rname and batch.get('expected_listed_date') == edate:
+                        raw += int(float(batch.get('qty') or 0))
+                per_sid.append(int(raw // max(1, mult)))
+            qty = min(per_sid) if per_sid else 0
+            if qty > 0:
                 merged['transit_batches'].append({
-                    'region_name': batch.get('region_name') or '-',
-                    'expected_listed_date': batch.get('expected_listed_date'),
-                    'qty': q,
+                    'region_name': rname,
+                    'expected_listed_date': edate,
+                    'qty': qty,
                 })
-            merged['factory_stock_qty'] += int(int(d.get('factory_stock_qty') or 0) // mult)
+
+        wip_keys = set()
+        for sid, _mult in links:
+            d = detail_by_op.get(sid) or self._forecast_empty_surplus_detail()
             for wb in d.get('wip_batches') or []:
-                q = int(int(wb.get('qty') or 0) // mult)
-                if q <= 0:
-                    continue
+                comp = wb.get('expected_completion_date')
+                if comp:
+                    wip_keys.add(comp)
+
+        for comp in sorted(wip_keys, key=lambda x: str(x or '')):
+            per_sid = []
+            for sid, mult in links:
+                d = detail_by_op.get(sid) or self._forecast_empty_surplus_detail()
+                raw = sum(
+                    int(float(w.get('qty') or 0))
+                    for w in (d.get('wip_batches') or [])
+                    if w.get('expected_completion_date') == comp
+                )
+                per_sid.append(int(raw // max(1, mult)))
+            qty = min(per_sid) if per_sid else 0
+            if qty > 0:
                 merged['wip_batches'].append({
-                    'qty': q,
-                    'expected_completion_date': wb.get('expected_completion_date'),
+                    'qty': qty,
+                    'expected_completion_date': comp,
                 })
+
+        for sid, _mult in links:
+            d = detail_by_op.get(sid) or self._forecast_empty_surplus_detail()
             merged['overseas_updated_at'] = self._forecast_date_max_iso(
                 merged.get('overseas_updated_at'), d.get('overseas_updated_at')
             )
@@ -4043,12 +4156,16 @@ class SalesManagementMixin:
                 )
                 for s in sources
             }
+            owner_detail = detail_by_op.get(oid) or self._forecast_empty_surplus_detail()
             if plans:
-                row['inventory_surplus_detail'] = self._forecast_merge_surplus_detail_for_plan_groups(
+                plan_detail = self._forecast_merge_surplus_detail_for_plan_groups(
                     plans, detail_by_op,
                 )
+                row['inventory_surplus_detail'] = self._forecast_merge_surplus_detail_add(
+                    owner_detail, plan_detail,
+                )
             else:
-                row['inventory_surplus_detail'] = self._forecast_empty_surplus_detail()
+                row['inventory_surplus_detail'] = owner_detail
 
     def _forecast_build_spec_inventory_stub_rows(self, conn, query_params, sf_group=None):
         """仅含 row_key / variant_id，供 patch=inventory 附加库存，避免重复拉历史与预测。"""
