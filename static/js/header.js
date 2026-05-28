@@ -1,5 +1,14 @@
 // 在页面加载时动态注入顶部导航，保持各模板统一
 (function(){
+    (function ensureSitjoyThemeScript() {
+        if (window.SitjoyTheme || document.querySelector('script[data-sitjoy-theme="1"]')) return;
+        const s = document.createElement('script');
+        s.src = '/static/js/theme.js';
+        s.async = false;
+        s.dataset.sitjoyTheme = '1';
+        document.head.appendChild(s);
+    })();
+
     const universalSelectState = new Map();
     const managedTableState = new Map();
     const PAGE_SIZE_OPTIONS = [20, 50, 100, 300, 500, 1000];

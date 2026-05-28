@@ -1,0 +1,76 @@
+/**
+ * 主题引擎：组件变体 → 令牌覆盖
+ * 在 theme.js 的 COMPONENT_REGISTRY 注册组件后，在此添加：
+ *   html[data-sj-{dataAttr}="变体名"] { --sj-cmp-...: ...; }
+ *
+ * 业务 CSS 应使用 var(--sj-cmp-xxx, 回退值)，勿在变体里直接改选择器颜色。
+ */
+
+/* 示例变体（可按需删除或扩展；默认外观由 tokens.css 决定） */
+html[data-sj-status-segment="compact"] {
+    --sj-cmp-status-segment-radius: 10px;
+    --sj-cmp-status-segment-gap: 0.2rem;
+    --sj-cmp-status-segment-inline-scale: 0.88;
+}
+
+html[data-sj-date-input="compact"] {
+    --sj-cmp-date-input-min-height: 32px;
+    --sj-cmp-date-input-border-width: 1px;
+    --sj-cmp-date-text-min-height: 26px;
+}
+
+/* 状态分段 status-segment */
+.status-segment {
+    background: var(--sj-cmp-status-segment-bg);
+    border-color: var(--sj-cmp-status-segment-border);
+    border-radius: var(--sj-cmp-status-segment-radius);
+    gap: var(--sj-cmp-status-segment-gap) !important;
+}
+
+.status-segment--inline {
+    border-radius: var(--sj-cmp-status-segment-inline-radius);
+    transform: scale(var(--sj-cmp-status-segment-inline-scale));
+}
+
+/* 组件样式弹窗 */
+.sitjoy-theme-panel--modal {
+    padding: 0 0 0.5rem;
+    font-size: 0.82rem;
+    color: var(--sj-color-ink);
+}
+
+.sitjoy-theme-panel--modal .sitjoy-theme-panel__hint {
+    margin: 0 0 0.65rem;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    color: var(--sj-color-muted);
+}
+
+.sitjoy-theme-panel--modal .sitjoy-theme-panel__row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    margin-bottom: 0.5rem;
+}
+
+.sitjoy-theme-panel--modal .sitjoy-theme-panel__label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--sj-color-muted);
+}
+
+.sitjoy-theme-panel--modal select {
+    width: 100%;
+    padding: 0.32rem 0.45rem;
+    border-radius: var(--sj-radius-xs);
+    border: 1px solid var(--sj-variant-input-border);
+    background: var(--sj-variant-input-bg);
+    color: var(--sj-color-ink);
+    font: inherit;
+    font-size: 0.8rem;
+}
+
+.sitjoy-theme-panel--modal select:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}

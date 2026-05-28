@@ -472,7 +472,13 @@
                     <div class="home-profile-text">
                         <div class="home-profile-greeting">
                             <span class="home-profile-kicker" id="homeProfileGreeting">加载中…</span>
-                            <h2 id="homeProfileDisplayName">加载中…</h2>
+                            <div class="home-profile-name-row">
+                                <h2 id="homeProfileDisplayName">加载中…</h2>
+                                <div class="home-profile-inline-actions">
+                                    <button type="button" class="btn-secondary btn-small" id="homeProfileEditBtn">编辑资料</button>
+                                    <button type="button" class="home-profile-logout-btn" onclick="handleLogout()">登出</button>
+                                </div>
+                            </div>
                         </div>
                         <div class="home-profile-meta">
                             <span class="home-profile-badge home-profile-badge--admin" id="homeProfileRole" hidden>管理员</span>
@@ -481,9 +487,28 @@
                         </div>
                     </div>
                 </div>
-                <div class="home-profile-actions">
-                    <button type="button" class="btn-secondary btn-small home-profile-action-btn" id="homeProfileEditBtn">编辑资料</button>
-                    <button type="button" class="btn-danger btn-small home-profile-action-btn" onclick="handleLogout()">登出</button>
+                <div class="home-profile-launcher" id="homeProfileLauncher" aria-label="桌面美化">
+                    <div class="home-profile-folder">
+                        <div class="home-profile-folder-head">
+                            <span class="home-profile-folder-icon" aria-hidden="true">
+                                <svg width="22" height="18" viewBox="0 0 22 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M1 5.5V15.5C1 16.3284 1.67157 17 2.5 17H19.5C20.3284 17 21 16.3284 21 15.5V5.5C21 4.67157 20.3284 4 19.5 4H11.5L9.5 1.5H2.5C1.67157 1.5 1 2.17157 1 3V5.5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+                                </svg>
+                            </span>
+                            <span class="home-profile-folder-title">桌面美化</span>
+                        </div>
+                        <div class="home-profile-folder-apps">
+                            <button type="button" class="home-profile-app" id="homeProfileThemeToggle" data-sitjoy-theme-toggle title="组件样式">
+                                <span class="home-profile-app-icon" aria-hidden="true">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M12 3L4 8V16L12 21L20 16V8L12 3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                                        <circle cx="12" cy="12" r="2.5" fill="currentColor"/>
+                                    </svg>
+                                </span>
+                                <span class="home-profile-app-label">组件样式</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </section>
         </div>
@@ -1003,6 +1028,19 @@
             <div class="pm-modal-actions">
                 <button type="button" class="btn-secondary" onclick="closeProfileModal()">取消</button>
                 <button type="button" class="btn-primary" id="profileSaveBtn">保存资料</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 组件样式（桌面美化） -->
+    <div id="sitjoyThemeModal" class="pm-modal" aria-hidden="true">
+        <div class="pm-modal-content pm-modal-content--wide sitjoy-theme-modal">
+            <div class="pm-modal-scroll">
+                <div class="modal-header">
+                    <h2>组件样式</h2>
+                    <button type="button" class="modal-close" onclick="SitjoyTheme.closeModal()" aria-label="关闭">×</button>
+                </div>
+                <div id="sitjoyThemeModalBody" class="sitjoy-theme-panel sitjoy-theme-panel--modal" role="region" aria-label="组件样式设置"></div>
             </div>
         </div>
     </div>
@@ -4369,6 +4407,9 @@
 
         window.addEventListener('load', () => {
             renderHomeProfileGreeting();
+            if (window.SitjoyTheme && typeof window.SitjoyTheme.mountHomeLauncher === 'function') {
+                window.SitjoyTheme.mountHomeLauncher();
+            }
             checkAuth().then(() => {
                 buildCalendarControls();
                 bindEvents();
@@ -4382,6 +4423,7 @@
             });
         });
     </script>
+    <script src="/static/js/theme.js"></script>
     <script src="/static/js/header.js"></script>
 </body>
 </html>
