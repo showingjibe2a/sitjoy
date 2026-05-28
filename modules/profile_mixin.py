@@ -79,6 +79,8 @@ class ProfileMixin:
             'name': row.get('name') or '',
             'phone': row.get('phone') or '',
             'birthday': self._format_profile_date(row.get('birthday')),
+            'hire_date': self._format_profile_date(row.get('hire_date')),
+            'job_title': (row.get('job_title') or '').strip(),
             'is_admin': int(row.get('is_admin') or 0),
             'can_grant_admin': int(row.get('can_grant_admin') or 0),
             'avatar_path': avatar_path,
@@ -92,7 +94,7 @@ class ProfileMixin:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, username, name, phone, birthday, is_admin,
+                SELECT id, username, name, phone, birthday, hire_date, job_title, is_admin,
                        COALESCE(can_grant_admin, 0) AS can_grant_admin,
                        avatar_path, created_at
                 FROM users

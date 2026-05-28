@@ -216,7 +216,8 @@ class AuthEmployeeMixin:
                             """
                             SELECT id, username, name, phone, birthday, is_admin,
                                    COALESCE(can_grant_admin, 0) AS can_grant_admin,
-                                   page_permissions, avatar_path, created_at
+                                   page_permissions, avatar_path, created_at,
+                                   hire_date, job_title
                             FROM users WHERE id=%s
                             """,
                             (user_id,)
@@ -236,6 +237,8 @@ class AuthEmployeeMixin:
                                         'created_at': serialized.get('created_at') or '',
                                         'role_label': serialized.get('role_label') or '',
                                         'birthday': serialized.get('birthday'),
+                                        'hire_date': serialized.get('hire_date'),
+                                        'job_title': serialized.get('job_title') or '',
                                     }
                             return self.send_json({
                                 'status': 'success',
@@ -410,8 +413,8 @@ class AuthEmployeeMixin:
                         if keyword:
                             cur.execute(
                                 """
-                                SELECT id, username, name, phone, birthday, is_admin,
-                                       COALESCE(can_grant_admin, 0) AS can_grant_admin,
+                                SELECT id, username, name, phone, birthday, hire_date, job_title,
+                                       is_admin, COALESCE(can_grant_admin, 0) AS can_grant_admin,
                                        page_permissions, COALESCE(is_approved, 1) AS is_approved, created_at
                                 FROM users
                                 WHERE name LIKE %s OR username LIKE %s OR phone LIKE %s
@@ -422,8 +425,8 @@ class AuthEmployeeMixin:
                         else:
                             cur.execute(
                                 """
-                                SELECT id, username, name, phone, birthday, is_admin,
-                                       COALESCE(can_grant_admin, 0) AS can_grant_admin,
+                                SELECT id, username, name, phone, birthday, hire_date, job_title,
+                                       is_admin, COALESCE(can_grant_admin, 0) AS can_grant_admin,
                                        page_permissions, COALESCE(is_approved, 1) AS is_approved, created_at
                                 FROM users
                                 ORDER BY id ASC
@@ -458,6 +461,8 @@ class AuthEmployeeMixin:
                         'name': row.get('name') or '',
                         'phone': row.get('phone') or '',
                         'birthday': row.get('birthday'),
+                        'hire_date': self._parse_date_str(row.get('hire_date')) if row.get('hire_date') else None,
+                        'job_title': (row.get('job_title') or '').strip(),
                         'is_admin': int(row.get('is_admin') or 0),
                         'can_grant_admin': int(row.get('can_grant_admin') or 0),
                         'is_approved': int(row.get('is_approved') or 0),
@@ -479,6 +484,9 @@ class AuthEmployeeMixin:
                 phone = (data.get('phone') or '').strip()
                 birthday_raw = (data.get('birthday') or '').strip()
                 birthday = self._parse_date_str(birthday_raw) if birthday_raw else None
+                hire_date_raw = (data.get('hire_date') or '').strip()
+                hire_date = self._parse_date_str(hire_date_raw) if hire_date_raw else None
+                job_title = (data.get('job_title') or '').strip() or None
                 target_is_admin = 1 if data.get('is_admin') else 0
                 target_can_grant_admin = 1 if data.get('can_grant_admin') else 0
                 if target_is_admin and not self._can_manage_admin_permission(actor_record):
@@ -495,9 +503,10 @@ class AuthEmployeeMixin:
                             """
                             INSERT INTO users (
                                 username, password_hash, name, phone, birthday,
+                                hire_date, job_title,
                                 is_admin, can_grant_admin, page_permissions, is_approved
                             )
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 1)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1)
                             """,
                             (
                                 username,
@@ -505,6 +514,8 @@ class AuthEmployeeMixin:
                                 name or None,
                                 phone or None,
                                 birthday,
+                                hire_date,
+                                job_title,
                                 target_is_admin,
                                 target_can_grant_admin,
                                 self._serialize_page_permissions(data.get('page_permissions'))
@@ -522,8 +533,14 @@ class AuthEmployeeMixin:
                 if not user_is_admin and item_id != user_id:
                     return self.send_json({'status': 'error', 'message': '无权修改其他员工信息'}, start_response)
 
-                if not user_is_admin and ('name' in data or 'birthday' in data or 'username' in data):
-                    return self.send_json({'status': 'error', 'message': '仅管理员可修改账号、姓名或生日'}, start_response)
+                if not user_is_admin and (
+                    'name' in data or 'birthday' in data or 'username' in data
+                    or 'hire_date' in data or 'job_title' in data
+                ):
+                    return self.send_json({
+                        'status': 'error',
+                        'message': '仅管理员可修改账号、姓名、生日、入职时间或岗位',
+                    }, start_response)
 
                 username = (data.get('username') or '').strip()
                 name = (data.get('name') or '').strip()
@@ -557,6 +574,13 @@ class AuthEmployeeMixin:
                 if 'birthday' in data:
                     updates.append('birthday=%s')
                     params.append(birthday)
+                if 'hire_date' in data:
+                    hire_date_raw = (data.get('hire_date') or '').strip()
+                    updates.append('hire_date=%s')
+                    params.append(self._parse_date_str(hire_date_raw) if hire_date_raw else None)
+                if 'job_title' in data:
+                    updates.append('job_title=%s')
+                    params.append((data.get('job_title') or '').strip() or None)
 
                 if 'page_permissions' in data:
                     if not user_is_admin:

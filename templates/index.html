@@ -610,7 +610,7 @@
             <div class="pm-toolbar" style="align-items:flex-start;">
                 <div>
                     <h3 style="margin:0;color:#2f2f33;">员工账号管理</h3>
-                    <p style="margin:6px 0 0;color:#6b5e4d;font-size:12px;">仅管理员可调整姓名与生日；账号密码由管理员创建与管理。</p>
+                    <p style="margin:6px 0 0;color:#6b5e4d;font-size:12px;">仅管理员可调整姓名、生日、入职时间与岗位；账号密码由管理员创建与管理。</p>
                 </div>
                 <div class="pm-toolbar-actions">
                     <span class="hero-stat" style="display:flex; align-items:center; gap:8px;">
@@ -628,6 +628,8 @@
                             <th>姓名</th>
                             <th>电话</th>
                             <th>生日</th>
+                            <th>入职时间</th>
+                            <th>岗位</th>
                             <th style="width:120px;">管理员</th>
                             <th style="width:120px;">管理员授权</th>
                             <th style="min-width:460px;">页面访问权限</th>
@@ -635,7 +637,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr><td colspan="8" style="text-align:center;">加载中...</td></tr>
+                        <tr><td colspan="10" style="text-align:center;">加载中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -895,6 +897,14 @@
                     <label>生日（可选）</label>
                     <input type="date" id="employeeBirthday">
                 </div>
+                <div class="form-group">
+                    <label>入职时间（可选）</label>
+                    <input type="date" id="employeeHireDate">
+                </div>
+                <div class="form-group">
+                    <label>岗位（可选）</label>
+                    <input type="text" id="employeeJobTitle" placeholder="例如：运营专员">
+                </div>
                 <div class="form-group pm-form-full">
                     <div class="permission-panel">
                         <h4 class="permission-panel-title">权限设置</h4>
@@ -956,6 +966,14 @@
                             <label>角色</label>
                             <input type="text" id="profileRole" readonly class="is-readonly">
                         </div>
+                        <div class="form-group">
+                            <label>岗位</label>
+                            <input type="text" id="profileJobTitle" readonly class="is-readonly">
+                        </div>
+                        <div class="form-group">
+                            <label>入职时间</label>
+                            <input type="text" id="profileHireDate" readonly class="is-readonly">
+                        </div>
                         <div class="form-group pm-form-full">
                             <label>注册时间</label>
                             <input type="text" id="profileCreatedAt" readonly class="is-readonly">
@@ -992,6 +1010,14 @@
                 <div class="form-group">
                     <label>生日（仅管理员）</label>
                     <input type="date" id="employeeEditBirthday">
+                </div>
+                <div class="form-group">
+                    <label>入职时间（仅管理员）</label>
+                    <input type="date" id="employeeEditHireDate">
+                </div>
+                <div class="form-group">
+                    <label>岗位（仅管理员）</label>
+                    <input type="text" id="employeeEditJobTitle" placeholder="例如：运营专员">
                 </div>
                 <div class="form-group">
                     <label>电话（可选）</label>
@@ -1589,8 +1615,10 @@
             const joinedEl = document.getElementById('homeProfileJoined');
             if (joinedEl) {
                 const birthdayLabel = formatProfileBirthdayLabel(currentUser.birthday);
+                const hireLabel = currentUser.hire_date ? `入职 ${String(currentUser.hire_date).slice(0, 10)}` : '';
+                const jobLabel = (currentUser.job_title || '').trim();
                 const joinedLabel = formatProfileJoinedLabel(currentUser.created_at);
-                const parts = [birthdayLabel, joinedLabel].filter(Boolean);
+                const parts = [jobLabel, hireLabel, birthdayLabel, joinedLabel].filter(Boolean);
                 joinedEl.textContent = parts.join(' · ');
             }
             applyProfileAvatarToElements(currentUser.avatar_url || null, displayName);
@@ -1605,6 +1633,10 @@
             document.getElementById('profilePhone').value = currentUser.phone || '';
             document.getElementById('profileBirthday').value = (currentUser.birthday || '').toString().slice(0, 10);
             document.getElementById('profileRole').value = currentUser.role_label || (currentUser.is_admin ? '管理员' : '员工');
+            const profileJobEl = document.getElementById('profileJobTitle');
+            if (profileJobEl) profileJobEl.value = (currentUser.job_title || '').trim() || '—';
+            const profileHireEl = document.getElementById('profileHireDate');
+            if (profileHireEl) profileHireEl.value = currentUser.hire_date ? String(currentUser.hire_date).slice(0, 10) : '—';
             document.getElementById('profileCreatedAt').value = currentUser.created_at || '';
             const hint = document.getElementById('profileModalHint');
             if (hint) {
@@ -2589,8 +2621,13 @@
                 if (data.status === 'success') {
                     if (window.showAppToast) window.showAppToast('保存成功', false, 1800);
                     closeTodoModal();
-                    loadTodos();
-                    loadCalendar();
+                    if (data.item) {
+                        mergeTodoIntoCaches(data.item);
+                        renderTodoTable(window.homeTodosCache || []);
+                        refreshCalendarFromCache();
+                    } else {
+                        loadTodos().then(() => refreshCalendarFromCache());
+                    }
                 } else {
                     const msg = data.message || '保存失败';
                     if (window.showAppToast) window.showAppToast(msg, true, 0);
@@ -2712,6 +2749,8 @@
             document.getElementById('employeeEditUsername').value = data.username || '';
             document.getElementById('employeeEditName').value = data.name || '';
             document.getElementById('employeeEditBirthday').value = data.birthday || '';
+            document.getElementById('employeeEditHireDate').value = (data.hire_date || '').toString().slice(0, 10);
+            document.getElementById('employeeEditJobTitle').value = data.job_title || '';
             document.getElementById('employeeEditPhone').value = data.phone || '';
             renderPermissionEditor('employeeEditPermissionEditor', {
                 is_admin: data.is_admin,
@@ -2737,9 +2776,32 @@
             if (modal) modal.classList.remove('active');
         }
 
-        function loadTodos() {
+        function mergeTodoIntoCaches(item) {
+            if (!item || item.id == null) return;
+            const id = parseInt(item.id, 10) || 0;
+            if (!id) return;
+            const patchList = (list) => {
+                const arr = Array.isArray(list) ? list.slice() : [];
+                const idx = arr.findIndex(t => (parseInt(t.id, 10) || 0) === id);
+                const prev = idx >= 0 ? arr[idx] : {};
+                const merged = { ...prev, ...item };
+                if (idx >= 0) arr[idx] = merged;
+                else arr.push(merged);
+                return arr;
+            };
+            window.homeTodosCache = patchList(window.homeTodosCache);
+            window.calendarTodosCache = patchList(window.calendarTodosCache);
+        }
+
+        function refreshCalendarFromCache() {
+            return loadCalendar({ useCacheOnly: true });
+        }
+
+        function loadTodos(options = {}) {
+            const opts = options || {};
             const params = new URLSearchParams();
-            params.set('with_links', '1');
+            if (opts.withLinks !== false) params.set('with_links', '1');
+            if (opts.skipRecurringReset) params.set('skip_recurring_reset', '1');
             if (window.todoSelectedTypeId && parseInt(window.todoSelectedTypeId, 10) > 0) {
                 params.set('todo_type_id', String(parseInt(window.todoSelectedTypeId, 10)));
             }
@@ -3050,6 +3112,18 @@
         async function setTodoCompletedNow(todoId) {
             const id = parseInt(todoId || '0', 10) || 0;
             if (!id) return;
+            const prev = (window.homeTodosCache || []).find(t => (parseInt(t.id, 10) || 0) === id);
+            const optimisticAt = new Date();
+            const pad = (n) => String(n).padStart(2, '0');
+            const optimisticAtText = `${optimisticAt.getFullYear()}-${pad(optimisticAt.getMonth() + 1)}-${pad(optimisticAt.getDate())} ${pad(optimisticAt.getHours())}:${pad(optimisticAt.getMinutes())}:${pad(optimisticAt.getSeconds())}`;
+            if (prev) {
+                mergeTodoIntoCaches({
+                    ...prev,
+                    my_is_completed: 1,
+                    my_completed_at: optimisticAtText
+                });
+                renderTodoTable(window.homeTodosCache || []);
+            }
             try {
                 const resp = await fetch('/api/todo', {
                     method: 'PUT',
@@ -3059,10 +3133,20 @@
                 });
                 const data = await resp.json();
                 if (!data || data.status !== 'success') throw new Error((data && data.message) || '更新失败');
+                if (data.item) {
+                    mergeTodoIntoCaches(data.item);
+                    renderTodoTable(window.homeTodosCache || []);
+                    refreshCalendarFromCache();
+                } else {
+                    await loadTodos({ skipRecurringReset: true });
+                    refreshCalendarFromCache();
+                }
                 if (window.showAppToast) window.showAppToast('已标记为已完成', false, 1600);
-                await loadTodos();
-                loadCalendar({ forceReload: true });
             } catch (err) {
+                if (prev) {
+                    mergeTodoIntoCaches(prev);
+                    renderTodoTable(window.homeTodosCache || []);
+                }
                 if (window.showAppToast) window.showAppToast(err && err.message ? err.message : '更新失败', true, 0);
             }
         }
@@ -3082,8 +3166,15 @@
                 });
                 const data = await resp.json();
                 if (!data || data.status !== 'success') throw new Error((data && data.message) || '保存失败');
+                if (data.item) {
+                    mergeTodoIntoCaches(data.item);
+                    renderTodoTable(window.homeTodosCache || []);
+                    refreshCalendarFromCache();
+                } else {
+                    await loadTodos({ skipRecurringReset: true });
+                    refreshCalendarFromCache();
+                }
                 if (window.showAppToast) window.showAppToast('完成时间已保存', false, 1400);
-                await loadTodos();
             } catch (err) {
                 if (window.showAppToast) window.showAppToast(err && err.message ? err.message : '保存失败', true, 0);
             }
@@ -3171,7 +3262,7 @@
                     const tbody = document.querySelector('#employeeTable tbody');
                     if (!tbody) return;
                     if (data.status !== 'success') {
-                        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#a33;">${data.message || '加载失败'}</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:#a33;">${data.message || '加载失败'}</td></tr>`;
                         window.calendarEmployeesCache = [];
                         return [];
                     }
@@ -3179,12 +3270,14 @@
                     window.employeeMap = Object.fromEntries(items.map(item => [String(item.id), item]));
                     window.calendarEmployeesCache = items;
                     if (items.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">暂无账号</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">暂无账号</td></tr>';
                         return items;
                     }
                     tbody.innerHTML = items.map(emp => {
                         const displayName = emp.name || '-';
                         const formattedBday = emp.birthday ? new Date(emp.birthday + 'T00:00:00').toLocaleDateString('zh-CN', { month:'numeric', day:'numeric' }) : '-';
+                        const formattedHire = emp.hire_date ? String(emp.hire_date).slice(0, 10) : '-';
+                        const jobTitle = (emp.job_title || '').trim() || '-';
                         const isSelf = currentUser && Number(currentUser.id || 0) === Number(emp.id || 0);
                         const canDelete = !isSelf && !Number(emp.is_admin || 0) && !Number(emp.can_grant_admin || 0);
                         return `
@@ -3193,6 +3286,8 @@
                                 <td>${displayName}</td>
                                 <td>${emp.phone || '-'}</td>
                                 <td>${formattedBday}</td>
+                                <td>${escapeHtml(formattedHire)}</td>
+                                <td>${escapeHtml(jobTitle)}</td>
                                 <td>${buildSwitchMarkup(!!emp.is_admin, 'data-role="is_admin"', false)}</td>
                                 <td>${buildSwitchMarkup(!!emp.can_grant_admin, 'data-role="can_grant_admin"', !canEditAdminGrant())}</td>
                                 <td>
@@ -3224,14 +3319,19 @@
             grid.innerHTML = '';
 
             const forceReload = !!options.forceReload;
+            const useCacheOnly = !!options.useCacheOnly;
             let todos = Array.isArray(window.calendarTodosCache) ? window.calendarTodosCache : null;
             let employees = Array.isArray(window.calendarEmployeesCache) ? window.calendarEmployeesCache : null;
 
-            if (forceReload || !todos || !employees) {
-                const [todoItems, employeeItems] = await Promise.all([
-                    loadTodos().catch(() => []),
-                    loadEmployees().catch(() => [])
-                ]);
+            if (useCacheOnly && todos && employees) {
+                // 使用内存缓存重绘，避免重复请求
+            } else if (forceReload || !todos || !employees) {
+                const loaders = [];
+                if (forceReload || !todos) loaders.push(loadTodos().catch(() => []));
+                else loaders.push(Promise.resolve(todos));
+                if (forceReload || !employees) loaders.push(loadEmployees().catch(() => []));
+                else loaders.push(Promise.resolve(employees));
+                const [todoItems, employeeItems] = await Promise.all(loaders);
                 todos = Array.isArray(todoItems) ? todoItems : [];
                 employees = Array.isArray(employeeItems) ? employeeItems : [];
             }
@@ -3684,8 +3784,7 @@
                                             : '已删除你自己的任务';
                                         window.showAppToast(msg, false, 1800);
                                     }
-                                    loadTodos();
-                                    loadCalendar({ forceReload: true });
+                                    loadTodos().then(() => refreshCalendarFromCache());
                                 })
                                 .catch(err => {
                                     if (window.showAppToast) window.showAppToast(err && err.message ? err.message : '删除失败', true, 0);
@@ -3704,10 +3803,20 @@
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ id: id, is_completed: 0 })
                         })
-                            .then(() => {
+                            .then(r => r.json())
+                            .then(data => {
+                                if (!data || data.status !== 'success') throw new Error((data && data.message) || '更新失败');
+                                if (data.item) {
+                                    mergeTodoIntoCaches(data.item);
+                                    renderTodoTable(window.homeTodosCache || []);
+                                    refreshCalendarFromCache();
+                                } else {
+                                    loadTodos({ skipRecurringReset: true }).then(() => refreshCalendarFromCache());
+                                }
                                 if (window.showAppToast) window.showAppToast('已更新为未完成', false, 1800);
-                                loadTodos();
-                                loadCalendar({ forceReload: true });
+                            })
+                            .catch(err => {
+                                if (window.showAppToast) window.showAppToast(err && err.message ? err.message : '更新失败', true, 0);
                             });
                         return;
                     }
@@ -3825,6 +3934,8 @@
                     name: document.getElementById('employeeName').value.trim(),
                     phone: document.getElementById('employeePhone').value.trim(),
                     birthday: document.getElementById('employeeBirthday').value,
+                    hire_date: (document.getElementById('employeeHireDate') || {}).value || '',
+                    job_title: (document.getElementById('employeeJobTitle') || {}).value.trim(),
                     is_admin: permissionState.is_admin,
                     can_grant_admin: permissionState.can_grant_admin,
                     page_permissions: permissionState.page_permissions
@@ -3862,7 +3973,7 @@
                 employeeEditForm.addEventListener('submit', e => {
                 e.preventDefault();
                 if (!isAdmin) {
-                    showModalHint('employeeEditHint', '仅管理员可修改姓名或生日', true);
+                    showModalHint('employeeEditHint', '仅管理员可编辑员工资料', true);
                     return;
                 }
                 const id = document.getElementById('employeeEditId').value;
@@ -3882,6 +3993,8 @@
                     username: document.getElementById('employeeEditUsername').value.trim(),
                     name: document.getElementById('employeeEditName').value.trim(),
                     birthday: document.getElementById('employeeEditBirthday').value,
+                    hire_date: (document.getElementById('employeeEditHireDate') || {}).value || '',
+                    job_title: (document.getElementById('employeeEditJobTitle') || {}).value.trim(),
                     phone: document.getElementById('employeeEditPhone').value.trim(),
                     is_admin: permissionState.is_admin,
                     can_grant_admin: permissionState.can_grant_admin,

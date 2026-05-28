@@ -283,6 +283,179 @@ class UtilityMixin:
                 rows,
             )
 
+    def _todo_attach_links_to_rows(self, cur, rows):
+        todo_ids = [self._parse_int(r.get('id')) for r in (rows or []) if self._parse_int(r.get('id'))]
+        if not todo_ids:
+            return
+        placeholders = ','.join(['%s'] * len(todo_ids))
+        cur.execute(
+            f"""
+            SELECT tsl.todo_id, tsl.sales_product_id, tsl.sku_family_id,
+                   sp.platform_sku, pf.sku_family
+            FROM todo_sales_links tsl
+            LEFT JOIN sales_products sp ON sp.id = tsl.sales_product_id
+            LEFT JOIN product_families pf ON pf.id = tsl.sku_family_id
+            WHERE tsl.todo_id IN ({placeholders})
+            ORDER BY tsl.id ASC
+            """,
+            tuple(todo_ids),
+        )
+        link_rows = cur.fetchall() or []
+        link_map = {}
+        for lk in link_rows:
+            tid = self._parse_int(lk.get('todo_id'))
+            if not tid:
+                continue
+            link_map.setdefault(tid, self._todo_link_details_empty())
+            sp_id = self._parse_int(lk.get('sales_product_id'))
+            sf_id = self._parse_int(lk.get('sku_family_id'))
+            sku = str(lk.get('platform_sku') or '').strip()
+            sf = str(lk.get('sku_family') or '').strip()
+            if sp_id and sp_id not in link_map[tid]['sales_product_ids']:
+                link_map[tid]['sales_product_ids'].append(sp_id)
+            if sku and sku not in link_map[tid]['platform_skus']:
+                link_map[tid]['platform_skus'].append(sku)
+            if sf_id and sf_id not in link_map[tid]['sku_family_ids']:
+                link_map[tid]['sku_family_ids'].append(sf_id)
+            if sf and sf not in link_map[tid]['sku_families']:
+                link_map[tid]['sku_families'].append(sf)
+
+        cur.execute(
+            f"""
+            SELECT tpl.todo_id, tpl.platform_type_id, pt.name AS platform_type_name
+            FROM todo_platform_type_links tpl
+            LEFT JOIN platform_types pt ON pt.id = tpl.platform_type_id
+            WHERE tpl.todo_id IN ({placeholders})
+            ORDER BY tpl.id ASC
+            """,
+            tuple(todo_ids),
+        )
+        pt_rows = cur.fetchall() or []
+        for pr in pt_rows:
+            tid = self._parse_int(pr.get('todo_id'))
+            if not tid:
+                continue
+            link_map.setdefault(tid, self._todo_link_details_empty())
+            pid = self._parse_int(pr.get('platform_type_id'))
+            nm = str(pr.get('platform_type_name') or '').strip()
+            if pid and pid not in link_map[tid]['platform_type_ids']:
+                link_map[tid]['platform_type_ids'].append(pid)
+            if nm and nm not in link_map[tid]['platform_type_names']:
+                link_map[tid]['platform_type_names'].append(nm)
+
+        cur.execute(
+            f"""
+            SELECT ta.todo_id, ta.assignee_id, u.name, u.username,
+                   ta.is_completed, ta.completed_at
+            FROM todo_assignments ta
+            LEFT JOIN users u ON u.id = ta.assignee_id
+            WHERE ta.todo_id IN ({placeholders})
+            ORDER BY ta.id ASC
+            """,
+            tuple(todo_ids),
+        )
+        ass_rows = cur.fetchall() or []
+        ass_map = {}
+        for ar in ass_rows:
+            tid = self._parse_int(ar.get('todo_id'))
+            if not tid:
+                continue
+            ass_map.setdefault(tid, []).append({
+                'assignee_id': self._parse_int(ar.get('assignee_id')),
+                'name': ar.get('name') or '',
+                'username': ar.get('username') or '',
+                'is_completed': int(ar.get('is_completed') or 0),
+                'completed_at': ar.get('completed_at'),
+            })
+
+        for r in rows:
+            tid = self._parse_int(r.get('id'))
+            details = link_map.get(tid, self._todo_link_details_empty())
+            r.update(details)
+            r['assignees'] = ass_map.get(tid, [])
+
+    def _todo_list_rows(
+        self,
+        conn,
+        user_id,
+        *,
+        include_all=False,
+        todo_type_id=None,
+        todo_ids=None,
+        with_links=False,
+        skip_recurring_reset=False,
+    ):
+        if not include_all and not skip_recurring_reset:
+            self._todo_apply_recurring_resets(conn, user_id, todo_type_id=todo_type_id)
+        with conn.cursor() as cur:
+            params = []
+            if include_all:
+                where_sql = 'WHERE 1=1'
+            else:
+                where_sql = 'WHERE ta.assignee_id=%s'
+                params.append(user_id)
+            if self._parse_int(todo_type_id):
+                where_sql += ' AND t.todo_type_id=%s'
+                params.append(self._parse_int(todo_type_id))
+            id_list = [self._parse_int(x) for x in (todo_ids or []) if self._parse_int(x)]
+            if todo_ids is not None:
+                if not id_list:
+                    return []
+                where_sql += f" AND t.id IN ({','.join(['%s'] * len(id_list))})"
+                params.extend(id_list)
+
+            cur.execute(
+                f"""
+                SELECT
+                    t.id,
+                    t.todo_type_id,
+                    tt.type_name AS todo_type_name,
+                    t.title,
+                    t.detail,
+                    t.start_date,
+                    t.due_date,
+                    t.reminder_interval_days,
+                    t.is_recurring,
+                    t.priority,
+                    t.created_by,
+                    t.created_at,
+                    u.name AS creator_name,
+                    u.username AS creator_username,
+                    ta.assignee_id AS my_assignee_id,
+                    ta.is_completed AS my_is_completed,
+                    ta.completed_at AS my_completed_at
+                FROM todos t
+                LEFT JOIN todo_types tt ON tt.id = t.todo_type_id
+                LEFT JOIN users u ON u.id = t.created_by
+                LEFT JOIN todo_assignments ta ON ta.todo_id = t.id
+                {where_sql}
+                ORDER BY (COALESCE(ta.is_completed,0)=1) ASC,
+                         COALESCE(t.due_date, '9999-12-31') ASC,
+                         t.id DESC
+                LIMIT 800
+                """,
+                tuple(params),
+            )
+            rows = cur.fetchall() or []
+            if with_links and rows:
+                self._todo_attach_links_to_rows(cur, rows)
+            for r in rows:
+                r['effective_date'] = self._todo_effective_calendar_date(r)
+            return rows
+
+    def _todo_fetch_one(self, conn, user_id, todo_id, with_links=False):
+        tid = self._parse_int(todo_id)
+        if not tid:
+            return None
+        rows = self._todo_list_rows(
+            conn,
+            user_id,
+            todo_ids=[tid],
+            with_links=with_links,
+            skip_recurring_reset=True,
+        )
+        return rows[0] if rows else None
+
     def handle_todo_api(self, environ, method, start_response):
         """待办事项 API（CRUD）"""
         try:
@@ -294,147 +467,19 @@ class UtilityMixin:
                 query_params = parse_qs(environ.get('QUERY_STRING', ''))
                 include_all = str((query_params.get('include_all', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
                 with_links = str((query_params.get('with_links', ['0'])[0] or '0')).lower() in ('1', 'true', 'yes', 'on')
+                skip_recurring_reset = str(
+                    (query_params.get('skip_recurring_reset', ['0'])[0] or '0')
+                ).lower() in ('1', 'true', 'yes', 'on')
                 todo_type_id = self._parse_int((query_params.get('todo_type_id', [''])[0] or '').strip())
                 with self._get_db_connection() as conn:
-                    if not include_all:
-                        self._todo_apply_recurring_resets(conn, user_id, todo_type_id=todo_type_id)
-                    with conn.cursor() as cur:
-                        params = []
-                        if include_all:
-                            where_sql = "WHERE 1=1"
-                        else:
-                            where_sql = "WHERE ta.assignee_id=%s"
-                            params.append(user_id)
-                        if todo_type_id:
-                            where_sql += " AND t.todo_type_id=%s"
-                            params.append(todo_type_id)
-
-                        cur.execute(
-                            f"""
-                            SELECT
-                                t.id,
-                                t.todo_type_id,
-                                tt.type_name AS todo_type_name,
-                                t.title,
-                                t.detail,
-                                t.start_date,
-                                t.due_date,
-                                t.reminder_interval_days,
-                                t.is_recurring,
-                                t.priority,
-                                t.created_by,
-                                t.created_at,
-                                u.name AS creator_name,
-                                u.username AS creator_username,
-                                ta.assignee_id AS my_assignee_id,
-                                ta.is_completed AS my_is_completed,
-                                ta.completed_at AS my_completed_at
-                            FROM todos t
-                            LEFT JOIN todo_types tt ON tt.id = t.todo_type_id
-                            LEFT JOIN users u ON u.id = t.created_by
-                            LEFT JOIN todo_assignments ta ON ta.todo_id = t.id
-                            {where_sql}
-                            ORDER BY (COALESCE(ta.is_completed,0)=1) ASC,
-                                     COALESCE(t.due_date, '9999-12-31') ASC,
-                                     t.id DESC
-                            LIMIT 800
-                            """,
-                            tuple(params)
-                        )
-                        rows = cur.fetchall() or []
-
-                        if with_links and rows:
-                            todo_ids = [self._parse_int(r.get('id')) for r in rows if self._parse_int(r.get('id'))]
-                            if todo_ids:
-                                placeholders = ','.join(['%s'] * len(todo_ids))
-                                cur.execute(
-                                    f"""
-                                    SELECT tsl.todo_id, tsl.sales_product_id, tsl.sku_family_id,
-                                           sp.platform_sku, pf.sku_family
-                                    FROM todo_sales_links tsl
-                                    LEFT JOIN sales_products sp ON sp.id = tsl.sales_product_id
-                                    LEFT JOIN product_families pf ON pf.id = tsl.sku_family_id
-                                    WHERE tsl.todo_id IN ({placeholders})
-                                    ORDER BY tsl.id ASC
-                                    """,
-                                    tuple(todo_ids)
-                                )
-                                link_rows = cur.fetchall() or []
-                                link_map = {}
-                                for lk in link_rows:
-                                    tid = self._parse_int(lk.get('todo_id'))
-                                    if not tid:
-                                        continue
-                                    link_map.setdefault(tid, self._todo_link_details_empty())
-                                    sp_id = self._parse_int(lk.get('sales_product_id'))
-                                    sf_id = self._parse_int(lk.get('sku_family_id'))
-                                    sku = str(lk.get('platform_sku') or '').strip()
-                                    sf = str(lk.get('sku_family') or '').strip()
-                                    if sp_id and sp_id not in link_map[tid]['sales_product_ids']:
-                                        link_map[tid]['sales_product_ids'].append(sp_id)
-                                    if sku and sku not in link_map[tid]['platform_skus']:
-                                        link_map[tid]['platform_skus'].append(sku)
-                                    if sf_id and sf_id not in link_map[tid]['sku_family_ids']:
-                                        link_map[tid]['sku_family_ids'].append(sf_id)
-                                    if sf and sf not in link_map[tid]['sku_families']:
-                                        link_map[tid]['sku_families'].append(sf)
-
-                                cur.execute(
-                                    f"""
-                                    SELECT tpl.todo_id, tpl.platform_type_id, pt.name AS platform_type_name
-                                    FROM todo_platform_type_links tpl
-                                    LEFT JOIN platform_types pt ON pt.id = tpl.platform_type_id
-                                    WHERE tpl.todo_id IN ({placeholders})
-                                    ORDER BY tpl.id ASC
-                                    """,
-                                    tuple(todo_ids)
-                                )
-                                pt_rows = cur.fetchall() or []
-                                for pr in pt_rows:
-                                    tid = self._parse_int(pr.get('todo_id'))
-                                    if not tid:
-                                        continue
-                                    link_map.setdefault(tid, self._todo_link_details_empty())
-                                    pid = self._parse_int(pr.get('platform_type_id'))
-                                    nm = str(pr.get('platform_type_name') or '').strip()
-                                    if pid and pid not in link_map[tid]['platform_type_ids']:
-                                        link_map[tid]['platform_type_ids'].append(pid)
-                                    if nm and nm not in link_map[tid]['platform_type_names']:
-                                        link_map[tid]['platform_type_names'].append(nm)
-
-                                cur.execute(
-                                    f"""
-                                    SELECT ta.todo_id, ta.assignee_id, u.name, u.username,
-                                           ta.is_completed, ta.completed_at
-                                    FROM todo_assignments ta
-                                    LEFT JOIN users u ON u.id = ta.assignee_id
-                                    WHERE ta.todo_id IN ({placeholders})
-                                    ORDER BY ta.id ASC
-                                    """,
-                                    tuple(todo_ids)
-                                )
-                                ass_rows = cur.fetchall() or []
-                                ass_map = {}
-                                for ar in ass_rows:
-                                    tid = self._parse_int(ar.get('todo_id'))
-                                    if not tid:
-                                        continue
-                                    ass_map.setdefault(tid, []).append({
-                                        'assignee_id': self._parse_int(ar.get('assignee_id')),
-                                        'name': ar.get('name') or '',
-                                        'username': ar.get('username') or '',
-                                        'is_completed': int(ar.get('is_completed') or 0),
-                                        'completed_at': ar.get('completed_at'),
-                                    })
-
-                                for r in rows:
-                                    tid = self._parse_int(r.get('id'))
-                                    details = link_map.get(tid, self._todo_link_details_empty())
-                                    r.update(details)
-                                    r['assignees'] = ass_map.get(tid, [])
-
-                        for r in rows:
-                            r['effective_date'] = self._todo_effective_calendar_date(r)
+                    rows = self._todo_list_rows(
+                        conn,
+                        user_id,
+                        include_all=include_all,
+                        todo_type_id=todo_type_id,
+                        with_links=with_links,
+                        skip_recurring_reset=skip_recurring_reset,
+                    )
                 return self.send_json({'status': 'success', 'items': rows}, start_response)
 
             if method == 'POST':
@@ -513,7 +558,8 @@ class UtilityMixin:
                         self._replace_todo_assignees(cur, new_id, assignee_ids, assignee_status_map=assignee_status_map)
                         self._replace_todo_sales_links(cur, new_id, related_sales_product_ids, related_sku_family_ids)
                         self._replace_todo_platform_type_links(cur, new_id, related_platform_type_ids)
-                return self.send_json({'status': 'success', 'id': new_id}, start_response)
+                    item = self._todo_fetch_one(conn, user_id, new_id, with_links=True)
+                return self.send_json({'status': 'success', 'id': new_id, 'item': item}, start_response)
 
             if method == 'PUT':
                 data = self._read_json_body(environ)
@@ -676,7 +722,14 @@ class UtilityMixin:
                                     base['completed_at'] = completed_at
                                 assignee_status_map[int(user_id)] = base
                             self._replace_todo_assignees(cur, item_id, assignee_ids, assignee_status_map=assignee_status_map)
-                return self.send_json({'status': 'success'}, start_response)
+                    need_links = (
+                        related_sales_product_ids is not None
+                        or related_sku_family_ids is not None
+                        or related_platform_type_ids is not None
+                        or assignee_ids is not None
+                    )
+                    item = self._todo_fetch_one(conn, user_id, item_id, with_links=need_links)
+                return self.send_json({'status': 'success', 'item': item}, start_response)
 
             if method == 'DELETE':
                 data = self._read_json_body(environ) or {}
