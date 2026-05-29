@@ -2017,8 +2017,78 @@
         table.classList.remove('is-grid-selecting');
     }
 
+    function clearTransitSkuGridPaintNodes(nodes){
+        (nodes || []).forEach((node) => {
+            if(!node || !node.classList) return;
+            node.classList.remove('pm-grid-detail-selected', 'pm-grid-detail-anchor');
+        });
+    }
+
+    function clearTransitSkuGridPaintCells(cells){
+        (cells || []).forEach((cell) => {
+            if(!cell || !cell.classList) return;
+            cell.classList.remove(
+                'pm-sku-grid-sel-cell',
+                'pm-sku-grid-sel-first',
+                'pm-sku-grid-sel-mid',
+                'pm-sku-grid-sel-last'
+            );
+        });
+    }
+
+    function applyTransitSkuGridSpanCellClasses(state, selection){
+        const sc1 = selection.sc1;
+        const sc2 = selection.sc2;
+        const multiCol = sc2 > sc1;
+        const cells = new Set();
+        selection.rowSlots.forEach((slot) => {
+            const row = getVisibleRows(state)[slot.tr];
+            if(!row) return;
+            for(let sc = sc1; sc <= sc2; sc += 1){
+                const cell = getTransitSkuCellInTableRow(row, sc);
+                if(!cell) continue;
+                cell.classList.add('pm-sku-grid-sel-cell');
+                if(multiCol){
+                    if(sc === sc1) cell.classList.add('pm-sku-grid-sel-first');
+                    if(sc === sc2) cell.classList.add('pm-sku-grid-sel-last');
+                    if(sc > sc1 && sc < sc2) cell.classList.add('pm-sku-grid-sel-mid');
+                }
+                cells.add(cell);
+            }
+        });
+        return Array.from(cells);
+    }
+
+    let gridSelectionPaintScheduled = false;
+    function schedulePaintGridSelection(){
+        if(gridSelectionPaintScheduled) return;
+        gridSelectionPaintScheduled = true;
+        window.requestAnimationFrame(() => {
+            gridSelectionPaintScheduled = false;
+            paintGridSelection();
+        });
+    }
+
+    function transitSkuGridPaintSignature(skuSel, selection){
+        if(!skuSel || !skuSel.anchor || !skuSel.current || !selection || !selection.rowSlots) return '';
+        const a = skuSel.anchor;
+        const c = skuSel.current;
+        return [
+            a.tr, a.sc, a.lr,
+            c.tr, c.sc, c.lr,
+            selection.sc1, selection.sc2,
+            selection.rowSlots.length,
+            selection.rowSlots[0] ? `${selection.rowSlots[0].tr}:${selection.rowSlots[0].lr}` : '',
+            selection.rowSlots.length > 1
+                ? `${selection.rowSlots[selection.rowSlots.length - 1].tr}:${selection.rowSlots[selection.rowSlots.length - 1].lr}`
+                : ''
+        ].join('|');
+    }
+
     function clearGridSelection(){
         if(!activeGridSelection) return;
+        clearTransitSkuGridPaintNodes(activeGridSelection.skuPaintedNodes);
+        clearTransitSkuGridPaintCells(activeGridSelection.skuPaintedCells);
         clearGridSelectionClasses(activeGridSelection.state && activeGridSelection.state.table);
         activeGridSelection = null;
         notifySitjoyGridSelectionChange();
@@ -2124,16 +2194,53 @@
         return { tr, sc, lr };
     }
 
-    function normalizeTransitSkuGridRect(a, b){
-        if(!a || !b) return null;
+    /** 将在途记录多行 SKU 压平为连续行号，跨记录框选按「起点→终点」而非每条记录重复同一 lr 序列 */
+    function buildTransitSkuFlatRowIndex(state){
+        const entries = [];
+        getVisibleRows(state).forEach((row, tr) => {
+            void row;
+            const lineCount = getTransitSkuStackLineCountForRow(state, tr);
+            for(let lr = 0; lr < lineCount; lr += 1){
+                entries.push({ tr, lr });
+            }
+        });
+        return entries;
+    }
+
+    function transitSkuFlatIndexFromCoord(state, coord){
+        if(!coord) return -1;
+        const entries = buildTransitSkuFlatRowIndex(state);
+        return entries.findIndex((e) => e.tr === coord.tr && e.lr === coord.lr);
+    }
+
+    function resolveTransitSkuGridSelection(state, anchor, current){
+        if(!state || !anchor || !current) return null;
+        const entries = buildTransitSkuFlatRowIndex(state);
+        if(!entries.length) return null;
+        const ia = transitSkuFlatIndexFromCoord(state, anchor);
+        const ib = transitSkuFlatIndexFromCoord(state, current);
+        if(ia < 0 || ib < 0) return null;
+        const flatMin = Math.min(ia, ib);
+        const flatMax = Math.max(ia, ib);
         return {
-            tr1: Math.min(Number(a.tr), Number(b.tr)),
-            tr2: Math.max(Number(a.tr), Number(b.tr)),
-            sc1: Math.min(Number(a.sc), Number(b.sc)),
-            sc2: Math.max(Number(a.sc), Number(b.sc)),
-            lr1: Math.min(Number(a.lr), Number(b.lr)),
-            lr2: Math.max(Number(a.lr), Number(b.lr))
+            sc1: Math.min(Number(anchor.sc), Number(current.sc)),
+            sc2: Math.max(Number(anchor.sc), Number(current.sc)),
+            rowSlots: entries.slice(flatMin, flatMax + 1)
         };
+    }
+
+    function collectTransitSkuGridCellsFromSelection(state, selection){
+        const cells = new Set();
+        if(!state || !selection || !selection.rowSlots) return cells;
+        selection.rowSlots.forEach((slot) => {
+            const row = getVisibleRows(state)[slot.tr];
+            if(!row) return;
+            for(let sc = selection.sc1; sc <= selection.sc2; sc += 1){
+                const cell = getTransitSkuCellInTableRow(row, sc);
+                if(cell) cells.add(cell);
+            }
+        });
+        return cells;
     }
 
     function getTransitSkuStackLineCountForRow(state, tableRowIndex){
@@ -2163,39 +2270,20 @@
         return node && cell ? extractTransitSkuStackLineText(node, cell) : '';
     }
 
-    function collectTransitSkuGridCellsInRect(state, rect){
-        const cells = new Set();
-        if(!state || !rect) return cells;
-        for(let tr = rect.tr1; tr <= rect.tr2; tr += 1){
-            const row = getVisibleRows(state)[tr];
-            if(!row) continue;
-            for(let sc = rect.sc1; sc <= rect.sc2; sc += 1){
-                const cell = getTransitSkuCellInTableRow(row, sc);
-                if(cell) cells.add(cell);
-            }
-        }
-        return cells;
-    }
-
     function copyTransitSkuGridSelectionToClipboard(state){
         const skuSel = activeGridSelection && activeGridSelection.transitSkuGrid;
         if(!state || !skuSel || !skuSel.anchor || !skuSel.current) return false;
-        const rect = normalizeTransitSkuGridRect(skuSel.anchor, skuSel.current);
-        if(!rect) return false;
+        const selection = resolveTransitSkuGridSelection(state, skuSel.anchor, skuSel.current);
+        if(!selection || !selection.rowSlots.length) return false;
 
         const lines = [];
-        for(let tr = rect.tr1; tr <= rect.tr2; tr += 1){
-            const lineMax = getTransitSkuStackLineCountForRow(state, tr);
-            if(!lineMax) continue;
-            const lrEnd = Math.min(rect.lr2, lineMax - 1);
-            for(let lr = rect.lr1; lr <= lrEnd; lr += 1){
-                const cols = [];
-                for(let sc = rect.sc1; sc <= rect.sc2; sc += 1){
-                    cols.push(getTransitSkuGridValue(state, tr, sc, lr));
-                }
-                lines.push(cols.join('\t'));
+        selection.rowSlots.forEach((slot) => {
+            const cols = [];
+            for(let sc = selection.sc1; sc <= selection.sc2; sc += 1){
+                cols.push(getTransitSkuGridValue(state, slot.tr, sc, slot.lr));
             }
-        }
+            lines.push(cols.join('\t'));
+        });
         const text = lines.join('\n');
         if(!text) return false;
 
@@ -2357,31 +2445,47 @@
     function paintGridSelection(){
         if(!activeGridSelection || !activeGridSelection.state) return;
         const state = activeGridSelection.state;
-        clearGridSelectionClasses(state.table);
 
         const skuSel = activeGridSelection.transitSkuGrid;
         if(skuSel && skuSel.anchor && skuSel.current){
-            const rect = normalizeTransitSkuGridRect(skuSel.anchor, skuSel.current);
-            if(rect){
-                collectTransitSkuGridCellsInRect(state, rect).forEach((cell) => {
-                    if(cell && cell.isConnected) cell.classList.add('pm-grid-cell-selected');
-                });
-                for(let tr = rect.tr1; tr <= rect.tr2; tr += 1){
-                    const lrEnd = Math.min(rect.lr2, getTransitSkuStackLineCountForRow(state, tr) - 1);
-                    for(let lr = rect.lr1; lr <= lrEnd; lr += 1){
-                        for(let sc = rect.sc1; sc <= rect.sc2; sc += 1){
-                            const node = getTransitSkuGridLineNode(state, tr, sc, lr);
-                            if(node) node.classList.add('pm-grid-detail-selected');
-                        }
-                    }
+            const selection = resolveTransitSkuGridSelection(state, skuSel.anchor, skuSel.current);
+            if(selection && selection.rowSlots.length){
+                const sig = transitSkuGridPaintSignature(skuSel, selection);
+                if(sig && sig === activeGridSelection.skuGridPaintSig){
+                    return;
                 }
-                const anchorNode = getTransitSkuGridLineNode(state, skuSel.anchor.tr, skuSel.anchor.sc, skuSel.anchor.lr);
-                if(anchorNode) anchorNode.classList.add('pm-grid-detail-anchor');
+                activeGridSelection.skuGridPaintSig = sig;
+
+                clearTransitSkuGridPaintNodes(activeGridSelection.skuPaintedNodes);
+                clearTransitSkuGridPaintCells(activeGridSelection.skuPaintedCells);
+                activeGridSelection.skuPaintedNodes = [];
+                activeGridSelection.skuPaintedCells = [];
+                state.table.querySelectorAll('td.pm-grid-cell-selected, td.pm-grid-cell-anchor').forEach((cell) => {
+                    cell.classList.remove('pm-grid-cell-selected', 'pm-grid-cell-anchor');
+                });
+
+                activeGridSelection.selectedCells = collectTransitSkuGridCellsFromSelection(state, selection);
+                const anchor = skuSel.anchor;
+                selection.rowSlots.forEach((slot) => {
+                    for(let sc = selection.sc1; sc <= selection.sc2; sc += 1){
+                        const node = getTransitSkuGridLineNode(state, slot.tr, sc, slot.lr);
+                        if(!node) continue;
+                        const isAnchor = anchor.tr === slot.tr && anchor.sc === sc && anchor.lr === slot.lr;
+                        node.classList.add(isAnchor ? 'pm-grid-detail-anchor' : 'pm-grid-detail-selected');
+                        activeGridSelection.skuPaintedNodes.push(node);
+                    }
+                });
+                activeGridSelection.skuPaintedCells = applyTransitSkuGridSpanCellClasses(state, selection);
                 state.table.classList.add('is-grid-selecting');
                 notifySitjoyGridSelectionChange();
                 return;
             }
         }
+        activeGridSelection.skuGridPaintSig = '';
+        activeGridSelection.skuPaintedNodes = [];
+        activeGridSelection.skuPaintedCells = [];
+
+        clearGridSelectionClasses(state.table);
 
         activeGridSelection.selectedCells.forEach(cell => {
             if(cell && cell.isConnected) cell.classList.add('pm-grid-cell-selected');
@@ -2413,7 +2517,10 @@
             dragAnchor: null,
             detailSelections: new Map(),
             detailDragging: null,
-            transitSkuGrid: null
+            transitSkuGrid: null,
+            skuPaintedNodes: [],
+            skuPaintedCells: [],
+            skuGridPaintSig: ''
         };
         return activeGridSelection;
     }
@@ -2841,8 +2948,6 @@
             if(skuGridCoord){
                 if(event.shiftKey && selection.transitSkuGrid && selection.transitSkuGrid.anchor){
                     selection.transitSkuGrid.current = skuGridCoord;
-                    const rect = normalizeTransitSkuGridRect(selection.transitSkuGrid.anchor, skuGridCoord);
-                    selection.selectedCells = collectTransitSkuGridCellsInRect(state, rect);
                     selection.detailSelections = new Map();
                     selection.detailDragging = null;
                     selection.dragging = false;
@@ -2850,9 +2955,7 @@
                     paintGridSelection();
                     return;
                 }
-                const rect0 = normalizeTransitSkuGridRect(skuGridCoord, skuGridCoord);
                 selection.transitSkuGrid = { anchor: skuGridCoord, current: skuGridCoord };
-                selection.selectedCells = collectTransitSkuGridCellsInRect(state, rect0);
                 selection.detailSelections = new Map();
                 selection.detailDragging = { mode: 'transitSkuGrid' };
                 selection.dragging = false;
@@ -7047,12 +7150,7 @@
                 const g = getTransitSkuGridCoord(state, el);
                 if(!g) return;
                 activeGridSelection.transitSkuGrid.current = g;
-                const rect = normalizeTransitSkuGridRect(
-                    activeGridSelection.transitSkuGrid.anchor,
-                    g
-                );
-                activeGridSelection.selectedCells = collectTransitSkuGridCellsInRect(state, rect);
-                paintGridSelection();
+                schedulePaintGridSelection();
                 return;
             }
 
@@ -7066,7 +7164,7 @@
             const detailSel = (activeGridSelection.detailSelections || new Map()).get(cell);
             if(!detailSel) return;
             detailSel.current = detailCoord;
-            paintGridSelection();
+            schedulePaintGridSelection();
             return;
         }
 
