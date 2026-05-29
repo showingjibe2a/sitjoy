@@ -1443,19 +1443,33 @@
             bump(72);
         }
 
+        const stackLines = cell.querySelectorAll('.transit-sku-stack-line');
+        if(stackLines.length){
+            stackLines.forEach((line) => {
+                const t = String(line.textContent || '').replace(/\s+/g, ' ').trim();
+                if(t) bump(Math.min(220, t.length * 7.5 + 20));
+            });
+            return minW;
+        }
+
+        if(minW === 0){
+            const plain = String(cell.innerText || cell.textContent || '').replace(/\s+/g, ' ').trim();
+            if(plain) bump(Math.min(280, plain.length * 7.5 + 24));
+        }
+
         return minW;
     }
 
-    function getManagedColumnResizeMin(state, columnKey){
-        const base = getPmTableColResizeMin(state);
+    /** 按表头 + 表体内容估算列默认宽度（仅用于初始/重置，不限制用户拖窄） */
+    function computeManagedColumnContentDefaultWidth(state, columnKey){
         const key = String(columnKey || '').trim();
-        if(!state || !key) return base;
+        if(!state || !key) return 0;
 
-        let floor = base;
+        let width = getPmTableColResizeMin(state);
         const headerRow = getPrimaryHeaderRow(state);
         if(headerRow){
             const th = Array.from(headerRow.cells || []).find((cell) => String(cell.dataset.manageColKey || '').trim() === key);
-            if(th) floor = Math.max(floor, measureManagedHeaderMinWidthPx(th));
+            if(th) width = Math.max(width, measureManagedHeaderMinWidthPx(th));
         }
 
         const rows = getDataRows(state).filter((row) => row && row.style.display !== 'none');
@@ -1463,30 +1477,25 @@
         for(let i = 0; i < sampleCount; i += 1){
             const cell = mapRowByKey(rows[i]).get(key);
             if(!cell) continue;
-            floor = Math.max(floor, measureManagedCellContentMinWidthPx(cell));
+            width = Math.max(width, measureManagedCellContentMinWidthPx(cell));
         }
-        ensureTemplateColumnWidths(state);
-        const tpl = state.templateColumnWidths && state.templateColumnWidths[key];
-        if(tpl > 0){
-            const headerOnly = measureManagedHeaderMinWidthPx(
-                headerRow ? Array.from(headerRow.cells || []).find((cell) => String(cell.dataset.manageColKey || '').trim() === key) : null
-            );
-            floor = Math.max(headerOnly || 0, Math.min(floor, Math.ceil(tpl * 1.12)));
-        }
-        return floor;
+        return Math.max(getPmTableColResizeMin(state), Math.min(280, Math.round(width)));
+    }
+
+    /** 拖拽列宽时的硬下限（绝对最小 px），允许窄于内容，超出部分省略号 */
+    function getManagedColumnResizeMin(state, columnKey){
+        void columnKey;
+        return getPmTableColResizeMin(state);
     }
 
     function clampManagedColumnWidth(state, columnKey, widthPx){
         const w = Math.round(Number(widthPx) || 0);
-        const key = String(columnKey || '').trim();
-        let floor;
+        let floor = getPmTableColResizeMin(state);
         if(activeResizeState
             && activeResizeState.state === state
-            && String(activeResizeState.key || '').trim() === key
+            && String(activeResizeState.key || '').trim() === String(columnKey || '').trim()
             && Number.isFinite(activeResizeState.resizeMinPx)){
             floor = activeResizeState.resizeMinPx;
-        } else {
-            floor = getManagedColumnResizeMin(state, key);
         }
         return Math.max(floor, w);
     }
@@ -1687,7 +1696,8 @@
         const typeHint = inferDefaultWidthFromHeaderCell(meta.cell);
         const labelLen = String(meta.label || '').trim().length;
         const textWidth = Math.ceil(Math.min(labelLen, 14) * 14 + 28);
-        const merged = Math.max(headerWidth, typeHint, textWidth);
+        const contentDefault = state && key ? computeManagedColumnContentDefaultWidth(state, key) : 0;
+        const merged = Math.max(headerWidth, typeHint, textWidth, contentDefault);
         return Math.max(48, Math.min(280, merged));
     }
 
@@ -3243,7 +3253,7 @@
                     key,
                     startX: event.clientX,
                     startWidth: cell.getBoundingClientRect().width,
-                    resizeMinPx: getManagedColumnResizeMin(state, key),
+                    resizeMinPx: getPmTableColResizeMin(state),
                     handle,
                     hasMoved: false
                 };
@@ -5195,7 +5205,10 @@
                 const hasStored = Number.isFinite(Number(stored ?? legacy)) && Number(stored ?? legacy) > 0;
                 const width = Number(stored ?? legacy ?? compact);
                 const raw = Number.isFinite(width) && width > 0 ? width : compact;
-                resolvedWidths[key] = hasStored ? clampManagedColumnWidth(state, key, raw) : raw;
+                /* 已保存宽度尊重用户拖窄；仅保证不低于绝对最小列宽 */
+                resolvedWidths[key] = hasStored
+                    ? Math.max(getPmTableColResizeMin(state), Math.round(raw))
+                    : raw;
             });
             if(isPmMonthColWidthSyncTable(state.table)){
                 const monthKeys = validKeys.filter(k => isPmMonthColKeyForWidthSync(state.table, k));
