@@ -1728,6 +1728,14 @@ button.sj-group-row-edit-btn {
 .pm-table.is-grid-selecting td.transit-col-sku-listed:has(.transit-sku-stack .pm-grid-detail-anchor) {
     background: transparent !important;
     box-shadow: none !important;
+    overflow: visible !important;
+}
+
+.pm-table.is-grid-selecting td.transit-col-sku-color .transit-sku-stack,
+.pm-table.is-grid-selecting td.transit-col-sku .transit-sku-stack,
+.pm-table.is-grid-selecting td.transit-col-sku-qty .transit-sku-stack,
+.pm-table.is-grid-selecting td.transit-col-sku-listed .transit-sku-stack {
+    overflow: visible;
 }
 
 /* 在途 SKU：相邻选中行去掉行间分隔线，底色/框线连贯；行高由模板固定，不再改 padding */
@@ -2309,9 +2317,9 @@ button.sj-group-row-edit-btn {
     min-width: var(--pm-managed-table-width, max-content) !important;
 }
 
-.pm-table.is-managed-table > tbody > tr > td:has(input, select, textarea, button, .status-segment, .pm-actions, .preview-status, .preview-doc-cell, .preview-doc-actions, .universal-select-dropdown, .sku-cell, .pm-cell-interactive),
-.pm-managed-head-table.is-managed-table > thead > tr > th:has(input, button, select),
-.pm-managed-head-table.is-managed-table > thead > tr > th:has(.pm-col-resizer) {
+.pm-table.is-managed-table > tbody > tr > td:not(.pm-table-hide-col):has(input, select, textarea, button, .status-segment, .pm-actions, .preview-status, .preview-doc-cell, .preview-doc-actions, .universal-select-dropdown, .sku-cell, .pm-cell-interactive),
+.pm-managed-head-table.is-managed-table > thead > tr > th:not(.pm-table-hide-col):has(input, button, select),
+.pm-managed-head-table.is-managed-table > thead > tr > th:not(.pm-table-hide-col):has(.pm-col-resizer) {
     max-width: none;
     overflow: visible;
     white-space: normal;
@@ -2378,9 +2386,27 @@ button.sj-group-row-edit-btn {
     box-sizing: border-box;
 }
 
+/* 全局不可编辑展示样式（纯展示块；表单内只读字段可复用 .history-text） */
+.history-text {
+    min-height: 38px;
+    border: 1px solid rgba(207, 199, 189, 0.55);
+    border-radius: 8px;
+    padding: 0.5rem 0.65rem;
+    background: transparent;
+    color: var(--morandi-slate);
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+    min-width: 0;
+    width: 100%;
+    font: inherit;
+    line-height: 1.4;
+    word-break: break-word;
+    cursor: default;
+}
+
 .pm-table td .history-text {
     display: block;
-    min-width: 0;
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -2432,6 +2458,7 @@ button.sj-group-row-edit-btn {
 /*
  * 托管表隐藏列：必须用 visibility:collapse，不能用 display:none。
  * display:none 会让表体单元格脱离列网格，而分离表头仍占位 → 串列错位。
+ * 隐藏列内子节点须一并收束，否则复杂单元格（如权限编辑器）仍会撑开行高。
  */
 .pm-table.is-managed-table > thead > tr > th.pm-table-hide-col,
 .pm-table.is-managed-table > tbody > tr > td.pm-table-hide-col,
@@ -2442,8 +2469,24 @@ button.sj-group-row-edit-btn {
     border-width: 0 !important;
     font-size: 0 !important;
     line-height: 0 !important;
+    height: 0 !important;
+    max-height: 0 !important;
+    min-height: 0 !important;
     overflow: hidden !important;
     white-space: nowrap !important;
+}
+
+.pm-table.is-managed-table > tbody > tr > td.pm-table-hide-col > *,
+.pm-table.is-managed-table > thead > tr > th.pm-table-hide-col > *,
+.pm-managed-head-table.is-managed-table > thead > tr > th.pm-table-hide-col > * {
+    display: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    min-height: 0 !important;
+    height: 0 !important;
+    max-height: 0 !important;
+    overflow: hidden !important;
 }
 
 .pm-table.is-managed-table col[data-pm-col-hidden="1"],
@@ -4927,12 +4970,6 @@ a.nas-main-image-crumb:hover {
     color: #9a9083;
     text-align: center;
     line-height: 1.45;
-}
-
-.home-profile-modal-form .is-readonly {
-    background: #f5f1ea;
-    color: #7a7268;
-    cursor: default;
 }
 
 @media (max-width: 900px) {

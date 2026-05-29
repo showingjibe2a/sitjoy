@@ -247,17 +247,6 @@ class ProfileMixin:
                 phone = (data.get('phone') or '').strip()
                 birthday_raw = (data.get('birthday') or '').strip()
                 birthday = self._parse_date_str(birthday_raw) if birthday_raw else None
-                job_title = (data.get('job_title') or '').strip() or None
-                hire_date_raw = (data.get('hire_date') or '').strip()
-                hire_date = self._parse_date_str(hire_date_raw) if hire_date_raw else None
-                supervisor_raw = data.get('direct_supervisor_id')
-                supervisor_id = None
-                if supervisor_raw is not None and str(supervisor_raw).strip() != '':
-                    supervisor_id = self._parse_int(supervisor_raw)
-                    if not supervisor_id:
-                        return self.send_json({'status': 'error', 'message': '直属上级无效'}, start_response)
-                    if int(supervisor_id) == int(user_id):
-                        return self.send_json({'status': 'error', 'message': '不能将自己设为直属上级'}, start_response)
                 if not username:
                     return self.send_json({'status': 'error', 'message': '登录账号不能为空'}, start_response)
                 with self._get_db_connection() as conn:
@@ -268,27 +257,16 @@ class ProfileMixin:
                         )
                         if cur.fetchone():
                             return self.send_json({'status': 'error', 'message': '登录账号已存在，请更换'}, start_response)
-                        if supervisor_id:
-                            cur.execute(
-                                'SELECT id FROM users WHERE id=%s AND COALESCE(is_approved, 1)=1 LIMIT 1',
-                                (int(supervisor_id),),
-                            )
-                            if not cur.fetchone():
-                                return self.send_json({'status': 'error', 'message': '直属上级不存在或不可用'}, start_response)
                         cur.execute(
                             """
                             UPDATE users
-                            SET username=%s, phone=%s, birthday=%s,
-                                job_title=%s, hire_date=%s, direct_supervisor_id=%s
+                            SET username=%s, phone=%s, birthday=%s
                             WHERE id=%s
                             """,
                             (
                                 username,
                                 phone or None,
                                 birthday,
-                                job_title,
-                                hire_date,
-                                supervisor_id,
                                 int(user_id),
                             ),
                         )

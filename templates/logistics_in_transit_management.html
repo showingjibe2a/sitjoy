@@ -84,18 +84,33 @@
     #mainTable td.transit-col-sku-qty + td.transit-col-sku-listed {
       padding-left: 0;
     }
-    /* 多列框选：选中行条吃进 td 水平 padding，列间不留底色缝（文字用等量 padding 顶住） */
+    /* 框选时勿裁切 inset 框线（托管表 td 默认 overflow:hidden） */
+    #mainTable.pm-table.is-grid-selecting td.transit-col-sku-color:has(.pm-grid-detail-selected, .pm-grid-detail-anchor),
+    #mainTable.pm-table.is-grid-selecting td.transit-col-sku:has(.pm-grid-detail-selected, .pm-grid-detail-anchor),
+    #mainTable.pm-table.is-grid-selecting td.transit-col-sku-qty:has(.pm-grid-detail-selected, .pm-grid-detail-anchor),
+    #mainTable.pm-table.is-grid-selecting td.transit-col-sku-listed:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) {
+      overflow: visible !important;
+    }
+    #mainTable.pm-table.is-grid-selecting td.transit-col-sku-color .transit-sku-stack,
+    #mainTable.pm-table.is-grid-selecting td.transit-col-sku .transit-sku-stack,
+    #mainTable.pm-table.is-grid-selecting td.transit-col-sku-qty .transit-sku-stack,
+    #mainTable.pm-table.is-grid-selecting td.transit-col-sku-listed .transit-sku-stack {
+      overflow: visible;
+    }
+    /* 默认只向右吃进 padding，保留完整左侧框线 */
     #mainTable.pm-table.is-grid-selecting .transit-sku-stack-line.pm-grid-detail-selected,
     #mainTable.pm-table.is-grid-selecting .transit-sku-stack-line.pm-grid-detail-anchor {
-      margin-left: -0.28rem;
+      position: relative;
+      z-index: 1;
+      margin-left: 0;
       margin-right: -0.28rem;
-      padding-left: 0.28rem;
+      padding-left: 0;
       padding-right: 0.28rem;
-      width: calc(100% + 0.56rem);
+      width: calc(100% + 0.28rem);
       max-width: none;
       box-sizing: border-box;
     }
-    /* 相邻两列均有选中时，共享竖缝不再露底 */
+    /* 仅当左侧相邻列也有选中时，才向左吃进列缝 */
     #mainTable.pm-table.is-grid-selecting td.transit-col-sku-color:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) + td.transit-col-sku:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) .transit-sku-stack-line.pm-grid-detail-selected,
     #mainTable.pm-table.is-grid-selecting td.transit-col-sku-color:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) + td.transit-col-sku:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) .transit-sku-stack-line.pm-grid-detail-anchor,
     #mainTable.pm-table.is-grid-selecting td.transit-col-sku:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) + td.transit-col-sku-qty:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) .transit-sku-stack-line.pm-grid-detail-selected,
@@ -104,6 +119,7 @@
     #mainTable.pm-table.is-grid-selecting td.transit-col-sku-qty:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) + td.transit-col-sku-listed:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) .transit-sku-stack-line.pm-grid-detail-anchor {
       margin-left: -0.28rem;
       padding-left: 0.28rem;
+      width: calc(100% + 0.56rem);
     }
     .transit-sku-stack {
       display: flex;

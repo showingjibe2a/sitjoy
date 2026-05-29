@@ -722,7 +722,7 @@
                             <form id="profileForm" class="pm-form home-profile-form-grid">
                                 <div class="form-group">
                                     <label>姓名</label>
-                                    <input type="text" id="profileName" readonly class="is-readonly" placeholder="—">
+                                    <div id="profileName" class="history-text">—</div>
                                 </div>
                                 <div class="form-group">
                                     <label>手机</label>
@@ -735,21 +735,19 @@
                             </form>
                         </section>
                         <section class="permission-panel home-profile-panel" aria-labelledby="profilePanelJobTitle">
-                            <h4 class="permission-panel-title" id="profilePanelJobTitle">② 岗位信息<span class="help-dot" data-tip="岗位、直属上级与入职时间可自行维护。"></span></h4>
+                            <h4 class="permission-panel-title" id="profilePanelJobTitle">② 岗位信息<span class="help-dot" data-tip="岗位、直属上级与入职时间由管理员维护。"></span></h4>
                             <div class="pm-form home-profile-form-grid">
                                 <div class="form-group">
                                     <label>岗位</label>
-                                    <input type="text" id="profileJobTitle" placeholder="例如：运营专员">
+                                    <div id="profileJobTitle" class="history-text">—</div>
                                 </div>
                                 <div class="form-group">
                                     <label>直属上级</label>
-                                    <select id="profileDirectSupervisor" data-universal-no-search="1">
-                                        <option value="">无</option>
-                                    </select>
+                                    <div id="profileDirectSupervisor" class="history-text">—</div>
                                 </div>
                                 <div class="form-group pm-form-full">
                                     <label>入职时间</label>
-                                    <input type="date" id="profileHireDate">
+                                    <div id="profileHireDate" class="history-text">—</div>
                                 </div>
                             </div>
                         </section>
@@ -762,11 +760,11 @@
                                 </div>
                                 <div class="form-group" id="profileSystemPermissionGroup" hidden>
                                     <label>系统权限</label>
-                                    <input type="text" id="profileSystemPermission" readonly class="is-readonly">
+                                    <div id="profileSystemPermission" class="history-text">—</div>
                                 </div>
                                 <div class="form-group pm-form-full">
                                     <label>注册时间</label>
-                                    <input type="text" id="profileCreatedAt" readonly class="is-readonly">
+                                    <div id="profileCreatedAt" class="history-text">—</div>
                                 </div>
                             </div>
                         </section>
@@ -1000,43 +998,54 @@
         }
 
         function fillProfileSupervisorSelect(candidates, selectedId) {
-            const sel = document.getElementById('profileDirectSupervisor');
-            if (!sel) return;
+            const el = document.getElementById('profileDirectSupervisor');
+            if (!el) return;
             const selected = selectedId ? String(selectedId) : '';
-            sel.innerHTML = '<option value="">无</option>';
-            (candidates || []).forEach(item => {
+            let label = '无';
+            (candidates || []).some(item => {
                 const id = String(item.id || '');
-                if (!id) return;
-                const opt = document.createElement('option');
-                opt.value = id;
-                opt.textContent = item.label || id;
-                if (id === selected) opt.selected = true;
-                sel.appendChild(opt);
+                if (!id || id !== selected) return false;
+                label = item.label || id;
+                return true;
             });
+            el.textContent = label;
         }
 
         function fillProfileModalForm(profile, supervisorCandidates) {
             if (!profile) return;
             const nameEl = document.getElementById('profileName');
-            if (nameEl) nameEl.value = (profile.name || profile.display_name || '').trim() || '—';
+            if (nameEl) nameEl.textContent = (profile.name || profile.display_name || '').trim() || '—';
             const phoneEl = document.getElementById('profilePhone');
             if (phoneEl) phoneEl.value = profile.phone || '';
             const birthdayEl = document.getElementById('profileBirthday');
             if (birthdayEl) birthdayEl.value = (profile.birthday || '').toString().slice(0, 10);
             const jobEl = document.getElementById('profileJobTitle');
-            if (jobEl) jobEl.value = (profile.job_title || '').trim();
-            fillProfileSupervisorSelect(supervisorCandidates, profile.direct_supervisor_id);
+            if (jobEl) jobEl.textContent = (profile.job_title || '').trim() || '—';
+            const supervisorEl = document.getElementById('profileDirectSupervisor');
+            if (supervisorEl) {
+                const supervisorLabel = (profile.direct_supervisor_label || '').trim();
+                if (supervisorLabel) {
+                    supervisorEl.textContent = supervisorLabel;
+                } else if (profile.direct_supervisor_id) {
+                    fillProfileSupervisorSelect(supervisorCandidates, profile.direct_supervisor_id);
+                } else {
+                    supervisorEl.textContent = '无';
+                }
+            }
             const hireEl = document.getElementById('profileHireDate');
-            if (hireEl) hireEl.value = profile.hire_date ? String(profile.hire_date).slice(0, 10) : '';
+            if (hireEl) {
+                const hire = profile.hire_date ? String(profile.hire_date).slice(0, 10) : '';
+                hireEl.textContent = hire || '—';
+            }
             const usernameEl = document.getElementById('profileUsername');
             if (usernameEl) usernameEl.value = profile.username || '';
             const permGroup = document.getElementById('profileSystemPermissionGroup');
             const permEl = document.getElementById('profileSystemPermission');
             const permLabel = formatProfileSystemPermission(profile);
             if (permGroup) permGroup.hidden = !permLabel;
-            if (permEl) permEl.value = permLabel;
+            if (permEl) permEl.textContent = permLabel || '—';
             const createdEl = document.getElementById('profileCreatedAt');
-            if (createdEl) createdEl.value = profile.created_at || '';
+            if (createdEl) createdEl.textContent = profile.created_at || '—';
             const displayName = profile.display_name || profile.name || profile.username || '用户';
             applyProfileAvatarToElements(profile.avatar_url || null, displayName);
         }
@@ -1097,15 +1106,10 @@
         }
 
         async function saveProfile() {
-            const supervisorSel = document.getElementById('profileDirectSupervisor');
-            const supervisorVal = supervisorSel ? supervisorSel.value : '';
             const payload = {
                 username: (document.getElementById('profileUsername').value || '').trim(),
                 phone: (document.getElementById('profilePhone').value || '').trim(),
-                birthday: (document.getElementById('profileBirthday').value || '').trim(),
-                job_title: (document.getElementById('profileJobTitle').value || '').trim(),
-                hire_date: (document.getElementById('profileHireDate').value || '').trim(),
-                direct_supervisor_id: supervisorVal === '' ? null : supervisorVal
+                birthday: (document.getElementById('profileBirthday').value || '').trim()
             };
             if (!payload.username) {
                 showProfileHint('登录账号不能为空', true);

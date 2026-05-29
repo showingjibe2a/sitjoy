@@ -635,17 +635,23 @@
             return `<span class="health-metric-cell">${text}</span>`;
         }
 
-        function encodeItem(item) {
-            return encodeURIComponent(JSON.stringify(item || {}));
+        function escapeHtml(text) {
+            return String(text == null ? '' : text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
         }
 
-        function openEditModalEncoded(encodedText) {
-            try {
-                const item = JSON.parse(decodeURIComponent(encodedText || ''));
-                openEditModal(item);
-            } catch (e) {
-                setImportStatus('记录解析失败', 'error');
+        /** 编辑走 id + 列表缓存，避免备注含 ' ( ) 等破坏 onclick 内联字符串 */
+        function openEditModalById(id) {
+            const rowId = Number(id);
+            const item = (latestListItems || []).find((row) => Number(row.id) === rowId);
+            if (!item) {
+                setImportStatus('未找到该记录，请刷新列表后重试', 'error');
+                return;
             }
+            openEditModal(item);
         }
 
         function renderShopSelectOptions() {
@@ -1132,11 +1138,11 @@
                         <td>${metricCell(item, warnMap, 'pre_fulfillment_cancel_rate')}</td>
                         <td>${metricCell(item, warnMap, 'valid_tracking_rate')}</td>
                         <td>${metricCell(item, warnMap, 'on_time_delivery_rate')}</td>
-                        <td>${item.remark || ''}</td>
+                        <td>${escapeHtml(item.remark || '')}</td>
                         <td>
                             <div class="pm-actions">
-                                <button class="btn-secondary" onclick="openEditModalEncoded('${encodeItem(item)}')">编辑</button>
-                                <button class="btn-danger" onclick='deleteItem(${item.id})'>删除</button>
+                                <button type="button" class="btn-secondary" onclick="openEditModalById(${Number(item.id) || 0})">编辑</button>
+                                <button type="button" class="btn-danger" onclick="deleteItem(${Number(item.id) || 0})">删除</button>
                             </div>
                         </td>
                     </tr>
