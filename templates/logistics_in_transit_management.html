@@ -59,36 +59,65 @@
     .readonly-segment { pointer-events: none; opacity: .9; }
     .qty-consistent-yes { color: #2f6f2f; font-weight: 700; }
     .qty-consistent-no { color: #a33; font-weight: 700; }
-    .transit-detail-cell { white-space: normal !important; overflow: hidden !important; text-overflow: initial !important; vertical-align: top; padding: .12rem .28rem !important; }
-    #mainTable thead th { vertical-align: middle; }
-    #mainTable thead .transit-head-main th[rowspan="2"] { vertical-align: middle; }
-    #mainTable thead .transit-group-head { padding: .12rem .28rem .2rem; }
-    #mainTable thead .transit-head-subrow th,
-    .pm-managed-head-table thead .transit-head-subrow th {
-      padding: .1rem .28rem;
-      vertical-align: middle;
-      font-size: .72rem;
-      font-weight: 600;
-      color: var(--morandi-slate);
-      border-bottom: 1px solid rgba(207,199,189,.75);
-      background: rgba(255,252,248,.96);
+    #mainTable th,
+    #mainTable td {
+      box-sizing: border-box;
+    }
+    .transit-col-sku-color,
+    .transit-col-sku-qty,
+    .transit-col-sku-listed {
+      text-align: center;
+      vertical-align: top;
+      font-variant-numeric: tabular-nums;
+    }
+    .transit-col-sku {
+      vertical-align: top;
+      min-width: 0;
+    }
+    .transit-sku-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 0.22rem;
+      min-width: 0;
+    }
+    .transit-sku-stack-line {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 1.35rem;
+      line-height: 1.25;
+      min-width: 0;
+    }
+    .transit-col-sku .transit-sku-stack-line {
+      justify-content: flex-start;
+    }
+    .transit-col-sku .transit-detail-sku-text {
+      display: block;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    .transit-sku-stack-line .is-mismatch {
+      color: #b42318;
+      font-weight: 700;
+    }
+    #mainTable thead th { vertical-align: middle; white-space: nowrap; }
+    #mainTable thead th.transit-th-sku-group {
+      background: rgba(245, 241, 235, 0.96);
       position: relative;
       overflow: visible;
     }
-    #mainTable thead .transit-sub-sort-th,
-    .pm-managed-head-table thead .transit-sub-sort-th { cursor: pointer; user-select: none; }
-    #mainTable thead .transit-sub-sort-th.is-active,
-    .pm-managed-head-table thead .transit-sub-sort-th.is-active { color: var(--morandi-ink); }
-    #mainTable thead .transit-sub-sort-th .transit-sort-ind,
-    .pm-managed-head-table thead .transit-sub-sort-th .transit-sort-ind { font-size: .58rem; opacity: .72; margin-left: .12rem; }
-    #mainTable thead .transit-sub-sort-th.is-active .transit-sort-ind,
-    .pm-managed-head-table thead .transit-sub-sort-th.is-active .transit-sort-ind { opacity: 1; }
-    .pm-managed-head-table thead .transit-sub-sort-th.is-col-resizing,
+    #mainTable thead .transit-sub-sort-th { cursor: pointer; user-select: none; }
+    #mainTable thead .transit-sub-sort-th.is-active { color: var(--morandi-ink); }
+    #mainTable thead .transit-sub-sort-th.pm-sortable::after,
+    .pm-managed-head-table thead .transit-sub-sort-th.pm-sortable::after {
+      font-size: 0.75em;
+      color: rgba(123, 128, 136, 0.7);
+    }
     #mainTable thead .transit-sub-sort-th.is-col-resizing { background: rgba(42,36,32,.06); }
-    #mainTable thead .transit-group-head.pm-sortable::after,
-    #mainTable thead .transit-group-head.pm-sort-asc::after,
-    #mainTable thead .transit-group-head.pm-sort-desc::after { display: none !important; }
+    .pm-managed-head-table thead .transit-sub-sort-th { cursor: pointer; user-select: none; position: relative; overflow: visible; }
+    .pm-managed-head-table thead .transit-sub-sort-th.is-col-resizing { background: rgba(42,36,32,.06); }
     .transit-sub-col-resizer {
       position: absolute;
       top: 0;
@@ -101,19 +130,15 @@
     }
     .transit-sub-col-resizer:hover,
     .transit-sub-col-resizer.is-active { background: rgba(42,36,32,.12); }
-    .transit-detail-list { display: grid; gap: 0; width: 100%; }
-    .transit-detail-item { display: grid; grid-template-columns: var(--transit-p0, 15%) var(--transit-p1, 44%) var(--transit-p2, 20.5%) var(--transit-p3, 20.5%); gap: 0; align-items: stretch; font-size: .84rem; width: 100%; min-width: 0; }
-    .transit-detail-item .transit-detail-color-col { display: inline-flex; justify-content: center; align-items: center; }
-    .transit-detail-item .transit-detail-sku-col { display: inline-flex; align-items: center; gap: .12rem; min-width: 0; width: 100%; }
-    .transit-detail-item .transit-detail-sku-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .transit-detail-item .transit-detail-qty-col,
-    .transit-detail-item .transit-detail-listed-col { text-align: center; font-variant-numeric: tabular-nums; }
-    .transit-detail-item > span { min-height: 24px; padding: .12rem .28rem; box-sizing: border-box; border: 1px solid rgba(207,199,189,.55); margin-left: -1px; margin-top: -1px; overflow: hidden; }
     .preview-doc-cell { display: grid; gap: .28rem; }
     .preview-doc-actions { display: flex; gap: .28rem; flex-wrap: wrap; align-items: center; }
     .preview-doc-actions .btn-secondary { padding: .12rem .32rem; font-size: .72rem; line-height: 1.2; }
+    #transit-doc-modal .transit-doc-modal-scroll { max-height: min(62vh, 520px); overflow: auto; margin-top: .5rem; border: 1px solid rgba(207,199,189,.55); border-radius: 10px; }
+    #transit-doc-modal .transit-doc-file-table { margin: 0; width: 100%; }
+    #transit-doc-modal .transit-doc-status { display: none; margin-top: .65rem; padding: .5rem .65rem; border-radius: 8px; font-size: .88rem; }
+    #transit-doc-modal .transit-doc-toolbar { display: flex; gap: .45rem; flex-wrap: wrap; align-items: center; margin-top: .35rem; }
+    #transit-doc-modal .transit-doc-meta { font-size: .84rem; color: var(--morandi-slate); margin: .2rem 0 0; }
     .transit-color-dot { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(60,60,60,.24); flex: 0 0 auto; }
-    .transit-detail-item.is-mismatch .transit-detail-listed-col { color: #b42318; font-weight: 700; }
     .pm-toolbar .pm-search input[type="text"],
     #pm-modal input[type="text"]:not(.readonly-cell):not(.readonly-dark),
     #pm-modal input[type="date"],
@@ -133,22 +158,7 @@
     }
     #pm-modal textarea { min-height: 4.5rem; resize: vertical; }
     .inline-edit-cell {
-      white-space: nowrap !important;
-      overflow: hidden !important;
-      text-overflow: clip !important;
       vertical-align: middle;
-    }
-    #mainTable.is-managed-table > tbody > tr > td.inline-edit-cell {
-      min-width: 0;
-    }
-    #mainTable td.inline-edit-cell:has(select) {
-      overflow: visible !important;
-    }
-    /* 含下拉/按钮的单元格允许溢出展示（避免遮挡弹层） */
-    #mainTable td.transit-col-qty-checked,
-    #mainTable td.transit-col-doc {
-      overflow: visible !important;
-      white-space: normal !important;
     }
     .transit-inline-input {
       width: 100%;
@@ -176,14 +186,14 @@
       max-width: 100%;
       min-width: 0;
     }
-    .transit-inline-warehouse, .transit-inline-forwarder {
+    .transit-inline-warehouse, .transit-inline-forwarder, .transit-inline-region {
       width: 100%;
       max-width: 100%;
       min-width: 0;
     }
-    .transit-inline-warehouse.is-empty, .transit-inline-forwarder.is-empty { color: #8f8f8f; }
-    .transit-inline-warehouse option, .transit-inline-forwarder option { color: #1f1f1f; }
-    .transit-inline-warehouse option[value=""], .transit-inline-forwarder option[value=""] { color: #8f8f8f; }
+    .transit-inline-warehouse.is-empty, .transit-inline-forwarder.is-empty, .transit-inline-region.is-empty { color: #8f8f8f; }
+    .transit-inline-warehouse option, .transit-inline-forwarder option, .transit-inline-region option { color: #1f1f1f; }
+    .transit-inline-warehouse option[value=""], .transit-inline-forwarder option[value=""], .transit-inline-region option[value=""] { color: #8f8f8f; }
     .transit-inline-input:focus { outline: none; border-color: var(--morandi-ink); box-shadow: 0 0 0 2px rgba(42,36,32,.08); }
     .transit-inline-input.is-dirty { border-color: #a07e66; background: rgba(255, 248, 240, .9); }
     .transit-inline-remark-wrap {
@@ -198,8 +208,6 @@
       max-width: 100%;
       min-width: 0;
     }
-    .transit-detail-row td { background: rgba(255,255,255,.62); border-top: none !important; }
-    .transit-detail-wrap { padding: 0; width: 100%; box-sizing: border-box; overflow: hidden; }
 
     .preview-savebar {
       position: fixed;
@@ -233,7 +241,85 @@
   <section class="hero" style="margin-bottom:1.5rem;"><h2>在途物流库存管理</h2><p>管理在途物流节点、提单信息与SKU到货上架数量</p></section>
   <section class="pm-layout">
     <div class="card pm-card"><div class="pm-toolbar"><div class="pm-toolbar-actions"><div class="form-group pm-search" style="margin:0;"><span class="pm-search-title">搜索</span><input id="searchInput" type="text" placeholder="搜索箱号/提单号/工厂/货代"><span class="pm-search-title" style="margin-left:.4rem;">SKU</span><input id="skuFilterInput" type="text" placeholder="筛选SKU"><span class="pm-search-title" style="margin-left:.4rem;">颜色</span><input id="colorFilterInput" type="text" placeholder="筛选颜色(HEX/关键字)"><button class="btn-primary" onclick="loadList()">搜索</button><button class="btn-secondary" onclick="resetSearch()">清空</button></div><span class="pm-divider"></span><button class="btn-secondary" onclick="downloadTransitTemplate()">下载模板</button><button class="btn-secondary" onclick="triggerTransitUpload()">批量上传</button><button class="btn-secondary" onclick="openTransitDetailExportModal()">导出明细</button><input type="file" id="transitTemplateUploadInput" accept=".xlsx" style="display:none;"><span class="pm-divider"></span><button class="btn-accent" onclick="openCreateModal()">新增</button></div></div></div>
-    <div><table class="pm-table" id="mainTable" data-pm-col-resize-min="1" data-pm-col-resize-lock="0"><colgroup><col style="width:54px"><col style="width:72px"><col style="width:96px"><col style="width:96px"><col style="width:160px"><col style="width:110px"><col style="width:48px"><col style="width:140px"><col style="width:66px"><col style="width:66px"><col style="width:110px"><col style="width:96px"><col style="width:160px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:110px"><col style="width:110px"><col style="width:110px"><col style="width:110px"><col style="width:150px"><col style="width:96px"><col style="width:110px"><col style="width:140px"><col style="width:96px"><col style="width:110px"><col style="width:14%"><col style="width:150px"><col style="width:150px"><col style="width:160px"></colgroup><thead><tr class="transit-head-main"><th rowspan="2" style="width:54px; text-align:center;"><input type="checkbox" id="transitSelectAll"></th><th rowspan="2" class="transit-col-box">箱号</th><th rowspan="2" class="transit-col-factory">工厂</th><th rowspan="2" class="transit-col-region">目的区域</th><th rowspan="2" class="transit-col-warehouse">目的仓库</th><th rowspan="2" class="transit-col-expected">预计上架时间</th><th class="transit-group-head transit-col-detail" colspan="4" data-disable-sort="1" data-manage-col-key="SKU详情">SKU详情</th><th rowspan="2" class="transit-col-factory-ship">工厂发货日期</th><th rowspan="2" class="transit-col-status">已确认装箱量</th><th rowspan="2" class="transit-col-forwarder" data-manage-col-key="货代">货代</th><th rowspan="2" class="transit-col-bill">提单号</th><th rowspan="2" class="transit-col-shipping">船公司</th><th rowspan="2" class="transit-col-vessel">船名航次</th><th rowspan="2" class="transit-col-port-load">起运港</th><th rowspan="2" class="transit-col-port-dest">目的港</th><th rowspan="2" class="transit-col-doc">提供报关资料</th><th rowspan="2" class="transit-col-doc">提供清关资料</th><th rowspan="2" class="transit-col-date" data-manage-col-key="ETD">ETD</th><th rowspan="2" class="transit-col-date" data-manage-col-key="ETA">ETA</th><th rowspan="2" class="transit-col-arrival">到港日期</th><th rowspan="2" class="transit-col-warehouse-exp">预计送仓日期</th><th rowspan="2" class="transit-col-inbound">入库单号</th><th rowspan="2" class="transit-col-status">已登记上架</th><th rowspan="2" class="transit-col-date">实际上架日期</th><th rowspan="2" class="transit-col-qty-checked">已核对上架数量</th><th rowspan="2" class="transit-col-qty-consistent">数量一致</th><th rowspan="2" class="transit-col-financial">财务已核验</th><th rowspan="2" class="transit-col-remark">备注</th><th rowspan="2" class="transit-col-created">创建时间</th><th rowspan="2" class="transit-col-updated">更新时间</th><th rowspan="2" class="transit-col-edit">编辑</th></tr><tr class="transit-head-subrow"><th class="tiny-center transit-sub-sort-th" data-sort-field="representative_color" data-transit-sub-col="0">颜色<span class="transit-sort-ind" data-sort-indicator-for="representative_color">↕</span></th><th class="transit-sub-sort-th" data-sort-field="sku" data-transit-sub-col="1">SKU<span class="transit-sort-ind" data-sort-indicator-for="sku">↕</span></th><th class="tiny-center transit-sub-sort-th" data-sort-field="shipped_qty" data-transit-sub-col="2">发货数量<span class="transit-sort-ind" data-sort-indicator-for="shipped_qty">↕</span></th><th class="tiny-center transit-sub-sort-th" data-sort-field="listed_qty" data-transit-sub-col="3">上架数量<span class="transit-sort-ind" data-sort-indicator-for="listed_qty">↕</span></th></tr></thead><tbody><tr><td colspan="34" style="text-align:center;">加载中...</td></tr></tbody></table></div>
+    <div>
+      <table class="pm-table" id="mainTable" data-pm-col-resize-min="36" data-pm-col-resize-lock="0" data-pm-column-sequence-after="预计上架时间:SKU详情-颜色,SKU详情-SKU,SKU详情-发货数量,SKU详情-上架数量">
+        <colgroup>
+          <col style="width:54px" data-manage-col-key="__transit_chk__" data-pm-default-width="54">
+          <col style="width:72px" data-manage-col-key="箱号" data-pm-default-width="72">
+          <col style="width:96px" data-manage-col-key="工厂" data-pm-default-width="96">
+          <col style="width:96px" data-manage-col-key="目的区域" data-pm-default-width="96">
+          <col style="width:112px" data-manage-col-key="目的仓库" data-pm-default-width="112">
+          <col style="width:110px" data-manage-col-key="预计上架时间" data-pm-default-width="110">
+          <col style="width:48px" data-manage-col-key="SKU详情-颜色" data-pm-default-width="48">
+          <col style="width:140px" data-manage-col-key="SKU详情-SKU" data-pm-default-width="140">
+          <col style="width:66px" data-manage-col-key="SKU详情-发货数量" data-pm-default-width="66">
+          <col style="width:66px" data-manage-col-key="SKU详情-上架数量" data-pm-default-width="66">
+          <col style="width:110px" data-manage-col-key="工厂发货日期" data-pm-default-width="110">
+          <col style="width:96px" data-manage-col-key="已确认装箱量" data-pm-default-width="96">
+          <col style="width:88px" data-manage-col-key="货代" data-pm-default-width="88">
+          <col style="width:120px" data-manage-col-key="提单号" data-pm-default-width="120">
+          <col style="width:120px" data-manage-col-key="船公司" data-pm-default-width="120">
+          <col style="width:120px" data-manage-col-key="船名航次" data-pm-default-width="120">
+          <col style="width:120px" data-manage-col-key="起运港" data-pm-default-width="120">
+          <col style="width:120px" data-manage-col-key="目的港" data-pm-default-width="120">
+          <col style="width:96px" data-manage-col-key="提供报关资料" data-pm-default-width="96">
+          <col style="width:96px" data-manage-col-key="提供清关资料" data-pm-default-width="96">
+          <col style="width:112px" data-manage-col-key="ETD" data-pm-default-width="112">
+          <col style="width:112px" data-manage-col-key="ETA" data-pm-default-width="112">
+          <col style="width:112px" data-manage-col-key="到港日期" data-pm-default-width="112">
+          <col style="width:112px" data-manage-col-key="预计送仓日期" data-pm-default-width="112">
+          <col style="width:96px" data-manage-col-key="入库单号" data-pm-default-width="96">
+          <col style="width:96px" data-manage-col-key="已登记上架" data-pm-default-width="96">
+          <col style="width:112px" data-manage-col-key="实际上架日期" data-pm-default-width="112">
+          <col style="width:128px" data-manage-col-key="已核对上架数量" data-pm-default-width="128">
+          <col style="width:96px" data-manage-col-key="数量一致" data-pm-default-width="96">
+          <col style="width:96px" data-manage-col-key="财务已核验" data-pm-default-width="96">
+          <col style="width:140px" data-manage-col-key="备注" data-pm-default-width="140">
+          <col style="width:108px" data-manage-col-key="创建时间" data-pm-default-width="108">
+          <col style="width:108px" data-manage-col-key="更新时间" data-pm-default-width="108">
+          <col style="width:120px" data-manage-col-key="编辑" data-pm-default-width="120">
+        </colgroup>
+        <thead>
+          <tr class="transit-head-main">
+            <th style="width:54px;text-align:center;" data-manage-col-key="__transit_chk__" data-disable-sort="1"><input type="checkbox" id="transitSelectAll"></th>
+            <th class="transit-col-box" data-manage-col-key="箱号">箱号</th>
+            <th class="transit-col-factory" data-manage-col-key="工厂">工厂</th>
+            <th class="transit-col-region" data-manage-col-key="目的区域">目的区域</th>
+            <th class="transit-col-warehouse" data-manage-col-key="目的仓库">目的仓库</th>
+            <th class="transit-col-expected" data-manage-col-key="预计上架时间">预计上架时间</th>
+            <th class="tiny-center transit-sub-sort-th transit-th-sku-group pm-sortable" data-sort-field="representative_color" data-transit-sub-col="0" data-manage-col-key="SKU详情-颜色" data-disable-sort="1">颜色</th>
+            <th class="transit-sub-sort-th transit-th-sku-group pm-sortable" data-sort-field="sku" data-transit-sub-col="1" data-manage-col-key="SKU详情-SKU" data-disable-sort="1">SKU</th>
+            <th class="tiny-center transit-sub-sort-th transit-th-sku-group pm-sortable" data-sort-field="shipped_qty" data-transit-sub-col="2" data-manage-col-key="SKU详情-发货数量" data-disable-sort="1">发货数量</th>
+            <th class="tiny-center transit-sub-sort-th transit-th-sku-group pm-sortable" data-sort-field="listed_qty" data-transit-sub-col="3" data-manage-col-key="SKU详情-上架数量" data-disable-sort="1">上架数量</th>
+            <th class="transit-col-factory-ship" data-manage-col-key="工厂发货日期">工厂发货日期</th>
+            <th class="transit-col-status" data-manage-col-key="已确认装箱量">已确认装箱量</th>
+            <th class="transit-col-forwarder" data-manage-col-key="货代">货代</th>
+            <th class="transit-col-bill" data-manage-col-key="提单号">提单号</th>
+            <th class="transit-col-shipping" data-manage-col-key="船公司">船公司</th>
+            <th class="transit-col-vessel" data-manage-col-key="船名航次">船名航次</th>
+            <th class="transit-col-port-load" data-manage-col-key="起运港">起运港</th>
+            <th class="transit-col-port-dest" data-manage-col-key="目的港">目的港</th>
+            <th class="transit-col-doc" data-manage-col-key="提供报关资料">提供报关资料</th>
+            <th class="transit-col-doc" data-manage-col-key="提供清关资料">提供清关资料</th>
+            <th class="transit-col-date" data-manage-col-key="ETD">ETD</th>
+            <th class="transit-col-date" data-manage-col-key="ETA">ETA</th>
+            <th class="transit-col-arrival" data-manage-col-key="到港日期">到港日期</th>
+            <th class="transit-col-warehouse-exp" data-manage-col-key="预计送仓日期">预计送仓日期</th>
+            <th class="transit-col-inbound" data-manage-col-key="入库单号">入库单号</th>
+            <th class="transit-col-status" data-manage-col-key="已登记上架">已登记上架</th>
+            <th class="transit-col-date" data-manage-col-key="实际上架日期">实际上架日期</th>
+            <th class="transit-col-qty-checked" data-manage-col-key="已核对上架数量">已核对上架数量</th>
+            <th class="transit-col-qty-consistent" data-manage-col-key="数量一致">数量一致</th>
+            <th class="transit-col-financial" data-manage-col-key="财务已核验">财务已核验</th>
+            <th class="transit-col-remark" data-manage-col-key="备注">备注</th>
+            <th class="transit-col-created" data-manage-col-key="创建时间">创建时间</th>
+            <th class="transit-col-updated" data-manage-col-key="更新时间">更新时间</th>
+            <th class="transit-col-edit" data-manage-col-key="编辑">编辑</th>
+          </tr>
+        </thead>
+        <tbody><tr><td colspan="34" style="text-align:center;">加载中...</td></tr></tbody>
+      </table>
+    </div>
   </section>
 </div>
 
@@ -258,7 +344,9 @@
 </div><div id="modalStatus" class="response" style="display:none;margin-top:.75rem;"></div></div><div class="pm-modal-actions"><button class="btn-secondary" onclick="closeModal()">取消</button><button class="btn-primary" onclick="saveFromModal()">保存</button></div></div></div>
 
 <div class="pm-modal" id="qty-verify-modal"><div class="pm-modal-content pm-modal-content--wide"><div class="pm-modal-scroll"><h3 style="margin-top:0;">核对SKU上架数量</h3><div class="item-box"><div class="item-row tiny-tag"><span class="item-header-label tiny-center">下单SKU</span><span class="item-header-label tiny-center">发货数量</span><span class="item-header-label tiny-center">上架数量</span></div><div id="qtyVerifyRows"></div><div class="line" style="margin-top:.5rem;"><button type="button" class="btn-accent" onclick="addQtyVerifyModalRow()">新增一行</button><span class="transit-paste-hint" style="margin:0;">可补充仓库多出的 SKU：发货数量可为 0，上架数量填实收。</span></div></div></div><div class="pm-modal-actions" style="margin-top:.75rem;"><button class="btn-secondary" onclick="closeQtyVerifyModal()">取消</button><button class="btn-secondary" id="qtyVerifyApplyStockBtn" style="display:none;" onclick="submitQtyVerifyModal(true)">确认并叠加到在库</button><button class="btn-primary" onclick="submitQtyVerifyModal(false)">提交核对</button></div></div></div>
-<div class="pm-modal" id="confirm-modal"><div class="pm-modal-content" style="max-width:680px;"><h3 id="confirmTitle" style="margin-top:0;">提示</h3><div id="confirmBody" class="confirm-body"></div><div class="pm-modal-actions" style="margin-top:.8rem;"><button class="btn-secondary" id="confirmCancelBtn">取消</button><button class="btn-primary" id="confirmOkBtn">确定</button></div></div></div>
+<div class="pm-modal" id="confirm-modal"><div class="pm-modal-content" style="max-width:680px;"><h3 id="confirmTitle" style="margin-top:0;">提示</h3><div id="confirmBody" class="confirm-body"></div><input id="confirmInput" class="hidden" type="text" style="width:100%;box-sizing:border-box;margin-top:.65rem;"><div class="pm-modal-actions" style="margin-top:.8rem;"><button class="btn-secondary" id="confirmCancelBtn">取消</button><button class="btn-primary" id="confirmOkBtn">确定</button></div></div></div>
+<div class="pm-modal" id="transit-doc-modal"><div class="pm-modal-content pm-modal-content--wide" style="max-width:920px;"><h3 id="transitDocModalTitle" style="margin-top:0;">资料文件管理</h3><p id="transitDocModalDesc" class="transit-doc-meta"></p><div class="transit-doc-toolbar"><button type="button" class="btn-secondary" onclick="reloadTransitDocModalFiles()">刷新</button><button type="button" class="btn-secondary" onclick="triggerTransitDocModalUpload()">上传文件</button><button type="button" class="btn-danger" onclick="deleteTransitDocModalSelected()">删除选中</button></div><div id="transitDocModalStatus" class="transit-doc-status"></div><div class="transit-doc-modal-scroll"><table class="pm-table transit-doc-file-table" id="transitDocFileTable"><thead><tr><th style="width:54px;text-align:center;"><input type="checkbox" id="transitDocFileSelectAll"></th><th>文件名</th><th style="width:100px;">大小</th><th style="width:168px;">更新时间</th><th style="width:220px;">操作</th></tr></thead><tbody><tr><td colspan="5" style="text-align:center;">加载中...</td></tr></tbody></table></div><div class="pm-modal-actions" style="margin-top:.75rem;"><button type="button" class="btn-secondary" onclick="closeTransitDocModal()">关闭</button></div></div></div>
+<input type="file" id="transitDocModalUploadInput" style="display:none;" multiple>
 <div class="pm-modal" id="transit-export-modal"><div class="pm-modal-content" style="max-width:760px;"><h3 style="margin-top:0;">导出在途物流明细</h3><div class="pm-form" style="display:grid;gap:.65rem;"><div class="form-group pm-form-full"><label>当前选中记录</label><div id="transitExportSelectedInfo" class="history-text">0 条</div></div><div class="form-group pm-form-full"><label>导出字段（多选）</label><div id="transitExportFieldBox" class="item-box" style="max-height:42vh;overflow:auto;"></div></div></div><div class="pm-modal-actions"><button class="btn-secondary" type="button" onclick="closeTransitDetailExportModal()">取消</button><button class="btn-primary" type="button" onclick="downloadTransitDetailExport()">下载</button></div></div></div>
 <input type="file" id="transitDocUploadInput" style="display:none;" multiple>
 <div id="uploadProgress" class="upload-progress"><div id="uploadProgressText" class="upload-progress-title">准备上传...</div><div class="upload-progress-bar"><span id="uploadProgressFill"></span></div></div>
@@ -301,11 +389,10 @@ const transitExportFieldDefs = [
 let transitExportSelectedSnapshot = [];
 const transitDetailSortState = { field: '', dir: '' };
 const TRANSIT_SKU_DETAIL_COLS_KEY = 'sitjoy.transit.detail.skuDetailGridColsPx.v1';
-const TRANSIT_SKU_DETAIL_COL_KEY = 'SKU详情';
+const TRANSIT_SKU_DETAIL_COL_KEYS = ['SKU详情-颜色', 'SKU详情-SKU', 'SKU详情-发货数量', 'SKU详情-上架数量'];
 const TRANSIT_SKU_DETAIL_DEFAULT = [48, 140, 66, 66];
 const TRANSIT_SUB_COL_RESIZE_EDGE_PX = 16;
 let transitSubColResize = null;
-let transitGroupResizing = false;
 
 function readTransitSkuDetailColWidths(){
   try {
@@ -332,20 +419,9 @@ function getTransitSkuDetailColEls(table){
   const colgroup = t.querySelector('colgroup');
   if(!colgroup) return [];
   const cols = Array.from(colgroup.children || []).filter((node) => node && String(node.tagName || '').toUpperCase() === 'COL');
-  const keyed = cols.filter((col) => String(col.dataset.manageColKey || '').trim() === TRANSIT_SKU_DETAIL_COL_KEY);
+  const keyed = TRANSIT_SKU_DETAIL_COL_KEYS.map((k) => cols.find((col) => String(col.dataset.manageColKey || '').trim() === k)).filter(Boolean);
   if(keyed.length === 4) return keyed;
   return cols.slice(6, 10);
-}
-function readTransitSkuDetailColWidthsFromDom(table){
-  const cols = getTransitSkuDetailColEls(table);
-  return TRANSIT_SKU_DETAIL_DEFAULT.map((def, i) => {
-    const col = cols[i];
-    if(col){
-      const m = String(col.style.width || '').match(/^([\d.]+)px/i);
-      if(m) return Math.max(1, Math.round(parseFloat(m[1])));
-    }
-    return def;
-  });
 }
 function getTransitManagedHeadTable(){
   const table = document.querySelector('#mainTable');
@@ -359,6 +435,17 @@ function getTransitManagedHeadTable(){
   }
   return null;
 }
+function readTransitSkuDetailColWidthsFromDom(table){
+  const cols = getTransitSkuDetailColEls(table);
+  return TRANSIT_SKU_DETAIL_DEFAULT.map((def, i) => {
+    const col = cols[i];
+    if(col){
+      const m = String(col.style.width || '').match(/^([\d.]+)px/i);
+      if(m) return Math.max(1, Math.round(parseFloat(m[1])));
+    }
+    return def;
+  });
+}
 function getTransitSkuDetailSubThs(root){
   const scope = root || document;
   return Array.from(scope.querySelectorAll('thead tr.transit-head-subrow th[data-transit-sub-col]'));
@@ -368,19 +455,7 @@ function getTransitSkuDetailTables(){
   const headTable = getTransitManagedHeadTable();
   return [mainTable, headTable].filter(Boolean);
 }
-function setMainTableTransitDetailCssVars(w0, w1, w2, w3){
-  const table = document.querySelector('#mainTable');
-  if(!table) return;
-  const nums = [w0, w1, w2, w3].map((x) => Math.max(1, Math.round(Number(x) || 0)));
-  const sum = nums.reduce((a, b) => a + b, 0) || 1;
-  table.style.setProperty('--transit-d0', nums[0] + 'px');
-  table.style.setProperty('--transit-d1', nums[1] + 'px');
-  table.style.setProperty('--transit-d2', nums[2] + 'px');
-  table.style.setProperty('--transit-d3', nums[3] + 'px');
-  nums.forEach((n, i) => {
-    table.style.setProperty('--transit-p' + i, ((n / sum) * 100).toFixed(4) + '%');
-  });
-}
+const TRANSIT_TABLE_LEAF_COLS = 34;
 function syncTransitSkuDetailColElsToTables(widths){
   const w = (widths || []).map((x) => Math.max(1, Math.round(Number(x) || 0)));
   if(w.length !== 4 || w.some((n) => !n)) return null;
@@ -395,43 +470,17 @@ function syncTransitSkuDetailColElsToTables(widths){
       col.style.maxWidth = '';
     });
     getTransitSkuDetailSubThs(tbl).forEach((th) => {
-      const i = Number(th.dataset.transitSubCol || 0);
-      const px = w[i];
-      if(!px) return;
-      th.style.width = px + 'px';
+      th.style.width = '';
       th.style.minWidth = '';
       th.style.maxWidth = '';
     });
-    tbl.querySelectorAll('th.transit-col-detail[colspan="4"], td.transit-col-detail[colspan="4"]').forEach((cell) => {
-      cell.style.width = sum + 'px';
-      cell.style.minWidth = '';
-      cell.style.maxWidth = '';
-    });
   });
-  setMainTableTransitDetailCssVars(w[0], w[1], w[2], w[3]);
   return w;
 }
 function applyTransitSkuDetailColWidths(widths, persist){
   const w = syncTransitSkuDetailColElsToTables(widths);
   if(!w) return;
   if(persist !== false) writeTransitSkuDetailColWidths(w);
-}
-function syncTransitSkuDetailProportionsAfterGroupResize(){
-  if(transitSubColResize) return;
-  const table = document.querySelector('#mainTable');
-  if(!table) return;
-  const current = readTransitSkuDetailColWidthsFromDom(table);
-  const currentSum = current.reduce((a, b) => a + b, 0);
-  const stored = readTransitSkuDetailColWidths();
-  if(stored){
-    const storedSum = stored.reduce((a, b) => a + b, 0);
-    if(storedSum > 0 && Math.abs(storedSum - currentSum) > 2){
-      const ratio = currentSum / storedSum;
-      applyTransitSkuDetailColWidths(stored.map((x) => Math.max(1, Math.round(x * ratio))), false);
-      return;
-    }
-  }
-  applyTransitSkuDetailColWidths(current, false);
 }
 function isTransitSubColResizeHit(th, clientX){
   if(!th) return false;
@@ -475,28 +524,16 @@ function bindTransitSkuDetailColLayout(){
   if(!table || table.dataset.transitSubcolLayoutBound === '1') return;
   table.dataset.transitSubcolLayoutBound = '1';
 
-  document.addEventListener('mousedown', (e) => {
-    const handle = e.target && e.target.closest ? e.target.closest('.pm-col-resizer') : null;
-    if(!handle) return;
-    const th = handle.closest('th');
-    if(th && (th.classList.contains('transit-col-detail') || String(th.textContent || '').includes('SKU详情'))) transitGroupResizing = true;
-  }, true);
-  document.addEventListener('mouseup', () => {
-    if(transitSubColResize) return;
-    if(!transitGroupResizing) return;
-    transitGroupResizing = false;
-    requestAnimationFrame(syncTransitSkuDetailProportionsAfterGroupResize);
-  }, true);
-
   document.addEventListener('pointerdown', (e) => {
     let th = e.target && e.target.closest
-      ? e.target.closest('.pm-managed-head-table .transit-sub-sort-th[data-transit-sub-col]')
+      ? e.target.closest('.pm-managed-head-table .transit-sub-sort-th[data-transit-sub-col], #mainTable .transit-sub-sort-th[data-transit-sub-col]')
       : null;
     if(!th && e.target && e.target.closest){
       const handle = e.target.closest('.transit-sub-col-resizer');
       if(handle) th = handle.closest('.transit-sub-sort-th[data-transit-sub-col]');
     }
-    if(!th || !th.closest('.pm-managed-head-table')) return;
+    const inHead = th && (th.closest('.pm-managed-head-table') || th.closest('#mainTable'));
+    if(!inHead) return;
     if(e.target.closest('.pm-col-resizer')) return;
     if(!e.target.closest('.transit-sub-col-resizer') && !isTransitSubColResizeHit(th, e.clientX)) return;
     startTransitSubColResize(th, e);
@@ -547,7 +584,7 @@ let transitActiveConfirmDone = null;
 const $=(s)=>document.querySelector(s);
 
 function showStatus(m,e){const x=$('#modalStatus');x.style.display='block';x.style.background=e?'#ffecec':'#f0fff0';x.style.color=e?'#a33':'#2f6f2f';x.textContent=m}
-function showDialog(o){const m=$('#confirm-modal'),t=$('#confirmTitle'),b=$('#confirmBody'),ok=$('#confirmOkBtn'),ca=$('#confirmCancelBtn');t.textContent=o.title||'提示';b.textContent=o.message||'';ok.textContent=o.okText||'确定';ca.textContent=o.cancelText||'取消';ca.style.display=o.showCancel===false?'none':'';m.classList.toggle('is-danger',String(o.variant||'').toLowerCase()==='danger');m.classList.add('active');return new Promise(r=>{let bdArm=false;function onBdDown(e){bdArm=(e.target===m)}function onBdR(){bdArm=false}function onBdUp(e){if(bdArm&&e.target===m&&o.showCancel!==false)done({ok:false});bdArm=false}function done(v){transitActiveConfirmDone=null;m.classList.remove('active');m.classList.remove('is-danger');ok.onclick=null;ca.onclick=null;m.removeEventListener('pointerdown',onBdDown);m.removeEventListener('pointerup',onBdUp);m.removeEventListener('pointerleave',onBdR);m.removeEventListener('pointercancel',onBdR);r(v)}transitActiveConfirmDone=done;ok.onclick=()=>done({ok:true});ca.onclick=()=>done({ok:false});m.addEventListener('pointerdown',onBdDown);m.addEventListener('pointerup',onBdUp);m.addEventListener('pointerleave',onBdR);m.addEventListener('pointercancel',onBdR)})}
+function showDialog(o){const m=$('#confirm-modal'),t=$('#confirmTitle'),b=$('#confirmBody'),i=$('#confirmInput'),ok=$('#confirmOkBtn'),ca=$('#confirmCancelBtn');t.textContent=o.title||'提示';b.textContent=o.message||'';ok.textContent=o.okText||'确定';ca.textContent=o.cancelText||'取消';const ask=!!o.withInput;i.classList.toggle('hidden',!ask);if(ask){i.value=o.inputValue||'';i.placeholder=o.inputPlaceholder||''}ca.style.display=o.showCancel===false?'none':'';m.classList.toggle('is-danger',String(o.variant||'').toLowerCase()==='danger');m.classList.add('active');return new Promise(r=>{let bdArm=false;function onBdDown(e){bdArm=(e.target===m)}function onBdR(){bdArm=false}function onBdUp(e){if(bdArm&&e.target===m&&o.showCancel!==false)done({ok:false,value:''});bdArm=false}function done(v){transitActiveConfirmDone=null;m.classList.remove('active');m.classList.remove('is-danger');ok.onclick=null;ca.onclick=null;m.removeEventListener('pointerdown',onBdDown);m.removeEventListener('pointerup',onBdUp);m.removeEventListener('pointerleave',onBdR);m.removeEventListener('pointercancel',onBdR);r(v)}transitActiveConfirmDone=done;ok.onclick=()=>done({ok:true,value:ask?i.value:''});ca.onclick=()=>done({ok:false,value:''});m.addEventListener('pointerdown',onBdDown);m.addEventListener('pointerup',onBdUp);m.addEventListener('pointerleave',onBdR);m.addEventListener('pointercancel',onBdR);if(ask)i.focus()})}
 function setSeg(id,v){const s=$('#'+id);s.dataset.value=String(v||'0');s.querySelectorAll('.status-pill').forEach(b=>b.classList.toggle('is-active',String(b.dataset.value)===String(v||'0')))}
 function getSeg(id){return String($('#'+id).dataset.value||'0')}
 function bindSeg(id,cb){const s=$('#'+id);s.querySelectorAll('.status-pill').forEach(b=>b.onclick=()=>{setSeg(id,b.dataset.value||'0');cb&&cb(b.dataset.value||'0')});setSeg(id,s.dataset.value||'0')}
@@ -658,8 +695,185 @@ function collectQtyVerifyListedMap(){const mp=new Map();document.querySelectorAl
 function submitQtyVerifyModal(applyToStock){const shouldApply=!!applyToStock;const mp=collectQtyVerifyListedMap();if(qtyVerifyTargetId){if(!mp.size){window.showAppToast&&window.showAppToast('请至少保留一行并选择下单SKU',true);return}const items=Array.from(mp.entries()).map(([order_product_id,listed_qty])=>({order_product_id,listed_qty}));fetch('/api/logistics-in-transit?action=verify_qty',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:qtyVerifyTargetId,items,apply_to_overseas_stock:shouldApply?1:0})}).then(r=>r.json()).then(d=>{if(d.status!=='success'){window.showAppToast&&window.showAppToast(d.message||'核对失败',true);return}closeQtyVerifyModal();const added=Number(d.added_stock_rows||0);if(shouldApply){window.showAppToast&&window.showAppToast(`核对完成，已叠加到在库（${added} 条）`,false,1800);}else{window.showAppToast&&window.showAppToast('核对完成',false,1200);}loadList()}).catch(()=>window.showAppToast&&window.showAppToast('核对失败',true));return}if(shouldApply){window.showAppToast&&window.showAppToast('当前仅支持对已保存记录叠加到在库',true);return}if(!mp.size){window.showAppToast&&window.showAppToast('请至少保留一行并选择下单SKU',true);return}const collected=new Set(Array.from(document.querySelectorAll(transitItemRowSelector())).map(r=>String(r.querySelector('.transit-item-sku')?.value||'').trim()).filter(Boolean));mp.forEach((_lst,pid)=>{if(pid&&!collected.has(pid)){addTransitItemRow({order_product_id:Number(pid),shipped_qty:0,listed_qty:mp.get(pid)});collected.add(pid)}});let allMatch=true;document.querySelectorAll(transitItemRowSelector()).forEach(r=>{const pid=String(r.querySelector('.transit-item-sku').value||'');const shipped=Number(r.querySelector('.transit-item-shipped').value||0);const listed=pid&&mp.has(pid)?mp.get(pid):shipped;r.querySelector('.transit-item-listed').value=String(listed);if(shipped!==listed)allMatch=false});setSeg('qtyCheckedSegment','1');setSeg('qtyConsistentSegment',allMatch?'1':'0');closeQtyVerifyModal();window.showAppToast&&window.showAppToast('核对结果已更新，请点击保存',false,1400)}
 function openQtyVerifyModalFromList(id){loadOptions().then(()=>fetch(`/api/logistics-in-transit?id=${encodeURIComponent(id)}`).then(r=>r.json()).then(d=>{if(d.status!=='success'||!d.item){window.showAppToast&&window.showAppToast(d.message||'加载失败',true);return}qtyVerifyTargetId=Number(id);qtyVerifyFactoryId=Number((d.item||{}).factory_id||0);qtyVerifyExtraFactoryIds=(d.item||{}).consolidation_factory_ids||[];const applyBtn=$('#qtyVerifyApplyStockBtn');if(applyBtn)applyBtn.style.display='';const w=$('#qtyVerifyRows');w.innerHTML='';((d.item||{}).items||[]).forEach(it=>appendOneQtyVerifyRow(w,{order_product_id:it.order_product_id,shipped_qty:it.shipped_qty,listed_qty:it.listed_qty==null?it.shipped_qty:it.listed_qty}));$('#qty-verify-modal').classList.add('active');}))}
 function triggerUpload(type,targetTransitId){const transitId=Number(targetTransitId||editId||0);if(!transitId){showStatus('请先保存当前记录后再上传资料',true);window.showAppToast&&window.showAppToast('请先保存当前记录后再上传资料',true,2200);return}currentUploadDocType=type;currentUploadTransitId=transitId;const i=$('#transitDocUploadInput');i.value='';i.click()}
-function uploadTransitDocs(files){const transitId=Number(currentUploadTransitId||editId||0);if(!transitId||!currentUploadDocType||!files||!files.length)return;const fd=new FormData();fd.append('transit_id',String(transitId));fd.append('doc_type',currentUploadDocType);Array.from(files).forEach(f=>fd.append('files',f));fetch('/api/logistics-in-transit-doc-upload',{method:'POST',body:fd}).then(r=>r.json()).then(d=>{if(d.status!=='success'){showStatus(d.message||'上传失败',true);window.showAppToast&&window.showAppToast(d.message||'上传失败',true,2400);return}const isModalTarget=Number(editId||0)===transitId;if(isModalTarget){setSeg(currentUploadDocType==='declaration'?'declarationDocsSegment':'clearanceDocsSegment','1');syncDocs();refreshDocCounts();showStatus('资料上传成功',false)}window.showAppToast&&window.showAppToast('资料上传成功',false,1600);loadList()}).finally(()=>{currentUploadTransitId=null;currentUploadDocType=null})}
-function openDocManager(type,targetTransitId){const transitId=Number(targetTransitId||editId||0);if(!transitId){showStatus('请先保存当前记录后再管理文件',true);window.showAppToast&&window.showAppToast('请先保存当前记录后再管理文件',true,2200);return}window.open(`/logistics-in-transit-doc-files?transit_id=${encodeURIComponent(transitId)}&doc_type=${encodeURIComponent(type)}`,'_blank')}
+const transitDocModalState={transitId:0,docType:'',selectedNames:new Set()};
+function normalizeTransitDocName(n){const t=String(n||'').trim();if(t.startsWith("b'")&&t.endsWith("'"))return t.slice(2,-1);if(t.startsWith('b"')&&t.endsWith('"'))return t.slice(2,-1);return t}
+function transitDocModalLabel(){return transitDocModalState.docType==='declaration'?'报关资料':'清关资料'}
+function showTransitDocModalStatus(m,isErr){const el=$('#transitDocModalStatus');if(!el)return;if(!m){el.style.display='none';el.textContent='';return}el.style.display='block';el.style.background=isErr?'#ffecec':'#f0fff0';el.style.color=isErr?'#a33':'#2f6f2f';el.textContent=m}
+function fmtTransitDocSize(n){n=Number(n||0);if(n<1024)return `${n} B`;if(n<1024*1024)return `${(n/1024).toFixed(1)} KB`;return `${(n/(1024*1024)).toFixed(1)} MB`}
+function syncTransitDocModalSelectAll(){const all=$('#transitDocFileSelectAll');const boxes=Array.from(document.querySelectorAll('#transitDocFileTable .transit-doc-file-check'));if(!all)return;const checked=boxes.filter(b=>b.checked).length;all.checked=boxes.length>0&&checked===boxes.length;all.indeterminate=checked>0&&checked<boxes.length}
+function toggleTransitDocModalSelectAll(checked){document.querySelectorAll('#transitDocFileTable .transit-doc-file-check').forEach(cb=>{cb.checked=!!checked;const n=normalizeTransitDocName(cb.dataset.name||'');if(!n)return;if(checked)transitDocModalState.selectedNames.add(n);else transitDocModalState.selectedNames.delete(n)});syncTransitDocModalSelectAll()}
+function reloadTransitDocModalFiles(){
+  const transitId=Number(transitDocModalState.transitId||0);
+  const docType=String(transitDocModalState.docType||'').trim().toLowerCase();
+  const tb=document.querySelector('#transitDocFileTable tbody');
+  if(!tb)return;
+  if(!transitId||!['declaration','clearance'].includes(docType)){tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:#a33;">参数无效</td></tr>';return}
+  fetch(`/api/logistics-in-transit-doc-files?transit_id=${encodeURIComponent(transitId)}&doc_type=${encodeURIComponent(docType)}`)
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.status!=='success'){tb.innerHTML=`<tr><td colspan="5" style="text-align:center;color:#a33;">${escapeHtml(d.message||'加载失败')}</td></tr>`;return}
+      const arr=(d.items||[]).map(x=>Object.assign({},x,{name:normalizeTransitDocName(x.name)}));
+      const visible=new Set(arr.map(x=>normalizeTransitDocName(x.name||'')));
+      transitDocModalState.selectedNames=new Set(Array.from(transitDocModalState.selectedNames).filter(n=>visible.has(n)));
+      if(!arr.length){tb.innerHTML='<tr><td colspan="5" style="text-align:center;">暂无文件</td></tr>';syncTransitDocModalSelectAll();return}
+      tb.innerHTML=arr.map(i=>{
+        const nm=normalizeTransitDocName(i.name);
+        const checked=transitDocModalState.selectedNames.has(nm)?' checked':'';
+        return `<tr data-name="${escapeHtml(nm)}"><td style="text-align:center;"><input type="checkbox" class="transit-doc-file-check" data-name="${escapeHtml(nm)}"${checked}></td><td>${escapeHtml(nm||'')}</td><td>${escapeHtml(fmtTransitDocSize(i.size))}</td><td>${escapeHtml(i.updated_at||'')}</td><td><div class="pm-actions"><button type="button" class="btn-secondary" data-doc-action="download" data-name="${escapeHtml(nm)}">下载</button><button type="button" class="btn-secondary" data-doc-action="rename" data-name="${escapeHtml(nm)}">重命名</button><button type="button" class="btn-danger" data-doc-action="delete" data-name="${escapeHtml(nm)}">删除</button></div></td></tr>`;
+      }).join('');
+      syncTransitDocModalSelectAll();
+    })
+    .catch(e=>{tb.innerHTML=`<tr><td colspan="5" style="text-align:center;color:#a33;">加载失败</td></tr>`;showTransitDocModalStatus(String(e),true)});
+}
+function openTransitDocModal(type,targetTransitId){
+  const transitId=Number(targetTransitId||editId||0);
+  const docType=String(type||'').trim().toLowerCase();
+  if(!transitId){window.showAppToast&&window.showAppToast('请先保存当前记录后再管理文件',true,2200);return}
+  if(!['declaration','clearance'].includes(docType))return;
+  transitDocModalState.transitId=transitId;
+  transitDocModalState.docType=docType;
+  transitDocModalState.selectedNames=new Set();
+  const titleEl=$('#transitDocModalTitle');
+  const descEl=$('#transitDocModalDesc');
+  if(titleEl)titleEl.textContent=`${transitDocModalLabel()} · 文件管理`;
+  if(descEl)descEl.textContent=`在途记录 ID: ${transitId}`;
+  showTransitDocModalStatus('',false);
+  reloadTransitDocModalFiles();
+  $('#transit-doc-modal').classList.add('active');
+}
+function closeTransitDocModal(){
+  $('#transit-doc-modal').classList.remove('active');
+  transitDocModalState.transitId=0;
+  transitDocModalState.docType='';
+  transitDocModalState.selectedNames=new Set();
+  if(Number(editId||0)>0)refreshDocCounts();
+}
+function triggerTransitDocModalUpload(){const inp=$('#transitDocModalUploadInput');if(inp){inp.value='';inp.click()}}
+function uploadTransitDocModalFiles(files){
+  const transitId=Number(transitDocModalState.transitId||0);
+  const docType=String(transitDocModalState.docType||'').trim().toLowerCase();
+  if(!transitId||!docType||!files||!files.length)return;
+  const fd=new FormData();
+  fd.append('transit_id',String(transitId));
+  fd.append('doc_type',docType);
+  Array.from(files).forEach(f=>fd.append('files',f));
+  showTransitDocModalStatus('正在上传...',false);
+  fetch('/api/logistics-in-transit-doc-upload',{method:'POST',body:fd})
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.status!=='success'){showTransitDocModalStatus(d.message||'上传失败',true);window.showAppToast&&window.showAppToast(d.message||'上传失败',true,2400);return}
+      if(Number(editId||0)===transitId){setSeg(docType==='declaration'?'declarationDocsSegment':'clearanceDocsSegment','1');syncDocs();refreshDocCounts()}
+      showTransitDocModalStatus(`上传成功：${(d.saved||[]).length} 个文件`,false);
+      window.showAppToast&&window.showAppToast('资料上传成功',false,1600);
+      reloadTransitDocModalFiles();
+      loadList();
+    })
+    .catch(()=>{showTransitDocModalStatus('上传失败',true);window.showAppToast&&window.showAppToast('上传失败',true,2400)});
+}
+function downloadTransitDocModalFile(name){
+  const transitId=Number(transitDocModalState.transitId||0);
+  const docType=String(transitDocModalState.docType||'');
+  const n=normalizeTransitDocName(name);
+  if(!transitId||!docType||!n)return;
+  window.location.href=`/api/logistics-in-transit-doc-files?action=download&transit_id=${encodeURIComponent(transitId)}&doc_type=${encodeURIComponent(docType)}&name=${encodeURIComponent(n)}`;
+}
+function renameTransitDocModalFile(oldName){
+  const transitId=Number(transitDocModalState.transitId||0);
+  const docType=String(transitDocModalState.docType||'');
+  const oldN=normalizeTransitDocName(oldName);
+  if(!transitId||!docType||!oldN)return;
+  showDialog({title:'重命名文件',message:`请输入新文件名（原文件：${oldN}）`,withInput:true,inputValue:oldN,okText:'下一步',cancelText:'取消'}).then(a=>{
+    if(!a.ok)return;
+    const newN=String(a.value||'').trim();
+    if(!newN||newN===oldN)return;
+    showDialog({title:'确认重命名',message:`确认将文件重命名为 ${newN} ？`,okText:'确认',cancelText:'取消'}).then(b=>{
+      if(!b.ok)return;
+      fetch('/api/logistics-in-transit-doc-files',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({transit_id:transitId,doc_type:docType,old_name:oldN,new_name:newN})})
+        .then(r=>r.json())
+        .then(d=>{
+          if(d.status!=='success'){showTransitDocModalStatus(d.message||'重命名失败',true);return}
+          showTransitDocModalStatus('重命名成功',false);
+          reloadTransitDocModalFiles();
+        })
+        .catch(()=>showTransitDocModalStatus('重命名失败',true));
+    });
+  });
+}
+function deleteTransitDocModalFile(name){
+  const transitId=Number(transitDocModalState.transitId||0);
+  const docType=String(transitDocModalState.docType||'');
+  const n=normalizeTransitDocName(name);
+  if(!transitId||!docType||!n)return;
+  showDialog({title:'确认删除',message:`确认删除文件 ${n} ？`,okText:'删除',cancelText:'取消',variant:'danger'}).then(x=>{
+    if(!x.ok)return;
+    fetch('/api/logistics-in-transit-doc-files',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({transit_id:transitId,doc_type:docType,name:n})})
+      .then(r=>r.json())
+      .then(d=>{
+        if(d.status!=='success'){showTransitDocModalStatus(d.message||'删除失败',true);return}
+        transitDocModalState.selectedNames.delete(n);
+        showTransitDocModalStatus('删除成功',false);
+        reloadTransitDocModalFiles();
+        loadList();
+      })
+      .catch(()=>showTransitDocModalStatus('删除失败',true));
+  });
+}
+function deleteTransitDocModalSelected(){
+  const names=Array.from(transitDocModalState.selectedNames||[]);
+  if(!names.length){window.showAppToast&&window.showAppToast('请先勾选要删除的文件',true,2400);return}
+  showDialog({title:'批量删除确认',message:`将删除已勾选的 ${names.length} 个文件。`,okText:'确认删除',cancelText:'取消',variant:'danger'}).then(x=>{
+    if(!x.ok)return;
+    const transitId=Number(transitDocModalState.transitId||0);
+    const docType=String(transitDocModalState.docType||'');
+    (async()=>{
+      for(const n of names){
+        try{
+          const resp=await fetch('/api/logistics-in-transit-doc-files',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({transit_id:transitId,doc_type:docType,name:n})});
+          const d=await resp.json().catch(()=>({}));
+          if(!resp.ok||!d||d.status!=='success'){showTransitDocModalStatus((d&&d.message)?d.message:`删除失败：${n}`,true);return}
+        }catch(e){showTransitDocModalStatus('删除失败: '+e,true);return}
+      }
+      transitDocModalState.selectedNames.clear();
+      showTransitDocModalStatus('删除成功',false);
+      reloadTransitDocModalFiles();
+      loadList();
+    })();
+  });
+}
+function bindTransitDocModalOnce(){
+  if(document.body.dataset.transitDocModalBound==='1')return;
+  document.body.dataset.transitDocModalBound='1';
+  const uploadInp=$('#transitDocModalUploadInput');
+  if(uploadInp)uploadInp.addEventListener('change',function(){uploadTransitDocModalFiles(this.files);this.value=''});
+  const selectAll=$('#transitDocFileSelectAll');
+  if(selectAll)selectAll.addEventListener('change',function(){toggleTransitDocModalSelectAll(this.checked)});
+  const fileTable=$('#transitDocFileTable');
+  if(fileTable){
+    fileTable.addEventListener('change',e=>{
+      const cb=e.target&&e.target.closest?e.target.closest('input.transit-doc-file-check'):null;
+      if(!cb)return;
+      const n=normalizeTransitDocName(cb.dataset.name||'');
+      if(!n)return;
+      if(cb.checked)transitDocModalState.selectedNames.add(n);else transitDocModalState.selectedNames.delete(n);
+      syncTransitDocModalSelectAll();
+    });
+    fileTable.addEventListener('click',e=>{
+      const btn=e.target&&e.target.closest?e.target.closest('button[data-doc-action]'):null;
+      if(!btn)return;
+      const action=String(btn.dataset.docAction||'').trim();
+      const name=normalizeTransitDocName(btn.dataset.name||'');
+      if(!action||!name)return;
+      if(action==='download'){downloadTransitDocModalFile(name);return}
+      if(action==='rename'){renameTransitDocModalFile(name);return}
+      if(action==='delete'){
+        if(!transitDocModalState.selectedNames.has(name)){window.showAppToast&&window.showAppToast('请先勾选该文件再点击删除',true,2600);return}
+        deleteTransitDocModalFile(name);
+      }
+    });
+  }
+}
+function openDocManager(type,targetTransitId){openTransitDocModal(type,targetTransitId)}
+function uploadTransitDocs(files){const transitId=Number(currentUploadTransitId||editId||0);if(!transitId||!currentUploadDocType||!files||!files.length)return;const fd=new FormData();fd.append('transit_id',String(transitId));fd.append('doc_type',currentUploadDocType);Array.from(files).forEach(f=>fd.append('files',f));fetch('/api/logistics-in-transit-doc-upload',{method:'POST',body:fd}).then(r=>r.json()).then(d=>{if(d.status!=='success'){showStatus(d.message||'上传失败',true);window.showAppToast&&window.showAppToast(d.message||'上传失败',true,2400);return}const isModalTarget=Number(editId||0)===transitId;if(isModalTarget){setSeg(currentUploadDocType==='declaration'?'declarationDocsSegment':'clearanceDocsSegment','1');syncDocs();refreshDocCounts();showStatus('资料上传成功',false)}if($('#transit-doc-modal').classList.contains('active')&&Number(transitDocModalState.transitId)===transitId&&transitDocModalState.docType===currentUploadDocType){reloadTransitDocModalFiles()}window.showAppToast&&window.showAppToast('资料上传成功',false,1600);loadList()}).finally(()=>{currentUploadTransitId=null;currentUploadDocType=null})}
 function validateTransitPayloadForSave(p){if(!p.factory_id||!p.destination_region_id||!p.expected_listed_date_latest){return '工厂、目的区域、预计上架时间为必填'}if(!(p.items||[]).length){return '至少维护一行下单SKU'}if(p.items.some(x=>Number(x.shipped_qty||0)<0)){return '发货数量不能为负数'}if(String(p.qty_verified)==='1'&&String(p.inventory_registered)!=='1'){return '需要先登记上架才能确认已核对上架数量'}return ''}
 function saveFromModal(){const p={factory_id:$('#factoryId').value,consolidation_factory_ids:getTransitConsolidationFactoryIds(),forwarder_id:$('#forwarderId').value,destination_region_id:$('#destinationRegionId').value,logistics_box_no:$('#logisticsBoxNo').value.trim(),bill_of_lading_no:$('#billOfLadingNo').value.trim(),destination_warehouse_id:$('#destinationWarehouseId').value,factory_ship_date_latest:$('#factoryShipDateLatest').value,expected_listed_date_latest:$('#expectedListedDateLatest').value,listed_date:$('#listedDate').value,etd_latest:$('#etdLatest').value,eta_latest:$('#etaLatest').value,arrival_port_date:$('#arrivalPortDate').value,expected_warehouse_date:$('#expectedWarehouseDate').value,shipping_company:$('#shippingCompany').value.trim(),vessel_voyage:$('#vesselVoyage').value.trim(),declaration_docs_provided:getSeg('declarationDocsSegment'),inventory_registered:getSeg('inventoryRegisteredSegment'),clearance_docs_provided:getSeg('clearanceDocsSegment'),qty_verified:getSeg('qtyCheckedSegment'),financial_verified:getSeg('financialVerifiedSegment'),confirmed_boxed_qty:getSeg('confirmedBoxedSegment'),port_of_loading:$('#portOfLoading').value.trim(),port_of_destination:$('#portOfDestination').value.trim(),inbound_order_no:$('#inboundOrderNo').value.trim(),remark:$('#remark').value.trim(),items:collectItems()};if(String(p.inventory_registered)==='1'&&!p.listed_date){p.listed_date=todayDateText();const listedEl=$('#listedDate');if(listedEl)listedEl.value=p.listed_date;}if(String(p.inventory_registered)!=='1'){p.listed_date='';const listedEl2=$('#listedDate');if(listedEl2)listedEl2.value='';}const msg=validateTransitPayloadForSave(p);if(msg){showStatus(msg,true);return}const proceed=()=>{const m=editId?'PUT':'POST';if(editId)p.id=editId;if(String(p.confirmed_boxed_qty)==='1'&&confirmedDeductOnSave===1)p.apply_deduct_factory_stock=1;fetch('/api/logistics-in-transit',{method:m,headers:{'Content-Type':'application/json'},body:JSON.stringify(p)}).then(r=>r.json()).then(d=>{if(d.status==='success'){confirmedDeductOnSave=0;showStatus('保存成功',false);window.showAppToast&&window.showAppToast('保存成功',false,1500);if(stayOnModalAfterSave){stayOnModalAfterSave=false;loadList();return}setTimeout(()=>{closeModal();loadList()},280)}else{stayOnModalAfterSave=false;showStatus(d.message||'操作失败',true)}}).catch(()=>{stayOnModalAfterSave=false;showStatus('操作失败',true)})};proceed();}
 function removeItem(id){showDialog({title:'确认删除',message:'确认删除该在途物流库存记录？',okText:'删除',cancelText:'取消',variant:'danger'}).then(x=>{if(!x.ok)return;fetch('/api/logistics-in-transit',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}).then(r=>r.json()).then(d=>{if(d.status==='success')loadList();else showDialog({title:'删除失败',message:d.message||'删除失败',showCancel:false})})})}
@@ -715,6 +929,16 @@ const rowDisplayStatus=v=>`<div class="status-segment status-segment--inline rea
 function rowInlineDate(field,value,id,extraClass=''){const cls=['transit-inline-input','transit-inline-date','transit-inline-edit',extraClass].filter(Boolean).join(' ');const esc=escapeHtml(value||'');return `<input type="date" class="${cls}" data-id="${id}" data-field="${field}" value="${esc}" title="${esc}">`;}
 const rowDocStatus=(field,v,id,type,label)=>`<div class="preview-doc-cell">${rowStatus(field,v,id)}<div class="preview-doc-actions"><button type="button" class="btn-secondary" onclick="triggerUpload('${type}',${id})">上传${label}</button><button type="button" class="btn-secondary" onclick="openDocManager('${type}',${id})">文件管理</button></div></div>`;
 function rowQtyCheckedCell(v,id){return `<div class="preview-doc-cell transit-col-qty-checked"><div>${rowStatus('qty_verified',v,id)}</div><div class="preview-doc-actions"><button type="button" class="btn-secondary" onclick="openQtyVerifyModalFromList(${id})">核对数量</button></div></div>`;}
+function getRegionSelectHTML(regionId,transitId){
+  const selectedRegionId=String(regionId||'').trim();
+  const selectedRegion=selectedRegionId?(optionDestinationRegions||[]).find(r=>String(r.id||'')===selectedRegionId):null;
+  const hasSelection=!!selectedRegion;
+  const placeholder=`<option value="" disabled ${hasSelection?'':'selected'}>请选择</option>`;
+  const mergedRegions=(optionDestinationRegions||[]).slice();
+  if(selectedRegion&&!mergedRegions.some(r=>String(r.id||'')===selectedRegionId))mergedRegions.unshift(selectedRegion);
+  const opts=[placeholder].concat(mergedRegions.map(r=>{const rid=String(r.id||'');const selected=hasSelection&&rid===selectedRegionId?' selected':'';return `<option value="${rid}"${selected}>${escapeHtml(r.region_name||'')}</option>`})).join('');
+  return `<select class="transit-inline-input transit-inline-region transit-inline-edit ${hasSelection?'':'is-empty'}" data-universal-compact="1" data-id="${transitId}" data-field="destination_region_id">${opts}</select>`;
+}
 function getWarehouseSelectHTML(regionId,warehouseId,transitId){
   const regionIdNum=Number(regionId||0);
   const selectedWarehouseId=String(warehouseId||'').trim();
@@ -747,25 +971,158 @@ function formatDateTimeText(v){
   return normalized.length>19?normalized.slice(0,19):normalized;
 }
 function syncInlineSelectVisualState(selectEl){if(!selectEl)return;const empty=String(selectEl.value||'').trim()==='';selectEl.classList.toggle('is-empty',empty)}
+function replaceTransitRowWarehouseSelect(tr,regionId,warehouseId,transitId){
+  const cell=tr&&tr.querySelector('td.transit-col-warehouse');
+  if(!cell)return null;
+  cell.innerHTML=getWarehouseSelectHTML(regionId,warehouseId,transitId);
+  const sel=cell.querySelector('select.transit-inline-warehouse');
+  if(sel)bindTransitInlineEditElement(sel);
+  return sel;
+}
+function onTransitInlineEditChange(){
+  const id=Number(this.dataset.id||0);
+  const field=String(this.dataset.field||'');
+  const val=this.value||'';
+  markTransitInlineEdit(id,field,val);
+  this.classList.add('is-dirty');
+  if(this.matches('select.transit-inline-warehouse, select.transit-inline-forwarder, select.transit-inline-region'))syncInlineSelectVisualState(this);
+  if(field==='destination_region_id'){
+    const tr=this.closest('tr');
+    const regionId=Number(val||0);
+    const whCell=tr&&tr.querySelector('td.transit-col-warehouse');
+    const whSel=whCell&&whCell.querySelector('select.transit-inline-warehouse');
+    const prevWh=whSel?String(whSel.value||'').trim():'';
+    const stillValid=regionId&&prevWh&&(optionWarehouses||[]).some(w=>String(w.id||'')===prevWh&&Number(w.destination_region_id||0)===regionId);
+    const nextWh=stillValid?prevWh:'';
+    const newWhSel=replaceTransitRowWarehouseSelect(tr,regionId,nextWh,id);
+    if(!stillValid){
+      markTransitInlineEdit(id,'destination_warehouse_id','');
+      if(newWhSel)newWhSel.classList.add('is-dirty');
+    }else if(nextWh){
+      markTransitInlineEdit(id,'destination_warehouse_id',nextWh);
+    }
+    return;
+  }
+  if(id&&(field==='eta_latest'||field==='arrival_port_date'||field==='expected_warehouse_date')&&String(val).trim()){
+    const days=field==='expected_warehouse_date'?3:10;
+    const next=addDaysToYmd(String(val).trim(),days);
+    if(next){
+      const tr=this.closest('tr');
+      const exp=tr&&tr.querySelector('.transit-inline-edit[data-field="expected_listed_date_latest"]');
+      if(exp){exp.value=next;markTransitInlineEdit(id,'expected_listed_date_latest',next);exp.classList.add('is-dirty');toastTransitExpectedListedSynced()}
+    }
+  }
+}
+function bindTransitInlineEditElement(inp){
+  if(!inp||inp.dataset.transitInlineBound==='1')return;
+  inp.dataset.transitInlineBound='1';
+  if(pendingTransitInlineEdits.has(Number(inp.dataset.id||0)))inp.classList.add('is-dirty');
+  inp.addEventListener('change',onTransitInlineEditChange);
+  if(inp.classList.contains('transit-inline-warehouse')||inp.classList.contains('transit-inline-forwarder')||inp.classList.contains('transit-inline-region')){
+    window.refreshUniversalSingleSelect&&window.refreshUniversalSingleSelect(inp);
+    syncInlineSelectVisualState(inp);
+  }
+}
 function safeColorValue(value){const text=String(value||'').trim();if(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(text))return text;if(/^rgba?\(\s*(?:\d{1,3}%?\s*,\s*){2}\d{1,3}%?(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)$/.test(text))return text;if(/^hsla?\(\s*\d{1,3}(?:deg|rad|turn)?\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%\s*(?:,\s*(?:0|1|0?\.\d+))?\s*\)$/.test(text))return text;return ''}
-function refreshTransitDetailSortHeaderUi(){document.querySelectorAll('.transit-sub-sort-th').forEach(th=>{const field=String(th.getAttribute('data-sort-field')||'');const active=field&&field===transitDetailSortState.field&&!!transitDetailSortState.dir;th.classList.toggle('is-active',active)});document.querySelectorAll('.transit-sort-ind[data-sort-indicator-for]').forEach(el=>{const field=String(el.getAttribute('data-sort-indicator-for')||'');if(!field||field!==transitDetailSortState.field||!transitDetailSortState.dir){el.textContent='↕';return}el.textContent=transitDetailSortState.dir==='asc'?'↑':'↓'})}
+function refreshTransitDetailSortHeaderUi(){
+  const activeField=String(transitDetailSortState.field||'').trim();
+  const activeDir=String(transitDetailSortState.dir||'').trim();
+  document.querySelectorAll('#mainTable .transit-sub-sort-th, .pm-managed-head-table .transit-sub-sort-th').forEach(th=>{
+    const field=String(th.getAttribute('data-sort-field')||'');
+    const active=field&&field===activeField&&!!activeDir;
+    th.classList.add('pm-sortable');
+    th.classList.toggle('is-active',active);
+    th.classList.remove('pm-sort-asc','pm-sort-desc');
+    if(active&&activeDir==='asc')th.classList.add('pm-sort-asc');
+    if(active&&activeDir==='desc')th.classList.add('pm-sort-desc');
+  });
+}
 function sortTransitDetailItems(rows){const arr=Array.isArray(rows)?rows.slice():[];const field=transitDetailSortState.field;const dir=transitDetailSortState.dir;if(!field||!dir)return arr;arr.sort((a,b)=>{if(field==='sku'){const av=String((a&&a.sku)||'');const bv=String((b&&b.sku)||'');const cmp=av.localeCompare(bv,'zh-CN',{sensitivity:'base'});return dir==='asc'?cmp:-cmp}if(field==='representative_color'){const av=String((a&&a.representative_color)||'').toLowerCase();const bv=String((b&&b.representative_color)||'').toLowerCase();const cmp=av.localeCompare(bv,'zh-CN',{sensitivity:'base'});if(cmp!==0)return dir==='asc'?cmp:-cmp;const asku=String((a&&a.sku)||'');const bsku=String((b&&b.sku)||'');const tie=asku.localeCompare(bsku,'zh-CN',{sensitivity:'base'});return dir==='asc'?tie:-tie}const av=Number((a&&a[field])||0);const bv=Number((b&&b[field])||0);if(av===bv){const asku=String((a&&a.sku)||'');const bsku=String((b&&b.sku)||'');const tie=asku.localeCompare(bsku,'zh-CN',{sensitivity:'base'});return dir==='asc'?tie:-tie}return dir==='asc'?(av-bv):(bv-av)});return arr}
 function toggleTransitDetailSort(field){const key=String(field||'').trim();if(!key)return;if(transitDetailSortState.field!==key){transitDetailSortState.field=key;transitDetailSortState.dir='asc'}else if(transitDetailSortState.dir==='asc'){transitDetailSortState.dir='desc'}else if(transitDetailSortState.dir==='desc'){transitDetailSortState.field='';transitDetailSortState.dir=''}else{transitDetailSortState.dir='asc'}refreshTransitDetailSortHeaderUi();loadList()}
-function buildTransitDetailHtml(items){
-  const rows=sortTransitDetailItems(Array.isArray(items)?items:[]);
-  if(!rows.length)return '<div class="transit-detail-wrap">暂无 SKU 明细</div>';
-  const isRegistered=rows.some(it=>Number(it._inventory_registered||0)===1);
-  const body=rows.map(it=>{const shipped=Number(it.shipped_qty||0);const listedRaw=it.listed_qty==null?null:Number(it.listed_qty||0);const listedText=isRegistered?(listedRaw==null?'-':String(listedRaw)):'-';const color=safeColorValue(it.representative_color);const dot=color?`<span class="transit-color-dot" style="background:${color};"></span>`:'-';const mismatch=isRegistered&&listedRaw!=null&&shipped!==listedRaw;return `<div class="transit-detail-item ${mismatch?'is-mismatch':''}" data-transit-detail-row="1"><span class="transit-detail-color-col">${dot}</span><span class="transit-detail-sku-col"><span class="transit-detail-sku-text">${escapeHtml(it.sku||'')}</span></span><span class="transit-detail-qty-col">${shipped}</span><span class="transit-detail-listed-col">${listedText}</span></div>`}).join('');
-  return `<div class="transit-detail-wrap"><div class="transit-detail-list" data-transit-detail-list="1">${body}</div></div>`;
+function buildTransitSkuStackedTds(items, isRegistered){
+  const rows = sortTransitDetailItems(Array.isArray(items) ? items : []);
+  if(!rows.length){
+    return '<td class="transit-col-sku-color tiny-center" data-manage-col-key="SKU详情-颜色">—</td>'
+      + '<td class="transit-col-sku" data-manage-col-key="SKU详情-SKU">—</td>'
+      + '<td class="transit-col-sku-qty tiny-center" data-manage-col-key="SKU详情-发货数量">—</td>'
+      + '<td class="transit-col-sku-listed tiny-center" data-manage-col-key="SKU详情-上架数量">—</td>';
+  }
+  const line = (html) => `<div class="transit-sku-stack-line">${html}</div>`;
+  const stack = (inner) => `<div class="transit-sku-stack">${inner}</div>`;
+  const colorHtml = stack(rows.map((it) => {
+    const color = safeColorValue(it.representative_color);
+    return line(color ? `<span class="transit-color-dot" style="background:${color};"></span>` : '—');
+  }).join(''));
+  const skuHtml = stack(rows.map((it) => line(`<span class="transit-detail-sku-text">${escapeHtml(it.sku || '')}</span>`)).join(''));
+  const shipHtml = stack(rows.map((it) => line(String(Number(it.shipped_qty || 0)))).join(''));
+  const listedHtml = stack(rows.map((it) => {
+    const shipped = Number(it.shipped_qty || 0);
+    const listedRaw = it.listed_qty == null ? null : Number(it.listed_qty || 0);
+    const listedText = isRegistered ? (listedRaw == null ? '—' : String(listedRaw)) : '—';
+    const mismatch = isRegistered && listedRaw != null && shipped !== listedRaw;
+    return line(`<span class="${mismatch ? 'is-mismatch' : ''}">${listedText}</span>`);
+  }).join(''));
+  return `<td class="transit-col-sku-color tiny-center" data-manage-col-key="SKU详情-颜色">${colorHtml}</td>`
+    + `<td class="transit-col-sku" data-manage-col-key="SKU详情-SKU">${skuHtml}</td>`
+    + `<td class="transit-col-sku-qty tiny-center" data-manage-col-key="SKU详情-发货数量">${shipHtml}</td>`
+    + `<td class="transit-col-sku-listed tiny-center" data-manage-col-key="SKU详情-上架数量">${listedHtml}</td>`;
+}
+function buildTransitRecordRowHtml(i){
+  const expectedVal = i.expected_listed_date_latest || '';
+  const factoryShipVal = i.factory_ship_date_latest || '';
+  const etdVal = i.etd_latest || '';
+  const etaVal = i.eta_latest || '';
+  const arrivalVal = i.arrival_port_date || '';
+  const warehouseVal = i.expected_warehouse_date || '';
+  const listedVal = i.listed_date || '';
+  const remarkVal = escapeHtml(i.remark || '');
+  const createdText = formatDateTimeText(i.created_at);
+  const updatedText = formatDateTimeText(i.updated_at);
+  const detailItems = (i.items || []).map(x => Object.assign({}, x, { _inventory_registered: i.inventory_registered || 0 }));
+  const isRegistered = Number(i.inventory_registered || 0) === 1;
+  const checked = selectedTransitIds.has(Number(i.id)) ? ' checked' : '';
+  return `<tr data-transit-row-id="${i.id}">`
+    + `<td style="text-align:center;"><input type="checkbox" class="transit-row-check" data-id="${i.id}"${checked}></td>`
+    + `<td class="inline-edit-cell transit-col-box">${getInlineText('logistics_box_no', i.logistics_box_no, i.id, 'transit-inline-box')}</td>`
+    + `<td class="transit-col-factory">${escapeHtml(i.factory_names_all || i.factory_name || '')}</td>`
+    + `<td class="inline-edit-cell transit-col-region">${getRegionSelectHTML(i.destination_region_id, i.id)}</td>`
+    + `<td class="inline-edit-cell transit-col-warehouse">${getWarehouseSelectHTML(i.destination_region_id, i.destination_warehouse_id, i.id)}</td>`
+    + `<td class="inline-edit-cell transit-col-expected">${rowInlineDate('expected_listed_date_latest', expectedVal, i.id)}</td>`
+    + buildTransitSkuStackedTds(detailItems, isRegistered)
+    + `<td class="inline-edit-cell transit-col-factory-ship">${rowInlineDate('factory_ship_date_latest', factoryShipVal, i.id)}</td>`
+    + `<td class="transit-col-status">${rowStatus('confirmed_boxed_qty', i.confirmed_boxed_qty || 0, i.id)}</td>`
+    + `<td class="inline-edit-cell transit-col-forwarder">${getForwarderSelectHTML(i.forwarder_id, i.id)}</td>`
+    + `<td class="inline-edit-cell transit-col-bill">${getInlineText('bill_of_lading_no', i.bill_of_lading_no, i.id)}</td>`
+    + `<td class="inline-edit-cell transit-col-shipping">${getInlineText('shipping_company', i.shipping_company, i.id)}</td>`
+    + `<td class="inline-edit-cell transit-col-vessel">${getInlineText('vessel_voyage', i.vessel_voyage, i.id)}</td>`
+    + `<td class="inline-edit-cell transit-col-port-load">${getInlineText('port_of_loading', i.port_of_loading, i.id)}</td>`
+    + `<td class="inline-edit-cell transit-col-port-dest">${getInlineText('port_of_destination', i.port_of_destination, i.id)}</td>`
+    + `<td class="transit-col-doc">${rowDocStatus('declaration_docs_provided', i.declaration_docs_provided || 0, i.id, 'declaration', '报关资料')}</td>`
+    + `<td class="transit-col-doc">${rowDocStatus('clearance_docs_provided', i.clearance_docs_provided || 0, i.id, 'clearance', '清关资料')}</td>`
+    + `<td class="inline-edit-cell transit-col-date">${rowInlineDate('etd_latest', etdVal, i.id)}</td>`
+    + `<td class="inline-edit-cell transit-col-date">${rowInlineDate('eta_latest', etaVal, i.id)}</td>`
+    + `<td class="inline-edit-cell transit-col-arrival">${rowInlineDate('arrival_port_date', arrivalVal, i.id)}</td>`
+    + `<td class="inline-edit-cell transit-col-warehouse-exp">${rowInlineDate('expected_warehouse_date', warehouseVal, i.id)}</td>`
+    + `<td class="inline-edit-cell transit-col-inbound">${getInlineText('inbound_order_no', i.inbound_order_no, i.id)}</td>`
+    + `<td class="transit-col-status">${rowStatus('inventory_registered', i.inventory_registered || 0, i.id)}</td>`
+    + `<td class="inline-edit-cell transit-col-date">${rowInlineDate('listed_date', listedVal, i.id)}</td>`
+    + `<td class="transit-col-qty-checked">${rowQtyCheckedCell(i.qty_verified || 0, i.id)}</td>`
+    + `<td class="transit-col-qty-consistent">${rowDisplayStatus(i.qty_consistent || 0)}</td>`
+    + `<td class="transit-col-financial">${rowStatus('financial_verified', i.financial_verified || 0, i.id)}</td>`
+    + `<td class="inline-edit-cell transit-col-remark"><span class="transit-inline-remark-wrap"><input type="text" class="transit-inline-input transit-inline-remark transit-inline-edit" data-id="${i.id}" data-field="remark" value="${remarkVal}" title="${remarkVal}"></span></td>`
+    + `<td class="transit-col-created">${escapeHtml(createdText)}</td>`
+    + `<td class="transit-col-updated">${escapeHtml(updatedText)}</td>`
+    + `<td class="transit-col-edit"><div class="pm-actions"><button class="btn-secondary" onclick="openEditModal(${i.id})">编辑</button><button class="btn-danger" onclick="removeItem(${i.id})">删除</button></div></td>`
+    + '</tr>';
 }
 function applyPreviewStatusSegment(seg,val){const v=String(val)==='1'?'1':'0';seg.dataset.value=v;seg.querySelectorAll('.status-pill').forEach(btn=>btn.classList.toggle('is-active',String(btn.dataset.value)===v))}
 function bindPreviewStatusEditors(){const tbody=document.querySelector('#mainTable tbody');if(!tbody||tbody.dataset.boundPreviewStatus==='1')return;tbody.dataset.boundPreviewStatus='1';tbody.addEventListener('click',e=>{const btn=e.target.closest('.preview-status .status-pill');if(!btn)return;const seg=btn.closest('.preview-status');if(!seg)return;const id=Number(seg.dataset.id||0);const field=String(seg.dataset.field||'');const newVal=String(btn.dataset.value||'0');const oldVal=String(seg.dataset.value||'0');if(!id||!field||newVal===oldVal)return;const commit=(extra)=>{applyPreviewStatusSegment(seg,newVal);window.showAppToast&&window.showAppToast('正在保存状态...',false,1200);quickUpdateStatus(id,field,newVal,extra).then(d=>{if(d.status!=='success'){applyPreviewStatusSegment(seg,oldVal);window.showAppToast&&window.showAppToast(d.message||'状态更新失败',true);}else{window.showAppToast&&window.showAppToast('保存成功',false);if(field==='inventory_registered'){loadList();}}}).catch(()=>{applyPreviewStatusSegment(seg,oldVal);window.showAppToast&&window.showAppToast('状态更新失败',true);})};if(field==='confirmed_boxed_qty'&&newVal==='1'&&oldVal!=='1'){showDialog({title:'确认装箱量',message:'是否保存目前状态并从工厂在库数据中扣减装箱量？',okText:'保存并扣减',cancelText:'仅保存'}).then(res=>commit({apply_deduct_factory_stock:res.ok?1:0}));return}commit({});})}
 
-function loadList(){const q=$('#searchInput').value.trim();const sku=($('#skuFilterInput')?.value||'').trim();const color=($('#colorFilterInput')?.value||'').trim();const query=new URLSearchParams();if(q)query.set('q',q);if(sku)query.set('sku',sku);if(color)query.set('color',color);loadOptions().then(()=>{fetch(`/api/logistics-in-transit?${query}`).then(r=>r.json()).then(d=>{const tb=document.querySelector('#mainTable tbody');if(d.status!=='success'){tb.innerHTML=`<tr><td colspan="34" style="text-align:center;color:#a33;">${d.message||'加载失败'}</td></tr>`;return}const arr=d.items||[];const availableIds=new Set(arr.map(i=>Number(i.id||0)).filter(v=>v>0));Array.from(selectedTransitIds).forEach(id=>{if(!availableIds.has(id))selectedTransitIds.delete(id)});if(!arr.length){tb.innerHTML='<tr><td colspan="34" style="text-align:center;">暂无数据</td></tr>';syncSelectAllState();refreshTransitDetailSortHeaderUi();refreshTransitSkuDetailLayout();return}tb.innerHTML=arr.map(i=>{const expectedVal=i.expected_listed_date_latest||'';const factoryShipVal=i.factory_ship_date_latest||'';const etdVal=i.etd_latest||'';const etaVal=i.eta_latest||'';const arrivalVal=i.arrival_port_date||'';const warehouseVal=i.expected_warehouse_date||'';const listedVal=i.listed_date||'';const remarkVal=escapeHtml(i.remark||'');const createdText=formatDateTimeText(i.created_at);const updatedText=formatDateTimeText(i.updated_at);const detailItems=(i.items||[]).map(x=>Object.assign({},x,{_inventory_registered:i.inventory_registered||0}));return `<tr data-transit-row-id="${i.id}"><td style="text-align:center;"><input type="checkbox" class="transit-row-check" data-id="${i.id}" ${selectedTransitIds.has(Number(i.id))?'checked':''}></td><td class="transit-col-box">${i.logistics_box_no||''}</td><td class="transit-col-factory">${escapeHtml(i.factory_names_all||i.factory_name||'')}</td><td class="transit-col-region">${i.destination_region_name||''}</td><td class="inline-edit-cell transit-col-warehouse">${getWarehouseSelectHTML(i.destination_region_id,i.destination_warehouse_id,i.id)}</td><td class="inline-edit-cell transit-col-expected">${rowInlineDate('expected_listed_date_latest',expectedVal,i.id)}</td><td class="transit-detail-cell transit-col-detail" data-transit-detail-cell="1" colspan="4">${buildTransitDetailHtml(detailItems)}</td><td class="inline-edit-cell transit-col-factory-ship">${rowInlineDate('factory_ship_date_latest',factoryShipVal,i.id)}</td><td class="transit-col-status">${rowStatus('confirmed_boxed_qty',i.confirmed_boxed_qty||0,i.id)}</td><td class="inline-edit-cell transit-col-forwarder">${getForwarderSelectHTML(i.forwarder_id,i.id)}</td><td class="inline-edit-cell transit-col-bill">${getInlineText('bill_of_lading_no',i.bill_of_lading_no,i.id)}</td><td class="inline-edit-cell transit-col-shipping">${getInlineText('shipping_company',i.shipping_company,i.id)}</td><td class="inline-edit-cell transit-col-vessel">${getInlineText('vessel_voyage',i.vessel_voyage,i.id)}</td><td class="inline-edit-cell transit-col-port-load">${getInlineText('port_of_loading',i.port_of_loading,i.id)}</td><td class="inline-edit-cell transit-col-port-dest">${getInlineText('port_of_destination',i.port_of_destination,i.id)}</td><td class="transit-col-doc">${rowDocStatus('declaration_docs_provided',i.declaration_docs_provided||0,i.id,'declaration','报关资料')}</td><td class="transit-col-doc">${rowDocStatus('clearance_docs_provided',i.clearance_docs_provided||0,i.id,'clearance','清关资料')}</td><td class="inline-edit-cell transit-col-date">${rowInlineDate('etd_latest',etdVal,i.id)}</td><td class="inline-edit-cell transit-col-date">${rowInlineDate('eta_latest',etaVal,i.id)}</td><td class="inline-edit-cell transit-col-arrival">${rowInlineDate('arrival_port_date',arrivalVal,i.id)}</td><td class="inline-edit-cell transit-col-warehouse-exp">${rowInlineDate('expected_warehouse_date',warehouseVal,i.id)}</td><td class="inline-edit-cell transit-col-inbound">${getInlineText('inbound_order_no',i.inbound_order_no,i.id)}</td><td class="transit-col-status">${rowStatus('inventory_registered',i.inventory_registered||0,i.id)}</td><td class="inline-edit-cell transit-col-date">${rowInlineDate('listed_date',listedVal,i.id)}</td><td class="transit-col-qty-checked">${rowQtyCheckedCell(i.qty_verified||0,i.id)}</td><td class="transit-col-qty-consistent">${rowDisplayStatus(i.qty_consistent||0)}</td><td class="transit-col-financial">${rowStatus('financial_verified',i.financial_verified||0,i.id)}</td><td class="inline-edit-cell transit-col-remark"><span class="transit-inline-remark-wrap"><input type="text" class="transit-inline-input transit-inline-remark transit-inline-edit" data-id="${i.id}" data-field="remark" value="${remarkVal}" title="${remarkVal}"></span></td><td class="transit-col-created">${escapeHtml(createdText)}</td><td class="transit-col-updated">${escapeHtml(updatedText)}</td><td class="transit-col-edit"><div class="pm-actions"><button class="btn-secondary" onclick="openEditModal(${i.id})">编辑</button><button class="btn-danger" onclick="removeItem(${i.id})">删除</button></div></td></tr>`}).join('');tb.querySelectorAll('.transit-row-check').forEach(cb=>{cb.addEventListener('change',function(){const id=Number(this.dataset.id||0);if(!id)return;if(this.checked)selectedTransitIds.add(id);else selectedTransitIds.delete(id);syncSelectAllState()})});document.querySelectorAll('.transit-inline-edit').forEach(inp=>{if(pendingTransitInlineEdits.has(Number(inp.dataset.id||0))){inp.classList.add('is-dirty')}inp.addEventListener('change',function(){const id=Number(this.dataset.id||0);const field=String(this.dataset.field||'');const val=this.value||'';markTransitInlineEdit(id,field,val);this.classList.add('is-dirty');if(this.matches('select.transit-inline-warehouse, select.transit-inline-forwarder'))syncInlineSelectVisualState(this);if(id&&(field==='eta_latest'||field==='arrival_port_date'||field==='expected_warehouse_date')&&String(val).trim()){const days=field==='expected_warehouse_date'?3:10;const next=addDaysToYmd(String(val).trim(),days);if(next){const tr=this.closest('tr');const exp=tr&&tr.querySelector('.transit-inline-edit[data-field="expected_listed_date_latest"]');if(exp){exp.value=next;markTransitInlineEdit(id,'expected_listed_date_latest',next);exp.classList.add('is-dirty');toastTransitExpectedListedSynced()}}}});if(inp.classList.contains('transit-inline-warehouse')){ window.refreshUniversalSingleSelect&&window.refreshUniversalSingleSelect(inp);syncInlineSelectVisualState(inp)}else if(inp.classList.contains('transit-inline-forwarder')){window.refreshUniversalSingleSelect&&window.refreshUniversalSingleSelect(inp);syncInlineSelectVisualState(inp)}});syncSelectAllState();bindPreviewStatusEditors();refreshTransitDetailSortHeaderUi();refreshTransitSkuDetailLayout()})})}
+function loadList(){const q=$('#searchInput').value.trim();const sku=($('#skuFilterInput')?.value||'').trim();const color=($('#colorFilterInput')?.value||'').trim();const query=new URLSearchParams();if(q)query.set('q',q);if(sku)query.set('sku',sku);if(color)query.set('color',color);loadOptions().then(()=>{fetch(`/api/logistics-in-transit?${query}`).then(r=>r.json()).then(d=>{const tb=document.querySelector('#mainTable tbody');const colSpan=TRANSIT_TABLE_LEAF_COLS;if(d.status!=='success'){tb.innerHTML=`<tr><td colspan="${colSpan}" style="text-align:center;color:#a33;">${d.message||'加载失败'}</td></tr>`;return}const arr=d.items||[];const availableIds=new Set(arr.map(i=>Number(i.id||0)).filter(v=>v>0));Array.from(selectedTransitIds).forEach(id=>{if(!availableIds.has(id))selectedTransitIds.delete(id)});if(!arr.length){tb.innerHTML=`<tr><td colspan="${colSpan}" style="text-align:center;">暂无数据</td></tr>`;syncSelectAllState();refreshTransitDetailSortHeaderUi();refreshTransitSkuDetailLayout();return}tb.innerHTML=arr.map(i=>buildTransitRecordRowHtml(i)).join('');tb.querySelectorAll('.transit-row-check').forEach(cb=>{cb.addEventListener('change',function(){const id=Number(this.dataset.id||0);if(!id)return;if(this.checked)selectedTransitIds.add(id);else selectedTransitIds.delete(id);syncSelectAllState()})});document.querySelectorAll('.transit-inline-edit').forEach(bindTransitInlineEditElement);syncSelectAllState();bindPreviewStatusEditors();refreshTransitDetailSortHeaderUi();refreshTransitSkuDetailLayout();const mt=document.querySelector('#mainTable');if(mt&&window.SitjoyManagedPmTable&&typeof window.SitjoyManagedPmTable.invalidateLayout==='function')window.SitjoyManagedPmTable.invalidateLayout(mt)})})}
 $('#searchInput').addEventListener('keydown',e=>{if(e.key==='Enter')loadList()});
 $('#skuFilterInput')&&$('#skuFilterInput').addEventListener('keydown',e=>{if(e.key==='Enter')loadList()});
 $('#colorFilterInput')&&$('#colorFilterInput').addEventListener('keydown',e=>{if(e.key==='Enter')loadList()});
-window.setTimeout(function(){var b=window.bindPmModalBackdropClose;if(typeof b!=='function')return;var x=$('#pm-modal'),y=$('#qty-verify-modal'),z=$('#transit-export-modal'),c=$('#confirm-modal');if(x)b(x,closeModal);if(y)b(y,closeQtyVerifyModal);if(z)b(z,closeTransitDetailExportModal);if(c)b(c,function(){if(typeof transitActiveConfirmDone==='function'&&c.classList.contains('active'))transitActiveConfirmDone({ok:false});else{c.classList.remove('active');c.classList.remove('is-danger')}})},0);$('#transitDocUploadInput').addEventListener('change',function(){uploadTransitDocs(this.files);this.value=''});$('#transitTemplateUploadInput').addEventListener('change',function(){const f=(this.files||[])[0];if(f)uploadTransitTemplate(f);this.value=''});$('#transitSelectAll').addEventListener('change',function(){toggleTransitSelectAll(this.checked)});
+window.setTimeout(function(){var b=window.bindPmModalBackdropClose;if(typeof b!=='function')return;var x=$('#pm-modal'),y=$('#qty-verify-modal'),z=$('#transit-export-modal'),d=$('#transit-doc-modal'),c=$('#confirm-modal');if(x)b(x,closeModal);if(y)b(y,closeQtyVerifyModal);if(z)b(z,closeTransitDetailExportModal);if(d)b(d,closeTransitDocModal);if(c)b(c,function(){if(typeof transitActiveConfirmDone==='function'&&c.classList.contains('active'))transitActiveConfirmDone({ok:false,value:''});else{c.classList.remove('active');c.classList.remove('is-danger')}})},0);$('#transitDocUploadInput').addEventListener('change',function(){uploadTransitDocs(this.files);this.value=''});$('#transitTemplateUploadInput').addEventListener('change',function(){const f=(this.files||[])[0];if(f)uploadTransitTemplate(f);this.value=''});$('#transitSelectAll').addEventListener('change',function(){toggleTransitSelectAll(this.checked)});
 function resetSearch(){$('#searchInput').value='';const skuEl=$('#skuFilterInput');if(skuEl)skuEl.value='';const colorEl=$('#colorFilterInput');if(colorEl)colorEl.value='';loadList()}
 function resetColumnWidthAndSort(){
   // 重置排序状态
@@ -787,6 +1144,7 @@ function resetColumnWidthAndSort(){
   } catch(_e){}
 
   try { localStorage.removeItem(TRANSIT_SKU_DETAIL_COLS_KEY); } catch(_e){}
+  applyTransitSkuDetailColWidths(TRANSIT_SKU_DETAIL_DEFAULT.slice(), true);
 
   // 刷新排序UI
   refreshTransitDetailSortHeaderUi();
@@ -809,6 +1167,23 @@ $('#destinationWarehouseId').addEventListener('change',onDestinationWarehouseCha
 $('#factoryId').addEventListener('change',()=>{setTransitConsolidationFactoryIds(getTransitConsolidationFactoryIds());syncTransitItemSkuOptions()});
 window.addEventListener('load',bindTransitConsolidationFactoryPickerOnce);
 bindModalExpectedListedAutoSync();
+window.addEventListener('load',function(){
+  const mt=document.querySelector('#mainTable');
+  if(!mt)return;
+  mt.addEventListener('pm-reset-column-widths',function(){
+    applyTransitSkuDetailColWidths(TRANSIT_SKU_DETAIL_DEFAULT.slice(),true);
+  });
+});
+window.addEventListener('load',bindTransitDocModalOnce);
+window.addEventListener('load',function(){
+  const params=new URLSearchParams(window.location.search||'');
+  const transitId=Number(params.get('transit_id')||0);
+  const docType=String(params.get('open_doc')||params.get('doc_type')||'').trim().toLowerCase();
+  if(transitId&&['declaration','clearance'].includes(docType)){
+    openTransitDocModal(docType,transitId);
+    try{const u=new URL(window.location.href);u.searchParams.delete('open_doc');u.searchParams.delete('doc_type');u.searchParams.delete('transit_id');window.history.replaceState({},'',u.pathname+(u.search||''))}catch(_e){}
+  }
+});
 window.addEventListener('focus',refreshDocCounts);window.addEventListener('load',initTransitSkuDetailColLayout);window.addEventListener('load',loadList);
 window.addEventListener('load',syncTransitPreviewSaveBar);
 </script>

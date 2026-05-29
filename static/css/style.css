@@ -2263,13 +2263,57 @@ button.sj-group-row-edit-btn {
 }
 
 /*
- * 托管宽表：子元素（inline-input 的 min-width、status-segment 的 max-content）会撑破列宽，
- * 在窄列下与右侧单元格视觉重叠。强制列内裁剪并让可收缩控件占满格而不溢出。
+ * 托管宽表：列宽仅由 colgroup 决定；单元格 min-width:0 + overflow 做省略号。
+ * 勿对 td 设 max-width:0（无 colgroup 时会把表体列压扁，与分离表头错位）。
  */
+.pm-table.is-managed-table > thead > tr > th,
 .pm-table.is-managed-table > tbody > tr > td,
 .pm-managed-head-table.is-managed-table > thead > tr > th {
+    min-width: 0;
     overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     vertical-align: middle;
+}
+
+/* 业务页常给 .preview-edit-cell 设 min-width，会撑破 colgroup 导致表头/表体列错位 */
+.pm-table.is-managed-table td.preview-edit-cell,
+.pm-table.is-managed-table .preview-edit-cell {
+    min-width: 0 !important;
+    box-sizing: border-box;
+}
+
+.pm-table.is-managed-table[data-pm-col-width-sum="1"] {
+    width: var(--pm-managed-table-width, max-content) !important;
+    min-width: var(--pm-managed-table-width, max-content) !important;
+}
+
+.pm-table.is-managed-table > tbody > tr > td:has(input, select, textarea, button, .status-segment, .pm-actions, .preview-status, .preview-doc-cell, .preview-doc-actions, .universal-select-dropdown, .sku-cell, .pm-cell-interactive),
+.pm-managed-head-table.is-managed-table > thead > tr > th:has(input, button, select),
+.pm-managed-head-table.is-managed-table > thead > tr > th:has(.pm-col-resizer) {
+    max-width: none;
+    overflow: visible;
+    white-space: normal;
+}
+
+.pm-managed-head-table.is-managed-table > thead > tr > th:has(.pm-col-resizer) {
+    position: relative;
+}
+
+.pm-table.is-managed-table .inline-input,
+.pm-table.is-managed-table input.inline-input,
+.pm-table.is-managed-table .preview-edit-input,
+.pm-table.is-managed-table .transit-inline-input,
+.pm-table.is-managed-table input[type="date"],
+.pm-table.is-managed-table input[type="datetime-local"],
+.pm-table.is-managed-table input[type="month"],
+.pm-table.is-managed-table input.app-date-input,
+.pm-table.is-managed-table select,
+.pm-table.is-managed-table textarea {
+    min-width: 0 !important;
+    max-width: 100%;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .pm-table td .inline-input,
@@ -2304,7 +2348,8 @@ button.sj-group-row-edit-btn {
     box-sizing: border-box;
 }
 
-.pm-table td .status-segment {
+.pm-table.is-managed-table td .status-segment,
+.pm-table.is-managed-table td .preview-status .status-segment {
     width: 100% !important;
     min-width: 0 !important;
     max-width: 100% !important;
@@ -2338,6 +2383,7 @@ button.sj-group-row-edit-btn {
     height: 100%;
     cursor: col-resize;
     user-select: none;
+    z-index: 4;
 }
 
 .pm-col-resizer::after {
@@ -2360,6 +2406,28 @@ button.sj-group-row-edit-btn {
 
 .pm-table-hide-col {
     display: none !important;
+}
+
+/*
+ * 托管表隐藏列：必须用 visibility:collapse，不能用 display:none。
+ * display:none 会让表体单元格脱离列网格，而分离表头仍占位 → 串列错位。
+ */
+.pm-table.is-managed-table > thead > tr > th.pm-table-hide-col,
+.pm-table.is-managed-table > tbody > tr > td.pm-table-hide-col,
+.pm-managed-head-table.is-managed-table > thead > tr > th.pm-table-hide-col {
+    display: table-cell !important;
+    visibility: collapse !important;
+    padding: 0 !important;
+    border-width: 0 !important;
+    font-size: 0 !important;
+    line-height: 0 !important;
+    overflow: hidden !important;
+    white-space: nowrap !important;
+}
+
+.pm-table.is-managed-table col[data-pm-col-hidden="1"],
+.pm-managed-head-table.is-managed-table col[data-pm-col-hidden="1"] {
+    visibility: collapse;
 }
 
 .pm-actions {

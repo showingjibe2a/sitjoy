@@ -823,6 +823,15 @@ class LogisticsInTransitMixin:
                         elif 'destination_warehouse_id' in raw:
                             payload['destination_warehouse_id'] = None
 
+                    if 'destination_region_id' in raw:
+                        region_id = self._parse_int(raw.get('destination_region_id'))
+                        if not region_id:
+                            return self.send_json({'status': 'error', 'message': f'记录 {item_id} 的目的区域不能为空'}, start_response)
+                        payload['destination_region_id'] = region_id
+
+                    if 'logistics_box_no' in raw:
+                        payload['logistics_box_no'] = (raw.get('logistics_box_no') or '').strip() or None
+
                     if len(payload.keys()) > 1:
                         normalized_updates.append(payload)
 
@@ -835,12 +844,59 @@ class LogisticsInTransitMixin:
                         for payload in normalized_updates:
                             item_id = payload['id']
                             cur.execute(
-                                "SELECT id, qty_verified, factory_ship_date_initial, factory_ship_date_previous, factory_ship_date_latest, etd_initial, etd_previous, etd_latest, eta_initial, eta_previous, eta_latest FROM logistics_in_transit WHERE id=%s LIMIT 1",
+                                """
+                                SELECT id, qty_verified, destination_region_id, destination_warehouse_id,
+                                       factory_ship_date_initial, factory_ship_date_previous, factory_ship_date_latest,
+                                       etd_initial, etd_previous, etd_latest, eta_initial, eta_previous, eta_latest
+                                FROM logistics_in_transit
+                                WHERE id=%s
+                                LIMIT 1
+                                """,
                                 (item_id,)
                             )
                             existing = cur.fetchone() or {}
                             if not existing:
                                 return self.send_json({'status': 'error', 'message': f'记录 {item_id} 不存在'}, start_response)
+
+                            if 'destination_region_id' in payload and 'destination_warehouse_id' not in payload:
+                                wh_id = self._parse_int(existing.get('destination_warehouse_id'))
+                                new_region_id = self._parse_int(payload.get('destination_region_id'))
+                                if wh_id and new_region_id:
+                                    cur.execute(
+                                        "SELECT destination_region_id FROM logistics_overseas_warehouses WHERE id=%s LIMIT 1",
+                                        (wh_id,)
+                                    )
+                                    wh_row = cur.fetchone() or {}
+                                    wh_region_id = self._parse_int(wh_row.get('destination_region_id'))
+                                    if wh_region_id and wh_region_id != new_region_id:
+                                        payload['destination_warehouse_id'] = None
+
+                            if 'logistics_box_no' in payload:
+                                box_no = payload.get('logistics_box_no')
+                                if box_no:
+                                    cur.execute(
+                                        "SELECT id FROM logistics_in_transit WHERE logistics_box_no=%s AND id<>%s LIMIT 1",
+                                        (box_no, item_id)
+                                    )
+                                    if cur.fetchone():
+                                        return self.send_json({'status': 'error', 'message': f'箱号「{box_no}」已存在'}, start_response)
+
+                            if 'destination_warehouse_id' in payload and payload.get('destination_warehouse_id'):
+                                wh_id = self._parse_int(payload.get('destination_warehouse_id'))
+                                region_id = self._parse_int(
+                                    payload.get('destination_region_id')
+                                    if 'destination_region_id' in payload
+                                    else existing.get('destination_region_id')
+                                )
+                                if wh_id and region_id:
+                                    cur.execute(
+                                        "SELECT destination_region_id FROM logistics_overseas_warehouses WHERE id=%s LIMIT 1",
+                                        (wh_id,)
+                                    )
+                                    wh_row = cur.fetchone() or {}
+                                    wh_region_id = self._parse_int(wh_row.get('destination_region_id'))
+                                    if wh_region_id and wh_region_id != region_id:
+                                        return self.send_json({'status': 'error', 'message': f'记录 {item_id} 的目的仓库与目的区域不匹配'}, start_response)
 
                             sets = []
                             params = []
@@ -937,6 +993,14 @@ class LogisticsInTransitMixin:
                             if 'destination_warehouse_id' in payload:
                                 sets.append('destination_warehouse_id=%s')
                                 params.append(payload.get('destination_warehouse_id'))
+
+                            if 'destination_region_id' in payload:
+                                sets.append('destination_region_id=%s')
+                                params.append(payload.get('destination_region_id'))
+
+                            if 'logistics_box_no' in payload:
+                                sets.append('logistics_box_no=%s')
+                                params.append(payload.get('logistics_box_no'))
 
                             if not sets:
                                 continue
