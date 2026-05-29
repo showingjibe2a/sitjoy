@@ -2024,41 +2024,6 @@
         });
     }
 
-    function clearTransitSkuGridPaintCells(cells){
-        (cells || []).forEach((cell) => {
-            if(!cell || !cell.classList) return;
-            cell.classList.remove(
-                'pm-sku-grid-sel-cell',
-                'pm-sku-grid-sel-first',
-                'pm-sku-grid-sel-mid',
-                'pm-sku-grid-sel-last'
-            );
-        });
-    }
-
-    function applyTransitSkuGridSpanCellClasses(state, selection){
-        const sc1 = selection.sc1;
-        const sc2 = selection.sc2;
-        const multiCol = sc2 > sc1;
-        const cells = new Set();
-        selection.rowSlots.forEach((slot) => {
-            const row = getVisibleRows(state)[slot.tr];
-            if(!row) return;
-            for(let sc = sc1; sc <= sc2; sc += 1){
-                const cell = getTransitSkuCellInTableRow(row, sc);
-                if(!cell) continue;
-                cell.classList.add('pm-sku-grid-sel-cell');
-                if(multiCol){
-                    if(sc === sc1) cell.classList.add('pm-sku-grid-sel-first');
-                    if(sc === sc2) cell.classList.add('pm-sku-grid-sel-last');
-                    if(sc > sc1 && sc < sc2) cell.classList.add('pm-sku-grid-sel-mid');
-                }
-                cells.add(cell);
-            }
-        });
-        return Array.from(cells);
-    }
-
     let gridSelectionPaintScheduled = false;
     function schedulePaintGridSelection(){
         if(gridSelectionPaintScheduled) return;
@@ -2088,7 +2053,6 @@
     function clearGridSelection(){
         if(!activeGridSelection) return;
         clearTransitSkuGridPaintNodes(activeGridSelection.skuPaintedNodes);
-        clearTransitSkuGridPaintCells(activeGridSelection.skuPaintedCells);
         clearGridSelectionClasses(activeGridSelection.state && activeGridSelection.state.table);
         activeGridSelection = null;
         notifySitjoyGridSelectionChange();
@@ -2457,9 +2421,7 @@
                 activeGridSelection.skuGridPaintSig = sig;
 
                 clearTransitSkuGridPaintNodes(activeGridSelection.skuPaintedNodes);
-                clearTransitSkuGridPaintCells(activeGridSelection.skuPaintedCells);
                 activeGridSelection.skuPaintedNodes = [];
-                activeGridSelection.skuPaintedCells = [];
                 state.table.querySelectorAll('td.pm-grid-cell-selected, td.pm-grid-cell-anchor').forEach((cell) => {
                     cell.classList.remove('pm-grid-cell-selected', 'pm-grid-cell-anchor');
                 });
@@ -2475,7 +2437,6 @@
                         activeGridSelection.skuPaintedNodes.push(node);
                     }
                 });
-                activeGridSelection.skuPaintedCells = applyTransitSkuGridSpanCellClasses(state, selection);
                 state.table.classList.add('is-grid-selecting');
                 notifySitjoyGridSelectionChange();
                 return;
@@ -2483,7 +2444,6 @@
         }
         activeGridSelection.skuGridPaintSig = '';
         activeGridSelection.skuPaintedNodes = [];
-        activeGridSelection.skuPaintedCells = [];
 
         clearGridSelectionClasses(state.table);
 
@@ -2519,7 +2479,6 @@
             detailDragging: null,
             transitSkuGrid: null,
             skuPaintedNodes: [],
-            skuPaintedCells: [],
             skuGridPaintSig: ''
         };
         return activeGridSelection;

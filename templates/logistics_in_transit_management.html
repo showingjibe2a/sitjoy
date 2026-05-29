@@ -69,28 +69,45 @@
       text-align: center;
       vertical-align: top;
       font-variant-numeric: tabular-nums;
+      padding-left: 0.38rem;
+      padding-right: 0.38rem;
     }
     .transit-col-sku {
       vertical-align: top;
       min-width: 0;
+      padding-left: 0.38rem;
+      padding-right: 0.38rem;
+    }
+    /* SKU 四列之间收紧水平 padding，避免框选时靠负 margin 拼缝 */
+    #mainTable td.transit-col-sku-color + td.transit-col-sku,
+    #mainTable td.transit-col-sku + td.transit-col-sku-qty,
+    #mainTable td.transit-col-sku-qty + td.transit-col-sku-listed {
+      padding-left: 0.2rem;
     }
     .transit-sku-stack {
       display: flex;
       flex-direction: column;
-      gap: 0.22rem;
+      gap: 0;
       min-width: 0;
       width: 100%;
     }
+    /* 固定行高：选中/未选中一致，避免框选时行高突变；行间用分隔线而非 padding/gap */
     .transit-sku-stack-line {
       display: flex;
       align-items: center;
       justify-content: center;
-      min-height: 1.35rem;
+      height: 1.58rem;
+      min-height: 1.58rem;
+      max-height: 1.58rem;
       line-height: 1.25;
       min-width: 0;
       width: 100%;
       box-sizing: border-box;
-      transition: none;
+      padding: 0;
+      margin: 0;
+    }
+    .transit-sku-stack-line:not(:last-child) {
+      border-bottom: 1px solid rgba(207, 199, 189, 0.42);
     }
     .transit-col-sku .transit-sku-stack-line {
       justify-content: flex-start;

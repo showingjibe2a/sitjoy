@@ -1730,47 +1730,12 @@ button.sj-group-row-edit-btn {
     box-shadow: none !important;
 }
 
-/*
- * 在途 SKU 堆叠行：与通用 .pm-grid-detail-selected / .pm-grid-detail-anchor 一致（含 inset 框线）。
- * 列间、行间用负 margin + 等量 padding 消空隙，不改变文字对齐。
- */
-.pm-table.is-grid-selecting .transit-sku-stack-line.pm-grid-detail-selected + .transit-sku-stack-line.pm-grid-detail-selected,
-.pm-table.is-grid-selecting .transit-sku-stack-line.pm-grid-detail-selected + .transit-sku-stack-line.pm-grid-detail-anchor,
-.pm-table.is-grid-selecting .transit-sku-stack-line.pm-grid-detail-anchor + .transit-sku-stack-line.pm-grid-detail-selected,
-.pm-table.is-grid-selecting .transit-sku-stack-line.pm-grid-detail-anchor + .transit-sku-stack-line.pm-grid-detail-anchor {
-    margin-top: -0.22rem;
-    padding-top: 0.22rem;
-}
-
-.pm-table.is-grid-selecting td.pm-sku-grid-sel-first:not(.pm-sku-grid-sel-last) .transit-sku-stack-line.pm-grid-detail-selected,
-.pm-table.is-grid-selecting td.pm-sku-grid-sel-first:not(.pm-sku-grid-sel-last) .transit-sku-stack-line.pm-grid-detail-anchor {
-    margin-right: -0.62rem;
-    padding-right: 0.62rem;
-    width: calc(100% + 0.62rem);
-    max-width: none;
-    box-sizing: border-box;
-}
-
-.pm-table.is-grid-selecting td.pm-sku-grid-sel-last:not(.pm-sku-grid-sel-first) .transit-sku-stack-line.pm-grid-detail-selected,
-.pm-table.is-grid-selecting td.pm-sku-grid-sel-last:not(.pm-sku-grid-sel-first) .transit-sku-stack-line.pm-grid-detail-anchor {
-    margin-left: -0.62rem;
-    padding-left: 0.62rem;
-    margin-right: -0.62rem;
-    padding-right: 0.62rem;
-    width: calc(100% + 1.24rem);
-    max-width: none;
-    box-sizing: border-box;
-}
-
-.pm-table.is-grid-selecting td.pm-sku-grid-sel-mid .transit-sku-stack-line.pm-grid-detail-selected,
-.pm-table.is-grid-selecting td.pm-sku-grid-sel-mid .transit-sku-stack-line.pm-grid-detail-anchor {
-    margin-left: -0.62rem;
-    padding-left: 0.62rem;
-    margin-right: -0.62rem;
-    padding-right: 0.62rem;
-    width: calc(100% + 1.24rem);
-    max-width: none;
-    box-sizing: border-box;
+/* 在途 SKU：相邻选中行去掉行间分隔线，底色/框线连贯；行高由模板固定，不再改 padding */
+.pm-table.is-grid-selecting .transit-sku-stack-line.pm-grid-detail-selected:has(+ .transit-sku-stack-line.pm-grid-detail-selected),
+.pm-table.is-grid-selecting .transit-sku-stack-line.pm-grid-detail-selected:has(+ .transit-sku-stack-line.pm-grid-detail-anchor),
+.pm-table.is-grid-selecting .transit-sku-stack-line.pm-grid-detail-anchor:has(+ .transit-sku-stack-line.pm-grid-detail-selected),
+.pm-table.is-grid-selecting .transit-sku-stack-line.pm-grid-detail-anchor:has(+ .transit-sku-stack-line.pm-grid-detail-anchor) {
+    border-bottom-color: transparent;
 }
 
 .pm-column-filter-th {
