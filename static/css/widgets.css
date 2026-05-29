@@ -158,6 +158,237 @@
 .mj-actions-btns { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .mj-toolbar { flex-wrap: wrap; gap: 0.5rem; align-items: center; }
 
+/* 通用多人房间：布局 + 对话 */
+.widget-room-stage--inline {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    min-height: 0;
+    gap: 0.65rem;
+    padding: 0.35rem 0;
+}
+.widget-room-board-cluster {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: stretch;
+    flex: 0 0 auto;
+    max-width: 100%;
+    gap: clamp(0.65rem, 1.4vw, 1rem);
+}
+.widget-room-side-panel {
+    flex: 0 0 auto;
+    width: clamp(148px, 17vw, 196px);
+    max-height: none;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.62rem 0.55rem;
+    margin: 0;
+    background: rgba(255, 252, 247, 0.96);
+    border: 1px solid rgba(195, 186, 174, 0.85);
+    border-radius: 12px;
+    box-sizing: border-box;
+    box-shadow: 0 4px 16px rgba(42, 36, 32, 0.07);
+    overflow-y: auto;
+}
+.go-play-side-panel {
+    /* 围棋沿用；与 widget-room-side-panel 同构 */
+}
+.mj-board-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.65rem 0.75rem 1rem;
+    overflow-x: auto;
+}
+.mj-board-stage .mj-table-wrap {
+    flex: 0 0 auto;
+    width: min(520px, calc(100vw - 18rem));
+    max-width: 100%;
+    margin: 0;
+}
+.widget-room-chat {
+    display: flex;
+    flex-direction: column;
+    background: rgba(255, 252, 247, 0.96);
+    border: 1px solid rgba(195, 186, 174, 0.85);
+    border-radius: 10px;
+    box-sizing: border-box;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(42, 36, 32, 0.06);
+}
+.widget-room-chat--below {
+    width: min(calc(520px + 196px + 1rem), 100%);
+    max-width: 100%;
+    min-height: 8.5rem;
+    max-height: 11rem;
+}
+.widget-room-chat--side {
+    width: clamp(148px, 20vw, 210px);
+    min-height: 0;
+    max-height: min(88vh, 520px);
+    align-self: stretch;
+}
+.widget-room-chat-head {
+    flex: 0 0 auto;
+    padding: 0.35rem 0.55rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--morandi-slate);
+    border-bottom: 1px solid rgba(207, 199, 189, 0.55);
+    background: rgba(248, 244, 236, 0.85);
+}
+.widget-room-chat-log {
+    flex: 1 1 auto;
+    min-height: 4.5rem;
+    overflow-y: auto;
+    padding: 0.4rem 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+.widget-room-chat-empty {
+    margin: 0;
+    font-size: 0.76rem;
+    color: var(--morandi-slate);
+    text-align: center;
+    padding: 0.5rem 0;
+}
+.widget-room-chat-msg {
+    display: flex;
+    flex-direction: column;
+    gap: 0.12rem;
+    max-width: 92%;
+    align-self: flex-start;
+}
+.widget-room-chat-msg--mine {
+    align-self: flex-end;
+    text-align: right;
+}
+.widget-room-chat-msg-meta {
+    font-size: 0.68rem;
+    color: var(--morandi-slate);
+    display: flex;
+    gap: 0.35rem;
+    align-items: baseline;
+}
+.widget-room-chat-msg--mine .widget-room-chat-msg-meta {
+    justify-content: flex-end;
+}
+.widget-room-chat-msg-text {
+    display: inline-block;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    padding: 0.28rem 0.45rem;
+    border-radius: 8px;
+    background: rgba(143, 168, 139, 0.14);
+    color: var(--morandi-ink);
+    word-break: break-word;
+    text-align: left;
+}
+.widget-room-chat-msg--mine .widget-room-chat-msg-text {
+    background: rgba(90, 120, 154, 0.16);
+}
+.widget-room-chat-form {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 0.35rem;
+    padding: 0.4rem 0.45rem;
+    border-top: 1px solid rgba(207, 199, 189, 0.55);
+    background: rgba(255, 255, 255, 0.65);
+}
+.widget-room-chat-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 26px;
+    height: 26px;
+    font-size: 0.78rem;
+    padding: 0.12rem 0.4rem !important;
+}
+.widget-room-chat-send {
+    flex-shrink: 0;
+}
+.mj-play-popup-stage {
+    align-items: stretch;
+    max-width: min(96vw, 780px);
+}
+.mj-play-popup-stage .widget-room-chat--side {
+    order: 2;
+}
+.mj-play-popup-stage .mj-popup-side {
+    order: 3;
+}
+.go-play-popup-stage .widget-room-chat--side {
+    order: 1;
+    max-height: 100%;
+}
+.go-play-board-wrap--popup {
+    order: 0;
+}
+.go-play-popup-tools {
+    order: 2;
+}
+.go-play-stage--inline .widget-room-chat--below {
+    width: min(calc(520px + 188px + 1rem), 100%);
+}
+.mj-side-scores {
+    font-size: 0.74rem;
+    line-height: 1.35;
+    color: var(--morandi-ink);
+    margin: 0;
+}
+.mj-side-lobby-label {
+    font-size: 0.72rem;
+    color: var(--morandi-slate);
+    margin: 0 0 0.25rem;
+}
+.mj-lobby-seats--side {
+    max-width: none;
+    margin: 0 0 0.35rem;
+    gap: 0.35rem;
+}
+.mj-dice-roll {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    z-index: 2;
+    pointer-events: none;
+}
+.mj-dice-pair {
+    display: flex;
+    gap: 0.65rem;
+    justify-content: center;
+    margin-bottom: 0.45rem;
+}
+.mj-die {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.4rem;
+    height: 2.4rem;
+    border-radius: 0.45rem;
+    background: linear-gradient(145deg, #fff8ee, #e8dcc8);
+    color: #3d3428;
+    font-weight: 800;
+    font-size: 1.15rem;
+    box-shadow: 0 2px 6px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.65);
+    border: 1px solid rgba(90,70,50,.25);
+}
+.mj-dice-result {
+    margin: 0;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    color: #f8f4ec;
+    text-shadow: 0 1px 3px rgba(0,0,0,.45);
+    max-width: 11rem;
+}
+
 /* 围棋对弈：与业务页一致的全宽 pm-layout */
 .go-play-layout-root {
     width: 100%;
@@ -254,12 +485,13 @@
 
 .go-play-stage--inline {
     display: flex;
-    flex-direction: row;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     width: 100%;
     min-height: 0;
     padding: 0.35rem 0;
+    gap: 0.65rem;
 }
 
 .go-play-board-cluster {
@@ -324,6 +556,74 @@
     color: #5a4a20;
     background: rgba(210, 170, 80, 0.18);
     border-color: rgba(184, 140, 50, 0.4);
+}
+.go-local-banner-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+.go-local-stone-wrap {
+    margin-top: 0.1rem;
+}
+.go-local-banner-hint,
+.go-practice-banner-text {
+    margin: 0;
+    font-size: 0.76rem;
+    line-height: 1.4;
+    color: inherit;
+}
+.go-local-stone-segment .status-pill,
+#goLocalStoneSegment .status-pill {
+    min-width: 2rem;
+    padding: 0.2rem 0.35rem !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.go-local-stone-opt {
+    display: inline-block;
+    width: 0.72rem;
+    height: 0.72rem;
+    border-radius: 50%;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
+    flex-shrink: 0;
+}
+.go-local-stone-opt--black {
+    background: radial-gradient(circle at 32% 28%, #555, #111 72%);
+}
+.go-local-stone-opt--white {
+    background: radial-gradient(circle at 32% 28%, #fff, #ddd 70%);
+    border: 1px solid rgba(0, 0, 0, 0.15);
+}
+.go-local-stone-opt--both {
+    position: relative;
+    width: 1.15rem;
+    height: 0.72rem;
+    box-shadow: none;
+    border-radius: 0;
+    background: none;
+}
+.go-local-stone-opt--both::before,
+.go-local-stone-opt--both::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 0.68rem;
+    height: 0.68rem;
+    border-radius: 50%;
+    transform: translateY(-50%);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
+}
+.go-local-stone-opt--both::before {
+    left: 0;
+    background: radial-gradient(circle at 32% 28%, #555, #111 72%);
+    z-index: 2;
+}
+.go-local-stone-opt--both::after {
+    left: 0.42rem;
+    background: radial-gradient(circle at 32% 28%, #fff, #ddd 70%);
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    z-index: 1;
 }
 
 .go-play-side-section {

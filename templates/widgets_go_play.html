@@ -67,7 +67,29 @@
 
                     <aside class="go-play-side-panel" id="goSidePanel" aria-label="对弈信息与操作">
                         <p class="go-play-side-notice pm-u-hidden" id="goWindowPlaceholder">棋盘已在独立窗口中打开，本页仍负责房间操作与同步；请保持本页不要关闭</p>
-                        <p class="go-play-side-notice go-play-side-notice--practice pm-u-hidden" id="goPracticeBanner"></p>
+                        <div class="go-play-side-notice go-play-side-notice--practice pm-u-hidden" id="goPracticeBanner">
+                            <div id="goLocalBannerControls" class="go-local-banner-controls pm-u-hidden">
+                                <div class="status-segment status-segment--inline" id="goLocalModeSegment" data-value="match" role="group" aria-label="本地模式">
+                                    <button type="button" class="status-pill status-pill--enabled" data-value="setup">本地摆棋</button>
+                                    <button type="button" class="status-pill status-pill--enabled is-active" data-value="match">本地对弈</button>
+                                </div>
+                                <div class="go-local-stone-wrap pm-u-hidden" id="goLocalStoneWrap">
+                                    <div class="status-segment status-segment--inline" id="goLocalStoneSegment" data-value="alternate" role="group" aria-label="落子颜色">
+                                        <button type="button" class="status-pill status-pill--enabled is-active" data-value="alternate" title="黑白交替（下一手为上一手反色）" aria-label="黑白交替">
+                                            <span class="go-local-stone-opt go-local-stone-opt--both" aria-hidden="true"></span>
+                                        </button>
+                                        <button type="button" class="status-pill status-pill--enabled" data-value="black" title="仅黑子" aria-label="仅黑子">
+                                            <span class="go-local-stone-opt go-local-stone-opt--black" aria-hidden="true"></span>
+                                        </button>
+                                        <button type="button" class="status-pill status-pill--enabled" data-value="white" title="仅白子" aria-label="仅白子">
+                                            <span class="go-local-stone-opt go-local-stone-opt--white" aria-hidden="true"></span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <p class="go-local-banner-hint" id="goLocalBannerHint"></p>
+                            </div>
+                            <p class="go-practice-banner-text pm-u-hidden" id="goPracticeBannerText"></p>
+                        </div>
 
                         <div id="goRoomPanel" class="go-play-side-section pm-u-hidden">
                             <div class="go-play-side-meta">
@@ -95,8 +117,7 @@
 
                         <div id="goLocalPanel" class="go-play-side-section pm-u-hidden">
                             <div class="go-play-side-meta">
-                                <p class="go-play-side-hint" id="goLocalHint">本地摆棋：点击棋盘落子，黑白轮流；虚手换手，悔一手撤销上一手。</p>
-                                <p class="go-play-side-status" id="goLocalStatus">本地摆棋 · 黑方行棋（0 手）</p>
+                                <p class="go-play-side-status" id="goLocalStatus">本地对弈 · 黑方行棋（0 手）</p>
                             </div>
                             <div class="go-play-side-actions">
                                 <button type="button" class="go-play-side-btn btn-secondary" id="goLocalPassBtn">虚手</button>
@@ -108,6 +129,7 @@
                         <p class="go-play-side-foot" id="goBoardSyncHint">在棋盘上点击落子。在线对局时请保持<strong>主页面</strong>开启以同步；本地摆棋时主页面与小窗均可落子并互相同步。</p>
                     </aside>
                     </div>
+                    <div class="widget-room-chat widget-room-chat--below pm-u-hidden" id="goRoomChat" hidden aria-label="房间对话"></div>
                 </div>
             </div>
         </section>
@@ -116,6 +138,7 @@
     <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
     <script src="/static/js/header.js"></script>
     <script src="/static/js/widget-board-overlay.js"></script>
+    <script src="/static/js/widget-room.js"></script>
     <script src="/static/js/go-play.js"></script>
 </body>
 </html>

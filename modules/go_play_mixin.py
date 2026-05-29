@@ -1,5 +1,7 @@
 """在线围棋对弈（小组件）：文件持久化房间（多进程共享）、长轮询推送、19 路；悔棋/认输需对方确认。"""
 
+from modules.widget_room_chat_mixin import WidgetRoomChatMixin
+
 import json
 import os
 import random
@@ -21,7 +23,7 @@ GO_STREAM_PING_SEC = 12
 GO_CLEANUP_ACTIONS = frozenset({
     'create', 'join', 'leave', 'state', 'move', 'pass',
     'undo', 'resign', 'respond', 'cancel_request', 'rematch',
-    'practice_start', 'practice_cancel', 'practice_end',
+    'practice_start', 'practice_cancel', 'practice_end', 'chat_send',
 })
 
 _go_file_lock = threading.RLock()
@@ -64,7 +66,7 @@ def _go_unregister_waiter(room_code, ev):
             _go_waiters.pop(code, None)
 
 
-class GoPlayMixin:
+class GoPlayMixin(WidgetRoomChatMixin):
     """围棋对弈 API 与房间状态。"""
 
     def _go_rooms_dir(self):
@@ -486,6 +488,10 @@ class GoPlayMixin:
         out.update(self._go_pending_summary(room, user_id))
         out.update(self._go_rematch_summary(room, user_id))
         out.update(self._go_practice_summary(room, user_id))
+        chat, chat_seq = self._wrc_chat_public(room, user_id)
+        out['chat_messages'] = chat
+        out['chat_seq'] = chat_seq
+        out['my_user_id'] = uid
         return out
 
     def _go_get_room_locked(self, code):
@@ -555,7 +561,30 @@ class GoPlayMixin:
             return self._go_action_practice_cancel(user_id, data, start_response)
         if action == 'practice_end':
             return self._go_action_practice_end(user_id, data, start_response)
+        if action == 'chat_send':
+            return self._go_action_chat_send(user_id, data, start_response)
         return self.send_json({'status': 'error', 'message': '未知操作'}, start_response)
+
+    def _go_action_chat_send(self, user_id, data, start_response):
+        code = str(data.get('room_code') or '').strip().upper()
+        with self._go_room_store(code) as (room, err):
+            if err:
+                return self.send_json({'status': 'error', 'message': err}, start_response)
+            if not self._go_user_in_room(room, user_id):
+                return self.send_json({'status': 'error', 'message': '您不在该房间中'}, start_response)
+            name = self._go_user_display_name(user_id)
+            if self._parse_int(room.get('black_user_id')) == int(user_id):
+                name = room.get('black_name') or name
+            elif self._parse_int(room.get('white_user_id')) == int(user_id):
+                name = room.get('white_name') or name
+            _, err_msg = self._wrc_chat_append(room, user_id, name, data.get('text'))
+            if err_msg:
+                return self.send_json({'status': 'error', 'message': err_msg}, start_response)
+            self._go_bump_version(room)
+            self._go_save_room(room)
+        out = self._go_room_for_user(room, user_id)
+        out['status'] = 'success'
+        return self.send_json(out, start_response)
 
     def _go_action_create(self, user_id, start_response):
         code = self._go_new_room_code()

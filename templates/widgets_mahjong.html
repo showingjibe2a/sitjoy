@@ -13,61 +13,94 @@
     <div class="container">
         <section class="hero" style="margin-bottom: 1rem;">
             <h2>麻将</h2>
-            <p>至少 <strong>2 人</strong> 在座且全部准备后可开局（最多 4 人）。当前规则：<strong>仅平胡</strong>；平胡 1 分，<strong>庄家双倍</strong>。昵称来自员工账号。</p>
+            <p>至少 <strong>2 人</strong> 在座且全部准备后可开局（最多 4 人）。首局投骰定庄；之后每局由<strong>上局胡牌者</strong>坐庄。当前规则：<strong>仅平胡</strong>；平胡 1 分，<strong>庄家双倍</strong>。昵称来自员工账号。</p>
         </section>
 
         <section class="pm-layout mj-layout-root">
             <div class="card pm-card mj-toolbar-card">
                 <div class="pm-toolbar mj-toolbar">
                     <button type="button" class="btn-accent" id="mjCreateBtn">创建房间</button>
-                    <div class="go-play-join-group">
+                    <div class="go-play-join-group widget-room-join-group">
                         <span class="pm-search-title">加入房间</span>
                         <div class="go-play-join-row">
                             <input type="text" id="mjJoinInput" class="inline-input" maxlength="8" placeholder="6 位房间号" autocomplete="off">
                             <button type="button" class="btn-secondary" id="mjJoinBtn">加入</button>
                         </div>
                     </div>
-                    <button type="button" class="btn-secondary pm-u-hidden" id="mjReadyBtn">准备</button>
-                    <button type="button" class="btn-primary pm-u-hidden" id="mjStartBtn">开局</button>
-                    <button type="button" class="btn-primary pm-u-hidden" id="mjNextHandBtn">下一局</button>
-                    <button type="button" class="btn-secondary pm-u-hidden" id="mjLeaveBtn">离开房间</button>
                     <button type="button" class="btn-secondary" id="mjPopoutBtn" title="在新窗口打开牌桌（需允许弹出窗口）">牌桌独立窗口</button>
                 </div>
                 <p class="mj-hint" id="mjRoomHint">创建或加入房间后开始。</p>
-                <div class="mj-lobby-panel pm-u-hidden" id="mjLobbyPanel">
-                    <p class="mj-lobby-label">座位准备（✓ 表示已准备）</p>
-                    <div class="mj-lobby-seats" id="mjLobbySeats" aria-label="座位准备状态"></div>
-                </div>
-                <p class="go-play-side-notice pm-u-hidden" id="mjWindowPlaceholder">牌桌已在独立窗口中打开，请保持本页开启以同步对局。</p>
-                <div class="mj-scores" id="mjScoresBar" hidden></div>
             </div>
 
-            <div class="card pm-card mj-table-card pm-u-hidden" id="mjTableCard">
-                <div class="mj-table-wrap" id="mjTableWrap">
-                    <div class="mj-table" id="mjTable">
-                        <div class="mj-seat mj-seat--top" data-seat="1"><div class="mj-seat-name" id="mjSeatName1">—</div><div class="mj-seat-meta" id="mjSeatMeta1"></div><div class="mj-river" id="mjRiver1"></div><div class="mj-melds" id="mjMelds1"></div></div>
-                        <div class="mj-seat mj-seat--left" data-seat="2"><div class="mj-seat-name" id="mjSeatName2">—</div><div class="mj-seat-meta" id="mjSeatMeta2"></div><div class="mj-river" id="mjRiver2"></div><div class="mj-melds" id="mjMelds2"></div></div>
-                        <div class="mj-seat mj-seat--right" data-seat="3"><div class="mj-seat-name" id="mjSeatName3">—</div><div class="mj-seat-meta" id="mjSeatMeta3"></div><div class="mj-river" id="mjRiver3"></div><div class="mj-melds" id="mjMelds3"></div></div>
-                        <div class="mj-center" id="mjCenterInfo">—</div>
-                        <div class="mj-seat mj-seat--bottom" data-seat="0">
-                            <div class="mj-seat-name" id="mjSeatName0">—</div>
-                            <div class="mj-seat-meta" id="mjSeatMeta0"></div>
-                            <div class="mj-melds" id="mjMelds0"></div>
-                            <div class="mj-hand" id="mjMyHand" aria-label="我的手牌"></div>
-                            <div class="mj-river" id="mjRiver0"></div>
-                        </div>
-                        <div class="widget-board-overlay pm-u-hidden" id="mjBoardOverlay" hidden aria-live="polite">
-                            <div class="widget-board-dialog" role="dialog" aria-modal="true" aria-labelledby="mjOverlayTitle">
-                                <p class="widget-board-dialog-title" id="mjOverlayTitle"></p>
-                                <p class="widget-board-dialog-msg" id="mjOverlayMsg"></p>
-                                <div class="widget-board-dialog-actions" id="mjOverlayActions"></div>
+            <div class="card pm-card mj-board-card pm-u-hidden" id="mjBoardCard">
+                <div class="widget-room-stage widget-room-stage--inline mj-board-stage">
+                    <div class="widget-room-board-cluster">
+                        <div class="mj-table-wrap" id="mjTableWrap">
+                            <div class="mj-table" id="mjTable">
+                                <div class="mj-seat mj-seat--top" data-seat="1"><div class="mj-seat-name" id="mjSeatName1">—</div><div class="mj-seat-meta" id="mjSeatMeta1"></div><div class="mj-river" id="mjRiver1"></div><div class="mj-melds" id="mjMelds1"></div></div>
+                                <div class="mj-seat mj-seat--left" data-seat="2"><div class="mj-seat-name" id="mjSeatName2">—</div><div class="mj-seat-meta" id="mjSeatMeta2"></div><div class="mj-river" id="mjRiver2"></div><div class="mj-melds" id="mjMelds2"></div></div>
+                                <div class="mj-seat mj-seat--right" data-seat="3"><div class="mj-seat-name" id="mjSeatName3">—</div><div class="mj-seat-meta" id="mjSeatMeta3"></div><div class="mj-river" id="mjRiver3"></div><div class="mj-melds" id="mjMelds3"></div></div>
+                                <div class="mj-center" id="mjCenterInfo">—</div>
+                                <div class="mj-dice-roll pm-u-hidden" id="mjDiceRoll" aria-live="polite">
+                                    <div class="mj-dice-pair">
+                                        <span class="mj-die" id="mjDie1">—</span>
+                                        <span class="mj-die" id="mjDie2">—</span>
+                                    </div>
+                                    <p class="mj-dice-result" id="mjDiceResult"></p>
+                                </div>
+                                <div class="mj-seat mj-seat--bottom" data-seat="0">
+                                    <div class="mj-seat-name" id="mjSeatName0">—</div>
+                                    <div class="mj-seat-meta" id="mjSeatMeta0"></div>
+                                    <div class="mj-melds" id="mjMelds0"></div>
+                                    <div class="mj-hand" id="mjMyHand" aria-label="我的手牌"></div>
+                                    <div class="mj-river" id="mjRiver0"></div>
+                                </div>
+                                <div class="widget-board-overlay pm-u-hidden" id="mjBoardOverlay" hidden aria-live="polite">
+                                    <div class="widget-board-dialog" role="dialog" aria-modal="true" aria-labelledby="mjOverlayTitle">
+                                        <p class="widget-board-dialog-title" id="mjOverlayTitle"></p>
+                                        <p class="widget-board-dialog-msg" id="mjOverlayMsg"></p>
+                                        <div class="widget-board-dialog-actions" id="mjOverlayActions"></div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
+
+                        <aside class="widget-room-side-panel go-play-side-panel" id="mjSidePanel" aria-label="房间信息与操作">
+                            <p class="go-play-side-notice pm-u-hidden" id="mjWindowPlaceholder">牌桌已在独立窗口中打开，请保持本页开启以同步对局。</p>
+
+                            <div id="mjRoomPanel" class="go-play-side-section pm-u-hidden">
+                                <div class="go-play-side-meta">
+                                    <div class="go-play-side-meta-row">
+                                        <span class="go-play-side-label">房间</span>
+                                        <strong class="go-play-room-code" id="mjRoomCode">------</strong>
+                                    </div>
+                                    <p class="go-play-side-meta-line" id="mjSideStatusLine">等待开局</p>
+                                    <p class="go-play-side-meta-line go-play-side-meta-line--muted" id="mjSidePlayersLine"></p>
+                                    <p class="mj-side-scores pm-u-hidden" id="mjSideScores"></p>
+                                </div>
+
+                                <div class="mj-lobby-panel pm-u-hidden" id="mjLobbyPanel">
+                                    <p class="mj-side-lobby-label">座位准备（✓ 已准备）</p>
+                                    <div class="mj-lobby-seats mj-lobby-seats--side" id="mjLobbySeats" aria-label="座位准备状态"></div>
+                                </div>
+
+                                <div class="go-play-side-actions">
+                                    <button type="button" class="go-play-side-btn btn-secondary pm-u-hidden" id="mjReadyBtn">准备</button>
+                                    <button type="button" class="go-play-side-btn btn-primary pm-u-hidden" id="mjStartBtn">开局</button>
+                                    <button type="button" class="go-play-side-btn btn-primary pm-u-hidden" id="mjConfirmRollBtn">确认发牌</button>
+                                    <button type="button" class="go-play-side-btn btn-primary pm-u-hidden" id="mjNextHandBtn">下一局</button>
+                                    <button type="button" class="go-play-side-btn btn-secondary pm-u-hidden" id="mjLeaveBtn">离开房间</button>
+                                </div>
+                            </div>
+                        </aside>
                     </div>
-                </div>
-                <div class="mj-actions" id="mjActions" hidden>
-                    <span class="mj-actions-label">操作：</span>
-                    <div class="mj-actions-btns" id="mjActionBtns"></div>
+
+                    <div class="mj-actions" id="mjActions" hidden>
+                        <span class="mj-actions-label">操作：</span>
+                        <div class="mj-actions-btns" id="mjActionBtns"></div>
+                    </div>
+
+                    <div class="widget-room-chat widget-room-chat--below pm-u-hidden" id="mjRoomChat" hidden aria-label="房间对话"></div>
                 </div>
             </div>
         </section>
@@ -75,6 +108,7 @@
     <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
     <script src="/static/js/header.js"></script>
     <script src="/static/js/widget-board-overlay.js"></script>
+    <script src="/static/js/widget-room.js"></script>
     <script src="/static/js/mahjong-play.js"></script>
 </body>
 </html>

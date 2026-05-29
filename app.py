@@ -135,7 +135,7 @@ class WSGIApp(
             'aplus_management': 'A+管理',
             'widgets': '小组件',
             'widgets_go_play': '围棋对弈',
-            'widgets_mahjong': '搓麻将',
+            'widgets_mahjong': '麻将',
         }
 
         # 将上面定义的中文名应用到权限列表里

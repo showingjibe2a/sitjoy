@@ -34,6 +34,8 @@
   let practiceByColor = 0;
   let practiceLocal = null;
   let localBoardMode = false;
+  let localPlayMode = 'match';
+  let localStoneMode = 'alternate';
   let watchActive = false;
   let eventSource = null;
   let watchAbort = false;
@@ -46,8 +48,33 @@
   let popupMonitorTimer = null;
   let watchAbortCtrl = null;
   let boardOverlay = null;
+  let goRoomChat = null;
+  let lastChatMessages = [];
 
   const $ = (id) => document.getElementById(id);
+
+  function initGoRoomChat() {
+    if (goRoomChat || !win.WidgetRoom) return goRoomChat;
+    const root = document.getElementById('goRoomChat');
+    if (!root) return null;
+    goRoomChat = win.WidgetRoom.createChat({
+      root,
+      layout: isPopup ? 'side' : 'below',
+      isActive: () => !!roomCode,
+      onSend: (text) => api('chat_send', { room_code: roomCode, text }).then((data) => {
+        applyState(data, { force: true });
+      }),
+    });
+    return goRoomChat;
+  }
+
+  function syncGoRoomChat(data) {
+    if (!goRoomChat) initGoRoomChat();
+    if (!goRoomChat) return;
+    const active = !!roomCode;
+    goRoomChat.setVisible(active);
+    if (active) goRoomChat.render((data && data.chat_messages) || []);
+  }
 
   function getAppBasePath() {
     if (win.SITJOY_BASE_PATH) {
@@ -379,6 +406,59 @@
     return { x: lastMoveX, y: lastMoveY };
   }
 
+  function getLocalPlaceColor() {
+    if (!practiceLocal) return BLACK;
+    if (localPlayMode === 'match') {
+      return practiceLocal.currentPlayer;
+    }
+    if (localStoneMode === 'black') return BLACK;
+    if (localStoneMode === 'white') return WHITE;
+    if (practiceLocal.moves.length) {
+      const last = practiceLocal.moves[practiceLocal.moves.length - 1];
+      return last.color === BLACK ? WHITE : BLACK;
+    }
+    return practiceLocal.currentPlayer || BLACK;
+  }
+
+  function setSegmentValue(segEl, value) {
+    if (!segEl) return;
+    segEl.dataset.value = value;
+    segEl.querySelectorAll('.status-pill[data-value]').forEach((btn) => {
+      btn.classList.toggle('is-active', btn.getAttribute('data-value') === value);
+    });
+  }
+
+  function renderLocalBannerUi() {
+    const banner = $('goPracticeBanner');
+    const controls = $('goLocalBannerControls');
+    const textEl = $('goPracticeBannerText');
+    const stoneWrap = $('goLocalStoneWrap');
+    const hintEl = $('goLocalBannerHint');
+    if (!banner || !isFreeLocalBoard()) return;
+    banner.classList.remove('pm-u-hidden');
+    if (controls) controls.classList.remove('pm-u-hidden');
+    if (textEl) {
+      textEl.textContent = '';
+      textEl.classList.add('pm-u-hidden');
+    }
+    setSegmentValue($('goLocalModeSegment'), localPlayMode);
+    if (stoneWrap) {
+      stoneWrap.classList.toggle('pm-u-hidden', localPlayMode !== 'setup');
+    }
+    setSegmentValue($('goLocalStoneSegment'), localStoneMode);
+    if (hintEl) {
+      if (localPlayMode === 'match') {
+        hintEl.textContent = '黑白轮流对弈；虚手换手，悔一手撤销上一手。';
+      } else if (localStoneMode === 'black') {
+        hintEl.textContent = '仅放置黑子；虚手、悔手仍可用。';
+      } else if (localStoneMode === 'white') {
+        hintEl.textContent = '仅放置白子；虚手、悔手仍可用。';
+      } else {
+        hintEl.textContent = '下一手为上一手反色；首手黑子。虚手换手。';
+      }
+    }
+  }
+
   function enterFreeLocalBoard() {
     if (roomCode) return;
     localBoardMode = true;
@@ -407,11 +487,9 @@
       $('goLocalPanel')?.classList.remove('pm-u-hidden');
       $('goRoomPanel')?.classList.add('pm-u-hidden');
       $('goLobbyHint')?.classList.add('pm-u-hidden');
-      if ($('goLocalHint')) {
-        $('goLocalHint').textContent = '本地摆棋：点击棋盘落子，黑白轮流；虚手换手，悔一手撤销上一手。';
-      }
       if ($('goPopoutBtn')) $('goPopoutBtn').disabled = false;
       updateLocalTurnHint();
+      renderLocalBannerUi();
     }
     renderBoard($('goBoard'));
     updatePracticeUi();
@@ -558,7 +636,20 @@
     const el = $('goLocalStatus');
     if (!el || !isFreeLocalBoard() || !practiceLocal) return;
     const n = practiceLocal.moves.length;
-    el.textContent = `本地摆棋 · ${colorName(practiceLocal.currentPlayer)}行棋（${n} 手）`;
+    if (localPlayMode === 'match') {
+      el.textContent = `本地对弈 · ${colorName(practiceLocal.currentPlayer)}行棋（${n} 手）`;
+      return;
+    }
+    if (localStoneMode === 'black') {
+      el.textContent = `本地摆棋 · 仅黑子（${n} 手）`;
+      return;
+    }
+    if (localStoneMode === 'white') {
+      el.textContent = `本地摆棋 · 仅白子（${n} 手）`;
+      return;
+    }
+    const next = getLocalPlaceColor();
+    el.textContent = `本地摆棋 · 下一手${colorName(next)}（${n} 手）`;
   }
 
   function notifyOpenerLocalAction(action) {
@@ -605,7 +696,7 @@
     if (practiceLocal.ko && (Number(practiceLocal.ko.x) !== x || Number(practiceLocal.ko.y) !== y)) {
       practiceLocal.ko = null;
     }
-    const color = practiceLocal.currentPlayer;
+    const color = getLocalPlaceColor();
     const b = cloneBoard2d(practiceLocal.board);
     const res = localTryPlay(b, x, y, color);
     if (!res.ok) {
@@ -619,7 +710,9 @@
       practiceLocal.ko = null;
     }
     practiceLocal.moves.push({ x, y, color, captures: res.captured });
-    practiceLocal.currentPlayer = color === BLACK ? WHITE : BLACK;
+    if (localPlayMode === 'match' || localStoneMode === 'alternate') {
+      practiceLocal.currentPlayer = color === BLACK ? WHITE : BLACK;
+    }
     practiceLocal.lastMoveX = x;
     practiceLocal.lastMoveY = y;
     renderBoard($('goBoard'));
@@ -645,13 +738,10 @@
       setToolbarBtns(practiceBtns, { hidden: true });
       setToolbarBtns(practiceRevertBtns, { hidden: true });
       setToolbarBtns(practiceEndBtns, { hidden: true });
-      const banner = $('goPracticeBanner');
-      if (banner && !isPopup) {
-        banner.classList.remove('pm-u-hidden');
-        banner.textContent = '本地摆棋：点击棋盘落子，黑白轮流；虚手换手，悔一手撤销上一手。';
-      }
+      renderLocalBannerUi();
       if (isPopup) {
-        document.title = `本地摆棋 · ${colorName(practiceLocal ? practiceLocal.currentPlayer : BLACK)}`;
+        const modeLabel = localPlayMode === 'match' ? '本地对弈' : '本地摆棋';
+        document.title = `${modeLabel} · ${colorName(getLocalPlaceColor())}`;
       }
       return;
     }
@@ -689,15 +779,25 @@
     }
 
     if (banner && !isPopup) {
+      const controls = $('goLocalBannerControls');
+      const textEl = $('goPracticeBannerText');
       if (youInPractice) {
         banner.classList.remove('pm-u-hidden');
-        banner.textContent = `演习中：可本地模拟双方落子（已 ${practiceLocal ? practiceLocal.moves.length : 0} 手）。「撤回一步」仅撤销试下；「结束演习」恢复开局并继续正式对弈。`;
+        if (controls) controls.classList.add('pm-u-hidden');
+        if (textEl) {
+          textEl.classList.remove('pm-u-hidden');
+          textEl.textContent = `演习中：可本地模拟双方落子（已 ${practiceLocal ? practiceLocal.moves.length : 0} 手）。「撤回一步」仅撤销试下；「结束演习」恢复开局并继续正式对弈。`;
+        }
       } else if (opponentInPractice) {
         banner.classList.remove('pm-u-hidden');
-        banner.textContent = '对方正在演习中，请稍候…';
+        if (controls) controls.classList.add('pm-u-hidden');
+        if (textEl) {
+          textEl.classList.remove('pm-u-hidden');
+          textEl.textContent = '对方正在演习中，请稍候…';
+        }
       } else {
         banner.classList.add('pm-u-hidden');
-        banner.textContent = '';
+        if (textEl) textEl.textContent = '';
       }
     }
 
@@ -734,6 +834,8 @@
       opponentInPractice,
       practiceByColor,
       localBoardMode,
+      localPlayMode,
+      localStoneMode,
       freeLocalActive: isFreeLocalBoard(),
       practiceActive: isLocalBoardActive(),
       practiceBoard: isLocalBoardActive() ? practiceLocal.board : board,
@@ -759,6 +861,7 @@
       practiceLastMove: isLocalBoardActive()
         ? { x: practiceLocal.lastMoveX, y: practiceLocal.lastMoveY }
         : (lastMoveX >= 0 ? { x: lastMoveX, y: lastMoveY } : null),
+      chatMessages: lastChatMessages,
     };
   }
 
@@ -1151,6 +1254,7 @@
     }
 
     lastVersion = Number(data.version || 0);
+    lastChatMessages = data.chat_messages || lastChatMessages;
 
     if (!isPopup) {
       if ($('goRoomCode')) $('goRoomCode').textContent = roomCode || '------';
@@ -1195,6 +1299,7 @@
     renderBoard($('goBoard'));
     updateBoardOverlay(data);
     updatePopupStatusBar(data);
+    syncGoRoomChat(data);
     postStateToPopup();
     return true;
   }
@@ -1223,7 +1328,8 @@
   function updatePopupDocumentTitle(data) {
     if (!isPopup) return;
     if (isFreeLocalBoard()) {
-      document.title = `本地摆棋 · ${colorName(practiceLocal ? practiceLocal.currentPlayer : BLACK)}`;
+      const modeLabel = localPlayMode === 'match' ? '本地对弈' : '本地摆棋';
+      document.title = `${modeLabel} · ${colorName(getLocalPlaceColor())}`;
       return;
     }
     if (!roomCode) return;
@@ -1578,6 +1684,7 @@
       if (c) sessionStorage.setItem(ROOM_STORAGE_KEY, c);
       else sessionStorage.removeItem(ROOM_STORAGE_KEY);
     } catch (_) {}
+    if (!isPopup && win.WidgetRoom) win.WidgetRoom.setUrlRoomParam(c);
   }
 
   function readStoredRoomCode() {
@@ -1674,8 +1781,10 @@
     lastMoveY = -1;
     lastMoveKey = '';
     lastVersion = -1;
+    lastChatMessages = [];
     persistRoomCode('');
     stopWatch();
+    syncGoRoomChat({ chat_messages: [] });
     $('goRoomPanel')?.classList.add('pm-u-hidden');
     $('goRoomCopyBtn')?.classList.add('pm-u-hidden');
     $('goLocalPanel')?.classList.remove('pm-u-hidden');
@@ -1728,7 +1837,40 @@
     });
   }
 
+  function bindLocalBannerUi() {
+    const modeSeg = $('goLocalModeSegment');
+    if (modeSeg && modeSeg.dataset.bound !== '1') {
+      modeSeg.dataset.bound = '1';
+      modeSeg.addEventListener('click', (e) => {
+        const btn = e.target.closest('.status-pill[data-value]');
+        if (!btn || !isFreeLocalBoard()) return;
+        const v = btn.getAttribute('data-value');
+        if (v !== 'setup' && v !== 'match') return;
+        localPlayMode = v;
+        renderLocalBannerUi();
+        updateLocalTurnHint();
+        postStateToPopup();
+      });
+    }
+    const stoneSeg = $('goLocalStoneSegment');
+    if (stoneSeg && stoneSeg.dataset.bound !== '1') {
+      stoneSeg.dataset.bound = '1';
+      stoneSeg.addEventListener('click', (e) => {
+        const btn = e.target.closest('.status-pill[data-value]');
+        if (!btn || !isFreeLocalBoard() || localPlayMode !== 'setup') return;
+        const v = btn.getAttribute('data-value');
+        if (v !== 'alternate' && v !== 'black' && v !== 'white') return;
+        localStoneMode = v;
+        renderLocalBannerUi();
+        updateLocalTurnHint();
+        postStateToPopup();
+      });
+    }
+  }
+
   function bindMainUi() {
+    initGoRoomChat();
+    bindLocalBannerUi();
     $('goCreateBtn')?.addEventListener('click', () => {
       const btn = $('goCreateBtn');
       stopWatch();
@@ -1908,6 +2050,7 @@
 
   function bindPopupUi() {
     initBoardOverlay();
+    initGoRoomChat();
     const boardEl = $('goBoard');
     board = Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY));
     renderBoard(boardEl);
@@ -1978,6 +2121,12 @@
           ensurePracticeLocalReady();
         }
         localBoardMode = !!p.freeLocalActive;
+        if (p.localPlayMode === 'setup' || p.localPlayMode === 'match') {
+          localPlayMode = p.localPlayMode;
+        }
+        if (p.localStoneMode === 'alternate' || p.localStoneMode === 'black' || p.localStoneMode === 'white') {
+          localStoneMode = p.localStoneMode;
+        }
         if (p.practiceActive && p.practiceBoard) {
           const baseSrc = p.practiceBaseBoard || p.practiceBoard;
           const baseKo = p.practiceBaseKo != null ? p.practiceBaseKo : p.practiceKo;
@@ -2024,6 +2173,7 @@
           end_reason: endReason,
         });
         updatePracticeUi();
+        syncGoRoomChat({ chat_messages: p.chatMessages || [] });
         updatePopupDocumentTitle({});
       }
     });

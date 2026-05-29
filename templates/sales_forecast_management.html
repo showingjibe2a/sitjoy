@@ -153,9 +153,11 @@
             white-space: nowrap;
             box-shadow: none;
         }
-        .sf-toolbar .sf-compact-select,
         .sf-toolbar .sf-compact-date {
             box-sizing: border-box;
+            width: 6.35rem;
+            min-width: 6.35rem;
+            max-width: 6.35rem;
             min-height: 24px;
             height: 24px;
             padding: 0.08rem 0.28rem;
@@ -167,17 +169,13 @@
             color: var(--morandi-ink);
             flex-shrink: 0;
         }
-        .sf-toolbar .sf-compact-select {
-            width: 5.85rem;
-            min-width: 5.85rem;
+        .sf-ship-plan-month-wrap {
+            flex: 0 0 auto;
             max-width: 5.85rem;
-            padding-right: 1.05rem;
-            cursor: pointer;
         }
-        .sf-toolbar .sf-compact-date {
-            width: 6.35rem;
-            min-width: 6.35rem;
-            max-width: 6.35rem;
+        .sf-toolbar .sf-ship-plan-month-wrap .universal-select-dropdown {
+            width: auto;
+            max-width: 5.85rem;
         }
         .sf-month-picker-head {
             display: flex;
@@ -814,14 +812,14 @@
             flex-wrap: nowrap;
             align-items: center;
             gap: 0.35rem;
-            flex: 1 1 100%;
+            flex: 0 1 auto;
             min-width: 0;
         }
         .sf-ship-plan-toolbar.is-visible {
             display: flex;
         }
         .sf-ship-plan-label {
-            font-size: 0.75rem;
+            font-size: 0.78rem;
             color: var(--morandi-slate);
             white-space: nowrap;
             flex-shrink: 0;
@@ -1806,7 +1804,9 @@
                 <span class="sf-divider sf-ship-plan-toolbar-divider" aria-hidden="true" style="display:none;"></span>
                 <div class="sf-toolbar-group sf-ship-plan-toolbar" id="sfShipPlanToolbar">
                     <span class="sf-ship-plan-label">备货月份</span>
-                    <select id="sfShipPlanMonthSelect" class="sf-compact-select" aria-label="备货月份"></select>
+                    <span class="sf-month-input-wrap sf-ship-plan-month-wrap">
+                        <select id="sfShipPlanMonthSelect" class="sf-compact-select pm-inline-compact-select" data-universal-compact="1" data-universal-no-search="1" aria-label="备货月份"></select>
+                    </span>
                     <span class="sf-ship-plan-label">发货日期</span>
                     <input type="date" id="sfShipPlanDateInput" class="sf-compact-date" aria-label="发货日期">
                     <button type="button" class="btn-secondary btn-small" id="btnSfRegionStockRatio">区域备货比例</button>
@@ -3394,7 +3394,7 @@
             const bar = document.getElementById('sfShipPlanToolbar');
             const divider = document.querySelector('.sf-ship-plan-toolbar-divider');
             if (bar) bar.classList.toggle('is-visible', show);
-            if (divider) divider.style.display = 'none';
+            if (divider) divider.style.display = show ? '' : 'none';
             if (show) renderSfShipPlanMonthSelect();
         }
 
@@ -3413,6 +3413,9 @@
             } else if (!months.includes(cur)) {
                 sel.value = months[0];
                 state.sfShipPlan.stockMonth = months[0];
+            }
+            if (typeof window.refreshUniversalSingleSelect === 'function') {
+                window.refreshUniversalSingleSelect(sel);
             }
         }
 

@@ -21,8 +21,31 @@
   let popupOpen = false;
   let popupMonitorTimer = null;
   let mjBoardOverlay = null;
+  let joinInFlight = false;
+  let roomChat = null;
 
   const $ = (id) => document.getElementById(id);
+
+  function resolveMySeat(s) {
+    if (!s) return null;
+    const direct = s.my_seat;
+    if (direct != null && direct >= 0) return direct;
+    const uid = s.my_user_id;
+    if (uid == null) return null;
+    const seats = s.seats || [];
+    for (let i = 0; i < seats.length; i++) {
+      const st = seats[i];
+      if (st && Number(st.user_id) === Number(uid)) return i;
+    }
+    return null;
+  }
+
+  function withResolvedSeat(s) {
+    if (!s) return s;
+    const mySeat = resolveMySeat(s);
+    if (mySeat === s.my_seat) return s;
+    return Object.assign({}, s, { my_seat: mySeat });
+  }
 
   function initMjBoardOverlay() {
     if (mjBoardOverlay) return mjBoardOverlay;
@@ -113,13 +136,41 @@
 
   function saveRoomCode(code) {
     try {
-      if (code) localStorage.setItem(ROOM_KEY, code);
+      if (code) localStorage.setItem(ROOM_KEY, String(code).trim().toUpperCase());
       else localStorage.removeItem(ROOM_KEY);
     } catch (_) {}
+    if (isMain && win.WidgetRoom) win.WidgetRoom.setUrlRoomParam(code);
   }
 
   function loadRoomCode() {
+    if (win.WidgetRoom) {
+      const fromUrl = win.WidgetRoom.readUrlRoomParam();
+      if (fromUrl) return fromUrl;
+    }
     try { return localStorage.getItem(ROOM_KEY) || ''; } catch (_) { return ''; }
+  }
+
+  function initRoomChat() {
+    if (roomChat || !win.WidgetRoom) return roomChat;
+    const root = $('mjRoomChat');
+    if (!root) return null;
+    roomChat = win.WidgetRoom.createChat({
+      root,
+      layout: isPopup ? 'side' : 'below',
+      isActive: () => lobbyInRoom(state),
+      onSend: (text) => api('chat_send', { room_code: roomCode, text }).then((data) => {
+        applyState(data);
+      }),
+    });
+    return roomChat;
+  }
+
+  function syncRoomChat(s) {
+    if (!roomChat) initRoomChat();
+    if (!roomChat) return;
+    const active = lobbyInRoom(s);
+    roomChat.setVisible(active);
+    if (active) roomChat.render((s && s.chat_messages) || []);
   }
 
   function pageUrl(path) {
@@ -207,6 +258,18 @@
     onTableWindowClosed();
   }
 
+  function seatAtIndex(seats, i) {
+    const st = (seats || [])[i];
+    if (!st) return null;
+    const uid = Number(st.user_id);
+    if (!uid) return st;
+    for (let j = 0; j < i; j++) {
+      const other = (seats || [])[j];
+      if (other && Number(other.user_id) === uid) return null;
+    }
+    return st;
+  }
+
   function renderLobbySeats(s) {
     const root = $('mjLobbySeats');
     const panel = $('mjLobbyPanel');
@@ -218,14 +281,15 @@
     const seats = s.seats || [];
     const minP = Number(s.min_players) || 2;
     const labels = ['东', '南', '西', '北'];
+    const mySeat = resolveMySeat(s);
     root.innerHTML = [0, 1, 2, 3].map((i) => {
-      const st = seats[i];
+      const st = seatAtIndex(seats, i);
       const cls = ['mj-seat-dot'];
       if (!st) cls.push('mj-seat-dot--empty');
       else {
         cls.push('mj-seat-dot--filled');
         if (st.ready) cls.push('mj-seat-dot--ready');
-        if (s.my_seat === i) cls.push('mj-seat-dot--me');
+        if (mySeat === i) cls.push('mj-seat-dot--me');
       }
       const check = st && st.ready ? '✓' : '';
       const name = st ? (st.name || '—') : '空位';
@@ -240,6 +304,10 @@
       hint.textContent = '房间内 ' + n + ' 人 · 至少 ' + minP + ' 人全部准备后可开局'
         + (lobby.can_start ? '（可开局）' : '');
     }
+  }
+
+  function lobbyInRoom(s) {
+    return !!(s && s.code && resolveMySeat(s) != null);
   }
 
   function setVisible(el, on) {
@@ -266,11 +334,41 @@
     const label = (s && s.you_are_host) ? '解散房间' : '离开房间';
     const mainBtn = $('mjLeaveBtn');
     const popBtn = $('mjPopupLeaveBtn');
-    const inRoom = !!(s && s.code && s.my_seat != null);
+    const inRoom = lobbyInRoom(s);
     if (mainBtn) mainBtn.textContent = label;
     if (popBtn) popBtn.textContent = label;
     setVisible(mainBtn, inRoom);
     setVisible(popBtn, inRoom);
+  }
+
+  function renderRoomSidebar(s) {
+    if (!s) return;
+    const codeEl = $('mjRoomCode');
+    if (codeEl) codeEl.textContent = s.code || '------';
+    const statusEl = $('mjSideStatusLine');
+    const playersEl = $('mjSidePlayersLine');
+    const seats = s.seats || [];
+    if (playersEl) {
+      const names = [];
+      const seen = new Set();
+      seats.forEach((st) => {
+        if (!st) return;
+        const uid = Number(st.user_id);
+        if (uid && seen.has(uid)) return;
+        if (uid) seen.add(uid);
+        names.push((st.name || '—') + (st.ready ? ' ✓' : ''));
+      });
+      playersEl.textContent = names.length ? names.join(' · ') : '等待玩家加入';
+    }
+    if (statusEl) {
+      let label = '等待开局';
+      if (s.status === 'dealer_roll') label = '投骰定庄';
+      else if (s.status === 'playing') label = '对局中';
+      else if (s.status === 'hand_end') label = '本局结束';
+      statusEl.textContent = label;
+    }
+    const panel = $('mjRoomPanel');
+    if (panel) panel.classList.toggle('pm-u-hidden', !lobbyInRoom(s));
   }
 
   function clearRoomUi(hint) {
@@ -285,19 +383,22 @@
     if (hintEl) hintEl.textContent = hint || '创建或加入房间后开始。';
     setVisible($('mjReadyBtn'), false);
     setVisible($('mjStartBtn'), false);
+    setVisible($('mjConfirmRollBtn'), false);
     setVisible($('mjNextHandBtn'), false);
     setVisible($('mjLeaveBtn'), false);
-    setVisible($('mjTableCard'), false);
+    setVisible($('mjBoardCard'), false);
     setVisible($('mjLobbyPanel'), false);
+    $('mjRoomPanel') && $('mjRoomPanel').classList.add('pm-u-hidden');
+    if (roomChat) roomChat.setVisible(false);
     const lobbySeats = $('mjLobbySeats');
     if (lobbySeats) {
       lobbySeats.innerHTML = '';
       lobbySeats.hidden = true;
     }
-    const scores = $('mjScoresBar');
+    const scores = $('mjSideScores');
     if (scores) {
-      scores.hidden = true;
-      scores.innerHTML = '';
+      scores.classList.add('pm-u-hidden');
+      scores.textContent = '';
     }
     const actions = $('mjActions');
     if (actions) actions.hidden = true;
@@ -307,7 +408,11 @@
       renderSeat(i, { seats: [], discards: [], melds: [], my_seat: null, dealer_seat: 0, current_seat: null });
     }
     const center = $('mjCenterInfo');
-    if (center) center.textContent = hint || '—';
+    if (center) {
+      center.textContent = hint || '—';
+      center.classList.remove('pm-u-hidden');
+    }
+    setVisible($('mjDiceRoll'), false);
     setWindowPlaceholderVisible(false);
     updatePopoutBtnUi();
     updateLeaveButtons(null);
@@ -332,21 +437,51 @@
     if (!o.silent) alert(msg);
   }
 
-  function renderScores(s) {
-    const bar = $('mjScoresBar');
-    if (!bar || !s) return;
-    const scores = s.scores || {};
-    const seats = s.seats || [];
-    const parts = seats.filter(Boolean).map((st) => {
-      const sc = scores[String(st.seat)] ?? 0;
-      return `${esc(st.name)}: ${sc}`;
-    });
-    if (!parts.length) {
-      bar.hidden = true;
+  function renderDiceRoll(s) {
+    const panel = $('mjDiceRoll');
+    const d1 = $('mjDie1');
+    const d2 = $('mjDie2');
+    const res = $('mjDiceResult');
+    const center = $('mjCenterInfo');
+    const rolling = !!(s && s.status === 'dealer_roll' && s.dice_roll);
+    setVisible(panel, rolling);
+    if (center) center.classList.toggle('pm-u-hidden', rolling);
+    if (!rolling) {
+      if (res) res.textContent = '';
       return;
     }
-    bar.hidden = false;
-    bar.innerHTML = '<strong>累计积分</strong> · ' + parts.join(' ｜ ');
+    const dr = s.dice_roll;
+    if (d1) d1.textContent = String(dr.dice1 || '—');
+    if (d2) d2.textContent = String(dr.dice2 || '—');
+    const dn = dr.dealer_name || '—';
+    if (res) {
+      res.textContent = '合计 ' + (dr.total || '?') + ' · 庄家：' + dn
+        + (s.you_are_host ? '（请确认发牌）' : '（等待房主确认）');
+    }
+  }
+
+  function renderScores(s) {
+    const bar = $('mjSideScores');
+    if (!bar || !s) return;
+    const scores = s.scores || {};
+    const seats = (s.seats || []);
+    const parts = [];
+    const seen = new Set();
+    seats.forEach((st, i) => {
+      if (!st) return;
+      const uid = Number(st.user_id);
+      if (uid && seen.has(uid)) return;
+      if (uid) seen.add(uid);
+      const sc = (s.scores || {})[String(st.seat != null ? st.seat : i)] ?? 0;
+      parts.push(`${esc(st.name)}: ${sc}`);
+    });
+    if (!parts.length || s.status === 'lobby') {
+      bar.classList.add('pm-u-hidden');
+      bar.textContent = '';
+      return;
+    }
+    bar.classList.remove('pm-u-hidden');
+    bar.textContent = '积分 · ' + parts.join(' ｜ ');
   }
 
   function renderSeat(seatIdx, s) {
@@ -355,7 +490,7 @@
     const metaEl = $('mjSeatMeta' + seatIdx);
     const riverEl = $('mjRiver' + seatIdx);
     const meldsEl = $('mjMelds' + seatIdx);
-    const st = (s.seats || [])[logical];
+    const st = logical >= 0 ? seatAtIndex(s.seats, logical) : null;
     if (!nameEl) return;
     if (!st) {
       nameEl.textContent = '空位';
@@ -386,8 +521,12 @@
   function renderHand(s) {
     const handEl = $('mjMyHand');
     if (!handEl) return;
+    if (s.status === 'dealer_roll') {
+      handEl.innerHTML = '';
+      return;
+    }
     const hand = s.my_hand || [];
-    const mySeat = s.my_seat;
+    const mySeat = resolveMySeat(s);
     const canDiscard = s.status === 'playing' && s.phase === 'discard' && s.current_seat === mySeat;
     handEl.innerHTML = hand.map((t) => {
       const cls = 'mj-tile' + (canDiscard ? ' mj-tile--clickable' : '');
@@ -433,35 +572,47 @@
     });
   }
 
+  function shouldRotateTableView(s) {
+    const st = s && s.status;
+    return st === 'playing' || st === 'hand_end';
+  }
+
   function domSlotForSeat(logicalSeat, s) {
-    const my = s.my_seat;
+    if (!shouldRotateTableView(s)) return logicalSeat;
+    const my = resolveMySeat(s);
     const active = (s.active_seats || []).slice().sort((a, b) => a - b);
     if (my == null || !active.length) return logicalSeat;
     const mi = active.indexOf(my);
     const si = active.indexOf(logicalSeat);
-    if (si < 0) return logicalSeat;
+    if (mi < 0 || si < 0) return logicalSeat;
     const diff = (si - mi + active.length) % active.length;
+    const map2 = { 0: 0, 1: 3 };
     const map3 = { 0: 0, 1: 3, 2: 1 };
     const map4 = { 0: 0, 1: 3, 2: 1, 3: 2 };
-    const map = active.length === 3 ? map3 : map4;
+    const map = active.length === 2 ? map2 : (active.length === 3 ? map3 : map4);
     return map[diff] != null ? map[diff] : logicalSeat;
   }
 
-  function renderTable(s) {
+  function logicalSeatForDomSlot(dom, s) {
+    if (!shouldRotateTableView(s)) {
+      return dom >= 0 && dom < 4 ? dom : -1;
+    }
+    for (let L = 0; L < 4; L++) {
+      if (domSlotForSeat(L, s) === dom) return L;
+    }
+    return -1;
+  }
+
+  function renderTable(raw) {
+    const s = withResolvedSeat(raw);
     state = s;
     if (!s || !s.code) return;
     roomCode = s.code;
     saveRoomCode(roomCode);
     for (let dom = 0; dom < 4; dom++) {
-      let logical = dom;
-      for (let L = 0; L < 4; L++) {
-        if (domSlotForSeat(L, s) === dom) {
-          logical = L;
-          break;
-        }
-      }
+      const logical = logicalSeatForDomSlot(dom, s);
       renderSeat(dom, Object.assign({}, s, {
-        my_seat: s.my_seat,
+        my_seat: resolveMySeat(s),
         _view_seat: logical,
         discards: s.discards,
         melds: s.melds,
@@ -471,7 +622,9 @@
       }));
     }
     const viewS = Object.assign({}, s);
-    if (s.my_seat != null) {
+    const mySeat = resolveMySeat(s);
+    if (mySeat != null) {
+      viewS.my_seat = mySeat;
       viewS.my_hand = s.my_hand;
     }
     renderHand(viewS);
@@ -485,6 +638,11 @@
         const lb = s.lobby || {};
         msg += ' · 等待开局（' + (lb.occupied_count || 0) + ' 人，至少 ' + (s.min_players || 2) + ' 人准备）';
       }
+      else if (s.status === 'dealer_roll') {
+        const dr = s.dice_roll || {};
+        msg += ' · 投骰定庄';
+        if (dr.dealer_name) msg += ' · 庄家 ' + dr.dealer_name;
+      }
       else if (s.status === 'playing') msg += ` · 牌墙余 ${s.wall_remaining ?? '?'}`;
       else if (s.status === 'hand_end') {
         const r = s.last_hand_result || {};
@@ -492,30 +650,39 @@
         else if (r.winner_seat != null) {
           const wn = ((s.seats || [])[r.winner_seat] || {}).name || '';
           msg += ` · ${wn} 胡（${r.win_type === 'tsumo' ? '自摸' : '点炮'}）`;
+          if (r.win_type === 'tsumo' || r.win_type === 'ron') msg += ` · 下局 ${wn} 坐庄`;
         }
       }
       center.textContent = msg;
     }
 
     renderLobbySeats(s);
+    renderDiceRoll(s);
+    renderRoomSidebar(s);
+    syncRoomChat(s);
 
-    setVisible($('mjTableCard'), s.status !== 'lobby' && !(isMain && popupOpen));
-    setVisible($('mjReadyBtn'), s.status === 'lobby' && s.my_seat != null);
+    const inRoom = lobbyInRoom(s);
+    setVisible($('mjBoardCard'), inRoom);
+    const hideTable = isMain && popupOpen;
+    setVisible($('mjTableWrap'), inRoom && !hideTable);
+    setVisible($('mjReadyBtn'), s.status === 'lobby' && resolveMySeat(s) != null);
     setVisible($('mjStartBtn'), s.status === 'lobby' && s.you_are_host);
+    setVisible($('mjConfirmRollBtn'), s.status === 'dealer_roll' && s.you_are_host);
     setVisible($('mjNextHandBtn'), s.status === 'hand_end' && s.you_are_host);
-    setVisible($('mjLeaveBtn'), !!s.my_seat);
+    setVisible($('mjLeaveBtn'), lobbyInRoom(s));
     updateLeaveButtons(s);
 
     const readyBtn = $('mjReadyBtn');
+    const mySeat = resolveMySeat(s);
     if (readyBtn && s.status === 'lobby') {
-      const me = (s.seats || [])[s.my_seat];
+      const me = mySeat != null ? (s.seats || [])[mySeat] : null;
       readyBtn.textContent = me && me.ready ? '取消准备' : '准备';
     }
     const popReady = $('mjPopupReadyBtn');
     if (popReady && s.status === 'lobby') {
-      const me = (s.seats || [])[s.my_seat];
+      const me = mySeat != null ? (s.seats || [])[mySeat] : null;
       popReady.textContent = me && me.ready ? '取消准备' : '准备';
-      setVisible(popReady, s.my_seat != null);
+      setVisible(popReady, mySeat != null);
     }
     if (isMain) updatePopoutBtnUi();
   }
@@ -561,11 +728,17 @@
   }
 
   async function doJoin() {
+    if (joinInFlight) return;
     const code = ($('mjJoinInput') && $('mjJoinInput').value || '').trim().toUpperCase();
     if (!code) return alert('请输入房间号');
-    const data = await api('join', { room_code: code });
-    applyState(data);
-    if (!isPopup) startWatch();
+    joinInFlight = true;
+    try {
+      const data = await api('join', { room_code: code });
+      applyState(data);
+      if (!isPopup) startWatch();
+    } finally {
+      joinInFlight = false;
+    }
   }
 
   function requestLeaveRoom() {
@@ -614,6 +787,11 @@
 
   async function doStart() {
     const data = await api('start', { room_code: roomCode });
+    applyState(data);
+  }
+
+  async function doConfirmRoll() {
+    const data = await api('confirm_roll', { room_code: roomCode });
     applyState(data);
   }
 
@@ -748,14 +926,20 @@
     try {
       const data = await api('state', { room_code: roomCode }, 'GET');
       applyState(data);
-      if (!isPopup) startWatch();
     } catch (err) {
-      saveRoomCode('');
-      const msg = String((err && err.message) || '');
-      if (msg.indexOf('解散') >= 0 || msg.indexOf('不存在') >= 0 || msg.indexOf('过期') >= 0) {
-        clearRoomUi(msg);
+      try {
+        const data = await api('join', { room_code: roomCode });
+        applyState(data);
+      } catch (err2) {
+        saveRoomCode('');
+        const msg = String((err2 && err2.message) || (err && err.message) || '');
+        if (msg.indexOf('解散') >= 0 || msg.indexOf('不存在') >= 0 || msg.indexOf('过期') >= 0 || msg.indexOf('不在') >= 0) {
+          clearRoomUi(msg.indexOf('解散') >= 0 ? msg : '房间已解散或已过期');
+        }
+        return;
       }
     }
+    if (!isPopup) startWatch();
   }
 
   function bindMainMessageBridge() {
@@ -769,6 +953,7 @@
 
   function initPopup() {
     initMjBoardOverlay();
+    initRoomChat();
     document.title = '麻将牌桌';
     tryResume();
     const syncFromOpener = () => {
@@ -801,12 +986,14 @@
 
   function initMain() {
     initMjBoardOverlay();
+    initRoomChat();
     bindMainMessageBridge();
     $('mjCreateBtn') && $('mjCreateBtn').addEventListener('click', () => doCreate().catch((e) => alert(e.message)));
     $('mjJoinBtn') && $('mjJoinBtn').addEventListener('click', () => doJoin().catch((e) => alert(e.message)));
     $('mjLeaveBtn') && $('mjLeaveBtn').addEventListener('click', () => requestLeaveRoom().catch((e) => alert(e.message)));
     $('mjReadyBtn') && $('mjReadyBtn').addEventListener('click', () => doReady().catch((e) => alert(e.message)));
     $('mjStartBtn') && $('mjStartBtn').addEventListener('click', () => doStart().catch((e) => alert(e.message)));
+    $('mjConfirmRollBtn') && $('mjConfirmRollBtn').addEventListener('click', () => doConfirmRoll().catch((e) => alert(e.message)));
     $('mjNextHandBtn') && $('mjNextHandBtn').addEventListener('click', () => doNextHand().catch((e) => alert(e.message)));
     const popBtn = $('mjPopoutBtn');
     if (popBtn) {
