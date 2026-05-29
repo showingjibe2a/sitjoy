@@ -2030,6 +2030,67 @@
         return !!(cell && cell.querySelector && cell.querySelector('[data-transit-detail-list="1"]'));
     }
 
+    function isTransitSkuStackCell(cell){
+        return !!(cell && cell.querySelector && cell.querySelector('.transit-sku-stack'));
+    }
+
+    function isTransitSubcellCell(cell){
+        return isTransitDetailCell(cell) || isTransitSkuStackCell(cell);
+    }
+
+    function extractTransitSkuStackLineText(line, cell){
+        if(!line) return '';
+        const colorDot = line.querySelector('.transit-color-dot');
+        if(colorDot){
+            const chipColor = String(colorDot.style.backgroundColor || '').trim();
+            if(chipColor) return chipColor;
+            if(typeof window.getComputedStyle === 'function'){
+                const computedColor = String(window.getComputedStyle(colorDot).backgroundColor || '').trim();
+                if(computedColor && computedColor.toLowerCase() !== 'rgba(0, 0, 0, 0)' && computedColor.toLowerCase() !== 'transparent'){
+                    return computedColor;
+                }
+            }
+            return '●';
+        }
+        const skuText = line.querySelector('.transit-detail-sku-text');
+        if(skuText) return String(skuText.textContent || '').replace(/\s+/g, ' ').trim();
+        return String(line.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function getTransitSkuStackLines(cell){
+        if(!isTransitSkuStackCell(cell)) return [];
+        return Array.from(cell.querySelectorAll('.transit-sku-stack-line')).map((line) => extractTransitSkuStackLineText(line, cell));
+    }
+
+    function getTransitSkuStackLineCoord(target, cell){
+        if(!target || !cell || !isTransitSkuStackCell(cell)) return null;
+        const line = target.closest('.transit-sku-stack-line');
+        if(!line || !cell.contains(line)) return null;
+        const lines = Array.from(cell.querySelectorAll('.transit-sku-stack-line'));
+        const row = lines.indexOf(line);
+        if(row < 0) return null;
+        return { row, col: 0 };
+    }
+
+    function getTransitSubcellCoord(target, cell){
+        const stackCoord = getTransitSkuStackLineCoord(target, cell);
+        if(stackCoord) return stackCoord;
+        return getTransitDetailNodeCoord(target, cell);
+    }
+
+    function getTransitSubcellNodesByRect(cell, rect){
+        if(!cell || !rect) return [];
+        if(isTransitSkuStackCell(cell)){
+            const lines = Array.from(cell.querySelectorAll('.transit-sku-stack-line'));
+            const out = [];
+            for(let r = rect.r1; r <= rect.r2; r += 1){
+                if(lines[r]) out.push(lines[r]);
+            }
+            return out;
+        }
+        return getTransitDetailNodesByRect(cell, rect);
+    }
+
     function getTransitDetailValueMatrix(cell){
         if(!isTransitDetailCell(cell)) return [];
         const list = cell.querySelector('[data-transit-detail-list="1"]');
@@ -2155,9 +2216,9 @@
         (activeGridSelection.detailSelections || new Map()).forEach((detailSel, cell) => {
             if(!cell || !cell.isConnected || !detailSel || !detailSel.anchor || !detailSel.current) return;
             const rect = normalizeTransitDetailRect(detailSel.anchor, detailSel.current);
-            const nodes = getTransitDetailNodesByRect(cell, rect);
+            const nodes = getTransitSubcellNodesByRect(cell, rect);
             nodes.forEach(node => node.classList.add('pm-grid-detail-selected'));
-            const anchorNodes = getTransitDetailNodesByRect(cell, normalizeTransitDetailRect(detailSel.anchor, detailSel.anchor));
+            const anchorNodes = getTransitSubcellNodesByRect(cell, normalizeTransitDetailRect(detailSel.anchor, detailSel.anchor));
             if(anchorNodes[0]) anchorNodes[0].classList.add('pm-grid-detail-anchor');
         });
         if(activeGridSelection.selectedCells.size > 0){
@@ -2221,6 +2282,23 @@
             const option = select.options && select.selectedIndex >= 0 ? select.options[select.selectedIndex] : null;
             const value = option ? String(option.textContent || option.value || '').trim() : String(select.value || '').trim();
             if(value) return value;
+        }
+
+        const stackLines = getTransitSkuStackLines(cell);
+        if(stackLines.length){
+            const detailSel = activeGridSelection
+                && activeGridSelection.detailSelections
+                ? activeGridSelection.detailSelections.get(cell)
+                : null;
+            if(detailSel && detailSel.anchor && detailSel.current){
+                const rect = normalizeTransitDetailRect(detailSel.anchor, detailSel.current);
+                const parts = [];
+                for(let r = rect.r1; r <= rect.r2; r += 1){
+                    parts.push(String(stackLines[r] || ''));
+                }
+                return parts.join('\n');
+            }
+            return stackLines.join('\n');
         }
 
         const transitDetailRows = getTransitDetailValueMatrix(cell);
@@ -2298,10 +2376,21 @@
                 const key = `${r}:${c}`;
                 if(!selectedKey.has(key)) continue;
                 const cell = getCellByCoord(state, { row: r, col: c });
-                if(!cell || !isTransitDetailCell(cell)) continue;
+                if(!cell || !isTransitSubcellCell(cell)) continue;
+                const detailSel = (activeGridSelection.detailSelections || new Map()).get(cell);
+                if(isTransitSkuStackCell(cell)){
+                    const stackLines = getTransitSkuStackLines(cell);
+                    if(!stackLines.length) continue;
+                    if(detailSel && detailSel.anchor && detailSel.current){
+                        const rect = normalizeTransitDetailRect(detailSel.anchor, detailSel.current);
+                        rowExpand = Math.max(rowExpand, rect.r2 - rect.r1 + 1);
+                    } else {
+                        rowExpand = Math.max(rowExpand, stackLines.length);
+                    }
+                    continue;
+                }
                 const detailMatrix = getTransitDetailValueMatrix(cell);
                 if(!detailMatrix.length) continue;
-                const detailSel = (activeGridSelection.detailSelections || new Map()).get(cell);
                 if(detailSel && detailSel.anchor && detailSel.current){
                     const rect = normalizeTransitDetailRect(detailSel.anchor, detailSel.current);
                     rowExpand = Math.max(rowExpand, rect.r2 - rect.r1 + 1);
@@ -2321,6 +2410,21 @@
                     const cell = getCellByCoord(state, { row: r, col: c });
                     if(!cell){
                         cols.push('');
+                        continue;
+                    }
+
+                    if(isTransitSkuStackCell(cell)){
+                        const stackLines = getTransitSkuStackLines(cell);
+                        const detailSel = (activeGridSelection.detailSelections || new Map()).get(cell);
+                        if(detailSel && detailSel.anchor && detailSel.current){
+                            const rect = normalizeTransitDetailRect(detailSel.anchor, detailSel.current);
+                            const targetRow = rect.r1 + sub;
+                            if(targetRow >= rect.r1 && targetRow <= rect.r2){
+                                cols.push(String(stackLines[targetRow] || ''));
+                            }
+                        } else {
+                            cols.push(String(stackLines[sub] || ''));
+                        }
                         continue;
                     }
 
@@ -2548,7 +2652,7 @@
             event.preventDefault();
             const selection = ensureGridSelectionState(state);
 
-            const detailCoord = getTransitDetailNodeCoord(event.target, cell);
+            const detailCoord = getTransitSubcellCoord(event.target, cell);
             if(detailCoord){
                 selectCellsForState(state, [cell], coord);
                 selection.detailSelections = new Map();
@@ -6728,7 +6832,7 @@
             const el = document.elementFromPoint(event.clientX, event.clientY);
             const hoverCell = el && el.closest ? el.closest('td') : null;
             if(!hoverCell || hoverCell !== cell) return;
-            const detailCoord = getTransitDetailNodeCoord(el, cell);
+            const detailCoord = getTransitSubcellCoord(el, cell);
             if(!detailCoord) return;
             const detailSel = (activeGridSelection.detailSelections || new Map()).get(cell);
             if(!detailSel) return;
