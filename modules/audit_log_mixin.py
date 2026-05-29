@@ -1,4 +1,4 @@
-"""访问与操作审计日志：页面访问、数据库相关 API 写操作；仅 user id=1 可查询与清理。"""
+"""访问与操作审计日志：页面访问、数据库相关 API 写操作；可授权管理员可查询与清理。"""
 
 import json
 import re
@@ -12,6 +12,7 @@ _AUDIT_SUMMARY_MAX = 4000
 _AUDIT_SKIP_OPERATION_PREFIXES = (
     '/api/auth',
     '/api/audit-log',
+    '/api/notification',
     '/api/go-play',
     '/api/mahjong-play',
     '/api/hello',
@@ -20,6 +21,44 @@ _AUDIT_REDACT_KEYS = frozenset({
     'password', 'password_hash', 'old_password', 'new_password',
     'confirm_phrase', 'confirm_username',
 })
+
+_AUDIT_HTTP_VERB_LABELS = {
+    'POST': '新增',
+    'PUT': '更新',
+    'PATCH': '更新',
+    'DELETE': '删除',
+}
+
+_AUDIT_API_RESOURCE_LABELS = {
+    '/api/employee': '员工账号',
+    '/api/profile': '个人资料',
+    '/api/todo': '待办',
+    '/api/todo-type': '待办类型',
+    '/api/auth': '登录认证',
+}
+
+_AUDIT_COMMON_FIELD_LABELS = {
+    'id': 'ID',
+    'username': '账号',
+    'name': '姓名',
+    'phone': '手机',
+    'birthday': '生日',
+    'hire_date': '入职时间',
+    'job_title': '岗位',
+    'direct_supervisor_id': '直属上级',
+    'is_admin': '管理员',
+    'can_grant_admin': '管理员授权',
+    'page_permissions': '页面访问权限',
+    'factory_scope_mode': '工厂范围模式',
+    'factory_scope_ids': '工厂范围',
+    'title': '标题',
+    'detail': '详情',
+    'due_date': '截止日期',
+    'start_date': '开始日期',
+    'priority': '优先级',
+    'is_recurring': '循环任务',
+    'reminder_interval_days': '提醒间隔(天)',
+}
 
 
 class AuditLogMixin:
@@ -64,6 +103,15 @@ class AuditLogMixin:
             or 'does not exist' in message
             or 'unknown table' in message
         )
+
+    @staticmethod
+    def _audit_is_missing_column_error(exc, column_name=None):
+        message = str(exc or '').lower()
+        if 'unknown column' not in message:
+            return False
+        if column_name:
+            return str(column_name).lower() in message
+        return True
 
     def _audit_page_label(self, page_key, page_path):
         labels = getattr(self, 'PAGE_PERMISSION_LABELS', None) or {}
@@ -207,12 +255,169 @@ class AuditLogMixin:
             return 'widgets_mahjong'
         return None
 
+    @staticmethod
+    def _audit_format_display_value(value):
+        if value is None:
+            return '（空）'
+        if isinstance(value, bool):
+            return '是' if value else '否'
+        if isinstance(value, (int, float)) and value in (0, 1):
+            return '是' if int(value) == 1 else '否'
+        if isinstance(value, (dict, list, tuple, set)):
+            try:
+                text = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+            except Exception:
+                text = str(value)
+            if len(text) > 180:
+                return text[:177] + '…'
+            return text
+        text = str(value).strip()
+        return text if text else '（空）'
+
+    def _audit_field_label(self, field_name, field_labels=None):
+        key = str(field_name or '').strip()
+        if not key:
+            return '字段'
+        labels = field_labels or {}
+        if key in labels:
+            return labels[key]
+        if key in _AUDIT_COMMON_FIELD_LABELS:
+            return _AUDIT_COMMON_FIELD_LABELS[key]
+        return key
+
+    def _audit_compute_field_changes(self, before, after, field_labels=None, fields=None):
+        before_map = before if isinstance(before, dict) else {}
+        after_map = after if isinstance(after, dict) else {}
+        keys = list(fields or [])
+        if not keys:
+            keys = sorted(set(before_map.keys()) | set(after_map.keys()))
+        changes = []
+        for key in keys:
+            old_raw = before_map.get(key)
+            new_raw = after_map.get(key)
+            if key == 'page_permissions':
+                old_norm = self._normalize_page_permissions(old_raw) if hasattr(self, '_normalize_page_permissions') else old_raw
+                new_norm = self._normalize_page_permissions(new_raw) if hasattr(self, '_normalize_page_permissions') else new_raw
+                if json.dumps(old_norm, ensure_ascii=False, sort_keys=True) == json.dumps(new_norm, ensure_ascii=False, sort_keys=True):
+                    continue
+                old_display = '（空）'
+                new_display = '已调整'
+            else:
+                old_display = self._audit_format_display_value(old_raw)
+                new_display = self._audit_format_display_value(new_raw)
+                if old_display == new_display:
+                    continue
+            changes.append({
+                'field': str(key),
+                'label': self._audit_field_label(key, field_labels),
+                'old': old_display,
+                'new': new_display,
+            })
+        return changes
+
+    def _audit_stage_entity_changes(
+        self,
+        environ,
+        entity_type,
+        entity_id,
+        entity_label,
+        before,
+        after,
+        field_labels=None,
+        fields=None,
+        action=None,
+    ):
+        if not environ:
+            return
+        changes = self._audit_compute_field_changes(before, after, field_labels=field_labels, fields=fields)
+        if not changes:
+            return
+        environ['sitjoy.audit_entity'] = {
+            'action': (action or environ.get('REQUEST_METHOD') or 'PUT').strip().lower(),
+            'entity_type': str(entity_type or '')[:64],
+            'entity_id': int(entity_id) if entity_id is not None else None,
+            'entity_label': str(entity_label or '')[:255],
+            'changes': changes,
+        }
+
+    def _audit_resource_label_for_path(self, path):
+        p = str(path or '').strip()
+        if p in _AUDIT_API_RESOURCE_LABELS:
+            return _AUDIT_API_RESOURCE_LABELS[p]
+        labels = getattr(self, 'PAGE_PERMISSION_LABELS', None) or {}
+        module_key = self._audit_module_key_for_path(p)
+        if module_key and labels.get(module_key):
+            return labels[module_key]
+        return p or 'API'
+
+    def _audit_build_intuitive_summary(self, path, method, body_data=None, entity_meta=None):
+        verb = _AUDIT_HTTP_VERB_LABELS.get((method or 'GET').upper(), method or 'GET')
+        resource = self._audit_resource_label_for_path(path)
+        lines = []
+
+        if entity_meta:
+            action = str(entity_meta.get('action') or '').lower()
+            verb = _AUDIT_HTTP_VERB_LABELS.get(action.upper(), verb)
+            entity_label = str(entity_meta.get('entity_label') or '').strip()
+            entity_id = entity_meta.get('entity_id')
+            head = verb + ' · ' + resource
+            if entity_label:
+                head += f'「{entity_label}」'
+            if entity_id:
+                head += f'(#{entity_id})'
+            lines.append(head)
+            for item in entity_meta.get('changes') or []:
+                label = item.get('label') or item.get('field') or '字段'
+                old_v = item.get('old', '（空）')
+                new_v = item.get('new', '（空）')
+                lines.append(f'{label}：{old_v} → {new_v}')
+            return '\n'.join(lines)[:_AUDIT_SUMMARY_MAX]
+
+        lines.append(f'{verb} · {resource}')
+        if isinstance(body_data, dict) and body_data:
+            preview_keys = []
+            for key in body_data.keys():
+                if str(key).lower() in _AUDIT_REDACT_KEYS:
+                    continue
+                preview_keys.append(key)
+            preview_keys = preview_keys[:12]
+            for key in preview_keys:
+                label = self._audit_field_label(key)
+                value = self._audit_format_display_value(body_data.get(key))
+                if len(value) > 120:
+                    value = value[:117] + '…'
+                lines.append(f'{label}：{value}')
+            if len(body_data.keys()) > len(preview_keys):
+                lines.append(f'… 另有 {len(body_data.keys()) - len(preview_keys)} 项')
+        return '\n'.join(lines)[:_AUDIT_SUMMARY_MAX]
+
     def _audit_try_log_operation(self, environ, path, method):
         user_id = self._get_session_user(environ)
         if not user_id or not self._audit_should_log_operation(path, method):
             return
         snap = self._audit_user_snapshot(user_id)
-        summary = self._audit_build_request_summary(environ, path, method)
+        entity_meta = environ.get('sitjoy.audit_entity')
+        body_data = None
+        body = environ.get('sitjoy.audit_request_body')
+        if body and not environ.get('sitjoy.audit_body_skipped'):
+            try:
+                body_data = json.loads(body.decode('utf-8', errors='replace'))
+                if isinstance(body_data, dict):
+                    body_data = self._audit_redact_json(body_data)
+            except Exception:
+                body_data = None
+        if entity_meta:
+            summary = self._audit_build_intuitive_summary(path, method, body_data=body_data, entity_meta=entity_meta)
+        else:
+            summary = self._audit_build_intuitive_summary(path, method, body_data=body_data)
+            if not summary or summary.count('\n') <= 1:
+                summary = self._audit_build_request_summary(environ, path, method)
+        changes_json = None
+        if entity_meta:
+            try:
+                changes_json = json.dumps(entity_meta, ensure_ascii=False, separators=(',', ':'))
+            except Exception:
+                changes_json = None
         module_key = self._audit_module_key_for_path(path)
         payload = (
             snap['user_id'],
@@ -222,6 +427,7 @@ class AuditLogMixin:
             (method or 'GET').upper()[:16],
             (str(module_key)[:64] if module_key else None),
             summary,
+            changes_json,
             self._audit_client_ip(environ),
         )
 
@@ -234,22 +440,40 @@ class AuditLogMixin:
                             INSERT INTO operation_logs (
                                 user_id, username, user_name,
                                 api_path, http_method, module_key,
-                                request_summary, client_ip
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                request_summary, changes_json, client_ip
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                             """,
                             payload,
                         )
             except Exception as e:
-                if not self._audit_is_missing_table_error(e):
-                    print('Audit operation log error: ' + str(e))
+                if self._audit_is_missing_table_error(e):
+                    try:
+                        with self._get_db_connection() as conn:
+                            with conn.cursor() as cur:
+                                cur.execute(
+                                    """
+                                    INSERT INTO operation_logs (
+                                        user_id, username, user_name,
+                                        api_path, http_method, module_key,
+                                        request_summary, client_ip
+                                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                    """,
+                                    payload[:7] + (payload[8],),
+                                )
+                    except Exception as e2:
+                        if not self._audit_is_missing_table_error(e2):
+                            print('Audit operation log fallback error: ' + str(e2))
+                    return
+                print('Audit operation log error: ' + str(e))
 
         threading.Thread(target=_insert, daemon=True).start()
 
     def handle_audit_log_api(self, environ, method, start_response):
         try:
             user_id = self._get_session_user(environ)
-            if not self._is_super_admin_user(user_id):
-                return self.send_json({'status': 'error', 'message': '仅超级管理员（ID=1）可查看审计日志'}, start_response)
+            can_view = getattr(self, '_can_view_audit_logs', None)
+            if not callable(can_view) or not can_view(user_id):
+                return self.send_json({'status': 'error', 'message': '仅可授权管理员可查看审计日志'}, start_response)
 
             query = parse_qs(environ.get('QUERY_STRING', ''))
             action = (query.get('action', [''])[0] or '').strip().lower()
@@ -345,19 +569,36 @@ class AuditLogMixin:
                             """,
                             tuple(params) + (page_size, offset),
                         )
+                        rows = cur.fetchall() or []
                     else:
-                        cur.execute(
-                            f"""
-                            SELECT id, user_id, username, user_name, api_path, http_method, module_key,
-                                   request_summary, client_ip, created_at
-                            FROM {table}
-                            WHERE {where_sql}
-                            ORDER BY id DESC
-                            LIMIT %s OFFSET %s
-                            """,
-                            tuple(params) + (page_size, offset),
-                        )
-                    rows = cur.fetchall() or []
+                        try:
+                            cur.execute(
+                                f"""
+                                SELECT id, user_id, username, user_name, api_path, http_method, module_key,
+                                       request_summary, changes_json, client_ip, created_at
+                                FROM {table}
+                                WHERE {where_sql}
+                                ORDER BY id DESC
+                                LIMIT %s OFFSET %s
+                                """,
+                                tuple(params) + (page_size, offset),
+                            )
+                            rows = cur.fetchall() or []
+                        except Exception as list_exc:
+                            if not self._audit_is_missing_column_error(list_exc, 'changes_json'):
+                                raise
+                            cur.execute(
+                                f"""
+                                SELECT id, user_id, username, user_name, api_path, http_method, module_key,
+                                       request_summary, client_ip, created_at
+                                FROM {table}
+                                WHERE {where_sql}
+                                ORDER BY id DESC
+                                LIMIT %s OFFSET %s
+                                """,
+                                tuple(params) + (page_size, offset),
+                            )
+                            rows = cur.fetchall() or []
 
             for row in rows:
                 if row.get('created_at') is not None:

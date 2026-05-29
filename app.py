@@ -37,6 +37,7 @@ from modules.sales_management_mixin import SalesManagementMixin
 from modules.sales_product_mixin import SalesProductMixin
 from modules.go_play_mixin import GoPlayMixin
 from modules.mahjong_play_mixin import MahjongPlayMixin
+from modules.notification_mixin import NotificationMixin
 from modules.support_domain_mixin import SupportDomainMixin
 from modules.utility_mixin import UtilityMixin
 
@@ -52,6 +53,7 @@ class WSGIApp(
     RequestRoutingMixin,      # 路由分发逻辑
     AuditLogMixin,            # 访问/操作审计日志
     PagePermissionMixin,      # 页面权限控制
+    NotificationMixin,        # 站内通知
     CoreAppMixin,             # 核心基础逻辑
     AuthEmployeeMixin,        # 员工权限认证
     ProfileMixin,             # 首页个人信息与头像

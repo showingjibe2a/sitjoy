@@ -255,6 +255,7 @@ class AuthEmployeeMixin:
                     'birthday': profile_extra.get('birthday', row.get('birthday')),
                     'is_admin': is_admin_flag,
                     'can_grant_admin': int(row.get('can_grant_admin') or 0),
+                    'can_view_audit_logs': 1 if self._can_view_audit_logs(user_id) else 0,
                     'page_permissions': page_permissions,
                     'page_permission_labels': getattr(self, 'PAGE_PERMISSION_LABELS', {}),
                     'page_permission_groups': getattr(self, 'PAGE_PERMISSION_GROUPS', []),
@@ -308,6 +309,9 @@ class AuthEmployeeMixin:
                                 """,
                                 (username, pwd_hash, name or None, phone or None, birthday)
                             )
+                            notify = getattr(self, '_notify_registration_pending', None)
+                            if callable(notify):
+                                notify(username, name)
                             return self.send_json({
                                 'status': 'pending',
                                 'message': '注册申请已提交，请等待管理员审核后方可登录'
@@ -367,12 +371,19 @@ class AuthEmployeeMixin:
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
-                            "SELECT id, is_admin, COALESCE(can_grant_admin, 0) AS can_grant_admin FROM users WHERE id=%s",
+                            "SELECT id, username, is_admin, COALESCE(can_grant_admin, 0) AS can_grant_admin FROM users WHERE id=%s",
                             (user_id,)
                         )
                         actor_row = cur.fetchone()
                         if not actor_row or not actor_row.get('is_admin'):
                             return self.send_json({'status': 'error', 'message': '无权限'}, start_response)
+                        cur.execute(
+                            "SELECT id, username FROM users WHERE id=%s AND COALESCE(is_approved, 1)=0 LIMIT 1",
+                            (target_id,),
+                        )
+                        target_row = cur.fetchone()
+                        if not target_row:
+                            return self.send_json({'status': 'error', 'message': '待审核用户不存在'}, start_response)
                         if approved:
                             desired_is_admin = 1 if data.get('is_admin') else 0
                             desired_can_grant_admin = 1 if data.get('can_grant_admin') else 0
@@ -392,6 +403,9 @@ class AuthEmployeeMixin:
                                 """,
                                 (desired_is_admin, desired_can_grant_admin, page_permissions, target_id)
                             )
+                            notify = getattr(self, '_notify_registration_approved', None)
+                            if callable(notify):
+                                notify(target_id, target_row.get('username'))
                         else:
                             cur.execute(
                                 "DELETE FROM users WHERE id=%s AND COALESCE(is_approved,1)=0",
@@ -638,12 +652,30 @@ class AuthEmployeeMixin:
                 with self._get_db_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
-                            "SELECT id, is_admin, page_permissions FROM users WHERE id=%s",
+                            """
+                            SELECT id, username, name, phone, birthday, hire_date, job_title,
+                                   is_admin, can_grant_admin, page_permissions, direct_supervisor_id
+                            FROM users WHERE id=%s
+                            """,
                             (item_id,)
                         )
                         target_row = cur.fetchone() or {}
                         if not target_row:
                             return self.send_json({'status': 'error', 'message': '用户不存在'}, start_response)
+
+                        before_audit = {
+                            'username': target_row.get('username'),
+                            'name': target_row.get('name'),
+                            'phone': target_row.get('phone'),
+                            'birthday': target_row.get('birthday'),
+                            'hire_date': target_row.get('hire_date'),
+                            'job_title': target_row.get('job_title'),
+                            'is_admin': int(target_row.get('is_admin') or 0),
+                            'can_grant_admin': int(target_row.get('can_grant_admin') or 0),
+                            'page_permissions': target_row.get('page_permissions'),
+                            'direct_supervisor_id': target_row.get('direct_supervisor_id'),
+                        }
+                        after_audit = dict(before_audit)
 
                         if 'username' in data:
                             cur.execute(
@@ -674,6 +706,39 @@ class AuthEmployeeMixin:
                                 f"UPDATE users SET {', '.join(updates)} WHERE id=%s",
                                 tuple(params)
                             )
+                            cur.execute(
+                                """
+                                SELECT username, name, phone, birthday, hire_date, job_title,
+                                       is_admin, can_grant_admin, page_permissions, direct_supervisor_id
+                                FROM users WHERE id=%s
+                                """,
+                                (item_id,),
+                            )
+                            new_row = cur.fetchone() or {}
+                            after_audit = {
+                                'username': new_row.get('username'),
+                                'name': new_row.get('name'),
+                                'phone': new_row.get('phone'),
+                                'birthday': new_row.get('birthday'),
+                                'hire_date': new_row.get('hire_date'),
+                                'job_title': new_row.get('job_title'),
+                                'is_admin': int(new_row.get('is_admin') or 0),
+                                'can_grant_admin': int(new_row.get('can_grant_admin') or 0),
+                                'page_permissions': new_row.get('page_permissions'),
+                                'direct_supervisor_id': new_row.get('direct_supervisor_id'),
+                            }
+                            stage_audit = getattr(self, '_audit_stage_entity_changes', None)
+                            if callable(stage_audit):
+                                label = (after_audit.get('name') or after_audit.get('username') or '').strip() or f'用户#{item_id}'
+                                stage_audit(
+                                    environ,
+                                    'users',
+                                    item_id,
+                                    label,
+                                    before_audit,
+                                    after_audit,
+                                    action='put',
+                                )
 
                     if has_factory_scope_payload:
                         try:

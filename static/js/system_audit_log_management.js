@@ -6,8 +6,11 @@
     let auditLogTotal = 0;
     const auditLogPageSize = 50;
 
-    function isSuperAdmin() {
-        return !!(currentUser && Number(currentUser.id || 0) === 1);
+    function canViewAuditLogs() {
+        if (!currentUser) return false;
+        if (Number(currentUser.can_view_audit_logs || 0) === 1) return true;
+        if (Number(currentUser.id || 0) === 1) return true;
+        return Number(currentUser.is_admin || 0) === 1 && Number(currentUser.can_grant_admin || 0) === 1;
     }
 
     function escapeHtml(value) {
@@ -26,6 +29,44 @@
         return text.replace('T', ' ').slice(0, 19);
     }
 
+    function moduleLabel(row) {
+        const key = String(row.module_key || '').trim();
+        const labels = (currentUser && currentUser.page_permission_labels) || {};
+        return labels[key] || key || '—';
+    }
+
+    function renderOperationSummaryHtml(row) {
+        let meta = null;
+        if (row.changes_json) {
+            try {
+                meta = typeof row.changes_json === 'string' ? JSON.parse(row.changes_json) : row.changes_json;
+            } catch (_err) {
+                meta = null;
+            }
+        }
+        if (meta && Array.isArray(meta.changes) && meta.changes.length) {
+            const verbMap = { post: '新增', put: '更新', patch: '更新', delete: '删除' };
+            const verb = verbMap[String(meta.action || '').toLowerCase()] || '更新';
+            const head = verb + ' · ' + (meta.entity_label || meta.entity_type || '记录')
+                + (meta.entity_id ? ' #' + meta.entity_id : '');
+            const rows = meta.changes.map(ch => `
+                <tr>
+                    <th>${escapeHtml(ch.label || ch.field || '字段')}</th>
+                    <td>${escapeHtml(ch.old || '（空）')}</td>
+                    <td>${escapeHtml(ch.new || '（空）')}</td>
+                </tr>
+            `).join('');
+            return `<div class="audit-log-change-head">${escapeHtml(head)}</div>
+                <table class="audit-log-change-table">
+                    <thead><tr><th>字段</th><th>变更前</th><th>变更后</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>`;
+        }
+        const summary = String(row.request_summary || '').trim();
+        if (!summary) return '—';
+        return escapeHtml(summary).replace(/\n/g, '<br>');
+    }
+
     function renderAuditLogTableHead() {
         const head = document.getElementById('auditLogTableHead');
         if (!head) return;
@@ -37,7 +78,7 @@
     }
 
     async function loadAuditLogs(page = 1) {
-        if (!isSuperAdmin()) return;
+        if (!canViewAuditLogs()) return;
         auditLogPage = Math.max(1, page);
         const q = (document.getElementById('auditSearchQ') || {}).value || '';
         const dateFrom = (document.getElementById('auditDateFrom') || {}).value || '';
@@ -87,8 +128,8 @@
                         <td>${escapeHtml(row.user_name || '')}</td>
                         <td>${escapeHtml(row.http_method || '')}</td>
                         <td>${escapeHtml(row.api_path || '')}</td>
-                        <td>${escapeHtml(row.module_key || '')}</td>
-                        <td class="audit-log-summary-cell">${escapeHtml(row.request_summary || '')}</td>
+                        <td>${escapeHtml(moduleLabel(row))}</td>
+                        <td class="audit-log-summary-cell">${renderOperationSummaryHtml(row)}</td>
                         <td>${escapeHtml(row.client_ip || '')}</td>
                     </tr>
                 `).join('');
@@ -119,7 +160,7 @@
     }
 
     async function cleanupAuditLogs() {
-        if (!isSuperAdmin()) return;
+        if (!canViewAuditLogs()) return;
         const keepDaysRaw = prompt('保留最近多少天的日志？（默认 90，将删除更早的记录）', '90');
         if (keepDaysRaw === null) return;
         const keepDays = Math.max(1, Math.min(3650, parseInt(String(keepDaysRaw).trim(), 10) || 90));
@@ -176,7 +217,7 @@
                     return;
                 }
                 currentUser = data;
-                if (!isSuperAdmin()) {
+                if (!canViewAuditLogs()) {
                     window.location.href = '/';
                     return;
                 }

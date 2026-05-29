@@ -45,8 +45,18 @@ class PagePermissionMixin:
             return permissions
         merged = dict(permissions)
         for key in self._denied_permission_keys():
+            if key == 'system_audit_log_management':
+                if self._can_manage_admin_permission(record):
+                    merged[key] = 1
+                continue
             merged[key] = 1
         return merged
+
+    def _can_view_audit_logs(self, user_id):
+        record = self._get_user_permission_record(user_id)
+        if not record:
+            return False
+        return self._can_manage_admin_permission(record)
 
     def _normalize_page_permissions(self, raw_permissions, default_all=True):
         keys = self._permission_keys()

@@ -7,6 +7,7 @@ API_PERMISSION_MAP = {
     '/api/audit-log': 'system_audit_log_management',
     '/api/todo': 'home',
     '/api/todo-type': 'home',
+    '/api/notification': 'home',
     '/api/calendar': 'home',
     '/api/images': 'gallery',
     '/api/browse': 'gallery',
@@ -282,6 +283,7 @@ API_ROUTE_MAP = {
     '/api/go-play': ('method', 'handle_go_play_api'),
     '/api/mahjong-play': ('method', 'handle_mahjong_play_api'),
     '/api/audit-log': ('method', 'handle_audit_log_api'),
+    '/api/notification': ('method', 'handle_notification_api'),
 }
 
 
@@ -346,9 +348,9 @@ class RequestRoutingMixin:
         if not user_id:
             return self.send_json({'status': 'error', 'message': '未登录'}, start_response)
         if path == '/api/audit-log':
-            is_super = getattr(self, '_is_super_admin_user', None)
-            if not callable(is_super) or not is_super(user_id):
-                return self.send_json({'status': 'error', 'message': '仅超级管理员（ID=1）可查看审计日志'}, start_response)
+            can_view = getattr(self, '_can_view_audit_logs', None)
+            if not callable(can_view) or not can_view(user_id):
+                return self.send_json({'status': 'error', 'message': '仅可授权管理员可查看审计日志'}, start_response)
             return None
         method = (environ.get('REQUEST_METHOD') or 'GET').upper()
         if path == '/api/employee' and method != 'GET':

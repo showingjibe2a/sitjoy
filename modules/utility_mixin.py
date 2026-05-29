@@ -559,6 +559,9 @@ class UtilityMixin:
                         self._replace_todo_sales_links(cur, new_id, related_sales_product_ids, related_sku_family_ids)
                         self._replace_todo_platform_type_links(cur, new_id, related_platform_type_ids)
                     item = self._todo_fetch_one(conn, user_id, new_id, with_links=True)
+                notify = getattr(self, '_notify_todo_assigned', None)
+                if callable(notify):
+                    notify(assignee_ids, title, todo_id=new_id, actor_user_id=user_id)
                 return self.send_json({'status': 'success', 'id': new_id, 'item': item}, start_response)
 
             if method == 'PUT':
@@ -702,6 +705,11 @@ class UtilityMixin:
                                 (item_id,)
                             )
                             assignee_rows = cur.fetchall() or []
+                            previous_assignee_ids = [
+                                self._parse_int(row.get('assignee_id'))
+                                for row in assignee_rows
+                                if self._parse_int(row.get('assignee_id'))
+                            ]
                             assignee_status_map = {}
                             for row in assignee_rows:
                                 aid = self._parse_int(row.get('assignee_id'))
@@ -722,6 +730,18 @@ class UtilityMixin:
                                     base['completed_at'] = completed_at
                                 assignee_status_map[int(user_id)] = base
                             self._replace_todo_assignees(cur, item_id, assignee_ids, assignee_status_map=assignee_status_map)
+                            notify_title = title
+                            if notify_title is None:
+                                cur.execute('SELECT title FROM todos WHERE id=%s LIMIT 1', (item_id,))
+                                title_row = cur.fetchone() or {}
+                                notify_title = title_row.get('title')
+                            new_assignee_ids = [
+                                aid for aid in assignee_ids
+                                if self._parse_int(aid) and self._parse_int(aid) not in set(previous_assignee_ids)
+                            ]
+                            notify = getattr(self, '_notify_todo_assigned', None)
+                            if callable(notify) and new_assignee_ids:
+                                notify(new_assignee_ids, notify_title, todo_id=item_id, actor_user_id=user_id)
                     need_links = (
                         related_sales_product_ids is not None
                         or related_sku_family_ids is not None

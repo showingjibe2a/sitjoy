@@ -359,14 +359,49 @@
         }
         .todo-table-wrap {
             width: 100%;
-            overflow: auto;
-            max-height: 520px;
+            flex: 1 1 auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
             border: 1px solid rgba(207, 199, 189, 0.6);
             border-radius: 10px;
             background: rgba(255, 255, 255, 0.86);
         }
+        .todo-rail .rail-card > :not(.todo-table-wrap) {
+            flex-shrink: 0;
+        }
+        .todo-table-wrap .pm-table-toolbar,
+        .todo-table-wrap .pm-managed-head-wrap,
+        .todo-table-wrap .pm-table-top-scroll {
+            flex-shrink: 0;
+        }
+        .todo-table-wrap .pm-managed-head-wrap {
+            border-radius: 10px 10px 0 0;
+        }
+        .todo-table-wrap .pm-managed-body-wrap {
+            flex: 1 1 auto;
+            min-height: 0;
+            max-height: 520px;
+            overflow-x: auto;
+            overflow-y: auto;
+            border-radius: 0 0 10px 10px;
+        }
+        .todo-table-wrap .pm-managed-head-wrap.is-managed-wrap,
+        .todo-table-wrap .pm-managed-body-wrap.is-managed-wrap {
+            box-shadow: none;
+        }
+        /* 托管表尚未初始化时的兜底：整表滚动 + 粘性表头 */
+        .todo-table-wrap:not(:has(.pm-managed-body-wrap)) {
+            display: block;
+            overflow: auto;
+            max-height: 520px;
+        }
         #todoTable th, #todoTable td { font-size: 13px; }
         #todoTable thead th { position: sticky; top: 0; z-index: 2; background: #f5efe5; }
+        .todo-table-wrap:has(.pm-managed-body-wrap) #todoTable thead.pm-managed-hidden-head {
+            display: none;
+        }
         #todoTable .pm-actions { display: inline-flex; gap: 0.35rem; }
         #todoTable tbody tr.todo-overdue td { background: rgba(179, 83, 83, 0.1) !important; }
         .todo-title-cell { min-width: 140px; word-break: break-word; }

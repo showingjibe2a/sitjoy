@@ -6960,6 +6960,225 @@
         }
     }
 
+    function initSitjoyNotifications(authData){
+        const wrap = document.getElementById('sitjoyNotificationCenter');
+        const trigger = document.getElementById('sitjoyNotificationTrigger');
+        const panel = document.getElementById('sitjoyNotificationPanel');
+        const list = document.getElementById('sitjoyNotificationList');
+        const badge = document.getElementById('sitjoyNotificationBadge');
+        const markAllBtn = document.getElementById('sitjoyNotificationMarkAll');
+        if(!wrap || !trigger || !panel || !list || !badge) return;
+        if(!authData || authData.status === 'error'){
+            wrap.hidden = true;
+            return;
+        }
+        wrap.hidden = false;
+
+        let panelOpen = false;
+        let pollTimer = null;
+        let panelPortaled = false;
+
+        function ensureNotificationPanelPortaled(){
+            if(panelPortaled || !panel) return;
+            if(panel.parentElement !== document.body){
+                document.body.appendChild(panel);
+            }
+            panelPortaled = true;
+        }
+
+        function escapeNotificationHtml(value){
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function formatNotificationTime(value){
+            const text = String(value || '').trim();
+            if(!text) return '';
+            return text.replace('T', ' ').slice(0, 16);
+        }
+
+        function setUnreadCount(count){
+            const num = Math.max(0, Number(count || 0));
+            if(num > 0){
+                badge.hidden = false;
+                badge.textContent = num > 99 ? '99+' : String(num);
+            } else {
+                badge.hidden = true;
+                badge.textContent = '0';
+            }
+        }
+
+        function renderNotificationItems(items){
+            const rows = Array.isArray(items) ? items : [];
+            if(!rows.length){
+                list.innerHTML = '<div class="sitjoy-notification-empty">暂无通知</div>';
+                return;
+            }
+            list.innerHTML = rows.map(item => {
+                const unread = !Number(item.is_read || 0);
+                const linkUrl = String(item.link_url || '').trim();
+                const linkLabel = String(item.link_label || '').trim() || '查看详情';
+                const linkHtml = linkUrl
+                    ? `<a class="sitjoy-notification-item-link" href="${escapeNotificationHtml(linkUrl)}">${escapeNotificationHtml(linkLabel)}</a>`
+                    : '<span></span>';
+                return `
+                    <article class="sitjoy-notification-item${unread ? ' is-unread' : ''}" data-notification-id="${escapeNotificationHtml(item.id)}" data-link-url="${escapeNotificationHtml(linkUrl)}">
+                        <div class="sitjoy-notification-item-title">${escapeNotificationHtml(item.title || '通知')}</div>
+                        ${item.body ? `<div class="sitjoy-notification-item-body">${escapeNotificationHtml(item.body)}</div>` : ''}
+                        <div class="sitjoy-notification-item-meta">
+                            <span>${escapeNotificationHtml(formatNotificationTime(item.created_at))}</span>
+                            ${linkHtml}
+                        </div>
+                    </article>
+                `;
+            }).join('');
+        }
+
+        async function fetchUnreadCount(){
+            try {
+                const resp = await fetch('/api/notification?action=unread_count', { credentials: 'include' });
+                const data = await resp.json();
+                if(data.status === 'success'){
+                    setUnreadCount(data.unread_count);
+                }
+            } catch (_err) {
+            }
+        }
+
+        async function loadNotificationList(){
+            try {
+                const resp = await fetch('/api/notification?page=1&page_size=20', { credentials: 'include' });
+                const data = await resp.json();
+                if(data.status !== 'success'){
+                    list.innerHTML = '<div class="sitjoy-notification-empty">' + escapeNotificationHtml(data.message || '加载失败') + '</div>';
+                    return;
+                }
+                renderNotificationItems(data.items || []);
+                setUnreadCount(data.unread_count);
+            } catch (_err) {
+                list.innerHTML = '<div class="sitjoy-notification-empty">网络错误</div>';
+            }
+        }
+
+        function positionNotificationPanel(){
+            if(!trigger || !panel || panel.hidden) return;
+            const rect = trigger.getBoundingClientRect();
+            const gap = 8;
+            const viewportPad = 12;
+            const panelWidth = Math.min(360, Math.max(240, window.innerWidth - viewportPad * 2));
+            let left = rect.right - panelWidth;
+            left = Math.max(viewportPad, Math.min(left, window.innerWidth - panelWidth - viewportPad));
+            let top = rect.bottom + gap;
+            const maxHeight = Math.min(420, window.innerHeight - top - viewportPad);
+            panel.style.width = panelWidth + 'px';
+            panel.style.left = left + 'px';
+            panel.style.top = top + 'px';
+            panel.style.maxHeight = Math.max(160, maxHeight) + 'px';
+        }
+
+        function closeNotificationPanel(){
+            panelOpen = false;
+            panel.hidden = true;
+            panel.classList.remove('is-open');
+            trigger.setAttribute('aria-expanded', 'false');
+        }
+
+        function openNotificationPanel(){
+            ensureNotificationPanelPortaled();
+            panelOpen = true;
+            panel.hidden = false;
+            panel.classList.add('is-open');
+            trigger.setAttribute('aria-expanded', 'true');
+            positionNotificationPanel();
+            loadNotificationList();
+        }
+
+        async function markNotificationRead(id){
+            if(!id) return;
+            try {
+                await fetch('/api/notification?action=mark_read', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: Number(id) })
+                });
+            } catch (_err) {
+            }
+        }
+
+        trigger.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            if(panelOpen) closeNotificationPanel();
+            else openNotificationPanel();
+        });
+
+        if(markAllBtn){
+            markAllBtn.addEventListener('click', async (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                try {
+                    const resp = await fetch('/api/notification?action=mark_all_read', {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({})
+                    });
+                    const data = await resp.json();
+                    if(data.status === 'success'){
+                        await loadNotificationList();
+                        setUnreadCount(0);
+                    }
+                } catch (_err) {
+                }
+            });
+        }
+
+        list.addEventListener('click', async (ev) => {
+            const itemEl = ev.target.closest('.sitjoy-notification-item');
+            if(!itemEl) return;
+            const id = itemEl.dataset.notificationId;
+            const linkUrl = String(itemEl.dataset.linkUrl || '').trim();
+            if(id) await markNotificationRead(id);
+            if(linkUrl){
+                window.location.href = linkUrl;
+                return;
+            }
+            itemEl.classList.remove('is-unread');
+            fetchUnreadCount();
+        });
+
+        document.addEventListener('click', (ev) => {
+            if(!panelOpen) return;
+            if(ev.target.closest('#sitjoyNotificationCenter')) return;
+            if(ev.target.closest('#sitjoyNotificationPanel')) return;
+            closeNotificationPanel();
+        });
+
+        document.addEventListener('keydown', (ev) => {
+            if(ev.key === 'Escape' && panelOpen) closeNotificationPanel();
+        });
+
+        window.addEventListener('resize', () => {
+            if(panelOpen) positionNotificationPanel();
+        });
+        window.addEventListener('scroll', () => {
+            if(panelOpen) positionNotificationPanel();
+        }, true);
+
+        fetchUnreadCount();
+        if(pollTimer) window.clearInterval(pollTimer);
+        pollTimer = window.setInterval(fetchUnreadCount, 60000);
+        window.refreshSitjoyNotifications = async function(forceList){
+            await fetchUnreadCount();
+            if(forceList && panelOpen) await loadNotificationList();
+        };
+    }
+
     function loadHeader(){
         Promise.all([
             fetch('/static/partials/header.html').then(r => r.text()),
@@ -6970,6 +7189,7 @@
                 if(!el) return;
                 el.innerHTML = html;
                 applyHeaderPermissions(authData);
+                initSitjoyNotifications(authData);
                 initSitjoyUsageGuide();
                 hoistPageHeroToNavbar();
 
@@ -7167,6 +7387,7 @@
             activeResizeState.handle.classList.remove('is-active');
             const rsState = activeResizeState.state;
             persistColumnWidths(rsState);
+            applyPinnedColumns(rsState);
             syncSjAggToggleColumnCssVar(rsState);
             activeResizeState = null;
             document.body.style.cursor = '';

@@ -556,6 +556,163 @@ input[type="month"] {
     }
 }
 
+.sitjoy-notification-center {
+    position: relative;
+    flex: 0 0 auto;
+    overflow: visible;
+}
+
+.navbar-leading .sitjoy-notification-center {
+    overflow: visible;
+}
+
+.sitjoy-notification-center[hidden] {
+    display: none !important;
+}
+
+.sitjoy-notification-trigger {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border: 1px solid rgba(207, 199, 189, 0.75);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--morandi-ink);
+    cursor: pointer;
+    padding: 0;
+}
+
+.sitjoy-notification-trigger:hover,
+.sitjoy-notification-trigger[aria-expanded="true"] {
+    background: rgba(255, 255, 255, 0.95);
+    border-color: rgba(154, 144, 131, 0.85);
+}
+
+.sitjoy-notification-badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: #b67f7f;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+    box-sizing: border-box;
+}
+
+.sitjoy-notification-badge[hidden] {
+    display: none !important;
+}
+
+.sitjoy-notification-panel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: min(360px, calc(100vw - 24px));
+    max-height: min(420px, calc(100vh - 24px));
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(207, 199, 189, 0.85);
+    border-radius: 12px;
+    background: var(--morandi-cream);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.14);
+    z-index: 12050;
+    overflow: hidden;
+    margin: 0;
+}
+
+.sitjoy-notification-panel[hidden] {
+    display: none !important;
+}
+
+.sitjoy-notification-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.65rem 0.75rem;
+    border-bottom: 1px solid rgba(207, 199, 189, 0.55);
+    background: rgba(255, 255, 255, 0.72);
+}
+
+.sitjoy-notification-panel-head strong {
+    color: var(--morandi-ink);
+    font-size: 0.9rem;
+}
+
+.sitjoy-notification-list {
+    overflow: auto;
+    padding: 0.35rem 0;
+}
+
+.sitjoy-notification-empty {
+    padding: 1.25rem 0.85rem;
+    text-align: center;
+    color: var(--morandi-slate);
+    font-size: 0.84rem;
+}
+
+.sitjoy-notification-item {
+    display: grid;
+    gap: 0.22rem;
+    padding: 0.62rem 0.75rem;
+    border-bottom: 1px solid rgba(207, 199, 189, 0.35);
+    cursor: pointer;
+}
+
+.sitjoy-notification-item:last-child {
+    border-bottom: none;
+}
+
+.sitjoy-notification-item:hover {
+    background: rgba(255, 255, 255, 0.55);
+}
+
+.sitjoy-notification-item.is-unread {
+    background: rgba(212, 165, 116, 0.12);
+}
+
+.sitjoy-notification-item-title {
+    color: var(--morandi-ink);
+    font-size: 0.86rem;
+    font-weight: 700;
+    line-height: 1.35;
+}
+
+.sitjoy-notification-item-body {
+    color: var(--morandi-slate);
+    font-size: 0.8rem;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.sitjoy-notification-item-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    color: #9a9083;
+    font-size: 0.72rem;
+}
+
+.sitjoy-notification-item-link {
+    color: #8b7355;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.sitjoy-notification-item-link:hover {
+    text-decoration: underline;
+}
+
 .logo {
     font-size: 1.5rem;
     color: var(--morandi-ink);
@@ -2318,6 +2475,7 @@ button.sj-group-row-edit-btn {
 }
 
 .pm-table.is-managed-table > tbody > tr > td:not(.pm-table-hide-col):has(input, select, textarea, button, .status-segment, .pm-actions, .preview-status, .preview-doc-cell, .preview-doc-actions, .universal-select-dropdown, .sku-cell, .pm-cell-interactive),
+.pm-table.is-managed-table > thead > tr > th:not(.pm-table-hide-col):has(.pm-col-resizer),
 .pm-managed-head-table.is-managed-table > thead > tr > th:not(.pm-table-hide-col):has(input, button, select),
 .pm-managed-head-table.is-managed-table > thead > tr > th:not(.pm-table-hide-col):has(.pm-col-resizer) {
     max-width: none;
@@ -2325,6 +2483,7 @@ button.sj-group-row-edit-btn {
     white-space: normal;
 }
 
+.pm-table.is-managed-table > thead > tr > th:has(.pm-col-resizer),
 .pm-managed-head-table.is-managed-table > thead > tr > th:has(.pm-col-resizer) {
     position: relative;
 }

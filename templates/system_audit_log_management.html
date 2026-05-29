@@ -16,8 +16,34 @@
         .audit-log-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 14px; }
         .audit-log-filters .form-group { margin: 0; min-width: 140px; }
         .audit-log-summary-cell {
-            max-width: 420px; white-space: pre-wrap; word-break: break-word;
-            font-size: 12px; color: #4a4a4a;
+            min-width: 280px;
+            max-width: 520px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 12px;
+            color: #4a4a4a;
+        }
+        .audit-log-change-head {
+            font-weight: 700;
+            color: #2f2f33;
+            margin-bottom: 0.35rem;
+        }
+        .audit-log-change-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        .audit-log-change-table th,
+        .audit-log-change-table td {
+            border: 1px solid rgba(207, 199, 189, 0.55);
+            padding: 0.28rem 0.42rem;
+            text-align: left;
+            vertical-align: top;
+        }
+        .audit-log-change-table th {
+            background: rgba(243, 240, 236, 0.9);
+            color: #5a534c;
+            white-space: nowrap;
         }
     </style>
 </head>
@@ -27,7 +53,7 @@
     <div class="container">
         <section class="hero" style="margin-bottom: 1.5rem;">
             <h2>系统审计日志</h2>
-            <p>记录员工页面访问与数据库写操作 API；仅超级管理员（ID=1）可查看。</p>
+            <p>记录员工页面访问与数据库写操作；支持结构化字段变更摘要（按需接入）。</p>
         </section>
 
         <section class="card pm-card" id="auditLogSection" aria-label="系统审计日志">

@@ -11,6 +11,26 @@
                     <div class="sitjoy-usage-ticker-track" id="sitjoyUsageTickerTrack"></div>
                 </div>
             </button>
+            <div class="sitjoy-notification-center" id="sitjoyNotificationCenter" hidden>
+                <button type="button" class="sitjoy-notification-trigger" id="sitjoyNotificationTrigger" aria-expanded="false" aria-controls="sitjoyNotificationPanel" title="通知">
+                    <span class="sitjoy-notification-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                            <path d="M13.73 21a2 2 0 01-3.46 0"></path>
+                        </svg>
+                    </span>
+                    <span class="sitjoy-notification-badge" id="sitjoyNotificationBadge" hidden>0</span>
+                </button>
+                <div class="sitjoy-notification-panel" id="sitjoyNotificationPanel" hidden>
+                    <div class="sitjoy-notification-panel-head">
+                        <strong>通知</strong>
+                        <button type="button" class="btn-ghost btn-small" id="sitjoyNotificationMarkAll">全部已读</button>
+                    </div>
+                    <div class="sitjoy-notification-list" id="sitjoyNotificationList">
+                        <div class="sitjoy-notification-empty">暂无通知</div>
+                    </div>
+                </div>
+            </div>
         </div>
         <ul class="nav-menu">
             <li><a href="/" class="nav-home" data-page-key="home">首页</a></li>
