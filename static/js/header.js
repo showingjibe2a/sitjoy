@@ -2082,6 +2082,146 @@
         return { row, col: 0 };
     }
 
+    const TRANSIT_SKU_GRID_COL_KEYS = [
+        'SKU详情-颜色',
+        'SKU详情-SKU',
+        'SKU详情-发货数量',
+        'SKU详情-上架数量'
+    ];
+
+    function getTransitSkuGridColIndex(cell){
+        if(!cell) return -1;
+        const key = String(cell.dataset.manageColKey || '').trim();
+        let idx = TRANSIT_SKU_GRID_COL_KEYS.indexOf(key);
+        if(idx >= 0) return idx;
+        if(cell.classList.contains('transit-col-sku-color')) return 0;
+        if(cell.classList.contains('transit-col-sku-qty')) return 2;
+        if(cell.classList.contains('transit-col-sku-listed')) return 3;
+        if(cell.classList.contains('transit-col-sku')) return 1;
+        return -1;
+    }
+
+    function getTransitSkuCellInTableRow(row, skuColIndex){
+        if(!row || skuColIndex < 0 || skuColIndex >= TRANSIT_SKU_GRID_COL_KEYS.length) return null;
+        const cell = mapRowByKey(row).get(TRANSIT_SKU_GRID_COL_KEYS[skuColIndex]);
+        return cell && isTransitSkuStackCell(cell) ? cell : null;
+    }
+
+    function getTransitSkuGridCoord(state, target){
+        if(!state || !target || !target.closest) return null;
+        const cell = target.closest('td');
+        if(!cell || !state.tbody.contains(cell) || !isTransitSkuStackCell(cell)) return null;
+        const sc = getTransitSkuGridColIndex(cell);
+        if(sc < 0) return null;
+        const trEl = cell.parentElement;
+        if(!trEl) return null;
+        const tr = getVisibleRows(state).indexOf(trEl);
+        if(tr < 0) return null;
+        const line = target.closest('.transit-sku-stack-line');
+        if(!line || !cell.contains(line)) return null;
+        const lr = Array.from(cell.querySelectorAll('.transit-sku-stack-line')).indexOf(line);
+        if(lr < 0) return null;
+        return { tr, sc, lr };
+    }
+
+    function normalizeTransitSkuGridRect(a, b){
+        if(!a || !b) return null;
+        return {
+            tr1: Math.min(Number(a.tr), Number(b.tr)),
+            tr2: Math.max(Number(a.tr), Number(b.tr)),
+            sc1: Math.min(Number(a.sc), Number(b.sc)),
+            sc2: Math.max(Number(a.sc), Number(b.sc)),
+            lr1: Math.min(Number(a.lr), Number(b.lr)),
+            lr2: Math.max(Number(a.lr), Number(b.lr))
+        };
+    }
+
+    function getTransitSkuStackLineCountForRow(state, tableRowIndex){
+        const row = getVisibleRows(state)[tableRowIndex];
+        if(!row) return 0;
+        let max = 0;
+        for(let sc = 0; sc < TRANSIT_SKU_GRID_COL_KEYS.length; sc += 1){
+            const cell = getTransitSkuCellInTableRow(row, sc);
+            if(cell) max = Math.max(max, cell.querySelectorAll('.transit-sku-stack-line').length);
+        }
+        return max;
+    }
+
+    function getTransitSkuGridLineNode(state, tableRowIndex, skuColIndex, lineIndex){
+        const row = getVisibleRows(state)[tableRowIndex];
+        if(!row) return null;
+        const cell = getTransitSkuCellInTableRow(row, skuColIndex);
+        if(!cell) return null;
+        const lines = cell.querySelectorAll('.transit-sku-stack-line');
+        return lines[lineIndex] || null;
+    }
+
+    function getTransitSkuGridValue(state, tableRowIndex, skuColIndex, lineIndex){
+        const row = getVisibleRows(state)[tableRowIndex];
+        const cell = row ? getTransitSkuCellInTableRow(row, skuColIndex) : null;
+        const node = getTransitSkuGridLineNode(state, tableRowIndex, skuColIndex, lineIndex);
+        return node && cell ? extractTransitSkuStackLineText(node, cell) : '';
+    }
+
+    function collectTransitSkuGridCellsInRect(state, rect){
+        const cells = new Set();
+        if(!state || !rect) return cells;
+        for(let tr = rect.tr1; tr <= rect.tr2; tr += 1){
+            const row = getVisibleRows(state)[tr];
+            if(!row) continue;
+            for(let sc = rect.sc1; sc <= rect.sc2; sc += 1){
+                const cell = getTransitSkuCellInTableRow(row, sc);
+                if(cell) cells.add(cell);
+            }
+        }
+        return cells;
+    }
+
+    function copyTransitSkuGridSelectionToClipboard(state){
+        const skuSel = activeGridSelection && activeGridSelection.transitSkuGrid;
+        if(!state || !skuSel || !skuSel.anchor || !skuSel.current) return false;
+        const rect = normalizeTransitSkuGridRect(skuSel.anchor, skuSel.current);
+        if(!rect) return false;
+
+        const lines = [];
+        for(let tr = rect.tr1; tr <= rect.tr2; tr += 1){
+            const lineMax = getTransitSkuStackLineCountForRow(state, tr);
+            if(!lineMax) continue;
+            const lrEnd = Math.min(rect.lr2, lineMax - 1);
+            for(let lr = rect.lr1; lr <= lrEnd; lr += 1){
+                const cols = [];
+                for(let sc = rect.sc1; sc <= rect.sc2; sc += 1){
+                    cols.push(getTransitSkuGridValue(state, tr, sc, lr));
+                }
+                lines.push(cols.join('\t'));
+            }
+        }
+        const text = lines.join('\n');
+        if(!text) return false;
+
+        if(navigator.clipboard && navigator.clipboard.writeText){
+            navigator.clipboard.writeText(text).then(() => {
+                if(window.showAppToast) window.showAppToast('已复制选中区域', false, 1200);
+            }).catch(() => {});
+            return true;
+        }
+
+        const area = document.createElement('textarea');
+        area.value = text;
+        area.style.position = 'fixed';
+        area.style.left = '-10000px';
+        area.style.top = '-10000px';
+        document.body.appendChild(area);
+        area.focus();
+        area.select();
+        try {
+            document.execCommand('copy');
+            if(window.showAppToast) window.showAppToast('已复制选中区域', false, 1200);
+        } catch (_) {}
+        document.body.removeChild(area);
+        return true;
+    }
+
     function getTransitSubcellCoord(target, cell){
         const stackCoord = getTransitSkuStackLineCoord(target, cell);
         if(stackCoord) return stackCoord;
@@ -2218,6 +2358,31 @@
         if(!activeGridSelection || !activeGridSelection.state) return;
         const state = activeGridSelection.state;
         clearGridSelectionClasses(state.table);
+
+        const skuSel = activeGridSelection.transitSkuGrid;
+        if(skuSel && skuSel.anchor && skuSel.current){
+            const rect = normalizeTransitSkuGridRect(skuSel.anchor, skuSel.current);
+            if(rect){
+                collectTransitSkuGridCellsInRect(state, rect).forEach((cell) => {
+                    if(cell && cell.isConnected) cell.classList.add('pm-grid-cell-selected');
+                });
+                for(let tr = rect.tr1; tr <= rect.tr2; tr += 1){
+                    const lrEnd = Math.min(rect.lr2, getTransitSkuStackLineCountForRow(state, tr) - 1);
+                    for(let lr = rect.lr1; lr <= lrEnd; lr += 1){
+                        for(let sc = rect.sc1; sc <= rect.sc2; sc += 1){
+                            const node = getTransitSkuGridLineNode(state, tr, sc, lr);
+                            if(node) node.classList.add('pm-grid-detail-selected');
+                        }
+                    }
+                }
+                const anchorNode = getTransitSkuGridLineNode(state, skuSel.anchor.tr, skuSel.anchor.sc, skuSel.anchor.lr);
+                if(anchorNode) anchorNode.classList.add('pm-grid-detail-anchor');
+                state.table.classList.add('is-grid-selecting');
+                notifySitjoyGridSelectionChange();
+                return;
+            }
+        }
+
         activeGridSelection.selectedCells.forEach(cell => {
             if(cell && cell.isConnected) cell.classList.add('pm-grid-cell-selected');
         });
@@ -2247,7 +2412,8 @@
             dragging: false,
             dragAnchor: null,
             detailSelections: new Map(),
-            detailDragging: null
+            detailDragging: null,
+            transitSkuGrid: null
         };
         return activeGridSelection;
     }
@@ -2256,6 +2422,7 @@
         const selection = ensureGridSelectionState(state);
         selection.selectedCells = new Set((cells || []).filter(Boolean));
         selection.anchorCoord = anchorCoord || null;
+        selection.transitSkuGrid = null;
         if(selection.selectedCells.size !== 1){
             selection.detailSelections = new Map();
             selection.detailDragging = null;
@@ -2268,6 +2435,7 @@
         if(selection.selectedCells.has(cell)) selection.selectedCells.delete(cell);
         else selection.selectedCells.add(cell);
         selection.anchorCoord = anchorCoord || selection.anchorCoord;
+        selection.transitSkuGrid = null;
         if(selection.selectedCells.size !== 1){
             selection.detailSelections = new Map();
             selection.detailDragging = null;
@@ -2364,8 +2532,12 @@
     }
 
     function copyGridSelectionToClipboard(){
-        if(!activeGridSelection || !activeGridSelection.state || !activeGridSelection.selectedCells.size) return false;
+        if(!activeGridSelection || !activeGridSelection.state) return false;
         const state = activeGridSelection.state;
+        if(activeGridSelection.transitSkuGrid){
+            return copyTransitSkuGridSelectionToClipboard(state);
+        }
+        if(!activeGridSelection.selectedCells.size) return false;
         const coords = [];
         activeGridSelection.selectedCells.forEach(cell => {
             const coord = getCellCoord(state, cell);
@@ -2628,7 +2800,10 @@
     }
 
     function hasActiveManagedSelection(state){
-        return !!(state && activeGridSelection && activeGridSelection.state === state && activeGridSelection.selectedCells && activeGridSelection.selectedCells.size > 0);
+        return !!(state && activeGridSelection && activeGridSelection.state === state && (
+            (activeGridSelection.selectedCells && activeGridSelection.selectedCells.size > 0)
+            || (activeGridSelection.transitSkuGrid && activeGridSelection.transitSkuGrid.anchor)
+        ));
     }
 
     function bindGridSelection(state){
@@ -2662,8 +2837,34 @@
             event.preventDefault();
             const selection = ensureGridSelectionState(state);
 
-            const detailCoord = getTransitSubcellCoord(event.target, cell);
+            const skuGridCoord = getTransitSkuGridCoord(state, event.target);
+            if(skuGridCoord){
+                if(event.shiftKey && selection.transitSkuGrid && selection.transitSkuGrid.anchor){
+                    selection.transitSkuGrid.current = skuGridCoord;
+                    const rect = normalizeTransitSkuGridRect(selection.transitSkuGrid.anchor, skuGridCoord);
+                    selection.selectedCells = collectTransitSkuGridCellsInRect(state, rect);
+                    selection.detailSelections = new Map();
+                    selection.detailDragging = null;
+                    selection.dragging = false;
+                    selection.dragAnchor = null;
+                    paintGridSelection();
+                    return;
+                }
+                const rect0 = normalizeTransitSkuGridRect(skuGridCoord, skuGridCoord);
+                selection.transitSkuGrid = { anchor: skuGridCoord, current: skuGridCoord };
+                selection.selectedCells = collectTransitSkuGridCellsInRect(state, rect0);
+                selection.detailSelections = new Map();
+                selection.detailDragging = { mode: 'transitSkuGrid' };
+                selection.dragging = false;
+                selection.dragAnchor = null;
+                selection.anchorCoord = coord;
+                paintGridSelection();
+                return;
+            }
+
+            const detailCoord = isTransitDetailCell(cell) ? getTransitSubcellCoord(event.target, cell) : null;
             if(detailCoord){
+                selection.transitSkuGrid = null;
                 selectCellsForState(state, [cell], coord);
                 selection.detailSelections = new Map();
                 selection.detailSelections.set(cell, { anchor: detailCoord, current: detailCoord });
@@ -6840,6 +7041,21 @@
         if(activeGridSelection && activeGridSelection.detailDragging && activeGridSelection.state){
             const dragInfo = activeGridSelection.detailDragging;
             const state = activeGridSelection.state;
+
+            if(dragInfo.mode === 'transitSkuGrid' && activeGridSelection.transitSkuGrid){
+                const el = document.elementFromPoint(event.clientX, event.clientY);
+                const g = getTransitSkuGridCoord(state, el);
+                if(!g) return;
+                activeGridSelection.transitSkuGrid.current = g;
+                const rect = normalizeTransitSkuGridRect(
+                    activeGridSelection.transitSkuGrid.anchor,
+                    g
+                );
+                activeGridSelection.selectedCells = collectTransitSkuGridCellsInRect(state, rect);
+                paintGridSelection();
+                return;
+            }
+
             const cell = dragInfo.cell;
             if(!cell || !cell.isConnected || !state.tbody.contains(cell)) return;
             const el = document.elementFromPoint(event.clientX, event.clientY);
