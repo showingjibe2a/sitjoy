@@ -2392,12 +2392,29 @@
     }
 
     function notifySitjoyGridSelectionChange(){
-        const cells = (activeGridSelection && activeGridSelection.selectedCells)
+        let cells = (activeGridSelection && activeGridSelection.selectedCells)
             ? Array.from(activeGridSelection.selectedCells).filter(cell => cell && cell.isConnected)
             : [];
+        let extractCellText = (td) => extractCellClipboardText(td);
+
+        /* 在途 SKU 跨行框选：按堆叠行统计，勿把整格多行数字拼成一个大数 */
+        if(activeGridSelection
+            && activeGridSelection.transitSkuGrid
+            && activeGridSelection.skuPaintedNodes
+            && activeGridSelection.skuPaintedNodes.length){
+            cells = activeGridSelection.skuPaintedNodes.filter((line) => line
+                && line.isConnected
+                && (line.classList.contains('pm-grid-detail-selected')
+                    || line.classList.contains('pm-grid-detail-anchor')));
+            extractCellText = (line) => {
+                const td = line.closest ? line.closest('td') : null;
+                return td ? extractTransitSkuStackLineText(line, td) : '';
+            };
+        }
+
         const detail = {
             cells,
-            extractCellText: (td) => extractCellClipboardText(td)
+            extractCellText
         };
         window.__sitjoyPendingGridSelection = detail;
         if(window.SitjoyCellSelectionStats && typeof window.SitjoyCellSelectionStats.apply === 'function'){

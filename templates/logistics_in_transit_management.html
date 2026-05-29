@@ -69,20 +69,41 @@
       text-align: center;
       vertical-align: top;
       font-variant-numeric: tabular-nums;
-      padding-left: 0.38rem;
-      padding-right: 0.38rem;
+      padding-left: 0.28rem;
+      padding-right: 0.28rem;
     }
     .transit-col-sku {
       vertical-align: top;
       min-width: 0;
-      padding-left: 0.38rem;
-      padding-right: 0.38rem;
+      padding-left: 0.28rem;
+      padding-right: 0.28rem;
     }
-    /* SKU 四列之间收紧水平 padding，避免框选时靠负 margin 拼缝 */
+    /* SKU 四列之间无额外左 padding，列缝仅左右各 0.28rem */
     #mainTable td.transit-col-sku-color + td.transit-col-sku,
     #mainTable td.transit-col-sku + td.transit-col-sku-qty,
     #mainTable td.transit-col-sku-qty + td.transit-col-sku-listed {
-      padding-left: 0.2rem;
+      padding-left: 0;
+    }
+    /* 多列框选：选中行条吃进 td 水平 padding，列间不留底色缝（文字用等量 padding 顶住） */
+    #mainTable.pm-table.is-grid-selecting .transit-sku-stack-line.pm-grid-detail-selected,
+    #mainTable.pm-table.is-grid-selecting .transit-sku-stack-line.pm-grid-detail-anchor {
+      margin-left: -0.28rem;
+      margin-right: -0.28rem;
+      padding-left: 0.28rem;
+      padding-right: 0.28rem;
+      width: calc(100% + 0.56rem);
+      max-width: none;
+      box-sizing: border-box;
+    }
+    /* 相邻两列均有选中时，共享竖缝不再露底 */
+    #mainTable.pm-table.is-grid-selecting td.transit-col-sku-color:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) + td.transit-col-sku:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) .transit-sku-stack-line.pm-grid-detail-selected,
+    #mainTable.pm-table.is-grid-selecting td.transit-col-sku-color:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) + td.transit-col-sku:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) .transit-sku-stack-line.pm-grid-detail-anchor,
+    #mainTable.pm-table.is-grid-selecting td.transit-col-sku:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) + td.transit-col-sku-qty:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) .transit-sku-stack-line.pm-grid-detail-selected,
+    #mainTable.pm-table.is-grid-selecting td.transit-col-sku:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) + td.transit-col-sku-qty:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) .transit-sku-stack-line.pm-grid-detail-anchor,
+    #mainTable.pm-table.is-grid-selecting td.transit-col-sku-qty:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) + td.transit-col-sku-listed:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) .transit-sku-stack-line.pm-grid-detail-selected,
+    #mainTable.pm-table.is-grid-selecting td.transit-col-sku-qty:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) + td.transit-col-sku-listed:has(.pm-grid-detail-selected, .pm-grid-detail-anchor) .transit-sku-stack-line.pm-grid-detail-anchor {
+      margin-left: -0.28rem;
+      padding-left: 0.28rem;
     }
     .transit-sku-stack {
       display: flex;

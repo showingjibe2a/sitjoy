@@ -38,6 +38,55 @@
         return Number.isFinite(n) ? n : null;
     }
 
+    /** 从单元格文本解析 0~N 个数字（多行/多空格分隔，避免「20 40」被拼成 2040） */
+    function collectNumericValuesFromText(raw) {
+        const text = String(raw == null ? '' : raw).trim();
+        if (!text) return [];
+
+        const lineParts = text.split(/[\r\n]+/).map((p) => p.trim()).filter(Boolean);
+        if (lineParts.length > 1) {
+            const out = [];
+            lineParts.forEach((part) => {
+                const n = parseNumericFromText(part);
+                if (n !== null) out.push(n);
+            });
+            return out;
+        }
+
+        const tokens = text.split(/\s+/).map((p) => p.trim()).filter(Boolean);
+        if (tokens.length > 1) {
+            const parsed = tokens.map((t) => parseNumericFromText(t));
+            if (parsed.every((n) => n !== null)) return parsed;
+        }
+
+        const single = parseNumericFromText(text);
+        return single !== null ? [single] : [];
+    }
+
+    function collectNumericValuesFromCell(td, customExtract) {
+        if (!td) return [];
+        if (td.classList && td.classList.contains('transit-sku-stack-line')) {
+            const n = parseNumericFromText(extractPlainTextFromCell(td, customExtract));
+            return n !== null ? [n] : [];
+        }
+        const stack = td.querySelector && td.querySelector('.transit-sku-stack');
+        if (stack) {
+            const selected = stack.querySelectorAll(
+                '.transit-sku-stack-line.pm-grid-detail-selected, .transit-sku-stack-line.pm-grid-detail-anchor'
+            );
+            const lines = selected.length
+                ? Array.from(selected)
+                : Array.from(stack.querySelectorAll('.transit-sku-stack-line') || []);
+            const out = [];
+            lines.forEach((line) => {
+                const n = parseNumericFromText(extractPlainTextFromCell(line, customExtract));
+                if (n !== null) out.push(n);
+            });
+            return out;
+        }
+        return collectNumericValuesFromText(extractPlainTextFromCell(td, customExtract));
+    }
+
     function formatStatNumber(value, opts) {
         const n = Number(value);
         if (!Number.isFinite(n)) return '—';
@@ -84,10 +133,8 @@
         const cells = (detail && detail.cells) ? detail.cells.filter(Boolean) : [];
         const extractFn = detail && detail.extractCellText;
         const values = [];
-        cells.forEach((td) => {
-            const text = extractPlainTextFromCell(td, extractFn);
-            const n = parseNumericFromText(text);
-            if (n !== null) values.push(n);
+        cells.forEach((cell) => {
+            collectNumericValuesFromCell(cell, extractFn).forEach((n) => values.push(n));
         });
 
         if (values.length < MIN_NUMERIC_CELLS) {
@@ -128,6 +175,8 @@
     global.SitjoyCellSelectionStats = {
         apply: applySelectionDetail,
         parseNumericFromText,
+        collectNumericValuesFromText,
+        collectNumericValuesFromCell,
         extractPlainTextFromCell,
     };
 
