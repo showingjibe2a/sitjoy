@@ -5,6 +5,7 @@ from modules.widget_room_chat_mixin import WidgetRoomChatMixin
 import json
 import os
 import random
+import shutil
 import string
 import threading
 import time
@@ -142,12 +143,22 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         try:
             os.replace(tmp, path)
         except Exception:
+            # 网络盘/SMB 上 replace 可能失败：禁止先删原文件，避免房间「消失」
+            copied = False
             try:
-                if os.path.isfile(path):
-                    os.remove(path)
+                shutil.copy2(tmp, path)
+                copied = True
             except Exception:
                 pass
-            os.rename(tmp, path)
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass
+            if not copied:
+                try:
+                    os.rename(tmp, path)
+                except Exception:
+                    pass
         _mj_signal_waiters(code)
 
     def _mj_write_room_file(self, room):
@@ -188,7 +199,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                 self._mj_write_room_file_unlocked(room)
 
     def _mj_read_room_normalized(self, code):
-        """读取房间并去重座位；若有修正则写回。"""
+        """读取房间并去重座位；若有修正则写回（读路径不写庄家位，避免换座后频繁覆写文件）。"""
         code = str(code or '').strip().upper()
         with _mj_file_lock:
             room = self._mj_read_room_file(code) if code else None
@@ -196,22 +207,37 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                 return None
             if self._mj_normalize_seats(room):
                 self._mj_write_room_file_unlocked(room)
-            elif self._mj_sync_lobby_dealer_seat(room):
-                self._mj_write_room_file_unlocked(room)
             return room
 
-    def _mj_read_room_retry(self, code, attempts=3):
+    def _mj_read_room_retry(self, code, attempts=5):
         """读取房间文件，短暂重试以避免并发写入时误判房间不存在。"""
         code = str(code or '').strip().upper()
         if not code:
             return None
         last = None
-        for i in range(max(1, int(attempts or 1))):
+        tries = max(1, int(attempts or 1))
+        for i in range(tries):
             last = self._mj_read_room_normalized(code)
             if last is not None:
                 return last
-            if i + 1 < attempts:
-                time.sleep(0.05)
+            if i + 1 < tries:
+                time.sleep(0.06 * (i + 1))
+        return last
+
+    def _mj_read_room_for_user(self, code, user_id, attempts=5):
+        """读取房间并确认用户仍在座；换座/SSE 同步时避免短暂误判不在房间。"""
+        code = str(code or '').strip().upper()
+        uid = self._parse_int(user_id) or 0
+        if not code or not uid:
+            return None
+        tries = max(1, int(attempts or 1))
+        last = None
+        for i in range(tries):
+            last = self._mj_read_room_retry(code, attempts=3)
+            if last and self._mj_seat_of_user(last, uid) is not None:
+                return last
+            if i + 1 < tries:
+                time.sleep(0.06 * (i + 1))
         return last
 
     def _mj_save_room(self, room):
@@ -949,6 +975,8 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             if not self._mj_relocate_seat_player(room, my_seat, want):
                 return self.send_json({'status': 'error', 'message': '该座位已有人或无法换座'}, start_response)
             self._mj_after_lobby_seating_change(room)
+            if self._mj_seat_of_user(room, user_id) is None:
+                return self.send_json({'status': 'error', 'message': '换座失败，请刷新后重试'}, start_response)
             self._mj_bump_version(room)
             self._mj_save_room(room)
         return self._mj_json_room(room, user_id, start_response, message='已更换座位')
@@ -1221,7 +1249,9 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             last_ping = started
             try:
                 while time.time() - started < MJ_STREAM_SESSION_SEC:
-                    room_now = self._mj_read_room_retry(code)
+                    room_now = self._mj_read_room_for_user(code, uid, attempts=4)
+                    if not room_now:
+                        room_now = self._mj_read_room_retry(code, attempts=5)
                     if not room_now:
                         yield self._sse_event('room_dissolved', {
                             'status': 'error',
@@ -1230,13 +1260,8 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                         })
                         return
                     if self._mj_seat_of_user(room_now, uid) is None:
-                        # 换座等操作后可能短暂不同步，再读一次再判定
-                        room_retry = self._mj_read_room_retry(code, attempts=2)
-                        if room_retry and self._mj_seat_of_user(room_retry, uid) is not None:
-                            room_now = room_retry
-                        else:
-                            yield self._sse_event('room_error', {'status': 'error', 'message': '您不在该房间中'})
-                            return
+                        yield self._sse_event('room_error', {'status': 'error', 'message': '您不在该房间中'})
+                        return
                     ver = int(room_now.get('version') or 0)
                     if ver > since_local:
                         payload = self._mj_room_public(room_now, uid)

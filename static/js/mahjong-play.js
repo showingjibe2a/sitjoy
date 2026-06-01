@@ -1004,7 +1004,7 @@
       if (data && data.message) mjToast(data.message, false);
     } catch (err) {
       const msg = String((err && err.message) || '');
-      const maybeTransient = /解散|过期|不在该房间|换座失败|刷新/.test(msg);
+      const maybeTransient = /解散|过期|不存在|不在该房间|换座失败|刷新/.test(msg);
       if (maybeTransient) {
         try {
           const fresh = await api('state', { room_code: roomCode }, 'GET');
@@ -1111,7 +1111,11 @@
       try {
         const data = JSON.parse(ev.data);
         const msg = String(data.message || '');
-        if (msg.indexOf('不在该房间') >= 0) {
+        const maybeRecover = msg.indexOf('不在该房间') >= 0
+          || msg.indexOf('解散') >= 0
+          || msg.indexOf('过期') >= 0
+          || msg.indexOf('不存在') >= 0;
+        if (maybeRecover) {
           recoverRoomStateAfterSyncError().then((ok) => {
             if (!ok) onRoomEnded(msg || '房间已结束');
           });
@@ -1119,7 +1123,9 @@
         }
         onRoomEnded(msg || '房间已结束');
       } catch (_) {
-        onRoomEnded('房间已结束');
+        recoverRoomStateAfterSyncError().then((ok) => {
+          if (!ok) onRoomEnded('房间已结束');
+        });
       }
     };
     es.addEventListener('room_error', onRoomEndedEvent);
@@ -1152,7 +1158,9 @@
         if (watchAbort || (err && err.name === 'AbortError')) return;
         const msg = String((err && err.message) || '');
         if (msg.indexOf('解散') >= 0 || msg.indexOf('不存在') >= 0 || msg.indexOf('过期') >= 0) {
-          onRoomEnded(msg.indexOf('解散') >= 0 ? msg : '房间已解散或已过期');
+          recoverRoomStateAfterSyncError().then((ok) => {
+            if (!ok) onRoomEnded(msg.indexOf('解散') >= 0 ? msg : '房间已解散或已过期');
+          });
           return;
         }
         if (msg.indexOf('不在该房间') >= 0) {
