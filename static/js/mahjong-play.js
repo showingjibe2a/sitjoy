@@ -277,6 +277,26 @@
     return st;
   }
 
+  function resolveHostSeat(s) {
+    if (!s) return null;
+    const hostUid = Number(s.host_user_id || 0);
+    if (hostUid) {
+      const seats = s.seats || [];
+      for (let i = 0; i < seats.length; i++) {
+        const st = seatAtIndex(seats, i);
+        if (st && Number(st.user_id) === hostUid) return i;
+      }
+    }
+    const ds = Number(s.dealer_seat);
+    return ds >= 0 && ds < 4 ? ds : null;
+  }
+
+  function windLabelForSeat(seatIdx, anchorSeat) {
+    const labels = ['东', '南', '西', '北'];
+    if (anchorSeat == null) return labels[seatIdx] || '—';
+    return labels[(seatIdx - anchorSeat + 4) % 4];
+  }
+
   function renderLobbySeats(s) {
     const root = $('mjLobbySeats');
     const panel = $('mjLobbyPanel');
@@ -287,10 +307,11 @@
     if (!inLobby) return;
     const seats = s.seats || [];
     const minP = Number(s.min_players) || 2;
-    const labels = ['东', '南', '西', '北'];
+    const anchorSeat = resolveHostSeat(s);
     const mySeat = resolveMySeat(s);
     root.innerHTML = [0, 1, 2, 3].map((i) => {
       const st = seatAtIndex(seats, i);
+      const wind = windLabelForSeat(i, anchorSeat);
       const cls = ['mj-seat-dot'];
       if (!st) cls.push('mj-seat-dot--empty');
       else {
@@ -300,9 +321,9 @@
       }
       const check = st && st.ready ? '✓' : '';
       const name = st ? (st.name || '—') : '空位';
-      return '<div class="' + cls.join(' ') + '" title="' + esc(labels[i] + ' · ' + name) + '">'
+      return '<div class="' + cls.join(' ') + '" title="' + esc(wind + ' · ' + name) + '">'
         + '<span class="mj-seat-dot-inner">' + check + '</span>'
-        + '<span class="mj-seat-dot-name">' + esc(st ? name : '空') + '</span></div>';
+        + '<span class="mj-seat-dot-name">' + esc(st ? name : wind) + '</span></div>';
     }).join('');
     const lobby = s.lobby || {};
     const hint = $('mjRoomHint');
@@ -536,7 +557,15 @@
     const name = st.name || '—';
     nameEl.textContent = name;
     const meta = [];
-    if (s.dealer_seat === logical) meta.push('庄');
+    const hostUid = Number(s.host_user_id || 0);
+    const stUid = Number(st.user_id || 0);
+    if (s.status === 'lobby') {
+      if (hostUid && stUid === hostUid) meta.push('房主');
+      const anchor = resolveHostSeat(s);
+      if (anchor != null) meta.push(windLabelForSeat(logical, anchor));
+    } else if (s.dealer_seat === logical) {
+      meta.push('庄');
+    }
     if (s.current_seat === logical && s.status === 'playing') meta.push('出牌');
     if (st.ready && s.status === 'lobby') meta.push('已准备');
     if (metaEl) metaEl.textContent = meta.join(' · ');
@@ -670,22 +699,36 @@
     if (my == null || !active.length) return logicalSeat;
     const mi = active.indexOf(my);
     const si = active.indexOf(logicalSeat);
-    if (mi < 0 || si < 0) return logicalSeat;
+    if (mi < 0 || si < 0) return -1;
     const diff = (si - mi + active.length) % active.length;
     const map2 = { 0: 0, 1: 1 };
     const map3 = { 0: 0, 1: 3, 2: 1 };
     const map4 = { 0: 0, 1: 3, 2: 1, 3: 2 };
     const map = active.length === 2 ? map2 : (active.length === 3 ? map3 : map4);
-    return map[diff] != null ? map[diff] : logicalSeat;
+    return map[diff] != null ? map[diff] : -1;
   }
 
   function logicalSeatForDomSlot(dom, s) {
     if (!shouldRotateTableView(s)) {
       return dom >= 0 && dom < 4 ? dom : -1;
     }
+    const my = resolveMySeat(s);
+    if (dom === 0 && my != null) return my;
     for (let L = 0; L < 4; L++) {
+      if (L === my) continue;
       if (domSlotForSeat(L, s) === dom) return L;
     }
+    if (my == null) return -1;
+    const occupiedDom = new Set([0]);
+    for (let L = 0; L < 4; L++) {
+      if (L === my) continue;
+      const mapped = domSlotForSeat(L, s);
+      if (mapped >= 0) occupiedDom.add(mapped);
+    }
+    const emptyLogical = [0, 1, 2, 3].filter((L) => L !== my && !seatAtIndex(s.seats, L));
+    const freeDom = [1, 2, 3].filter((d) => !occupiedDom.has(d));
+    const di = freeDom.indexOf(dom);
+    if (di >= 0 && di < emptyLogical.length) return emptyLogical[di];
     return -1;
   }
 

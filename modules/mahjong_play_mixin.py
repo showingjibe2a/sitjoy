@@ -196,6 +196,8 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                 return None
             if self._mj_normalize_seats(room):
                 self._mj_write_room_file_unlocked(room)
+            elif self._mj_sync_lobby_dealer_seat(room):
+                self._mj_write_room_file_unlocked(room)
             return room
 
     def _mj_read_room_retry(self, code, attempts=3):
@@ -248,6 +250,48 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
     def _mj_can_swap_seat(self, room):
         return str(room.get('status') or '') == 'lobby'
 
+    def _mj_host_seat(self, room):
+        return self._mj_seat_of_user(room, room.get('host_user_id'))
+
+    def _mj_sync_lobby_dealer_seat(self, room):
+        """大厅阶段庄家位跟随房主（首局仍由骰子重新定庄）。"""
+        if str(room.get('status') or '') != 'lobby':
+            return False
+        host_seat = self._mj_host_seat(room)
+        if host_seat is None:
+            return False
+        if int(room.get('dealer_seat') or -1) == int(host_seat):
+            return False
+        room['dealer_seat'] = int(host_seat)
+        return True
+
+    def _mj_pick_join_seat(self, room, seats=None):
+        """从房主顺时针找第一个空位，避免新玩家落到旧东位/空庄位。"""
+        if seats is None:
+            seats = list(room.get('seats') or [None] * MJ_SEATS)
+        else:
+            seats = list(seats)
+        while len(seats) < MJ_SEATS:
+            seats.append(None)
+        host_seat = self._mj_host_seat(room)
+        order = []
+        if host_seat is not None:
+            for k in range(1, MJ_SEATS):
+                order.append((int(host_seat) + k) % MJ_SEATS)
+        else:
+            order = list(range(MJ_SEATS))
+        for i in order:
+            if not isinstance(seats[i], dict):
+                return i
+        return None
+
+    def _mj_after_lobby_seating_change(self, room):
+        """入座/换座/清理后：去重座位并同步大厅庄家位。"""
+        changed = self._mj_normalize_seats(room)
+        if self._mj_sync_lobby_dealer_seat(room):
+            changed = True
+        return changed
+
     def _mj_relocate_seat_player(self, room, from_seat, to_seat):
         """将玩家从 from_seat 移到 to_seat，并同步积分与牌局数组索引。"""
         fs = int(from_seat)
@@ -279,10 +323,12 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         scores[str(ts)] = int(scores.pop(str(fs), scores.get(str(ts), 0)) or 0)
         room['scores'] = scores
 
-        if int(room.get('dealer_seat') or 0) == fs:
-            room['dealer_seat'] = ts
-        if room.get('current_seat') == fs:
-            room['current_seat'] = ts
+        in_lobby = str(room.get('status') or '') == 'lobby'
+        if not in_lobby:
+            if int(room.get('dealer_seat') or 0) == fs:
+                room['dealer_seat'] = ts
+            if room.get('current_seat') == fs:
+                room['current_seat'] = ts
 
         for key in ('hands', 'melds', 'discards'):
             arr = list(room.get(key) or [])
@@ -903,7 +949,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                 return self._mj_json_room(room, user_id, start_response, message='您已在该座位')
             if not self._mj_relocate_seat_player(room, my_seat, want):
                 return self.send_json({'status': 'error', 'message': '该座位已有人或无法换座'}, start_response)
-            self._mj_normalize_seats(room)
+            self._mj_after_lobby_seating_change(room)
             self._mj_bump_version(room)
             self._mj_save_room(room)
         with _mj_file_lock:
@@ -923,17 +969,15 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                 return self.send_json({'status': 'error', 'message': '对局已开始，无法加入'}, start_response)
             self._mj_normalize_seats(room)
             existing = self._mj_seat_of_user(room, user_id)
-            seats = room.get('seats') or [None] * MJ_SEATS
+            seats = list(room.get('seats') or [None] * MJ_SEATS)
+            while len(seats) < MJ_SEATS:
+                seats.append(None)
             if existing is not None:
                 seats[existing]['name'] = self._mj_user_display_name(user_id)
                 self._mj_clear_user_duplicate_seats(seats, user_id, keep_seat=existing)
             else:
                 self._mj_clear_user_duplicate_seats(seats, user_id, keep_seat=None)
-                slot = None
-                for i in range(MJ_SEATS):
-                    if seats[i] is None:
-                        slot = i
-                        break
+                slot = self._mj_pick_join_seat(room, seats)
                 if slot is None:
                     return self.send_json({'status': 'error', 'message': '房间座位已满'}, start_response)
                 seats[slot] = {
@@ -941,8 +985,8 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                     'name': self._mj_user_display_name(user_id),
                     'ready': False,
                 }
-            room['seats'] = seats
-            self._mj_normalize_seats(room)
+            room['seats'] = seats[:MJ_SEATS]
+            self._mj_after_lobby_seating_change(room)
             self._mj_bump_version(room)
             self._mj_save_room(room)
         return self._mj_json_room(room, user_id, start_response)
