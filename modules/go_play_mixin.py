@@ -148,13 +148,29 @@ class GoPlayMixin(WidgetRoomChatMixin):
             self._go_write_room_file_unlocked(room)
 
     def _go_delete_room_file(self, code):
+        code = str(code or '').strip().upper()
+        if not code:
+            return False
         path = self._go_room_path(code)
+        tmp = path + '.tmp'
+        deleted = False
         with _go_file_lock:
-            try:
-                if os.path.isfile(path):
-                    os.remove(path)
-            except Exception:
-                pass
+            for target in (path, tmp):
+                try:
+                    if os.path.isfile(target):
+                        os.remove(target)
+                        deleted = True
+                except Exception:
+                    pass
+        return deleted
+
+    def _go_dissolve_room(self, code):
+        """删除房间文件并唤醒长轮询 / SSE 等待者。"""
+        code = str(code or '').strip().upper()
+        if not code:
+            return
+        self._go_delete_room_file(code)
+        _go_signal_waiters(code)
 
     @contextmanager
     def _go_room_store(self, code, create=False, durable=True):
@@ -308,7 +324,7 @@ class GoPlayMixin(WidgetRoomChatMixin):
                 continue
             room = self._go_read_room_file(name[:-5])
             if room and now - float(room.get('created_at') or 0) > GO_ROOM_TTL_SEC:
-                self._go_delete_room_file(room.get('code'))
+                self._go_dissolve_room(room.get('code'))
 
     def _go_new_room_code(self):
         alphabet = string.ascii_uppercase + string.digits
@@ -643,6 +659,7 @@ class GoPlayMixin(WidgetRoomChatMixin):
     def _go_action_leave(self, user_id, data, start_response):
         """离开房间：白方离开则回到等待；房主离开则删除房间文件。"""
         code = str(data.get('room_code') or '').strip().upper()
+        dissolve = False
         with self._go_room_store(code) as (room, err):
             if err:
                 return self.send_json({'status': 'error', 'message': err}, start_response)
@@ -662,10 +679,17 @@ class GoPlayMixin(WidgetRoomChatMixin):
                 self._go_bump_version(room)
                 self._go_save_room(room)
             elif uid == bu:
-                self._go_delete_room_file(code)
-                return self.send_json({'status': 'success', 'room_deleted': True}, start_response)
+                dissolve = True
             else:
                 return self.send_json({'status': 'error', 'message': '您不在该房间中'}, start_response)
+        if dissolve:
+            self._go_dissolve_room(code)
+            return self.send_json({
+                'status': 'success',
+                'room_deleted': True,
+                'left_room': True,
+                'message': '房间已解散',
+            }, start_response)
         out = self._go_room_for_user(room, user_id)
         out['status'] = 'success'
         return self.send_json(out, start_response)

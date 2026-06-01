@@ -7,8 +7,15 @@
   const ROOM_KEY = 'sitjoy.mahjong.room.v1';
   const TABLE_POPUP_NAME = 'sitjoy_mj_table_popup';
 
-  const isPopup = document.body && document.body.dataset.mjPlayMode === 'popup';
-  const isMain = document.body && document.body.dataset.mjPlayMode === 'main';
+  function mjPlayMode() {
+    const mode = String((document.body && document.body.dataset.mjPlayMode) || '').trim().toLowerCase();
+    const popup = mode === 'popup';
+    const main = mode === 'main' || (!popup && !!document.getElementById('mjCreateBtn'));
+    return { isPopup: popup, isMain: main };
+  }
+
+  const isPopup = mjPlayMode().isPopup;
+  const isMain = mjPlayMode().isMain;
 
   let roomCode = '';
   let state = null;
@@ -139,7 +146,7 @@
       if (code) localStorage.setItem(ROOM_KEY, String(code).trim().toUpperCase());
       else localStorage.removeItem(ROOM_KEY);
     } catch (_) {}
-    if (isMain && win.WidgetRoom) win.WidgetRoom.setUrlRoomParam(code);
+    if (mjPlayMode().isMain && win.WidgetRoom) win.WidgetRoom.setUrlRoomParam(code);
   }
 
   function loadRoomCode() {
@@ -721,10 +728,28 @@
     } catch (_) {}
   }
 
+  function mjToast(message, isError) {
+    const msg = String(message || '').trim();
+    if (!msg) return;
+    if (win.showAppToast) win.showAppToast(msg, !!isError);
+    else if (isError) alert(msg);
+  }
+
   async function doCreate() {
-    const data = await api('create', {});
-    applyState(data);
-    if (!isPopup) startWatch();
+    const btn = $('mjCreateBtn');
+    if (btn && btn.disabled) return;
+    if (btn) btn.disabled = true;
+    try {
+      const data = await api('create', {});
+      if (!applyState(data)) {
+        mjToast('房间已创建但界面更新失败，请刷新页面', true);
+        return;
+      }
+      mjToast('房间已创建：' + roomCode, false);
+      if (!isPopup) startWatch();
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   async function doJoin() {
@@ -988,7 +1013,7 @@
     initMjBoardOverlay();
     initRoomChat();
     bindMainMessageBridge();
-    $('mjCreateBtn') && $('mjCreateBtn').addEventListener('click', () => doCreate().catch((e) => alert(e.message)));
+    $('mjCreateBtn') && $('mjCreateBtn').addEventListener('click', () => doCreate().catch((e) => mjToast(e.message || '创建失败', true)));
     $('mjJoinBtn') && $('mjJoinBtn').addEventListener('click', () => doJoin().catch((e) => alert(e.message)));
     $('mjLeaveBtn') && $('mjLeaveBtn').addEventListener('click', () => requestLeaveRoom().catch((e) => alert(e.message)));
     $('mjReadyBtn') && $('mjReadyBtn').addEventListener('click', () => doReady().catch((e) => alert(e.message)));
@@ -1004,15 +1029,21 @@
     }
     win.addEventListener('beforeunload', () => {
       if (!roomCode || !state || state.my_seat == null) return;
-      if (state.you_are_host) return;
       beaconLeave();
     });
     tryResume();
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
-    if (isPopup) initPopup();
-    else if (isMain) initMain();
+  function bootMahjongPlay() {
+    const mode = mjPlayMode();
+    if (mode.isPopup) initPopup();
+    else if (mode.isMain) initMain();
     else tryResume();
-  });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootMahjongPlay);
+  } else {
+    bootMahjongPlay();
+  }
 })(typeof window !== 'undefined' ? window : this);

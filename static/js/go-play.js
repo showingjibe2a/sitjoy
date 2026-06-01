@@ -961,14 +961,19 @@
       return;
     }
     initBoardOverlay();
+    const isHost = yourColor === BLACK;
+    const confirmLabel = isHost ? '解散房间' : '离开房间';
+    const message = isHost
+      ? '确定解散房间吗？房间将被关闭，对手需重新创建或加入其他房间。'
+      : '确定要离开当前房间吗？离开后需重新加入才能继续对局。';
     if (!boardOverlay) {
       leaveRoom();
       return;
     }
     boardOverlay.showConfirm({
-      title: '离开房间',
-      message: '确定要离开当前房间吗？离开后需重新加入才能继续对局。',
-      confirmLabel: '离开房间',
+      title: isHost ? '解散房间' : '离开房间',
+      message,
+      confirmLabel,
       cancelLabel: '取消',
       danger: true,
       onConfirm: () => { leaveRoom(); },
@@ -1807,7 +1812,7 @@
 
   function notifyServerLeave() {
     const code = String(roomCode || '').trim().toUpperCase();
-    if (!code || yourColor !== WHITE) return;
+    if (!code || !yourColor) return;
     const body = JSON.stringify({ action: 'leave', room_code: code });
     const url = apiUrl('/api/go-play');
     try {
@@ -2233,7 +2238,7 @@
     });
   }
 
-  document.addEventListener('DOMContentLoaded', () => {
+  function bootGoPlay() {
     board = Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY));
     if (isPopup) {
       bindPopupUi();
@@ -2254,7 +2259,13 @@
     } else {
       enterFreeLocalBoard();
     }
-  });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootGoPlay);
+  } else {
+    bootGoPlay();
+  }
 
   if (!isPopup) {
     win.addEventListener('pagehide', () => {
