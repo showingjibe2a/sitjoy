@@ -523,6 +523,22 @@
     plus?.classList.add('pm-u-hidden');
   }
 
+  function renderPlayerRole(roleEl, isDealer, visible) {
+    if (!roleEl) return;
+    if (!visible) {
+      roleEl.textContent = '';
+      roleEl.classList.add('pm-u-hidden');
+      roleEl.setAttribute('aria-hidden', 'true');
+      roleEl.classList.remove('mj-role-tag--dealer', 'mj-role-tag--xian');
+      return;
+    }
+    roleEl.textContent = isDealer ? '庄' : '闲';
+    roleEl.classList.remove('pm-u-hidden');
+    roleEl.setAttribute('aria-hidden', 'false');
+    roleEl.classList.toggle('mj-role-tag--dealer', isDealer);
+    roleEl.classList.toggle('mj-role-tag--xian', !isDealer);
+  }
+
   function renderPlayerBadge(domIdx, s, logical) {
     const badge = $('mjPlayerBadge' + domIdx);
     const img = $('mjPlayerAvatarImg' + domIdx);
@@ -530,6 +546,7 @@
     const plus = $('mjPlayerAvatarPlus' + domIdx);
     const nameEl = $('mjSeatName' + domIdx);
     const metaEl = $('mjSeatMeta' + domIdx);
+    const roleEl = $('mjSeatRole' + domIdx);
     const scoreEl = $('mjSeatScore' + domIdx);
     if (!badge || !nameEl) return;
 
@@ -541,12 +558,14 @@
 
     badge.classList.toggle('is-empty', empty);
     badge.classList.toggle('is-me', !empty && mySeat === logical);
+    badge.classList.toggle('is-dealer', !empty && s.dealer_seat === logical);
     badge.classList.toggle('is-actionable', canSwap);
     badge.tabIndex = canSwap ? 0 : -1;
     badge.setAttribute('aria-disabled', canSwap ? 'false' : 'true');
 
     if (empty) {
       nameEl.textContent = '空位';
+      renderPlayerRole(roleEl, false, false);
       if (metaEl) metaEl.textContent = canSwap ? '点击换座' : '';
       if (scoreEl) scoreEl.textContent = '';
       plus?.classList.remove('pm-u-hidden');
@@ -556,15 +575,12 @@
 
     const name = st.name || '—';
     nameEl.textContent = name;
+    const isDealer = s.dealer_seat === logical;
+    renderPlayerRole(roleEl, isDealer, true);
     const meta = [];
-    const hostUid = Number(s.host_user_id || 0);
-    const stUid = Number(st.user_id || 0);
     if (s.status === 'lobby') {
-      if (hostUid && stUid === hostUid) meta.push('房主');
       const anchor = resolveHostSeat(s);
       if (anchor != null) meta.push(windLabelForSeat(logical, anchor));
-    } else if (s.dealer_seat === logical) {
-      meta.push('庄');
     }
     if (s.current_seat === logical && s.status === 'playing') meta.push('出牌');
     if (st.ready && s.status === 'lobby') meta.push('已准备');
