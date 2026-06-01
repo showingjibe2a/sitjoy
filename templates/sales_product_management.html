@@ -432,7 +432,7 @@
             </div>
 
             <div class="sj-sales-table-host" id="salesProductTableHost">
-                <table class="pm-table" id="salesProductTable">
+                <table class="pm-table" id="salesProductTable" data-pm-skip-client-pagination="1" data-pm-frozen-lead-only="1">
                     <thead>
                         <tr>
                             <th style="width:54px; text-align:center;" data-manage-col-key="__sales_chk__" data-disable-sort="1"><input type="checkbox" id="salesSelectAll"></th>
@@ -441,18 +441,18 @@
                                     <button type="button" class="sj-agg-all-toggle" data-sj-agg-all-toggle="1" aria-label="分组全部展开或收起">▼</button>
                                 </div>
                             </th>
-                            <th class="sj-th-thumb cell-center">图片</th>
-                            <th data-sort-key="product_status">状态</th>
-                            <th data-sort-key="shop_name">店铺</th>
-                            <th data-sort-key="sku_family">货号</th>
-                            <th data-sort-key="fabric">面料</th>
-                            <th data-sort-key="spec_name">规格名称</th>
-                            <th data-sort-key="platform_sku">销售平台SKU</th>
-                            <th data-sort-key="child_code">子体编号</th>
-                            <th>下单SKU</th>
-                            <th data-sort-key="sale_price_usd">售价</th>
-                            <th data-sort-key="created_at">创建时间</th>
-                            <th style="width:160px;">操作</th>
+                            <th class="sj-th-thumb cell-center" data-manage-col-key="图片" data-pm-default-width="68">图片</th>
+                            <th data-manage-col-key="状态" data-sort-key="product_status">状态</th>
+                            <th data-manage-col-key="店铺" data-sort-key="shop_name">店铺</th>
+                            <th data-manage-col-key="货号" data-sort-key="sku_family">货号</th>
+                            <th data-manage-col-key="面料" data-sort-key="fabric">面料</th>
+                            <th data-manage-col-key="规格名称" data-sort-key="spec_name">规格名称</th>
+                            <th data-manage-col-key="销售平台SKU" data-sort-key="platform_sku">销售平台SKU</th>
+                            <th data-manage-col-key="子体编号" data-sort-key="child_code">子体编号</th>
+                            <th data-manage-col-key="下单SKU">下单SKU</th>
+                            <th data-manage-col-key="售价" data-sort-key="sale_price_usd">售价</th>
+                            <th data-manage-col-key="创建时间" data-sort-key="created_at">创建时间</th>
+                            <th style="width:160px;" data-manage-col-key="操作">操作</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1857,7 +1857,7 @@
                 <tr class="${rowCls}" data-group-key="${gk}" data-sj-row-entity-id="${item.id}">
                     <td style="text-align:center;"><input type="checkbox" class="sales-row-checkbox" data-id="${item.id}" ${selectedSalesProductIds.has(String(item.id)) ? 'checked' : ''}></td>
                     <td class="sj-agg-toggle-cell" data-manage-col-key="__sj_agg__"></td>
-                    <td class="sj-cell-thumb" style="text-align:center;" data-sj-preview="1">${previewCell}</td>
+                    <td class="sj-cell-thumb cell-center" data-manage-col-key="图片" style="text-align:center;" data-sj-preview="1">${previewCell}</td>
                     <td>${renderInlineProductStatus(item)}</td>
                     <td>${escapeHtml(item.shop_name || '')}</td>
                     <td>${item.sku_family || ''}</td>
@@ -1878,8 +1878,22 @@
             `;
         }
 
+        function salesApplyManageLayoutSig() {
+            const main = document.getElementById('salesProductTable');
+            if (!main) return;
+            main.dataset.sjManageLayoutSig = salesProductAggregateMode === 'parent' ? 'sales-agg-parent' : 'sales-agg-none';
+        }
+
         function refreshSalesProductTableHeaderSortUi() {
-            const headRow = document.querySelector('#salesProductTable thead tr');
+            const main = document.getElementById('salesProductTable');
+            let headRow = null;
+            if (main && window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.resolveBodyTableFromHeaderTh === 'function') {
+                const headTable = main.closest('.sj-sales-table-host')?.querySelector('.pm-managed-head-table');
+                if (headTable && headTable.tHead && headTable.tHead.rows && headTable.tHead.rows[0]) {
+                    headRow = headTable.tHead.rows[0];
+                }
+            }
+            if (!headRow) headRow = document.querySelector('#salesProductTable thead tr');
             if (!headRow) return;
             headRow.querySelectorAll('th[data-sort-key]').forEach(th => {
                 th.classList.remove('pm-sortable', 'pm-sort-asc', 'pm-sort-desc');
@@ -2013,21 +2027,34 @@
             if (lockNow) th.dataset.manageColLocked = '1';
             else delete th.dataset.manageColLocked;
             salesSyncAggregateToggleHeaderUi();
-            if (prev !== lockNow && window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.invalidateLayout === 'function') {
-                window.SitjoyManagedPmTable.invalidateLayout(main);
+            if (prev !== lockNow && window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.syncLayout === 'function') {
+                window.SitjoyManagedPmTable.syncLayout(main);
             }
         }
 
-        function salesInvalidateManagedTableLayout() {
-            const main = document.getElementById('salesProductTable');
-            if (main && window.SitjoyManagedPmTable && typeof window.SitjoyManagedPmTable.invalidateLayout === 'function') {
-                window.SitjoyManagedPmTable.invalidateLayout(main);
+        function salesManagedTableBodyApi() {
+            return window.SitjoyManagedPmTable || null;
+        }
+
+        function salesBeginManagedTableBodyUpdate() {
+            const api = salesManagedTableBodyApi();
+            if (api && typeof api.beginBodyUpdate === 'function') {
+                api.beginBodyUpdate(document.getElementById('salesProductTable'));
+            }
+        }
+
+        function salesEndManagedTableBodyUpdate() {
+            const api = salesManagedTableBodyApi();
+            if (api && typeof api.endBodyUpdate === 'function') {
+                api.endBodyUpdate(document.getElementById('salesProductTable'));
             }
         }
 
         function renderSalesGroupedTable(items) {
+            salesApplyManageLayoutSig();
             const tbody = document.querySelector('#salesProductTable tbody');
             if (!tbody) return;
+            salesBeginManagedTableBodyUpdate();
             if (!(items || []).length) {
                 tbody.innerHTML = '<tr><td colspan="14" style="text-align:center;">暂无数据</td></tr>';
                 const host = document.getElementById('salesProductTableHost');
@@ -2036,7 +2063,7 @@
                 refreshSalesProductTableHeaderSortUi();
                 syncSalesSelectAllCheckbox();
                 syncSalesPreviewSaveBar();
-                salesInvalidateManagedTableLayout();
+                salesEndManagedTableBodyUpdate();
                 return;
             }
 
@@ -2096,7 +2123,7 @@
             bindSalesPreviewEditEvents();
             syncSalesSelectAllCheckbox();
             syncSalesPreviewSaveBar();
-            salesInvalidateManagedTableLayout();
+            salesEndManagedTableBodyUpdate();
         }
 
         function bindSalesRowSelectionEvents() {
@@ -5218,6 +5245,7 @@
 
         function initPage() {
             restoreSalesProductAggregateModeFromStorage();
+            salesApplyManageLayoutSig();
             syncSalesAggregateSegmentUi();
             bindSalesAggregateSegment();
             initSalesGroupedAggregateHelpers();

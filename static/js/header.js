@@ -16,6 +16,8 @@
     let toastStack = null;
     let activeColumnsPanelState = null;
     let activeResizeState = null;
+    let resizePendingFrame = null;
+    let resizePendingWidth = null;
     let activeHelpDotTooltip = null;
     let activeHelpDotAnchor = null;
     let helpDotDelegationInstalled = false;
@@ -1439,7 +1441,7 @@
             return minW;
         }
 
-        if(cell.querySelector('img.thumb, img[data-thumb], .thumb-img')){
+        if(cell.querySelector('img.thumb, img[data-thumb], .thumb-img, .sj-table-thumb-img, .sf-variant-thumb, .fabric-table-thumb, .order-preview-thumb')){
             bump(72);
         }
 
@@ -1505,7 +1507,9 @@
         const w = parseInt(th.style.width, 10) || 0;
         if(w > 0) return w;
         const minW = parseInt(th.style.minWidth, 10) || 0;
-        return minW > 0 ? minW : 0;
+        if(minW > 0) return minW;
+        const attrW = parseInt(th.getAttribute('data-pm-default-width') || th.dataset.pmDefaultWidth || '', 10) || 0;
+        return attrW > 0 ? attrW : 0;
     }
 
     function setManagedColHiddenState(col, hidden){
@@ -1513,10 +1517,31 @@
         if(hidden){
             col.setAttribute('data-pm-col-hidden', '1');
             col.style.visibility = 'collapse';
+            col.style.width = '0px';
+            col.style.minWidth = '0px';
+            col.style.maxWidth = '0px';
             return;
         }
         col.removeAttribute('data-pm-col-hidden');
         col.style.visibility = '';
+        col.style.width = '';
+        col.style.minWidth = '';
+        col.style.maxWidth = '';
+    }
+
+    function isManagedThumbColumnKey(state, columnKey, headerCell){
+        const key = String(columnKey || '').trim();
+        if(key === '图片') return true;
+        const cell = headerCell || null;
+        if(cell && cell.classList){
+            if(cell.classList.contains('sj-th-thumb') || cell.classList.contains('sf-th-thumb')) return true;
+        }
+        return false;
+    }
+
+    function managedThumbColumnMinWidthPx(state, columnKey, headerCell){
+        void state;
+        return isManagedThumbColumnKey(state, columnKey, headerCell) ? 68 : 0;
     }
 
     /**
@@ -1675,6 +1700,7 @@
         if(/transit-col-inbound|transit-col-box/.test(cls)) return 96;
         if(/transit-col-factory|transit-col-region/.test(cls)) return 96;
         if(/transit-col-created|transit-col-updated/.test(cls)) return 108;
+        if(/\bsj-th-thumb\b|\bsf-th-thumb\b/.test(cls)) return 68;
         return 0;
     }
 
@@ -1809,6 +1835,25 @@
         } catch (_) {
             return new Set();
         }
+    }
+
+    /** 仅锁定布局锚点列（复选框、汇总展开列等）参与冻结，忽略误存的其它列 */
+    function resolvePinnedColumnsForTable(table, headerMeta, lockedColumns){
+        const lockedSet = new Set(
+            (lockedColumns instanceof Set ? Array.from(lockedColumns) : (Array.isArray(lockedColumns) ? lockedColumns : []))
+                .map(k => String(k || '').trim())
+                .filter(Boolean)
+        );
+        if(String(table && table.dataset && table.dataset.pmFrozenLeadOnly || '') === '1'){
+            return lockedSet;
+        }
+        const merged = new Set(lockedSet);
+        readPersistedPinned(table, headerMeta).forEach(k => merged.add(String(k || '').trim()));
+        return merged;
+    }
+
+    function tableSkipsClientPagination(state){
+        return !!(state && state.table && String(state.table.dataset.pmSkipClientPagination || '') === '1');
     }
 
     function persistPinnedColumns(state){
@@ -3021,6 +3066,12 @@
 
         Array.from(state.table.rows || []).forEach(row => {
             if((row.cells || []).length !== state.headerCount) return;
+            let needsKeying = false;
+            Array.from(row.cells || []).forEach((cell, idx) => {
+                const key = resolveKeyByCell(cell, idx);
+                if(String(cell.dataset.manageColKey || '').trim() !== key) needsKeying = true;
+            });
+            if(!needsKeying) return;
             Array.from(row.cells || []).forEach((cell, idx) => {
                 const key = resolveKeyByCell(cell, idx);
                 if(String(cell.dataset.manageColKey || '').trim() !== key) cell.dataset.manageColKey = key;
@@ -3089,8 +3140,38 @@
         });
     }
 
-    function applyPinnedColumns(state){
-        if(!state || !state.table) return;
+    function findManagedHeaderCellForKey(state, columnKey){
+        const key = String(columnKey || '').trim();
+        if(!key || !state || !state.table) return null;
+        const headerRow = state.table.tHead && state.table.tHead.rows && state.table.tHead.rows[0];
+        if(!headerRow) return null;
+        return Array.from(headerRow.cells || []).find((cell) => String(cell.dataset.manageColKey || '').trim() === key) || null;
+    }
+
+    function readManagedColumnLayoutWidthPx(state, columnKey){
+        const key = String(columnKey || '').trim();
+        if(!key || !state) return 0;
+        const cols = resolveManagedColgroupColsForKey(state, key);
+        if(cols.length){
+            let sum = 0;
+            cols.forEach((col) => {
+                if(String(col.getAttribute('data-pm-col-hidden') || '') === '1') return;
+                sum += parseColWidthPx(col.style.width) || 0;
+            });
+            if(sum > 0) return sum;
+        }
+        const w = Number((state.columnWidths || {})[key]);
+        if(Number.isFinite(w) && w > 0) return w;
+        const dw = Number((state.defaultColumnWidths || {})[key]);
+        if(Number.isFinite(dw) && dw > 0) return dw;
+        const meta = (state.headers || []).find(h => String(h.key || '').trim() === key);
+        const headerCell = findManagedHeaderCellForKey(state, key);
+        const thumbMin = managedThumbColumnMinWidthPx(state, key, headerCell);
+        if(thumbMin > 0) return thumbMin;
+        return computeDefaultColumnWidth(state, meta);
+    }
+
+    function pinnedLayoutSigForState(state){
         const visible = state.visibleColumns || new Set();
         const pinnedAll = new Set();
         if(state.lockedColumns && state.lockedColumns.size){
@@ -3101,7 +3182,52 @@
         }
         const pinnedOrder = (state.columnOrder || []).filter(k => {
             const key = String(k || '').trim();
-            return !!key && pinnedAll.has(key) && visible.has(key);
+            if(!key || !pinnedAll.has(key) || !visible.has(key)) return false;
+            return !isManagedColumnSlotHidden(state, key, findManagedHeaderCellForKey(state, key));
+        });
+        return pinnedOrder.map(k => `${k}:${readManagedColumnLayoutWidthPx(state, k)}`).join('|');
+    }
+
+    function pinnedLayoutNeedsUpdateAfterResize(state, resizedKey){
+        const key = String(resizedKey || '').trim();
+        if(!key || !state) return false;
+        const visible = state.visibleColumns || new Set();
+        const pinnedAll = new Set();
+        if(state.lockedColumns && state.lockedColumns.size){
+            state.lockedColumns.forEach(k => pinnedAll.add(String(k || '').trim()));
+        }
+        if(state.pinnedColumns && state.pinnedColumns.size){
+            state.pinnedColumns.forEach(k => pinnedAll.add(String(k || '').trim()));
+        }
+        const pinnedOrder = (state.columnOrder || []).filter(k => {
+            const kk = String(k || '').trim();
+            if(!kk || !pinnedAll.has(kk) || !visible.has(kk)) return false;
+            return !isManagedColumnSlotHidden(state, kk, findManagedHeaderCellForKey(state, kk));
+        });
+        if(!pinnedOrder.length) return false;
+        const idx = pinnedOrder.indexOf(key);
+        return idx >= 0;
+    }
+
+    function applyPinnedColumns(state, options){
+        if(!state || !state.table) return;
+        const sig = pinnedLayoutSigForState(state);
+        const force = !!(options && options.force);
+        if(!force && state.pinnedLayoutSig === sig) return;
+        state.pinnedLayoutSig = sig;
+
+        const visible = state.visibleColumns || new Set();
+        const pinnedAll = new Set();
+        if(state.lockedColumns && state.lockedColumns.size){
+            state.lockedColumns.forEach(k => pinnedAll.add(String(k || '').trim()));
+        }
+        if(state.pinnedColumns && state.pinnedColumns.size){
+            state.pinnedColumns.forEach(k => pinnedAll.add(String(k || '').trim()));
+        }
+        const pinnedOrder = (state.columnOrder || []).filter(k => {
+            const key = String(k || '').trim();
+            if(!key || !pinnedAll.has(key) || !visible.has(key)) return false;
+            return !isManagedColumnSlotHidden(state, key, findManagedHeaderCellForKey(state, key));
         });
 
         const clearSticky = (t) => {
@@ -3120,20 +3246,13 @@
         };
 
         if(!pinnedOrder.length){
+            state.pinnedLayoutSig = '';
             clearSticky(state.table);
             if(state.headerTable) clearSticky(state.headerTable);
             return;
         }
 
-        const widthByKey = (key) => {
-            const k = String(key || '').trim();
-            const w = Number((state.columnWidths || {})[k]);
-            if(Number.isFinite(w) && w > 0) return w;
-            const dw = Number((state.defaultColumnWidths || {})[k]);
-            if(Number.isFinite(dw) && dw > 0) return dw;
-            const meta = (state.headers || []).find(h => String(h.key || '').trim() === k);
-            return computeDefaultColumnWidth(state, meta);
-        };
+        const widthByKey = (key) => readManagedColumnLayoutWidthPx(state, key);
 
         const leftByKey = new Map();
         let acc = 0;
@@ -3142,14 +3261,17 @@
             acc += Math.max(0, widthByKey(k));
         });
 
+        const pinnedKeySet = new Set(pinnedOrder);
         const applyTo = (t) => {
             if(!t) return;
             Array.from(t.rows || []).forEach(row => {
                 Array.from(row.cells || []).forEach(cell => {
                     const key = String((cell && cell.dataset && cell.dataset.manageColKey) ? cell.dataset.manageColKey : '').trim();
                     if(!key) return;
-                    const isPinned = leftByKey.has(key);
-                    if(!isPinned){
+                    const isPinned = pinnedKeySet.has(key);
+                    const wasPinned = !!(cell.classList && cell.classList.contains('pm-table-pinned-cell'));
+                    if(!isPinned && !wasPinned) return;
+                    if(!isPinned || isManagedColumnSlotHidden(state, key)){
                         if(cell.classList && cell.classList.contains('pm-table-pinned-cell')){
                             cell.classList.remove('pm-table-pinned-cell');
                             try {
@@ -3225,7 +3347,7 @@
         orderedCols.forEach(col => colgroup.appendChild(col));
     }
 
-    function isManagedColumnSlotHidden(state, columnKey, headerCell){
+    function isManagedColumnSlotHidden(state, columnKey){
         const key = String(columnKey || '').trim();
         if(!key || !state) return false;
         const visible = state.visibleColumns || new Set();
@@ -3235,14 +3357,6 @@
                 ? state.table.closest('.sj-sales-table-host, .sj-wip-table-host')
                 : null;
             if(host && !host.classList.contains('sj-aggregate-active')) return true;
-        }
-        if(headerCell){
-            if(headerCell.classList && headerCell.classList.contains('pm-table-hide-col')) return true;
-            try {
-                const cs = window.getComputedStyle(headerCell);
-                if(cs && (cs.display === 'none' || cs.visibility === 'collapse')) return true;
-            } catch (_e) {
-            }
         }
         return false;
     }
@@ -3277,11 +3391,13 @@
 
             let w = Number(widths[key]);
             if(!Number.isFinite(w) || w <= 0){
-                w = readManagedColgroupWidthPx(state, key) || parseThStyleWidthPx(cell) || 80;
+                w = readManagedColgroupWidthPx(state, key) || parseThStyleWidthPx(cell) || inferDefaultWidthFromHeaderCell(cell) || 80;
             }
             if(key === '__sj_agg__'){
                 w = Math.min(28, Math.max(20, Math.round(w) || 24));
             }
+            const thumbMin = managedThumbColumnMinWidthPx(state, key, cell);
+            if(thumbMin > 0) w = Math.max(thumbMin, Math.round(w) || thumbMin);
             col.style.width = `${Math.max(minCol, Math.round(w))}px`;
         });
 
@@ -3333,8 +3449,9 @@
         });
     }
 
-    function applyColumnVisibility(state){
-        const visible = state.visibleColumns;
+    function syncManagedColumnVisibilitySlots(state){
+        if(!state || !state.table) return;
+        const visible = state.visibleColumns || new Set();
         const tables = [state.table];
         if(state.headerTable) tables.push(state.headerTable);
         tables.forEach((table) => {
@@ -3343,11 +3460,27 @@
                 if((row.cells || []).length !== state.headerCount) return;
                 Array.from(row.cells).forEach(cell => {
                     const key = String(cell.dataset.manageColKey || '').trim();
-                    cell.classList.toggle('pm-table-hide-col', !visible.has(key));
+                    const hide = !visible.has(key) || isManagedColumnSlotHidden(state, key);
+                    cell.classList.toggle('pm-table-hide-col', hide);
                 });
             });
         });
         syncManagedColgroupSlotVisibility(state);
+        if(state.headerTable){
+            syncManagedHeaderColgroupFromMainTable(state);
+        }
+        applyPinnedColumns(state);
+    }
+
+    /** 字段显示勾选变更：仅同步可见性/冻结，避免全量重算列宽 */
+    function applyColumnVisibilityChange(state){
+        applyColumnVisibility(state);
+        applyPinnedColumns(state, { force: true });
+        syncTopScroll(state);
+    }
+
+    function applyColumnVisibility(state){
+        syncManagedColumnVisibilitySlots(state);
         if(!state.light && state.headerTable){
             syncDetachedHeader(state);
             ensureResizeHandles(state);
@@ -3398,9 +3531,23 @@
         cell.style.maxWidth = '';
     }
 
-    function applyColumnWidthToDomForKey(state, columnKey, width){
+    function scheduleLiveResizeColSync(state){
+        if(!state) return;
+        if(state.liveResizeSyncScheduled) return;
+        state.liveResizeSyncScheduled = true;
+        window.requestAnimationFrame(() => {
+            state.liveResizeSyncScheduled = false;
+            if(!state || !state.table) return;
+            syncManagedHeaderColgroupFromMainTable(state);
+            syncManagedTableTotalWidth(state);
+            syncTopScroll(state);
+        });
+    }
+
+    function applyColumnWidthToDomForKey(state, columnKey, width, options){
         ensureManagedTableColgroup(state);
         const columnKeyStr = String(columnKey || '').trim();
+        const live = !!(options && options.live);
         const headerRow = state.table.tHead && state.table.tHead.rows && state.table.tHead.rows[0];
         const headerCell = headerRow
             ? Array.from(headerRow.cells || []).find((cell) => String(cell.dataset.manageColKey || '').trim() === columnKeyStr)
@@ -3408,14 +3555,19 @@
         if(isManagedColumnSlotHidden(state, columnKeyStr, headerCell)){
             const matchedHidden = resolveManagedColgroupColsForKey(state, columnKeyStr);
             matchedHidden.forEach((node) => setManagedColHiddenState(node, true));
-            syncManagedHeaderColgroupFromMainTable(state);
-            syncManagedTableTotalWidth(state);
+            if(live) scheduleLiveResizeColSync(state);
+            else {
+                syncManagedHeaderColgroupFromMainTable(state);
+                syncManagedTableTotalWidth(state);
+            }
             return;
         }
 
         const minColWidth = getPmTableColResizeMin(state);
         let appliedWidth = Math.max(minColWidth, Math.round(Number(width) || 0));
         if(columnKeyStr === '__sj_agg__') appliedWidth = Math.min(28, Math.max(20, appliedWidth));
+        const thumbMin = managedThumbColumnMinWidthPx(state, columnKeyStr, headerCell);
+        if(thumbMin > 0) appliedWidth = Math.max(thumbMin, appliedWidth);
         const matchedCols = resolveManagedColgroupColsForKey(state, columnKeyStr);
 
         if(matchedCols.length){
@@ -3430,12 +3582,12 @@
                 node.style.minWidth = '';
                 node.style.maxWidth = '';
             });
-        } else {
+        } else if(!live) {
             applyManagedColumnWidthToCells(state, columnKey, appliedWidth);
         }
 
-        /* 有 colgroup 时清除 td/th 内联列宽，避免与 col 冲突 */
-        if(matchedCols.length){
+        /* 有 colgroup 时清除 td/th 内联列宽，避免与 col 冲突；拖拽过程中跳过以减轻卡顿 */
+        if(matchedCols.length && !live){
             const clearKeyOnCell = (cell) => {
                 if(String(cell.dataset.manageColKey || '').trim() !== columnKey) return;
                 clearManagedCellInlineColumnSize(cell);
@@ -3445,15 +3597,18 @@
                 Array.from(row.cells).forEach(clearKeyOnCell);
             });
             if(state.headerTable && state.headerTable.tHead && state.headerTable.tHead.rows.length){
-                const headerRow = state.headerTable.tHead.rows[0];
-                Array.from(headerRow.cells || []).forEach(clearKeyOnCell);
+                const headerRowLive = state.headerTable.tHead.rows[0];
+                Array.from(headerRowLive.cells || []).forEach(clearKeyOnCell);
             }
         }
 
-        syncManagedHeaderColgroupFromMainTable(state);
-        syncManagedTableTotalWidth(state);
+        if(live) scheduleLiveResizeColSync(state);
+        else {
+            syncManagedHeaderColgroupFromMainTable(state);
+            syncManagedTableTotalWidth(state);
+        }
 
-        if(columnKey === '__sj_agg__' && state.table && state.table.tBodies && state.table.tBodies[0]){
+        if(!live && columnKey === '__sj_agg__' && state.table && state.table.tBodies && state.table.tBodies[0]){
             state.table.tBodies[0].querySelectorAll('td.sj-agg-toggle-cell').forEach((cell) => {
                 clearManagedCellInlineColumnSize(cell);
             });
@@ -3481,7 +3636,7 @@
             state.columnWidths[k] = width;
         });
         keysToApply.forEach((k) => {
-            applyColumnWidthToDomForKey(state, k, width);
+            applyColumnWidthToDomForKey(state, k, width, options);
         });
     }
 
@@ -3521,16 +3676,18 @@
         if(!headerRow || headerRow.cells.length !== state.headerCount) return;
 
         Array.from(headerRow.cells).forEach(cell => {
+            const key = String(cell.dataset.manageColKey || '').trim();
+            if(isManagedColumnSlotHidden(state, key, cell)) return;
             if(cell.querySelector('.pm-col-resizer')) return;
             const handle = document.createElement('span');
             handle.className = 'pm-col-resizer';
             handle.addEventListener('mousedown', (event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                const key = String(cell.dataset.manageColKey || '').trim();
+                const resizeKey = String(cell.dataset.manageColKey || '').trim();
                 activeResizeState = {
                     state,
-                    key,
+                    key: resizeKey,
                     startX: event.clientX,
                     startWidth: cell.getBoundingClientRect().width,
                     resizeMinPx: getPmTableColResizeMin(state),
@@ -3631,13 +3788,10 @@
             applyColumnOrder(state);
             applyColumnVisibility(state);
             syncDetachedHeader(state);
-            applyColumnWidths(state);
-            applyPinnedColumns(state);
+            applyPinnedColumns(state, { force: true });
             ensureSortableHeaders(state);
             ensureResizeHandles(state);
             refreshSortHeaderUi(state);
-            applySort(state);
-            applyPagination(state);
             syncTopScroll(state);
             renderColumnPanel(state);
         });
@@ -3677,15 +3831,10 @@
                 if(checkbox.checked) state.visibleColumns.add(String(key || '').trim());
                 else state.visibleColumns.delete(String(key || '').trim());
                 persistColumns(state);
-                applyColumnVisibility(state);
-                applyColumnWidths(state);
-                applyPinnedColumns(state);
+                applyColumnVisibilityChange(state);
                 ensureSortableHeaders(state);
                 ensureResizeHandles(state);
                 refreshSortHeaderUi(state);
-                applySort(state);
-                applyPagination(state);
-                syncTopScroll(state);
             });
 
             const text = document.createElement('span');
@@ -3697,17 +3846,21 @@
             const pin = document.createElement('button');
             pin.type = 'button';
             pin.className = 'pm-table-columns-pin';
+            const frozenLeadOnly = String(state.table.dataset.pmFrozenLeadOnly || '') === '1';
             const pinnedNow = !!(state.pinnedColumns && state.pinnedColumns.has(k0)) || isLocked;
             pin.textContent = '';
             pin.setAttribute('aria-label', pinnedNow ? '取消冻结' : '冻结到左侧');
-            pin.title = isLocked ? (k0 === '__sj_agg__' ? '收起列默认冻结' : '复选列默认冻结') : (pinnedNow ? '点击取消冻结' : '点击冻结到左侧');
-            pin.disabled = isLocked;
+            pin.title = isLocked
+                ? (k0 === '__sj_agg__' ? '收起列默认冻结' : '复选列默认冻结')
+                : (frozenLeadOnly ? '该表仅冻结复选框与展开列' : (pinnedNow ? '点击取消冻结' : '点击冻结到左侧'));
+            pin.disabled = isLocked || frozenLeadOnly;
             pin.classList.toggle('is-active', pinnedNow);
             pin.addEventListener('click', (ev) => {
                 ev.preventDefault();
                 ev.stopPropagation();
                 const k = String(key || '').trim();
                 if(!k || (state.lockedColumns && state.lockedColumns.has(k))) return;
+                if(frozenLeadOnly) return;
                 state.pinnedColumns = state.pinnedColumns || new Set();
                 const willPin = !state.pinnedColumns.has(k);
                 if(willPin){
@@ -3733,13 +3886,10 @@
                     applyColumnOrder(state);
                     applyColumnVisibility(state);
                     syncDetachedHeader(state);
-                    applyColumnWidths(state);
-                    applyPinnedColumns(state);
+                    applyPinnedColumns(state, { force: true });
                     ensureSortableHeaders(state);
                     ensureResizeHandles(state);
                     refreshSortHeaderUi(state);
-                    applySort(state);
-                    applyPagination(state);
                     syncTopScroll(state);
                     renderColumnPanel(state);
                 });
@@ -3789,6 +3939,13 @@
     function applyPagination(state){
         if(!state || !state.info || !state.pageCurrent || !state.prevBtn || !state.nextBtn) return;
         const allRows = getDataRows(state);
+        if(tableSkipsClientPagination(state)){
+            allRows.forEach((row) => {
+                if(String(row.dataset.pmFilterHidden || '0') === '1') row.style.display = 'none';
+                else row.style.display = '';
+            });
+            return;
+        }
         const rows = allRows.filter(row => String(row.dataset.pmFilterHidden || '0') !== '1');
         const isServerManaged = String(state.table.dataset.serverPaginationMode || '').toLowerCase() === 'server'
             || state.table.dataset.serverPaginationMode === '1';
@@ -4777,26 +4934,92 @@
         return null;
     }
 
+    /** 表体/布局轻量同步：不重算列宽配置、不克隆分离表头 */
+    function syncManagedTableBodyLayout(state){
+        if(!state || !state.table) return;
+        const headerMeta = getHeaderMeta(state.table);
+        if(!headerMeta.length) return;
+        state.headerCount = headerMeta.length;
+        ensureManagedColumnKeys(state, headerMeta);
+        syncManagedColumnVisibilitySlots(state);
+        syncSjAggToggleColumnCssVar(state);
+        syncTopScroll(state);
+        reapplyManagedColumnFiltersFromHandle(state);
+    }
+
+    function finishManagedTableBodyUpdate(state){
+        if(!state || !state.table) return;
+        syncManagedTableBodyLayout(state);
+        applyPagination(state);
+        syncManagedBatchBar(state);
+    }
+
+    function beginManagedTableBodyUpdate(table){
+        const t = typeof table === 'string' ? document.querySelector(table) : table;
+        if(!t) return;
+        const state = managedTableState.get(t);
+        if(!state) return;
+        state.bodyUpdateDepth = (state.bodyUpdateDepth || 0) + 1;
+        if(state.bodyUpdateDepth === 1) state.suppressManagedRefresh = true;
+    }
+
+    function endManagedTableBodyUpdate(table){
+        const t = typeof table === 'string' ? document.querySelector(table) : table;
+        if(!t) return;
+        const state = managedTableState.get(t);
+        if(!state) return;
+        state.bodyUpdateDepth = Math.max(0, (state.bodyUpdateDepth || 1) - 1);
+        if(state.bodyUpdateDepth > 0) return;
+        state.suppressManagedRefresh = false;
+        finishManagedTableBodyUpdate(state);
+    }
+
+    /** 表体重绘后轻量同步列宽/分离表头，不重置 headerSignature（避免反复全量解析列宽） */
+    function syncManagedTableLayout(table){
+        const t = typeof table === 'string' ? document.querySelector(table) : table;
+        if(!t) return;
+        const state = managedTableState.get(t);
+        if(!state) return;
+        finishManagedTableBodyUpdate(state);
+    }
+
     function invalidateManagedTableLayout(table){
         const t = typeof table === 'string' ? document.querySelector(table) : table;
         if(!t) return;
         const state = managedTableState.get(t);
         if(!state) return;
+        let sigChanged = false;
         try{
             // 月份等宽同步表由页面在重绘 thead 前写入稳定的 sjManageLayoutSig；此处若再刷 Date.now()
             // 会导致 headerSignature 每次变化，反复走列宽全量解析并写回 storage，覆盖用户拖拽宽度。
             if(!isPmMonthColWidthSyncTable(t)){
-                t.dataset.sjManageLayoutSig = String(Date.now());
+                const preSet = String(t.dataset.sjManageLayoutSig || '').trim();
+                if(!preSet){
+                    t.dataset.sjManageLayoutSig = String(Date.now());
+                    sigChanged = true;
+                } else {
+                    const prevLayoutSig = String(state.lastManageLayoutSig || '');
+                    if(preSet !== prevLayoutSig){
+                        state.lastManageLayoutSig = preSet;
+                        sigChanged = true;
+                    }
+                }
+            } else {
+                sigChanged = true;
             }
         } catch(_e){
+            sigChanged = true;
         }
-        state.headerSignature = '';
+        if(sigChanged) state.headerSignature = '';
         refreshManagedTable(state);
     }
 
     window.SitjoyManagedPmTable = Object.assign({}, window.SitjoyManagedPmTable || {}, {
         resolveBodyTableFromHeaderTh,
         invalidateLayout: invalidateManagedTableLayout,
+        syncLayout: syncManagedTableLayout,
+        beginBodyUpdate: beginManagedTableBodyUpdate,
+        endBodyUpdate: endManagedTableBodyUpdate,
         syncBatchBar(tableOrSelector){
             const table = typeof tableOrSelector === 'string' ? document.querySelector(tableOrSelector) : tableOrSelector;
             const state = table ? (managedTableState.get(table) || null) : null;
@@ -5411,9 +5634,8 @@
             const headerRow = getPrimaryHeaderRow(state);
             if(headerRow){
                 Array.from(headerRow.cells || []).forEach(cell => {
-                    if(cell.classList.contains('pm-table-hide-col')) return;
                     const key = String(cell.dataset.manageColKey || '').trim();
-                    if(isManagedColumnSlotHidden(state, key, cell)) return;
+                    if(isManagedColumnSlotHidden(state, key)) return;
                     const styled = parseFloat(cell.style.width || '0') || 0;
                     const measured = Math.ceil(cell.getBoundingClientRect().width || 0);
                     headerWidth += Math.max(styled, measured, 36);
@@ -5432,6 +5654,7 @@
     }
 
     function refreshManagedTable(state){
+        if(state && state.suppressManagedRefresh) return;
         if(activeGridSelection && activeGridSelection.state === state){
             const hasDetached = Array.from(activeGridSelection.selectedCells || []).some(cell => !cell || !cell.isConnected);
             if(hasDetached) clearGridSelection();
@@ -5462,7 +5685,9 @@
             .map(meta => `${meta.key}:${meta.label}`)
             .join('|') + '|__layout__|' + layoutSig;
 
-        if(headerSignature !== state.headerSignature){
+        const headerStructureChanged = headerSignature !== state.headerSignature;
+
+        if(headerStructureChanged){
             state.headerSignature = headerSignature;
             state.headerCount = headerCount;
             state.headers = headerMeta.map(meta => ({ origin: meta.origin, key: meta.key, label: meta.label }));
@@ -5511,8 +5736,8 @@
                     .map(meta => String(meta.key || '').trim())
             );
             state.lockedColumns.forEach(key => state.visibleColumns.add(String(key || '').trim()));
-            state.pinnedColumns = readPersistedPinned(state.table, headerMeta) || new Set();
-            state.lockedColumns.forEach(key => state.pinnedColumns.add(String(key || '').trim()));
+            state.pinnedColumns = resolvePinnedColumnsForTable(state.table, headerMeta, state.lockedColumns);
+            persistPinnedColumns(state);
             if(String(state.table.dataset.pmDefaultPinnedFirst || '') === '1' && validKeys[0]){
                 let hasStoredPins = false;
                 try{
@@ -5530,6 +5755,35 @@
             }
         }
 
+        const lockedNow = new Set(
+            headerMeta
+                .filter(meta => isLockedLayoutColumn(meta.cell, meta.label))
+                .map(meta => String(meta.key || '').trim())
+                .filter(Boolean)
+        );
+        state.lockedColumns = lockedNow;
+        let lockedVisChanged = false;
+        lockedNow.forEach(key => {
+            if(!state.visibleColumns.has(key)){
+                state.visibleColumns.add(key);
+                lockedVisChanged = true;
+            }
+        });
+        if(lockedVisChanged && !headerStructureChanged && !state.light){
+            applyColumnVisibility(state);
+        }
+
+        if(!headerStructureChanged && state.pinnedColumns){
+            const nextPins = resolvePinnedColumnsForTable(state.table, headerMeta, lockedNow);
+            const cur = Array.from(state.pinnedColumns.values()).sort().join('|');
+            const nxt = Array.from(nextPins.values()).sort().join('|');
+            if(cur !== nxt){
+                state.pinnedColumns = nextPins;
+                persistPinnedColumns(state);
+                applyPinnedColumns(state, { force: true });
+            }
+        }
+
         validKeys.forEach(key => {
             if(!state.columnOrder.includes(key)) state.columnOrder.push(key);
         });
@@ -5538,30 +5792,44 @@
         ensureRowSortOrigin(state);
         ensureManagedBatchHandlers(state);
         if(!state.light){
-            applyColumnOrder(state);
-            applyColumnVisibility(state);
-            applyColumnWidths(state);
-            applyPinnedColumns(state);
+            if(headerStructureChanged){
+                applyColumnOrder(state);
+                applyColumnVisibility(state);
+                applyColumnWidths(state);
+                applyPinnedColumns(state);
+            } else {
+                syncManagedTableBodyLayout(state);
+            }
         } else if(String(state.table.dataset.pmLightStickyLayout || '') === '1'){
-            applyColumnOrder(state);
-            applyColumnVisibility(state);
-            applyColumnWidths(state);
-            applyPinnedColumns(state);
+            if(headerStructureChanged){
+                applyColumnOrder(state);
+                applyColumnVisibility(state);
+                applyColumnWidths(state);
+                applyPinnedColumns(state);
+            } else {
+                syncManagedTableBodyLayout(state);
+            }
         }
         ensureSortableHeaders(state);
         refreshSortHeaderUi(state);
-        applySort(state);
+        if(!state.sortOrigin || !state.sortDir) {
+            /* 页面自管排序时分组重绘 tbody 后跳过托管排序 */
+        } else {
+            applySort(state);
+        }
         if(!state.light){
-            ensureResizeHandles(state);
+            if(headerStructureChanged) ensureResizeHandles(state);
             applyPagination(state);
             syncManagedBatchBar(state);
             syncTopScroll(state);
             if(activeColumnsPanelState === state) repositionColumnsPanel(state);
         } else if(state.light && String(state.table.dataset.pmLightStickyLayout || '') === '1'
             && String(state.table.dataset.pmLightAllowColResize || '') === '1'){
-            ensureResizeHandles(state);
+            if(headerStructureChanged) ensureResizeHandles(state);
         }
-        ensureManagedTableColumnFilter(state);
+        if(!tableSkipsClientPagination(state)){
+            ensureManagedTableColumnFilter(state);
+        }
         reapplyManagedColumnFiltersFromHandle(state);
 
         state.isRefreshing = false;
@@ -5684,6 +5952,8 @@
             isRefreshing: false,
             needRefresh: false,
             refreshScheduled: false,
+            bodyUpdateDepth: 0,
+            suppressManagedRefresh: false,
             batchBar: null,
             columnFilterHandle: null
         };
@@ -5694,6 +5964,12 @@
         }
 
         if(!isLightTable){
+            if(String(table.dataset.pmSkipClientPagination || '') === '1'){
+                const pagerLeft = toolbar.querySelector('.pm-table-toolbar-left');
+                const pagerRight = toolbar.querySelector('.pm-table-pager');
+                if(pagerLeft) pagerLeft.style.display = 'none';
+                if(pagerRight) pagerRight.style.display = 'none';
+            }
             PAGE_SIZE_OPTIONS.forEach(size => {
                 const option = document.createElement('option');
                 option.value = String(size);
@@ -5942,6 +6218,7 @@
         }
 
         const scheduleRefresh = () => {
+            if(state.suppressManagedRefresh) return;
             if(state.refreshScheduled) return;
             state.refreshScheduled = true;
             window.requestAnimationFrame(() => {
@@ -7333,8 +7610,14 @@
         if(activeResizeState){
             const delta = event.clientX - activeResizeState.startX;
             if(Math.abs(delta) > 2) activeResizeState.hasMoved = true;
-            const width = activeResizeState.startWidth + delta;
-            setColumnWidthByKey(activeResizeState.state, activeResizeState.key, width);
+            resizePendingWidth = activeResizeState.startWidth + delta;
+            if(resizePendingFrame) return;
+            const rs = activeResizeState;
+            resizePendingFrame = window.requestAnimationFrame(() => {
+                resizePendingFrame = null;
+                if(!activeResizeState || activeResizeState !== rs) return;
+                setColumnWidthByKey(rs.state, rs.key, resizePendingWidth, { live: true });
+            });
         }
 
         if(activeGridSelection && activeGridSelection.detailDragging && activeGridSelection.state){
@@ -7384,11 +7667,24 @@
             // 松手后 click 常落在表头 th 上而非 resizer，会误触排序；与是否产生位移无关
             const until = Date.now() + 650;
             suppressSortUntil = Math.max(Number(suppressSortUntil) || 0, until);
+            if(resizePendingFrame){
+                window.cancelAnimationFrame(resizePendingFrame);
+                resizePendingFrame = null;
+            }
             activeResizeState.handle.classList.remove('is-active');
             const rsState = activeResizeState.state;
+            const rsKey = activeResizeState.key;
+            const finalWidth = Number.isFinite(Number(resizePendingWidth))
+                ? resizePendingWidth
+                : (activeResizeState.startWidth || 0);
+            resizePendingWidth = null;
+            setColumnWidthByKey(rsState, rsKey, finalWidth);
             persistColumnWidths(rsState);
-            applyPinnedColumns(rsState);
+            if(pinnedLayoutNeedsUpdateAfterResize(rsState, rsKey)){
+                applyPinnedColumns(rsState, { force: true });
+            }
             syncSjAggToggleColumnCssVar(rsState);
+            syncTopScroll(rsState);
             activeResizeState = null;
             document.body.style.cursor = '';
             document.body.style.userSelect = '';

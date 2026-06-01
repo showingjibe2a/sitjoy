@@ -1717,6 +1717,7 @@ input.optional-date-input[type="text"]:focus {
 .sj-sales-table-host.sj-aggregate-active .sj-agg-toggle-cell,
 .sj-wip-table-host.sj-aggregate-active .sj-agg-toggle-col,
 .sj-wip-table-host.sj-aggregate-active .sj-agg-toggle-cell {
+    visibility: visible !important;
     width: var(--sj-agg-toggle-w, 1.45rem);
     min-width: var(--sj-agg-toggle-w, 1.45rem);
     max-width: 1.6rem;
@@ -1771,11 +1772,21 @@ input.optional-date-input[type="text"]:focus {
 .sj-sales-table-host:not(.sj-aggregate-active) td.sj-agg-toggle-cell,
 .sj-wip-table-host:not(.sj-aggregate-active) th.sj-agg-toggle-col,
 .sj-wip-table-host:not(.sj-aggregate-active) td.sj-agg-toggle-cell {
-    display: none !important;
+    /* 须用 visibility:collapse 保留列网格；display:none 会使表体脱离 colgroup 导致后续列（如图片）错位 */
+    display: table-cell !important;
+    visibility: collapse !important;
     width: 0 !important;
     min-width: 0 !important;
+    max-width: 0 !important;
     padding: 0 !important;
-    border: none !important;
+    border-width: 0 !important;
+    overflow: hidden !important;
+}
+.sj-sales-table-host:not(.sj-aggregate-active) th.sj-agg-toggle-col > *,
+.sj-sales-table-host:not(.sj-aggregate-active) td.sj-agg-toggle-cell > *,
+.sj-wip-table-host:not(.sj-aggregate-active) th.sj-agg-toggle-col > *,
+.sj-wip-table-host:not(.sj-aggregate-active) td.sj-agg-toggle-cell > * {
+    display: none !important;
 }
 
 /* 汇总分组父行：右侧通用小编辑按钮（销售父体、工厂在制等可复用） */
@@ -2648,6 +2659,46 @@ button.sj-group-row-edit-btn {
     overflow: hidden !important;
 }
 
+.sj-sales-table-host.sj-aggregate-active .pm-table.is-managed-table > thead > tr > th.pm-table-hide-col.sj-agg-toggle-col,
+.sj-sales-table-host.sj-aggregate-active .pm-table.is-managed-table > tbody > tr > td.pm-table-hide-col.sj-agg-toggle-cell,
+.sj-sales-table-host.sj-aggregate-active .pm-managed-head-table.is-managed-table > thead > tr > th.pm-table-hide-col.sj-agg-toggle-col,
+.sj-wip-table-host.sj-aggregate-active .pm-table.is-managed-table > thead > tr > th.pm-table-hide-col.sj-agg-toggle-col,
+.sj-wip-table-host.sj-aggregate-active .pm-table.is-managed-table > tbody > tr > td.pm-table-hide-col.sj-agg-toggle-cell,
+.sj-wip-table-host.sj-aggregate-active .pm-managed-head-table.is-managed-table > thead > tr > th.pm-table-hide-col.sj-agg-toggle-col {
+    visibility: visible !important;
+    width: var(--sj-agg-toggle-w, 1.45rem) !important;
+    min-width: var(--sj-agg-toggle-w, 1.45rem) !important;
+    max-width: 1.6rem !important;
+    height: auto !important;
+    max-height: none !important;
+    font-size: inherit !important;
+    line-height: inherit !important;
+}
+
+.sj-sales-table-host.sj-aggregate-active .pm-table.is-managed-table > thead > tr > th.sj-agg-toggle-col,
+.sj-sales-table-host.sj-aggregate-active .pm-table.is-managed-table > tbody > tr > td.sj-agg-toggle-cell,
+.sj-sales-table-host.sj-aggregate-active .pm-managed-head-table.is-managed-table > thead > tr > th.sj-agg-toggle-col,
+.sj-wip-table-host.sj-aggregate-active .pm-table.is-managed-table > thead > tr > th.sj-agg-toggle-col,
+.sj-wip-table-host.sj-aggregate-active .pm-table.is-managed-table > tbody > tr > td.sj-agg-toggle-cell,
+.sj-wip-table-host.sj-aggregate-active .pm-managed-head-table.is-managed-table > thead > tr > th.sj-agg-toggle-col {
+    visibility: visible !important;
+}
+
+.sj-sales-table-host.sj-aggregate-active .pm-table.is-managed-table > thead > tr > th.sj-agg-toggle-col > *,
+.sj-sales-table-host.sj-aggregate-active .pm-table.is-managed-table > tbody > tr > td.sj-agg-toggle-cell > *,
+.sj-sales-table-host.sj-aggregate-active .pm-managed-head-table.is-managed-table > thead > tr > th.sj-agg-toggle-col > *,
+.sj-sales-table-host.sj-aggregate-active .pm-table.is-managed-table > thead > tr > th.pm-table-hide-col.sj-agg-toggle-col > *,
+.sj-sales-table-host.sj-aggregate-active .pm-table.is-managed-table > tbody > tr > td.pm-table-hide-col.sj-agg-toggle-cell > *,
+.sj-wip-table-host.sj-aggregate-active .pm-table.is-managed-table > thead > tr > th.sj-agg-toggle-col > *,
+.sj-wip-table-host.sj-aggregate-active .pm-table.is-managed-table > tbody > tr > td.sj-agg-toggle-cell > *,
+.sj-wip-table-host.sj-aggregate-active .pm-managed-head-table.is-managed-table > thead > tr > th.sj-agg-toggle-col > *,
+.sj-wip-table-host.sj-aggregate-active .pm-table.is-managed-table > thead > tr > th.pm-table-hide-col.sj-agg-toggle-col > *,
+.sj-wip-table-host.sj-aggregate-active .pm-table.is-managed-table > tbody > tr > td.pm-table-hide-col.sj-agg-toggle-cell > * {
+    display: revert !important;
+    height: auto !important;
+    max-height: none !important;
+}
+
 .pm-table.is-managed-table col[data-pm-col-hidden="1"],
 .pm-managed-head-table.is-managed-table col[data-pm-col-hidden="1"] {
     visibility: collapse;
@@ -3212,6 +3263,10 @@ table.sf-table td.sf-cell-thumb {
 .pm-table td.sj-cell-thumb,
 table.sf-table td.sf-cell-thumb {
     color: #5b5346;
+}
+.pm-table.is-managed-table td.sj-cell-thumb,
+.pm-managed-head-table.is-managed-table th.sj-th-thumb {
+    overflow: hidden !important;
 }
 .sj-table-thumb-img,
 .sf-variant-thumb,
