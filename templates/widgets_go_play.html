@@ -100,7 +100,32 @@
                                         <button type="button" class="btn-secondary btn-small go-play-room-copy-btn pm-u-hidden" id="goRoomCopyBtn" title="复制加入链接与房间号" aria-label="复制加入链接与房间号">复制</button>
                                     </span>
                                 </div>
-                                <p class="go-play-side-meta-line" id="goPlayersLine">黑：- ｜ 白：-</p>
+                                <div class="go-play-players-head" id="goPlayersHead" aria-label="对局双方">
+                                    <div class="go-play-player-slot">
+                                        <div class="go-play-player-avatar go-play-player-avatar--black" id="goBlackAvatarBtn" role="button" aria-label="黑方" aria-disabled="true" tabindex="-1">
+                                            <img class="go-play-player-avatar-img" id="goBlackAvatarImg" alt="" hidden>
+                                            <span class="go-play-player-avatar-fallback pm-u-hidden" id="goBlackAvatarFallback" aria-hidden="true"></span>
+                                            <span class="go-play-player-avatar-plus pm-u-hidden" id="goBlackAvatarPlus" aria-hidden="true">+</span>
+                                        </div>
+                                        <span class="go-play-player-color">
+                                            <span class="go-play-player-color-stone go-play-player-color-stone--black" aria-hidden="true"></span>
+                                            黑
+                                        </span>
+                                        <span class="go-play-player-name" id="goBlackPlayerName">—</span>
+                                    </div>
+                                    <div class="go-play-player-slot">
+                                        <div class="go-play-player-avatar go-play-player-avatar--white" id="goWhiteAvatarBtn" role="button" aria-label="白方" aria-disabled="true" tabindex="-1">
+                                            <img class="go-play-player-avatar-img" id="goWhiteAvatarImg" alt="" hidden>
+                                            <span class="go-play-player-avatar-fallback pm-u-hidden" id="goWhiteAvatarFallback" aria-hidden="true"></span>
+                                            <span class="go-play-player-avatar-plus pm-u-hidden" id="goWhiteAvatarPlus" aria-hidden="true">+</span>
+                                        </div>
+                                        <span class="go-play-player-color">
+                                            <span class="go-play-player-color-stone go-play-player-color-stone--white" aria-hidden="true"></span>
+                                            白
+                                        </span>
+                                        <span class="go-play-player-name" id="goWhitePlayerName">—</span>
+                                    </div>
+                                </div>
                                 <p class="go-play-side-meta-line" id="goTurnLine">状态：-</p>
                                 <p class="go-play-side-meta-line go-play-side-meta-line--muted" id="goUndoLine">悔棋需对方同意</p>
                             </div>

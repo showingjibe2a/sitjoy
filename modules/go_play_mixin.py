@@ -24,6 +24,7 @@ GO_CLEANUP_ACTIONS = frozenset({
     'create', 'join', 'leave', 'state', 'move', 'pass',
     'undo', 'resign', 'respond', 'cancel_request', 'rematch',
     'practice_start', 'practice_cancel', 'practice_end', 'chat_send',
+    'swap_color',
 })
 
 _go_file_lock = threading.RLock()
@@ -305,6 +306,27 @@ class GoPlayMixin(WidgetRoomChatMixin):
         except Exception:
             return f'用户{uid}'
 
+    def _go_user_avatar_url(self, user_id):
+        uid = self._parse_int(user_id) or 0
+        if not uid:
+            return None
+        try:
+            with self._get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute('SELECT avatar_path FROM users WHERE id=%s LIMIT 1', (uid,))
+                    row = cur.fetchone() or {}
+            path = str(row.get('avatar_path') or '').strip()
+            return f'/api/profile/avatar?user_id={uid}' if path else None
+        except Exception:
+            return None
+
+    def _go_can_swap_color(self, room):
+        if str(room.get('status') or '') != 'waiting':
+            return False
+        if room.get('moves'):
+            return False
+        return True
+
     def _go_cleanup_rooms(self):
         now = time.time()
         root = self._go_rooms_dir()
@@ -495,6 +517,12 @@ class GoPlayMixin(WidgetRoomChatMixin):
             'moves_count': len(moves),
             'black_name': room.get('black_name') or '',
             'white_name': room.get('white_name') or '',
+            'black_user_id': self._parse_int(room.get('black_user_id')) or 0,
+            'white_user_id': self._parse_int(room.get('white_user_id')) or 0,
+            'black_avatar_url': self._go_user_avatar_url(room.get('black_user_id')),
+            'white_avatar_url': self._go_user_avatar_url(room.get('white_user_id')),
+            'can_swap_color': self._go_can_swap_color(room),
+            'host_user_id': self._go_host_user_id(room) or 0,
             'winner': int(room.get('winner') or 0),
             'end_reason': room.get('end_reason') or '',
             'version': int(room.get('version') or 0),
@@ -518,6 +546,35 @@ class GoPlayMixin(WidgetRoomChatMixin):
         if not room:
             return None, '房间不存在或已过期'
         return room, None
+
+    def _go_host_user_id(self, room):
+        return self._parse_int(room.get('host_user_id'))
+
+    def _go_sync_playing_status(self, room):
+        """仅当黑白双方都在座时才为 playing，否则回到 waiting（终局除外）。"""
+        if str(room.get('status') or '') == 'ended':
+            return False
+        bu = self._parse_int(room.get('black_user_id'))
+        wu = self._parse_int(room.get('white_user_id'))
+        prev = str(room.get('status') or '')
+        if bu and wu:
+            room['status'] = 'playing'
+        elif prev == 'playing':
+            room['status'] = 'waiting'
+        return prev != str(room.get('status') or '')
+
+    def _go_migrate_host_if_missing(self, room):
+        if self._parse_int(room.get('host_user_id')):
+            return False
+        bu = self._parse_int(room.get('black_user_id'))
+        wu = self._parse_int(room.get('white_user_id'))
+        if bu and not wu:
+            room['host_user_id'] = bu
+            return True
+        if wu and not bu:
+            room['host_user_id'] = wu
+            return True
+        return False
 
     def _go_save_room(self, room):
         raise _GoRoomMutated()
@@ -579,6 +636,8 @@ class GoPlayMixin(WidgetRoomChatMixin):
             return self._go_action_practice_end(user_id, data, start_response)
         if action == 'chat_send':
             return self._go_action_chat_send(user_id, data, start_response)
+        if action == 'swap_color':
+            return self._go_action_swap_color(user_id, data, start_response)
         return self.send_json({'status': 'error', 'message': '未知操作'}, start_response)
 
     def _go_action_chat_send(self, user_id, data, start_response):
@@ -608,6 +667,7 @@ class GoPlayMixin(WidgetRoomChatMixin):
         room = {
             'code': code,
             'created_at': time.time(),
+            'host_user_id': int(user_id),
             'black_user_id': int(user_id),
             'white_user_id': None,
             'black_name': name,
@@ -633,53 +693,130 @@ class GoPlayMixin(WidgetRoomChatMixin):
         out['status'] = 'success'
         return self.send_json(out, start_response)
 
+    def _go_action_swap_color(self, user_id, data, start_response):
+        """等待对手时，已在房一方点击空位可改执黑/白（仅空位可换）。"""
+        code = str(data.get('room_code') or '').strip().upper()
+        prefer = str(data.get('prefer_color') or data.get('color') or '').strip().lower()
+        if prefer in ('1', 'black', 'b', '黑'):
+            want = GO_BLACK
+        elif prefer in ('2', 'white', 'w', '白'):
+            want = GO_WHITE
+        else:
+            return self.send_json({'status': 'error', 'message': '请指定要执黑或执白'}, start_response)
+        with self._go_room_store(code) as (room, err):
+            if err:
+                return self.send_json({'status': 'error', 'message': err}, start_response)
+            if not self._go_can_swap_color(room):
+                return self.send_json({'status': 'error', 'message': '对局已开始或有棋步，无法更换执棋'}, start_response)
+            uid = int(user_id)
+            bu = self._parse_int(room.get('black_user_id'))
+            wu = self._parse_int(room.get('white_user_id'))
+            name = self._go_user_display_name(uid)
+            if want == GO_WHITE:
+                if wu:
+                    return self.send_json({'status': 'error', 'message': '白方已有玩家'}, start_response)
+                if uid == wu:
+                    return self.send_json({'status': 'success', 'message': '您已在白方'}, start_response)
+                if uid == bu:
+                    room['white_user_id'] = uid
+                    room['white_name'] = room.get('black_name') or name
+                    room['black_user_id'] = None
+                    room['black_name'] = None
+                elif not bu and not wu:
+                    room['white_user_id'] = uid
+                    room['white_name'] = name
+                else:
+                    return self.send_json({'status': 'error', 'message': '仅当前在房玩家可换至空位'}, start_response)
+            else:
+                if bu:
+                    return self.send_json({'status': 'error', 'message': '黑方已有玩家'}, start_response)
+                if uid == bu:
+                    return self.send_json({'status': 'success', 'message': '您已在黑方'}, start_response)
+                if uid == wu:
+                    room['black_user_id'] = uid
+                    room['black_name'] = room.get('white_name') or name
+                    room['white_user_id'] = None
+                    room['white_name'] = None
+                elif not bu and not wu:
+                    room['black_user_id'] = uid
+                    room['black_name'] = name
+                else:
+                    return self.send_json({'status': 'error', 'message': '仅当前在房玩家可换至空位'}, start_response)
+            room['current_player'] = GO_BLACK
+            self._go_sync_playing_status(room)
+            self._go_bump_version(room)
+            self._go_save_room(room)
+        out = self._go_room_for_user(room, user_id)
+        out['status'] = 'success'
+        out['message'] = '已更换执棋'
+        return self.send_json(out, start_response)
+
     def _go_action_join(self, user_id, data, start_response):
         code = str(data.get('room_code') or '').strip().upper()
         with self._go_room_store(code) as (room, err):
             if err:
                 return self.send_json({'status': 'error', 'message': err}, start_response)
+            migrated = self._go_migrate_host_if_missing(room)
             uid = int(user_id)
-            if uid == self._parse_int(room.get('black_user_id')):
+            bu = self._parse_int(room.get('black_user_id'))
+            wu = self._parse_int(room.get('white_user_id'))
+            changed = False
+            if uid == bu or uid == wu:
                 pass
-            elif room.get('white_user_id'):
-                if self._parse_int(room.get('white_user_id')) == uid:
-                    pass
-                else:
-                    return self.send_json({'status': 'error', 'message': '房间已满'}, start_response)
-            else:
+            elif not bu:
+                room['black_user_id'] = uid
+                room['black_name'] = self._go_user_display_name(uid)
+                changed = True
+            elif not wu:
                 room['white_user_id'] = uid
                 room['white_name'] = self._go_user_display_name(uid)
-                room['status'] = 'playing'
-                room['version'] = int(room.get('version') or 0) + 1
+                changed = True
+            else:
+                return self.send_json({'status': 'error', 'message': '房间已满'}, start_response)
+            status_changed = self._go_sync_playing_status(room)
+            if changed or status_changed or migrated:
+                self._go_bump_version(room)
                 self._go_save_room(room)
         out = self._go_room_for_user(room, user_id)
         out['status'] = 'success'
         return self.send_json(out, start_response)
 
     def _go_action_leave(self, user_id, data, start_response):
-        """离开房间：白方离开则回到等待；房主离开则删除房间文件。"""
+        """离开房间：房主离开则删除房间；非房主离开则释放座位。"""
         code = str(data.get('room_code') or '').strip().upper()
         dissolve = False
         with self._go_room_store(code) as (room, err):
             if err:
                 return self.send_json({'status': 'error', 'message': err}, start_response)
+            migrated = self._go_migrate_host_if_missing(room)
             uid = int(user_id)
             bu = self._parse_int(room.get('black_user_id'))
             wu = self._parse_int(room.get('white_user_id'))
-            if uid == wu:
+            host = self._go_host_user_id(room)
+            if (host and uid == host) or (not host and uid == bu) or (not host and uid == wu and not bu):
+                dissolve = True
+            elif uid == wu:
                 room['white_user_id'] = None
                 room['white_name'] = None
-                if room.get('status') == 'playing':
-                    room['status'] = 'waiting'
                 room['pass_streak'] = 0
                 self._go_clear_pending(room)
                 self._go_clear_practice(room)
                 room['rematch_black'] = False
                 room['rematch_white'] = False
+                self._go_sync_playing_status(room)
                 self._go_bump_version(room)
                 self._go_save_room(room)
             elif uid == bu:
-                dissolve = True
+                room['black_user_id'] = None
+                room['black_name'] = None
+                room['pass_streak'] = 0
+                self._go_clear_pending(room)
+                self._go_clear_practice(room)
+                room['rematch_black'] = False
+                room['rematch_white'] = False
+                self._go_sync_playing_status(room)
+                self._go_bump_version(room)
+                self._go_save_room(room)
             else:
                 return self.send_json({'status': 'error', 'message': '您不在该房间中'}, start_response)
         if dissolve:

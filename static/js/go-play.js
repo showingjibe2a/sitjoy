@@ -26,6 +26,8 @@
   let endReason = '';
   let blackName = '';
   let whiteName = '';
+  let hostUserId = 0;
+  let myUserId = 0;
   let rematchYou = false;
   let rematchOpponent = false;
   let koPoint = null;
@@ -961,7 +963,7 @@
       return;
     }
     initBoardOverlay();
-    const isHost = yourColor === BLACK;
+    const isHost = hostUserId > 0 ? myUserId === hostUserId : yourColor === BLACK;
     const confirmLabel = isHost ? '解散房间' : '离开房间';
     const message = isHost
       ? '确定解散房间吗？房间将被关闭，对手需重新创建或加入其他房间。'
@@ -1214,6 +1216,166 @@
     closeBoardWindow();
   }
 
+  function goPlayerInitial(name) {
+    const n = String(name || '').trim();
+    if (!n || n === '-') return '？';
+    return n.charAt(0);
+  }
+
+  function clearGoPlayerAvatarVisuals(img, fallback, plus) {
+    if (img) {
+      img.onload = null;
+      img.onerror = null;
+      img.hidden = true;
+      img.classList.add('pm-u-hidden');
+      img.removeAttribute('src');
+    }
+    if (fallback) {
+      fallback.textContent = '';
+      fallback.hidden = true;
+      fallback.classList.add('pm-u-hidden');
+    }
+    plus?.classList.add('pm-u-hidden');
+  }
+
+  function setGoPlayerAvatarSlot(opts) {
+    const btn = opts.btn;
+    if (!btn) return;
+    const img = opts.img;
+    const fallback = opts.fallback;
+    const plus = opts.plus;
+    const empty = !!opts.empty;
+    const actionable = !!opts.actionable;
+    const name = String(opts.name || '').trim();
+    const avatarUrl = opts.avatarUrl ? String(opts.avatarUrl) : '';
+
+    clearGoPlayerAvatarVisuals(img, fallback, plus);
+
+    btn.classList.toggle('is-empty', empty);
+    btn.classList.toggle('is-me', !!opts.isMe);
+    btn.classList.toggle('is-actionable', actionable);
+    btn.tabIndex = actionable ? 0 : -1;
+    btn.setAttribute('aria-disabled', actionable ? 'false' : 'true');
+
+    const colorLabel = opts.color === WHITE ? '白' : '黑';
+    if (empty) {
+      btn.setAttribute('aria-label', actionable ? `点击执${colorLabel}` : `${colorLabel}方空位`);
+      plus?.classList.remove('pm-u-hidden');
+      return;
+    }
+
+    btn.setAttribute('aria-label', `${name || colorLabel + '方'} 执${colorLabel}`);
+    if (avatarUrl && img) {
+      img.alt = name || `${colorLabel}方`;
+      img.onerror = () => {
+        img.hidden = true;
+        img.classList.add('pm-u-hidden');
+        img.removeAttribute('src');
+        if (fallback) {
+          fallback.textContent = goPlayerInitial(name);
+          fallback.hidden = false;
+          fallback.classList.remove('pm-u-hidden');
+        }
+      };
+      img.onload = () => {
+        img.hidden = false;
+        img.classList.remove('pm-u-hidden');
+        if (fallback) {
+          fallback.hidden = true;
+          fallback.classList.add('pm-u-hidden');
+        }
+      };
+      img.classList.remove('pm-u-hidden');
+      img.src = avatarUrl;
+      if (img.complete && img.naturalWidth > 0) {
+        img.hidden = false;
+        img.classList.remove('pm-u-hidden');
+        if (fallback) {
+          fallback.hidden = true;
+          fallback.classList.add('pm-u-hidden');
+        }
+      }
+    } else if (fallback) {
+      fallback.textContent = goPlayerInitial(name);
+      fallback.hidden = false;
+      fallback.classList.remove('pm-u-hidden');
+    }
+  }
+
+  function updateGoPlayersHead(data) {
+    if (isPopup || !$('goPlayersHead')) return;
+    const d = data || {};
+    const blackUid = Number(d.black_user_id || 0);
+    const whiteUid = Number(d.white_user_id || 0);
+    const myUid = Number(d.my_user_id || 0);
+    const canSwap = !!d.can_swap_color;
+    const yc = Number(d.your_color || yourColor || 0);
+
+    const blackEmpty = !blackUid;
+    const whiteEmpty = !whiteUid;
+    const blackNameText = blackEmpty ? '—' : String(d.black_name || blackName || '—').trim() || '—';
+    const whiteNameText = whiteEmpty ? '等待对手' : String(d.white_name || whiteName || '—').trim() || '—';
+    const canTakeBlack = canSwap && blackEmpty && yc === WHITE && myUid === whiteUid;
+    const canTakeWhite = canSwap && whiteEmpty && yc === BLACK && myUid === blackUid;
+
+    setGoPlayerAvatarSlot({
+      btn: $('goBlackAvatarBtn'),
+      img: $('goBlackAvatarImg'),
+      fallback: $('goBlackAvatarFallback'),
+      plus: $('goBlackAvatarPlus'),
+      color: BLACK,
+      userId: blackUid,
+      name: blackNameText,
+      avatarUrl: blackEmpty ? '' : d.black_avatar_url,
+      isMe: myUid && myUid === blackUid,
+      empty: blackEmpty,
+      actionable: canTakeBlack,
+    });
+    setGoPlayerAvatarSlot({
+      btn: $('goWhiteAvatarBtn'),
+      img: $('goWhiteAvatarImg'),
+      fallback: $('goWhiteAvatarFallback'),
+      plus: $('goWhiteAvatarPlus'),
+      color: WHITE,
+      userId: whiteUid,
+      name: whiteNameText,
+      avatarUrl: whiteEmpty ? '' : d.white_avatar_url,
+      isMe: myUid && myUid === whiteUid,
+      empty: whiteEmpty,
+      actionable: canTakeWhite,
+    });
+
+    if ($('goBlackPlayerName')) $('goBlackPlayerName').textContent = blackNameText;
+    if ($('goWhitePlayerName')) $('goWhitePlayerName').textContent = whiteNameText;
+  }
+
+  function swapGoColor(preferColor) {
+    if (!roomCode) return;
+    api('swap_color', { room_code: roomCode, prefer_color: preferColor }).then((d) => {
+      if (!applyOwnActionResponse(d, '更换执棋失败')) return;
+      toast((d && d.message) || '已更换执棋', false);
+    }).catch((err) => toast(err.message || '网络错误', true));
+  }
+
+  function bindGoPlayerAvatarUi() {
+    function bindAvatarSlot(el, preferColor) {
+      if (!el || el.dataset.bound === '1') return;
+      el.dataset.bound = '1';
+      const activate = () => {
+        if (!el.classList.contains('is-actionable')) return;
+        swapGoColor(preferColor);
+      };
+      el.addEventListener('click', activate);
+      el.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        activate();
+      });
+    }
+    bindAvatarSlot($('goBlackAvatarBtn'), 'black');
+    bindAvatarSlot($('goWhiteAvatarBtn'), 'white');
+  }
+
   function applyState(data, opts) {
     if (!data || data.status !== 'success') return false;
     const ver = Number(data.version || 0);
@@ -1236,6 +1398,8 @@
     endReason = String(data.end_reason || '');
     blackName = String(data.black_name || '');
     whiteName = String(data.white_name || '');
+    hostUserId = Number(data.host_user_id || 0);
+    myUserId = Number(data.my_user_id || 0);
     rematchYou = !!data.rematch_you;
     rematchOpponent = !!data.rematch_opponent;
     koPoint = data.ko || null;
@@ -1263,9 +1427,7 @@
 
     if (!isPopup) {
       if ($('goRoomCode')) $('goRoomCode').textContent = roomCode || '------';
-      if ($('goPlayersLine')) {
-        $('goPlayersLine').textContent = `黑：${data.black_name || '-'} ｜ 白：${data.white_name || '等待对手'}`;
-      }
+      updateGoPlayersHead(data);
       let turnText = '等待对手加入';
       if (youInPractice) {
         turnText = `演习中 · 本地 ${colorName(practiceLocal ? practiceLocal.currentPlayer : currentPlayer)}行棋`;
@@ -1779,6 +1941,8 @@
     rematchYou = false;
     rematchOpponent = false;
     koPoint = null;
+    hostUserId = 0;
+    myUserId = 0;
     youInPractice = false;
     opponentInPractice = false;
     stopLocalPractice();
@@ -1799,6 +1963,7 @@
       $('goRoomHint').textContent = '';
       $('goRoomHint').classList.add('pm-u-hidden');
     }
+    updateGoPlayersHead({});
     board = Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY));
     renderBoard($('goBoard'));
     updateBoardOverlay({});
@@ -1808,22 +1973,6 @@
       win.history.replaceState({}, '', u);
     } catch (_) {}
     enterFreeLocalBoard();
-  }
-
-  function notifyServerLeave() {
-    const code = String(roomCode || '').trim().toUpperCase();
-    if (!code || !yourColor) return;
-    const body = JSON.stringify({ action: 'leave', room_code: code });
-    const url = apiUrl('/api/go-play');
-    try {
-      fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-        credentials: 'include',
-        keepalive: true,
-      }).catch(() => {});
-    } catch (_) {}
   }
 
   function leaveRoom() {
@@ -1876,6 +2025,7 @@
   function bindMainUi() {
     initGoRoomChat();
     bindLocalBannerUi();
+    bindGoPlayerAvatarUi();
     $('goCreateBtn')?.addEventListener('click', () => {
       const btn = $('goCreateBtn');
       stopWatch();
@@ -2269,7 +2419,6 @@
 
   if (!isPopup) {
     win.addEventListener('pagehide', () => {
-      notifyServerLeave();
       stopWatch();
       closeBoardPopup();
     });

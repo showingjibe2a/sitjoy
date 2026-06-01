@@ -687,6 +687,182 @@
     min-height: 0;
 }
 
+.go-play-players-head {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 2rem;
+    margin: 0.35rem 0 0.2rem;
+    width: 100%;
+}
+
+.go-play-player-slot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.32rem;
+    width: 4.25rem;
+    flex: 0 0 auto;
+}
+
+.go-play-player-color {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.32rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--morandi-slate);
+    letter-spacing: 0.04em;
+    line-height: 1;
+}
+
+.go-play-player-color-stone {
+    display: inline-block;
+    width: 0.72rem;
+    height: 0.72rem;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
+}
+
+.go-play-player-color-stone--black {
+    background: radial-gradient(circle at 32% 28%, #555, #111 72%);
+}
+
+.go-play-player-color-stone--white {
+    background: radial-gradient(circle at 32% 28%, #fff, #ddd 70%);
+    border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.go-play-player-name {
+    display: block;
+    width: 100%;
+    font-size: 0.78rem;
+    line-height: 1.25;
+    color: var(--morandi-ink);
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-height: 1.05em;
+}
+
+.go-play-player-avatar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    aspect-ratio: 1 / 1;
+    padding: 0;
+    margin: 0;
+    border: none;
+    border-radius: 50%;
+    background: #f5f1ea;
+    overflow: hidden;
+    box-sizing: border-box;
+    cursor: default;
+    flex-shrink: 0;
+    clip-path: circle(50% at 50% 50%);
+    box-shadow: inset 0 0 0 2px rgba(42, 36, 32, 0.35);
+    transition: box-shadow 0.15s ease, background 0.15s ease;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.go-play-player-avatar--black {
+    box-shadow: inset 0 0 0 2px #2a2420;
+}
+
+.go-play-player-avatar--white {
+    background: #faf8f4;
+    box-shadow: inset 0 0 0 2px #c8c0b4;
+}
+
+.go-play-player-avatar.is-me {
+    box-shadow: 0 0 0 2px rgba(143, 168, 139, 0.55), inset 0 0 0 2px rgba(42, 36, 32, 0.35);
+}
+
+.go-play-player-avatar--black.is-me {
+    box-shadow: 0 0 0 2px rgba(143, 168, 139, 0.55), inset 0 0 0 2px #2a2420;
+}
+
+.go-play-player-avatar--white.is-me {
+    box-shadow: 0 0 0 2px rgba(143, 168, 139, 0.55), inset 0 0 0 2px #c8c0b4;
+}
+
+.go-play-player-avatar.is-empty {
+    background: rgba(245, 241, 234, 0.65);
+    box-shadow: none;
+    border: 2px dashed #b7aea4;
+    clip-path: none;
+    border-radius: 50%;
+}
+
+.go-play-player-avatar.is-empty.go-play-player-avatar--black,
+.go-play-player-avatar.is-empty.go-play-player-avatar--white {
+    border-color: #b7aea4;
+}
+
+.go-play-player-avatar.is-actionable {
+    cursor: pointer;
+}
+
+.go-play-player-avatar:not(.is-actionable) {
+    cursor: default;
+}
+
+.go-play-player-avatar.is-actionable:hover {
+    box-shadow: inset 0 0 0 2px #8fa88b;
+    background: rgba(232, 238, 229, 0.95);
+}
+
+.go-play-player-avatar.is-actionable:focus-visible {
+    outline: 2px solid #8fa88b;
+    outline-offset: 2px;
+}
+
+.go-play-player-avatar-img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
+.go-play-player-avatar-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #4a433c;
+    user-select: none;
+    border-radius: 50%;
+}
+
+.go-play-player-avatar--white .go-play-player-avatar-fallback {
+    color: #5c554c;
+}
+
+.go-play-player-avatar-plus {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.35rem;
+    font-weight: 500;
+    line-height: 1;
+    color: #8a8278;
+    pointer-events: none;
+    user-select: none;
+}
+
 .go-play-side-hint {
     margin: 0;
     font-size: 0.78rem;
