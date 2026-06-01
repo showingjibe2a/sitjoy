@@ -1536,17 +1536,21 @@
         if(!col) return;
         if(hidden){
             col.setAttribute('data-pm-col-hidden', '1');
-            col.style.visibility = 'collapse';
-            col.style.width = '0px';
-            col.style.minWidth = '0px';
-            col.style.maxWidth = '0px';
+            col.style.setProperty('visibility', 'collapse', 'important');
+            col.style.setProperty('width', '0px', 'important');
+            col.style.setProperty('min-width', '0px', 'important');
+            col.style.setProperty('max-width', '0px', 'important');
+            col.style.setProperty('padding', '0', 'important');
+            col.style.setProperty('border-width', '0', 'important');
             return;
         }
         col.removeAttribute('data-pm-col-hidden');
-        col.style.visibility = '';
-        col.style.width = '';
-        col.style.minWidth = '';
-        col.style.maxWidth = '';
+        col.style.removeProperty('visibility');
+        col.style.removeProperty('width');
+        col.style.removeProperty('min-width');
+        col.style.removeProperty('max-width');
+        col.style.removeProperty('padding');
+        col.style.removeProperty('border-width');
     }
 
     function isManagedThumbColumnKey(state, columnKey, headerCell){
@@ -3496,6 +3500,7 @@
     function applyColumnVisibilityChange(state){
         applyColumnVisibility(state);
         applyPinnedColumns(state, { force: true });
+        syncManagedTableTotalWidth(state);
         syncTopScroll(state);
     }
 
@@ -3693,9 +3698,11 @@
         const enforceMin = !(options && options.enforceMin === false);
         clearAllManagedCellInlineSizes(state);
         const widths = state.columnWidths || {};
+        const visible = state.visibleColumns || null;
         let widthsChanged = false;
         Object.keys(widths).forEach(key => {
             if(String(key) === PM_MONTH_COL_GROUP_WIDTH_KEY) return;
+            if(visible && !visible.has(String(key || '').trim())) return;
             const prev = Number(widths[key]);
             const next = enforceMin ? clampManagedColumnWidth(state, key, prev) : Math.max(1, Math.round(prev) || 0);
             if(next !== prev) widthsChanged = true;

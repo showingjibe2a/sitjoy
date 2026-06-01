@@ -2635,6 +2635,9 @@ button.sj-group-row-edit-btn {
 .pm-managed-head-table.is-managed-table > thead > tr > th.pm-table-hide-col {
     display: table-cell !important;
     visibility: collapse !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
     padding: 0 !important;
     border-width: 0 !important;
     font-size: 0 !important;
@@ -2701,7 +2704,12 @@ button.sj-group-row-edit-btn {
 
 .pm-table.is-managed-table col[data-pm-col-hidden="1"],
 .pm-managed-head-table.is-managed-table col[data-pm-col-hidden="1"] {
-    visibility: collapse;
+    visibility: collapse !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    padding: 0 !important;
+    border-width: 0 !important;
 }
 
 .pm-actions {
