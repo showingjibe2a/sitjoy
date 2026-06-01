@@ -21,13 +21,14 @@ MJ_WAIT_POLL_SEC = 0.3
 MJ_STREAM_SESSION_SEC = 90
 MJ_STREAM_PING_SEC = 12
 MJ_TILE_COPIES = 4
+MJ_TOTAL_TILES = 100
 
 # 三人麻将：条(s)、筒(p)、字(z1-7 东南西北中发白)，共 100 张
 MJ_SUITS = ('p', 's')
 MJ_HONORS = tuple(f'z{i}' for i in range(1, 8))
 
 MJ_CLEANUP_ACTIONS = frozenset({
-    'create', 'join', 'leave', 'ready', 'start', 'confirm_roll', 'state', 'wait',
+    'create', 'join', 'leave', 'ready', 'start', 'confirm_roll', 'roll_dice', 'state', 'wait',
     'discard', 'claim', 'next_hand', 'chat_send', 'swap_seat',
 })
 
@@ -607,32 +608,99 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         room['status'] = 'hand_end'
         room['phase'] = 'hand_end'
 
-    def _mj_roll_dealer_from_dice(self, room):
-        """掷两枚骰子，按点数和在在座玩家中确定庄家座位。"""
+    def _mj_count_tiles_accounted(self, room):
+        total = 0
+        wall = room.get('wall') or []
+        pos = int(room.get('wall_pos') or 0)
+        total += max(0, len(wall) - pos)
+        hands = room.get('hands') or [[], [], [], []]
+        for h in hands:
+            total += len(h or [])
+        discards = room.get('discards') or [[], [], [], []]
+        for d in discards:
+            total += len(d or [])
+        melds = room.get('melds') or [[], [], [], []]
+        for seat_melds in melds:
+            for m in (seat_melds or []):
+                total += len(m.get('tiles') or [])
+        return total
+
+    def _mj_assert_tile_conservation(self, room):
+        if room.get('status') != 'playing':
+            return
+        accounted = self._mj_count_tiles_accounted(room)
+        if accounted > MJ_TOTAL_TILES:
+            raise ValueError('牌数异常（超出牌墙总量）')
+
+    def _mj_claim_options_for_seat(self, room, seat, tile):
+        opts = []
+        if self._mj_can_win_seat(room, seat, tile):
+            opts.append('win')
+        hc = Counter(self._mj_hand_tile_list(room, seat))
+        if hc.get(tile, 0) >= 2:
+            opts.append('pung')
+        if hc.get(tile, 0) >= 3:
+            opts.append('kong')
+        return opts
+
+    def _mj_any_claim_possible(self, room, discard_seat, tile):
+        for s in self._mj_active_seats(room):
+            if s == discard_seat:
+                continue
+            if self._mj_claim_options_for_seat(room, s, tile):
+                return True
+        return False
+
+    def _mj_autofill_pass_claims(self, room):
+        cr = room.get('claim_round')
+        if not isinstance(cr, dict):
+            return
+        discard_seat = int(cr.get('discard_seat', -1))
+        tile = cr.get('tile')
+        waiting = [s for s in self._mj_active_seats(room) if s != discard_seat]
+        responses = dict(cr.get('responses') or {})
+        for s in waiting:
+            if s in responses:
+                continue
+            if not self._mj_claim_options_for_seat(room, s, tile):
+                responses[s] = 'pass'
+        cr['responses'] = responses
+        room['claim_round'] = cr
+
+    def _mj_finalize_dealer_from_rolls(self, room):
         active = self._mj_active_seats(room)
-        if not active:
-            return 0
-        d1 = random.randint(1, 6)
-        d2 = random.randint(1, 6)
-        total = d1 + d2
-        idx = (total - 2) % len(active)
-        dealer = active[idx]
-        return d1, d2, total, dealer
+        rolls = room.get('dice_rolls') or {}
+        best_seat = None
+        best_total = -1
+        for s in active:
+            r = rolls.get(str(s)) or rolls.get(s)
+            if not isinstance(r, dict):
+                return False
+            total = int(r.get('total') or 0)
+            if total > best_total or (total == best_total and (best_seat is None or s < best_seat)):
+                best_total = total
+                best_seat = s
+        if best_seat is None:
+            return False
+        winner = rolls.get(str(best_seat)) or rolls.get(best_seat) or {}
+        room['dealer_seat'] = best_seat
+        room['dice_roll'] = {
+            'dice1': int(winner.get('dice1') or 0),
+            'dice2': int(winner.get('dice2') or 0),
+            'total': int(winner.get('total') or 0),
+            'dealer_seat': best_seat,
+            'all_rolls': {str(s): (rolls.get(str(s)) or rolls.get(s)) for s in active},
+        }
+        return True
 
     def _mj_begin_dealer_roll(self, room):
         active = self._mj_active_seats(room)
         if len(active) < MJ_MIN_PLAYERS:
             raise ValueError(f'至少需要 {MJ_MIN_PLAYERS} 人才能开局')
-        d1, d2, total, dealer = self._mj_roll_dealer_from_dice(room)
-        room['dealer_seat'] = dealer
-        room['dice_roll'] = {
-            'dice1': d1,
-            'dice2': d2,
-            'total': total,
-            'dealer_seat': dealer,
-        }
         room['status'] = 'dealer_roll'
         room['phase'] = 'dealer_roll'
+        room['dice_rolls'] = {}
+        room.pop('dice_roll', None)
 
     def _mj_start_hand(self, room):
         active = self._mj_active_seats(room)
@@ -665,6 +733,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         room['status'] = 'playing'
         room['last_hand_result'] = None
         room.pop('dice_roll', None)
+        room.pop('dice_rolls', None)
         if room['phase'] == 'draw':
             self._mj_do_draw(room, dealer)
 
@@ -683,6 +752,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         if self._mj_can_win_seat(room, seat):
             room['pending_self_win'] = True
         room['phase'] = 'discard'
+        self._mj_assert_tile_conservation(room)
 
     def _mj_resolve_claims(self, room):
         cr = room.get('claim_round')
@@ -804,17 +874,25 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             }
             if claim_view['need_response']:
                 tile = claim.get('tile')
-                opts = ['pass']
-                if self._mj_can_win_seat(room, my_seat, tile):
-                    opts.append('win')
-                hc = Counter(self._mj_hand_tile_list(room, my_seat))
-                if hc.get(tile, 0) >= 2:
-                    opts.append('pung')
-                if hc.get(tile, 0) >= 3:
-                    opts.append('kong')
+                opts = ['pass'] + self._mj_claim_options_for_seat(room, my_seat, tile)
                 claim_view['options'] = opts
         dice_roll = None
         if room.get('status') == 'dealer_roll':
+            active = self._mj_active_seats(room)
+            rolls_map = room.get('dice_rolls') or {}
+            rolls_list = []
+            for s in active:
+                sp = seats_pub[s] if s < len(seats_pub) else None
+                r = rolls_map.get(str(s)) or rolls_map.get(s)
+                rolls_list.append({
+                    'seat': s,
+                    'name': (sp or {}).get('name') or '',
+                    'rolled': isinstance(r, dict),
+                    'dice1': int(r.get('dice1') or 0) if isinstance(r, dict) else 0,
+                    'dice2': int(r.get('dice2') or 0) if isinstance(r, dict) else 0,
+                    'total': int(r.get('total') or 0) if isinstance(r, dict) else 0,
+                })
+            need_my_roll = my_seat is not None and str(my_seat) not in rolls_map
             dr = room.get('dice_roll') or {}
             ds = int(dr.get('dealer_seat', room.get('dealer_seat') or 0))
             dealer_name = ''
@@ -823,6 +901,9 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                     dealer_name = sp.get('name') or ''
                     break
             dice_roll = {
+                'rolls': rolls_list,
+                'need_my_roll': need_my_roll,
+                'all_done': len(rolls_map) >= len(active),
                 'dice1': int(dr.get('dice1') or 0),
                 'dice2': int(dr.get('dice2') or 0),
                 'total': int(dr.get('total') or 0),
@@ -891,6 +972,8 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             return self._mj_action_start(user_id, data, start_response)
         if action == 'confirm_roll':
             return self._mj_action_confirm_roll(user_id, data, start_response)
+        if action == 'roll_dice':
+            return self._mj_action_roll_dice(user_id, data, start_response)
         if action == 'state':
             return self._mj_action_state(user_id, query, start_response)
         if action == 'stream':
@@ -1149,10 +1232,45 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                 return self.send_json({'status': 'error', 'message': '仅房主可确认发牌'}, start_response)
             if room.get('status') != 'dealer_roll':
                 return self.send_json({'status': 'error', 'message': '当前不在定庄阶段'}, start_response)
+            active = self._mj_active_seats(room)
+            rolls = room.get('dice_rolls') or {}
+            if len(rolls) < len(active):
+                return self.send_json({'status': 'error', 'message': '尚有玩家未掷骰'}, start_response)
             try:
+                if not self._mj_finalize_dealer_from_rolls(room):
+                    return self.send_json({'status': 'error', 'message': '定庄失败'}, start_response)
                 self._mj_start_hand(room)
             except ValueError as ex:
                 return self.send_json({'status': 'error', 'message': str(ex)}, start_response)
+            self._mj_bump_version(room)
+            self._mj_save_room(room)
+        return self._mj_json_room(room, user_id, start_response)
+
+    def _mj_action_roll_dice(self, user_id, data, start_response):
+        code = str(data.get('room_code') or '').strip().upper()
+        with self._mj_room_store(code) as (room, err):
+            if err:
+                return self.send_json({'status': 'error', 'message': err}, start_response)
+            if room.get('status') != 'dealer_roll':
+                return self.send_json({'status': 'error', 'message': '当前不在投骰阶段'}, start_response)
+            seat = self._mj_seat_of_user(room, user_id)
+            if seat is None:
+                return self.send_json({'status': 'error', 'message': '您不在该房间中'}, start_response)
+            rolls = dict(room.get('dice_rolls') or {})
+            if str(seat) in rolls:
+                return self.send_json({'status': 'error', 'message': '您已掷过骰子'}, start_response)
+            d1 = random.randint(1, 6)
+            d2 = random.randint(1, 6)
+            rolls[str(seat)] = {'dice1': d1, 'dice2': d2, 'total': d1 + d2, 'seat': seat}
+            room['dice_rolls'] = rolls
+            active = self._mj_active_seats(room)
+            if len(rolls) >= len(active):
+                try:
+                    if not self._mj_finalize_dealer_from_rolls(room):
+                        return self.send_json({'status': 'error', 'message': '定庄失败'}, start_response)
+                    self._mj_start_hand(room)
+                except ValueError as ex:
+                    return self.send_json({'status': 'error', 'message': str(ex)}, start_response)
             self._mj_bump_version(room)
             self._mj_save_room(room)
         return self._mj_json_room(room, user_id, start_response)
@@ -1295,6 +1413,9 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             if int(room.get('current_seat', -1)) != seat:
                 return self.send_json({'status': 'error', 'message': '未轮到您出牌'}, start_response)
             hands = room.get('hands') or [[], [], [], []]
+            hand_n = len(hands[seat] or [])
+            if hand_n % 3 != 2:
+                return self.send_json({'status': 'error', 'message': '手牌数量异常'}, start_response)
             if tile not in (hands[seat] or []):
                 return self.send_json({'status': 'error', 'message': '手牌中没有该牌'}, start_response)
             hands[seat].remove(tile)
@@ -1309,12 +1430,23 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             waiting = [s for s in active if s != seat]
             if not waiting:
                 return self.send_json({'status': 'error', 'message': '玩家不足'}, start_response)
-            room['claim_round'] = {
-                'discard_seat': seat,
-                'tile': tile,
-                'responses': {},
-            }
-            room['phase'] = 'claim'
+            if not self._mj_any_claim_possible(room, seat, tile):
+                room['claim_round'] = None
+                nxt = self._mj_next_seat(room, seat)
+                self._mj_do_draw(room, nxt)
+            else:
+                room['claim_round'] = {
+                    'discard_seat': seat,
+                    'tile': tile,
+                    'responses': {},
+                }
+                room['phase'] = 'claim'
+                self._mj_autofill_pass_claims(room)
+                cr = room.get('claim_round') or {}
+                responses = cr.get('responses') or {}
+                if all(s in responses for s in waiting):
+                    self._mj_resolve_claims(room)
+            self._mj_assert_tile_conservation(room)
             self._mj_bump_version(room)
             self._mj_save_room(room)
         return self._mj_json_room(room, user_id, start_response)
@@ -1365,7 +1497,9 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             responses[seat] = claim_type
             cr['responses'] = responses
             room['claim_round'] = cr
+            self._mj_autofill_pass_claims(room)
             self._mj_resolve_claims(room)
+            self._mj_assert_tile_conservation(room)
             self._mj_bump_version(room)
             self._mj_save_room(room)
         return self._mj_json_room(room, user_id, start_response)

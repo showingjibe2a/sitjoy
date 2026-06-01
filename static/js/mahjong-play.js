@@ -82,7 +82,124 @@
       messageId: 'mjOverlayMsg',
       actionsId: 'mjOverlayActions',
     });
+    mjBoardOverlay.setGameRenderer(renderMjBoardOverlay);
     return mjBoardOverlay;
+  }
+
+  function mjOverlayDialogEl() {
+    const overlay = $('mjBoardOverlay');
+    return overlay ? overlay.querySelector('.widget-board-dialog') : null;
+  }
+
+  function renderMjLobbySeatsHtml(s, esc) {
+    const seats = s.seats || [];
+    const mySeat = resolveMySeat(s);
+    let html = '<div class="mj-overlay-seats mj-lobby-seats">';
+    for (let i = 0; i < 4; i++) {
+      const st = seats[i];
+      const cls = ['mj-seat-dot'];
+      if (st) cls.push('mj-seat-dot--filled');
+      if (st && st.ready) cls.push('mj-seat-dot--ready');
+      if (i === mySeat) cls.push('mj-seat-dot--me');
+      const initial = st ? playerInitial(st.name) : '';
+      const name = st ? ((st.name || '—') + (st.ready ? ' ✓' : '')) : '空位';
+      html += `<div class="${cls.join(' ')}">`
+        + `<div class="mj-seat-dot-inner">${esc(initial)}</div>`
+        + `<span class="mj-seat-dot-name">${esc(name)}</span>`
+        + '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function renderMjBoardOverlay(els, s, api) {
+    if (!s || !s.code || !lobbyInRoom(s)) return false;
+    const esc = api.escHtml;
+    const btn = api.makeActionButton;
+    els.actionsEl.innerHTML = '';
+    els.titleEl.textContent = '';
+    els.msgEl.innerHTML = '';
+    const dialog = mjOverlayDialogEl();
+    if (dialog) dialog.classList.remove('widget-board-dialog--wide');
+
+    if (s.status === 'lobby') {
+      const lobby = s.lobby || {};
+      const minP = Number(s.min_players) || 2;
+      const n = lobby.occupied_count != null
+        ? lobby.occupied_count
+        : (s.seats || []).filter(Boolean).length;
+      els.titleEl.textContent = '等待开局';
+      if (dialog) dialog.classList.add('widget-board-dialog--wide');
+      const hint = '房间内 ' + n + ' 人 · 至少 ' + minP + ' 人全部准备后可开局'
+        + (lobby.can_start ? '（可开局）' : '');
+      els.msgEl.innerHTML = renderMjLobbySeatsHtml(s, esc)
+        + `<p class="mj-overlay-hint">${esc(hint)}</p>`;
+      const mySeat = resolveMySeat(s);
+      const me = mySeat != null ? (s.seats || [])[mySeat] : null;
+      if (mySeat != null) {
+        els.actionsEl.appendChild(btn(
+          me && me.ready ? '取消准备' : '准备',
+          'btn-accent',
+          () => { doReady().catch((err) => alert(err.message)); }
+        ));
+      }
+      if (s.you_are_host && lobby.can_start) {
+        els.actionsEl.appendChild(btn(
+          '开局',
+          'btn-accent',
+          () => { doStart().catch((err) => alert(err.message)); }
+        ));
+      }
+      return true;
+    }
+
+    if (s.status === 'dealer_roll') {
+      const dr = s.dice_roll || {};
+      const rolls = dr.rolls || [];
+      els.titleEl.textContent = '投骰定庄';
+      if (dialog) dialog.classList.add('widget-board-dialog--wide');
+      const mySeat = resolveMySeat(s);
+      let html = '<div class="mj-overlay-seats mj-lobby-seats mj-overlay-dice-seats">';
+      rolls.forEach((r) => {
+        const cls = ['mj-seat-dot', 'mj-seat-dot--filled'];
+        if (r.rolled) cls.push('mj-seat-dot--ready');
+        if (r.seat === mySeat) cls.push('mj-seat-dot--me');
+        const inner = r.rolled ? (r.dice1 + '+' + r.dice2 + '=' + r.total) : '?';
+        html += `<div class="${cls.join(' ')}">`
+          + `<div class="mj-seat-dot-inner mj-seat-dot-inner--dice">${esc(inner)}</div>`
+          + `<span class="mj-seat-dot-name">${esc(r.name || '—')}</span>`
+          + '</div>';
+      });
+      html += '</div>';
+      const pending = rolls.filter((r) => !r.rolled).length;
+      let hint = pending ? ('还有 ' + pending + ' 人未掷骰 · 点数最大者坐庄') : '全员已掷骰，正在发牌…';
+      if (dr.dealer_name && dr.all_done) {
+        hint = '庄家：' + dr.dealer_name + '（合计 ' + (dr.total || '?') + '）· 正在发牌…';
+      }
+      html += `<p class="mj-overlay-hint">${esc(hint)}</p>`;
+      els.msgEl.innerHTML = html;
+      if (dr.need_my_roll) {
+        els.actionsEl.appendChild(btn(
+          '掷骰子',
+          'btn-accent',
+          () => { doRollDice().catch((err) => alert(err.message)); }
+        ));
+      }
+      return true;
+    }
+
+    return false;
+  }
+
+  function updateBoardOverlay(s) {
+    initMjBoardOverlay();
+    if (!mjBoardOverlay || mjBoardOverlay.hasConfirm()) return;
+    mjBoardOverlay.refresh(s);
+  }
+
+  function isBoardOverlayActive(s) {
+    if (!s || !lobbyInRoom(s)) return false;
+    return s.status === 'lobby' || s.status === 'dealer_roll';
   }
 
   function getAppBasePath() {
@@ -504,6 +621,7 @@
     setWindowPlaceholderVisible(false);
     updatePopoutBtnUi();
     updateLeaveButtons(null);
+    if (mjBoardOverlay) mjBoardOverlay.clear();
     if (isPopup && hint && center) center.textContent = hint;
   }
 
@@ -526,26 +644,7 @@
   }
 
   function renderDiceRoll(s) {
-    const panel = $('mjDiceRoll');
-    const d1 = $('mjDie1');
-    const d2 = $('mjDie2');
-    const res = $('mjDiceResult');
-    const center = $('mjCenterInfo');
-    const rolling = !!(s && s.status === 'dealer_roll' && s.dice_roll);
-    setVisible(panel, rolling);
-    if (center) center.classList.toggle('pm-u-hidden', rolling);
-    if (!rolling) {
-      if (res) res.textContent = '';
-      return;
-    }
-    const dr = s.dice_roll;
-    if (d1) d1.textContent = String(dr.dice1 || '—');
-    if (d2) d2.textContent = String(dr.dice2 || '—');
-    const dn = dr.dealer_name || '—';
-    if (res) {
-      res.textContent = '合计 ' + (dr.total || '?') + ' · 庄家：' + dn
-        + (s.you_are_host ? '（请确认发牌）' : '（等待房主确认）');
-    }
+    setVisible($('mjDiceRoll'), false);
   }
 
   function renderScores(s) {
@@ -887,16 +986,20 @@
 
     renderLobbySeats(s);
     renderDiceRoll(s);
+    updateBoardOverlay(s);
     renderRoomSidebar(s);
     syncRoomChat(s);
+
+    const overlayActive = isBoardOverlayActive(s);
+    if (center) center.classList.toggle('pm-u-hidden', overlayActive);
 
     const inRoom = lobbyInRoom(s);
     setVisible($('mjBoardCard'), inRoom);
     const hideTable = isMain && popupOpen;
     setVisible($('mjTableWrap'), inRoom && !hideTable);
-    setVisible($('mjReadyBtn'), s.status === 'lobby' && resolveMySeat(s) != null);
-    setVisible($('mjStartBtn'), s.status === 'lobby' && s.you_are_host);
-    setVisible($('mjConfirmRollBtn'), s.status === 'dealer_roll' && s.you_are_host);
+    setVisible($('mjReadyBtn'), s.status === 'lobby' && resolveMySeat(s) != null && !overlayActive);
+    setVisible($('mjStartBtn'), s.status === 'lobby' && s.you_are_host && !overlayActive);
+    setVisible($('mjConfirmRollBtn'), false);
     setVisible($('mjNextHandBtn'), s.status === 'hand_end' && s.you_are_host);
     setVisible($('mjLeaveBtn'), lobbyInRoom(s));
     updateLeaveButtons(s);
@@ -910,7 +1013,7 @@
     if (popReady && s.status === 'lobby') {
       const me = mySeat != null ? (s.seats || [])[mySeat] : null;
       popReady.textContent = me && me.ready ? '取消准备' : '准备';
-      setVisible(popReady, mySeat != null);
+      setVisible(popReady, mySeat != null && !overlayActive);
     }
     if (isMain) updatePopoutBtnUi();
   }
@@ -1036,6 +1139,11 @@
 
   async function doStart() {
     const data = await api('start', { room_code: roomCode });
+    applyState(data);
+  }
+
+  async function doRollDice() {
+    const data = await api('roll_dice', { room_code: roomCode });
     applyState(data);
   }
 
