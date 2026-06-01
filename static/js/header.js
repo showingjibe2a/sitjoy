@@ -1484,22 +1484,42 @@
         return Math.max(getPmTableColResizeMin(state), Math.min(280, Math.round(width)));
     }
 
-    /** 拖拽列宽时的硬下限（绝对最小 px），允许窄于内容，超出部分省略号 */
+    /** 列宽硬下限：全局最小 px + 图片列等业务最小宽 */
+    function getManagedColumnEffectiveMinWidth(state, columnKey, headerCell){
+        const key = String(columnKey || '').trim();
+        const cell = headerCell || findManagedHeaderCellForKey(state, key);
+        const tableMin = getPmTableColResizeMin(state);
+        const thumbMin = managedThumbColumnMinWidthPx(state, key, cell);
+        return Math.max(tableMin, thumbMin || 0);
+    }
+
+    /** 拖拽列宽时的硬下限（含图片列 68px 等） */
     function getManagedColumnResizeMin(state, columnKey){
-        void columnKey;
-        return getPmTableColResizeMin(state);
+        if(!state || !columnKey) return getPmTableColResizeMin(state);
+        return getManagedColumnEffectiveMinWidth(state, columnKey, findManagedHeaderCellForKey(state, columnKey));
     }
 
     function clampManagedColumnWidth(state, columnKey, widthPx){
+        const key = String(columnKey || '').trim();
         const w = Math.round(Number(widthPx) || 0);
-        let floor = getPmTableColResizeMin(state);
+        const headerCell = findManagedHeaderCellForKey(state, key);
+        let floor = getManagedColumnEffectiveMinWidth(state, key, headerCell);
         if(activeResizeState
             && activeResizeState.state === state
-            && String(activeResizeState.key || '').trim() === String(columnKey || '').trim()
+            && String(activeResizeState.key || '').trim() === key
             && Number.isFinite(activeResizeState.resizeMinPx)){
-            floor = activeResizeState.resizeMinPx;
+            floor = Math.max(floor, activeResizeState.resizeMinPx);
         }
         return Math.max(floor, w);
+    }
+
+    function applyManagedColPixelWidth(col, widthPx, minWidthPx){
+        if(!col) return;
+        const minW = Math.max(1, Math.round(Number(minWidthPx) || 0));
+        const w = Math.max(minW, Math.round(Number(widthPx) || 0));
+        col.style.width = `${w}px`;
+        col.style.minWidth = `${minW}px`;
+        col.style.maxWidth = '';
     }
 
     function parseThStyleWidthPx(th){
@@ -1594,7 +1614,9 @@
                 const persisted = key ? Number((state.columnWidths || {})[key]) : 0;
                 let w = (Number.isFinite(persisted) && persisted > 0) ? persisted : (fromTh || 80);
                 if(key === '__sj_agg__') w = Math.min(28, Math.max(20, Math.round(w) || 24));
-                col.style.width = `${w}px`;
+                const colMin = getManagedColumnEffectiveMinWidth(state, key, cell);
+                if(colMin > 0) w = Math.max(colMin, Math.round(w) || colMin);
+                applyManagedColPixelWidth(col, w, colMin);
             }
         });
         syncManagedTableTotalWidth(state);
@@ -3372,7 +3394,6 @@
         const cols = Array.from(colgroup.children || [])
             .filter(node => node && String(node.tagName || '').toUpperCase() === 'COL');
         const widths = state.columnWidths || {};
-        const minCol = getPmTableColResizeMin(state);
 
         Array.from(headerRow.cells || []).forEach((cell, idx) => {
             const col = cols[idx];
@@ -3386,7 +3407,6 @@
             }
 
             setManagedColHiddenState(col, false);
-            col.style.minWidth = '';
             col.style.maxWidth = '';
 
             let w = Number(widths[key]);
@@ -3396,9 +3416,9 @@
             if(key === '__sj_agg__'){
                 w = Math.min(28, Math.max(20, Math.round(w) || 24));
             }
-            const thumbMin = managedThumbColumnMinWidthPx(state, key, cell);
-            if(thumbMin > 0) w = Math.max(thumbMin, Math.round(w) || thumbMin);
-            col.style.width = `${Math.max(minCol, Math.round(w))}px`;
+            const colMin = getManagedColumnEffectiveMinWidth(state, key, cell);
+            w = clampManagedColumnWidth(state, key, w);
+            applyManagedColPixelWidth(col, w, colMin);
         });
 
         syncManagedHeaderColgroupFromMainTable(state);
@@ -3531,15 +3551,34 @@
         cell.style.maxWidth = '';
     }
 
+    /** 为各 col 写入 min-width，避免调整其它列时 table 总宽短暂不一致导致列被压窄 */
+    function syncManagedColgroupMinWidths(state){
+        if(!state || !state.table) return;
+        const headerRow = state.table.tHead && state.table.tHead.rows && state.table.tHead.rows[0];
+        if(!headerRow) return;
+        Array.from(headerRow.cells || []).forEach((cell) => {
+            const key = String(cell.dataset.manageColKey || '').trim();
+            if(!key || isManagedColumnSlotHidden(state, key, cell)) return;
+            const colMin = getManagedColumnEffectiveMinWidth(state, key, cell);
+            resolveManagedColgroupColsForKey(state, key).forEach((col) => {
+                if(String(col.getAttribute('data-pm-col-hidden') || '') === '1') return;
+                const cur = parseColWidthPx(col.style.width) || colMin;
+                applyManagedColPixelWidth(col, Math.max(colMin, cur), colMin);
+            });
+        });
+        syncManagedHeaderColgroupFromMainTable(state);
+    }
+
     function scheduleLiveResizeColSync(state){
         if(!state) return;
+        /* 总宽须与 colgroup 同步更新，否则 table-layout:fixed 会按比例压窄其它列（如图片列） */
+        syncManagedColgroupMinWidths(state);
+        syncManagedTableTotalWidth(state);
         if(state.liveResizeSyncScheduled) return;
         state.liveResizeSyncScheduled = true;
         window.requestAnimationFrame(() => {
             state.liveResizeSyncScheduled = false;
             if(!state || !state.table) return;
-            syncManagedHeaderColgroupFromMainTable(state);
-            syncManagedTableTotalWidth(state);
             syncTopScroll(state);
         });
     }
@@ -3563,11 +3602,9 @@
             return;
         }
 
-        const minColWidth = getPmTableColResizeMin(state);
-        let appliedWidth = Math.max(minColWidth, Math.round(Number(width) || 0));
+        const minColWidth = getManagedColumnEffectiveMinWidth(state, columnKeyStr, headerCell);
+        let appliedWidth = clampManagedColumnWidth(state, columnKeyStr, width);
         if(columnKeyStr === '__sj_agg__') appliedWidth = Math.min(28, Math.max(20, appliedWidth));
-        const thumbMin = managedThumbColumnMinWidthPx(state, columnKeyStr, headerCell);
-        if(thumbMin > 0) appliedWidth = Math.max(thumbMin, appliedWidth);
         const matchedCols = resolveManagedColgroupColsForKey(state, columnKeyStr);
 
         if(matchedCols.length){
@@ -3578,9 +3615,7 @@
             const span = Math.max(1, Math.min(spanHint, matchedCols.length));
             const perColWidth = Math.max(minColWidth, Math.round(appliedWidth / span));
             matchedCols.forEach(node => {
-                node.style.width = `${perColWidth}px`;
-                node.style.minWidth = '';
-                node.style.maxWidth = '';
+                applyManagedColPixelWidth(node, perColWidth, minColWidth);
             });
         } else if(!live) {
             applyManagedColumnWidthToCells(state, columnKey, appliedWidth);
@@ -3671,6 +3706,48 @@
         syncSjAggToggleColumnCssVar(state);
     }
 
+    /** 拖拽其它列后校正各列不低于业务最小宽（如图片列 68px） */
+    function enforceManagedColumnWidthFloors(state){
+        if(!state || !state.table) return false;
+        ensureManagedTableColgroup(state);
+        const headerRow = state.table.tHead && state.table.tHead.rows && state.table.tHead.rows[0];
+        if(!headerRow) return false;
+        let changed = false;
+        Array.from(headerRow.cells || []).forEach((cell) => {
+            const key = String(cell.dataset.manageColKey || '').trim();
+            if(!key || isManagedColumnSlotHidden(state, key, cell)) return;
+            const colMin = getManagedColumnEffectiveMinWidth(state, key, cell);
+            const cols = resolveManagedColgroupColsForKey(state, key);
+            if(!cols.length) return;
+            let targetW = 0;
+            cols.forEach((col) => {
+                if(String(col.getAttribute('data-pm-col-hidden') || '') === '1') return;
+                targetW += parseColWidthPx(col.style.width) || colMin;
+            });
+            if(!targetW) targetW = colMin;
+            targetW = clampManagedColumnWidth(state, key, targetW);
+            const prevStored = Number((state.columnWidths || {})[key]);
+            if(!Number.isFinite(prevStored) || prevStored !== targetW){
+                state.columnWidths[key] = targetW;
+                changed = true;
+            }
+            const span = Math.max(1, cols.length);
+            const perCol = Math.max(colMin, Math.round(targetW / span));
+            cols.forEach((col) => {
+                const cur = parseColWidthPx(col.style.width) || 0;
+                const curMin = parseColWidthPx(col.style.minWidth) || 0;
+                if(cur !== perCol || curMin !== colMin) changed = true;
+                applyManagedColPixelWidth(col, perCol, colMin);
+            });
+        });
+        if(changed){
+            persistColumnWidths(state);
+            syncManagedHeaderColgroupFromMainTable(state);
+            syncManagedTableTotalWidth(state);
+        }
+        return changed;
+    }
+
     function ensureResizeHandles(state){
         const headerRow = getPrimaryHeaderRow(state);
         if(!headerRow || headerRow.cells.length !== state.headerCount) return;
@@ -3690,7 +3767,7 @@
                     key: resizeKey,
                     startX: event.clientX,
                     startWidth: cell.getBoundingClientRect().width,
-                    resizeMinPx: getPmTableColResizeMin(state),
+                    resizeMinPx: getManagedColumnResizeMin(state, resizeKey),
                     handle,
                     hasMoved: false
                 };
@@ -7677,6 +7754,7 @@
                 : (activeResizeState.startWidth || 0);
             resizePendingWidth = null;
             setColumnWidthByKey(rsState, rsKey, finalWidth);
+            enforceManagedColumnWidthFloors(rsState);
             persistColumnWidths(rsState);
             if(pinnedLayoutNeedsUpdateAfterResize(rsState, rsKey)){
                 applyPinnedColumns(rsState, { force: true });
