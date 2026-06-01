@@ -470,48 +470,128 @@
   function renderScores(s) {
     const bar = $('mjSideScores');
     if (!bar || !s) return;
+    bar.classList.add('pm-u-hidden');
+    bar.textContent = '';
+  }
+
+  function seatScoreValue(s, logical) {
+    if (logical < 0) return 0;
     const scores = s.scores || {};
-    const seats = (s.seats || []);
-    const parts = [];
-    const seen = new Set();
-    seats.forEach((st, i) => {
-      if (!st) return;
-      const uid = Number(st.user_id);
-      if (uid && seen.has(uid)) return;
-      if (uid) seen.add(uid);
-      const sc = (s.scores || {})[String(st.seat != null ? st.seat : i)] ?? 0;
-      parts.push(`${esc(st.name)}: ${sc}`);
-    });
-    if (!parts.length || s.status === 'lobby') {
-      bar.classList.add('pm-u-hidden');
-      bar.textContent = '';
+    return Number(scores[String(logical)] ?? scores[logical] ?? 0);
+  }
+
+  function playerInitial(name) {
+    const n = String(name || '').trim();
+    if (!n || n === '-') return '？';
+    return n.charAt(0);
+  }
+
+  function clearPlayerAvatarVisuals(img, fallback, plus) {
+    if (img) {
+      img.onload = null;
+      img.onerror = null;
+      img.hidden = true;
+      img.classList.add('pm-u-hidden');
+      img.removeAttribute('src');
+    }
+    if (fallback) {
+      fallback.textContent = '';
+      fallback.hidden = true;
+      fallback.classList.add('pm-u-hidden');
+    }
+    plus?.classList.add('pm-u-hidden');
+  }
+
+  function renderPlayerBadge(domIdx, s, logical) {
+    const badge = $('mjPlayerBadge' + domIdx);
+    const img = $('mjPlayerAvatarImg' + domIdx);
+    const fallback = $('mjPlayerAvatarFallback' + domIdx);
+    const plus = $('mjPlayerAvatarPlus' + domIdx);
+    const nameEl = $('mjSeatName' + domIdx);
+    const metaEl = $('mjSeatMeta' + domIdx);
+    const scoreEl = $('mjSeatScore' + domIdx);
+    if (!badge || !nameEl) return;
+
+    clearPlayerAvatarVisuals(img, fallback, plus);
+    const st = logical >= 0 ? seatAtIndex(s.seats, logical) : null;
+    const mySeat = resolveMySeat(s);
+    const empty = !st;
+    const canSwap = !!s.can_swap_seat && mySeat != null && empty && logical >= 0 && logical !== mySeat;
+
+    badge.classList.toggle('is-empty', empty);
+    badge.classList.toggle('is-me', !empty && mySeat === logical);
+    badge.classList.toggle('is-actionable', canSwap);
+    badge.tabIndex = canSwap ? 0 : -1;
+    badge.setAttribute('aria-disabled', canSwap ? 'false' : 'true');
+
+    if (empty) {
+      nameEl.textContent = '空位';
+      if (metaEl) metaEl.textContent = canSwap ? '点击换座' : '';
+      if (scoreEl) scoreEl.textContent = '';
+      plus?.classList.remove('pm-u-hidden');
+      badge.setAttribute('aria-label', canSwap ? '点击换到此空位' : '空位');
       return;
     }
-    bar.classList.remove('pm-u-hidden');
-    bar.textContent = '积分 · ' + parts.join(' ｜ ');
+
+    const name = st.name || '—';
+    nameEl.textContent = name;
+    const meta = [];
+    if (s.dealer_seat === logical) meta.push('庄');
+    if (s.current_seat === logical && s.status === 'playing') meta.push('出牌');
+    if (st.ready && s.status === 'lobby') meta.push('已准备');
+    if (metaEl) metaEl.textContent = meta.join(' · ');
+    if (scoreEl) {
+      const sc = seatScoreValue(s, logical);
+      const showScore = s.status && s.status !== 'lobby';
+      scoreEl.textContent = showScore ? `${sc} 分` : '';
+      scoreEl.classList.toggle('pm-u-hidden', !showScore);
+    }
+    badge.setAttribute('aria-label', name);
+
+    const avatarUrl = st.avatar_url ? String(st.avatar_url) : '';
+    if (avatarUrl && img) {
+      img.alt = name;
+      img.onerror = () => {
+        img.hidden = true;
+        img.classList.add('pm-u-hidden');
+        img.removeAttribute('src');
+        if (fallback) {
+          fallback.textContent = playerInitial(name);
+          fallback.hidden = false;
+          fallback.classList.remove('pm-u-hidden');
+        }
+      };
+      img.onload = () => {
+        img.hidden = false;
+        img.classList.remove('pm-u-hidden');
+        if (fallback) {
+          fallback.hidden = true;
+          fallback.classList.add('pm-u-hidden');
+        }
+      };
+      img.src = avatarUrl;
+      if (img.complete && img.naturalWidth > 0) {
+        img.hidden = false;
+        img.classList.remove('pm-u-hidden');
+      }
+    } else if (fallback) {
+      fallback.textContent = playerInitial(name);
+      fallback.hidden = false;
+      fallback.classList.remove('pm-u-hidden');
+    }
   }
 
   function renderSeat(seatIdx, s) {
     const logical = s._view_seat != null ? s._view_seat : seatIdx;
-    const nameEl = $('mjSeatName' + seatIdx);
-    const metaEl = $('mjSeatMeta' + seatIdx);
+    renderPlayerBadge(seatIdx, s, logical);
     const riverEl = $('mjRiver' + seatIdx);
     const meldsEl = $('mjMelds' + seatIdx);
     const st = logical >= 0 ? seatAtIndex(s.seats, logical) : null;
-    if (!nameEl) return;
     if (!st) {
-      nameEl.textContent = '空位';
-      if (metaEl) metaEl.textContent = '';
       if (riverEl) riverEl.innerHTML = '';
       if (meldsEl) meldsEl.innerHTML = '';
       return;
     }
-    let meta = [];
-    if (s.dealer_seat === logical) meta.push('庄');
-    if (s.current_seat === logical) meta.push('出牌');
-    if (st.ready) meta.push('已准备');
-    nameEl.textContent = st.name || '—';
-    if (metaEl) metaEl.textContent = meta.join(' · ');
     const river = (s.discards || [])[logical] || [];
     if (riverEl) {
       riverEl.innerHTML = river.map((t) => `<span class="mj-tile mj-tile--mini">${esc(tileLabel(t))}</span>`).join('');
@@ -580,8 +660,7 @@
   }
 
   function shouldRotateTableView(s) {
-    const st = s && s.status;
-    return st === 'playing' || st === 'hand_end';
+    return resolveMySeat(s) != null;
   }
 
   function domSlotForSeat(logicalSeat, s) {
@@ -593,7 +672,7 @@
     const si = active.indexOf(logicalSeat);
     if (mi < 0 || si < 0) return logicalSeat;
     const diff = (si - mi + active.length) % active.length;
-    const map2 = { 0: 0, 1: 3 };
+    const map2 = { 0: 0, 1: 1 };
     const map3 = { 0: 0, 1: 3, 2: 1 };
     const map4 = { 0: 0, 1: 3, 2: 1, 3: 2 };
     const map = active.length === 2 ? map2 : (active.length === 3 ? map3 : map4);
@@ -696,6 +775,9 @@
   function applyState(data) {
     if (!data || data.status !== 'success') return false;
     const ver = Number(data.version) || 0;
+    if (!data.unchanged && lastVersion >= 0 && ver > 0 && ver < lastVersion) {
+      return false;
+    }
     if (data.unchanged && lastVersion >= 0 && ver <= lastVersion) return true;
     lastVersion = ver;
     renderTable(data);
@@ -834,6 +916,63 @@
     applyState(data);
   }
 
+  async function doSwapSeat(preferSeat) {
+    const data = await api('swap_seat', { room_code: roomCode, prefer_seat: preferSeat });
+    if (!applyState(data)) {
+      try {
+        const fresh = await api('state', { room_code: roomCode }, 'GET');
+        applyState(fresh);
+      } catch (_) {}
+    }
+    if (data && data.message) mjToast(data.message, false);
+  }
+
+  function onPlayerBadgeClick(domIdx) {
+    const badge = $('mjPlayerBadge' + domIdx);
+    if (!badge || !badge.classList.contains('is-actionable') || !state) return;
+    const target = logicalSeatForDomSlot(domIdx, state);
+    if (target < 0) return;
+    doSwapSeat(target).catch((err) => mjToast(err.message || '换座失败', true));
+  }
+
+  function bindPlayerAvatarUi() {
+    for (let dom = 0; dom < 4; dom++) {
+      const badge = $('mjPlayerBadge' + dom);
+      if (!badge || badge.dataset.bound === '1') continue;
+      badge.dataset.bound = '1';
+      const activate = () => onPlayerBadgeClick(dom);
+      badge.addEventListener('click', activate);
+      badge.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        activate();
+      });
+    }
+  }
+
+  let roomSyncRecoveries = 0;
+
+  async function recoverRoomStateAfterSyncError() {
+    if (!roomCode || roomSyncRecoveries >= 2) return false;
+    roomSyncRecoveries += 1;
+    try {
+      const data = await api('state', { room_code: roomCode }, 'GET');
+      if (data && data.status === 'success' && applyState(data)) {
+        roomSyncRecoveries = 0;
+        return true;
+      }
+    } catch (_) {
+      try {
+        const data = await api('join', { room_code: roomCode });
+        if (data && data.status === 'success' && applyState(data)) {
+          roomSyncRecoveries = 0;
+          return true;
+        }
+      } catch (_) {}
+    }
+    return false;
+  }
+
   function stopWatch() {
     watchAbort = true;
     if (watchCtrl) {
@@ -879,7 +1018,14 @@
       if (watchAbort || !ev.data) return;
       try {
         const data = JSON.parse(ev.data);
-        onRoomEnded(data.message || '房间已结束');
+        const msg = String(data.message || '');
+        if (msg.indexOf('不在该房间') >= 0) {
+          recoverRoomStateAfterSyncError().then((ok) => {
+            if (!ok) onRoomEnded(msg || '房间已结束');
+          });
+          return;
+        }
+        onRoomEnded(msg || '房间已结束');
       } catch (_) {
         onRoomEnded('房间已结束');
       }
@@ -918,7 +1064,9 @@
           return;
         }
         if (msg.indexOf('不在该房间') >= 0) {
-          onRoomEnded(msg);
+          recoverRoomStateAfterSyncError().then((ok) => {
+            if (!ok) onRoomEnded(msg);
+          });
           return;
         }
         if (!watchAbort && roomCode) win.setTimeout(watchLoop, 1500);
@@ -978,6 +1126,7 @@
   function initPopup() {
     initMjBoardOverlay();
     initRoomChat();
+    bindPlayerAvatarUi();
     document.title = '麻将牌桌';
     tryResume();
     const syncFromOpener = () => {
@@ -1011,6 +1160,7 @@
   function initMain() {
     initMjBoardOverlay();
     initRoomChat();
+    bindPlayerAvatarUi();
     bindMainMessageBridge();
     $('mjCreateBtn') && $('mjCreateBtn').addEventListener('click', () => doCreate().catch((e) => mjToast(e.message || '创建失败', true)));
     $('mjJoinBtn') && $('mjJoinBtn').addEventListener('click', () => doJoin().catch((e) => alert(e.message)));
@@ -1028,6 +1178,7 @@
     }
     win.addEventListener('beforeunload', () => {
       if (!roomCode || !state || state.my_seat == null) return;
+      if (state.you_are_host) return;
       beaconLeave();
     });
     tryResume();

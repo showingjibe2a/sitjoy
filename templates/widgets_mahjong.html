@@ -36,30 +36,90 @@
                 <div class="widget-room-stage widget-room-stage--inline mj-board-stage">
                     <div class="widget-room-board-cluster">
                         <div class="mj-table-wrap" id="mjTableWrap">
-                            <div class="mj-table" id="mjTable">
-                                <div class="mj-seat mj-seat--top" data-seat="1"><div class="mj-seat-name" id="mjSeatName1">—</div><div class="mj-seat-meta" id="mjSeatMeta1"></div><div class="mj-river" id="mjRiver1"></div><div class="mj-melds" id="mjMelds1"></div></div>
-                                <div class="mj-seat mj-seat--left" data-seat="2"><div class="mj-seat-name" id="mjSeatName2">—</div><div class="mj-seat-meta" id="mjSeatMeta2"></div><div class="mj-river" id="mjRiver2"></div><div class="mj-melds" id="mjMelds2"></div></div>
-                                <div class="mj-seat mj-seat--right" data-seat="3"><div class="mj-seat-name" id="mjSeatName3">—</div><div class="mj-seat-meta" id="mjSeatMeta3"></div><div class="mj-river" id="mjRiver3"></div><div class="mj-melds" id="mjMelds3"></div></div>
-                                <div class="mj-center" id="mjCenterInfo">—</div>
-                                <div class="mj-dice-roll pm-u-hidden" id="mjDiceRoll" aria-live="polite">
-                                    <div class="mj-dice-pair">
-                                        <span class="mj-die" id="mjDie1">—</span>
-                                        <span class="mj-die" id="mjDie2">—</span>
+                            <div class="mj-table-layout">
+                                <div class="mj-player-rail mj-player-rail--top">
+                                    <div class="mj-player-badge" id="mjPlayerBadge1" data-dom="1" role="button" tabindex="-1" aria-disabled="true" aria-label="对家">
+                                        <div class="mj-player-avatar" id="mjPlayerAvatar1">
+                                            <img class="mj-player-avatar-img" id="mjPlayerAvatarImg1" alt="" hidden>
+                                            <span class="mj-player-avatar-fallback pm-u-hidden" id="mjPlayerAvatarFallback1"></span>
+                                            <span class="mj-player-avatar-plus pm-u-hidden" id="mjPlayerAvatarPlus1">+</span>
+                                        </div>
+                                        <div class="mj-player-caption">
+                                            <span class="mj-player-name" id="mjSeatName1">—</span>
+                                            <span class="mj-player-score" id="mjSeatScore1"></span>
+                                            <span class="mj-seat-meta" id="mjSeatMeta1"></span>
+                                        </div>
                                     </div>
-                                    <p class="mj-dice-result" id="mjDiceResult"></p>
                                 </div>
-                                <div class="mj-seat mj-seat--bottom" data-seat="0">
-                                    <div class="mj-seat-name" id="mjSeatName0">—</div>
-                                    <div class="mj-seat-meta" id="mjSeatMeta0"></div>
-                                    <div class="mj-melds" id="mjMelds0"></div>
-                                    <div class="mj-hand" id="mjMyHand" aria-label="我的手牌"></div>
-                                    <div class="mj-river" id="mjRiver0"></div>
+                                <div class="mj-table-row">
+                                    <div class="mj-player-rail mj-player-rail--left">
+                                        <div class="mj-player-badge" id="mjPlayerBadge2" data-dom="2" role="button" tabindex="-1" aria-disabled="true" aria-label="上家">
+                                            <div class="mj-player-avatar" id="mjPlayerAvatar2">
+                                                <img class="mj-player-avatar-img" id="mjPlayerAvatarImg2" alt="" hidden>
+                                                <span class="mj-player-avatar-fallback pm-u-hidden" id="mjPlayerAvatarFallback2"></span>
+                                                <span class="mj-player-avatar-plus pm-u-hidden" id="mjPlayerAvatarPlus2">+</span>
+                                            </div>
+                                            <div class="mj-player-caption">
+                                                <span class="mj-player-name" id="mjSeatName2">—</span>
+                                                <span class="mj-player-score" id="mjSeatScore2"></span>
+                                                <span class="mj-seat-meta" id="mjSeatMeta2"></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="mj-table-felt">
+                                        <div class="mj-table" id="mjTable">
+                                            <div class="mj-seat mj-seat--top" data-dom="1"><div class="mj-river" id="mjRiver1"></div><div class="mj-melds" id="mjMelds1"></div></div>
+                                            <div class="mj-seat mj-seat--left" data-dom="2"><div class="mj-river" id="mjRiver2"></div><div class="mj-melds" id="mjMelds2"></div></div>
+                                            <div class="mj-seat mj-seat--right" data-dom="3"><div class="mj-river" id="mjRiver3"></div><div class="mj-melds" id="mjMelds3"></div></div>
+                                            <div class="mj-center" id="mjCenterInfo">—</div>
+                                            <div class="mj-dice-roll pm-u-hidden" id="mjDiceRoll" aria-live="polite">
+                                                <div class="mj-dice-pair">
+                                                    <span class="mj-die" id="mjDie1">—</span>
+                                                    <span class="mj-die" id="mjDie2">—</span>
+                                                </div>
+                                                <p class="mj-dice-result" id="mjDiceResult"></p>
+                                            </div>
+                                            <div class="mj-seat mj-seat--bottom" data-dom="0">
+                                                <div class="mj-melds" id="mjMelds0"></div>
+                                                <div class="mj-hand" id="mjMyHand" aria-label="我的手牌"></div>
+                                                <div class="mj-river" id="mjRiver0"></div>
+                                            </div>
+                                            <div class="widget-board-overlay pm-u-hidden" id="mjBoardOverlay" hidden aria-live="polite">
+                                                <div class="widget-board-dialog" role="dialog" aria-modal="true" aria-labelledby="mjOverlayTitle">
+                                                    <p class="widget-board-dialog-title" id="mjOverlayTitle"></p>
+                                                    <p class="widget-board-dialog-msg" id="mjOverlayMsg"></p>
+                                                    <div class="widget-board-dialog-actions" id="mjOverlayActions"></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="mj-player-rail mj-player-rail--right">
+                                        <div class="mj-player-badge" id="mjPlayerBadge3" data-dom="3" role="button" tabindex="-1" aria-disabled="true" aria-label="下家">
+                                            <div class="mj-player-avatar" id="mjPlayerAvatar3">
+                                                <img class="mj-player-avatar-img" id="mjPlayerAvatarImg3" alt="" hidden>
+                                                <span class="mj-player-avatar-fallback pm-u-hidden" id="mjPlayerAvatarFallback3"></span>
+                                                <span class="mj-player-avatar-plus pm-u-hidden" id="mjPlayerAvatarPlus3">+</span>
+                                            </div>
+                                            <div class="mj-player-caption">
+                                                <span class="mj-player-name" id="mjSeatName3">—</span>
+                                                <span class="mj-player-score" id="mjSeatScore3"></span>
+                                                <span class="mj-seat-meta" id="mjSeatMeta3"></span>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="widget-board-overlay pm-u-hidden" id="mjBoardOverlay" hidden aria-live="polite">
-                                    <div class="widget-board-dialog" role="dialog" aria-modal="true" aria-labelledby="mjOverlayTitle">
-                                        <p class="widget-board-dialog-title" id="mjOverlayTitle"></p>
-                                        <p class="widget-board-dialog-msg" id="mjOverlayMsg"></p>
-                                        <div class="widget-board-dialog-actions" id="mjOverlayActions"></div>
+                                <div class="mj-player-rail mj-player-rail--bottom">
+                                    <div class="mj-player-badge" id="mjPlayerBadge0" data-dom="0" role="button" tabindex="-1" aria-disabled="true" aria-label="本家">
+                                        <div class="mj-player-avatar" id="mjPlayerAvatar0">
+                                            <img class="mj-player-avatar-img" id="mjPlayerAvatarImg0" alt="" hidden>
+                                            <span class="mj-player-avatar-fallback pm-u-hidden" id="mjPlayerAvatarFallback0"></span>
+                                            <span class="mj-player-avatar-plus pm-u-hidden" id="mjPlayerAvatarPlus0">+</span>
+                                        </div>
+                                        <div class="mj-player-caption">
+                                            <span class="mj-player-name" id="mjSeatName0">—</span>
+                                            <span class="mj-player-score" id="mjSeatScore0"></span>
+                                            <span class="mj-seat-meta" id="mjSeatMeta0"></span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
