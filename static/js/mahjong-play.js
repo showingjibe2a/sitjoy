@@ -310,6 +310,13 @@
     return ds >= 0 && ds < 4 ? ds : null;
   }
 
+  function resolveWindAnchor(s) {
+    if (!s) return null;
+    if (s.status === 'lobby') return resolveHostSeat(s);
+    const ds = Number(s.dealer_seat);
+    return ds >= 0 && ds < 4 ? ds : resolveHostSeat(s);
+  }
+
   function windLabelForSeat(seatIdx, anchorSeat) {
     const labels = ['东', '南', '西', '北'];
     if (anchorSeat == null) return labels[seatIdx] || '—';
@@ -317,36 +324,11 @@
   }
 
   function renderLobbySeats(s) {
-    const root = $('mjLobbySeats');
-    const panel = $('mjLobbyPanel');
-    if (!root) return;
-    const inLobby = s && s.status === 'lobby' && s.code;
-    if (panel) panel.classList.toggle('pm-u-hidden', !inLobby);
-    root.hidden = !inLobby;
-    if (!inLobby) return;
-    const seats = s.seats || [];
-    const minP = Number(s.min_players) || 2;
-    const anchorSeat = resolveHostSeat(s);
-    const mySeat = resolveMySeat(s);
-    root.innerHTML = [0, 1, 2, 3].map((i) => {
-      const st = seatAtIndex(seats, i);
-      const wind = windLabelForSeat(i, anchorSeat);
-      const cls = ['mj-seat-dot'];
-      if (!st) cls.push('mj-seat-dot--empty');
-      else {
-        cls.push('mj-seat-dot--filled');
-        if (st.ready) cls.push('mj-seat-dot--ready');
-        if (mySeat === i) cls.push('mj-seat-dot--me');
-      }
-      const check = st && st.ready ? '✓' : '';
-      const name = st ? (st.name || '—') : '空位';
-      return '<div class="' + cls.join(' ') + '" title="' + esc(wind + ' · ' + name) + '">'
-        + '<span class="mj-seat-dot-inner">' + check + '</span>'
-        + '<span class="mj-seat-dot-name">' + esc(st ? name : wind) + '</span></div>';
-    }).join('');
-    const lobby = s.lobby || {};
+    const lobby = s && s.lobby || {};
     const hint = $('mjRoomHint');
-    if (hint) {
+    if (hint && s && s.status === 'lobby' && s.code) {
+      const seats = s.seats || [];
+      const minP = Number(s.min_players) || 2;
       const n = lobby.occupied_count != null ? lobby.occupied_count : seats.filter(Boolean).length;
       hint.textContent = '房间内 ' + n + ' 人 · 至少 ' + minP + ' 人全部准备后可开局'
         + (lobby.can_start ? '（可开局）' : '');
@@ -558,6 +540,22 @@
     roleEl.classList.toggle('mj-role-tag--xian', !isDealer);
   }
 
+  function renderSeatWind(windEl, logical, s) {
+    if (!windEl) return '';
+    const anchor = resolveWindAnchor(s);
+    if (anchor == null || logical < 0) {
+      windEl.textContent = '';
+      windEl.classList.add('pm-u-hidden');
+      windEl.setAttribute('aria-hidden', 'true');
+      return '';
+    }
+    const wind = windLabelForSeat(logical, anchor);
+    windEl.textContent = wind;
+    windEl.classList.remove('pm-u-hidden');
+    windEl.setAttribute('aria-hidden', 'false');
+    return wind;
+  }
+
   function renderPlayerBadge(domIdx, s, logical) {
     const badge = $('mjPlayerBadge' + domIdx);
     const img = $('mjPlayerAvatarImg' + domIdx);
@@ -566,6 +564,7 @@
     const nameEl = $('mjSeatName' + domIdx);
     const metaEl = $('mjSeatMeta' + domIdx);
     const roleEl = $('mjSeatRole' + domIdx);
+    const windEl = $('mjSeatWind' + domIdx);
     const scoreEl = $('mjSeatScore' + domIdx);
     if (!badge || !nameEl) return;
 
@@ -585,24 +584,22 @@
     else delete badge.dataset.logicalSeat;
 
     if (empty) {
+      const wind = renderSeatWind(windEl, logical, s);
       nameEl.textContent = '空位';
       renderPlayerRole(roleEl, false, false);
       if (metaEl) metaEl.textContent = canSwap ? '点击换座' : '';
       if (scoreEl) scoreEl.textContent = '';
       plus?.classList.remove('pm-u-hidden');
-      badge.setAttribute('aria-label', canSwap ? '点击换到此空位' : '空位');
+      badge.setAttribute('aria-label', canSwap ? (wind ? `点击换到${wind}位` : '点击换到此空位') : (wind ? `${wind}位空位` : '空位'));
       return;
     }
 
     const name = st.name || '—';
+    const wind = renderSeatWind(windEl, logical, s);
     nameEl.textContent = name;
     const isDealer = s.dealer_seat === logical;
-    renderPlayerRole(roleEl, isDealer, true);
+    renderPlayerRole(roleEl, isDealer, s.status !== 'lobby');
     const meta = [];
-    if (s.status === 'lobby') {
-      const anchor = resolveHostSeat(s);
-      if (anchor != null) meta.push(windLabelForSeat(logical, anchor));
-    }
     if (s.current_seat === logical && s.status === 'playing') meta.push('出牌');
     if (st.ready && s.status === 'lobby') meta.push('已准备');
     if (metaEl) metaEl.textContent = meta.join(' · ');
@@ -612,7 +609,7 @@
       scoreEl.textContent = showScore ? `${sc} 分` : '';
       scoreEl.classList.toggle('pm-u-hidden', !showScore);
     }
-    badge.setAttribute('aria-label', name);
+    badge.setAttribute('aria-label', wind ? `${wind} · ${name}` : name);
 
     const avatarUrl = st.avatar_url ? String(st.avatar_url) : '';
     if (avatarUrl && img) {
@@ -729,45 +726,15 @@
     return resolveMySeat(s) != null;
   }
 
-  function emptyLogicalSeatsOrdered(s, my) {
-    if (my == null) {
-      const out = [];
-      for (let L = 0; L < 4; L++) {
-        if (!seatAtIndex(s.seats, L)) out.push(L);
-      }
-      return out;
-    }
-    const out = [];
-    for (let k = 1; k < 4; k++) {
-      const L = (my + k) % 4;
-      if (L !== my && !seatAtIndex(s.seats, L)) out.push(L);
-    }
-    return out;
-  }
-
-  function freeDomSlotsForEmpty(s, my) {
-    const occupiedDom = new Set([0]);
-    for (let L = 0; L < 4; L++) {
-      if (L === my) continue;
-      const mapped = domSlotForSeat(L, s);
-      if (mapped >= 0) occupiedDom.add(mapped);
-    }
-    return [1, 2, 3].filter((d) => !occupiedDom.has(d));
-  }
-
+  /** 按牌桌方位映射：本家下、对家上、下家左（南）、上家右（北） */
   function domSlotForSeat(logicalSeat, s) {
-    if (!shouldRotateTableView(s)) return logicalSeat;
+    if (!shouldRotateTableView(s)) {
+      return logicalSeat >= 0 && logicalSeat < 4 ? logicalSeat : -1;
+    }
     const my = resolveMySeat(s);
-    const active = (s.active_seats || []).slice().sort((a, b) => a - b);
-    if (my == null || !active.length) return logicalSeat;
-    const mi = active.indexOf(my);
-    const si = active.indexOf(logicalSeat);
-    if (mi < 0 || si < 0) return -1;
-    const diff = (si - mi + active.length) % active.length;
-    const map2 = { 0: 0, 1: 1 };
-    const map3 = { 0: 0, 1: 3, 2: 1 };
-    const map4 = { 0: 0, 1: 3, 2: 1, 3: 2 };
-    const map = active.length === 2 ? map2 : (active.length === 3 ? map3 : map4);
+    if (my == null) return logicalSeat >= 0 && logicalSeat < 4 ? logicalSeat : -1;
+    const diff = (logicalSeat - my + 4) % 4;
+    const map = { 0: 0, 1: 2, 2: 1, 3: 3 };
     return map[diff] != null ? map[diff] : -1;
   }
 
@@ -775,17 +742,9 @@
     if (!shouldRotateTableView(s)) {
       return dom >= 0 && dom < 4 ? dom : -1;
     }
-    const my = resolveMySeat(s);
-    if (dom === 0 && my != null) return my;
     for (let L = 0; L < 4; L++) {
-      if (L === my) continue;
       if (domSlotForSeat(L, s) === dom) return L;
     }
-    if (my == null) return -1;
-    const emptyOrdered = emptyLogicalSeatsOrdered(s, my);
-    const freeDom = freeDomSlotsForEmpty(s, my);
-    const di = freeDom.indexOf(dom);
-    if (di >= 0 && di < emptyOrdered.length) return emptyOrdered[di];
     return -1;
   }
 
@@ -1028,7 +987,7 @@
         let msg = (data && data.message) || '已更换座位';
         if (state && state.status === 'lobby') {
           const my = resolveMySeat(state);
-          const anchor = resolveHostSeat(state);
+          const anchor = resolveWindAnchor(state);
           if (my != null && anchor != null) {
             msg += '（' + windLabelForSeat(my, anchor) + '位）';
           }
