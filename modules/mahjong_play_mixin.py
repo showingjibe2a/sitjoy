@@ -329,16 +329,15 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                 room['dealer_seat'] = ts
             if room.get('current_seat') == fs:
                 room['current_seat'] = ts
-
-        for key in ('hands', 'melds', 'discards'):
-            arr = list(room.get(key) or [])
-            while len(arr) < MJ_SEATS:
-                arr.append([])
-            from_val = arr[fs] if fs < len(arr) else []
-            to_val = arr[ts] if ts < len(arr) else []
-            arr[fs] = to_val if isinstance(to_val, list) else []
-            arr[ts] = from_val if isinstance(from_val, list) else []
-            room[key] = arr[:MJ_SEATS]
+            for key in ('hands', 'melds', 'discards'):
+                arr = list(room.get(key) or [])
+                while len(arr) < MJ_SEATS:
+                    arr.append([])
+                from_val = arr[fs] if fs < len(arr) else []
+                to_val = arr[ts] if ts < len(arr) else []
+                arr[fs] = to_val if isinstance(to_val, list) else []
+                arr[ts] = from_val if isinstance(from_val, list) else []
+                room[key] = arr[:MJ_SEATS]
         return True
 
     def _mj_new_room_code(self):
@@ -952,12 +951,6 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             self._mj_after_lobby_seating_change(room)
             self._mj_bump_version(room)
             self._mj_save_room(room)
-        with _mj_file_lock:
-            room = self._mj_read_room_file(code)
-        if not room:
-            return self.send_json({'status': 'error', 'message': '房间已解散或已过期', 'room_dissolved': True}, start_response)
-        if self._mj_seat_of_user(room, user_id) is None:
-            return self.send_json({'status': 'error', 'message': '换座失败，请刷新后重试'}, start_response)
         return self._mj_json_room(room, user_id, start_response, message='已更换座位')
 
     def _mj_action_join(self, user_id, data, start_response):

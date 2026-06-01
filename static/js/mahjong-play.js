@@ -562,6 +562,8 @@
     badge.classList.toggle('is-actionable', canSwap);
     badge.tabIndex = canSwap ? 0 : -1;
     badge.setAttribute('aria-disabled', canSwap ? 'false' : 'true');
+    if (logical >= 0) badge.dataset.logicalSeat = String(logical);
+    else delete badge.dataset.logicalSeat;
 
     if (empty) {
       nameEl.textContent = '空位';
@@ -708,6 +710,32 @@
     return resolveMySeat(s) != null;
   }
 
+  function emptyLogicalSeatsOrdered(s, my) {
+    if (my == null) {
+      const out = [];
+      for (let L = 0; L < 4; L++) {
+        if (!seatAtIndex(s.seats, L)) out.push(L);
+      }
+      return out;
+    }
+    const out = [];
+    for (let k = 1; k < 4; k++) {
+      const L = (my + k) % 4;
+      if (L !== my && !seatAtIndex(s.seats, L)) out.push(L);
+    }
+    return out;
+  }
+
+  function freeDomSlotsForEmpty(s, my) {
+    const occupiedDom = new Set([0]);
+    for (let L = 0; L < 4; L++) {
+      if (L === my) continue;
+      const mapped = domSlotForSeat(L, s);
+      if (mapped >= 0) occupiedDom.add(mapped);
+    }
+    return [1, 2, 3].filter((d) => !occupiedDom.has(d));
+  }
+
   function domSlotForSeat(logicalSeat, s) {
     if (!shouldRotateTableView(s)) return logicalSeat;
     const my = resolveMySeat(s);
@@ -735,16 +763,10 @@
       if (domSlotForSeat(L, s) === dom) return L;
     }
     if (my == null) return -1;
-    const occupiedDom = new Set([0]);
-    for (let L = 0; L < 4; L++) {
-      if (L === my) continue;
-      const mapped = domSlotForSeat(L, s);
-      if (mapped >= 0) occupiedDom.add(mapped);
-    }
-    const emptyLogical = [0, 1, 2, 3].filter((L) => L !== my && !seatAtIndex(s.seats, L));
-    const freeDom = [1, 2, 3].filter((d) => !occupiedDom.has(d));
+    const emptyOrdered = emptyLogicalSeatsOrdered(s, my);
+    const freeDom = freeDomSlotsForEmpty(s, my);
     const di = freeDom.indexOf(dom);
-    if (di >= 0 && di < emptyLogical.length) return emptyLogical[di];
+    if (di >= 0 && di < emptyOrdered.length) return emptyOrdered[di];
     return -1;
   }
 
@@ -976,22 +998,33 @@
   }
 
   async function doSwapSeat(preferSeat) {
-    const data = await api('swap_seat', { room_code: roomCode, prefer_seat: preferSeat });
-    if (!applyState(data)) {
-      try {
-        const fresh = await api('state', { room_code: roomCode }, 'GET');
-        applyState(fresh);
-      } catch (_) {}
+    try {
+      const data = await api('swap_seat', { room_code: roomCode, prefer_seat: preferSeat });
+      applyState(data);
+      if (data && data.message) mjToast(data.message, false);
+    } catch (err) {
+      const msg = String((err && err.message) || '');
+      const maybeTransient = /解散|过期|不在该房间|换座失败|刷新/.test(msg);
+      if (maybeTransient) {
+        try {
+          const fresh = await api('state', { room_code: roomCode }, 'GET');
+          if (applyState(fresh)) {
+            mjToast('换座已完成', false);
+            return;
+          }
+        } catch (_) {}
+      }
+      mjToast(msg || '换座失败', true);
     }
-    if (data && data.message) mjToast(data.message, false);
   }
 
   function onPlayerBadgeClick(domIdx) {
     const badge = $('mjPlayerBadge' + domIdx);
     if (!badge || !badge.classList.contains('is-actionable') || !state) return;
-    const target = logicalSeatForDomSlot(domIdx, state);
-    if (target < 0) return;
-    doSwapSeat(target).catch((err) => mjToast(err.message || '换座失败', true));
+    const raw = badge.getAttribute('data-logical-seat');
+    let target = raw != null && raw !== '' ? Number(raw) : logicalSeatForDomSlot(domIdx, state);
+    if (!Number.isFinite(target) || target < 0) return;
+    doSwapSeat(target);
   }
 
   function bindPlayerAvatarUi() {
