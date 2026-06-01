@@ -680,7 +680,6 @@
     updateLeaveButtons(s);
 
     const readyBtn = $('mjReadyBtn');
-    const mySeat = resolveMySeat(s);
     if (readyBtn && s.status === 'lobby') {
       const me = mySeat != null ? (s.seats || [])[mySeat] : null;
       readyBtn.textContent = me && me.ready ? '取消准备' : '准备';

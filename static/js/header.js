@@ -5827,9 +5827,7 @@
             && String(state.table.dataset.pmLightAllowColResize || '') === '1'){
             if(headerStructureChanged) ensureResizeHandles(state);
         }
-        if(!tableSkipsClientPagination(state)){
-            ensureManagedTableColumnFilter(state);
-        }
+        ensureManagedTableColumnFilter(state);
         reapplyManagedColumnFiltersFromHandle(state);
 
         state.isRefreshing = false;
