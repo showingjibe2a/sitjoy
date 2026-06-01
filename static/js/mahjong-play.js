@@ -54,6 +54,25 @@
     return Object.assign({}, s, { my_seat: mySeat });
   }
 
+  /** API 用 status=success 表示请求成功，对局阶段在 room_status */
+  function normalizeRoomState(raw) {
+    if (!raw) return raw;
+    let phase = String(raw.room_status || raw.game_status || '').trim();
+    if (!phase && raw.status === 'success') {
+      if (raw.lobby != null) phase = 'lobby';
+      else if (raw.dice_roll) phase = 'dealer_roll';
+      else if (raw.last_hand_result) phase = 'hand_end';
+      else if ((raw.my_hand || []).length || raw.wall_remaining != null) phase = 'playing';
+    }
+    if (!phase) {
+      const cur = String(raw.status || '').trim();
+      if (cur && cur !== 'success') return raw;
+      return raw;
+    }
+    if (raw.status === phase) return raw;
+    return Object.assign({}, raw, { status: phase, room_status: phase });
+  }
+
   function initMjBoardOverlay() {
     if (mjBoardOverlay) return mjBoardOverlay;
     if (!win.WidgetBoardOverlay) return null;
@@ -771,7 +790,7 @@
   }
 
   function renderTable(raw) {
-    const s = withResolvedSeat(raw);
+    const s = withResolvedSeat(normalizeRoomState(raw));
     state = s;
     if (!s || !s.code) return;
     roomCode = s.code;
@@ -874,7 +893,7 @@
       return;
     }
     if (payload.roomCode) roomCode = String(payload.roomCode).toUpperCase();
-    applyState(payload.state);
+    renderTable(payload.state);
   }
 
   function beaconLeave() {
@@ -1000,8 +1019,24 @@
   async function doSwapSeat(preferSeat) {
     try {
       const data = await api('swap_seat', { room_code: roomCode, prefer_seat: preferSeat });
-      applyState(data);
-      if (data && data.message) mjToast(data.message, false);
+      let ok = applyState(data);
+      if (!ok) {
+        const fresh = await api('state', { room_code: roomCode }, 'GET');
+        ok = applyState(fresh);
+      }
+      if (ok) {
+        let msg = (data && data.message) || '已更换座位';
+        if (state && state.status === 'lobby') {
+          const my = resolveMySeat(state);
+          const anchor = resolveHostSeat(state);
+          if (my != null && anchor != null) {
+            msg += '（' + windLabelForSeat(my, anchor) + '位）';
+          }
+        }
+        mjToast(msg, false);
+      } else {
+        mjToast('换座状态同步失败，请刷新页面', true);
+      }
     } catch (err) {
       const msg = String((err && err.message) || '');
       const maybeTransient = /解散|过期|不存在|不在该房间|换座失败|刷新/.test(msg);

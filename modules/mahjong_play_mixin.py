@@ -833,7 +833,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         return {
             'code': room.get('code'),
             'version': int(room.get('version') or 0),
-            'status': room.get('status'),
+            'room_status': room.get('status'),
             'phase': room.get('phase'),
             'host_user_id': self._parse_int(room.get('host_user_id')),
             'seats': seats_pub,
