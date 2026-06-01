@@ -156,6 +156,65 @@
     return honor[t] || t;
   }
 
+  function tileGlyph(t) {
+    const key = String(t || '').trim();
+    if (!key) return '?';
+    const suit = key[0];
+    if (suit === 'p') {
+      const n = parseInt(key.slice(1), 10);
+      if (n >= 1 && n <= 9) return String.fromCodePoint(0x1F019 + n - 1);
+    }
+    if (suit === 's') {
+      const n = parseInt(key.slice(1), 10);
+      if (n >= 1 && n <= 9) return String.fromCodePoint(0x1F010 + n - 1);
+    }
+    const honorCode = { z1: 0x1F000, z2: 0x1F001, z3: 0x1F002, z4: 0x1F003, z5: 0x1F004, z6: 0x1F005, z7: 0x1F006 };
+    if (honorCode[key]) return String.fromCodePoint(honorCode[key]);
+    return tileLabel(t);
+  }
+
+  function tileKindClasses(t) {
+    const key = String(t || '').trim();
+    if (key.startsWith('p')) return ['mj-tile--pin'];
+    if (key.startsWith('s')) return ['mj-tile--sou'];
+    if (key === 'z7') return ['mj-tile--honor', 'mj-tile--bai'];
+    if (key === 'z5') return ['mj-tile--honor', 'mj-tile--zhong'];
+    if (key === 'z6') return ['mj-tile--honor', 'mj-tile--fa'];
+    if (/^z[1-4]$/.test(key)) return ['mj-tile--honor', 'mj-tile--wind'];
+    if (key.startsWith('z')) return ['mj-tile--honor'];
+    return ['mj-tile--unknown'];
+  }
+
+  function tileInnerHtml(glyph) {
+    return '<span class="mj-tile-glyph-wrap"><span class="mj-tile-glyph">' + glyph + '</span></span>';
+  }
+
+  function tileFaceHtml(t, variant) {
+    const key = String(t || '').trim();
+    const label = tileLabel(key);
+    const glyph = tileGlyph(key);
+    const cls = ['mj-tile'].concat(tileKindClasses(key));
+    if (variant === 'mini' || variant === 'table') cls.push('mj-tile--table');
+    if (variant === 'hand') cls.push('mj-tile--hand');
+    return `<span class="${cls.join(' ')}" role="img" aria-label="${esc(label)}" data-tile="${esc(key)}">`
+      + tileInnerHtml(glyph)
+      + '</span>';
+  }
+
+  function tileHandButtonHtml(t, canDiscard) {
+    const key = String(t || '').trim();
+    const label = tileLabel(key);
+    const glyph = tileGlyph(key);
+    const cls = ['mj-tile', 'mj-tile--hand'].concat(tileKindClasses(key));
+    if (canDiscard) cls.push('mj-tile--clickable');
+    const inner = tileInnerHtml(glyph);
+    const attrs = ` class="${cls.join(' ')}" aria-label="${esc(label)}" data-tile="${esc(key)}"`;
+    if (canDiscard) {
+      return `<button type="button"${attrs} data-discard="1">${inner}</button>`;
+    }
+    return `<span${attrs} role="img">${inner}</span>`;
+  }
+
   function esc(s) {
     return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
   }
@@ -657,7 +716,7 @@
     }
     const river = (s.discards || [])[logical] || [];
     if (riverEl) {
-      riverEl.innerHTML = river.map((t) => `<span class="mj-tile mj-tile--mini">${esc(tileLabel(t))}</span>`).join('');
+      riverEl.innerHTML = river.map((t) => tileFaceHtml(t, 'mini')).join('');
     }
     const melds = (s.melds || [])[logical] || [];
     if (meldsEl) {
@@ -668,26 +727,51 @@
     }
   }
 
+  function syncHandTileLayout(handEl) {
+    if (!handEl) return;
+    const n = handEl.querySelectorAll('.mj-tile--hand').length;
+    handEl.style.setProperty('--mj-hand-count', String(Math.max(n, 1)));
+    const w = handEl.clientWidth;
+    if (n > 0 && w > 0) {
+      const rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const maxPx = 3.1 * rootPx;
+      const perTile = Math.min(maxPx, (w / n) * 0.93);
+      handEl.style.setProperty('--mj-hand-tile-size', perTile + 'px');
+    }
+  }
+
+  let handLayoutBound = false;
+  function ensureHandLayoutSync() {
+    if (handLayoutBound) return;
+    handLayoutBound = true;
+    window.addEventListener('resize', () => {
+      syncHandTileLayout($('mjMyHand'));
+    });
+  }
+
   function renderHand(s) {
     const handEl = $('mjMyHand');
+    const stripEl = handEl && handEl.closest('.mj-hand-strip');
     if (!handEl) return;
-    if (s.status === 'dealer_roll') {
+    ensureHandLayoutSync();
+    if (s.status === 'dealer_roll' || s.status === 'lobby') {
       handEl.innerHTML = '';
+      if (stripEl) stripEl.classList.add('pm-u-hidden');
       return;
     }
     const hand = s.my_hand || [];
     const mySeat = resolveMySeat(s);
     const canDiscard = s.status === 'playing' && s.phase === 'discard' && s.current_seat === mySeat;
-    handEl.innerHTML = hand.map((t) => {
-      const cls = 'mj-tile' + (canDiscard ? ' mj-tile--clickable' : '');
-      return `<button type="button" class="${cls}" data-tile="${esc(t)}" ${canDiscard ? '' : 'disabled'}>${esc(tileLabel(t))}</button>`;
-    }).join('');
-    handEl.querySelectorAll('.mj-tile--clickable').forEach((btn) => {
+    if (stripEl) stripEl.classList.toggle('pm-u-hidden', !hand.length);
+    handEl.innerHTML = hand.map((t) => tileHandButtonHtml(t, canDiscard)).join('');
+    handEl.querySelectorAll('.mj-tile--hand.mj-tile--clickable').forEach((btn) => {
       btn.addEventListener('click', () => {
         const tile = btn.getAttribute('data-tile');
         if (tile) doDiscard(tile);
       });
     });
+    syncHandTileLayout(handEl);
+    window.requestAnimationFrame(() => syncHandTileLayout(handEl));
   }
 
   function renderActions(s) {

@@ -87,6 +87,7 @@
 .mj-table-wrap {
     display: flex; justify-content: center; padding: 0.35rem 0;
     width: 100%;
+    overflow: visible;
 }
 .mj-table-wrap--popup { padding: 0; }
 .mj-table-card .mj-table-wrap { margin: 0 auto; }
@@ -242,9 +243,9 @@
     font-weight: 700;
     line-height: 1.2;
     letter-spacing: 0.02em;
-    color: #2f4a38;
-    background: rgba(220, 236, 224, 0.95);
-    border: 1px solid rgba(143, 168, 139, 0.55);
+    color: var(--morandi-ink, #4a4e57);
+    background: rgba(236, 231, 223, 0.95);
+    border: 1px solid rgba(139, 151, 163, 0.55);
     flex-shrink: 0;
 }
 .mj-player-name {
@@ -353,11 +354,15 @@
     aspect-ratio: 1 / 1;
     box-sizing: border-box;
     padding: 0.65rem;
-    background: linear-gradient(145deg, #3d6b4f 0%, #2f5540 100%);
+    background: linear-gradient(148deg, #9aa899 0%, #849582 52%, #758874 100%);
+    border: 1px solid rgba(122, 136, 118, 0.45);
     border-radius: 12px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.14),
+        0 8px 22px rgba(74, 78, 87, 0.1);
 }
 .mj-play-popup-body {
-    margin: 0; min-height: 100vh; background: #2a3d32;
+    margin: 0; min-height: 100vh; background: var(--morandi-mist, #f3f0ec);
     display: flex; align-items: center; justify-content: center;
     padding: 0.5rem;
 }
@@ -378,17 +383,43 @@
     left: 50%; top: 42%;
     transform: translate(-50%, -50%);
     text-align: center;
-    color: #f8f4ec;
+    color: var(--morandi-cream, #ece7df);
     font-size: 0.88rem;
     max-width: 70%;
     line-height: 1.45;
-    text-shadow: 0 1px 2px rgba(0,0,0,.35);
+    text-shadow: 0 1px 2px rgba(47, 47, 51, 0.28);
 }
-.mj-seat { position: absolute; color: #f8f4ec; font-size: 0.82rem; }
-.mj-seat--top { left: 50%; top: 0.35rem; transform: translateX(-50%); text-align: center; max-width: 92%; }
-.mj-seat--bottom { left: 50%; bottom: 0.35rem; transform: translateX(-50%); text-align: center; width: 96%; }
-.mj-seat--left { left: 0.35rem; top: 42%; max-width: 28%; }
-.mj-seat--right { right: 0.35rem; top: 42%; max-width: 28%; text-align: right; }
+.mj-seat { position: absolute; color: var(--morandi-cream, #ece7df); font-size: 0.82rem; z-index: 1; overflow: visible; }
+.mj-seat--top { left: 50%; top: 0.35rem; transform: translateX(-50%); text-align: center; width: 88%; max-width: 88%; }
+.mj-seat--bottom { left: 50%; bottom: 0.35rem; transform: translateX(-50%); text-align: center; width: 94%; max-width: 94%; z-index: 2; }
+.mj-seat--left { left: 0.35rem; top: 38%; width: 30%; max-width: 30%; }
+.mj-seat--right { right: 0.35rem; top: 38%; width: 30%; max-width: 30%; text-align: right; }
+.mj-hand-strip {
+    width: 100%;
+    max-width: min(96vw, 520px);
+    margin: 0.15rem 0 0.05rem;
+    padding: 0;
+    box-sizing: border-box;
+    background: transparent;
+    overflow: visible;
+}
+.mj-hand {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    justify-content: center;
+    align-items: flex-end;
+    gap: 0;
+    width: 100%;
+    min-height: 0;
+    padding: 0.35rem 0 0.15rem;
+    overflow: visible;
+    box-sizing: border-box;
+    container-type: inline-size;
+    --mj-hand-count: 13;
+    --mj-hand-tile-max: 3.1rem;
+    --mj-tile-pack: -0.2em;
+}
 .mj-player-rail .mj-seat-meta {
     opacity: 0.88;
     font-size: 0.68rem;
@@ -399,23 +430,176 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.mj-hand {
-    display: flex; flex-wrap: wrap; justify-content: center; gap: 0.35rem;
-    margin: 0.35rem 0;
+.mj-river {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+    align-content: flex-start;
+    overflow: visible;
+    --mj-tile-pack: -0.08em;
 }
-.mj-river { display: flex; flex-wrap: wrap; gap: 0.2rem; justify-content: center; max-height: 4.5rem; overflow: auto; }
+.mj-seat--top .mj-river,
+.mj-seat--bottom .mj-river {
+    flex-direction: row;
+    justify-content: center;
+    max-width: 100%;
+}
+.mj-seat--bottom .mj-river {
+    margin-top: 0.15rem;
+}
+.mj-seat--left .mj-river {
+    flex-direction: column;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    align-items: flex-start;
+    max-width: 100%;
+    overflow: visible;
+}
+.mj-seat--right .mj-river {
+    flex-direction: column;
+    flex-wrap: wrap;
+    align-content: flex-end;
+    align-items: flex-end;
+    max-width: 100%;
+    overflow: visible;
+}
 .mj-melds { font-size: 0.72rem; opacity: 0.9; margin: 0.2rem 0; }
+
+/* —— 麻将牌：莫兰迪色系 + 牌种区分 —— */
 .mj-tile {
-    display: inline-flex; align-items: center; justify-content: center;
-    min-width: 2.1rem; min-height: 2.6rem; padding: 0.15rem 0.35rem;
-    border-radius: 6px; border: 1px solid rgba(60,50,40,.25);
-    background: linear-gradient(180deg, #fffef8 0%, #f0e8d8 100%);
-    color: #2a2420; font-size: 0.8rem; font-weight: 600;
-    box-shadow: 0 2px 4px rgba(0,0,0,.12);
+    position: relative;
+    display: inline-block;
+    vertical-align: bottom;
+    padding: 0;
+    margin: 0;
+    border: none;
+    background: transparent;
+    line-height: 0;
+    box-sizing: content-box;
+    flex-shrink: 0;
+    -webkit-tap-highlight-color: transparent;
+    appearance: none;
+    -webkit-appearance: none;
+    font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
 }
-.mj-tile--mini { min-width: 1.5rem; min-height: 1.8rem; font-size: 0.68rem; }
-.mj-tile--clickable { cursor: pointer; }
-.mj-tile--clickable:hover { border-color: #8fa88b; transform: translateY(-2px); }
+.mj-tile-glyph-wrap {
+    display: block;
+    position: relative;
+    line-height: 0;
+    padding: 0;
+    background: transparent;
+    box-shadow: none;
+    border: none;
+}
+.mj-tile-glyph {
+    display: block;
+    line-height: 1;
+    font-size: 1em;
+    user-select: none;
+}
+
+/* 筒：莫兰迪灰蓝 */
+.mj-tile--pin .mj-tile-glyph {
+    filter: saturate(0.7) hue-rotate(196deg) brightness(1.06) contrast(0.96);
+}
+
+/* 条：莫兰迪橄榄绿（与白板冷暖区分，无角标） */
+.mj-tile--sou .mj-tile-glyph {
+    filter: saturate(0.72) hue-rotate(88deg) brightness(1.02) contrast(0.98);
+}
+
+/* 风牌：莫兰迪沙褐 */
+.mj-tile--wind .mj-tile-glyph {
+    filter: saturate(0.58) sepia(0.22) hue-rotate(12deg) brightness(1.04);
+}
+
+/* 中：莫兰迪玫瑰 */
+.mj-tile--zhong .mj-tile-glyph {
+    filter: saturate(0.62) hue-rotate(318deg) brightness(1.05);
+}
+
+/* 发：莫兰迪鼠尾草 */
+.mj-tile--fa .mj-tile-glyph {
+    filter: saturate(0.68) hue-rotate(92deg) brightness(1.03);
+}
+
+/* 白板：莫兰迪冷灰蓝、低饱和 */
+.mj-tile--bai .mj-tile-glyph {
+    filter: saturate(0.42) hue-rotate(208deg) brightness(1.14) contrast(1.06);
+}
+
+.mj-tile--hand {
+    flex: 0 0 auto;
+    width: auto;
+    height: auto;
+    cursor: default;
+    transition: transform 0.12s ease;
+}
+.mj-tile--hand .mj-tile-glyph {
+    font-size: min(var(--mj-hand-tile-max), var(--mj-hand-tile-size, 2.5rem));
+    line-height: 1;
+}
+.mj-hand .mj-tile--hand + .mj-tile--hand {
+    margin-left: var(--mj-tile-pack) !important;
+}
+button.mj-tile--hand,
+button.mj-tile--hand:hover,
+button.mj-tile--hand:active,
+button.mj-tile--hand:disabled {
+    min-height: 0 !important;
+    height: auto !important;
+    min-width: 0 !important;
+    width: auto !important;
+    padding: 0 !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    margin-right: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    font-weight: normal !important;
+    white-space: normal !important;
+    line-height: 0 !important;
+    display: inline-block !important;
+    vertical-align: bottom;
+    overflow: visible !important;
+}
+button.mj-tile--hand + button.mj-tile--hand {
+    margin-left: var(--mj-tile-pack) !important;
+}
+.mj-tile--hand.mj-tile--clickable {
+    cursor: pointer;
+}
+.mj-tile--hand.mj-tile--clickable:hover {
+    transform: translateY(-3px);
+    z-index: 2;
+}
+.mj-tile--hand.mj-tile--clickable:focus-visible {
+    outline: 2px solid var(--morandi-bluegray, #8b97a3);
+    outline-offset: 0;
+    border-radius: 2px;
+}
+
+.mj-tile--table {
+    font-size: 1.52rem;
+    width: auto;
+    height: auto;
+    vertical-align: bottom;
+}
+.mj-tile--table .mj-tile-glyph {
+    font-size: 1em;
+    line-height: 1;
+}
+.mj-river .mj-tile--table + .mj-tile--table {
+    margin-left: var(--mj-tile-pack);
+}
+.mj-seat--left .mj-river .mj-tile--table + .mj-tile--table,
+.mj-seat--right .mj-river .mj-tile--table + .mj-tile--table {
+    margin-left: 0;
+    margin-top: var(--mj-tile-pack);
+}
+
 .mj-actions {
     display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem;
     margin-top: 0.75rem; padding-top: 0.65rem;
@@ -467,7 +651,7 @@
     flex-direction: column;
     align-items: center;
     padding: 0.65rem 0.75rem 1rem;
-    overflow-x: auto;
+    overflow: visible;
 }
 .mj-board-stage .mj-table-wrap {
     flex: 0 0 auto;

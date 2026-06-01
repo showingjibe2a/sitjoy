@@ -1,0 +1,1 @@
+{"code":"2LT09X","created_at":1780306690.9079018,"host_user_id":7,"status":"dealer_roll","version":5,"seats":[{"user_id":7,"name":"测试","ready":true},null,{"user_id":1,"name":"俞杨昆","ready":true},null],"scores":{"0":0,"2":0,"3":0},"dealer_seat":2,"hand_no":1,"dice_roll":{"dice1":2,"dice2":3,"total":5,"dealer_seat":2},"phase":"dealer_roll"}
