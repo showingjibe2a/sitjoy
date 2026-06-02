@@ -789,7 +789,7 @@
     if (!roomChat) return;
     const active = lobbyInRoom(s);
     roomChat.setVisible(active);
-    if (active) roomChat.render((s && s.chat_messages) || [], { full: true });
+    if (active) roomChat.render((s && s.chat_messages) || []);
   }
 
   function pageUrl(path) {

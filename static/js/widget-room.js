@@ -114,40 +114,77 @@
     root.classList.add('widget-room-chat', layout === 'side' ? 'widget-room-chat--side' : 'widget-room-chat--below');
     root.innerHTML =
       '<div class="widget-room-chat-head">房间对话</div>'
+      + '<div class="widget-room-chat-body">'
       + '<div class="widget-room-chat-log" role="log" aria-live="polite"></div>'
+      + '<button type="button" class="widget-room-chat-new-hint" hidden aria-label="查看新消息">新消息 ↓</button>'
+      + '</div>'
       + '<form class="widget-room-chat-form" autocomplete="off">'
       + '<input type="text" class="widget-room-chat-input inline-input" maxlength="400" placeholder="输入消息…" aria-label="房间消息">'
       + '<button type="submit" class="btn-secondary btn-small widget-room-chat-send">发送</button>'
       + '</form>';
 
     const logEl = root.querySelector('.widget-room-chat-log');
+    const newHintBtn = root.querySelector('.widget-room-chat-new-hint');
     const form = root.querySelector('.widget-room-chat-form');
     const input = root.querySelector('.widget-room-chat-input');
     let lastId = 0;
     let sending = false;
+    let pendingNewCount = 0;
+    const SCROLL_PIN_THRESHOLD = 36;
 
     function setVisible(on) {
       root.hidden = !on;
       root.classList.toggle('pm-u-hidden', !on);
     }
 
+    function isNearBottom() {
+      if (!logEl) return true;
+      return logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight <= SCROLL_PIN_THRESHOLD;
+    }
+
+    function updateNewHint() {
+      if (!newHintBtn) return;
+      if (pendingNewCount <= 0) {
+        newHintBtn.hidden = true;
+        return;
+      }
+      newHintBtn.hidden = false;
+      newHintBtn.textContent = pendingNewCount > 1 ? ('新消息 ' + pendingNewCount + ' ↓') : '新消息 ↓';
+    }
+
     function scrollBottom() {
       if (!logEl) return;
       logEl.scrollTop = logEl.scrollHeight;
+      pendingNewCount = 0;
+      updateNewHint();
+    }
+
+    if (newHintBtn) {
+      newHintBtn.addEventListener('click', () => scrollBottom());
     }
 
     function render(messages, options) {
       if (!logEl) return;
       const list = Array.isArray(messages) ? messages : [];
       const forceFull = !!(options && options.full);
+      const forceScroll = !!(options && options.scroll === 'force');
+      const pinnedBottom = forceScroll || isNearBottom();
+
       if (!list.length) {
         logEl.innerHTML = '<p class="widget-room-chat-empty">暂无消息，打个招呼吧</p>';
         lastId = 0;
+        pendingNewCount = 0;
+        updateNewHint();
         return;
       }
+
+      const prevMaxId = lastId;
       const maxId = list.reduce((m, x) => Math.max(m, Number(x.id) || 0), 0);
-      const shouldRebuild = forceFull || maxId < lastId;
+      const shouldRebuild = forceFull || (maxId > 0 && maxId < prevMaxId);
+      let addedCount = 0;
+
       lastId = maxId;
+
       if (shouldRebuild) {
         logEl.innerHTML = list.map((m) => {
           const mine = !!m.mine;
@@ -160,11 +197,15 @@
             + '<span class="widget-room-chat-msg-text">' + escHtml(m.text || '') + '</span>'
             + '</div>';
         }).join('');
+        if (!pinnedBottom && maxId > prevMaxId && prevMaxId > 0) {
+          addedCount = list.filter((m) => (Number(m.id) || 0) > prevMaxId).length;
+        }
       } else {
         const existing = new Set(Array.from(logEl.querySelectorAll('[data-id]')).map((el) => el.getAttribute('data-id')));
         list.forEach((m) => {
           const id = String(m.id || '');
           if (!id || existing.has(id)) return;
+          addedCount += 1;
           const mine = !!m.mine;
           const cls = 'widget-room-chat-msg' + (mine ? ' widget-room-chat-msg--mine' : '');
           const div = document.createElement('div');
@@ -181,7 +222,13 @@
           logEl.appendChild(div);
         });
       }
-      scrollBottom();
+
+      if (pinnedBottom) {
+        scrollBottom();
+      } else if (addedCount > 0) {
+        pendingNewCount += addedCount;
+        updateNewHint();
+      }
     }
 
     form.addEventListener('submit', (e) => {
@@ -194,6 +241,7 @@
       input.disabled = true;
       o.onSend(text).then(() => {
         input.value = '';
+        scrollBottom();
       }).catch((err) => {
         if (win.alert) win.alert((err && err.message) || '发送失败');
       }).finally(() => {
