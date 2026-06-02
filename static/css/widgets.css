@@ -1063,9 +1063,7 @@
     border: 0.09em solid #2a5038;
     border-radius: 0.11em;
     isolation: isolate;
-    --mj-pin-dot: 0.11em;
-    --mj-sou-stick-w: 0.13em;
-    --mj-sou-stick-h: 0.44em;
+    container-type: size;
 }
 
 .mj-tile-face {
@@ -1077,6 +1075,8 @@
     height: 100%;
     overflow: hidden;
     background: transparent;
+    box-sizing: border-box;
+    padding: 0.04em;
 }
 
 /* 万：上黑下红 */
@@ -1101,14 +1101,14 @@
     letter-spacing: 0.05em;
 }
 
-/* 筒：纯色圆点（统一尺寸）；色标 — 红r 绿g 黑k，见 mahjong-play.js pinFaceHtml */
+/* 筒：圆点尺寸用 cqi/cqmin 相对牌面容器，同牌内大小一致 */
 .mj-tile-pin-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     grid-template-rows: repeat(3, 1fr);
     width: 100%;
     height: 100%;
-    gap: 0.03em;
+    gap: 0.02em;
     place-items: center;
 }
 .mj-tile-pin-cols {
@@ -1116,20 +1116,22 @@
     flex-direction: row;
     align-items: center;
     justify-content: center;
-    gap: 0.14em;
+    gap: 0.12em;
     width: 100%;
     height: 100%;
 }
 .mj-tile-pin-col {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-rows: repeat(var(--pin-rows, 3), 1fr);
     align-items: center;
-    justify-content: space-evenly;
-    gap: 0.04em;
+    justify-items: center;
+    gap: 0.02em;
     height: 100%;
     flex: 1;
+    min-width: 0;
 }
-.mj-tile-pin-cell {
+.mj-tile-pin-cell,
+.mj-tile-pin-slot {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1140,31 +1142,42 @@
 }
 .mj-tile-pin-dot {
     display: block;
-    width: var(--mj-pin-dot);
-    height: var(--mj-pin-dot);
+    width: 0.105em;
+    height: 0.105em;
     border-radius: 50%;
     background: var(--mj-pin-fill, #228838);
     border: none;
     box-sizing: border-box;
-    flex-shrink: 0;
+    flex: 0 0 auto;
 }
 .mj-tile-pin-dot[data-color="r"] { --mj-pin-fill: #c41818; }
 .mj-tile-pin-dot[data-color="g"] { --mj-pin-fill: #228838; }
 .mj-tile-pin-dot[data-color="k"] { --mj-pin-fill: #1a1a1a; }
 .mj-tile-pin-dot.is-big,
-.mj-tile-pin-cell.is-big .mj-tile-pin-dot {
-    width: calc(var(--mj-pin-dot) * 1.85);
-    height: calc(var(--mj-pin-dot) * 1.85);
+.mj-tile-pin-slot.is-big .mj-tile-pin-dot {
+    width: 0.19em;
+    height: 0.19em;
+}
+@supports (width: 1cqmin) {
+    .mj-tile-pin-dot {
+        width: 24cqmin;
+        height: 24cqmin;
+    }
+    .mj-tile-pin-dot.is-big,
+    .mj-tile-pin-slot.is-big .mj-tile-pin-dot {
+        width: 44cqmin;
+        height: 44cqmin;
+    }
 }
 
-/* 条：统一竹条尺寸；色标 — 仅 3/5/7/9 条含红（见 souFaceHtml） */
+/* 条：全牌统一竹条宽高（cqmin），无描边 */
 .mj-tile-sou-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     grid-template-rows: repeat(3, 1fr);
     width: 100%;
     height: 100%;
-    gap: 0.03em;
+    gap: 0.02em;
     place-items: center;
 }
 .mj-tile-sou-cols {
@@ -1172,18 +1185,19 @@
     flex-direction: row;
     align-items: center;
     justify-content: center;
-    gap: 0.12em;
+    gap: 0.1em;
     width: 100%;
     height: 100%;
 }
 .mj-tile-sou-col {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-rows: repeat(var(--sou-rows, 3), 1fr);
     align-items: center;
-    justify-content: space-evenly;
-    gap: 0.03em;
+    justify-items: center;
+    gap: 0.02em;
     height: 100%;
     flex: 1;
+    min-width: 0;
 }
 .mj-tile-sou-cell {
     display: flex;
@@ -1199,12 +1213,12 @@
 }
 .mj-tile-sou-stick {
     display: block;
-    width: var(--mj-sou-stick-w);
-    height: var(--mj-sou-stick-h);
-    border-radius: 0.05em;
-    border: max(1px, 0.035em) solid #134a28;
+    width: 0.078em;
+    height: 0.28em;
+    border-radius: 0.025em;
+    border: none;
     box-sizing: border-box;
-    flex-shrink: 0;
+    flex: 0 0 auto;
     background:
         repeating-linear-gradient(
             180deg,
@@ -1215,8 +1229,17 @@
             #32a050 40% 100%
         );
 }
+@supports (width: 1cqw) {
+    .mj-tile-sou-stick {
+        width: 11cqw;
+        height: 28cqh;
+    }
+    /* 八条每列四根，略缩短以免溢出 */
+    .mj-tile-sou-col[style*="--sou-rows:4"] .mj-tile-sou-stick {
+        height: 21cqh;
+    }
+}
 .mj-tile-sou-stick[data-color="r"] {
-    border-color: #8a1810;
     background:
         repeating-linear-gradient(
             180deg,
@@ -1227,33 +1250,21 @@
             #e84030 40% 100%
         );
 }
-.mj-tile-sou-grid .mj-tile-sou-stick {
-    width: var(--mj-sou-stick-w);
-    height: calc(var(--mj-sou-stick-h) * 0.72);
-}
-.mj-tile-sou-col .mj-tile-sou-stick {
-    width: var(--mj-sou-stick-w);
-    height: calc(var(--mj-sou-stick-h) * 0.2);
-}
-.mj-tile-sou-row-sticks {
+.mj-tile-sou-stack {
     display: flex;
-    flex-direction: row;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.12em;
+    gap: 0.03em;
     width: 100%;
     height: 100%;
-}
-.mj-tile-sou-row-sticks .mj-tile-sou-stick {
-    width: var(--mj-sou-stick-w);
-    height: calc(var(--mj-sou-stick-h) * 0.72);
 }
 .mj-tile-sou-tri {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.06em;
+    gap: 0.03em;
     width: 100%;
     height: 100%;
 }
@@ -1262,24 +1273,18 @@
     align-items: center;
     justify-content: center;
 }
-.mj-tile-sou-tri-top .mj-tile-sou-stick {
-    height: calc(var(--mj-sou-stick-h) * 0.38);
-}
 .mj-tile-sou-tri-bottom {
     display: flex;
     flex-direction: row;
-    align-items: flex-end;
+    align-items: center;
     justify-content: center;
-    gap: 0.16em;
-}
-.mj-tile-sou-tri-bottom .mj-tile-sou-stick {
-    height: calc(var(--mj-sou-stick-h) * 0.38);
+    gap: 0.12em;
 }
 .mj-tile-face--sou7 {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.05em;
+    gap: 0.03em;
 }
 .mj-tile-sou7-top {
     display: flex;
@@ -1288,15 +1293,12 @@
     flex: 0 0 auto;
     width: 100%;
 }
-.mj-tile-sou7-top .mj-tile-sou-stick {
-    height: calc(var(--mj-sou-stick-h) * 0.32);
-}
 .mj-tile-sou7-rows {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.05em;
+    gap: 0.03em;
     flex: 1 1 auto;
     width: 100%;
     min-height: 0;
@@ -1306,12 +1308,8 @@
     flex-direction: row;
     align-items: center;
     justify-content: center;
-    gap: 0.1em;
+    gap: 0.08em;
     width: 100%;
-}
-.mj-tile-sou-row .mj-tile-sou-stick {
-    width: var(--mj-sou-stick-w);
-    height: calc(var(--mj-sou-stick-h) * 0.3);
 }
 .mj-tile-sou-bird-svg {
     display: block;

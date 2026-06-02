@@ -424,8 +424,12 @@
     return `<span class="mj-tile-pin-dot${big ? ' is-big' : ''}" data-color="${color || 'k'}"></span>`;
   }
 
+  function pinDotSlotHtml(color, big) {
+    return `<span class="mj-tile-pin-slot${big ? ' is-big' : ''}">${pinDotHtml(color, big)}</span>`;
+  }
+
   function pinColHtml(colors) {
-    return `<span class="mj-tile-pin-col">${colors.map((c) => pinDotHtml(c)).join('')}</span>`;
+    return `<span class="mj-tile-pin-col" style="--pin-rows:${colors.length}">${colors.map((c) => pinDotSlotHtml(c)).join('')}</span>`;
   }
 
   function pinColsFaceHtml(rank, left, right) {
@@ -438,7 +442,7 @@
     for (let i = 1; i <= 9; i++) {
       const d = cells[i];
       if (d) {
-        grid += `<span class="mj-tile-pin-cell is-on${d.big ? ' is-big' : ''}">${pinDotHtml(d.c, d.big)}</span>`;
+        grid += `<span class="mj-tile-pin-cell is-on${d.big ? ' is-big' : ''}">${pinDotSlotHtml(d.c, d.big)}</span>`;
       } else {
         grid += '<span class="mj-tile-pin-cell"></span>';
       }
@@ -490,7 +494,7 @@
   function souColHtml(count, color) {
     let sticks = '';
     for (let i = 0; i < count; i++) sticks += souStickHtml(color);
-    return `<span class="mj-tile-sou-col">${sticks}</span>`;
+    return `<span class="mj-tile-sou-col" style="--sou-rows:${count}">${sticks}</span>`;
   }
 
   function souColsFaceHtml(rank, left, right) {
@@ -498,8 +502,8 @@
       + `<span class="mj-tile-sou-cols">${souColHtml(left, 'g')}${souColHtml(right, 'g')}</span></span>`;
   }
 
-  function souSticksRowHtml(colors) {
-    return `<span class="mj-tile-sou-row-sticks">${colors.map((c) => souStickHtml(c)).join('')}</span>`;
+  function souSticksStackHtml(colors) {
+    return `<span class="mj-tile-sou-stack">${colors.map((c) => souStickHtml(c)).join('')}</span>`;
   }
 
   function sou3TriHtml() {
@@ -542,7 +546,7 @@
     const G = 'g'; const R = 'r';
     if (rank === 1) return souBirdHtml();
     if (rank === 2) {
-      return `<span class="mj-tile-face mj-tile-face--sou mj-tile-face--sou2" data-rank="2">${souSticksRowHtml([G, G])}</span>`;
+      return `<span class="mj-tile-face mj-tile-face--sou mj-tile-face--sou2" data-rank="2">${souSticksStackHtml([G, G])}</span>`;
     }
     if (rank === 3) {
       return `<span class="mj-tile-face mj-tile-face--sou mj-tile-face--sou3" data-rank="3">${sou3TriHtml()}</span>`;
