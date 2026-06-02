@@ -415,7 +415,7 @@
     if (suit === 'w') return n + '万';
     if (suit === 'p') return n + '筒';
     if (suit === 's') return n + '条';
-    const honor = { z1: '东', z2: '南', z3: '西', z4: '北', z5: '中', z6: '发', z7: '白' };
+    const honor = { z1: '东', z2: '南', z3: '西', z4: '北', z5: '中', z6: '發', z7: '白' };
     return honor[t] || t;
   }
 
@@ -513,6 +513,14 @@
       + '</span>';
   }
 
+  function sou4BlockHtml() {
+    const row = (a, b) => `<span class="mj-tile-sou-row">${souStickHtml(a)}${souStickHtml(b)}</span>`;
+    return '<span class="mj-tile-sou-2x2">'
+      + row('g', 'g')
+      + row('g', 'g')
+      + '</span>';
+  }
+
   function souBirdHtml() {
     return '<span class="mj-tile-face mj-tile-face--sou mj-tile-face--sou1" data-rank="1">'
       + '<svg class="mj-tile-sou-bird-svg" viewBox="0 0 32 40" aria-hidden="true" focusable="false">'
@@ -552,7 +560,7 @@
       return `<span class="mj-tile-face mj-tile-face--sou mj-tile-face--sou3" data-rank="3">${sou3TriHtml()}</span>`;
     }
     if (rank === 4) {
-      return souGridHtml(4, { 2: G, 4: G, 6: G, 8: G });
+      return `<span class="mj-tile-face mj-tile-face--sou mj-tile-face--sou4" data-rank="4">${sou4BlockHtml()}</span>`;
     }
     if (rank === 5) {
       return souGridHtml(5, { 1: G, 3: G, 5: R, 7: G, 9: G });
@@ -579,7 +587,7 @@
     return souGridHtml(rank, {});
   }
 
-  const HONOR_CHAR = { z1: '东', z2: '南', z3: '西', z4: '北', z5: '中', z6: '发', z7: '' };
+  const HONOR_CHAR = { z1: '东', z2: '南', z3: '西', z4: '北', z5: '中', z6: '發', z7: '' };
 
   function manFaceHtml(rank) {
     return `<span class="mj-tile-face mj-tile-face--man" data-rank="${rank}">`

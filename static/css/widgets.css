@@ -1280,6 +1280,15 @@
     justify-content: center;
     gap: 0.12em;
 }
+.mj-tile-sou-2x2 {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.03em;
+    width: 100%;
+    height: 100%;
+}
 .mj-tile-face--sou7 {
     flex-direction: column;
     align-items: center;
