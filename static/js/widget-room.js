@@ -136,16 +136,17 @@
       logEl.scrollTop = logEl.scrollHeight;
     }
 
-    function render(messages) {
+    function render(messages, options) {
       if (!logEl) return;
       const list = Array.isArray(messages) ? messages : [];
+      const forceFull = !!(options && options.full);
       if (!list.length) {
         logEl.innerHTML = '<p class="widget-room-chat-empty">暂无消息，打个招呼吧</p>';
         lastId = 0;
         return;
       }
       const maxId = list.reduce((m, x) => Math.max(m, Number(x.id) || 0), 0);
-      const shouldRebuild = maxId < lastId || list.length < 3;
+      const shouldRebuild = forceFull || maxId < lastId;
       lastId = maxId;
       if (shouldRebuild) {
         logEl.innerHTML = list.map((m) => {

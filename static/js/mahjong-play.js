@@ -389,7 +389,7 @@
     if (!roomChat) return;
     const active = lobbyInRoom(s);
     roomChat.setVisible(active);
-    if (active) roomChat.render((s && s.chat_messages) || []);
+    if (active) roomChat.render((s && s.chat_messages) || [], { full: true });
   }
 
   function pageUrl(path) {
@@ -829,11 +829,30 @@
       + '</span>';
   }
 
+  function meldsElForSeat(seatIdx) {
+    let el = $('mjBadgeMelds' + seatIdx);
+    if (el) return el;
+    el = $('mjMelds' + seatIdx);
+    if (el) {
+      el.classList.add('mj-badge-melds');
+      return el;
+    }
+    const badge = $('mjPlayerBadge' + seatIdx);
+    if (!badge) return null;
+    const side = badge.querySelector('.mj-player-side') || badge;
+    el = document.createElement('div');
+    el.className = 'mj-badge-melds';
+    el.id = 'mjBadgeMelds' + seatIdx;
+    el.setAttribute('aria-label', '副露');
+    side.appendChild(el);
+    return el;
+  }
+
   function renderSeat(seatIdx, s) {
     const logical = s._view_seat != null ? s._view_seat : seatIdx;
     renderPlayerBadge(seatIdx, s, logical);
     const riverEl = $('mjRiver' + seatIdx);
-    const meldsEl = $('mjMelds' + seatIdx);
+    const meldsEl = meldsElForSeat(seatIdx);
     const st = logical >= 0 ? seatAtIndex(s.seats, logical) : null;
     if (!st) {
       if (riverEl) riverEl.innerHTML = '';
@@ -957,7 +976,9 @@
     }
     const hand = s.my_hand || [];
     const mySeat = resolveMySeat(s);
-    const canDiscard = s.status === 'playing' && s.phase === 'discard' && s.current_seat === mySeat;
+    const canDiscard = s.status === 'playing'
+      && s.phase === 'discard'
+      && Number(s.current_seat) === Number(mySeat);
     syncDiscardSelection(s);
     if (!canDiscard) selectedDiscardTile = null;
     const dt = s.drawn_tile;
@@ -1044,14 +1065,20 @@
   }
 
   function renderHandActions(s) {
-    const wrap = $('mjHandActions');
-    const btns = $('mjHandActionBtns');
+    const handWrap = $('mjHandActions');
+    const handBtns = $('mjHandActionBtns');
     const legacyWrap = $('mjActions');
-    if (legacyWrap) legacyWrap.hidden = true;
+    const legacyBtns = $('mjActionBtns');
+    const useLegacy = !handWrap || !handBtns;
+    const wrap = useLegacy ? legacyWrap : handWrap;
+    const btns = useLegacy ? legacyBtns : handBtns;
+    if (legacyWrap && !useLegacy) setVisible(legacyWrap, false);
     if (!wrap || !btns) return;
 
     const mySeat = resolveMySeat(s);
-    const canDiscard = s.status === 'playing' && s.phase === 'discard' && s.current_seat === mySeat;
+    const canDiscard = s.status === 'playing'
+      && s.phase === 'discard'
+      && Number(s.current_seat) === Number(mySeat);
     syncDiscardSelection(s);
 
     const list = [];
@@ -1069,7 +1096,7 @@
       });
       opts.forEach((opt) => {
         const labels = { win: '胡', pung: '碰', kong: '杠', chi: '吃', pass: '过' };
-        const style = opt === 'win' ? 'win' : (opt === 'pass' ? 'claim' : 'claim');
+        const style = opt === 'win' ? 'win' : 'claim';
         list.push({ type: opt, label: labels[opt] || opt, style });
       });
     }
@@ -1083,14 +1110,14 @@
     }
 
     if (!list.length) {
-      wrap.hidden = true;
+      setVisible(wrap, false);
       wrap.classList.remove('is-active');
       btns.innerHTML = '';
       hideChiOverlayIfIdle();
       return;
     }
 
-    wrap.hidden = false;
+    setVisible(wrap, true);
     wrap.classList.add('is-active');
     btns.innerHTML = list.map((a) => {
       const cls = ['mj-hand-action-btn'];
@@ -1246,14 +1273,15 @@
     const incoming = data.chat_messages || [];
     if (!incoming.length && lastChatSeq >= 0 && seq > 0 && seq <= lastChatSeq) return false;
     lastChatSeq = Math.max(lastChatSeq, seq);
+    const merged = merge(state ? (state.chat_messages || []) : [], incoming);
     if (state) {
       state = Object.assign({}, state, {
-        chat_messages: merge(state.chat_messages, incoming),
+        chat_messages: merged,
         chat_seq: seq || state.chat_seq,
       });
     }
     if (!roomChat) initRoomChat();
-    if (roomChat && incoming.length) roomChat.render(incoming);
+    if (roomChat) roomChat.render(merged);
     if (!isPopup) postStateToPopup();
     return true;
   }

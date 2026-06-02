@@ -76,7 +76,7 @@
     if (!goRoomChat) return;
     const active = !!roomCode;
     goRoomChat.setVisible(active);
-    if (active) goRoomChat.render((data && data.chat_messages) || []);
+    if (active) goRoomChat.render((data && data.chat_messages) || [], { full: true });
   }
 
   function getAppBasePath() {

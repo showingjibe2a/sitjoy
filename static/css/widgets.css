@@ -155,7 +155,7 @@
 }
 .mj-player-rail--left,
 .mj-player-rail--right {
-    width: calc(4.6rem * var(--mj-ui-scale, 1));
+    width: calc(5.4rem * var(--mj-ui-scale, 1));
 }
 .mj-player-rail--top,
 .mj-player-rail--bottom {
@@ -173,13 +173,48 @@
 .mj-player-rail--top .mj-player-badge,
 .mj-player-rail--bottom .mj-player-badge {
     flex-direction: row;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.55rem;
     max-width: min(100%, 17.5rem);
 }
+.mj-player-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+    flex: 1;
+}
+.mj-player-rail--left .mj-player-side,
+.mj-player-rail--right .mj-player-side {
+    align-items: center;
+    width: 100%;
+}
+.mj-badge-melds {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: flex-start;
+    gap: calc(0.14rem * var(--mj-ui-scale, 1));
+    margin-top: calc(0.14rem * var(--mj-ui-scale, 1));
+    max-width: 100%;
+    min-height: 0;
+}
+.mj-badge-melds:empty {
+    display: none;
+    margin: 0;
+}
+.mj-badge-melds .mj-meld-set {
+    margin: 0;
+}
+.mj-badge-melds .mj-tile--meld {
+    font-size: calc(0.92rem * var(--mj-ui-scale, 1));
+}
+.mj-badge-melds .mj-meld-set .mj-tile--meld + .mj-tile--meld {
+    margin-left: -0.14em;
+}
 .mj-player-rail--left .mj-player-badge,
 .mj-player-rail--right .mj-player-badge {
-    max-width: 4.5rem;
+    max-width: calc(5.4rem * var(--mj-ui-scale, 1));
 }
 .mj-player-caption {
     display: flex;
@@ -193,7 +228,7 @@
 .mj-player-rail--bottom .mj-player-caption {
     align-items: flex-start;
     text-align: left;
-    flex: 1;
+    width: 100%;
     min-width: 0;
 }
 .mj-player-identity {
@@ -453,8 +488,8 @@
     overflow: hidden;
     box-sizing: border-box;
 }
-.mj-seat--top { left: 50%; top: 0.35rem; transform: translateX(-50%); text-align: center; width: 72%; max-width: 72%; }
-.mj-seat--bottom { left: 50%; bottom: 0.35rem; transform: translateX(-50%); text-align: center; width: 72%; max-width: 72%; }
+.mj-seat--top { left: 50%; top: 0.35rem; transform: translateX(-50%); text-align: left; width: 72%; max-width: 72%; }
+.mj-seat--bottom { left: 50%; bottom: 0.35rem; transform: translateX(-50%); text-align: left; width: 72%; max-width: 72%; }
 .mj-seat--left { left: 0.35rem; top: 18%; bottom: 30%; width: 24%; max-width: 24%; display: flex; flex-direction: column; align-items: flex-start; }
 .mj-seat--right { right: 0.35rem; top: 18%; bottom: 30%; width: 24%; max-width: 24%; text-align: right; display: flex; flex-direction: column; align-items: flex-end; }
 .mj-seat--left .mj-melds,
@@ -584,12 +619,16 @@
 .mj-seat--top .mj-river,
 .mj-seat--bottom .mj-river {
     flex-direction: row;
-    justify-content: center;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    align-content: flex-start;
+    align-items: flex-start;
+    --mj-tile-pack: -0.34em;
     max-width: 100%;
-    max-height: calc(var(--mj-table-tile-size, 1.52rem) * 2.4);
+    max-height: calc(var(--mj-table-tile-size, 1.52rem) * 2.35);
 }
 .mj-seat--bottom .mj-river {
-    margin-top: 0.15rem;
+    margin-top: 0;
 }
 .mj-seat--left .mj-river {
     flex-direction: column;
@@ -608,14 +647,7 @@
     max-height: var(--mj-side-river-max-h, 9rem);
 }
 .mj-melds {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    justify-content: inherit;
-    gap: 0.08rem;
-    margin: 0.2rem 0;
-    max-width: 100%;
-    overflow: visible;
+    display: none;
 }
 
 /* —— 麻将牌：莫兰迪色系 + 牌种区分 —— */
