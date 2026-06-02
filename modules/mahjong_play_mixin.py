@@ -28,7 +28,7 @@ MJ_SUITS = ('w', 'p', 's')
 MJ_HONORS = tuple(f'z{i}' for i in range(1, 8))
 
 MJ_CLEANUP_ACTIONS = frozenset({
-    'create', 'join', 'leave', 'ready', 'start', 'confirm_roll', 'roll_dice', 'state', 'wait',
+    'create', 'join', 'leave', 'ready', 'start', 'confirm_roll', 'roll_dice', 'rejoin', 'state', 'wait',
     'discard', 'claim', 'next_hand', 'chat_send', 'swap_seat',
 })
 
@@ -1060,6 +1060,8 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             return self._mj_action_join(user_id, data, start_response)
         if action == 'leave':
             return self._mj_action_leave(user_id, data, start_response)
+        if action == 'rejoin':
+            return self._mj_action_rejoin(user_id, data, start_response)
         if action == 'ready':
             return self._mj_action_ready(user_id, data, start_response)
         if action == 'start':
@@ -1243,7 +1245,10 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             if seat is None:
                 return self.send_json({'status': 'error', 'message': '您不在该房间中'}, start_response)
             is_host = int(user_id) == self._parse_int(room.get('host_user_id'))
+            dissolve = bool(data.get('dissolve'))
             if is_host:
+                if not dissolve:
+                    return self._mj_json_room(room, user_id, start_response, message='仍在房间中')
                 self._mj_dissolve_room(code)
                 return self.send_json({
                     'status': 'success',
@@ -1276,6 +1281,51 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             'left_room': True,
             'message': '已离开房间',
         }, start_response)
+
+    def _mj_action_rejoin(self, user_id, data, start_response):
+        """刷新页面后重新入座（不创建新房间）。"""
+        code = str(data.get('room_code') or '').strip().upper()
+        with self._mj_room_store(code) as (room, err):
+            if err:
+                return self.send_json({'status': 'error', 'message': err}, start_response)
+            self._mj_normalize_seats(room)
+            seat = self._mj_seat_of_user(room, user_id)
+            if seat is not None:
+                return self._mj_json_room(room, user_id, start_response, message='已在房间中')
+            uid = int(user_id)
+            is_host = uid == self._parse_int(room.get('host_user_id'))
+            seats = list(room.get('seats') or [None] * MJ_SEATS)
+            while len(seats) < MJ_SEATS:
+                seats.append(None)
+            if room.get('status') == 'lobby':
+                slot = self._mj_pick_join_seat(room, seats)
+                if slot is None:
+                    return self.send_json({'status': 'error', 'message': '房间座位已满'}, start_response)
+                seats[slot] = {
+                    'user_id': uid,
+                    'name': self._mj_user_display_name(uid),
+                    'ready': bool(is_host),
+                }
+            elif is_host:
+                slot = None
+                for i in range(MJ_SEATS):
+                    if seats[i] is None:
+                        slot = i
+                        break
+                if slot is None:
+                    return self.send_json({'status': 'error', 'message': '房间座位已满，无法重连'}, start_response)
+                seats[slot] = {
+                    'user_id': uid,
+                    'name': self._mj_user_display_name(uid),
+                    'ready': True,
+                }
+            else:
+                return self.send_json({'status': 'error', 'message': '对局已开始，无法重新加入'}, start_response)
+            room['seats'] = seats[:MJ_SEATS]
+            self._mj_after_lobby_seating_change(room)
+            self._mj_bump_version(room)
+            self._mj_save_room(room)
+        return self._mj_json_room(room, user_id, start_response, message='已重新加入房间')
 
     def _mj_action_ready(self, user_id, data, start_response):
         code = str(data.get('room_code') or '').strip().upper()

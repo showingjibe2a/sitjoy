@@ -137,6 +137,13 @@
     min-width: 0;
     max-width: min(74vw, 420px);
 }
+.mj-felt-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    gap: 0.12rem;
+}
 .mj-table-felt .mj-table {
     max-width: 100%;
 }
@@ -388,6 +395,10 @@
         0 8px 22px rgba(74, 78, 87, 0.1);
     --mj-table-tile-size: 1.52rem;
     --mj-side-river-max-h: 9rem;
+    overflow: hidden;
+}
+.mj-table .widget-board-overlay {
+    z-index: 20;
 }
 .mj-play-popup-body {
     margin: 0; min-height: 100vh; background: var(--morandi-mist, #f3f0ec);
@@ -406,7 +417,7 @@
     gap: clamp(0.22rem, 1.2vw, 0.42rem);
 }
 .mj-play-popup-stage .mj-hand-strip {
-    max-width: min(88vw, 400px);
+    max-width: 100%;
 }
 @container mj-layout (max-width: 380px) {
     .mj-table-row { gap: 0.28rem; }
@@ -444,18 +455,32 @@
 }
 .mj-seat--top { left: 50%; top: 0.35rem; transform: translateX(-50%); text-align: center; width: 72%; max-width: 72%; }
 .mj-seat--bottom { left: 50%; bottom: 0.35rem; transform: translateX(-50%); text-align: center; width: 72%; max-width: 72%; }
-.mj-seat--left { left: 0.35rem; top: 20%; bottom: 26%; width: 26%; max-width: 26%; }
-.mj-seat--right { right: 0.35rem; top: 20%; bottom: 26%; width: 26%; max-width: 26%; text-align: right; }
+.mj-seat--left { left: 0.35rem; top: 18%; bottom: 30%; width: 24%; max-width: 24%; display: flex; flex-direction: column; align-items: flex-start; }
+.mj-seat--right { right: 0.35rem; top: 18%; bottom: 30%; width: 24%; max-width: 24%; text-align: right; display: flex; flex-direction: column; align-items: flex-end; }
+.mj-seat--left .mj-melds,
+.mj-seat--right .mj-melds {
+    flex: 0 0 auto;
+    max-width: 100%;
+}
+.mj-seat--left .mj-river,
+.mj-seat--right .mj-river {
+    flex: 1 1 auto;
+    min-height: 0;
+}
 .mj-hand-strip {
     position: relative;
-    z-index: 3;
+    z-index: 5;
     width: 100%;
-    max-width: min(74vw, 420px);
-    margin: 0.1rem auto 0.05rem;
-    padding: 0;
+    max-width: 100%;
+    margin: 0;
+    padding: 0.2rem 0 0.05rem;
     box-sizing: border-box;
-    background: transparent;
+    background: linear-gradient(to bottom, rgba(243, 240, 236, 0.98) 0%, rgba(243, 240, 236, 0.88) 55%, transparent 100%);
     overflow: visible;
+    isolation: isolate;
+}
+.mj-play-popup-body .mj-hand-strip {
+    background: linear-gradient(to bottom, rgba(243, 240, 236, 1) 0%, rgba(243, 240, 236, 0.92) 60%, transparent 100%);
 }
 .mj-hand {
     display: flex;

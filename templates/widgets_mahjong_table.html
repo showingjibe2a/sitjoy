@@ -54,10 +54,11 @@
                         </div>
                     </div>
                     <div class="mj-table-felt">
+                        <div class="mj-felt-stack">
                         <div class="mj-table" id="mjTable">
                             <div class="mj-seat mj-seat--top" data-dom="1"><div class="mj-river" id="mjRiver1"></div><div class="mj-melds" id="mjMelds1"></div></div>
-                            <div class="mj-seat mj-seat--left" data-dom="2"><div class="mj-river" id="mjRiver2"></div><div class="mj-melds" id="mjMelds2"></div></div>
-                            <div class="mj-seat mj-seat--right" data-dom="3"><div class="mj-river" id="mjRiver3"></div><div class="mj-melds" id="mjMelds3"></div></div>
+                            <div class="mj-seat mj-seat--left" data-dom="2"><div class="mj-melds" id="mjMelds2"></div><div class="mj-river" id="mjRiver2"></div></div>
+                            <div class="mj-seat mj-seat--right" data-dom="3"><div class="mj-melds" id="mjMelds3"></div><div class="mj-river" id="mjRiver3"></div></div>
                             <div class="mj-center" id="mjCenterInfo">—</div>
                             <div class="mj-dice-roll pm-u-hidden" id="mjDiceRoll" aria-live="polite">
                                 <div class="mj-dice-pair">
@@ -77,6 +78,10 @@
                                     <div class="widget-board-dialog-actions" id="mjOverlayActions"></div>
                                 </div>
                             </div>
+                        </div>
+                        <div class="mj-hand-strip pm-u-hidden" id="mjHandStrip" aria-label="我的手牌">
+                            <div class="mj-hand" id="mjMyHand"></div>
+                        </div>
                         </div>
                     </div>
                     <div class="mj-player-rail mj-player-rail--right">
@@ -99,9 +104,6 @@
                             </div>
                         </div>
                     </div>
-                </div>
-                <div class="mj-hand-strip pm-u-hidden" id="mjHandStrip" aria-label="我的手牌">
-                    <div class="mj-hand" id="mjMyHand"></div>
                 </div>
                 <div class="mj-player-rail mj-player-rail--bottom">
                     <div class="mj-player-badge" id="mjPlayerBadge0" data-dom="0" role="button" tabindex="-1" aria-disabled="true" aria-label="本家">

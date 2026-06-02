@@ -884,12 +884,21 @@
     if (table) {
       const tw = table.clientWidth;
       const th = table.clientHeight;
+      let tileRem = 1.52;
       if (tw > 0) {
-        const tileRem = Math.max(0.88, Math.min(1.52, (tw / 290) * 1.52));
-        table.style.setProperty('--mj-table-tile-size', tileRem.toFixed(3) + 'rem');
+        tileRem = Math.max(0.88, Math.min(1.52, (tw / 290) * 1.52));
       }
+      let maxRiver = 0;
+      for (let i = 0; i < 4; i++) {
+        const el = document.getElementById('mjRiver' + i);
+        if (el) maxRiver = Math.max(maxRiver, el.querySelectorAll('.mj-tile--table').length);
+      }
+      if (maxRiver > 5) {
+        tileRem = Math.max(0.72, tileRem * Math.max(0.75, 1 - (maxRiver - 5) * 0.045));
+      }
+      table.style.setProperty('--mj-table-tile-size', tileRem.toFixed(3) + 'rem');
       if (th > 0) {
-        table.style.setProperty('--mj-side-river-max-h', Math.round(th * 0.5) + 'px');
+        table.style.setProperty('--mj-side-river-max-h', Math.round(th * 0.4) + 'px');
       }
     }
     syncHandTileLayout($('mjMyHand'));
@@ -1193,19 +1202,6 @@
     renderTable(payload.state);
   }
 
-  function beaconLeave() {
-    if (!roomCode || isPopup) return;
-    try {
-      fetch(apiUrl('/api/mahjong-play'), {
-        method: 'POST',
-        credentials: 'include',
-        keepalive: true,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'leave', room_code: roomCode }),
-      });
-    } catch (_) {}
-  }
-
   function mjToast(message, isError) {
     const msg = String(message || '').trim();
     if (!msg) return;
@@ -1271,10 +1267,14 @@
   }
 
   async function doLeaveConfirmed() {
-    const data = await api('leave', { room_code: roomCode });
-    if (data.room_deleted || data.room_dissolved || data.left_room) {
-      const endedMsg = data.message || (data.room_dissolved ? '房间已解散' : '已离开房间');
-      onRoomEnded(endedMsg, isPopup ? {} : undefined);
+    const isHost = !!(state && state.you_are_host);
+    const data = await api('leave', { room_code: roomCode, dissolve: isHost });
+    if (data.room_deleted || data.room_dissolved) {
+      onRoomEnded(data.message || '房间已解散', isPopup ? {} : undefined);
+      return data;
+    }
+    if (data.left_room) {
+      onRoomEnded(data.message || '已离开房间', isPopup ? {} : undefined);
       return data;
     }
     applyState(data);
@@ -1540,15 +1540,20 @@
       applyState(data);
     } catch (err) {
       try {
-        const data = await api('join', { room_code: roomCode });
+        const data = await api('rejoin', { room_code: roomCode });
         applyState(data);
-      } catch (err2) {
-        saveRoomCode('');
-        const msg = String((err2 && err2.message) || (err && err.message) || '');
-        if (msg.indexOf('解散') >= 0 || msg.indexOf('不存在') >= 0 || msg.indexOf('过期') >= 0 || msg.indexOf('不在') >= 0) {
-          clearRoomUi(msg.indexOf('解散') >= 0 ? msg : '房间已解散或已过期');
+      } catch (errRejoin) {
+        try {
+          const data = await api('join', { room_code: roomCode });
+          applyState(data);
+        } catch (err2) {
+          saveRoomCode('');
+          const msg = String((err2 && err2.message) || (errRejoin && errRejoin.message) || (err && err.message) || '');
+          if (msg.indexOf('解散') >= 0 || msg.indexOf('不存在') >= 0 || msg.indexOf('过期') >= 0 || msg.indexOf('不在') >= 0) {
+            clearRoomUi(msg.indexOf('解散') >= 0 ? msg : '房间已解散或已过期');
+          }
+          return;
         }
-        return;
       }
     }
     if (!isPopup) startWatch();
@@ -1592,9 +1597,6 @@
     if (popLeave) {
       popLeave.addEventListener('click', () => requestLeaveRoom().catch((err) => alert(err.message)));
     }
-    win.addEventListener('beforeunload', () => {
-      if (roomCode && state && state.my_seat != null && !state.you_are_host) beaconLeave();
-    });
   }
 
   function initMain() {
@@ -1616,11 +1618,6 @@
         else openTableWindow();
       });
     }
-    win.addEventListener('beforeunload', () => {
-      if (!roomCode || !state || state.my_seat == null) return;
-      if (state.you_are_host) return;
-      beaconLeave();
-    });
     tryResume();
   }
 
