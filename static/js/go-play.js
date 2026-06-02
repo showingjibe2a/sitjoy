@@ -47,8 +47,11 @@
   let lastMoveX = -1;
   let lastMoveY = -1;
   const BOARD_POPUP_NAME = 'sitjoy_go_board_popup';
+  const GO_POPUP_BOUNDS_KEY = 'go';
+  const GO_POPUP_DEFAULTS = { width: 580, height: 560, minWidth: 360, minHeight: 400 };
   let popupOpen = false;
   let popupMonitorTimer = null;
+  let popupBoundsSaver = null;
   let watchAbortCtrl = null;
   let boardOverlay = null;
   let goRoomChat = null;
@@ -489,7 +492,6 @@
     if (!isPopup) {
       $('goLocalPanel')?.classList.remove('pm-u-hidden');
       $('goRoomPanel')?.classList.add('pm-u-hidden');
-      $('goLobbyHint')?.classList.add('pm-u-hidden');
       if ($('goPopoutBtn')) $('goPopoutBtn').disabled = false;
       updateLocalTurnHint();
       renderLocalBannerUi();
@@ -1136,6 +1138,11 @@
   }
 
   function onBoardWindowClosed() {
+    if (popupBoundsSaver) {
+      popupBoundsSaver.save();
+      popupBoundsSaver.stop();
+      popupBoundsSaver = null;
+    }
     boardPopup = null;
     popupOpen = false;
     stopPopupMonitor();
@@ -1163,14 +1170,18 @@
     const url = roomCode
       ? pageUrl('/widgets/go-play/board?room=' + encodeURIComponent(roomCode))
       : pageUrl('/widgets/go-play/board?local=1');
-    boardPopup = win.open(
-      url,
-      BOARD_POPUP_NAME,
-      'popup=yes,width=580,height=540,resizable=yes,scrollbars=no'
-    );
+    const popupApi = win.SitjoyWidgetPopup;
+    if (popupApi) {
+      boardPopup = popupApi.openWithRememberedBounds(GO_POPUP_BOUNDS_KEY, url, BOARD_POPUP_NAME, GO_POPUP_DEFAULTS);
+    } else {
+      boardPopup = win.open(url, BOARD_POPUP_NAME, 'popup=yes,width=580,height=560,resizable=yes,scrollbars=no');
+    }
     if (!boardPopup) {
       toast('无法打开新窗口：请在浏览器地址栏允许本站「弹出式窗口」后重试', true);
       return false;
+    }
+    if (popupApi) {
+      popupBoundsSaver = popupApi.attachBoundsSaver(GO_POPUP_BOUNDS_KEY, boardPopup, GO_POPUP_DEFAULTS);
     }
     popupOpen = true;
     setWindowPlaceholderVisible(true);
@@ -1484,11 +1495,6 @@
       $('goRoomPanel')?.classList.toggle('pm-u-hidden', !inRoom);
       $('goRoomCopyBtn')?.classList.toggle('pm-u-hidden', !inRoom);
       $('goLocalPanel')?.classList.toggle('pm-u-hidden', inRoom || !localBoardMode);
-      $('goLobbyHint')?.classList.add('pm-u-hidden');
-      const hintEl = $('goRoomHint');
-      if (hintEl && !hintEl.textContent.trim()) {
-        hintEl.classList.add('pm-u-hidden');
-      }
 
       if ($('goPopoutBtn')) $('goPopoutBtn').disabled = !roomCode && !localBoardMode;
       persistRoomCode(roomCode);
@@ -2000,12 +2006,7 @@
     $('goRoomPanel')?.classList.add('pm-u-hidden');
     $('goRoomCopyBtn')?.classList.add('pm-u-hidden');
     $('goLocalPanel')?.classList.remove('pm-u-hidden');
-    $('goLobbyHint')?.classList.add('pm-u-hidden');
     if ($('goPopoutBtn')) $('goPopoutBtn').disabled = false;
-    if ($('goRoomHint')) {
-      $('goRoomHint').textContent = '';
-      $('goRoomHint').classList.add('pm-u-hidden');
-    }
     updateGoPlayersHead({});
     board = Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY));
     renderBoard($('goBoard'));
@@ -2270,6 +2271,12 @@
 
     document.title = '围棋棋盘';
 
+    const popupApi = win.SitjoyWidgetPopup;
+    if (popupApi) {
+      popupApi.applyBounds(win, popupApi.resolveBounds(GO_POPUP_BOUNDS_KEY, GO_POPUP_DEFAULTS), GO_POPUP_DEFAULTS);
+      popupApi.attachBoundsSaver(GO_POPUP_BOUNDS_KEY, win, GO_POPUP_DEFAULTS);
+    }
+
     const syncFromOpener = () => {
       if (isFreeLocalBoard() && (!win.opener || win.opener.closed)) return;
       if (!win.opener || win.opener.closed) {
@@ -2406,6 +2413,12 @@
       }
       if (msg.type === 'go-play-request-state' || msg.type === 'go-play-popup-ready') {
         postStateToPopup();
+        if (msg.type === 'go-play-popup-ready') {
+          const popupApi = win.SitjoyWidgetPopup;
+          if (popupApi && boardPopup && !boardPopup.closed) {
+            popupApi.applyBounds(boardPopup, popupApi.resolveBounds(GO_POPUP_BOUNDS_KEY, GO_POPUP_DEFAULTS), GO_POPUP_DEFAULTS);
+          }
+        }
       }
     });
   }
@@ -2422,10 +2435,7 @@
       if (!ok) {
         persistRoomCode('');
         clearRoomFromUrl();
-        if ($('goRoomHint')) {
-          $('goRoomHint').textContent = '无法自动回到房间（可能已过期或服务器已重启），请重新创建或加入。';
-          $('goRoomHint').classList.remove('pm-u-hidden');
-        }
+        toast('无法自动回到房间（可能已过期或服务器已重启），请重新创建或加入。', true);
         enterFreeLocalBoard();
       }
     });

@@ -6,6 +6,10 @@
   const win = global || window;
   const ROOM_KEY = 'sitjoy.mahjong.room.v1';
   const TABLE_POPUP_NAME = 'sitjoy_mj_table_popup';
+  const MJ_POPUP_BOUNDS_KEY = 'mahjong';
+  const MJ_POPUP_DEFAULTS = { width: 520, height: 680, minWidth: 380, minHeight: 420 };
+  const MJ_JOIN_LOCAL_ORIGIN = 'http://192.168.5.203:233';
+  const MJ_JOIN_CLOUD_ORIGIN = 'http://812165.xyz:233';
 
   function mjPlayMode() {
     const mode = String((document.body && document.body.dataset.mjPlayMode) || '').trim().toLowerCase();
@@ -28,9 +32,11 @@
   let tablePopup = null;
   let popupOpen = false;
   let popupMonitorTimer = null;
+  let popupBoundsSaver = null;
   let mjBoardOverlay = null;
   let pendingChiPick = null;
-  let selectedDiscardTile = null;
+  let pendingWinPick = null;
+  let selectedDiscardIndex = null;
   let joinInFlight = false;
   let roomChat = null;
   let dealerRevealTimer = null;
@@ -183,11 +189,8 @@
     return html;
   }
 
-  function appendMjReadyOverlay(els, s, esc, btn) {
+  function appendMjReadyButtons(els, s, btn) {
     const lobby = s.lobby || {};
-    const dialog = mjOverlayDialogEl();
-    if (dialog) dialog.classList.add('widget-board-dialog--wide');
-    els.msgEl.innerHTML = renderMjLobbySeatsHtml(s, esc);
     const mySeat = resolveMySeat(s);
     const me = mySeat != null ? (s.seats || [])[mySeat] : null;
     if (mySeat != null) {
@@ -197,13 +200,58 @@
         () => { doReady().catch((err) => alert(err.message)); }
       ));
     }
-    if (s.you_are_host && lobby.can_start) {
+    if (s.you_are_host && lobby.can_start && s.status !== 'hand_end') {
       els.actionsEl.appendChild(btn(
-        s.status === 'hand_end' ? '开下一局' : '开局',
+        '开局',
         'btn-accent',
         () => { doStart().catch((err) => alert(err.message)); }
       ));
     }
+  }
+
+  function appendMjReadyOverlay(els, s, esc, btn) {
+    const dialog = mjOverlayDialogEl();
+    if (dialog) dialog.classList.add('widget-board-dialog--wide');
+    els.msgEl.innerHTML = renderMjLobbySeatsHtml(s, esc);
+    appendMjReadyButtons(els, s, btn);
+  }
+
+  function renderMjHandEndRevealHtml(s, esc) {
+    const reveal = ((s.last_hand_result || {}).reveal_hands || {}).seats;
+    if (!reveal || !reveal.length) return '';
+    const mySeat = resolveMySeat(s);
+    const winnerSeat = (s.last_hand_result || {}).winner_seat;
+    let html = '<div class="mj-hand-end-reveal">';
+    reveal.forEach((row) => {
+      const isMe = row.seat === mySeat;
+      const isWinner = row.seat === winnerSeat;
+      const cls = ['mj-hand-end-row'];
+      if (isMe) cls.push('mj-hand-end-row--me');
+      if (isWinner) cls.push('mj-hand-end-row--winner');
+      const meldsHtml = (row.melds || []).map((m) => renderMeldHtml(m)).join('');
+      const handHtml = (row.hand || []).map((t) => tileFaceHtml(t, 'mini')).join('');
+      const name = (row.name || '—') + (isWinner ? ' · 胡' : '');
+      html += `<div class="${cls.join(' ')}">`
+        + `<div class="mj-hand-end-name">${esc(name)}</div>`
+        + `<div class="mj-hand-end-tiles">${meldsHtml}`
+        + (handHtml ? `<span class="mj-hand-end-hand">${handHtml}</span>` : '')
+        + '</div></div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function mjHandEndResultLine(s) {
+    const r = s.last_hand_result || {};
+    if (r.win_type === 'draw') return '流局';
+    if (r.winner_seat == null) return '';
+    const wn = ((s.seats || [])[r.winner_seat] || {}).name || '';
+    let line = wn + ' 胡（' + (r.win_type === 'tsumo' ? '自摸' : '点炮') + '）';
+    const pat = hzPatternText(r);
+    if (pat) line += ' · ' + pat;
+    else if (r.dealer_mult) line += ' · 连庄 ' + r.dealer_mult + ' 倍';
+    if (r.win_type === 'tsumo' || r.win_type === 'ron') line += ' · 下局 ' + wn + ' 坐庄';
+    return line;
   }
 
   function renderMjBoardOverlay(els, s, api) {
@@ -225,20 +273,17 @@
     if (s.status === 'hand_end') {
       const r = s.last_hand_result || {};
       els.titleEl.textContent = '本局结束';
-      let resultLine = '';
-      if (r.win_type === 'draw') resultLine = '流局';
-      else if (r.winner_seat != null) {
-        const wn = ((s.seats || [])[r.winner_seat] || {}).name || '';
-        resultLine = wn + ' 胡（' + (r.win_type === 'tsumo' ? '自摸' : '点炮') + '）';
-        const pat = hzPatternText(r);
-        if (pat) resultLine += ' · ' + pat;
-      }
-      appendMjReadyOverlay(els, s, esc, btn);
+      if (dialog) dialog.classList.add('widget-board-dialog--wide');
+      const resultLine = mjHandEndResultLine(s);
       const dealerHint = r.win_type === 'draw' ? '流局庄家顺延，无需掷骰' : '上局赢家坐庄，无需掷骰';
-      const hintParts = [];
-      if (resultLine) hintParts.push(resultLine);
-      hintParts.push('准备下一局 · ' + dealerHint);
-      els.msgEl.innerHTML += `<p class="mj-overlay-hint">${esc(hintParts.join(' · '))}</p>`;
+      let html = '';
+      if (resultLine) html += `<p class="mj-overlay-result">${esc(resultLine)}</p>`;
+      const revealHtml = renderMjHandEndRevealHtml(s, esc);
+      if (revealHtml) html += revealHtml;
+      html += `<p class="mj-overlay-hint">${esc('全员准备后自动开始下一局 · ' + dealerHint)}</p>`;
+      html += renderMjLobbySeatsHtml(s, esc);
+      els.msgEl.innerHTML = html;
+      appendMjReadyButtons(els, s, btn);
       return true;
     }
 
@@ -290,7 +335,7 @@
 
   function updateBoardOverlay(s) {
     initMjBoardOverlay();
-    if (pendingChiPick) return;
+    if (pendingChiPick || pendingWinPick) return;
     if (!mjBoardOverlay || mjBoardOverlay.hasConfirm()) return;
     mjBoardOverlay.refresh(s);
   }
@@ -427,7 +472,7 @@
       + '</span>';
   }
 
-  function tileHandButtonHtml(t, canDiscard, mark, selected) {
+  function tileHandButtonHtml(t, canDiscard, mark, selected, handIdx) {
     const key = String(t || '').trim();
     const label = tileLabel(key);
     const glyph = tileGlyph(key);
@@ -437,7 +482,8 @@
     if (mark === 'drawn') cls.push('mj-tile--drawn');
     if (selected) cls.push('mj-tile--selected');
     const inner = tileInnerHtml(glyph);
-    const attrs = ` class="${cls.join(' ')}" aria-label="${esc(label)}" data-tile="${esc(key)}"`;
+    const idxAttr = canDiscard && handIdx != null ? ` data-hand-idx="${handIdx}"` : '';
+    const attrs = ` class="${cls.join(' ')}" aria-label="${esc(label)}" data-tile="${esc(key)}"${idxAttr}`;
     if (canDiscard) {
       const pressed = selected ? ' aria-pressed="true"' : ' aria-pressed="false"';
       return `<button type="button"${attrs}${pressed} data-select="1">${inner}</button>`;
@@ -492,6 +538,59 @@
     return resolveAppUrl(path);
   }
 
+  function copyTextToClipboard(text) {
+    const value = String(text || '');
+    if (!value) return Promise.resolve(false);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(value).then(() => true).catch(() => false);
+    }
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    ta.setAttribute('readonly', 'readonly');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    ta.style.pointerEvents = 'none';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try {
+      ok = !!document.execCommand('copy');
+    } catch (_) {
+      ok = false;
+    }
+    if (ta.parentNode) ta.parentNode.removeChild(ta);
+    return Promise.resolve(ok);
+  }
+
+  function buildMjRoomJoinUrl(origin, code) {
+    const base = String(origin || '').replace(/\/$/, '');
+    const c = encodeURIComponent(String(code || '').trim().toUpperCase());
+    return `${base}/widgets/mahjong?room=${c}`;
+  }
+
+  function buildMjRoomShareText(code) {
+    const c = String(code || roomCode || '').trim().toUpperCase();
+    if (!c) return '';
+    return [
+      `网址（本地直接加入）：${buildMjRoomJoinUrl(MJ_JOIN_LOCAL_ORIGIN, c)}`,
+      `网址（云端直接加入）：${buildMjRoomJoinUrl(MJ_JOIN_CLOUD_ORIGIN, c)}`,
+      `房间号：${c}`,
+    ].join('\n');
+  }
+
+  async function copyMjRoomShare() {
+    const text = buildMjRoomShareText();
+    if (!text) return;
+    const ok = await copyTextToClipboard(text);
+    mjToast(ok ? '已复制加入链接与房间号' : '复制失败', !ok);
+    const btn = $('mjRoomCopyBtn');
+    if (btn && ok) {
+      const prev = btn.textContent;
+      btn.textContent = '已复制';
+      win.setTimeout(() => { btn.textContent = prev; }, 1200);
+    }
+  }
+
   function snapshotState() {
     return {
       roomCode,
@@ -526,6 +625,11 @@
   }
 
   function onTableWindowClosed() {
+    if (popupBoundsSaver) {
+      popupBoundsSaver.save();
+      popupBoundsSaver.stop();
+      popupBoundsSaver = null;
+    }
     tablePopup = null;
     popupOpen = false;
     if (popupMonitorTimer) {
@@ -549,12 +653,19 @@
       return false;
     }
     const url = pageUrl('/widgets/mahjong/table?room=' + encodeURIComponent(roomCode));
-    tablePopup = win.open(url, TABLE_POPUP_NAME, mjPopupWindowFeatures());
+    const popupApi = win.SitjoyWidgetPopup;
+    if (popupApi) {
+      tablePopup = popupApi.openWithRememberedBounds(MJ_POPUP_BOUNDS_KEY, url, TABLE_POPUP_NAME, MJ_POPUP_DEFAULTS);
+    } else {
+      tablePopup = win.open(url, TABLE_POPUP_NAME, 'popup=yes,width=520,height=680,resizable=yes,scrollbars=no');
+    }
     if (!tablePopup) {
       alert('无法打开新窗口：请允许本站「弹出式窗口」后重试');
       return false;
     }
-    dockPopupWindow(tablePopup);
+    if (popupApi) {
+      popupBoundsSaver = popupApi.attachBoundsSaver(MJ_POPUP_BOUNDS_KEY, tablePopup, MJ_POPUP_DEFAULTS);
+    }
     popupOpen = true;
     setWindowPlaceholderVisible(true);
     const wrap = $('mjTableWrap');
@@ -613,19 +724,6 @@
     return labels[(seatIdx - anchorSeat + 4) % 4];
   }
 
-  function renderLobbySeats(s) {
-    const hint = $('mjRoomHint');
-    if (!hint) return;
-    if (s && s.code && lobbyInRoom(s)) {
-      hint.classList.add('pm-u-hidden');
-      return;
-    }
-    hint.classList.remove('pm-u-hidden');
-    if (!s || !s.code) {
-      hint.textContent = '创建或加入房间后开始。';
-    }
-  }
-
   function lobbyInRoom(s) {
     return !!(s && s.code && resolveMySeat(s) != null);
   }
@@ -656,30 +754,10 @@
     if (!s) return;
     const codeEl = $('mjRoomCode');
     if (codeEl) codeEl.textContent = s.code || '------';
-    const statusEl = $('mjSideStatusLine');
-    const playersEl = $('mjSidePlayersLine');
-    const seats = s.seats || [];
-    if (playersEl) {
-      const names = [];
-      const seen = new Set();
-      seats.forEach((st) => {
-        if (!st) return;
-        const uid = Number(st.user_id);
-        if (uid && seen.has(uid)) return;
-        if (uid) seen.add(uid);
-        names.push((st.name || '—') + (st.ready ? ' ✓' : ''));
-      });
-      playersEl.textContent = names.length ? names.join(' · ') : '等待玩家加入';
-    }
-    if (statusEl) {
-      let label = '等待开局';
-      if (s.status === 'dealer_roll') label = '投骰定庄';
-      else if (s.status === 'playing') label = '对局中';
-      else if (s.status === 'hand_end') label = '本局结束 · 等待准备';
-      statusEl.textContent = label;
-    }
-    const ruleEl = $('mjSideRuleLine');
+    const copyBtn = $('mjRoomCopyBtn');
     const inRoom = lobbyInRoom(s);
+    if (copyBtn) copyBtn.classList.toggle('pm-u-hidden', !inRoom);
+    const ruleEl = $('mjSideRuleLine');
     const inLobby = inRoom && s.status === 'lobby';
     if (ruleEl) {
       if (inRoom && !inLobby && (s.rule_summary || s.rule_label)) {
@@ -737,17 +815,8 @@
     state = null;
     lastVersion = -1;
     lastChatSeq = -1;
-    selectedDiscardTile = null;
+    selectedDiscardIndex = null;
     if (!isPopup) postStateToPopup();
-    const hintEl = $('mjRoomHint');
-    if (hintEl) {
-      hintEl.textContent = hint || '创建或加入房间后开始。';
-      hintEl.classList.remove('pm-u-hidden');
-    }
-    setVisible($('mjReadyBtn'), false);
-    setVisible($('mjStartBtn'), false);
-    setVisible($('mjConfirmRollBtn'), false);
-    setVisible($('mjNextHandBtn'), false);
     setVisible($('mjLeaveBtn'), false);
     if (!isPopup) {
       setVisible($('mjBoardCard'), true);
@@ -759,12 +828,9 @@
     $('mjRoomPanel') && $('mjRoomPanel').classList.add('pm-u-hidden');
     const ruleNotice = $('mjRuleNotice');
     if (ruleNotice) ruleNotice.classList.add('pm-u-hidden');
+    const copyBtn = $('mjRoomCopyBtn');
+    if (copyBtn) copyBtn.classList.add('pm-u-hidden');
     if (roomChat) roomChat.setVisible(false);
-    const lobbySeats = $('mjLobbySeats');
-    if (lobbySeats) {
-      lobbySeats.innerHTML = '';
-      lobbySeats.hidden = true;
-    }
     const scores = $('mjSideScores');
     if (scores) {
       scores.classList.add('pm-u-hidden');
@@ -967,10 +1033,35 @@
     }
   }
 
+  function tileConcealedHtml(variant) {
+    const cls = ['mj-tile', 'mj-tile--concealed'];
+    if (variant === 'mini' || variant === 'table' || variant === 'meld') cls.push('mj-tile--table', 'mj-tile--meld');
+    return `<span class="${cls.join(' ')}" role="img" aria-label="暗杠"></span>`;
+  }
+
+  function meldTitle(m) {
+    const t = m.type || '';
+    if (t === 'kong') {
+      if (m.kong_kind === 'concealed' || m.tiles_hidden) return '暗杠';
+      if (m.kong_kind === 'added') return '明杠（补）';
+      return '明杠';
+    }
+    if (t === 'pung') return '碰';
+    if (t === 'chi') return '吃';
+    return t;
+  }
+
   function renderMeldHtml(m) {
+    if (m.tiles_hidden) {
+      const n = Number(m.tile_count) || 4;
+      let html = '<span class="mj-meld-set mj-meld-set--concealed" title="' + esc(meldTitle(m)) + '">';
+      for (let i = 0; i < n; i++) html += tileConcealedHtml('meld');
+      html += '</span>';
+      return html;
+    }
     const tiles = m.tiles || [];
     const called = m.called_tile || null;
-    return '<span class="mj-meld-set" title="' + esc(m.type || '') + '">'
+    return '<span class="mj-meld-set" title="' + esc(meldTitle(m)) + '">'
       + tiles.map((t) => tileFaceHtml(t, 'meld', called && t === called ? 'called' : null)).join('')
       + '</span>';
   }
@@ -1035,7 +1126,7 @@
       const scale = scaleRaw ? parseFloat(scaleRaw) || 1 : 1;
       const rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
       const maxPx = 3.1 * rootPx * scale;
-      const packRatio = 0.26;
+      const packRatio = 0.30;
       const effectiveUnits = n - (n - 1) * packRatio;
       const perTile = Math.min(maxPx, w / Math.max(effectiveUnits, 1));
       handEl.style.setProperty('--mj-hand-tile-size', perTile + 'px');
@@ -1045,27 +1136,6 @@
 
   const MJ_LAYOUT_REF_W = 500;
   const MJ_LAYOUT_REF_H = 640;
-  const MJ_POPUP_WIDTH = 460;
-
-  function mjPopupWindowFeatures() {
-    const w = MJ_POPUP_WIDTH;
-    const sw = (win.screen && win.screen.availWidth) || win.innerWidth || 800;
-    const sh = (win.screen && win.screen.availHeight) || win.innerHeight || 600;
-    const left = Math.max(0, Math.round(sw - w));
-    return 'popup=yes,width=' + w + ',height=' + sh + ',left=' + left + ',top=0,resizable=yes,scrollbars=no';
-  }
-
-  function dockPopupWindow(popup) {
-    if (!popup || popup.closed) return;
-    const w = MJ_POPUP_WIDTH;
-    const sw = (win.screen && win.screen.availWidth) || win.innerWidth || 800;
-    const sh = (win.screen && win.screen.availHeight) || win.innerHeight || 600;
-    const left = Math.max(0, Math.round(sw - w));
-    try {
-      popup.moveTo(left, 0);
-      popup.resizeTo(w, sh);
-    } catch (_) {}
-  }
 
   function syncMjLayoutScale() {
     const layout = document.querySelector('.mj-table-layout');
@@ -1073,12 +1143,10 @@
     const wrap = layout.closest('.mj-table-wrap');
     const w = layout.clientWidth || MJ_LAYOUT_REF_W;
     let scale = Math.max(0.58, Math.min(1, w / MJ_LAYOUT_REF_W));
-    if (isPopup && wrap) {
-      const h = wrap.clientHeight || 0;
-      if (h > 0) {
-        const hScale = Math.max(0.58, Math.min(1, h / MJ_LAYOUT_REF_H));
-        scale = Math.min(scale, hScale);
-      }
+    if (isPopup) {
+      const vh = win.innerHeight || document.documentElement.clientHeight || MJ_LAYOUT_REF_H;
+      const hScale = Math.max(0.48, Math.min(1, (vh - 12) / MJ_LAYOUT_REF_H));
+      scale = Math.min(scale, hScale);
     }
     layout.style.setProperty('--mj-ui-scale', scale.toFixed(3));
     const table = layout.querySelector('.mj-table');
@@ -1136,8 +1204,8 @@
 
   function syncDiscardSelection(s) {
     const hand = (s && s.my_hand) || [];
-    if (!selectedDiscardTile || hand.indexOf(selectedDiscardTile) < 0) {
-      selectedDiscardTile = null;
+    if (selectedDiscardIndex == null || selectedDiscardIndex < 0 || selectedDiscardIndex >= hand.length) {
+      selectedDiscardIndex = null;
     }
   }
 
@@ -1148,7 +1216,7 @@
     ensureHandLayoutSync();
     if (s.status === 'dealer_roll' || s.status === 'lobby' || s.status === 'hand_end') {
       handEl.innerHTML = '';
-      selectedDiscardTile = null;
+      selectedDiscardIndex = null;
       if (stripEl) stripEl.classList.add('pm-u-hidden');
       return;
     }
@@ -1158,7 +1226,7 @@
       && s.phase === 'discard'
       && Number(s.current_seat) === Number(mySeat);
     syncDiscardSelection(s);
-    if (!canDiscard) selectedDiscardTile = null;
+    if (!canDiscard) selectedDiscardIndex = null;
     const dt = s.drawn_tile;
     const drawnTile = (dt && Number(dt.seat) === mySeat) ? dt.tile : null;
     let drawnIdx = -1;
@@ -1169,13 +1237,14 @@
     }
     if (stripEl) stripEl.classList.toggle('pm-u-hidden', !hand.length);
     handEl.innerHTML = hand.map((t, i) =>
-      tileHandButtonHtml(t, canDiscard, i === drawnIdx ? 'drawn' : null, canDiscard && t === selectedDiscardTile)
+      tileHandButtonHtml(t, canDiscard, i === drawnIdx ? 'drawn' : null, canDiscard && i === selectedDiscardIndex, i)
     ).join('');
     handEl.querySelectorAll('.mj-tile--hand.mj-tile--clickable').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const tile = btn.getAttribute('data-tile');
-        if (!tile || !canDiscard) return;
-        selectedDiscardTile = selectedDiscardTile === tile ? null : tile;
+        if (!canDiscard) return;
+        const idx = Number(btn.getAttribute('data-hand-idx'));
+        if (!Number.isFinite(idx)) return;
+        selectedDiscardIndex = selectedDiscardIndex === idx ? null : idx;
         renderHand(s);
         renderHandActions(s);
       });
@@ -1184,6 +1253,69 @@
     window.requestAnimationFrame(() => {
       syncMjLayoutScale();
       syncHandTileLayout(handEl);
+    });
+  }
+
+  function sortedWinOptions(opts) {
+    return (opts || []).slice().sort((a, b) => {
+      const ma = Number(a.sort_mult != null ? a.sort_mult : (a.pattern_mult || 1) * (a.dealer_mult || 1));
+      const mb = Number(b.sort_mult != null ? b.sort_mult : (b.pattern_mult || 1) * (b.dealer_mult || 1));
+      return mb - ma;
+    });
+  }
+
+  function currentWinOptions() {
+    if (!state) return [];
+    const cr = state.claim_round;
+    if (cr && cr.need_response && (cr.options || []).includes('win')) {
+      return sortedWinOptions(cr.win_options || []);
+    }
+    if (state.self_win_options && state.self_win_options.length) {
+      return sortedWinOptions(state.self_win_options);
+    }
+    return [];
+  }
+
+  function winActionLabel(opts) {
+    if (!opts || !opts.length) return '胡';
+    const wt = opts[0].win_type || 'tsumo';
+    if (wt === 'tsumo') return '自摸胡';
+    return '胡';
+  }
+
+  function showWinChoiceOverlay(winOptions) {
+    initMjBoardOverlay();
+    if (!mjBoardOverlay) return;
+    const opts = sortedWinOptions(winOptions);
+    pendingWinPick = opts;
+    const els = mjBoardOverlay.elements;
+    if (!els) return;
+    els.actionsEl.innerHTML = '';
+    const title = (opts[0] && opts[0].win_type === 'ron') ? '选择胡牌牌型' : '选择自摸牌型';
+    els.titleEl.textContent = title;
+    els.msgEl.innerHTML = '<div class="mj-chi-picker mj-win-picker">'
+      + opts.map((wo, idx) =>
+        '<button type="button" class="mj-chi-pick-btn mj-win-pick-btn" data-win-idx="' + idx + '">'
+        + '<span class="mj-win-pick-label">' + esc(wo.label || wo.pattern_label || '胡') + '</span>'
+        + '</button>'
+      ).join('')
+      + '</div>';
+    els.actionsEl.appendChild(mjBoardOverlay.makeActionButton('取消', 'btn-secondary', () => {
+      pendingWinPick = null;
+      mjBoardOverlay.refresh(state);
+    }));
+    els.overlay.classList.remove('pm-u-hidden');
+    els.overlay.removeAttribute('hidden');
+    els.msgEl.querySelectorAll('.mj-win-pick-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.getAttribute('data-win-idx'));
+        const pick = opts[idx];
+        pendingWinPick = null;
+        mjBoardOverlay.refresh(state);
+        if (pick) {
+          doClaim('win', null, pick.pattern_code || null).catch((err) => alert(err.message));
+        }
+      });
     });
   }
 
@@ -1219,14 +1351,25 @@
     });
   }
 
-  function hideChiOverlayIfIdle() {
-    if (pendingChiPick || !mjBoardOverlay) return;
+  function hideActionPickerIfIdle() {
+    if (pendingChiPick || pendingWinPick || !mjBoardOverlay) return;
     if (!mjBoardOverlay.hasConfirm() && !isBoardOverlayActive(state)) {
       mjBoardOverlay.refresh(state);
     }
   }
 
   function onClaimClick(type) {
+    if (type === 'win') {
+      const winOpts = currentWinOptions();
+      if (winOpts.length >= 1) {
+        showWinChoiceOverlay(winOpts);
+        return;
+      }
+      if (state && state.pending_self_win) {
+        doClaim('win').catch((err) => alert(err.message));
+        return;
+      }
+    }
     if (type === 'chi') {
       const cr = state && state.claim_round;
       const opts = (cr && cr.chi_options) || [];
@@ -1247,12 +1390,10 @@
     const handBtns = $('mjHandActionBtns');
     const legacyWrap = $('mjActions');
     const legacyBtns = $('mjActionBtns');
-    const usePopupSide = isPopup && legacyBtns;
-    const useLegacy = usePopupSide || !handWrap || !handBtns;
+    const useLegacy = !handWrap || !handBtns;
     const wrap = useLegacy ? legacyWrap : handWrap;
     const btns = useLegacy ? legacyBtns : handBtns;
     if (legacyWrap && !useLegacy) setVisible(legacyWrap, false);
-    if (handWrap && usePopupSide) setVisible(handWrap, false);
     if (!wrap || !btns) return;
 
     const mySeat = resolveMySeat(s);
@@ -1262,10 +1403,6 @@
     syncDiscardSelection(s);
 
     const list = [];
-    if (s.pending_self_win) {
-      list.push({ type: 'win', label: '自摸胡', style: 'win' });
-      list.push({ type: 'pass', label: '不胡，出牌', style: 'claim' });
-    }
     const cr = s.claim_round;
     if (cr && cr.need_response && (cr.options || []).length) {
       const order = ['win', 'pung', 'kong', 'chi', 'pass'];
@@ -1274,18 +1411,46 @@
         const ib = order.indexOf(b);
         return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
       });
+      const winOpts = cr.win_options || [];
       opts.forEach((opt) => {
-        const labels = { win: '胡', pung: '碰', kong: '杠', chi: '吃', pass: '过' };
-        const style = opt === 'win' ? 'win' : 'claim';
+        if (opt === 'win') {
+          list.push({ type: 'win', label: winActionLabel(winOpts), style: 'win' });
+          return;
+        }
+        const labels = { pung: '碰', kong: '杠', chi: '吃', pass: '过' };
+        const style = 'claim';
         list.push({ type: opt, label: labels[opt] || opt, style });
       });
     }
-    if (canDiscard && !s.pending_self_win && !(cr && cr.need_response)) {
+    if (canDiscard && !(cr && cr.need_response)) {
+      const winOpts = s.self_win_options || [];
+      if (winOpts.length || s.pending_self_win) {
+        list.push({ type: 'win', label: winActionLabel(winOpts), style: 'win' });
+      }
+      const sk = s.self_kong || {};
+      (sk.concealed || []).forEach((tile) => {
+        list.push({
+          type: 'self_kong',
+          kind: 'concealed',
+          tile,
+          label: '暗杠',
+          style: 'claim',
+        });
+      });
+      (sk.added || []).forEach((tile) => {
+        list.push({
+          type: 'self_kong',
+          kind: 'added',
+          tile,
+          label: '明杠',
+          style: 'claim',
+        });
+      });
       list.push({
         type: 'discard',
         label: '出牌',
         style: 'primary',
-        disabled: !selectedDiscardTile,
+        disabled: selectedDiscardIndex == null,
       });
     }
 
@@ -1293,7 +1458,7 @@
       setVisible(wrap, false);
       wrap.classList.remove('is-active');
       btns.innerHTML = '';
-      hideChiOverlayIfIdle();
+      hideActionPickerIfIdle();
       return;
     }
 
@@ -1306,7 +1471,9 @@
       else if (a.style === 'claim') cls.push('mj-hand-action-btn--claim');
       const dis = a.disabled ? ' disabled' : '';
       const action = a.type === 'discard' ? 'discard' : a.type;
-      return `<button type="button" class="${cls.join(' ')}" data-hand-action="${esc(action)}"${dis}>${esc(a.label)}</button>`;
+      const tileAttr = a.tile ? ` data-tile="${esc(a.tile)}"` : '';
+      const kindAttr = a.kind ? ` data-kong-kind="${esc(a.kind)}"` : '';
+      return `<button type="button" class="${cls.join(' ')}" data-hand-action="${esc(action)}"${tileAttr}${kindAttr}${dis}>${esc(a.label)}</button>`;
     }).join('');
 
     btns.querySelectorAll('[data-hand-action]').forEach((btn) => {
@@ -1314,10 +1481,19 @@
         if (btn.disabled) return;
         const t = btn.getAttribute('data-hand-action');
         if (t === 'discard') {
-          if (!selectedDiscardTile) return;
-          const tile = selectedDiscardTile;
-          selectedDiscardTile = null;
+          if (selectedDiscardIndex == null) return;
+          const hand = (state && state.my_hand) || [];
+          const tile = hand[selectedDiscardIndex];
+          if (!tile) return;
+          selectedDiscardIndex = null;
           doDiscard(tile).catch((err) => alert(err.message));
+          return;
+        }
+        if (t === 'self_kong') {
+          const kind = btn.getAttribute('data-kong-kind') || 'concealed';
+          const tile = btn.getAttribute('data-tile');
+          if (!tile) return;
+          doSelfKong(kind, tile).catch((err) => alert(err.message));
           return;
         }
         if (t) onClaimClick(t);
@@ -1386,46 +1562,31 @@
     renderScores(s);
 
     const center = $('mjCenterInfo');
+    const overlayCoversTable = isBoardOverlayActive(s);
     if (center) {
-      let msg = `房间 ${s.code} · 第 ${s.hand_no || 1} 局`;
-      if (s.rule_label) msg += ' · ' + s.rule_label;
-      if (s.status === 'lobby') {
-        const lb = s.lobby || {};
-        msg += ' · 等待开局（' + (lb.occupied_count || 0) + ' 人，至少 ' + (s.min_players || 2) + ' 人准备）';
-      }
-      else if (s.status === 'dealer_roll') {
-        const dr = s.dice_roll || {};
-        msg += ' · 投骰定庄';
-        if (dr.dealer_name) msg += ' · 庄家 ' + dr.dealer_name;
-      }
-      else if (s.status === 'playing') {
-        msg += ` · 牌墙余 ${s.wall_remaining ?? '?'}`;
-        if (s.rule_preset === 'hangzhou' && s.dealer_mult) {
-          msg += ' · 连庄 ' + s.dealer_mult + ' 倍';
+      if (overlayCoversTable) {
+        center.textContent = '';
+        center.classList.add('pm-u-hidden');
+      } else {
+        center.classList.remove('pm-u-hidden');
+        let msg = `房间 ${s.code} · 第 ${s.hand_no || 1} 局`;
+        if (s.rule_label) msg += ' · ' + s.rule_label;
+        if (s.status === 'playing') {
+          msg += ` · 牌墙余 ${s.wall_remaining ?? '?'}`;
+          if (s.rule_preset === 'hangzhou' && s.dealer_mult) {
+            msg += ' · 连庄 ' + s.dealer_mult + ' 倍';
+          }
         }
+        center.textContent = msg;
       }
-      else if (s.status === 'hand_end') {
-        const r = s.last_hand_result || {};
-        if (r.win_type === 'draw') msg += ' · 流局';
-        else if (r.winner_seat != null) {
-          const wn = ((s.seats || [])[r.winner_seat] || {}).name || '';
-          msg += ` · ${wn} 胡（${r.win_type === 'tsumo' ? '自摸' : '点炮'}）`;
-          const pat = hzPatternText(r);
-          if (pat) msg += ' · ' + pat;
-          else if (r.dealer_mult) msg += ' · 连庄 ' + r.dealer_mult + ' 倍';
-          if (r.win_type === 'tsumo' || r.win_type === 'ron') msg += ` · 下局 ${wn} 坐庄`;
-        }
-      }
-      center.textContent = msg;
     }
 
-    renderLobbySeats(s);
     renderDiceRoll(s);
     updateBoardOverlay(s);
     renderRoomSidebar(s);
     syncRoomChat(s);
 
-    const overlayCoversLobby = isBoardOverlayActive(s);
+    const overlayCoversLobby = overlayCoversTable;
 
     const inRoom = lobbyInRoom(s);
     if (!isPopup) setVisible($('mjBoardCard'), true);
@@ -1433,22 +1594,9 @@
     setVisible($('mjTableLayout'), inRoom && !hideTable);
     setVisible($('mjTablePlaceholder'), (!inRoom || hideTable) && !isPopup);
     const canReady = s.status === 'lobby' || s.status === 'hand_end';
-    setVisible($('mjReadyBtn'), canReady && resolveMySeat(s) != null && !overlayCoversLobby);
-    setVisible($('mjStartBtn'), canReady && s.you_are_host && !!(s.lobby && s.lobby.can_start) && !overlayCoversLobby);
-    setVisible($('mjConfirmRollBtn'), false);
-    setVisible($('mjNextHandBtn'), false);
     setVisible($('mjLeaveBtn'), lobbyInRoom(s));
     updateLeaveButtons(s);
 
-    const readyBtn = $('mjReadyBtn');
-    if (readyBtn && canReady) {
-      const me = mySeat != null ? (s.seats || [])[mySeat] : null;
-      readyBtn.textContent = me && me.ready ? '取消准备' : '准备';
-    }
-    const startBtn = $('mjStartBtn');
-    if (startBtn && canReady && s.you_are_host) {
-      startBtn.textContent = s.status === 'hand_end' ? '开下一局' : '开局';
-    }
     const popReady = $('mjPopupReadyBtn');
     if (popReady && canReady) {
       const me = mySeat != null ? (s.seats || [])[mySeat] : null;
@@ -1637,11 +1785,18 @@
     applyState(data);
   }
 
-  async function doClaim(type, chiTiles) {
+  async function doClaim(type, chiTiles, patternCode) {
     const payload = { room_code: roomCode, type };
     if (chiTiles && type === 'chi') payload.chi_tiles = chiTiles;
+    if (patternCode && type === 'win') payload.pattern_code = patternCode;
     const data = await api('claim', payload);
     pendingChiPick = null;
+    pendingWinPick = null;
+    applyState(data);
+  }
+
+  async function doSelfKong(kind, tile) {
+    const data = await api('self_kong', { room_code: roomCode, kind, tile });
     applyState(data);
   }
 
@@ -1900,7 +2055,12 @@
       if (e.origin !== win.location.origin) return;
       const msg = e.data || {};
       if (msg.type === 'mj-play-request-state') postStateToPopup();
-      if (msg.type === 'mj-play-popup-ready') dockPopupWindow(tablePopup);
+      if (msg.type === 'mj-play-popup-ready') {
+        const popupApi = win.SitjoyWidgetPopup;
+        if (popupApi && tablePopup && !tablePopup.closed) {
+          popupApi.applyBounds(tablePopup, popupApi.resolveBounds(MJ_POPUP_BOUNDS_KEY, MJ_POPUP_DEFAULTS), MJ_POPUP_DEFAULTS);
+        }
+      }
       if (msg.type === 'mj-play-room-ended') onRoomEnded(msg.message || '房间已结束', { silent: true });
     });
   }
@@ -1910,6 +2070,11 @@
     initRoomChat();
     bindPlayerAvatarUi();
     document.title = '麻将牌桌';
+    const popupApi = win.SitjoyWidgetPopup;
+    if (popupApi) {
+      popupApi.applyBounds(win, popupApi.resolveBounds(MJ_POPUP_BOUNDS_KEY, MJ_POPUP_DEFAULTS), MJ_POPUP_DEFAULTS);
+      popupApi.attachBoundsSaver(MJ_POPUP_BOUNDS_KEY, win, MJ_POPUP_DEFAULTS);
+    }
     tryResume();
     const syncFromOpener = () => {
       if (!win.opener || win.opener.closed) return;
@@ -1974,10 +2139,11 @@
     $('mjCreateBtn') && $('mjCreateBtn').addEventListener('click', () => doCreate().catch((e) => mjToast(e.message || '创建失败', true)));
     $('mjJoinBtn') && $('mjJoinBtn').addEventListener('click', () => doJoin().catch((e) => alert(e.message)));
     $('mjLeaveBtn') && $('mjLeaveBtn').addEventListener('click', () => requestLeaveRoom().catch((e) => alert(e.message)));
-    $('mjReadyBtn') && $('mjReadyBtn').addEventListener('click', () => doReady().catch((e) => alert(e.message)));
-    $('mjStartBtn') && $('mjStartBtn').addEventListener('click', () => doStart().catch((e) => alert(e.message)));
-    $('mjConfirmRollBtn') && $('mjConfirmRollBtn').addEventListener('click', () => doConfirmRoll().catch((e) => alert(e.message)));
-    $('mjNextHandBtn') && $('mjNextHandBtn').addEventListener('click', () => doNextHand().catch((e) => alert(e.message)));
+    $('mjRoomCopyBtn') && $('mjRoomCopyBtn').addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      copyMjRoomShare();
+    });
     const popBtn = $('mjPopoutBtn');
     if (popBtn) {
       popBtn.addEventListener('click', () => {

@@ -23,13 +23,12 @@
                     <div class="go-play-join-group widget-room-join-group">
                         <span class="pm-search-title">加入房间</span>
                         <div class="go-play-join-row">
-                            <input type="text" id="mjJoinInput" class="inline-input" maxlength="8" placeholder="6 位房间号" autocomplete="off">
+                            <input type="text" id="mjJoinInput" class="inline-input widget-room-join-input" maxlength="8" placeholder="6 位房间号" autocomplete="off">
                             <button type="button" class="btn-secondary" id="mjJoinBtn">加入</button>
                         </div>
                     </div>
                     <button type="button" class="btn-secondary" id="mjPopoutBtn" title="在新窗口打开牌桌（需允许弹出窗口）">牌桌独立窗口</button>
                 </div>
-                <p class="mj-hint" id="mjRoomHint">创建或加入房间后开始。</p>
             </div>
 
             <div class="card pm-card mj-board-card" id="mjBoardCard">
@@ -173,17 +172,17 @@
                                 <div class="go-play-side-meta">
                                     <div class="go-play-side-meta-row">
                                         <span class="go-play-side-label">房间</span>
-                                        <strong class="go-play-room-code" id="mjRoomCode">------</strong>
+                                        <span class="go-play-room-code-group">
+                                            <strong class="go-play-room-code" id="mjRoomCode">------</strong>
+                                            <button type="button" class="btn-secondary btn-small go-play-room-copy-btn pm-u-hidden" id="mjRoomCopyBtn" title="复制加入链接与房间号" aria-label="复制加入链接与房间号">复制</button>
+                                        </span>
                                     </div>
-                                    <p class="go-play-side-meta-line" id="mjSideStatusLine">等待开局</p>
-                                    <p class="go-play-side-meta-line go-play-side-meta-line--muted" id="mjSidePlayersLine"></p>
                                     <p class="go-play-side-meta-line go-play-side-meta-line--muted pm-u-hidden" id="mjSideRuleLine"></p>
                                     <p class="go-play-side-meta-line go-play-side-meta-line--muted pm-u-hidden" id="mjSideStreakLine"></p>
-                                    <p class="mj-side-scores pm-u-hidden" id="mjSideScores"></p>
                                 </div>
 
                                 <div id="mjRuleNotice" class="go-play-side-notice go-play-side-notice--practice pm-u-hidden" aria-label="牌局规则">
-                                    <select id="mjRulePreset" class="inline-input mj-rule-preset-select mj-rule-preset-select--compact" aria-label="规则预设">
+                                    <select id="mjRulePreset" class="inline-input mj-rule-preset-select mj-rule-preset-select--compact" data-universal-compact="1" data-universal-no-search="1" aria-label="规则预设">
                                         <option value="standard">标准（当前）</option>
                                         <option value="hangzhou">杭麻</option>
                                     </select>
@@ -191,11 +190,7 @@
                                 </div>
 
                                 <div class="go-play-side-actions">
-                                    <button type="button" class="go-play-side-btn btn-secondary pm-u-hidden" id="mjReadyBtn">准备</button>
-                                    <button type="button" class="go-play-side-btn btn-primary pm-u-hidden" id="mjStartBtn">开局</button>
-                                    <button type="button" class="go-play-side-btn btn-primary pm-u-hidden" id="mjConfirmRollBtn">确认发牌</button>
-                                    <button type="button" class="go-play-side-btn btn-primary pm-u-hidden" id="mjNextHandBtn">下一局</button>
-                                    <button type="button" class="go-play-side-btn btn-secondary pm-u-hidden" id="mjLeaveBtn">离开房间</button>
+                                    <button type="button" class="go-play-side-btn btn-secondary btn-small pm-u-hidden" id="mjLeaveBtn">离开房间</button>
                                 </div>
                             </div>
 
@@ -215,6 +210,7 @@
     </div>
     <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
     <script src="/static/js/header.js"></script>
+    <script src="/static/js/widget-popup-window.js"></script>
     <script src="/static/js/widget-board-overlay.js"></script>
     <script src="/static/js/widget-room.js"></script>
     <script src="/static/js/mahjong-play.js"></script>

@@ -228,7 +228,11 @@
         trigger.className = 'universal-select-trigger';
         trigger.textContent = '请选择';
 
-        const compact = String(select.dataset.universalCompact || '') === '1';
+        const compact = String(select.dataset.universalCompact || '') === '1'
+            || select.classList.contains('mj-rule-preset-select--compact')
+            || select.classList.contains('pm-table-page-size')
+            || select.classList.contains('pm-inline-compact-select')
+            || select.classList.contains('sf-compact-select');
         if(compact){
             wrapper.classList.add('universal-select-dropdown--compact');
             trigger.classList.add('universal-select-trigger--compact');
@@ -5959,7 +5963,7 @@
             toolbar.innerHTML = `
                 <div class="pm-table-toolbar-left">
                     <label>每页</label>
-                    <select class="pm-table-page-size" data-universal-no-search="1"></select>
+                    <select class="pm-table-page-size" data-universal-compact="1" data-universal-no-search="1"></select>
                     <span class="pm-table-info"></span>
                 </div>
                 <div class="pm-table-toolbar-right">

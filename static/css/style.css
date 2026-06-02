@@ -6108,9 +6108,6 @@ button.btn-small:active {
     font-weight: 500;
 }
 
-.pm-table-toolbar .pm-table-page-size,
-.pm-table-toolbar .universal-select-trigger,
-.pm-table-toolbar .universal-select-trigger.has-value,
 .pm-table-toolbar .pm-table-prev,
 .pm-table-toolbar .pm-table-next,
 .pm-table-toolbar .pm-table-columns-trigger,
@@ -6123,22 +6120,42 @@ button.btn-small:active {
     line-height: 1.15 !important;
 }
 
+.pm-table-toolbar .universal-select-trigger.universal-select-trigger--compact,
+.pm-table-toolbar .universal-select-trigger.universal-select-trigger--compact.has-value {
+    min-height: 24px !important;
+    height: auto !important;
+    padding: 0.1rem calc(0.42rem + 12px) 0.1rem 0.32rem !important;
+    border-radius: 6px !important;
+    font-size: 0.75rem !important;
+    line-height: 1.2 !important;
+    border-width: 1px !important;
+}
+
 .pm-table-toolbar .pm-table-page-size,
 .pm-table-toolbar .universal-select-trigger,
 .pm-table-toolbar .universal-select-trigger.has-value {
     min-width: 76px;
 }
 
-.pm-table-toolbar .universal-select-trigger,
-.pm-table-toolbar .universal-select-trigger.has-value {
-    padding-right: 1.55rem !important;
+.pm-table-toolbar .universal-select-trigger.universal-select-trigger--compact::after {
+    right: 7px;
+    border-left-width: 3px;
+    border-right-width: 3px;
+    border-top-width: 4px;
+    transform: translateY(-40%);
 }
 
-.pm-table-toolbar .universal-select-trigger::after {
-    right: 9px;
-    border-left-width: 4px;
-    border-right-width: 4px;
-    border-top-width: 5px;
+/* 侧栏规则框：compact 下拉占满宽度 */
+.go-play-side-notice .universal-select-dropdown.universal-select-dropdown--compact {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+}
+.go-play-side-notice .universal-select-trigger.universal-select-trigger--compact,
+.go-play-side-notice .universal-select-trigger.universal-select-trigger--compact.has-value {
+    width: 100%;
+    max-width: none;
+    margin: 0 0 0.35rem;
 }
 
 /* 小号 universal-select（表格内联等）：高度与输入框一致，文案省略号，右侧为小三角留白 */

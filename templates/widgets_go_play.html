@@ -25,15 +25,13 @@
                         <div class="form-group pm-search go-play-join-group" style="margin:0;">
                             <span class="pm-search-title">加入房间</span>
                             <div class="go-play-join-row">
-                                <input type="text" id="goJoinInput" class="inline-input" maxlength="8" placeholder="6 位房间号" autocomplete="off">
+                                <input type="text" id="goJoinInput" class="inline-input widget-room-join-input" maxlength="8" placeholder="6 位房间号" autocomplete="off">
                                 <button type="button" class="btn-secondary" id="goJoinBtn">加入</button>
                             </div>
                         </div>
                         <button type="button" class="btn-secondary" id="goPopoutBtn" title="在新浏览器窗口中打开棋盘（未加入房间时为本地摆棋）">棋盘独立窗口</button>
                     </div>
                 </div>
-                <p class="go-play-hint pm-u-hidden" id="goLobbyHint">未加入房间时可本地摆棋（黑白轮流）；创建房间后您执黑先行，对手加入后开始对局。</p>
-                <p class="go-play-hint pm-u-hidden" id="goRoomHint"></p>
             </div>
 
             <div class="card pm-card go-play-board-card">
@@ -130,13 +128,13 @@
                                 <p class="go-play-side-meta-line go-play-side-meta-line--muted" id="goUndoLine">悔棋需对方同意</p>
                             </div>
                             <div class="go-play-side-actions">
-                                <button type="button" class="go-play-side-btn btn-secondary" id="goPassBtn">虚手</button>
-                                <button type="button" class="go-play-side-btn btn-secondary" id="goUndoBtn">悔棋</button>
-                                <button type="button" class="go-play-side-btn btn-secondary" id="goResignBtn">认输</button>
-                                <button type="button" class="go-play-side-btn btn-secondary" id="goPracticeBtn" disabled>演习模式</button>
-                                <button type="button" class="go-play-side-btn btn-secondary pm-u-hidden" id="goPracticeRevertBtn">撤回一步</button>
-                                <button type="button" class="go-play-side-btn btn-danger pm-u-hidden" id="goPracticeEndBtn">结束演习</button>
-                                <button type="button" class="go-play-side-btn btn-secondary" id="goLeaveBtn">离开房间</button>
+                                <button type="button" class="go-play-side-btn btn-secondary btn-small" id="goPassBtn">虚手</button>
+                                <button type="button" class="go-play-side-btn btn-secondary btn-small" id="goUndoBtn">悔棋</button>
+                                <button type="button" class="go-play-side-btn btn-secondary btn-small" id="goResignBtn">认输</button>
+                                <button type="button" class="go-play-side-btn btn-secondary btn-small" id="goPracticeBtn" disabled>演习模式</button>
+                                <button type="button" class="go-play-side-btn btn-secondary btn-small pm-u-hidden" id="goPracticeRevertBtn">撤回一步</button>
+                                <button type="button" class="go-play-side-btn btn-danger btn-small pm-u-hidden" id="goPracticeEndBtn">结束演习</button>
+                                <button type="button" class="go-play-side-btn btn-secondary btn-small" id="goLeaveBtn">离开房间</button>
                             </div>
                         </div>
 
@@ -145,9 +143,9 @@
                                 <p class="go-play-side-status" id="goLocalStatus">本地对弈 · 黑方行棋（0 手）</p>
                             </div>
                             <div class="go-play-side-actions">
-                                <button type="button" class="go-play-side-btn btn-secondary" id="goLocalPassBtn">虚手</button>
-                                <button type="button" class="go-play-side-btn btn-secondary" id="goLocalUndoBtn">悔一手</button>
-                                <button type="button" class="go-play-side-btn btn-secondary" id="goLocalClearBtn">清空棋盘</button>
+                                <button type="button" class="go-play-side-btn btn-secondary btn-small" id="goLocalPassBtn">虚手</button>
+                                <button type="button" class="go-play-side-btn btn-secondary btn-small" id="goLocalUndoBtn">悔一手</button>
+                                <button type="button" class="go-play-side-btn btn-secondary btn-small" id="goLocalClearBtn">清空棋盘</button>
                             </div>
                         </div>
 
@@ -162,6 +160,7 @@
 
     <footer><p>&copy; 2026 SITJOY | 内部使用</p></footer>
     <script src="/static/js/header.js"></script>
+    <script src="/static/js/widget-popup-window.js"></script>
     <script src="/static/js/widget-board-overlay.js"></script>
     <script src="/static/js/widget-room.js"></script>
     <script src="/static/js/go-play.js"></script>
