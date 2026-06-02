@@ -42,7 +42,118 @@
 
 /* 搓麻将 */
 .mj-layout-root { width: 100%; max-width: 100%; }
-.mj-hint { font-size: 0.86rem; color: var(--morandi-slate); margin: 0.5rem 0 0; }
+.mj-rule-preset-wrap,
+.mj-side-rule-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 0;
+}
+.mj-side-rule-block .mj-rule-preset-select {
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
+}
+.mj-rule-preset-select {
+    max-width: 14rem;
+}
+.mj-rule-preset-hint {
+    margin: 0;
+    font-size: 0.74rem;
+    line-height: 1.4;
+    color: var(--morandi-slate);
+}
+.mj-table-placeholder {
+    margin: 2rem 1rem;
+    text-align: center;
+    font-size: 0.88rem;
+    color: var(--morandi-slate);
+    line-height: 1.45;
+}
+.mj-felt-stack .mj-board-overlay-below {
+    position: static;
+    inset: auto;
+    display: block;
+    background: rgba(255, 252, 247, 0.96);
+    border: 1px solid rgba(195, 186, 174, 0.85);
+    border-radius: 10px;
+    padding: 0.55rem 0.65rem;
+    margin-top: 0.28rem;
+    overflow: visible;
+    flex-shrink: 0;
+    width: 100%;
+    box-sizing: border-box;
+    box-shadow: 0 4px 14px rgba(42, 36, 32, 0.07);
+}
+.mj-felt-stack .mj-board-overlay-below[hidden],
+.mj-felt-stack .mj-board-overlay-below.pm-u-hidden {
+    display: none !important;
+}
+.mj-felt-stack .mj-board-overlay-below .widget-board-dialog {
+    width: 100%;
+    max-width: 100%;
+    max-height: none;
+    transform: none;
+    padding: 0.15rem 0.1rem 0.25rem;
+    background: transparent;
+    box-shadow: none;
+    overflow: visible;
+}
+.mj-play-popup-body .mj-hand-actions {
+    display: none !important;
+}
+.mj-play-popup-body .mj-popup-side .mj-actions--popup {
+    display: flex !important;
+    flex-direction: column;
+    gap: clamp(3px, 0.9vh, 6px);
+    margin: 0;
+    padding: 0;
+    border: none;
+}
+.mj-play-popup-body .mj-popup-side .mj-hand-action-btn {
+    display: block;
+    width: 100%;
+    margin: 0;
+    min-height: auto;
+    padding: clamp(0.18rem, 1.1vh, 0.32rem) clamp(0.2rem, 0.8vw, 0.38rem);
+    font-size: clamp(0.58rem, 2.1vw, 0.76rem);
+    line-height: 1.25;
+    font-weight: 600;
+    text-align: center;
+    color: #2a2420;
+    background: #fff;
+    border: 1px solid rgba(61, 69, 67, 0.22);
+    border-radius: clamp(5px, 1.2vw, 7px);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+.mj-play-popup-body .mj-popup-side .mj-hand-action-btn--win {
+    background: #e8f0ea;
+    border-color: #7fa88b;
+}
+.mj-play-popup-body .mj-popup-side .mj-hand-action-btn--primary {
+    background: #e8f0ea;
+    border-color: #7fa88b;
+}
+.mj-play-popup-body .mj-popup-side .mj-hand-action-btn:disabled {
+    opacity: 0.45;
+}
+.mj-play-popup-stage .mj-popup-side {
+    order: 3;
+}
+.mj-tile--joker {
+    box-shadow: inset 0 0 0 2px rgba(201, 162, 39, 0.75);
+}
+.mj-tile--joker.mj-tile--bai::after {
+    content: '财';
+    position: absolute;
+    right: 0.08rem;
+    top: 0.04rem;
+    font-size: 0.48em;
+    font-weight: 800;
+    color: #8a6d12;
+    line-height: 1;
+    pointer-events: none;
+}
 .mj-scores { margin-top: 0.5rem; font-size: 0.88rem; color: var(--morandi-ink); }
 .mj-lobby-panel { margin-top: 0.65rem; }
 .mj-lobby-label { font-size: 0.82rem; color: var(--morandi-slate); margin: 0 0 0.45rem; }
@@ -77,6 +188,12 @@
     background: rgba(111, 157, 125, 0.15);
     color: #3d6b4f;
 }
+.mj-seat-dot--dice-winner .mj-seat-dot-inner {
+    border-color: #c9a227;
+    background: rgba(201, 162, 39, 0.22);
+    color: #8a6d12;
+    box-shadow: 0 0 0 2px rgba(201, 162, 39, 0.45);
+}
 .mj-seat-dot--me .mj-seat-dot-inner {
     box-shadow: 0 0 0 2px rgba(111, 157, 125, 0.35);
 }
@@ -85,22 +202,34 @@
     max-width: 5.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .widget-board-dialog--wide {
-    width: min(92%, 22rem);
+    width: min(100%, calc(20rem * var(--mj-ui-scale, 1)));
+    max-width: 100%;
 }
 .mj-overlay-seats {
     margin: 0.2rem 0 0.45rem;
-    grid-template-columns: repeat(4, 1fr);
-    max-width: none;
-    gap: 0.45rem 0.35rem;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    max-width: 100%;
+    gap: 0.35rem 0.25rem;
 }
 .mj-overlay-seats .mj-seat-dot {
-    min-height: 3.6rem;
+    min-height: 3.2rem;
+    min-width: 0;
+    align-items: center;
+}
+.mj-overlay-seats .mj-seat-dot-inner {
+    width: calc(2.5rem * var(--mj-ui-scale, 1));
+    height: calc(2.5rem * var(--mj-ui-scale, 1));
+    flex-shrink: 0;
+    aspect-ratio: 1;
 }
 .mj-overlay-hint {
     margin: 0.35rem 0 0;
     font-size: 0.75rem;
     color: var(--morandi-slate);
     line-height: 1.4;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 .mj-seat-dot-inner--dice {
     font-size: 0.58rem;
@@ -462,22 +591,65 @@
 }
 .mj-table .widget-board-overlay {
     z-index: 20;
+    padding: 0.35rem;
+    overflow: hidden;
+    align-items: center;
+    justify-content: center;
+}
+.mj-table .widget-board-dialog,
+.mj-table .widget-board-dialog.widget-board-dialog--wide {
+    width: min(92%, calc(20rem * var(--mj-ui-scale, 1)));
+    max-width: calc(100% - 0.35rem);
+    max-height: calc(100% - 0.35rem);
+    overflow: visible;
+    transform: scale(var(--mj-ui-scale, 1));
+    transform-origin: center center;
 }
 .mj-play-popup-body {
-    margin: 0; min-height: 100vh; background: var(--morandi-mist, #f3f0ec);
-    display: flex; align-items: flex-start; justify-content: center;
-    padding: 0.35rem;
-    overflow: auto;
+    margin: 0;
+    height: 100vh;
+    height: 100dvh;
+    background: var(--morandi-mist, #f3f0ec);
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    overflow: hidden;
     box-sizing: border-box;
 }
 .mj-play-popup-stage {
-    display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: center;
-    gap: 0.65rem; width: 100%; max-width: 560px;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    justify-content: center;
+    gap: clamp(4px, 1vw, 8px);
+    padding: clamp(4px, 1.2vw, 6px);
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
 }
-.mj-play-popup-stage .mj-table-felt { max-width: min(88vw, 400px); }
+.mj-play-popup-stage .mj-table-wrap,
+.mj-play-popup-stage .mj-table-wrap--popup {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    max-width: none;
+    width: auto;
+    container-type: size;
+}
 .mj-play-popup-stage .mj-table-layout {
-    max-width: min(92vw, 460px);
-    gap: clamp(0.22rem, 1.2vw, 0.42rem);
+    width: min(100cqw, 500px);
+    max-width: 100%;
+    max-height: 100cqh;
+    gap: clamp(0.22rem, 1.2vh, 0.42rem);
+}
+.mj-play-popup-stage .mj-table-felt {
+    max-width: min(100cqw, 420px);
 }
 .mj-play-popup-stage .mj-hand-strip {
     max-width: 100%;
@@ -490,8 +662,16 @@
     }
 }
 .mj-popup-side {
-    display: flex; flex-direction: column; gap: 0.45rem;
-    min-width: 5.5rem; max-width: 7rem;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(3px, 0.9vh, 6px);
+    flex: 0 0 auto;
+    align-self: stretch;
+    justify-content: center;
+    min-width: clamp(4.5rem, 12vw, 6.5rem);
+    max-width: clamp(4.5rem, 12vw, 6.5rem);
+    max-height: 100%;
+    overflow: hidden;
 }
 .mj-actions--popup { margin: 0; padding: 0; border: none; flex-direction: column; }
 .mj-actions--popup .mj-actions-btns { flex-direction: column; }
@@ -919,23 +1099,30 @@ button.mj-tile--hand + button.mj-tile--hand {
     flex-direction: column;
     align-items: center;
     width: 100%;
+    max-width: 100%;
     min-height: 0;
     gap: 0.65rem;
     padding: 0.35rem 0;
+    box-sizing: border-box;
+    overflow-x: hidden;
 }
 .widget-room-board-cluster {
-    display: inline-flex;
+    display: flex;
     flex-direction: row;
-    align-items: stretch;
-    flex: 0 0 auto;
-    max-width: 100%;
+    align-items: flex-start;
+    flex: 0 1 auto;
+    width: 100%;
+    max-width: min(96vw, 740px);
+    min-width: 0;
     gap: clamp(0.65rem, 1.4vw, 1rem);
 }
 .widget-room-side-panel {
     flex: 0 0 auto;
-    width: clamp(148px, 17vw, 196px);
+    width: clamp(148px, 16vw, 196px);
+    max-width: 196px;
+    min-width: 0;
     max-height: none;
-    align-self: stretch;
+    align-self: flex-start;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
@@ -946,6 +1133,7 @@ button.mj-tile--hand + button.mj-tile--hand {
     border-radius: 12px;
     box-sizing: border-box;
     box-shadow: 0 4px 16px rgba(42, 36, 32, 0.07);
+    overflow-x: hidden;
     overflow-y: auto;
 }
 .go-play-side-panel {
@@ -956,12 +1144,15 @@ button.mj-tile--hand + button.mj-tile--hand {
     flex-direction: column;
     align-items: center;
     padding: 0.65rem 0.75rem 1rem;
-    overflow: visible;
+    overflow-x: hidden;
+    max-width: 100%;
+    box-sizing: border-box;
 }
 .mj-board-stage .mj-table-wrap {
-    flex: 0 0 auto;
-    width: min(520px, calc(100vw - 18rem));
-    max-width: 100%;
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    max-width: min(520px, 100%);
     margin: 0;
 }
 .widget-room-chat {
@@ -1067,12 +1258,14 @@ button.mj-tile--hand + button.mj-tile--hand {
 .widget-room-chat-send {
     flex-shrink: 0;
 }
-.mj-play-popup-stage {
-    align-items: stretch;
-    max-width: min(96vw, 780px);
-}
 .mj-play-popup-stage .widget-room-chat--side {
     order: 2;
+    flex: 0 0 auto;
+    align-self: stretch;
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    width: clamp(120px, 26vw, 168px);
 }
 .mj-play-popup-stage .mj-popup-side {
     order: 3;
@@ -1281,8 +1474,10 @@ button.mj-tile--hand + button.mj-tile--hand {
 .go-play-side-panel {
     flex: 0 0 auto;
     width: clamp(140px, 16vw, 188px);
+    max-width: 188px;
+    min-width: 0;
     max-height: none;
-    align-self: stretch;
+    align-self: flex-start;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
@@ -1293,6 +1488,7 @@ button.mj-tile--hand + button.mj-tile--hand {
     border-radius: 12px;
     box-sizing: border-box;
     box-shadow: 0 4px 16px rgba(42, 36, 32, 0.07);
+    overflow-x: hidden;
     overflow-y: auto;
 }
 
@@ -1665,10 +1861,12 @@ button.mj-tile--hand + button.mj-tile--hand {
 }
 
 @media (max-width: 760px) {
-    .go-play-board-cluster {
+    .go-play-board-cluster,
+    .widget-room-board-cluster {
         flex-direction: column;
-        align-items: stretch;
+        align-items: center;
         width: 100%;
+        max-width: 100%;
         gap: 0.75rem;
     }
 
@@ -1677,17 +1875,38 @@ button.mj-tile--hand + button.mj-tile--hand {
         border-radius: 12px;
     }
 
-    .go-play-side-panel {
+    .mj-board-stage .mj-table-wrap {
+        width: 100%;
+        max-width: min(520px, 100%);
+    }
+
+    .go-play-side-panel,
+    .widget-room-side-panel {
         width: 100%;
         max-width: min(520px, 100%);
         margin: 0 auto;
         border-radius: 12px;
-        align-self: stretch;
+        align-self: center;
+        flex: 0 0 auto;
+    }
+
+    .widget-room-chat--below {
+        width: min(520px, 100%);
+        max-width: 100%;
     }
 
     .go-play-board-slot--inline,
     .go-play-stage--inline .go-play-board-slot {
         width: 100%;
+    }
+
+    .mj-overlay-seats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.4rem 0.35rem;
+    }
+
+    .mj-overlay-seats .mj-seat-dot {
+        min-height: 3.4rem;
     }
 }
 
@@ -1860,16 +2079,24 @@ button.mj-tile--hand + button.mj-tile--hand {
     background: rgba(42, 36, 32, 0.42);
     box-sizing: border-box;
     pointer-events: auto;
+    overflow: auto;
+    min-width: 0;
 }
 
 .widget-board-dialog,
 .go-play-board-dialog {
     width: min(92%, 17rem);
+    max-width: 100%;
+    min-width: 0;
     padding: 0.85rem 0.95rem;
     border-radius: 10px;
     background: #fff;
     box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
     text-align: center;
+    box-sizing: border-box;
+    overflow-x: hidden;
+    overflow-y: auto;
+    max-height: min(88vh, calc(100% - 0.75rem));
 }
 
 .widget-board-dialog-title,
@@ -1879,6 +2106,7 @@ button.mj-tile--hand + button.mj-tile--hand {
     font-weight: 700;
     color: var(--morandi-ink, #2a2420);
     line-height: 1.35;
+    overflow-wrap: anywhere;
 }
 
 .widget-board-dialog-msg,
@@ -1887,6 +2115,9 @@ button.mj-tile--hand + button.mj-tile--hand {
     font-size: 0.8rem;
     color: var(--morandi-slate, #6b6560);
     line-height: 1.45;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .widget-board-dialog-actions,

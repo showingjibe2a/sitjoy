@@ -1,5 +1,16 @@
-"""在线麻将（小组件）：三人起局、仅平胡；积分与员工昵称；房间文件 + 长轮询。"""
+"""在线麻将（小组件）：规则预设、三人起局；积分与员工昵称；房间文件 + 长轮询。"""
 
+from modules.mahjong_rules import (
+    MJ_PRESET_HANGZHOU,
+    MJ_PRESET_STANDARD,
+    mj_dealer_streak_multiplier,
+    mj_hz_pattern_code,
+    mj_hz_pattern_label,
+    mj_hz_pattern_multiplier,
+    mj_normalize_preset,
+    mj_preset_public_list,
+    mj_rules_for_preset,
+)
 from modules.widget_room_chat_mixin import WidgetRoomChatMixin
 
 import json
@@ -20,6 +31,7 @@ MJ_WAIT_TIMEOUT_SEC = 8
 MJ_WAIT_POLL_SEC = 0.08
 MJ_STREAM_SESSION_SEC = 300
 MJ_STREAM_PING_SEC = 12
+MJ_DEALER_REVEAL_SEC = 2
 MJ_TILE_COPIES = 4
 MJ_TOTAL_TILES = 136
 
@@ -533,16 +545,167 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                         return True
         return False
 
-    def _mj_can_win(self, tiles):
+    def _mj_is_hangzhou(self, room):
+        return mj_normalize_preset((room or {}).get('rule_preset')) == MJ_PRESET_HANGZHOU
+
+    def _mj_hz_seat_state(self, room, seat):
+        if not self._mj_is_hangzhou(room):
+            return None
+        meta = room.setdefault('hz_meta', {})
+        key = str(seat)
+        if key not in meta:
+            meta[key] = {'joker_disc_streak': 0, 'after_kong_draw': False}
+        return meta[key]
+
+    def _mj_hz_on_discard(self, room, seat, tile):
+        st = self._mj_hz_seat_state(room, seat)
+        if st is None:
+            return
+        jokers = self._mj_joker_tiles(room)
+        if tile in jokers:
+            st['joker_disc_streak'] = int(st.get('joker_disc_streak') or 0) + 1
+        else:
+            st['joker_disc_streak'] = 0
+        st['after_kong_draw'] = False
+
+    def _mj_hz_on_normal_draw(self, room, seat):
+        st = self._mj_hz_seat_state(room, seat)
+        if st is not None:
+            st['after_kong_draw'] = False
+
+    def _mj_hz_on_kong_draw(self, room, seat):
+        st = self._mj_hz_seat_state(room, seat)
+        if st is not None:
+            st['after_kong_draw'] = True
+
+    def _mj_is_baotou_wait(self, room, seat, exclude_drawn=None):
+        """摸牌前：1 财神 + 4 组面子（12 张），摸任意牌可胡。"""
+        if not self._mj_is_hangzhou(room):
+            return False
+        hand = list(self._mj_hand_tile_list(room, seat))
+        if exclude_drawn and exclude_drawn in hand:
+            hand.remove(exclude_drawn)
+        tiles = hand + self._mj_meld_tiles_flat(room, seat)
+        jokers = self._mj_joker_tiles(room)
+        counter, j = self._mj_counter_jokers(Counter(tiles), jokers)
+        if j != 1:
+            return False
+        if not counter:
+            return False
+        return sum(counter.values()) % 3 == 0 and self._mj_can_form_melds_joker(counter, 0)
+
+    def _mj_hz_classify_tsumo(self, room, seat):
+        dt = room.get('drawn_tile') or {}
+        exclude = dt.get('tile') if int(dt.get('seat', -1)) == seat else None
+        is_baotou = self._mj_is_baotou_wait(room, seat, exclude_drawn=exclude)
+        st = self._mj_hz_seat_state(room, seat) or {}
+        streak = int(st.get('joker_disc_streak') or 0)
+        after_kong = bool(st.get('after_kong_draw'))
+        mult = mj_hz_pattern_multiplier(is_baotou, streak, after_kong)
+        code = mj_hz_pattern_code(is_baotou, streak, after_kong)
+        return code, mult, mj_hz_pattern_label(code)
+
+    def _mj_scale_deltas(self, deltas, factor):
+        f = int(factor or 1)
+        if f <= 1:
+            return dict(deltas or {})
+        return {k: int(v) * f for k, v in (deltas or {}).items()}
+
+    def _mj_rules(self, room):
+        preset = mj_normalize_preset((room or {}).get('rule_preset'))
+        rules = mj_rules_for_preset(preset)
+        rules['joker_tiles'] = frozenset(rules.get('joker_tiles') or ())
+        return rules
+
+    def _mj_joker_tiles(self, room):
+        return self._mj_rules(room).get('joker_tiles') or frozenset()
+
+    def _mj_can_win(self, tiles, joker_tiles=None):
+        jokers = frozenset(joker_tiles or ())
+        if not jokers:
+            if len(tiles) % 3 != 2:
+                return False
+            c = Counter(tiles)
+            for pair_tile in list(c.keys()):
+                if c[pair_tile] < 2:
+                    continue
+                rest = self._mj_counter_after_remove(c, pair_tile, 2)
+                if self._mj_can_form_melds(rest):
+                    return True
+            return False
+        return self._mj_can_win_with_jokers(tiles, jokers)
+
+    def _mj_counter_jokers(self, counter, joker_tiles):
+        c = counter.copy()
+        j = 0
+        for t in joker_tiles:
+            j += int(c.pop(t, 0) or 0)
+        return c, j
+
+    def _mj_try_sequence_joker(self, counter, jokers, seq_tiles):
+        c = counter.copy()
+        j = jokers
+        for t in seq_tiles:
+            if c.get(t, 0) > 0:
+                c[t] -= 1
+                if c[t] <= 0:
+                    del c[t]
+            elif j > 0:
+                j -= 1
+            else:
+                return False
+        return self._mj_can_form_melds_joker(c, j)
+
+    def _mj_can_form_melds_joker(self, counter, jokers):
+        total = sum(counter.values()) + jokers
+        if total == 0:
+            return True
+        if total % 3 != 0:
+            return False
+        if not counter:
+            return jokers >= 0 and jokers % 3 == 0
+        tile = min(counter.keys(), key=self._mj_tile_sort_key)
+        n = counter[tile]
+        for j_use in range(0, min(3, jokers) + 1):
+            need = 3 - j_use
+            if n >= need:
+                c = counter.copy()
+                c[tile] -= need
+                if c[tile] <= 0:
+                    del c[tile]
+                if self._mj_can_form_melds_joker(c, jokers - j_use):
+                    return True
+        suit = tile[0]
+        if suit in MJ_SUITS and len(tile) >= 2:
+            try:
+                num = int(tile[1:])
+            except Exception:
+                num = -1
+            if 1 <= num <= 9:
+                for start in (num - 2, num - 1, num):
+                    if start < 1 or start > 7:
+                        continue
+                    seq = [f'{suit}{start}', f'{suit}{start + 1}', f'{suit}{start + 2}']
+                    if self._mj_try_sequence_joker(counter, jokers, seq):
+                        return True
+        return False
+
+    def _mj_can_win_with_jokers(self, tiles, joker_tiles):
         if len(tiles) % 3 != 2:
             return False
-        c = Counter(tiles)
-        for pair_tile in list(c.keys()):
-            if c[pair_tile] < 2:
-                continue
-            rest = self._mj_counter_after_remove(c, pair_tile, 2)
-            if self._mj_can_form_melds(rest):
-                return True
+        counter, jokers = self._mj_counter_jokers(Counter(tiles), joker_tiles)
+        if jokers >= 2 and self._mj_can_form_melds_joker(counter, jokers - 2):
+            return True
+        for pair_tile in list(counter.keys()):
+            n = counter[pair_tile]
+            if n >= 2:
+                rest = self._mj_counter_after_remove(counter, pair_tile, 2)
+                if self._mj_can_form_melds_joker(rest, jokers):
+                    return True
+            if n >= 1 and jokers >= 1:
+                rest = self._mj_counter_after_remove(counter, pair_tile, 1)
+                if self._mj_can_form_melds_joker(rest, jokers - 1):
+                    return True
         return False
 
     def _mj_hand_tile_list(self, room, seat):
@@ -565,18 +728,29 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         return tiles
 
     def _mj_can_win_seat(self, room, seat, extra_tile=None):
-        return self._mj_can_win(self._mj_all_tiles_for_win(room, seat, extra_tile))
+        jokers = self._mj_joker_tiles(room)
+        return self._mj_can_win(
+            self._mj_all_tiles_for_win(room, seat, extra_tile),
+            jokers,
+        )
 
-    def _mj_draw_from_wall(self, room):
-        pos = int(room.get('wall_pos') or 0)
-        wall = room.get('wall') or []
-        if pos >= len(wall):
-            return None
-        tile = wall[pos]
-        room['wall_pos'] = pos + 1
-        return tile
-
-    def _mj_hand_scores(self, winner_seat, dealer_seat, active_seats):
+    def _mj_hand_scores(self, winner_seat, dealer_seat, active_seats, rules=None, dealer_streak=0):
+        rules = rules or mj_rules_for_preset(MJ_PRESET_STANDARD)
+        if rules.get('dealer_streak_scoring'):
+            mult = mj_dealer_streak_multiplier(dealer_streak)
+            deltas = {str(s): 0 for s in active_seats}
+            for s in active_seats:
+                if s == winner_seat:
+                    continue
+                if winner_seat == dealer_seat:
+                    pay = mult
+                elif s == dealer_seat:
+                    pay = mult
+                else:
+                    pay = 1
+                deltas[str(s)] = int(deltas.get(str(s), 0)) - pay
+                deltas[str(winner_seat)] = int(deltas.get(str(winner_seat), 0)) + pay
+            return deltas
         deltas = {str(s): 0 for s in active_seats}
         for s in active_seats:
             if s == winner_seat:
@@ -593,7 +767,16 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
     def _mj_apply_hand_scores(self, room, winner_seat, win_type):
         dealer = int(room.get('dealer_seat') or 0)
         active = self._mj_active_seats(room)
-        deltas = self._mj_hand_scores(winner_seat, dealer, active)
+        rules = self._mj_rules(room)
+        streak = int(room.get('dealer_streak') or 0)
+        mult = mj_dealer_streak_multiplier(streak) if rules.get('dealer_streak_scoring') else None
+        deltas = self._mj_hand_scores(winner_seat, dealer, active, rules, streak)
+        pattern_code = ''
+        pattern_label = ''
+        pattern_mult = 1
+        if rules.get('hz_special_patterns') and win_type == 'tsumo':
+            pattern_code, pattern_mult, pattern_label = self._mj_hz_classify_tsumo(room, winner_seat)
+            deltas = self._mj_scale_deltas(deltas, pattern_mult)
         scores = room.get('scores') or {}
         for k, v in deltas.items():
             scores[k] = int(scores.get(k, 0)) + int(v)
@@ -604,17 +787,46 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             'win_type': win_type,
             'deltas': deltas,
             'hand_no': int(room.get('hand_no') or 1),
+            'dealer_streak': streak,
+            'dealer_mult': mult,
+            'hand_pattern': pattern_code,
+            'hand_pattern_label': pattern_label,
+            'pattern_mult': pattern_mult,
         }
         self._mj_enter_hand_end_lobby(room)
+
+    def _mj_draw_from_wall(self, room):
+        pos = int(room.get('wall_pos') or 0)
+        wall = room.get('wall') or []
+        if pos >= len(wall):
+            return None
+        tile = wall[pos]
+        room['wall_pos'] = pos + 1
+        return tile
 
     def _mj_enter_hand_end_lobby(self, room):
         """本局结束：清牌桌、全员取消准备，等待下局。"""
         last = room.get('last_hand_result') or {}
         w = last.get('winner_seat')
-        if w is not None and last.get('win_type') in ('ron', 'tsumo'):
+        rules = self._mj_rules(room)
+        dealer = int(room.get('dealer_seat') or 0)
+        streak = int(room.get('dealer_streak') or 0)
+        win_type = last.get('win_type')
+        if win_type == 'draw':
+            if rules.get('dealer_streak_on_draw'):
+                room['dealer_streak'] = min(2, streak + 1)
+            else:
+                room['dealer_seat'] = self._mj_next_seat(room, dealer)
+                room['dealer_streak'] = 0
+        elif w is not None and win_type == 'tsumo':
+            if int(w) == dealer and rules.get('dealer_streak_on_dealer_win'):
+                room['dealer_streak'] = min(2, streak + 1)
+            else:
+                room['dealer_seat'] = int(w)
+                room['dealer_streak'] = 0
+        elif w is not None and win_type == 'ron':
             room['dealer_seat'] = int(w)
-        elif last.get('win_type') == 'draw':
-            room['dealer_seat'] = self._mj_next_seat(room, int(room.get('dealer_seat') or 0))
+            room['dealer_streak'] = 0
         seats = room.get('seats') or [None] * MJ_SEATS
         for i in range(MJ_SEATS):
             s = seats[i]
@@ -634,6 +846,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         room.pop('wall_pos', None)
         room.pop('dice_rolls', None)
         room.pop('dice_roll', None)
+        room.pop('hz_meta', None)
         room['status'] = 'hand_end'
         room['phase'] = 'hand_end'
 
@@ -703,7 +916,8 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
     def _mj_claim_options_for_seat(self, room, seat, tile, discard_seat=None):
         """碰/杠优先于吃；吃仅下家。"""
         opts = []
-        if self._mj_can_win_seat(room, seat, tile):
+        rules = self._mj_rules(room)
+        if rules.get('allow_ron') and self._mj_can_win_seat(room, seat, tile):
             opts.append('win')
         hc = Counter(self._mj_hand_tile_list(room, seat))
         if hc.get(tile, 0) >= 2:
@@ -780,6 +994,51 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         room['phase'] = 'dealer_roll'
         room['dice_rolls'] = {}
         room.pop('dice_roll', None)
+        room.pop('dealer_deal_at', None)
+
+    def _mj_schedule_dealer_reveal(self, room):
+        if not self._mj_finalize_dealer_from_rolls(room):
+            raise ValueError('定庄失败')
+        room['dealer_deal_at'] = time.time() + MJ_DEALER_REVEAL_SEC
+
+    def _mj_try_deal_after_reveal(self, room):
+        """投骰展示结束后自动发牌（在 room_store 内调用并 raise _MjRoomMutated）。"""
+        if str(room.get('status') or '') != 'dealer_roll':
+            return False
+        deal_at = float(room.get('dealer_deal_at') or 0)
+        if not deal_at or time.time() < deal_at:
+            return False
+        active = self._mj_active_seats(room)
+        rolls = room.get('dice_rolls') or {}
+        if len(rolls) < len(active):
+            return False
+        if not room.get('dice_roll') and not self._mj_finalize_dealer_from_rolls(room):
+            return False
+        self._mj_start_hand(room)
+        self._mj_bump_version(room)
+        room.pop('dealer_deal_at', None)
+        raise _MjRoomMutated()
+
+    def _mj_read_room_tick(self, code):
+        """读房间并在投骰展示计时结束后推进发牌。"""
+        code = str(code or '').strip().upper()
+        room = self._mj_read_room_retry(code)
+        if not room or str(room.get('status') or '') != 'dealer_roll':
+            return room
+        deal_at = float(room.get('dealer_deal_at') or 0)
+        if not deal_at or time.time() < deal_at:
+            return room
+        try:
+            with self._mj_room_store(code) as (room_now, err):
+                if err or not room_now:
+                    return self._mj_read_room_retry(code)
+                try:
+                    self._mj_try_deal_after_reveal(room_now)
+                except _MjRoomMutated:
+                    pass
+        except _MjRoomMutated:
+            pass
+        return self._mj_read_room_retry(code)
 
     def _mj_start_hand(self, room):
         active = self._mj_active_seats(room)
@@ -815,10 +1074,14 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         room['last_hand_result'] = None
         room.pop('dice_roll', None)
         room.pop('dice_rolls', None)
+        room.pop('dealer_deal_at', None)
+        room.pop('hz_meta', None)
         if room['phase'] == 'draw':
             self._mj_do_draw(room, dealer)
 
-    def _mj_do_draw(self, room, seat):
+    def _mj_do_draw(self, room, seat, *, from_kong=False):
+        if not from_kong:
+            self._mj_hz_on_normal_draw(room, seat)
         tile = self._mj_draw_from_wall(room)
         if tile is None:
             room['last_hand_result'] = {
@@ -882,6 +1145,11 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
 
         seat, act = best
         if act == 'win':
+            if not self._mj_rules(room).get('allow_ron'):
+                nxt = self._mj_next_seat(room, discard_seat)
+                room['current_seat'] = nxt
+                self._mj_do_draw(room, nxt)
+                return
             self._mj_apply_hand_scores(room, seat, 'ron')
             return
         hands = room.get('hands') or [[], [], [], []]
@@ -954,12 +1222,15 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             room['melds'] = melds
             room['discards'] = discards
             room['current_seat'] = seat
+            self._mj_hz_on_kong_draw(room, seat)
             kong_draw = self._mj_draw_from_wall(room)
             if kong_draw:
                 hands[seat].append(kong_draw)
                 hands[seat] = self._mj_sort_tiles(hands[seat])
                 room['hands'] = hands
                 room['drawn_tile'] = {'seat': seat, 'tile': kong_draw}
+                if self._mj_can_win_seat(room, seat):
+                    room['pending_self_win'] = True
             room['phase'] = 'discard'
             return
 
@@ -1036,7 +1307,15 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                 'dealer_seat': ds,
                 'dealer_name': dealer_name,
             }
+            deal_at = float(room.get('dealer_deal_at') or 0)
+            if deal_at > 0:
+                dice_roll['reveal_remaining'] = max(0.0, deal_at - time.time())
+            else:
+                dice_roll['reveal_remaining'] = 0
         chat, chat_seq = self._wrc_chat_public(room, user_id)
+        rules = self._mj_rules(room)
+        preset = mj_normalize_preset(room.get('rule_preset'))
+        streak = int(room.get('dealer_streak') or 0)
         return {
             'code': room.get('code'),
             'version': int(room.get('version') or 0),
@@ -1049,6 +1328,13 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             'active_seats': self._mj_active_seats(room),
             'min_players': MJ_MIN_PLAYERS,
             'dealer_seat': int(room.get('dealer_seat') or 0),
+            'dealer_streak': streak,
+            'dealer_mult': mj_dealer_streak_multiplier(streak) if rules.get('dealer_streak_scoring') else None,
+            'rule_preset': preset,
+            'rule_label': rules.get('label') or preset,
+            'rule_summary': rules.get('summary') or '',
+            'joker_tiles': list(self._mj_joker_tiles(room)),
+            'allow_ron': bool(rules.get('allow_ron')),
             'current_seat': room.get('current_seat'),
             'scores': room.get('scores') or {},
             'hand_no': int(room.get('hand_no') or 1),
@@ -1088,7 +1374,9 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             self._mj_cleanup_rooms()
 
         if action == 'create':
-            return self._mj_action_create(user_id, start_response)
+            return self._mj_action_create(user_id, data, start_response)
+        if action == 'presets':
+            return self.send_json({'status': 'success', 'presets': mj_preset_public_list()}, start_response)
         if action == 'join':
             return self._mj_action_join(user_id, data, start_response)
         if action == 'leave':
@@ -1142,7 +1430,9 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             out['message'] = message
         return self.send_json(out, start_response)
 
-    def _mj_action_create(self, user_id, start_response):
+    def _mj_action_create(self, user_id, data, start_response):
+        preset = mj_normalize_preset((data or {}).get('rule_preset'))
+        rules = mj_rules_for_preset(preset)
         code = self._mj_new_room_code()
         name = self._mj_user_display_name(user_id)
         seats = [None] * MJ_SEATS
@@ -1156,7 +1446,10 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             'seats': seats,
             'scores': {str(i): 0 for i in range(MJ_SEATS)},
             'dealer_seat': 0,
+            'dealer_streak': 0,
             'hand_no': 1,
+            'rule_preset': preset,
+            'rule_label': rules.get('label') or preset,
         }
         try:
             self._mj_write_room_file(room)
@@ -1277,19 +1570,17 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             if seat is None:
                 return self.send_json({'status': 'error', 'message': '您不在该房间中'}, start_response)
             is_host = int(user_id) == self._parse_int(room.get('host_user_id'))
-            dissolve = bool(data.get('dissolve'))
-            if is_host:
-                if not dissolve:
-                    return self._mj_json_room(room, user_id, start_response, message='仍在房间中')
-                self._mj_dissolve_room(code)
-                return self.send_json({
-                    'status': 'success',
-                    'room_deleted': True,
-                    'room_dissolved': True,
-                    'left_room': True,
-                    'message': '房间已解散',
-                }, start_response)
             self._mj_vacate_seat_in_room(room, seat)
+            if is_host:
+                active = self._mj_active_seats(room)
+                for i in active:
+                    seats = room.get('seats') or []
+                    s = seats[i] if i < len(seats) else None
+                    if isinstance(s, dict):
+                        uid = self._parse_int(s.get('user_id'))
+                        if uid:
+                            room['host_user_id'] = uid
+                            break
             if not self._mj_active_seats(room):
                 self._mj_dissolve_room(code)
                 return self.send_json({
@@ -1394,10 +1685,15 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             if room.get('status') == 'hand_end':
                 room['hand_no'] = int(room.get('hand_no') or 1) + 1
                 room.pop('last_hand_result', None)
-            try:
-                self._mj_begin_dealer_roll(room)
-            except ValueError as ex:
-                return self.send_json({'status': 'error', 'message': str(ex)}, start_response)
+                try:
+                    self._mj_start_hand(room)
+                except ValueError as ex:
+                    return self.send_json({'status': 'error', 'message': str(ex)}, start_response)
+            else:
+                try:
+                    self._mj_begin_dealer_roll(room)
+                except ValueError as ex:
+                    return self.send_json({'status': 'error', 'message': str(ex)}, start_response)
             self._mj_bump_version(room)
             self._mj_save_room(room)
         return self._mj_json_room(room, user_id, start_response)
@@ -1415,12 +1711,20 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             rolls = room.get('dice_rolls') or {}
             if len(rolls) < len(active):
                 return self.send_json({'status': 'error', 'message': '尚有玩家未掷骰'}, start_response)
+            deal_at = float(room.get('dealer_deal_at') or 0)
+            if deal_at and time.time() < deal_at:
+                remain = max(1, int(deal_at - time.time() + 0.999))
+                return self.send_json({
+                    'status': 'error',
+                    'message': f'请等待 {remain} 秒看清庄家后再发牌',
+                }, start_response)
             try:
-                if not self._mj_finalize_dealer_from_rolls(room):
+                if not room.get('dice_roll') and not self._mj_finalize_dealer_from_rolls(room):
                     return self.send_json({'status': 'error', 'message': '定庄失败'}, start_response)
                 self._mj_start_hand(room)
             except ValueError as ex:
                 return self.send_json({'status': 'error', 'message': str(ex)}, start_response)
+            room.pop('dealer_deal_at', None)
             self._mj_bump_version(room)
             self._mj_save_room(room)
         return self._mj_json_room(room, user_id, start_response)
@@ -1445,9 +1749,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             active = self._mj_active_seats(room)
             if len(rolls) >= len(active):
                 try:
-                    if not self._mj_finalize_dealer_from_rolls(room):
-                        return self.send_json({'status': 'error', 'message': '定庄失败'}, start_response)
-                    self._mj_start_hand(room)
+                    self._mj_schedule_dealer_reveal(room)
                 except ValueError as ex:
                     return self.send_json({'status': 'error', 'message': str(ex)}, start_response)
             self._mj_bump_version(room)
@@ -1456,7 +1758,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
 
     def _mj_action_state(self, user_id, query, start_response):
         code = str((query.get('room_code') or [''])[0] or '').strip().upper()
-        room = self._mj_read_room_retry(code)
+        room = self._mj_read_room_tick(code)
         if not room:
             return self.send_json({
                 'status': 'error',
@@ -1484,7 +1786,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             poll_sec=MJ_WAIT_POLL_SEC,
             register_waiter=_mj_register_waiter,
             unregister_waiter=_mj_unregister_waiter,
-            read_room=lambda c: self._mj_read_room_retry(c),
+            read_room=lambda c: self._mj_read_room_tick(c),
             user_in_room=lambda room, uid: self._mj_seat_of_user(room, uid) is not None,
             build_state_response=lambda room, uid: {
                 'status': 'success',
@@ -1516,7 +1818,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         if not code:
             return self.send_json({'status': 'error', 'message': '缺少房间号'}, start_response)
 
-        room = self._mj_read_room_retry(code)
+        room = self._mj_read_room_tick(code)
         if not room:
             return self.send_json({'status': 'error', 'message': '房间不存在或已过期'}, start_response)
         if self._mj_seat_of_user(room, user_id) is None:
@@ -1533,7 +1835,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             poll_sec=MJ_WAIT_POLL_SEC,
             register_waiter=_mj_register_waiter,
             unregister_waiter=_mj_unregister_waiter,
-            read_room=lambda c, u: self._mj_read_room_for_user(c, u, attempts=4) or self._mj_read_room_retry(c, attempts=5),
+            read_room=lambda c, u: self._mj_read_room_tick(c),
             user_in_room=lambda room_now, u: self._mj_seat_of_user(room_now, u) is not None,
             build_state_payload=lambda room_now, u: self._mj_room_public(room_now, u),
         )
@@ -1558,6 +1860,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                 return self.send_json({'status': 'error', 'message': '手牌数量异常'}, start_response)
             if tile not in (hands[seat] or []):
                 return self.send_json({'status': 'error', 'message': '手牌中没有该牌'}, start_response)
+            self._mj_hz_on_discard(room, seat, tile)
             hands[seat].remove(tile)
             hands[seat] = self._mj_sort_tiles(hands[seat])
             discards = room.get('discards') or [[], [], [], []]
@@ -1627,8 +1930,11 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             if claim_type not in ('win', 'pung', 'kong', 'chi', 'pass'):
                 return self.send_json({'status': 'error', 'message': '无效操作'}, start_response)
             tile = cr.get('tile')
-            if claim_type == 'win' and not self._mj_can_win_seat(room, seat, tile):
-                return self.send_json({'status': 'error', 'message': '不能胡牌'}, start_response)
+            if claim_type == 'win':
+                if not self._mj_rules(room).get('allow_ron'):
+                    return self.send_json({'status': 'error', 'message': '本规则不可点炮胡'}, start_response)
+                if not self._mj_can_win_seat(room, seat, tile):
+                    return self.send_json({'status': 'error', 'message': '不能胡牌'}, start_response)
             hc = Counter(self._mj_hand_tile_list(room, seat))
             if claim_type == 'pung' and hc.get(tile, 0) < 2:
                 return self.send_json({'status': 'error', 'message': '不能碰'}, start_response)

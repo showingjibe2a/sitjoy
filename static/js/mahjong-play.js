@@ -33,8 +33,51 @@
   let selectedDiscardTile = null;
   let joinInFlight = false;
   let roomChat = null;
+  let dealerRevealTimer = null;
+  let activeJokerTiles = new Set();
+
+  const MJ_PRESET_HINTS = {
+    standard: '136 张；可点炮/自摸；仅平胡；庄闲双倍，无连庄加倍。',
+    hangzhou: '白板财神；仅自摸；暴头/财飘/双财飘、杠开/杠暴/杠飘加倍；连庄 2→4→8 倍。',
+  };
+
+  function hzPatternText(r) {
+    if (!r || !r.hand_pattern_label) return '';
+    let t = r.hand_pattern_label;
+    if (Number(r.pattern_mult) > 1) t += ' ×' + r.pattern_mult;
+    if (Number(r.dealer_mult) > 1) t += '（连庄 ×' + r.dealer_mult + '）';
+    return t;
+  }
 
   const $ = (id) => document.getElementById(id);
+
+  function clearDealerRevealPoll() {
+    if (dealerRevealTimer) {
+      win.clearTimeout(dealerRevealTimer);
+      dealerRevealTimer = null;
+    }
+  }
+
+  /** 投骰定庄展示期 version 不变，需主动拉 state 更新倒计时并在到时发牌。 */
+  function needsDealerRevealPoll(s) {
+    if (!s || s.status !== 'dealer_roll') return false;
+    const dr = s.dice_roll || {};
+    return dr.all_done && (Number(dr.reveal_remaining) > 0 || !!dr.dealer_name);
+  }
+
+  function syncDealerRevealPoll(s) {
+    clearDealerRevealPoll();
+    if (!needsDealerRevealPoll(s) || !roomCode || watchAbort) return;
+    const remain = Number((s.dice_roll || {}).reveal_remaining) || 0;
+    const delay = remain > 0 ? Math.min(900, Math.max(250, remain * 450)) : 300;
+    dealerRevealTimer = win.setTimeout(() => {
+      dealerRevealTimer = null;
+      if (watchAbort || !roomCode) return;
+      api('state', { room_code: roomCode }, 'GET')
+        .then((data) => { if (data) applyState(data); })
+        .catch(() => {});
+    }, delay);
+  }
 
   function resolveMySeat(s) {
     if (!s) return null;
@@ -169,11 +212,15 @@
       else if (r.winner_seat != null) {
         const wn = ((s.seats || [])[r.winner_seat] || {}).name || '';
         resultLine = wn + ' 胡（' + (r.win_type === 'tsumo' ? '自摸' : '点炮') + '）';
+        const pat = hzPatternText(r);
+        if (pat) resultLine += ' · ' + pat;
       }
       appendMjReadyOverlay(els, s, esc, btn);
       const prep = els.msgEl.querySelector('.mj-overlay-hint');
       if (prep) {
-        const extra = (resultLine ? resultLine + ' · ' : '') + '准备下一局';
+        let dealerHint = '上局赢家坐庄，无需掷骰';
+        if (r.win_type === 'draw') dealerHint = '流局庄家顺延，无需掷骰';
+        const extra = (resultLine ? resultLine + ' · ' : '') + '准备下一局 · ' + dealerHint;
         prep.textContent = extra + ' · ' + prep.textContent;
       }
       return true;
@@ -185,10 +232,13 @@
       els.titleEl.textContent = '投骰定庄';
       if (dialog) dialog.classList.add('widget-board-dialog--wide');
       const mySeat = resolveMySeat(s);
+      const allDone = dr.all_done && rolls.length > 0 && rolls.every((r) => r.rolled);
+      const winnerSeat = allDone && dr.dealer_seat != null ? Number(dr.dealer_seat) : null;
       let html = '<div class="mj-overlay-seats mj-lobby-seats mj-overlay-dice-seats">';
       rolls.forEach((r) => {
         const cls = ['mj-seat-dot', 'mj-seat-dot--filled'];
         if (r.rolled) cls.push('mj-seat-dot--ready');
+        if (winnerSeat != null && r.seat === winnerSeat) cls.push('mj-seat-dot--dice-winner');
         if (r.seat === mySeat) cls.push('mj-seat-dot--me');
         const inner = r.rolled ? (r.dice1 + '+' + r.dice2 + '=' + r.total) : '?';
         html += `<div class="${cls.join(' ')}">`
@@ -198,9 +248,14 @@
       });
       html += '</div>';
       const pending = rolls.filter((r) => !r.rolled).length;
-      let hint = pending ? ('还有 ' + pending + ' 人未掷骰 · 点数最大者坐庄') : '全员已掷骰，正在发牌…';
-      if (dr.dealer_name && dr.all_done) {
-        hint = '庄家：' + dr.dealer_name + '（合计 ' + (dr.total || '?') + '）· 正在发牌…';
+      let hint = pending ? ('还有 ' + pending + ' 人未掷骰 · 点数最大者坐庄') : '';
+      if (!pending && dr.dealer_name) {
+        const remain = Math.ceil(Number(dr.reveal_remaining) || 0);
+        hint = '庄家：' + dr.dealer_name + '（' + (dr.total || '?') + ' 点）';
+        if (remain > 0) hint += ' · ' + remain + ' 秒后发牌…';
+        else hint += ' · 正在发牌…';
+      } else if (!pending) {
+        hint = '全员已掷骰，正在定庄…';
       }
       html += `<p class="mj-overlay-hint">${esc(hint)}</p>`;
       els.msgEl.innerHTML = html;
@@ -344,6 +399,7 @@
     const label = tileLabel(key);
     const glyph = tileGlyph(key);
     const cls = ['mj-tile'].concat(tileKindClasses(key));
+    if (activeJokerTiles.has(key)) cls.push('mj-tile--joker');
     if (variant === 'mini' || variant === 'table') cls.push('mj-tile--table');
     if (variant === 'hand') cls.push('mj-tile--hand');
     if (variant === 'meld') cls.push('mj-tile--table', 'mj-tile--meld');
@@ -360,6 +416,7 @@
     const label = tileLabel(key);
     const glyph = tileGlyph(key);
     const cls = ['mj-tile', 'mj-tile--hand'].concat(tileKindClasses(key));
+    if (activeJokerTiles.has(key)) cls.push('mj-tile--joker');
     if (canDiscard) cls.push('mj-tile--clickable');
     if (mark === 'drawn') cls.push('mj-tile--drawn');
     if (selected) cls.push('mj-tile--selected');
@@ -476,11 +533,12 @@
       return false;
     }
     const url = pageUrl('/widgets/mahjong/table?room=' + encodeURIComponent(roomCode));
-    tablePopup = win.open(url, TABLE_POPUP_NAME, 'popup=yes,width=520,height=580,resizable=yes,scrollbars=no');
+    tablePopup = win.open(url, TABLE_POPUP_NAME, mjPopupWindowFeatures());
     if (!tablePopup) {
       alert('无法打开新窗口：请允许本站「弹出式窗口」后重试');
       return false;
     }
+    dockPopupWindow(tablePopup);
     popupOpen = true;
     setWindowPlaceholderVisible(true);
     const wrap = $('mjTableWrap');
@@ -565,25 +623,16 @@
   }
 
   function leaveConfirmMessage(s) {
-    const host = s && s.you_are_host;
     const inGame = s && s.status && s.status !== 'lobby' && s.status !== 'hand_end';
-    if (host && inGame) {
-      return '对局进行中，解散将立即结束本房间并踢出所有玩家。确定解散？';
-    }
-    if (host) return '确定解散房间？所有玩家将被移出。';
     if (inGame) return '确定离开房间？对局将继续（本局按缺席处理）。';
     return '确定离开房间？';
   }
 
   function updateLeaveButtons(s) {
-    const label = (s && s.you_are_host) ? '解散房间' : '离开房间';
     const mainBtn = $('mjLeaveBtn');
-    const popBtn = $('mjPopupLeaveBtn');
     const inRoom = lobbyInRoom(s);
-    if (mainBtn) mainBtn.textContent = label;
-    if (popBtn) popBtn.textContent = label;
-    setVisible(mainBtn, inRoom);
-    setVisible(popBtn, inRoom);
+    if (mainBtn) mainBtn.textContent = '离开房间';
+    setVisible(mainBtn, inRoom && !isPopup);
   }
 
   function renderRoomSidebar(s) {
@@ -612,12 +661,40 @@
       else if (s.status === 'hand_end') label = '本局结束 · 等待准备';
       statusEl.textContent = label;
     }
+    const ruleEl = $('mjSideRuleLine');
+    const inRoom = lobbyInRoom(s);
+    if (ruleEl) {
+      if (inRoom && (s.rule_summary || s.rule_label)) {
+        ruleEl.textContent = s.rule_summary || ('规则：' + s.rule_label);
+        ruleEl.classList.remove('pm-u-hidden');
+      } else {
+        ruleEl.classList.add('pm-u-hidden');
+        ruleEl.textContent = '';
+      }
+    }
+    const streakEl = $('mjSideStreakLine');
+    if (streakEl) {
+      if (s.rule_preset === 'hangzhou' && s.dealer_mult) {
+        const streak = Number(s.dealer_streak) || 0;
+        const labels = ['一庄（2倍）', '二连庄（4倍）', '三连庄（8倍）'];
+        streakEl.textContent = '本局计分：' + (labels[Math.min(streak, 2)] || labels[0]);
+        streakEl.classList.remove('pm-u-hidden');
+      } else {
+        streakEl.classList.add('pm-u-hidden');
+        streakEl.textContent = '';
+      }
+    }
+    const presetSel = $('mjRulePreset');
+    if (presetSel) presetSel.disabled = inRoom;
+    const lobbyPanel = $('mjLobbyPanel');
+    if (lobbyPanel) lobbyPanel.classList.toggle('pm-u-hidden', inRoom);
     const panel = $('mjRoomPanel');
-    if (panel) panel.classList.toggle('pm-u-hidden', !lobbyInRoom(s));
+    if (panel) panel.classList.toggle('pm-u-hidden', !inRoom);
   }
 
   function clearRoomUi(hint) {
     stopWatch();
+    clearDealerRevealPoll();
     closeTableWindow();
     roomCode = '';
     saveRoomCode('');
@@ -627,14 +704,21 @@
     selectedDiscardTile = null;
     if (!isPopup) postStateToPopup();
     const hintEl = $('mjRoomHint');
-    if (hintEl) hintEl.textContent = hint || '创建或加入房间后开始。';
+    if (hintEl) hintEl.textContent = hint || '在右侧选择规则并创建房间，或输入房间号加入。';
     setVisible($('mjReadyBtn'), false);
     setVisible($('mjStartBtn'), false);
     setVisible($('mjConfirmRollBtn'), false);
     setVisible($('mjNextHandBtn'), false);
     setVisible($('mjLeaveBtn'), false);
-    setVisible($('mjBoardCard'), false);
-    setVisible($('mjLobbyPanel'), false);
+    if (!isPopup) {
+      setVisible($('mjBoardCard'), true);
+      setVisible($('mjTableLayout'), false);
+      setVisible($('mjTablePlaceholder'), true);
+      const lobbyPanel = $('mjLobbyPanel');
+      if (lobbyPanel) lobbyPanel.classList.remove('pm-u-hidden');
+    } else {
+      setVisible($('mjBoardCard'), false);
+    }
     $('mjRoomPanel') && $('mjRoomPanel').classList.add('pm-u-hidden');
     if (roomChat) roomChat.setVisible(false);
     const lobbySeats = $('mjLobbySeats');
@@ -921,12 +1005,42 @@
   }
 
   const MJ_LAYOUT_REF_W = 500;
+  const MJ_LAYOUT_REF_H = 640;
+  const MJ_POPUP_WIDTH = 460;
+
+  function mjPopupWindowFeatures() {
+    const w = MJ_POPUP_WIDTH;
+    const sw = (win.screen && win.screen.availWidth) || win.innerWidth || 800;
+    const sh = (win.screen && win.screen.availHeight) || win.innerHeight || 600;
+    const left = Math.max(0, Math.round(sw - w));
+    return 'popup=yes,width=' + w + ',height=' + sh + ',left=' + left + ',top=0,resizable=yes,scrollbars=no';
+  }
+
+  function dockPopupWindow(popup) {
+    if (!popup || popup.closed) return;
+    const w = MJ_POPUP_WIDTH;
+    const sw = (win.screen && win.screen.availWidth) || win.innerWidth || 800;
+    const sh = (win.screen && win.screen.availHeight) || win.innerHeight || 600;
+    const left = Math.max(0, Math.round(sw - w));
+    try {
+      popup.moveTo(left, 0);
+      popup.resizeTo(w, sh);
+    } catch (_) {}
+  }
 
   function syncMjLayoutScale() {
     const layout = document.querySelector('.mj-table-layout');
     if (!layout) return;
+    const wrap = layout.closest('.mj-table-wrap');
     const w = layout.clientWidth || MJ_LAYOUT_REF_W;
-    const scale = Math.max(0.58, Math.min(1, w / MJ_LAYOUT_REF_W));
+    let scale = Math.max(0.58, Math.min(1, w / MJ_LAYOUT_REF_W));
+    if (isPopup && wrap) {
+      const h = wrap.clientHeight || 0;
+      if (h > 0) {
+        const hScale = Math.max(0.58, Math.min(1, h / MJ_LAYOUT_REF_H));
+        scale = Math.min(scale, hScale);
+      }
+    }
     layout.style.setProperty('--mj-ui-scale', scale.toFixed(3));
     const table = layout.querySelector('.mj-table');
     if (table) {
@@ -965,6 +1079,8 @@
       ro.observe(layout);
       const wrap = layout.closest('.mj-table-wrap');
       if (wrap) ro.observe(wrap);
+      const stage = layout.closest('.mj-play-popup-stage');
+      if (stage) ro.observe(stage);
     }
     window.addEventListener('resize', syncMjLayoutScale);
     syncMjLayoutScale();
@@ -1092,10 +1208,12 @@
     const handBtns = $('mjHandActionBtns');
     const legacyWrap = $('mjActions');
     const legacyBtns = $('mjActionBtns');
-    const useLegacy = !handWrap || !handBtns;
+    const usePopupSide = isPopup && legacyBtns;
+    const useLegacy = usePopupSide || !handWrap || !handBtns;
     const wrap = useLegacy ? legacyWrap : handWrap;
     const btns = useLegacy ? legacyBtns : handBtns;
     if (legacyWrap && !useLegacy) setVisible(legacyWrap, false);
+    if (handWrap && usePopupSide) setVisible(handWrap, false);
     if (!wrap || !btns) return;
 
     const mySeat = resolveMySeat(s);
@@ -1202,6 +1320,7 @@
   function renderTable(raw) {
     const s = withResolvedSeat(normalizeRoomState(raw));
     state = s;
+    activeJokerTiles = new Set((s && s.joker_tiles) || []);
     if (!s || !s.code) return;
     roomCode = s.code;
     saveRoomCode(roomCode);
@@ -1230,6 +1349,7 @@
     const center = $('mjCenterInfo');
     if (center) {
       let msg = `房间 ${s.code} · 第 ${s.hand_no || 1} 局`;
+      if (s.rule_label) msg += ' · ' + s.rule_label;
       if (s.status === 'lobby') {
         const lb = s.lobby || {};
         msg += ' · 等待开局（' + (lb.occupied_count || 0) + ' 人，至少 ' + (s.min_players || 2) + ' 人准备）';
@@ -1239,13 +1359,21 @@
         msg += ' · 投骰定庄';
         if (dr.dealer_name) msg += ' · 庄家 ' + dr.dealer_name;
       }
-      else if (s.status === 'playing') msg += ` · 牌墙余 ${s.wall_remaining ?? '?'}`;
+      else if (s.status === 'playing') {
+        msg += ` · 牌墙余 ${s.wall_remaining ?? '?'}`;
+        if (s.rule_preset === 'hangzhou' && s.dealer_mult) {
+          msg += ' · 连庄 ' + s.dealer_mult + ' 倍';
+        }
+      }
       else if (s.status === 'hand_end') {
         const r = s.last_hand_result || {};
         if (r.win_type === 'draw') msg += ' · 流局';
         else if (r.winner_seat != null) {
           const wn = ((s.seats || [])[r.winner_seat] || {}).name || '';
           msg += ` · ${wn} 胡（${r.win_type === 'tsumo' ? '自摸' : '点炮'}）`;
+          const pat = hzPatternText(r);
+          if (pat) msg += ' · ' + pat;
+          else if (r.dealer_mult) msg += ' · 连庄 ' + r.dealer_mult + ' 倍';
           if (r.win_type === 'tsumo' || r.win_type === 'ron') msg += ` · 下局 ${wn} 坐庄`;
         }
       }
@@ -1258,16 +1386,16 @@
     renderRoomSidebar(s);
     syncRoomChat(s);
 
-    const overlayActive = isBoardOverlayActive(s);
-    if (center) center.classList.toggle('pm-u-hidden', overlayActive);
+    const overlayCoversLobby = isBoardOverlayActive(s);
 
     const inRoom = lobbyInRoom(s);
-    setVisible($('mjBoardCard'), inRoom);
+    if (!isPopup) setVisible($('mjBoardCard'), true);
     const hideTable = isMain && popupOpen;
-    setVisible($('mjTableWrap'), inRoom && !hideTable);
+    setVisible($('mjTableLayout'), inRoom && !hideTable);
+    setVisible($('mjTablePlaceholder'), (!inRoom || hideTable) && !isPopup);
     const canReady = s.status === 'lobby' || s.status === 'hand_end';
-    setVisible($('mjReadyBtn'), canReady && resolveMySeat(s) != null && !overlayActive);
-    setVisible($('mjStartBtn'), canReady && s.you_are_host && !!(s.lobby && s.lobby.can_start) && !overlayActive);
+    setVisible($('mjReadyBtn'), canReady && resolveMySeat(s) != null && !overlayCoversLobby);
+    setVisible($('mjStartBtn'), canReady && s.you_are_host && !!(s.lobby && s.lobby.can_start) && !overlayCoversLobby);
     setVisible($('mjConfirmRollBtn'), false);
     setVisible($('mjNextHandBtn'), false);
     setVisible($('mjLeaveBtn'), lobbyInRoom(s));
@@ -1286,11 +1414,12 @@
     if (popReady && canReady) {
       const me = mySeat != null ? (s.seats || [])[mySeat] : null;
       popReady.textContent = me && me.ready ? '取消准备' : '准备';
-      setVisible(popReady, mySeat != null && !overlayActive);
+      setVisible(popReady, isPopup && mySeat != null && !overlayCoversLobby);
     }
     if (isMain) updatePopoutBtnUi();
     ensureLayoutScaleSync();
     syncMjLayoutScale();
+    syncDealerRevealPoll(s);
   }
 
   function applyChatOnly(data) {
@@ -1321,7 +1450,13 @@
     if (!data.unchanged && lastVersion >= 0 && ver > 0 && ver < lastVersion) {
       return false;
     }
-    if (data.unchanged && lastVersion >= 0 && ver <= lastVersion) return true;
+    if (data.unchanged && lastVersion >= 0 && ver <= lastVersion) {
+      if (needsDealerRevealPoll(normalizeRoomState(data))) {
+        renderTable(data);
+        if (!isPopup) postStateToPopup();
+      }
+      return true;
+    }
     lastVersion = ver;
     if (data.chat_seq != null) lastChatSeq = Math.max(lastChatSeq, Number(data.chat_seq) || 0);
     renderTable(data);
@@ -1337,6 +1472,7 @@
     }
     if (data.unchanged) {
       if (data.chat_seq != null) lastChatSeq = Math.max(lastChatSeq, Number(data.chat_seq) || 0);
+      if (needsDealerRevealPoll(normalizeRoomState(data))) applyState(data);
       return;
     }
     applyState(data);
@@ -1365,7 +1501,9 @@
     if (btn && btn.disabled) return;
     if (btn) btn.disabled = true;
     try {
-      const data = await api('create', {});
+      const data = await api('create', {
+        rule_preset: ($('mjRulePreset') && $('mjRulePreset').value) || 'standard',
+      });
       if (!applyState(data)) {
         mjToast('房间已创建但界面更新失败，请刷新页面', true);
         return;
@@ -1398,15 +1536,14 @@
     }
     initMjBoardOverlay();
     const msg = leaveConfirmMessage(state);
-    const isHost = !!(state && state.you_are_host);
     if (!mjBoardOverlay) {
       return doLeaveConfirmed();
     }
     return new Promise((resolve, reject) => {
       mjBoardOverlay.showConfirm({
-        title: isHost ? '解散房间' : '离开房间',
+        title: '离开房间',
         message: msg,
-        confirmLabel: isHost ? '解散' : '离开',
+        confirmLabel: '离开',
         cancelLabel: '取消',
         danger: true,
         onConfirm: () => {
@@ -1418,8 +1555,7 @@
   }
 
   async function doLeaveConfirmed() {
-    const isHost = !!(state && state.you_are_host);
-    const data = await api('leave', { room_code: roomCode, dissolve: isHost });
+    const data = await api('leave', { room_code: roomCode });
     if (data.room_deleted || data.room_dissolved) {
       onRoomEnded(data.message || '房间已解散', isPopup ? {} : undefined);
       return data;
@@ -1558,6 +1694,7 @@
 
   function stopWatch() {
     watchAbort = true;
+    clearDealerRevealPoll();
     if (watchCtrl) {
       try { watchCtrl.abort(); } catch (_) {}
       watchCtrl = null;
@@ -1726,6 +1863,7 @@
       if (e.origin !== win.location.origin) return;
       const msg = e.data || {};
       if (msg.type === 'mj-play-request-state') postStateToPopup();
+      if (msg.type === 'mj-play-popup-ready') dockPopupWindow(tablePopup);
       if (msg.type === 'mj-play-room-ended') onRoomEnded(msg.message || '房间已结束', { silent: true });
     });
   }
@@ -1751,14 +1889,21 @@
     try {
       win.opener && win.opener.postMessage({ type: 'mj-play-popup-ready' }, win.location.origin);
     } catch (_) {}
+    ensureLayoutScaleSync();
+    syncMjLayoutScale();
+    win.addEventListener('resize', syncMjLayoutScale);
     const popReady = $('mjPopupReadyBtn');
     if (popReady) {
       popReady.addEventListener('click', () => doReady().catch((err) => alert(err.message)));
     }
-    const popLeave = $('mjPopupLeaveBtn');
-    if (popLeave) {
-      popLeave.addEventListener('click', () => requestLeaveRoom().catch((err) => alert(err.message)));
-    }
+  }
+
+  function syncRulePresetHint() {
+    const sel = $('mjRulePreset');
+    const hint = $('mjRulePresetHint');
+    if (!sel || !hint) return;
+    const key = sel.value || 'standard';
+    hint.textContent = MJ_PRESET_HINTS[key] || MJ_PRESET_HINTS.standard;
   }
 
   function initMain() {
@@ -1766,6 +1911,8 @@
     initRoomChat();
     bindPlayerAvatarUi();
     bindMainMessageBridge();
+    syncRulePresetHint();
+    $('mjRulePreset') && $('mjRulePreset').addEventListener('change', syncRulePresetHint);
     $('mjCreateBtn') && $('mjCreateBtn').addEventListener('click', () => doCreate().catch((e) => mjToast(e.message || '创建失败', true)));
     $('mjJoinBtn') && $('mjJoinBtn').addEventListener('click', () => doJoin().catch((e) => alert(e.message)));
     $('mjLeaveBtn') && $('mjLeaveBtn').addEventListener('click', () => requestLeaveRoom().catch((e) => alert(e.message)));

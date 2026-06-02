@@ -74,19 +74,19 @@
                                 <p class="mj-dice-result" id="mjDiceResult"></p>
                             </div>
                             <div class="mj-seat mj-seat--bottom" data-dom="0"><div class="mj-river" id="mjRiver0"></div></div>
-                            <div class="widget-board-overlay pm-u-hidden" id="mjBoardOverlay" hidden aria-live="polite">
-                                <div class="widget-board-dialog" role="dialog" aria-modal="true" aria-labelledby="mjOverlayTitle">
-                                    <p class="widget-board-dialog-title" id="mjOverlayTitle"></p>
-                                    <p class="widget-board-dialog-msg" id="mjOverlayMsg"></p>
-                                    <div class="widget-board-dialog-actions" id="mjOverlayActions"></div>
-                                </div>
-                            </div>
                         </div>
                         <div class="mj-hand-strip pm-u-hidden" id="mjHandStrip" aria-label="我的手牌">
                             <div class="mj-hand-actions pm-u-hidden" id="mjHandActions" aria-label="牌桌操作">
                                 <div class="mj-hand-actions-inner" id="mjHandActionBtns"></div>
                             </div>
                             <div class="mj-hand" id="mjMyHand"></div>
+                        </div>
+                        <div class="widget-board-overlay mj-board-overlay-below pm-u-hidden" id="mjBoardOverlay" hidden aria-live="polite">
+                            <div class="widget-board-dialog" role="dialog" aria-modal="true" aria-labelledby="mjOverlayTitle">
+                                <p class="widget-board-dialog-title" id="mjOverlayTitle"></p>
+                                <p class="widget-board-dialog-msg" id="mjOverlayMsg"></p>
+                                <div class="widget-board-dialog-actions" id="mjOverlayActions"></div>
+                            </div>
                         </div>
                         </div>
                     </div>
@@ -140,12 +140,11 @@
             </div>
         </div>
         <div class="widget-room-chat widget-room-chat--side pm-u-hidden" id="mjRoomChat" hidden aria-label="房间对话"></div>
-        <aside class="mj-popup-side" id="mjPopupSide" aria-label="牌桌操作">
-            <div class="mj-actions mj-actions--popup" id="mjActions" hidden>
+        <aside class="mj-popup-side go-play-popup-tools" id="mjPopupSide" aria-label="牌桌操作">
+            <div class="mj-actions mj-actions--popup pm-u-hidden" id="mjActions" hidden>
                 <div class="mj-actions-btns" id="mjActionBtns"></div>
             </div>
-            <button type="button" class="go-play-popup-btn pm-u-hidden" id="mjPopupReadyBtn">准备</button>
-            <button type="button" class="go-play-popup-btn go-play-popup-btn--danger pm-u-hidden" id="mjPopupLeaveBtn">离开房间</button>
+            <button type="button" class="go-play-popup-btn go-play-popup-btn--accent pm-u-hidden" id="mjPopupReadyBtn">准备</button>
         </aside>
     </div>
     <script src="/static/js/widget-board-overlay.js"></script>

@@ -13,7 +13,7 @@
     <div class="container">
         <section class="hero" style="margin-bottom: 1rem;">
             <h2>麻将</h2>
-            <p>至少 <strong>2 人</strong> 在座且全部准备后可开局（最多 4 人）。首局每人掷骰、点数最大者坐庄；之后每局由<strong>上局胡牌者</strong>坐庄。万筒条字共 136 张；支持碰、吃、杠；当前规则：<strong>仅平胡</strong>；平胡 1 分，<strong>庄家双倍</strong>。昵称来自员工账号。</p>
+            <p>至少 <strong>2 人</strong> 在座且全部准备后可开局（最多 4 人）。创建房间时选择规则预设；首局投骰定庄，之后由上局胡牌者坐庄。昵称来自员工账号。</p>
         </section>
 
         <section class="pm-layout mj-layout-root">
@@ -29,14 +29,15 @@
                     </div>
                     <button type="button" class="btn-secondary" id="mjPopoutBtn" title="在新窗口打开牌桌（需允许弹出窗口）">牌桌独立窗口</button>
                 </div>
-                <p class="mj-hint" id="mjRoomHint">创建或加入房间后开始。</p>
+                <p class="mj-hint" id="mjRoomHint">在右侧选择规则并创建房间，或输入房间号加入。</p>
             </div>
 
-            <div class="card pm-card mj-board-card pm-u-hidden" id="mjBoardCard">
+            <div class="card pm-card mj-board-card" id="mjBoardCard">
                 <div class="widget-room-stage widget-room-stage--inline mj-board-stage">
                     <div class="widget-room-board-cluster">
                         <div class="mj-table-wrap" id="mjTableWrap">
-                            <div class="mj-table-layout">
+                            <p class="mj-table-placeholder pm-u-hidden" id="mjTablePlaceholder">创建或加入房间后在此显示牌桌</p>
+                            <div class="mj-table-layout pm-u-hidden" id="mjTableLayout">
                                 <div class="mj-player-rail mj-player-rail--top">
                                     <div class="mj-player-badge" id="mjPlayerBadge1" data-dom="1" role="button" tabindex="-1" aria-disabled="true" aria-label="对家">
                                         <div class="mj-player-avatar" id="mjPlayerAvatar1">
@@ -99,19 +100,19 @@
                                                 <p class="mj-dice-result" id="mjDiceResult"></p>
                                             </div>
                                             <div class="mj-seat mj-seat--bottom" data-dom="0"><div class="mj-river" id="mjRiver0"></div></div>
-                                            <div class="widget-board-overlay pm-u-hidden" id="mjBoardOverlay" hidden aria-live="polite">
-                                                <div class="widget-board-dialog" role="dialog" aria-modal="true" aria-labelledby="mjOverlayTitle">
-                                                    <p class="widget-board-dialog-title" id="mjOverlayTitle"></p>
-                                                    <p class="widget-board-dialog-msg" id="mjOverlayMsg"></p>
-                                                    <div class="widget-board-dialog-actions" id="mjOverlayActions"></div>
-                                                </div>
-                                            </div>
                                         </div>
                                         <div class="mj-hand-strip pm-u-hidden" id="mjHandStrip" aria-label="我的手牌">
                                             <div class="mj-hand-actions pm-u-hidden" id="mjHandActions" aria-label="牌桌操作">
                                                 <div class="mj-hand-actions-inner" id="mjHandActionBtns"></div>
                                             </div>
                                             <div class="mj-hand" id="mjMyHand"></div>
+                                        </div>
+                                        <div class="widget-board-overlay mj-board-overlay-below pm-u-hidden" id="mjBoardOverlay" hidden aria-live="polite">
+                                            <div class="widget-board-dialog" role="dialog" aria-modal="true" aria-labelledby="mjOverlayTitle">
+                                                <p class="widget-board-dialog-title" id="mjOverlayTitle"></p>
+                                                <p class="widget-board-dialog-msg" id="mjOverlayMsg"></p>
+                                                <div class="widget-board-dialog-actions" id="mjOverlayActions"></div>
+                                            </div>
                                         </div>
                                         </div>
                                     </div>
@@ -168,6 +169,17 @@
                         <aside class="widget-room-side-panel go-play-side-panel" id="mjSidePanel" aria-label="房间信息与操作">
                             <p class="go-play-side-notice pm-u-hidden" id="mjWindowPlaceholder">牌桌已在独立窗口中打开，请保持本页开启以同步对局。</p>
 
+                            <div id="mjLobbyPanel" class="go-play-side-section">
+                                <div class="go-play-side-meta mj-side-rule-block">
+                                    <p class="go-play-side-label">规则预设</p>
+                                    <select id="mjRulePreset" class="inline-input mj-rule-preset-select" aria-label="规则预设">
+                                        <option value="standard">标准（当前）</option>
+                                        <option value="hangzhou">杭麻</option>
+                                    </select>
+                                    <p class="mj-rule-preset-hint" id="mjRulePresetHint">136 张；可点炮/自摸；仅平胡；庄闲双倍，无连庄加倍。</p>
+                                </div>
+                            </div>
+
                             <div id="mjRoomPanel" class="go-play-side-section pm-u-hidden">
                                 <div class="go-play-side-meta">
                                     <div class="go-play-side-meta-row">
@@ -176,6 +188,8 @@
                                     </div>
                                     <p class="go-play-side-meta-line" id="mjSideStatusLine">等待开局</p>
                                     <p class="go-play-side-meta-line go-play-side-meta-line--muted" id="mjSidePlayersLine"></p>
+                                    <p class="go-play-side-meta-line go-play-side-meta-line--muted pm-u-hidden" id="mjSideRuleLine"></p>
+                                    <p class="go-play-side-meta-line go-play-side-meta-line--muted pm-u-hidden" id="mjSideStreakLine"></p>
                                     <p class="mj-side-scores pm-u-hidden" id="mjSideScores"></p>
                                 </div>
 
@@ -187,6 +201,8 @@
                                     <button type="button" class="go-play-side-btn btn-secondary pm-u-hidden" id="mjLeaveBtn">离开房间</button>
                                 </div>
                             </div>
+
+                            <p class="go-play-side-foot" id="mjSideFoot">在牌桌区域操作出牌；在线对局时请保持<strong>主页面</strong>开启以同步，或使用牌桌独立窗口。</p>
                         </aside>
                     </div>
 
