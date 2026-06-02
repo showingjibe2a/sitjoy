@@ -446,6 +446,7 @@
     return `<span class="mj-tile-face mj-tile-face--pin" data-rank="${rank}"><span class="mj-tile-pin-grid">${grid}</span></span>`;
   }
 
+  /** 筒子牌面（国标常见配色）：r红 g绿 k黑 */
   function pinFaceHtml(rank) {
     const G = 'g'; const R = 'r'; const K = 'k';
     if (rank === 1) {
@@ -497,16 +498,32 @@
       + `<span class="mj-tile-sou-cols">${souColHtml(left, 'g')}${souColHtml(right, 'g')}</span></span>`;
   }
 
+  function souSticksRowHtml(colors) {
+    return `<span class="mj-tile-sou-row-sticks">${colors.map((c) => souStickHtml(c)).join('')}</span>`;
+  }
+
+  function sou3TriHtml() {
+    return '<span class="mj-tile-sou-tri">'
+      + `<span class="mj-tile-sou-tri-top">${souStickHtml('r')}</span>`
+      + `<span class="mj-tile-sou-tri-bottom">${souStickHtml('g')}${souStickHtml('g')}</span>`
+      + '</span>';
+  }
+
   function souBirdHtml() {
     return '<span class="mj-tile-face mj-tile-face--sou mj-tile-face--sou1" data-rank="1">'
-      + '<svg class="mj-tile-sou-bird-svg" viewBox="0 0 24 32" aria-hidden="true" focusable="false">'
-      + '<ellipse cx="12" cy="9.5" rx="7.5" ry="6.5" fill="#d82820"/>'
-      + '<path d="M12 5c-3 0-5 2-5.5 4.5c-2 .8-2 2.8.5 2.5c-.3 2 1 3.5 5 3.5s5.3-1.5 5-3.5c2.5.3 2.5-1.7.5-2.5C17 7 15 5 12 5z" fill="#c01818"/>'
-      + '<path d="M14 8.5l5-2.5" stroke="#a01010" stroke-width="1.4" stroke-linecap="round"/>'
-      + '<circle cx="15.5" cy="7.8" r="0.9" fill="#101010"/>'
-      + '<rect x="10.2" y="15.5" width="3.6" height="11" rx="1.2" fill="#228838"/>'
-      + '<rect x="7" y="19" width="2.2" height="6.5" rx="0.8" fill="#2ca050"/>'
-      + '<rect x="14.8" y="19" width="2.2" height="6.5" rx="0.8" fill="#2ca050"/>'
+      + '<svg class="mj-tile-sou-bird-svg" viewBox="0 0 32 40" aria-hidden="true" focusable="false">'
+      + '<rect x="12.5" y="24" width="7" height="14" rx="2" fill="#248040" stroke="#145028" stroke-width="0.8"/>'
+      + '<ellipse cx="9" cy="28" rx="3.5" ry="7" fill="#32a858" transform="rotate(-18 9 28)"/>'
+      + '<ellipse cx="23" cy="28" rx="3.5" ry="7" fill="#32a858" transform="rotate(18 23 28)"/>'
+      + '<ellipse cx="16" cy="14" rx="9" ry="8" fill="#e02820"/>'
+      + '<ellipse cx="20" cy="13" rx="7" ry="5" fill="#c01818" transform="rotate(-25 20 13)"/>'
+      + '<circle cx="12.5" cy="11" r="5.5" fill="#e02820"/>'
+      + '<circle cx="11" cy="10" r="1.3" fill="#101010"/>'
+      + '<circle cx="11.4" cy="9.6" r="0.45" fill="#fff"/>'
+      + '<path d="M7.5 10.5 L4 12 L7.5 12.5 Z" fill="#e8a020"/>'
+      + '<path d="M8 6 Q10 3 12 5 Q14 3 16 6 Q14 8 12 7 Q10 8 8 6" fill="#288848"/>'
+      + '<path d="M22 16 Q26 18 24 22 Q20 20 22 16" fill="#208838"/>'
+      + '<path d="M10 16 Q6 18 8 22 Q12 20 10 16" fill="#208838"/>'
       + '</svg></span>';
   }
 
@@ -520,19 +537,18 @@
     return `<span class="mj-tile-face mj-tile-face--sou" data-rank="${rank}"><span class="mj-tile-sou-grid">${grid}</span></span>`;
   }
 
+  /** 条子牌面：仅 3/5/7/9 含红条（3 顶红、5/9 中心红、7 顶红） */
   function souFaceHtml(rank) {
     const G = 'g'; const R = 'r';
     if (rank === 1) return souBirdHtml();
     if (rank === 2) {
-      return `<span class="mj-tile-face mj-tile-face--sou mj-tile-face--sou2" data-rank="2">`
-        + `<span class="mj-tile-sou-pair">${souStickHtml(G)}${souStickHtml(G)}</span></span>`;
+      return `<span class="mj-tile-face mj-tile-face--sou mj-tile-face--sou2" data-rank="2">${souSticksRowHtml([G, G])}</span>`;
     }
     if (rank === 3) {
-      return `<span class="mj-tile-face mj-tile-face--sou mj-tile-face--sou3" data-rank="3">`
-        + `<span class="mj-tile-sou-pair">${souStickHtml(G)}${souStickHtml(R)}${souStickHtml(G)}</span></span>`;
+      return `<span class="mj-tile-face mj-tile-face--sou mj-tile-face--sou3" data-rank="3">${sou3TriHtml()}</span>`;
     }
     if (rank === 4) {
-      return souColsFaceHtml(4, 2, 2);
+      return souGridHtml(4, { 2: G, 4: G, 6: G, 8: G });
     }
     if (rank === 5) {
       return souGridHtml(5, { 1: G, 3: G, 5: R, 7: G, 9: G });

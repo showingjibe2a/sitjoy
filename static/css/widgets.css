@@ -1063,6 +1063,9 @@
     border: 0.09em solid #2a5038;
     border-radius: 0.11em;
     isolation: isolate;
+    --mj-pin-dot: 0.11em;
+    --mj-sou-stick-w: 0.13em;
+    --mj-sou-stick-h: 0.44em;
 }
 
 .mj-tile-face {
@@ -1072,7 +1075,7 @@
     justify-content: center;
     width: 100%;
     height: 100%;
-    overflow: visible;
+    overflow: hidden;
     background: transparent;
 }
 
@@ -1098,92 +1101,17 @@
     letter-spacing: 0.05em;
 }
 
-/* 筒：3×3 或双列（六/八筒） */
+/* 筒：纯色圆点（统一尺寸）；色标 — 红r 绿g 黑k，见 mahjong-play.js pinFaceHtml */
 .mj-tile-pin-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     grid-template-rows: repeat(3, 1fr);
     width: 100%;
     height: 100%;
-    gap: 0.04em;
+    gap: 0.03em;
+    place-items: center;
 }
 .mj-tile-pin-cols {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: center;
-    gap: 0.12em;
-    width: 100%;
-    height: 100%;
-}
-.mj-tile-pin-col {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.05em;
-    height: 100%;
-    flex: 1;
-    max-width: 46%;
-}
-.mj-tile-pin-cell {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 0;
-    min-height: 0;
-}
-.mj-tile-pin-dot {
-    display: block;
-    width: 82%;
-    aspect-ratio: 1;
-    border-radius: 50%;
-    background: #f6f2e8;
-    border: max(1px, 0.05em) solid #141414;
-    box-sizing: border-box;
-    position: relative;
-    flex-shrink: 0;
-}
-.mj-tile-pin-col .mj-tile-pin-dot {
-    width: 78%;
-}
-.mj-tile-pin-dot::after {
-    content: '';
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    width: 50%;
-    height: 50%;
-    border-radius: 50%;
-    background: #f6f2e8;
-    border: max(1px, 0.045em) solid var(--mj-pin-ring, #c41818);
-    box-shadow: 0 0 0 max(1px, 0.04em) #141414;
-    box-sizing: border-box;
-}
-.mj-tile-pin-dot[data-color="r"] { --mj-pin-ring: #c41818; }
-.mj-tile-pin-dot[data-color="g"] { --mj-pin-ring: #228838; }
-.mj-tile-pin-dot[data-color="k"] { --mj-pin-ring: #141414; }
-.mj-tile-pin-dot.is-big,
-.mj-tile-pin-cell.is-big .mj-tile-pin-dot {
-    width: 92%;
-}
-.mj-tile-pin-dot.is-big::after,
-.mj-tile-pin-cell.is-big .mj-tile-pin-dot::after {
-    box-shadow: 0 0 0 max(1px, 0.045em) #141414, 0 0 0 max(1px, 0.09em) #228838;
-    border-color: #c41818;
-}
-
-/* 条：双列 / 七条 / 雀 SVG */
-.mj-tile-sou-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    grid-template-rows: repeat(3, 1fr);
-    width: 100%;
-    height: 100%;
-    gap: 0.04em;
-}
-.mj-tile-sou-cols {
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -1192,64 +1120,54 @@
     width: 100%;
     height: 100%;
 }
-.mj-tile-sou-col {
+.mj-tile-pin-col {
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: space-between;
+    justify-content: space-evenly;
     gap: 0.04em;
     height: 100%;
     flex: 1;
-    max-width: 46%;
 }
-.mj-tile-sou-cell {
+.mj-tile-pin-cell {
     display: flex;
     align-items: center;
     justify-content: center;
+    width: 100%;
+    height: 100%;
     min-width: 0;
     min-height: 0;
 }
-.mj-tile-sou-cell:not(.is-on) {
-    visibility: hidden;
-}
-.mj-tile-sou-stick {
+.mj-tile-pin-dot {
     display: block;
-    width: 42%;
-    height: 88%;
-    border-radius: 0.05em;
-    border: max(1px, 0.04em) solid #134a28;
+    width: var(--mj-pin-dot);
+    height: var(--mj-pin-dot);
+    border-radius: 50%;
+    background: var(--mj-pin-fill, #228838);
+    border: none;
     box-sizing: border-box;
     flex-shrink: 0;
-    background:
-        repeating-linear-gradient(
-            180deg,
-            #28944a 0 16%,
-            #155e30 16% 19%,
-            #38a85c 19% 32%,
-            #1a7038 32% 35%,
-            #32a050 35% 100%
-        );
 }
-.mj-tile-sou-col .mj-tile-sou-stick {
-    width: 52%;
-    height: auto;
-    flex: 1 1 0;
-    min-height: 0;
-    max-height: 24%;
+.mj-tile-pin-dot[data-color="r"] { --mj-pin-fill: #c41818; }
+.mj-tile-pin-dot[data-color="g"] { --mj-pin-fill: #228838; }
+.mj-tile-pin-dot[data-color="k"] { --mj-pin-fill: #1a1a1a; }
+.mj-tile-pin-dot.is-big,
+.mj-tile-pin-cell.is-big .mj-tile-pin-dot {
+    width: calc(var(--mj-pin-dot) * 1.85);
+    height: calc(var(--mj-pin-dot) * 1.85);
 }
-.mj-tile-sou-stick[data-color="r"] {
-    border-color: #8a1810;
-    background:
-        repeating-linear-gradient(
-            180deg,
-            #e83828 0 16%,
-            #a81810 16% 19%,
-            #f05040 19% 32%,
-            #c02018 32% 35%,
-            #e84030 35% 100%
-        );
+
+/* 条：统一竹条尺寸；色标 — 仅 3/5/7/9 条含红（见 souFaceHtml） */
+.mj-tile-sou-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    width: 100%;
+    height: 100%;
+    gap: 0.03em;
+    place-items: center;
 }
-.mj-tile-sou-pair {
+.mj-tile-sou-cols {
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -1258,36 +1176,126 @@
     width: 100%;
     height: 100%;
 }
-.mj-tile-sou-pair .mj-tile-sou-stick {
-    width: 28%;
-    height: 78%;
+.mj-tile-sou-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-evenly;
+    gap: 0.03em;
+    height: 100%;
+    flex: 1;
 }
-.mj-tile-face--sou3 .mj-tile-sou-pair .mj-tile-sou-stick {
-    width: 24%;
-    height: 72%;
+.mj-tile-sou-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+}
+.mj-tile-sou-cell:not(.is-on) {
+    visibility: hidden;
+}
+.mj-tile-sou-stick {
+    display: block;
+    width: var(--mj-sou-stick-w);
+    height: var(--mj-sou-stick-h);
+    border-radius: 0.05em;
+    border: max(1px, 0.035em) solid #134a28;
+    box-sizing: border-box;
+    flex-shrink: 0;
+    background:
+        repeating-linear-gradient(
+            180deg,
+            #28944a 0 18%,
+            #155e30 18% 22%,
+            #38a85c 22% 36%,
+            #1a7038 36% 40%,
+            #32a050 40% 100%
+        );
+}
+.mj-tile-sou-stick[data-color="r"] {
+    border-color: #8a1810;
+    background:
+        repeating-linear-gradient(
+            180deg,
+            #e83828 0 18%,
+            #a81810 18% 22%,
+            #f05040 22% 36%,
+            #c02018 36% 40%,
+            #e84030 40% 100%
+        );
+}
+.mj-tile-sou-grid .mj-tile-sou-stick {
+    width: var(--mj-sou-stick-w);
+    height: calc(var(--mj-sou-stick-h) * 0.72);
+}
+.mj-tile-sou-col .mj-tile-sou-stick {
+    width: var(--mj-sou-stick-w);
+    height: calc(var(--mj-sou-stick-h) * 0.2);
+}
+.mj-tile-sou-row-sticks {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 0.12em;
+    width: 100%;
+    height: 100%;
+}
+.mj-tile-sou-row-sticks .mj-tile-sou-stick {
+    width: var(--mj-sou-stick-w);
+    height: calc(var(--mj-sou-stick-h) * 0.72);
+}
+.mj-tile-sou-tri {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.06em;
+    width: 100%;
+    height: 100%;
+}
+.mj-tile-sou-tri-top {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.mj-tile-sou-tri-top .mj-tile-sou-stick {
+    height: calc(var(--mj-sou-stick-h) * 0.38);
+}
+.mj-tile-sou-tri-bottom {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 0.16em;
+}
+.mj-tile-sou-tri-bottom .mj-tile-sou-stick {
+    height: calc(var(--mj-sou-stick-h) * 0.38);
 }
 .mj-tile-face--sou7 {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.06em;
+    gap: 0.05em;
 }
 .mj-tile-sou7-top {
     display: flex;
     align-items: center;
     justify-content: center;
-    flex: 0 0 28%;
+    flex: 0 0 auto;
     width: 100%;
 }
 .mj-tile-sou7-top .mj-tile-sou-stick {
-    width: 26%;
-    height: 100%;
+    height: calc(var(--mj-sou-stick-h) * 0.32);
 }
 .mj-tile-sou7-rows {
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
     gap: 0.05em;
     flex: 1 1 auto;
     width: 100%;
@@ -1299,17 +1307,16 @@
     align-items: center;
     justify-content: center;
     gap: 0.1em;
-    flex: 1 1 0;
     width: 100%;
 }
 .mj-tile-sou-row .mj-tile-sou-stick {
-    width: 22%;
-    height: 100%;
+    width: var(--mj-sou-stick-w);
+    height: calc(var(--mj-sou-stick-h) * 0.3);
 }
 .mj-tile-sou-bird-svg {
     display: block;
-    width: 88%;
-    height: 92%;
+    width: 86%;
+    height: 88%;
     overflow: visible;
 }
 
