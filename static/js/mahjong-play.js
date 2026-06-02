@@ -419,6 +419,85 @@
     return honor[t] || t;
   }
 
+  function tileTipLabel(key) {
+    const label = tileLabel(key);
+    if (activeJokerTiles.has(key)) return label + '（癞子）';
+    return label;
+  }
+
+  function tileTipAttr(label) {
+    return ` data-mj-tip="${esc(label)}"`;
+  }
+
+  let mjTileTipEl = null;
+
+  function ensureMjTileTipEl() {
+    if (mjTileTipEl) return mjTileTipEl;
+    mjTileTipEl = document.createElement('div');
+    mjTileTipEl.className = 'mj-tile-tip-float';
+    mjTileTipEl.setAttribute('role', 'tooltip');
+    mjTileTipEl.hidden = true;
+    document.body.appendChild(mjTileTipEl);
+    return mjTileTipEl;
+  }
+
+  function showMjTileTip(tileEl) {
+    const text = tileEl && tileEl.getAttribute('data-mj-tip');
+    if (!text) {
+      hideMjTileTip();
+      return;
+    }
+    const tip = ensureMjTileTipEl();
+    tip.textContent = text;
+    tip.hidden = false;
+    const rect = tileEl.getBoundingClientRect();
+    tip.style.left = `${rect.left + rect.width / 2}px`;
+    tip.style.top = `${rect.top - 6}px`;
+    tip.style.transform = 'translate(-50%, -100%)';
+    requestAnimationFrame(() => {
+      if (tip.hidden) return;
+      const tr = tip.getBoundingClientRect();
+      if (tr.left < 4) tip.style.left = `${4 + tr.width / 2}px`;
+      if (tr.right > window.innerWidth - 4) tip.style.left = `${window.innerWidth - 4 - tr.width / 2}px`;
+      if (tr.top < 4) {
+        tip.style.top = `${rect.bottom + 6}px`;
+        tip.style.transform = 'translate(-50%, 0)';
+      }
+    });
+  }
+
+  function hideMjTileTip() {
+    if (mjTileTipEl) mjTileTipEl.hidden = true;
+  }
+
+  function bindMjTileTips() {
+    if (document.body.dataset.mjTileTipsBound) return;
+    document.body.dataset.mjTileTipsBound = '1';
+    document.addEventListener('mouseover', (e) => {
+      const tile = e.target.closest && e.target.closest('.mj-tile[data-mj-tip]');
+      if (tile) showMjTileTip(tile);
+    });
+    document.addEventListener('mouseout', (e) => {
+      const from = e.target.closest && e.target.closest('.mj-tile[data-mj-tip]');
+      if (!from) return;
+      const to = e.relatedTarget;
+      if (to && from.contains(to)) return;
+      hideMjTileTip();
+    });
+    document.addEventListener('focusin', (e) => {
+      const tile = e.target.closest && e.target.closest('.mj-tile[data-mj-tip]');
+      if (tile) showMjTileTip(tile);
+    });
+    document.addEventListener('focusout', (e) => {
+      const from = e.target.closest && e.target.closest('.mj-tile[data-mj-tip]');
+      if (!from) return;
+      const to = e.relatedTarget;
+      if (to && from.contains(to)) return;
+      hideMjTileTip();
+    });
+    window.addEventListener('scroll', hideMjTileTip, true);
+  }
+
   const MAN_NUM = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
   function pinDotHtml(color, big) {
     return `<span class="mj-tile-pin-dot${big ? ' is-big' : ''}" data-color="${color || 'k'}"></span>`;
@@ -434,7 +513,16 @@
 
   function pinColsFaceHtml(rank, left, right) {
     return `<span class="mj-tile-face mj-tile-face--pin mj-tile-face--pin-cols" data-rank="${rank}">`
-      + `<span class="mj-tile-pin-cols">${pinColHtml(left)}${pinColHtml(right)}</span></span>`;
+      + `<span class="mj-tile-pin-board"><span class="mj-tile-pin-cols">${pinColHtml(left)}${pinColHtml(right)}</span></span></span>`;
+  }
+
+  function pin7FaceHtml() {
+    const d = (c) => pinDotSlotHtml(c);
+    return `<span class="mj-tile-face mj-tile-face--pin mj-tile-face--pin7" data-rank="7">`
+      + '<span class="mj-tile-pin-board"><span class="mj-tile-pin7">'
+      + `<span class="mj-tile-pin-diag">${d('g')}${d('r')}${d('g')}</span>`
+      + `<span class="mj-tile-pin-quad">${d('k')}${d('k')}${d('g')}${d('g')}</span>`
+      + '</span></span></span>';
   }
 
   function pinGridHtml(rank, cells) {
@@ -447,7 +535,7 @@
         grid += '<span class="mj-tile-pin-cell"></span>';
       }
     }
-    return `<span class="mj-tile-face mj-tile-face--pin" data-rank="${rank}"><span class="mj-tile-pin-grid">${grid}</span></span>`;
+    return `<span class="mj-tile-face mj-tile-face--pin" data-rank="${rank}"><span class="mj-tile-pin-board"><span class="mj-tile-pin-grid">${grid}</span></span></span>`;
   }
 
   /** 筒子牌面（国标常见配色）：r红 g绿 k黑 */
@@ -472,9 +560,7 @@
       return pinColsFaceHtml(6, [G, G, K], [K, G, G]);
     }
     if (rank === 7) {
-      return pinGridHtml(7, {
-        1: { c: K }, 2: { c: R }, 3: { c: G }, 5: { c: K }, 7: { c: G }, 8: { c: R }, 9: { c: K },
-      });
+      return pin7FaceHtml();
     }
     if (rank === 8) {
       return pinColsFaceHtml(8, [K, K, K, K], [K, K, K, K]);
@@ -639,7 +725,7 @@
     if (mark === 'last-discard') cls.push('mj-tile--last-discard');
     if (mark === 'drawn') cls.push('mj-tile--drawn');
     if (mark === 'called') cls.push('mj-tile--called');
-    return `<span class="${cls.join(' ')}" role="img" aria-label="${esc(label)}" data-tile="${esc(key)}">`
+    return `<span class="${cls.join(' ')}" role="img" aria-label="${esc(label)}" data-tile="${esc(key)}"${tileTipAttr(tileTipLabel(key))}>`
       + tileInnerHtmlForTile(key)
       + '</span>';
   }
@@ -653,8 +739,9 @@
     if (mark === 'drawn') cls.push('mj-tile--drawn');
     if (selected) cls.push('mj-tile--selected');
     const inner = tileInnerHtmlForTile(key);
+    const tip = tileTipLabel(key);
     const idxAttr = canDiscard && handIdx != null ? ` data-hand-idx="${handIdx}"` : '';
-    const attrs = ` class="${cls.join(' ')}" aria-label="${esc(label)}" data-tile="${esc(key)}"${idxAttr}`;
+    const attrs = ` class="${cls.join(' ')}" aria-label="${esc(label)}" data-tile="${esc(key)}"${tileTipAttr(tip)}${idxAttr}`;
     if (canDiscard) {
       const pressed = selected ? ' aria-pressed="true"' : ' aria-pressed="false"';
       return `<span role="button" tabindex="0"${attrs}${pressed} data-select="1">${inner}</span>`;
@@ -1211,7 +1298,7 @@
   function tileConcealedHtml(variant) {
     const cls = ['mj-tile', 'mj-tile--concealed'];
     if (variant === 'mini' || variant === 'table' || variant === 'meld') cls.push('mj-tile--table', 'mj-tile--meld');
-    return `<span class="${cls.join(' ')}" role="img" aria-label="暗杠"></span>`;
+    return `<span class="${cls.join(' ')}" role="img" aria-label="暗杠"${tileTipAttr('暗杠')}></span>`;
   }
 
   function meldTitle(m) {
@@ -2412,6 +2499,7 @@
   }
 
   function bootMahjongPlay() {
+    bindMjTileTips();
     const mode = mjPlayMode();
     if (mode.isPopup) initPopup();
     else if (mode.isMain) initMain();

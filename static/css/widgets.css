@@ -104,29 +104,46 @@
 }
 .mj-tile--joker .mj-tile-glyph-wrap {
     position: relative;
-    border-radius: 0.2em;
+    background: linear-gradient(
+        165deg,
+        #fff4b0 0%,
+        #ffe060 35%,
+        #ffc820 70%,
+        #d89808 100%
+    );
+    border-color: #8a6508;
     box-shadow:
-        0 0 0.1em rgba(255, 228, 120, 0.95),
-        0 0 0.42em rgba(232, 178, 42, 0.72),
-        0 0 0.72em rgba(201, 148, 28, 0.38),
-        inset 0 0 0 0.12em rgba(255, 236, 160, 0.92),
-        inset 0 0 0.24em rgba(184, 138, 26, 0.42);
+        0 0 0.12em rgba(255, 210, 60, 1),
+        0 0 0.48em rgba(232, 168, 28, 0.82),
+        0 0 0.78em rgba(201, 138, 18, 0.45),
+        inset 0 0 0.08em rgba(255, 240, 160, 1),
+        inset 0 0 0.2em rgba(255, 200, 60, 0.65);
+}
+.mj-tile--joker {
+    filter: drop-shadow(0 0 0.12em rgba(255, 196, 48, 0.85));
 }
 .mj-tile--joker .mj-tile-glyph-wrap::before {
     content: '';
     position: absolute;
-    inset: -0.1em;
+    inset: 0;
     border-radius: inherit;
     pointer-events: none;
-    z-index: 4;
-    box-shadow:
-        0 0 0.18em rgba(255, 215, 80, 0.85),
-        0 0 0.55em rgba(232, 178, 42, 0.45);
+    z-index: 1;
+    background: radial-gradient(
+        ellipse 85% 75% at 50% 38%,
+        rgba(255, 252, 220, 0.72) 0%,
+        rgba(255, 220, 80, 0.28) 55%,
+        transparent 100%
+    );
     animation: mj-joker-glow 2.4s ease-in-out infinite;
 }
 @keyframes mj-joker-glow {
-    0%, 100% { opacity: 0.72; }
+    0%, 100% { opacity: 0.65; }
     50% { opacity: 1; }
+}
+.mj-tile--joker .mj-tile-face {
+    position: relative;
+    z-index: 2;
 }
 .mj-tile--joker.mj-tile--bai .mj-tile-glyph-wrap::after {
     content: '财';
@@ -143,12 +160,19 @@
 }
 .mj-tile--joker.mj-tile--hand.mj-tile--selected .mj-tile-glyph-wrap {
     transform: translateY(-4px);
+    background: linear-gradient(
+        165deg,
+        #fffef0 0%,
+        #fff4b0 32%,
+        #ffe050 68%,
+        #f0c028 100%
+    );
     box-shadow:
-        0 0 0.12em rgba(255, 228, 120, 1),
-        0 0 0.5em rgba(232, 178, 42, 0.82),
-        0 0 0.85em rgba(201, 148, 28, 0.48),
-        inset 0 0 0 0.14em rgba(255, 236, 160, 0.98),
-        inset 0 0 0 0.26em rgba(184, 138, 26, 0.5);
+        0 0 0.14em rgba(255, 228, 120, 1),
+        0 0 0.55em rgba(232, 178, 42, 0.85),
+        0 0 0.9em rgba(201, 148, 28, 0.5),
+        inset 0 0 0.08em rgba(255, 248, 210, 1),
+        inset 0 0 0.22em rgba(255, 220, 100, 0.65);
 }
 .mj-scores { margin-top: 0.5rem; font-size: 0.88rem; color: var(--morandi-ink); }
 .mj-lobby-panel { margin-top: 0.65rem; }
@@ -1047,6 +1071,24 @@
     appearance: none;
     -webkit-appearance: none;
 }
+.mj-tile-tip-float {
+    position: fixed;
+    z-index: 10050;
+    padding: 0.22em 0.48em;
+    border-radius: 0.28em;
+    background: rgba(28, 24, 20, 0.92);
+    color: #faf7ef;
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1.25;
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+}
+.mj-tile-tip-float[hidden] {
+    display: none !important;
+}
 
 .mj-tile-glyph-wrap {
     display: inline-flex;
@@ -1064,6 +1106,7 @@
     border-radius: 0.11em;
     isolation: isolate;
     container-type: size;
+    --mj-pin-dot-size: 0.105em;
 }
 
 .mj-tile-face {
@@ -1101,13 +1144,23 @@
     letter-spacing: 0.05em;
 }
 
-/* 筒：圆点尺寸用 cqi/cqmin 相对牌面容器，同牌内大小一致 */
+/* 筒：正方牌面区 + 固定圆点尺寸，避免格子拉伸导致变形 */
+.mj-tile-pin-board {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+}
 .mj-tile-pin-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     grid-template-rows: repeat(3, 1fr);
-    width: 100%;
-    height: 100%;
+    width: min(100%, 100%);
+    height: min(100%, 100%);
+    max-width: 100%;
+    max-height: 100%;
+    aspect-ratio: 1;
     gap: 0.02em;
     place-items: center;
 }
@@ -1117,33 +1170,45 @@
     align-items: center;
     justify-content: center;
     gap: 0.12em;
-    width: 100%;
-    height: 100%;
+    width: min(100%, 100%);
+    height: min(100%, 100%);
+    max-width: 100%;
+    max-height: 100%;
+    aspect-ratio: 1;
 }
 .mj-tile-pin-col {
-    display: grid;
-    grid-template-rows: repeat(var(--pin-rows, 3), 1fr);
+    display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-items: center;
+    justify-content: space-evenly;
     gap: 0.02em;
     height: 100%;
     flex: 1;
     min-width: 0;
 }
-.mj-tile-pin-cell,
-.mj-tile-pin-slot {
+.mj-tile-pin-cell {
     display: flex;
     align-items: center;
     justify-content: center;
     width: 100%;
     height: 100%;
+    aspect-ratio: 1;
     min-width: 0;
     min-height: 0;
 }
+.mj-tile-pin-slot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+}
 .mj-tile-pin-dot {
     display: block;
-    width: 0.105em;
-    height: 0.105em;
+    width: var(--mj-pin-dot-size);
+    height: var(--mj-pin-dot-size);
+    min-width: var(--mj-pin-dot-size);
+    min-height: var(--mj-pin-dot-size);
+    aspect-ratio: 1;
     border-radius: 50%;
     background: var(--mj-pin-fill, #228838);
     border: none;
@@ -1155,19 +1220,49 @@
 .mj-tile-pin-dot[data-color="k"] { --mj-pin-fill: #1a1a1a; }
 .mj-tile-pin-dot.is-big,
 .mj-tile-pin-slot.is-big .mj-tile-pin-dot {
-    width: 0.19em;
-    height: 0.19em;
+    width: calc(var(--mj-pin-dot-size) * 1.85);
+    height: calc(var(--mj-pin-dot-size) * 1.85);
+    min-width: calc(var(--mj-pin-dot-size) * 1.85);
+    min-height: calc(var(--mj-pin-dot-size) * 1.85);
 }
 @supports (width: 1cqmin) {
-    .mj-tile-pin-dot {
-        width: 24cqmin;
-        height: 24cqmin;
+    .mj-tile-glyph-wrap {
+        --mj-pin-dot-size: 24cqmin;
     }
-    .mj-tile-pin-dot.is-big,
-    .mj-tile-pin-slot.is-big .mj-tile-pin-dot {
-        width: 44cqmin;
-        height: 44cqmin;
-    }
+}
+.mj-tile-pin7 {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.03em;
+    width: min(100%, 100%);
+    height: min(100%, 100%);
+    max-width: 100%;
+    max-height: 100%;
+    aspect-ratio: 1;
+}
+.mj-tile-pin-diag {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    width: 88%;
+    flex: 1 1 auto;
+    min-height: 0;
+    place-items: center;
+}
+.mj-tile-pin-diag .mj-tile-pin-slot:nth-child(1) { grid-area: 1 / 1; }
+.mj-tile-pin-diag .mj-tile-pin-slot:nth-child(2) { grid-area: 2 / 2; }
+.mj-tile-pin-diag .mj-tile-pin-slot:nth-child(3) { grid-area: 3 / 3; }
+.mj-tile-pin-quad {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    width: 62%;
+    flex: 1 1 auto;
+    min-height: 0;
+    gap: 0.02em;
+    place-items: center;
 }
 
 /* 条：全牌统一竹条宽高（cqmin），无描边 */
@@ -1349,13 +1444,20 @@
     color: #208050;
     font-size: 0.5em;
 }
+.mj-tile-face--z7 {
+    padding: 0.11em;
+    box-sizing: border-box;
+}
 .mj-tile-face--z7::after {
     content: '';
     display: block;
-    width: 48%;
-    height: 62%;
-    border: 0.08em solid #1a4068;
-    border-radius: 0.04em;
+    flex: 0 0 auto;
+    width: auto;
+    height: 100%;
+    max-width: 100%;
+    aspect-ratio: 1;
+    border: 0.075em solid #1a4068;
+    border-radius: 0.035em;
     box-sizing: border-box;
 }
 .mj-tile-face--unknown {
