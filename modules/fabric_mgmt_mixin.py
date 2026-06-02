@@ -475,29 +475,232 @@ class FabricManagementMixin:
         except Exception as e:
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)
 
+    def _fabric_rename_library_items(self, folder, existing_names, fabric_code, image_type, raw_b64_items):
+        """『面料』目录内未绑定文件：按编码-类型-序号重命名（与 NAS 导入命名规则一致）。"""
+        import base64
+
+        results = []
+        existing = set(existing_names or [])
+        image_type = (image_type or '文字卖点图').strip() or '文字卖点图'
+
+        for raw_b64 in list(raw_b64_items or [])[:200]:
+            try:
+                raw_bytes = base64.b64decode(str(raw_b64 or '').strip())
+            except Exception:
+                continue
+            src = os.path.join(folder, raw_bytes)
+            if not os.path.isfile(src):
+                name_str = self._decode_fs_name_bytes(raw_bytes)
+                if name_str:
+                    src = os.path.join(folder, self._safe_fsencode(name_str))
+            if not os.path.isfile(src):
+                continue
+
+            base = os.path.basename(src)
+            src_basename_str = self._decode_fs_name_bytes(base if isinstance(base, bytes) else self._safe_fsencode(str(base)))
+
+            ext = os.path.splitext(src_basename_str)[1] or '.jpg'
+            idx = self._next_fabric_image_seq(existing, fabric_code, image_type)
+            candidate = self._fabric_target_filename(fabric_code, image_type, idx, ext)
+            dst = os.path.join(folder, self._safe_fsencode(candidate))
+            try:
+                os.rename(src, dst)
+            except Exception as rename_err:
+                return {'status': 'error', 'message': f'重命名失败: {rename_err}', 'items': results}
+
+            existing.add(candidate)
+            results.append({
+                'old_b64': str(raw_b64 or '').strip(),
+                'new_name': candidate,
+                'remark': image_type,
+            })
+
+        return {'status': 'success', 'items': results}
+
+    def _append_fabric_image_mappings(self, conn, fabric_id, images):
+        """追加面料图片映射（不删除已有映射）。"""
+        fid = int(fabric_id or 0)
+        if not fid:
+            return 0
+        if not self._has_required_tables(['fabric_image_mappings', 'image_assets']):
+            raise RuntimeError('缺少 fabric_image_mappings / image_assets')
+
+        max_sort = -1
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COALESCE(MAX(sort_order), -1) AS mx FROM fabric_image_mappings WHERE fabric_id=%s",
+                (fid,),
+            )
+            max_sort = self._parse_int((cur.fetchone() or {}).get('mx'))
+            if max_sort is None:
+                max_sort = -1
+
+        rows = []
+        for idx, item in enumerate(images or []):
+            if isinstance(item, dict):
+                image_name = str(item.get('image_name') or item.get('new_name') or '').strip()
+                type_name = str(item.get('remark') or item.get('image_type') or '').strip()
+                description = str(item.get('description') or '').strip()
+                sort_order = self._parse_int(item.get('sort_order'))
+            else:
+                image_name = str(item or '').strip()
+                type_name = ''
+                description = ''
+                sort_order = None
+            if not image_name:
+                continue
+            if sort_order is None:
+                sort_order = max_sort + 1 + len(rows)
+            rows.append((image_name, type_name, description, int(sort_order)))
+
+        if not rows:
+            return 0
+
+        has_tid = self._table_has_column(conn, 'image_assets', 'image_type_id')
+        has_dep = self._table_has_column(conn, 'image_assets', 'is_deprecated')
+        has_ofn = self._table_has_column(conn, 'image_assets', 'original_filename')
+
+        prepared = []
+        sha_list = []
+        for image_name, type_name, description, sort_order in rows:
+            abs_path = self._resolve_fabric_image_abs_path(image_name)
+            if not abs_path or not os.path.exists(abs_path):
+                continue
+            try:
+                with open(abs_path, 'rb') as f:
+                    content = f.read() or b''
+            except Exception:
+                continue
+            if not content:
+                continue
+            sha256 = hashlib.sha256(content).hexdigest()
+            try:
+                res_root = self._join_resources('')
+                rel_bytes = os.path.relpath(abs_path, res_root)
+                storage_path = os.fsdecode(rel_bytes).replace('\\', '/')
+            except Exception:
+                storage_path = str(image_name).replace('\\', '/')
+            orig_fn = os.path.basename(str(image_name).strip().replace('\\', '/')) or os.path.basename(storage_path)
+            prepared.append({
+                'sha256': sha256,
+                'storage_path': storage_path,
+                'original_filename': orig_fn,
+                'type_name': type_name,
+                'description': (description or '')[:1000],
+                'sort_order': int(sort_order),
+            })
+            sha_list.append(sha256)
+
+        if not prepared:
+            return 0
+
+        type_id_by_name = {}
+        if has_tid:
+            for rec in prepared:
+                nm = (rec.get('type_name') or '').strip() or '文字卖点图'
+                if nm not in type_id_by_name:
+                    try:
+                        type_id_by_name[nm] = self._get_image_type_id_by_name(conn, nm)
+                    except Exception:
+                        type_id_by_name[nm] = None
+
+        existing_by_sha = {}
+        with conn.cursor() as cur:
+            placeholders = ','.join(['%s'] * len(set(sha_list)))
+            cur.execute(
+                f"SELECT id, sha256 FROM image_assets WHERE sha256 IN ({placeholders})",
+                tuple(sorted(set(sha_list))),
+            )
+            for r in (cur.fetchall() or []):
+                existing_by_sha[str(r.get('sha256') or '')] = self._parse_int(r.get('id')) or 0
+
+        cols_base = ['sha256', 'storage_path', 'description']
+        if has_ofn:
+            cols_base.append('original_filename')
+        if has_tid:
+            cols_base.append('image_type_id')
+        if has_dep:
+            cols_base.append('is_deprecated')
+        insert_sql = f"INSERT INTO image_assets ({', '.join(cols_base)}) VALUES ({', '.join(['%s'] * len(cols_base))})"
+        to_insert = []
+        for rec in prepared:
+            if existing_by_sha.get(rec['sha256']):
+                continue
+            vals = [rec['sha256'], rec['storage_path'], rec.get('description') or None]
+            if has_ofn:
+                vals.append(rec.get('original_filename') or '')
+            if has_tid:
+                vals.append(type_id_by_name.get((rec.get('type_name') or '').strip() or '文字卖点图'))
+            if has_dep:
+                vals.append(0)
+            to_insert.append(tuple(vals))
+        if to_insert:
+            with conn.cursor() as cur:
+                cur.executemany(insert_sql, to_insert)
+            with conn.cursor() as cur:
+                placeholders = ','.join(['%s'] * len(set(sha_list)))
+                cur.execute(
+                    f"SELECT id, sha256 FROM image_assets WHERE sha256 IN ({placeholders})",
+                    tuple(sorted(set(sha_list))),
+                )
+                for r in (cur.fetchall() or []):
+                    existing_by_sha[str(r.get('sha256') or '')] = self._parse_int(r.get('id')) or 0
+
+        update_sets = ['description=%s']
+        if has_tid:
+            update_sets.append('image_type_id=%s')
+        update_sql = f"UPDATE image_assets SET {', '.join(update_sets)} WHERE id=%s"
+        update_rows = []
+        for rec in prepared:
+            aid = existing_by_sha.get(rec['sha256']) or 0
+            if not aid:
+                continue
+            params = [rec.get('description') or None]
+            if has_tid:
+                params.append(type_id_by_name.get((rec.get('type_name') or '').strip() or '文字卖点图'))
+            params.append(int(aid))
+            update_rows.append(tuple(params))
+        if update_rows:
+            with conn.cursor() as cur:
+                cur.executemany(update_sql, update_rows)
+
+        inserted = 0
+        with conn.cursor() as cur:
+            for rec in prepared:
+                aid = existing_by_sha.get(rec['sha256']) or 0
+                if not aid:
+                    continue
+                cur.execute(
+                    "SELECT id FROM fabric_image_mappings WHERE fabric_id=%s AND image_asset_id=%s LIMIT 1",
+                    (fid, int(aid)),
+                )
+                if cur.fetchone():
+                    continue
+                cur.execute(
+                    "INSERT INTO fabric_image_mappings (fabric_id, image_asset_id, sort_order) VALUES (%s,%s,%s)",
+                    (fid, int(aid), int(rec.get('sort_order') or 0)),
+                )
+                inserted += 1
+        return inserted
+
     def handle_fabric_attach_api(self, environ, start_response):
-        """关联面料图片"""
+        """『面料』目录内图片：重命名 + 可选立即写入 fabric_image_mappings。"""
         try:
             if environ['REQUEST_METHOD'] != 'POST':
                 return self.send_json({'status': 'error', 'message': 'Method not allowed'}, start_response)
 
-            content_length = int(environ.get('CONTENT_LENGTH', 0))
-            body = environ['wsgi.input'].read(content_length)
-            if not body:
-                data = {}
-            else:
-                try:
-                    text = body.decode('utf-8', errors='surrogateescape')
-                except Exception:
-                    text = body.decode('utf-8', errors='replace')
-                data = json.loads(text) if text else {}
-            
+            data = self._read_json_body(environ)
             fabric_code = (data.get('fabric_code') or '').strip()
-            image_type = (data.get('image_type') or data.get('remark') or '文字卖点图').strip()
+            image_type = (data.get('image_type') or data.get('remark') or '').strip()
+            fabric_id = self._parse_int(data.get('fabric_id'))
             items = data.get('items') or []
-            
-            if not fabric_code or not items:
-                return self.send_json({'status': 'error', 'message': 'Missing fabric_code or items'}, start_response)
+
+            if not fabric_code:
+                return self.send_json({'status': 'error', 'message': 'Missing fabric_code'}, start_response)
+            if not image_type:
+                return self.send_json({'status': 'error', 'message': '请先选择图片类型'}, start_response)
+            if not items:
+                return self.send_json({'status': 'error', 'message': 'Missing items'}, start_response)
 
             folder = self._ensure_fabric_folder()
             existing = set()
@@ -505,62 +708,31 @@ class FabricManagementMixin:
                 with os.scandir(folder) as it:
                     for entry in it:
                         if entry.is_file(follow_symlinks=False):
-                            name = entry.name
-                            if isinstance(name, (bytes, bytearray)):
-                                try:
-                                    name = os.fsdecode(name)
-                                except Exception:
-                                    name = name.decode('utf-8', errors='ignore')
-                            existing.add(str(name))
+                            existing.add(self._decode_fs_name_bytes(self._entry_name_bytes(entry)))
             except Exception:
                 existing = set()
 
-            results = []
-            next_idx = 1
-            
-            for raw_b64 in items:
-                try:
-                    raw_bytes = base64.b64decode(raw_b64)
-                    src = None
-                    try:
-                        src = os.path.join(folder, raw_bytes)
-                    except Exception:
-                        try:
-                            name_str = os.fsdecode(raw_bytes)
-                        except Exception:
-                            name_str = None
-                        if name_str:
-                            src = os.path.join(folder, os.fsencode(name_str))
+            rename_result = self._fabric_rename_library_items(folder, existing, fabric_code, image_type, items)
+            if rename_result.get('status') != 'success':
+                return self.send_json(rename_result, start_response)
 
-                    if not src or not os.path.exists(src):
-                        continue
+            results = rename_result.get('items') or []
+            if not results:
+                return self.send_json({'status': 'error', 'message': '未找到可绑定的图片文件'}, start_response)
 
-                    src_basename = os.path.basename(src)
-                    try:
-                        src_basename_str = os.fsdecode(src_basename)
-                    except Exception:
-                        src_basename_str = 'img'
+            bound = 0
+            if fabric_id:
+                with self._get_db_connection() as conn:
+                    bound = self._append_fabric_image_mappings(conn, fabric_id, results)
 
-                    ext = os.path.splitext(src_basename_str)[1] or ''
-                    idx = next_idx
-                    while True:
-                        candidate = self._fabric_target_filename(fabric_code, image_type, idx, ext)
-                        if candidate not in existing:
-                            break
-                        idx += 1
-
-                    dst = os.path.join(folder, os.fsencode(candidate))
-                    try:
-                        os.rename(src, dst)
-                        results.append({'old_b64': raw_b64, 'new_name': candidate})
-                        existing.add(candidate)
-                        next_idx = idx + 1
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
-
-            return self.send_json({'status': 'success', 'items': results}, start_response)
+            image_names = [str(r.get('new_name') or '').strip() for r in results if r.get('new_name')]
+            return self.send_json({
+                'status': 'success',
+                'items': results,
+                'image_names': image_names,
+                'bound': bound,
+                'message': f'已重命名 {len(image_names)} 张' + (f'，已绑定 {bound} 张到当前面料' if fabric_id else ''),
+            }, start_response)
         except Exception as e:
             print('Fabric attach error: ' + str(e))
             return self.send_json({'status': 'error', 'message': str(e)}, start_response)

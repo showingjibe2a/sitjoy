@@ -419,58 +419,22 @@
     return honor[t] || t;
   }
 
-  const CN_NUM = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
-  /** 筒子 3×3 点位（0 左上 → 8 右下） */
-  const PIN_LAYOUTS = {
-    1: [4],
-    2: [1, 7],
-    3: [0, 4, 8],
-    4: [0, 2, 6, 8],
-    5: [0, 2, 4, 6, 8],
-    6: [0, 3, 6, 2, 5, 8],
-    7: [0, 1, 2, 3, 5, 6, 8],
-    8: [0, 1, 2, 3, 5, 6, 7, 8],
-    9: [0, 1, 2, 3, 4, 5, 6, 7, 8],
-  };
-
-  function pinDotsMarkup(n) {
-    const on = new Set(PIN_LAYOUTS[n] || []);
-    let cells = '';
-    for (let i = 0; i < 9; i++) {
-      cells += `<span class="mj-pin-cell${on.has(i) ? ' is-on' : ''}"></span>`;
-    }
-    return `<span class="mj-pin-grid" aria-hidden="true">${cells}</span>`;
+  function tileGlyph(t) {
+    const key = String(t || '').trim();
+    if (!key) return '?';
+    const suit = key[0];
+    const n = parseInt(key.slice(1), 10);
+    if (suit === 'w' && n >= 1 && n <= 9) return String.fromCodePoint(0x1F007 + n - 1);
+    if (suit === 'p' && n >= 1 && n <= 9) return String.fromCodePoint(0x1F019 + n - 1);
+    if (suit === 's' && n >= 1 && n <= 9) return String.fromCodePoint(0x1F010 + n - 1);
+    const honorCode = { z1: 0x1F000, z2: 0x1F001, z3: 0x1F002, z4: 0x1F003, z5: 0x1F004, z6: 0x1F005, z7: 0x1F006 };
+    if (honorCode[key]) return String.fromCodePoint(honorCode[key]);
+    return '?';
   }
 
   function tileInnerHtmlForTile(key) {
-    const k = String(key || '').trim();
-    if (!k) {
-      return '<span class="mj-tile-glyph-wrap"><span class="mj-tile-face mj-tile-face--unknown">?</span></span>';
-    }
-    const suit = k[0];
-    const n = parseInt(k.slice(1), 10) || 0;
-    let body = '';
-    if (suit === 'w' && n >= 1 && n <= 9) {
-      body = `<span class="mj-face-text mj-face-man"><span class="mj-face-num">${CN_NUM[n]}</span><span class="mj-face-suit">万</span></span>`;
-    } else if (suit === 'p' && n >= 1 && n <= 9) {
-      body = pinDotsMarkup(n);
-    } else if (suit === 's' && n >= 1 && n <= 9) {
-      if (n === 1) {
-        body = '<span class="mj-face-sou-1" aria-hidden="true"><span class="mj-face-bamboo"></span></span>';
-      } else {
-        body = `<span class="mj-face-text mj-face-sou"><span class="mj-face-num">${CN_NUM[n]}</span><span class="mj-face-suit">条</span></span>`;
-      }
-    } else if (suit === 'z') {
-      const honor = { z1: '东', z2: '南', z3: '西', z4: '北', z5: '中', z6: '发', z7: '' };
-      if (k === 'z7') {
-        body = '<span class="mj-face-bai" aria-hidden="true"></span>';
-      } else {
-        body = `<span class="mj-face-honor">${esc(honor[k] || '?')}</span>`;
-      }
-    } else {
-      body = `<span class="mj-face-text">${esc(tileLabel(k))}</span>`;
-    }
-    return `<span class="mj-tile-glyph-wrap"><span class="mj-tile-face">${body}</span></span>`;
+    const glyph = tileGlyph(key);
+    return '<span class="mj-tile-glyph-wrap"><span class="mj-tile-glyph" aria-hidden="true">' + glyph + '</span></span>';
   }
 
   function tileKindClasses(t) {

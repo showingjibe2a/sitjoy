@@ -366,7 +366,91 @@
     showStatus('', false);
   }
 
+  function renderFabricImageTypeBar() {
+    const wrap = $('sjPickExistingImageTypeWrap');
+    const bar = $('sjPickExistingImageTypeBar');
+    if (!wrap || !bar) return;
+    const isFabric = state.context === 'fabric';
+    wrap.style.display = isFabric ? '' : 'none';
+    if (!isFabric) return;
+    const flow = global.FabricImageFlow;
+    const opts = typeof state.getImageTypeOptions === 'function' ? (state.getImageTypeOptions() || []) : [];
+    const current = typeof state.getImportImageType === 'function'
+      ? state.getImportImageType()
+      : (opts[0] && opts[0].name) || '';
+    if (flow && flow.renderImageTypeBar) {
+      flow.renderImageTypeBar(bar, opts, current);
+    } else if (!opts.length) {
+      bar.innerHTML = '<span class="pm-select-empty" style="padding:0 .4rem;">暂无图片类型</span>';
+    }
+  }
+
+  function getFabricImageType() {
+    const flow = global.FabricImageFlow;
+    const fallback = typeof state.getImportImageType === 'function' ? state.getImportImageType() : '';
+    if (flow && flow.readActiveImageType) {
+      return flow.readActiveImageType($('sjPickExistingImageTypeBar'), fallback);
+    }
+    return String(fallback || '').trim();
+  }
+
+  async function confirmPickFabric() {
+    const fabricCode = String(state.params.fabricCode || '').trim();
+    if (!fabricCode) {
+      showStatus('请先在面料表单中填写面料编号', true);
+      return;
+    }
+    const imageType = getFabricImageType();
+    if (!imageType) {
+      showStatus('请先选择图片类型', true);
+      return;
+    }
+    const picked = (state.items || []).filter((it) => state.selected.has(String(it.path_b64 || it.b64 || '')));
+    if (!picked.length) {
+      showStatus('请至少选择一张图片', true);
+      return;
+    }
+    const itemsRawB64 = picked.map((it) => String(it.name_raw_b64 || '').trim()).filter(Boolean);
+    if (!itemsRawB64.length) {
+      showStatus('所选图片缺少文件名信息，请刷新后重试', true);
+      return;
+    }
+    const flow = global.FabricImageFlow;
+    if (!flow || typeof flow.attachLibraryImages !== 'function') {
+      showStatus('面料绑定组件未加载，请刷新页面', true);
+      return;
+    }
+    showStatus(`正在重命名并绑定 ${itemsRawB64.length} 张…`, false);
+    const btn = $('sjPickExistingConfirmBtn');
+    if (btn) btn.disabled = true;
+    try {
+      const data = await flow.attachLibraryImages({
+        fabricCode,
+        fabricId: state.params.fabricId || null,
+        imageType,
+        itemsRawB64,
+      });
+      if (!data || data.status !== 'success') {
+        showStatus((data && data.message) ? data.message : '绑定失败', true);
+        return;
+      }
+      const names = data.image_names || [];
+      if (typeof state.onConfirm === 'function') {
+        state.onConfirm(names, imageType, data);
+      }
+      close();
+    } catch (e) {
+      showStatus('绑定失败: ' + e, true);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
   function confirmPick() {
+    if (state.context === 'fabric') {
+      confirmPickFabric();
+      return;
+    }
     const picked = (state.items || []).filter(it => state.selected.has(String(it.path_b64 || it.b64 || '')));
     if (!picked.length) {
       showStatus('请至少选择一张图片', true);
@@ -387,15 +471,23 @@
     state.context = String(opts?.context || 'fabric').trim().toLowerCase();
     state.params = {
       fabricId: opts?.fabricId || opts?.fabric_id || null,
+      fabricCode: opts?.fabricCode || opts?.fabric_code || '',
       variantId: opts?.variantId || opts?.variant_id || opts?.salesProductId || null,
       salesProductId: opts?.salesProductId || opts?.sales_product_id || null,
       orderProductId: opts?.orderProductId || opts?.order_product_id || null,
     };
+    state.getImageTypeOptions = opts?.getImageTypeOptions || null;
+    state.getImportImageType = opts?.getImportImageType || null;
     state.pathB64 = '';
     state.selected = new Set();
     state.onConfirm = opts?.onConfirm || null;
     const title = $('sjPickExistingTitle');
     if (title) title.textContent = opts?.title || '选择已有图片';
+    const confirmBtn = $('sjPickExistingConfirmBtn');
+    if (confirmBtn) {
+      confirmBtn.textContent = state.context === 'fabric' ? '确认绑定' : '确认选择';
+    }
+    renderFabricImageTypeBar();
     if ($('sjPickExistingSearch')) $('sjPickExistingSearch').value = '';
     $(MODAL_ID)?.classList.add('active');
     await loadList();

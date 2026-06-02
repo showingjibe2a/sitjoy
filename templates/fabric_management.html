@@ -372,33 +372,40 @@
         }
 
         async function openFabricPickExistingImages() {
+            const fabricCode = (document.getElementById('modalFabricCode')?.value || '').trim();
+            if (!fabricCode) {
+                showModalStatus('请先填写面料编号', true);
+                return;
+            }
             if (!window.SjPickExistingImages || typeof window.SjPickExistingImages.open !== 'function') {
                 showModalStatus('选择已有图片组件未加载，请刷新页面后重试', true);
+                return;
+            }
+            if (!window.FabricImageFlow) {
+                showModalStatus('面料图片绑定组件未加载，请刷新页面后重试', true);
                 return;
             }
             await window.SjPickExistingImages.open({
                 context: 'fabric',
                 fabricId: editId,
+                fabricCode,
+                getImageTypeOptions: () => fabricImageTypeOptions || [],
+                getImportImageType: () => {
+                    const bar = document.getElementById('fabricNasImageTypeBar');
+                    const active = bar && bar.querySelector('button.status-pill.is-active');
+                    const v = active ? String(active.getAttribute('data-value') || '').trim() : '';
+                    return v || getDefaultFabricImageTypeForAdd();
+                },
                 title: '选择已有图片（面料库 · 未绑定）',
-                onConfirm: (picked) => {
-                    const defaultType = getDefaultFabricImageTypeForAdd();
-                    (picked || []).forEach(it => {
-                        const display = (window.SitjoyFsName && window.SitjoyFsName.resolveItemDisplayName)
-                            ? window.SitjoyFsName.resolveItemDisplayName(it)
-                            : (it.display || it.name || '');
-                        if (!display) return;
-                        if ((selectedImageObjects || []).some(x => (x.image_name || '') === display)) return;
-                        selectedImageObjects.push({
-                            image_name: display,
-                            image_name_raw_b64: it.name_raw_b64 || '',
-                            preview_b64: it.b64 || it.path_b64 || '',
-                            remark: defaultType,
-                            description: '',
-                            sort_order: selectedImageObjects.length
-                        });
-                    });
-                    renderSelectedImagesGrid();
+                onConfirm: (imageNames, imageType, data) => {
+                    fabricNasOnAfterImport(imageNames, imageType);
                     loadFabricImages();
+                    if (editId && data && data.bound) {
+                        showModalStatus(data.message || `已绑定 ${data.bound} 张`, false);
+                        loadFabricList();
+                    } else if (data && data.message) {
+                        showModalStatus(data.message, false);
+                    }
                 }
             });
         }
@@ -1652,6 +1659,7 @@
     <script src="/static/js/header.js"></script>
     <script src="/static/js/nas_main_image_browser_ui.js"></script>
     <script src="/static/js/sitjoy_fs_name.js"></script>
+    <script src="/static/js/fabric_image_flow.js"></script>
     <script src="/static/js/fabric_nas_import.js"></script>
     <script src="/static/js/sj_pick_existing_images.js"></script>
     <script src="/static/js/pm_image_edit_modal.js"></script>
