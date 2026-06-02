@@ -173,9 +173,9 @@
 .mj-player-rail--top .mj-player-badge,
 .mj-player-rail--bottom .mj-player-badge {
     flex-direction: row;
-    align-items: flex-start;
+    align-items: flex-end;
     gap: 0.55rem;
-    max-width: min(100%, 17.5rem);
+    max-width: min(100%, 26rem);
 }
 .mj-player-side {
     display: flex;
@@ -184,20 +184,48 @@
     min-width: 0;
     flex: 1;
 }
+.mj-player-rail--top .mj-player-side,
+.mj-player-rail--bottom .mj-player-side {
+    flex-direction: row;
+    align-items: flex-end;
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+    gap: calc(0.28rem * var(--mj-ui-scale, 1));
+    min-width: 0;
+}
 .mj-player-rail--left .mj-player-side,
 .mj-player-rail--right .mj-player-side {
+    flex-direction: column;
     align-items: center;
     width: 100%;
+}
+.mj-player-rail--top .mj-player-caption,
+.mj-player-rail--bottom .mj-player-caption {
+    flex: 0 0 auto;
+    width: auto;
 }
 .mj-badge-melds {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-end;
     justify-content: flex-start;
-    gap: calc(0.14rem * var(--mj-ui-scale, 1));
-    margin-top: calc(0.14rem * var(--mj-ui-scale, 1));
+    gap: calc(0.1rem * var(--mj-ui-scale, 1));
     max-width: 100%;
     min-height: 0;
+}
+.mj-player-rail--top .mj-badge-melds,
+.mj-player-rail--bottom .mj-badge-melds {
+    margin-top: 0;
+    margin-left: calc(0.12rem * var(--mj-ui-scale, 1));
+    flex: 0 1 auto;
+    flex-wrap: nowrap;
+    max-width: none;
+}
+.mj-player-rail--left .mj-badge-melds,
+.mj-player-rail--right .mj-badge-melds {
+    margin-top: calc(0.12rem * var(--mj-ui-scale, 1));
+    justify-content: center;
+    width: 100%;
 }
 .mj-badge-melds:empty {
     display: none;
