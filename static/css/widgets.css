@@ -1045,7 +1045,6 @@
     -webkit-tap-highlight-color: transparent;
     appearance: none;
     -webkit-appearance: none;
-    color: initial;
 }
 .mj-tile-glyph-wrap {
     display: inline-block;
@@ -1055,7 +1054,7 @@
     background: transparent;
     box-shadow: none;
     border: none;
-    color: initial;
+    isolation: isolate;
 }
 .mj-tile-glyph {
     display: inline-block;
@@ -1067,11 +1066,9 @@
     font-weight: normal;
     letter-spacing: 0;
     user-select: none;
-    /* 避免 WebKit 继承页面文字色把 emoji 染成单色轮廓 */
-    color: initial;
-    -webkit-text-fill-color: initial;
-    text-shadow: none;
-    filter: none;
+    text-rendering: auto;
+    /* 切勿设置 color / -webkit-text-fill-color（含 initial/currentColor）：
+       WebKit 会把 Mahjong emoji 退化为继承色的空心描边，而非系统彩色字形。 */
 }
 
 .mj-tile--hand {
@@ -1144,9 +1141,29 @@
     width: 0.46em;
     height: 0.54em;
 }
-.mj-tile--called .mj-tile-glyph-wrap {
-    transform: translateY(2px);
-    opacity: 0.88;
+/* 吃碰明杠：外来牌顶标注小三角（莫兰迪红），替代下沉 */
+.mj-tile--called:not(.mj-tile--joker) .mj-tile-glyph-wrap {
+    box-shadow: none;
+}
+.mj-tile--called::after {
+    content: '';
+    position: absolute;
+    top: -0.56em;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0.54em;
+    height: 0.46em;
+    pointer-events: none;
+    z-index: 2;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 10'%3E%3Cpath fill='%23b67f7f' d='M6 9.2 0.4 0.8h11.2z'/%3E%3C/svg%3E");
+}
+.mj-tile--table.mj-tile--called::after {
+    top: -0.48em;
+    width: 0.46em;
+    height: 0.38em;
 }
 
 .mj-meld-set {
