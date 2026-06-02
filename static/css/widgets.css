@@ -1030,9 +1030,7 @@
     display: none;
 }
 
-/* —— 麻将牌：系统 Unicode emoji（跨平台彩色字形） ——
-   麻将块 (U+1F000) 仅「中」默认为 emoji，其余为文本样式；Safari 不支持 font-variant-emoji，
-   会退化为继承色的空心描边并因负间距叠牌而难以辨认。JS 已在各牌后追加 U+FE0F (VS16)。 */
+/* —— 麻将牌：CSS 绘制不透明牌面（不依赖系统 emoji，Safari/WebKit 兼容） —— */
 .mj-tile {
     position: relative;
     display: inline-block;
@@ -1049,29 +1047,50 @@
     -webkit-appearance: none;
 }
 .mj-tile-glyph-wrap {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     position: relative;
-    line-height: 0;
-    padding: 0;
-    background: transparent;
-    box-shadow: none;
-    border: none;
+    vertical-align: bottom;
+    line-height: 1;
+    box-sizing: border-box;
+    width: 0.74em;
+    height: 1em;
+    padding: 0.06em 0.04em 0.08em;
+    background: linear-gradient(168deg, #fffdf7 0%, #f7eed8 48%, #ebe0c8 100%);
+    border: 0.045em solid rgba(62, 52, 40, 0.36);
+    border-radius: 0.11em;
+    box-shadow:
+        inset 0 0.07em 0 rgba(255, 255, 255, 0.88),
+        inset -0.04em -0.06em 0 rgba(0, 0, 0, 0.05),
+        0 0.06em 0.14em rgba(0, 0, 0, 0.14);
     isolation: isolate;
 }
 .mj-tile-glyph {
-    display: inline-block;
-    line-height: 1;
-    vertical-align: bottom;
-    font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", emoji, sans-serif;
-    font-variant-emoji: emoji;
+    display: block;
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+    font-size: 0.34em;
+    font-weight: 800;
     font-style: normal;
-    font-weight: normal;
-    letter-spacing: 0;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    white-space: nowrap;
     user-select: none;
-    text-rendering: auto;
-    /* 切勿设置 color / -webkit-text-fill-color（含 initial/currentColor）：
-       文本展示模式下 WebKit 会用继承色画空心描边；彩色展示依赖 JS 追加的 U+FE0F。 */
+    text-align: center;
+    text-rendering: optimizeLegibility;
 }
+.mj-tile--man .mj-tile-glyph { color: #b42318; }
+.mj-tile--pin .mj-tile-glyph { color: #1a4a86; }
+.mj-tile--sou .mj-tile-glyph { color: #1a6b38; }
+.mj-tile--wind .mj-tile-glyph { color: #2a2824; font-size: 0.4em; }
+.mj-tile--zhong .mj-tile-glyph { color: #b42318; font-size: 0.42em; }
+.mj-tile--fa .mj-tile-glyph { color: #1a6b38; font-size: 0.42em; }
+.mj-tile--bai .mj-tile-glyph {
+    color: #6a645c;
+    font-size: 0.38em;
+    font-weight: 700;
+}
+.mj-tile--unknown .mj-tile-glyph { color: #5a5650; font-size: 0.38em; }
 
 .mj-tile--hand {
     flex: 0 0 auto;
@@ -1080,11 +1099,14 @@
     cursor: default;
 }
 .mj-tile--hand.mj-tile--clickable .mj-tile-glyph-wrap {
-    transition: transform 0.12s ease, opacity 0.12s ease;
+    transition: transform 0.12s ease, filter 0.12s ease;
 }
 .mj-tile--hand .mj-tile-glyph-wrap {
     font-size: min(var(--mj-hand-tile-max), var(--mj-hand-tile-size, 2.5rem));
     line-height: 1;
+}
+.mj-hand .mj-tile--hand {
+    position: relative;
 }
 .mj-hand .mj-tile--hand + .mj-tile--hand {
     margin-left: var(--mj-tile-pack) !important;
@@ -1093,7 +1115,7 @@
     cursor: pointer;
 }
 .mj-tile--hand.mj-tile--clickable:hover:not(.mj-tile--selected) .mj-tile-glyph-wrap {
-    opacity: 0.88;
+    filter: brightness(0.95);
 }
 .mj-tile--hand.mj-tile--clickable:focus-visible {
     outline: 2px solid rgba(139, 151, 163, 0.45);
@@ -1101,19 +1123,19 @@
     border-radius: 2px;
 }
 .mj-tile--hand.mj-tile--selected {
-    z-index: 3;
+    z-index: 20;
     position: relative;
 }
 .mj-tile--hand.mj-tile--selected .mj-tile-glyph-wrap {
     transform: translateY(-4px);
-    box-shadow: 0 4px 0 rgba(74, 78, 87, 0.34);
+    box-shadow:
+        inset 0 0.07em 0 rgba(255, 255, 255, 0.88),
+        inset -0.04em -0.06em 0 rgba(0, 0, 0, 0.05),
+        0 4px 0 rgba(74, 78, 87, 0.34),
+        0 0.06em 0.14em rgba(0, 0, 0, 0.14);
 }
 
 /* 摸牌 / 刚打出的牌：小圆角箭头标注（替代边框高亮） */
-.mj-tile--last-discard:not(.mj-tile--joker) .mj-tile-glyph-wrap,
-.mj-tile--drawn:not(.mj-tile--joker) .mj-tile-glyph-wrap {
-    box-shadow: none;
-}
 .mj-tile--last-discard::after,
 .mj-tile--drawn::after {
     content: '';
@@ -1144,9 +1166,6 @@
     height: 0.54em;
 }
 /* 吃碰明杠：外来牌顶标注小三角（莫兰迪红），替代下沉 */
-.mj-tile--called:not(.mj-tile--joker) .mj-tile-glyph-wrap {
-    box-shadow: none;
-}
 .mj-tile--called::after {
     content: '';
     position: absolute;
@@ -1256,6 +1275,9 @@
 .mj-tile--table .mj-tile-glyph-wrap {
     font-size: 1em;
     line-height: 1;
+}
+.mj-river .mj-tile--table {
+    position: relative;
 }
 .mj-river .mj-tile--table + .mj-tile--table {
     margin-left: var(--mj-tile-pack);

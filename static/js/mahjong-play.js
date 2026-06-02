@@ -419,29 +419,9 @@
     return honor[t] || t;
   }
 
-  /** U+FE0F：强制 emoji 彩色展示。麻将 Unicode 块默认文本样式，Safari/WebKit 会渲染成透明空心描边。 */
-  const MJ_TILE_EMOJI_VS = '\uFE0F';
-
-  function mahjongTileEmoji(codePoint) {
-    return String.fromCodePoint(codePoint) + MJ_TILE_EMOJI_VS;
-  }
-
-  function tileGlyph(t) {
-    const key = String(t || '').trim();
-    if (!key) return '?';
-    const suit = key[0];
-    const n = parseInt(key.slice(1), 10);
-    if (suit === 'w' && n >= 1 && n <= 9) return mahjongTileEmoji(0x1F007 + n - 1);
-    if (suit === 'p' && n >= 1 && n <= 9) return mahjongTileEmoji(0x1F019 + n - 1);
-    if (suit === 's' && n >= 1 && n <= 9) return mahjongTileEmoji(0x1F010 + n - 1);
-    const honorCode = { z1: 0x1F000, z2: 0x1F001, z3: 0x1F002, z4: 0x1F003, z5: 0x1F004, z6: 0x1F005, z7: 0x1F006 };
-    if (honorCode[key]) return mahjongTileEmoji(honorCode[key]);
-    return '?';
-  }
-
   function tileInnerHtmlForTile(key) {
-    const glyph = tileGlyph(key);
-    return '<span class="mj-tile-glyph-wrap"><span class="mj-tile-glyph" aria-hidden="true">' + glyph + '</span></span>';
+    const label = tileLabel(key);
+    return '<span class="mj-tile-glyph-wrap"><span class="mj-tile-glyph" aria-hidden="true">' + esc(label) + '</span></span>';
   }
 
   function tileKindClasses(t) {
