@@ -21,10 +21,10 @@ MJ_WAIT_POLL_SEC = 0.3
 MJ_STREAM_SESSION_SEC = 90
 MJ_STREAM_PING_SEC = 12
 MJ_TILE_COPIES = 4
-MJ_TOTAL_TILES = 100
+MJ_TOTAL_TILES = 136
 
-# 三人麻将：条(s)、筒(p)、字(z1-7 东南西北中发白)，共 100 张
-MJ_SUITS = ('p', 's')
+# 万(w)、筒(p)、条(s)、字(z1-7 东南西北中发白)，共 136 张
+MJ_SUITS = ('w', 'p', 's')
 MJ_HONORS = tuple(f'z{i}' for i in range(1, 8))
 
 MJ_CLEANUP_ACTIONS = frozenset({
@@ -411,7 +411,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             num = int(t[1:])
         except Exception:
             num = 0
-        suit_ord = 0 if suit == 'p' else (1 if suit == 's' else 2)
+        suit_ord = {'w': 0, 'p': 1, 's': 2}.get(suit, 3)
         return (suit_ord, num, t)
 
     def _mj_sort_tiles(self, tiles):
@@ -632,7 +632,47 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         if accounted > MJ_TOTAL_TILES:
             raise ValueError('牌数异常（超出牌墙总量）')
 
-    def _mj_claim_options_for_seat(self, room, seat, tile):
+    def _mj_chi_options(self, room, seat, discard_seat, tile):
+        """仅下家可吃；返回所有合法顺子组合（每项为排序后的三张牌）。"""
+        if self._mj_next_seat(room, discard_seat) != seat:
+            return []
+        if not tile or tile[0] not in MJ_SUITS or len(tile) < 2:
+            return []
+        suit = tile[0]
+        try:
+            num = int(tile[1:])
+        except Exception:
+            return []
+        hand = Counter(self._mj_hand_tile_list(room, seat))
+        options = []
+        seen = set()
+
+        def try_seq(nums):
+            if any(n < 1 or n > 9 for n in nums):
+                return
+            tiles = [f'{suit}{n}' for n in nums]
+            key = tuple(sorted(tiles, key=self._mj_tile_sort_key))
+            if key in seen:
+                return
+            need = [t for t in tiles if t != tile]
+            c = hand.copy()
+            for t in need:
+                if c.get(t, 0) < 1:
+                    return
+                c[t] -= 1
+            seen.add(key)
+            options.append(list(key))
+
+        if num >= 3:
+            try_seq([num - 2, num - 1, num])
+        if 2 <= num <= 8:
+            try_seq([num - 1, num, num + 1])
+        if num <= 7:
+            try_seq([num, num + 1, num + 2])
+        return options
+
+    def _mj_claim_options_for_seat(self, room, seat, tile, discard_seat=None):
+        """碰/杠优先于吃；吃仅下家。"""
         opts = []
         if self._mj_can_win_seat(room, seat, tile):
             opts.append('win')
@@ -641,15 +681,25 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             opts.append('pung')
         if hc.get(tile, 0) >= 3:
             opts.append('kong')
+        if discard_seat is not None and self._mj_chi_options(room, seat, discard_seat, tile):
+            opts.append('chi')
         return opts
 
     def _mj_any_claim_possible(self, room, discard_seat, tile):
         for s in self._mj_active_seats(room):
             if s == discard_seat:
                 continue
-            if self._mj_claim_options_for_seat(room, s, tile):
+            if self._mj_claim_options_for_seat(room, s, tile, discard_seat):
                 return True
         return False
+
+    def _mj_clear_drawn_tile(self, room, seat=None):
+        dt = room.get('drawn_tile')
+        if not isinstance(dt, dict):
+            room.pop('drawn_tile', None)
+            return
+        if seat is None or int(dt.get('seat', -1)) == seat:
+            room.pop('drawn_tile', None)
 
     def _mj_autofill_pass_claims(self, room):
         cr = room.get('claim_round')
@@ -662,7 +712,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         for s in waiting:
             if s in responses:
                 continue
-            if not self._mj_claim_options_for_seat(room, s, tile):
+            if not self._mj_claim_options_for_seat(room, s, tile, discard_seat):
                 responses[s] = 'pass'
         cr['responses'] = responses
         room['claim_round'] = cr
@@ -718,6 +768,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                 hands[s].append(wall[pos])
                 pos += 1
         hands[dealer].append(wall[pos])
+        dealer_drawn = wall[pos]
         pos += 1
         for s in range(MJ_SEATS):
             hands[s] = self._mj_sort_tiles(hands[s])
@@ -728,6 +779,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         room['discards'] = [[], [], [], []]
         room['last_discard'] = None
         room['claim_round'] = None
+        room['drawn_tile'] = {'seat': dealer, 'tile': dealer_drawn}
         room['current_seat'] = dealer
         room['phase'] = 'discard' if len(hands[dealer]) % 3 == 2 else 'draw'
         room['status'] = 'playing'
@@ -749,6 +801,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         hands[seat] = self._mj_sort_tiles(hands[seat])
         room['hands'] = hands
         room['current_seat'] = seat
+        room['drawn_tile'] = {'seat': seat, 'tile': tile}
         if self._mj_can_win_seat(room, seat):
             room['pending_self_win'] = True
         room['phase'] = 'discard'
@@ -772,12 +825,12 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             idx = (active_order.index(s) - base) % len(active_order)
             return idx
 
-        priority = {'win': 3, 'kong': 2, 'pung': 1, 'pass': 0}
+        priority = {'win': 4, 'kong': 3, 'pung': 2, 'chi': 1, 'pass': 0}
         best = None
         best_pri = -1
         best_ord = 99
         for s in waiting:
-            act = responses.get(s) or 'pass'
+            act = responses.get(s) or responses.get(str(s)) or 'pass'
             pri = priority.get(act, 0)
             if pri <= 0:
                 continue
@@ -803,6 +856,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
         discards = room.get('discards') or [[], [], [], []]
         if discard_seat >= 0 and discards[discard_seat]:
             discards[discard_seat].pop()
+        self._mj_clear_drawn_tile(room, seat)
         if act == 'pung':
             removed = 0
             new_hand = []
@@ -812,7 +866,41 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                     continue
                 new_hand.append(t)
             hands[seat] = self._mj_sort_tiles(new_hand)
-            melds[seat].append({'type': 'pung', 'tiles': [tile] * 3, 'from_seat': discard_seat, 'open': True})
+            melds[seat].append({'type': 'pung', 'tiles': [tile] * 3, 'from_seat': discard_seat, 'called_tile': tile, 'open': True})
+            room['hands'] = hands
+            room['melds'] = melds
+            room['discards'] = discards
+            room['current_seat'] = seat
+            room['phase'] = 'discard'
+            return
+        if act == 'chi':
+            chi_picks = cr.get('chi_picks') or {}
+            chi_tiles = chi_picks.get(seat) or chi_picks.get(str(seat))
+            if not isinstance(chi_tiles, list) or tile not in chi_tiles:
+                nxt = self._mj_next_seat(room, discard_seat)
+                room['current_seat'] = nxt
+                self._mj_do_draw(room, nxt)
+                return
+            valid = self._mj_chi_options(room, seat, discard_seat, tile)
+            norm = tuple(sorted(chi_tiles, key=self._mj_tile_sort_key))
+            if not any(tuple(sorted(v, key=self._mj_tile_sort_key)) == norm for v in valid):
+                nxt = self._mj_next_seat(room, discard_seat)
+                room['current_seat'] = nxt
+                self._mj_do_draw(room, nxt)
+                return
+            for t in chi_tiles:
+                if t == tile:
+                    continue
+                if t in hands[seat]:
+                    hands[seat].remove(t)
+            hands[seat] = self._mj_sort_tiles(hands[seat])
+            melds[seat].append({
+                'type': 'chi',
+                'tiles': sorted(chi_tiles, key=self._mj_tile_sort_key),
+                'from_seat': discard_seat,
+                'called_tile': tile,
+                'open': True,
+            })
             room['hands'] = hands
             room['melds'] = melds
             room['discards'] = discards
@@ -828,7 +916,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                     continue
                 new_hand.append(t)
             hands[seat] = self._mj_sort_tiles(new_hand)
-            melds[seat].append({'type': 'kong', 'tiles': [tile] * 4, 'from_seat': discard_seat, 'open': True})
+            melds[seat].append({'type': 'kong', 'tiles': [tile] * 4, 'from_seat': discard_seat, 'called_tile': tile, 'open': True})
             room['hands'] = hands
             room['melds'] = melds
             room['discards'] = discards
@@ -838,6 +926,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                 hands[seat].append(kong_draw)
                 hands[seat] = self._mj_sort_tiles(hands[seat])
                 room['hands'] = hands
+                room['drawn_tile'] = {'seat': seat, 'tile': kong_draw}
             room['phase'] = 'discard'
             return
 
@@ -874,8 +963,12 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             }
             if claim_view['need_response']:
                 tile = claim.get('tile')
-                opts = ['pass'] + self._mj_claim_options_for_seat(room, my_seat, tile)
+                discard_seat = int(claim.get('discard_seat', -1))
+                opts = ['pass'] + self._mj_claim_options_for_seat(room, my_seat, tile, discard_seat)
                 claim_view['options'] = opts
+                chi_opts = self._mj_chi_options(room, my_seat, discard_seat, tile)
+                if chi_opts:
+                    claim_view['chi_options'] = chi_opts
         dice_roll = None
         if room.get('status') == 'dealer_roll':
             active = self._mj_active_seats(room)
@@ -931,6 +1024,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             'melds': room.get('melds') or [[], [], [], []],
             'discards': room.get('discards') or [[], [], [], []],
             'last_discard': room.get('last_discard'),
+            'drawn_tile': room.get('drawn_tile'),
             'wall_remaining': max(0, len(room.get('wall') or []) - int(room.get('wall_pos') or 0)),
             'claim_round': claim_view,
             'pending_self_win': bool(room.get('pending_self_win')) and my_seat == room.get('current_seat'),
@@ -1426,6 +1520,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             room['discards'] = discards
             room['last_discard'] = {'seat': seat, 'tile': tile}
             room['pending_self_win'] = False
+            self._mj_clear_drawn_tile(room, seat)
             active = self._mj_active_seats(room)
             waiting = [s for s in active if s != seat]
             if not waiting:
@@ -1483,7 +1578,7 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
             discard_seat = int(cr.get('discard_seat', -1))
             if seat == discard_seat:
                 return self.send_json({'status': 'error', 'message': '出牌者不能响应'}, start_response)
-            if claim_type not in ('win', 'pung', 'kong', 'pass'):
+            if claim_type not in ('win', 'pung', 'kong', 'chi', 'pass'):
                 return self.send_json({'status': 'error', 'message': '无效操作'}, start_response)
             tile = cr.get('tile')
             if claim_type == 'win' and not self._mj_can_win_seat(room, seat, tile):
@@ -1493,6 +1588,24 @@ class MahjongPlayMixin(WidgetRoomChatMixin):
                 return self.send_json({'status': 'error', 'message': '不能碰'}, start_response)
             if claim_type == 'kong' and hc.get(tile, 0) < 3:
                 return self.send_json({'status': 'error', 'message': '不能杠'}, start_response)
+            if claim_type == 'chi':
+                chi_opts = self._mj_chi_options(room, seat, discard_seat, tile)
+                if not chi_opts:
+                    return self.send_json({'status': 'error', 'message': '不能吃'}, start_response)
+                chi_tiles = data.get('chi_tiles')
+                if isinstance(chi_tiles, str):
+                    chi_tiles = [x.strip() for x in chi_tiles.split(',') if x.strip()]
+                if not chi_tiles:
+                    if len(chi_opts) == 1:
+                        chi_tiles = list(chi_opts[0])
+                    else:
+                        return self.send_json({'status': 'error', 'message': '请选择吃法'}, start_response)
+                norm = tuple(sorted(chi_tiles, key=self._mj_tile_sort_key))
+                if not any(tuple(sorted(v, key=self._mj_tile_sort_key)) == norm for v in chi_opts):
+                    return self.send_json({'status': 'error', 'message': '无效的吃法'}, start_response)
+                chi_picks = dict(cr.get('chi_picks') or {})
+                chi_picks[str(seat)] = list(chi_tiles)
+                cr['chi_picks'] = chi_picks
             responses = cr.get('responses') or {}
             responses[seat] = claim_type
             cr['responses'] = responses

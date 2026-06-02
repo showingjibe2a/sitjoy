@@ -28,6 +28,7 @@
   let popupOpen = false;
   let popupMonitorTimer = null;
   let mjBoardOverlay = null;
+  let pendingChiPick = null;
   let joinInFlight = false;
   let roomChat = null;
 
@@ -193,6 +194,7 @@
 
   function updateBoardOverlay(s) {
     initMjBoardOverlay();
+    if (pendingChiPick) return;
     if (!mjBoardOverlay || mjBoardOverlay.hasConfirm()) return;
     mjBoardOverlay.refresh(s);
   }
@@ -267,6 +269,7 @@
     if (!t) return '?';
     const suit = t[0];
     const n = t.slice(1);
+    if (suit === 'w') return n + '万';
     if (suit === 'p') return n + '筒';
     if (suit === 's') return n + '条';
     const honor = { z1: '东', z2: '南', z3: '西', z4: '北', z5: '中', z6: '发', z7: '白' };
@@ -277,6 +280,10 @@
     const key = String(t || '').trim();
     if (!key) return '?';
     const suit = key[0];
+    if (suit === 'w') {
+      const n = parseInt(key.slice(1), 10);
+      if (n >= 1 && n <= 9) return String.fromCodePoint(0x1F007 + n - 1);
+    }
     if (suit === 'p') {
       const n = parseInt(key.slice(1), 10);
       if (n >= 1 && n <= 9) return String.fromCodePoint(0x1F019 + n - 1);
@@ -292,6 +299,7 @@
 
   function tileKindClasses(t) {
     const key = String(t || '').trim();
+    if (key.startsWith('w')) return ['mj-tile--man'];
     if (key.startsWith('p')) return ['mj-tile--pin'];
     if (key.startsWith('s')) return ['mj-tile--sou'];
     if (key === 'z7') return ['mj-tile--honor', 'mj-tile--bai'];
@@ -306,24 +314,29 @@
     return '<span class="mj-tile-glyph-wrap"><span class="mj-tile-glyph">' + glyph + '</span></span>';
   }
 
-  function tileFaceHtml(t, variant) {
+  function tileFaceHtml(t, variant, mark) {
     const key = String(t || '').trim();
     const label = tileLabel(key);
     const glyph = tileGlyph(key);
     const cls = ['mj-tile'].concat(tileKindClasses(key));
     if (variant === 'mini' || variant === 'table') cls.push('mj-tile--table');
     if (variant === 'hand') cls.push('mj-tile--hand');
+    if (variant === 'meld') cls.push('mj-tile--table', 'mj-tile--meld');
+    if (mark === 'last-discard') cls.push('mj-tile--last-discard');
+    if (mark === 'drawn') cls.push('mj-tile--drawn');
+    if (mark === 'called') cls.push('mj-tile--called');
     return `<span class="${cls.join(' ')}" role="img" aria-label="${esc(label)}" data-tile="${esc(key)}">`
       + tileInnerHtml(glyph)
       + '</span>';
   }
 
-  function tileHandButtonHtml(t, canDiscard) {
+  function tileHandButtonHtml(t, canDiscard, mark) {
     const key = String(t || '').trim();
     const label = tileLabel(key);
     const glyph = tileGlyph(key);
     const cls = ['mj-tile', 'mj-tile--hand'].concat(tileKindClasses(key));
     if (canDiscard) cls.push('mj-tile--clickable');
+    if (mark === 'drawn') cls.push('mj-tile--drawn');
     const inner = tileInnerHtml(glyph);
     const attrs = ` class="${cls.join(' ')}" aria-label="${esc(label)}" data-tile="${esc(key)}"`;
     if (canDiscard) {
@@ -802,6 +815,14 @@
     }
   }
 
+  function renderMeldHtml(m) {
+    const tiles = m.tiles || [];
+    const called = m.called_tile || null;
+    return '<span class="mj-meld-set" title="' + esc(m.type || '') + '">'
+      + tiles.map((t) => tileFaceHtml(t, 'meld', called && t === called ? 'called' : null)).join('')
+      + '</span>';
+  }
+
   function renderSeat(seatIdx, s) {
     const logical = s._view_seat != null ? s._view_seat : seatIdx;
     renderPlayerBadge(seatIdx, s, logical);
@@ -814,29 +835,82 @@
       return;
     }
     const river = (s.discards || [])[logical] || [];
+    const lastDisc = s.last_discard;
     if (riverEl) {
-      riverEl.innerHTML = river.map((t) => tileFaceHtml(t, 'mini')).join('');
+      riverEl.innerHTML = river.map((t, i) => {
+        const isLast = lastDisc
+          && Number(lastDisc.seat) === logical
+          && i === river.length - 1
+          && t === lastDisc.tile;
+        return tileFaceHtml(t, 'mini', isLast ? 'last-discard' : null);
+      }).join('');
     }
     const melds = (s.melds || [])[logical] || [];
     if (meldsEl) {
-      meldsEl.innerHTML = melds.map((m) => {
-        const tiles = (m.tiles || []).map((t) => tileLabel(t)).join('');
-        return `<span class="mj-meld">${esc(m.type)}:${esc(tiles)}</span>`;
-      }).join(' ');
+      meldsEl.innerHTML = melds.map((m) => renderMeldHtml(m)).join('');
     }
   }
 
   function syncHandTileLayout(handEl) {
     if (!handEl) return;
+    const stripEl = handEl.closest('.mj-hand-strip');
     const n = handEl.querySelectorAll('.mj-tile--hand').length;
     handEl.style.setProperty('--mj-hand-count', String(Math.max(n, 1)));
-    const w = handEl.clientWidth;
+    let w = handEl.clientWidth;
+    if (stripEl && stripEl.clientWidth > 0) w = stripEl.clientWidth;
     if (n > 0 && w > 0) {
+      const layout = handEl.closest('.mj-table-layout');
+      const scaleRaw = layout && getComputedStyle(layout).getPropertyValue('--mj-ui-scale');
+      const scale = scaleRaw ? parseFloat(scaleRaw) || 1 : 1;
       const rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-      const maxPx = 3.1 * rootPx;
-      const perTile = Math.min(maxPx, (w / n) * 0.93);
+      const maxPx = 3.1 * rootPx * scale;
+      const packRatio = 0.26;
+      const effectiveUnits = n - (n - 1) * packRatio;
+      const perTile = Math.min(maxPx, w / Math.max(effectiveUnits, 1));
       handEl.style.setProperty('--mj-hand-tile-size', perTile + 'px');
+      handEl.style.setProperty('--mj-tile-pack', (-packRatio * perTile) + 'px');
     }
+  }
+
+  const MJ_LAYOUT_REF_W = 500;
+
+  function syncMjLayoutScale() {
+    const layout = document.querySelector('.mj-table-layout');
+    if (!layout) return;
+    const w = layout.clientWidth || MJ_LAYOUT_REF_W;
+    const scale = Math.max(0.58, Math.min(1, w / MJ_LAYOUT_REF_W));
+    layout.style.setProperty('--mj-ui-scale', scale.toFixed(3));
+    const table = layout.querySelector('.mj-table');
+    if (table) {
+      const tw = table.clientWidth;
+      const th = table.clientHeight;
+      if (tw > 0) {
+        const tileRem = Math.max(0.88, Math.min(1.52, (tw / 290) * 1.52));
+        table.style.setProperty('--mj-table-tile-size', tileRem.toFixed(3) + 'rem');
+      }
+      if (th > 0) {
+        table.style.setProperty('--mj-side-river-max-h', Math.round(th * 0.5) + 'px');
+      }
+    }
+    syncHandTileLayout($('mjMyHand'));
+  }
+
+  let layoutScaleBound = false;
+  function ensureLayoutScaleSync() {
+    if (layoutScaleBound) return;
+    const layout = document.querySelector('.mj-table-layout');
+    if (!layout) return;
+    layoutScaleBound = true;
+    const ro = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(() => syncMjLayoutScale())
+      : null;
+    if (ro) {
+      ro.observe(layout);
+      const wrap = layout.closest('.mj-table-wrap');
+      if (wrap) ro.observe(wrap);
+    }
+    window.addEventListener('resize', syncMjLayoutScale);
+    syncMjLayoutScale();
   }
 
   let handLayoutBound = false;
@@ -844,7 +918,7 @@
     if (handLayoutBound) return;
     handLayoutBound = true;
     window.addEventListener('resize', () => {
-      syncHandTileLayout($('mjMyHand'));
+      syncMjLayoutScale();
     });
   }
 
@@ -861,8 +935,18 @@
     const hand = s.my_hand || [];
     const mySeat = resolveMySeat(s);
     const canDiscard = s.status === 'playing' && s.phase === 'discard' && s.current_seat === mySeat;
+    const dt = s.drawn_tile;
+    const drawnTile = (dt && Number(dt.seat) === mySeat) ? dt.tile : null;
+    let drawnIdx = -1;
+    if (drawnTile) {
+      for (let i = hand.length - 1; i >= 0; i--) {
+        if (hand[i] === drawnTile) { drawnIdx = i; break; }
+      }
+    }
     if (stripEl) stripEl.classList.toggle('pm-u-hidden', !hand.length);
-    handEl.innerHTML = hand.map((t) => tileHandButtonHtml(t, canDiscard)).join('');
+    handEl.innerHTML = hand.map((t, i) =>
+      tileHandButtonHtml(t, canDiscard, i === drawnIdx ? 'drawn' : null)
+    ).join('');
     handEl.querySelectorAll('.mj-tile--hand.mj-tile--clickable').forEach((btn) => {
       btn.addEventListener('click', () => {
         const tile = btn.getAttribute('data-tile');
@@ -870,7 +954,65 @@
       });
     });
     syncHandTileLayout(handEl);
-    window.requestAnimationFrame(() => syncHandTileLayout(handEl));
+    window.requestAnimationFrame(() => {
+      syncMjLayoutScale();
+      syncHandTileLayout(handEl);
+    });
+  }
+
+  function showChiChoiceOverlay(chiOptions) {
+    initMjBoardOverlay();
+    if (!mjBoardOverlay) return;
+    pendingChiPick = chiOptions;
+    const els = mjBoardOverlay.elements;
+    if (!els) return;
+    els.actionsEl.innerHTML = '';
+    els.titleEl.textContent = '选择吃的组合';
+    els.msgEl.innerHTML = '<div class="mj-chi-picker">'
+      + chiOptions.map((tiles, idx) =>
+        '<button type="button" class="mj-chi-pick-btn" data-chi-idx="' + idx + '">'
+        + tiles.map((t) => tileFaceHtml(t, 'meld')).join('')
+        + '</button>'
+      ).join('')
+      + '</div>';
+    els.actionsEl.appendChild(mjBoardOverlay.makeActionButton('取消', 'btn-secondary', () => {
+      pendingChiPick = null;
+      mjBoardOverlay.refresh(state);
+    }));
+    els.overlay.classList.remove('pm-u-hidden');
+    els.overlay.removeAttribute('hidden');
+    els.msgEl.querySelectorAll('.mj-chi-pick-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.getAttribute('data-chi-idx'));
+        const pick = chiOptions[idx];
+        pendingChiPick = null;
+        mjBoardOverlay.refresh(state);
+        if (pick) doClaim('chi', pick).catch((err) => alert(err.message));
+      });
+    });
+  }
+
+  function hideChiOverlayIfIdle() {
+    if (pendingChiPick || !mjBoardOverlay) return;
+    if (!mjBoardOverlay.hasConfirm() && !isBoardOverlayActive(state)) {
+      mjBoardOverlay.refresh(state);
+    }
+  }
+
+  function onClaimClick(type) {
+    if (type === 'chi') {
+      const cr = state && state.claim_round;
+      const opts = (cr && cr.chi_options) || [];
+      if (opts.length > 1) {
+        showChiChoiceOverlay(opts);
+        return;
+      }
+      if (opts.length === 1) {
+        doClaim('chi', opts[0]).catch((err) => alert(err.message));
+        return;
+      }
+    }
+    doClaim(type).catch((err) => alert(err.message));
   }
 
   function renderActions(s) {
@@ -884,13 +1026,20 @@
     }
     const cr = s.claim_round;
     if (cr && cr.need_response && (cr.options || []).length) {
-      (cr.options || []).forEach((opt) => {
-        const labels = { win: '胡', pung: '碰', kong: '杠', pass: '过' };
+      const order = ['win', 'pung', 'kong', 'chi', 'pass'];
+      const opts = (cr.options || []).slice().sort((a, b) => {
+        const ia = order.indexOf(a);
+        const ib = order.indexOf(b);
+        return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+      });
+      opts.forEach((opt) => {
+        const labels = { win: '胡', pung: '碰', kong: '杠', chi: '吃', pass: '过' };
         list.push({ type: opt, label: labels[opt] || opt });
       });
     }
     if (!list.length) {
       wrap.hidden = true;
+      hideChiOverlayIfIdle();
       return;
     }
     wrap.hidden = false;
@@ -900,7 +1049,7 @@
     btns.querySelectorAll('.mj-claim-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         const t = btn.getAttribute('data-claim');
-        if (t) doClaim(t);
+        if (t) onClaimClick(t);
       });
     });
   }
@@ -1016,6 +1165,8 @@
       setVisible(popReady, mySeat != null && !overlayActive);
     }
     if (isMain) updatePopoutBtnUi();
+    ensureLayoutScaleSync();
+    syncMjLayoutScale();
   }
 
   function applyState(data) {
@@ -1162,8 +1313,11 @@
     applyState(data);
   }
 
-  async function doClaim(type) {
-    const data = await api('claim', { room_code: roomCode, type });
+  async function doClaim(type, chiTiles) {
+    const payload = { room_code: roomCode, type };
+    if (chiTiles && type === 'chi') payload.chi_tiles = chiTiles;
+    const data = await api('claim', payload);
+    pendingChiPick = null;
     applyState(data);
   }
 
@@ -1475,6 +1629,7 @@
     if (mode.isPopup) initPopup();
     else if (mode.isMain) initMain();
     else tryResume();
+    ensureLayoutScaleSync();
   }
 
   if (document.readyState === 'loading') {
